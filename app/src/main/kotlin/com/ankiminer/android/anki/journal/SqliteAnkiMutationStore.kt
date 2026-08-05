@@ -3969,7 +3969,7 @@ internal class SqliteAnkiMutationStore(
         val claims =
             db.rawQuery(
                 """SELECT run_id, asset_id, COALESCE(actual_filename, requested_filename), provider_prefix
-                   FROM media_claims WHERE state IN ('PENDING','STORED','COMMIT_UNCERTAIN','PRESENT_BYTES_VERIFIED')""".trimIndent(),
+                   FROM media_claims WHERE state IN ($UNRESOLVED_CLAIM_STATES_SQL)""".trimIndent(),
                 null,
             ).use { cursor ->
                 cursor.mapRows {
@@ -3984,9 +3984,15 @@ internal class SqliteAnkiMutationStore(
     }
 
     /**
-     * Resolved claim history is intentionally unbounded and must not be passed to the 16k
-     * in-memory validator. Indexed lookups select only possible collisions, then the shared exact
-     * validator decides each candidate pair.
+     * Claim history is intentionally unbounded and must not be passed to the 16k in-memory
+     * validator. Indexed lookups select only possible collisions, then the shared exact validator
+     * decides each candidate pair.
+     *
+     * `state != 'CLEANED_VERIFIED'` is implied by [UNRESOLVED_CLAIM_STATES_SQL] and kept anyway: it
+     * is the term `claim_namespace_direct_index` and `claim_namespace_prefix_index` are partial on,
+     * and SQLite only uses a partial index when the query carries a term from its WHERE. Dropping it
+     * would silently turn this probe into a full scan of unbounded history inside the reservation
+     * write transaction. `namespaceProbeUsesBothPartialIndexes` pins that.
      */
     private fun requireNoClaimNamespaceCollisions(
         db: SQLiteDatabase,
@@ -4027,7 +4033,8 @@ internal class SqliteAnkiMutationStore(
             db.rawQuery(
                 """SELECT run_id, asset_id, $directExpression, provider_prefix
                    FROM media_claims
-                   WHERE state != 'CLEANED_VERIFIED' AND (${clauses.joinToString(" OR ")})""".trimIndent(),
+                   WHERE state != 'CLEANED_VERIFIED' AND state IN ($UNRESOLVED_CLAIM_STATES_SQL)
+                     AND (${clauses.joinToString(" OR ")})""".trimIndent(),
                 arguments.toTypedArray(),
             ).use { cursor ->
                 while (cursor.moveToNext()) {
@@ -4433,6 +4440,20 @@ internal class SqliteAnkiMutationStore(
     companion object {
         const val DEFAULT_DATABASE_NAME = "anki_mutations.db"
         private const val ACTIVE_PARENT_STATES_SQL = "'PREPARED','RUNNING','RESULT_READY'"
+
+        /**
+         * The claim states that still own a media namespace, emitted once so the bounded sweep and
+         * the indexed history probe cannot drift apart. They used to disagree: the sweep read only
+         * unresolved claims while the probe read all of resolved history, so a claim that attached
+         * successfully kept its provider prefix for the life of the collection and every later run
+         * asking for the same filename — every re-mining of one word's local audio — was refused.
+         *
+         * Ownership ends where recovery does. Nothing renames, cleans, or reissues a resolved claim,
+         * and no path deletes bytes AnkiDroid already holds, so its name is free for the provider to
+         * resolve: identical bytes come back as the same file, different bytes as {preferred}_{suffix}.
+         */
+        private val UNRESOLVED_CLAIM_STATES_SQL =
+            MediaClaimState.entries.filter { it.isUnresolved }.joinToString(",") { "'${it.name}'" }
         private const val OPEN_VALIDATION_ROW_LIMIT = GLOBAL_UNRESOLVED_CLAIM_LIMIT
         private const val RETENTION_PRUNE_BATCH = 512
     }

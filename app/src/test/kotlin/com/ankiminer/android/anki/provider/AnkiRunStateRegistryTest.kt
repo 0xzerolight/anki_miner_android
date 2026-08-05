@@ -394,25 +394,6 @@ class AnkiRunStateRegistryTest {
     }
 
     @Test
-    fun `media acknowledgement filename collision cannot bypass atomic response admission`() {
-        val registry = AnkiRunStateRegistry()
-        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
-        registry.withOwner(RUN_ID) { owner ->
-            val first = MediaAcknowledgement(ASSET_ID, "clip.mp3", 1L)
-            registry.commitDurableMutationResponse(owner, REQUEST_ID, listOf(first))
-            assertEquals(first, registry.mediaAcknowledgement(owner, ASSET_ID))
-            assertThrows(RunStateConflictException::class.java) {
-                registry.commitDurableMutationResponse(
-                    owner,
-                    OTHER_REQUEST_ID,
-                    listOf(MediaAcknowledgement(OTHER_ASSET_ID, "clip.mp3", 2L)),
-                )
-            }
-            assertNull(registry.mediaAcknowledgement(owner, OTHER_ASSET_ID))
-        }
-    }
-
-    @Test
     fun `provider entry capability rejects wrong owner and exact scope mismatch`() {
         val registry = AnkiRunStateRegistry()
         assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
@@ -794,8 +775,13 @@ class AnkiRunStateRegistryTest {
         assertEquals(listOf(null), cleanup)
     }
 
+    /**
+     * One response cannot name one file twice: its assets have distinct content-addressed names, so
+     * one filename back for two of them is the provider contradicting itself. Across responses it is
+     * ordinary — see [`separate responses may acknowledge one filename under distinct claims`].
+     */
     @Test
-    fun `duplicate acknowledgement filename or claim installs nothing`() {
+    fun `duplicate acknowledgement filename or claim within one response installs nothing`() {
         listOf(
             listOf(
                 MediaAcknowledgement(ASSET_ID, "same.mp3", 1L),
@@ -817,6 +803,43 @@ class AnkiRunStateRegistryTest {
             }
             assertEquals(ReleaseState.RELEASED, registry.release(RUN_ID, true))
         }
+    }
+
+    /**
+     * Mining one word twice in a run is not a run-fatal conflict.
+     *
+     * Both stores hand AnkiDroid the same content-addressed name for the same bytes, and it answers
+     * with the file it already holds. Two claims, two assets, one filename. Note bindings key on the
+     * claim, so nothing downstream is ambiguous — and failing here would quarantine the whole run
+     * over a correct provider answer.
+     *
+     * The claim collision at the end carries what the removed filename-collision test proved: a
+     * rejected response still installs nothing.
+     */
+    @Test
+    fun `separate responses may acknowledge one filename under distinct claims`() {
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            val first = MediaAcknowledgement(ASSET_ID, "clip.mp3", 1L)
+            val second = MediaAcknowledgement(OTHER_ASSET_ID, "clip.mp3", 2L)
+            registry.commitDurableMutationResponse(owner, REQUEST_ID, listOf(first))
+            registry.commitDurableMutationResponse(owner, OTHER_REQUEST_ID, listOf(second))
+
+            assertEquals(first, registry.mediaAcknowledgement(owner, ASSET_ID))
+            assertEquals(second, registry.mediaAcknowledgement(owner, OTHER_ASSET_ID))
+
+            // The claim is still one asset's identity, whichever response it arrives in.
+            assertThrows(RunStateConflictException::class.java) {
+                registry.commitDurableMutationResponse(
+                    owner,
+                    THIRD_REQUEST_ID,
+                    listOf(MediaAcknowledgement(THIRD_ASSET_ID, "other.mp3", 1L)),
+                )
+            }
+            assertNull(registry.mediaAcknowledgement(owner, THIRD_ASSET_ID))
+        }
+        assertEquals(ReleaseState.RELEASED, registry.release(RUN_ID, true))
     }
 
     @Test
@@ -986,6 +1009,7 @@ class AnkiRunStateRegistryTest {
         const val THIRD_REQUEST_ID = "anki_33333333333333333333333333333333"
         const val ASSET_ID = "asset_11111111111111111111111111111111"
         const val OTHER_ASSET_ID = "asset_22222222222222222222222222222222"
+        const val THIRD_ASSET_ID = "asset_33333333333333333333333333333333"
         const val NOTE_ID = "note_11111111111111111111111111111111"
     }
 
