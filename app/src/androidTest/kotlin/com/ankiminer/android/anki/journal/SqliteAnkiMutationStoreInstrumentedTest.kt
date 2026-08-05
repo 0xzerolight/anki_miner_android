@@ -2572,9 +2572,17 @@ class SqliteAnkiMutationStoreInstrumentedTest {
         }
     }
 
+    /**
+     * A resolved claim stops owning its media namespace.
+     *
+     * It used to own it forever, which is what made every re-mining of one word's local audio fail:
+     * the name is content-addressed, the pack file does not change, so the second run asked for a
+     * name the first run's attached claim still held. Ownership ends where recovery does — nothing
+     * renames, cleans, or reissues a resolved claim — and the provider resolves the name itself.
+     */
     @Test
-    fun resolvedNamespaceHistoryUsesIndexedCollisionProofOutsideTheUnresolvedCap() =
-        withStore(JournalCapacityLimits.forTests(2, 4)) { store ->
+    fun resolvedClaimsReleaseTheirMediaNamespace() =
+        withStore(JournalCapacityLimits.forTests(8, 8)) { store ->
             val attached = prepareMedia(store, 90, 1, 1)
             store.recordProviderEntry(attached.child.id)
             store.commitMediaReceipt(
@@ -2643,7 +2651,8 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 ).single()
             store.releaseReservation(disjoint.id)
 
-            assertThrows(JournalInvariantViolation::class.java) {
+            // The attached claim's own filename. This is the reported bug: mining one word twice.
+            val attachedDirect =
                 store.reserveMedia(
                     freshRun,
                     listOf(
@@ -2652,9 +2661,12 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                             preferredName = "fresh-direct",
                         ),
                     ),
-                )
-            }
-            assertThrows(JournalInvariantViolation::class.java) {
+                ).single()
+            assertEquals("audio_1.mp3", attachedDirect.requestedFilename)
+            store.releaseReservation(attachedDirect.id)
+
+            // A name inside an acknowledged claim's provider prefix.
+            val acknowledgedPrefix =
                 store.reserveMedia(
                     freshRun,
                     listOf(
@@ -2663,9 +2675,11 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                             preferredName = "fresh-prefix",
                         ),
                     ),
-                )
-            }
-            assertThrows(JournalInvariantViolation::class.java) {
+                ).single()
+            store.releaseReservation(acknowledgedPrefix.id)
+
+            // A provider prefix that covers an acknowledged claim's name.
+            val overAcknowledged =
                 store.reserveMedia(
                     freshRun,
                     listOf(
@@ -2674,8 +2688,8 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                             preferredName = "audio_3",
                         ),
                     ),
-                )
-            }
+                ).single()
+            store.releaseReservation(overAcknowledged.id)
 
             val releasedName =
                 store.reserveMedia(
@@ -2688,6 +2702,130 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     ),
                 ).single()
             assertEquals(cleaned.claim.requestedFilename, releasedName.requestedFilename)
+        }
+
+    /**
+     * The other half of the same rule: a claim recovery can still act on keeps its namespace.
+     *
+     * A crashed run's stored-but-unattached claim is the Issue #6 shape. Its bytes are in the
+     * collection under a name nothing has attributed yet, so handing that name to a second owner
+     * would make the orphan unrecoverable. The way out is the existing stored-unattached
+     * remediation, which releases the name by resolving the claim.
+     */
+    @Test
+    fun unresolvedClaimsStillOwnTheirMediaNamespace() =
+        withStore(JournalCapacityLimits.forTests(4, 8)) { store ->
+            val orphan = prepareMedia(store, 80, 1, 1)
+            store.recordProviderEntry(orphan.child.id)
+            store.commitMediaReceipt(
+                orphan.child.id,
+                orphan.claim.id,
+                ProviderReceipt.Media("audio_1.mp3", "file:///audio_1.mp3"),
+                "stored but never attached",
+            )
+            assertEquals(MediaClaimState.STORED.name, claimState(store.writableDatabase, orphan.claim.id))
+            store.releaseMediaLease(orphan.claim.runId)
+
+            val freshRun = runId(81)
+            val freshKey = ParentKey(freshRun, requestId(1))
+            store.acquireMediaLease(freshRun)
+
+            assertThrows(JournalInvariantViolation::class.java) {
+                store.reserveMedia(
+                    freshRun,
+                    listOf(
+                        reservation(freshKey, 100).copy(
+                            requestedFilename = "audio_1.mp3",
+                            preferredName = "fresh-direct",
+                        ),
+                    ),
+                )
+            }
+            assertThrows(JournalInvariantViolation::class.java) {
+                store.reserveMedia(
+                    freshRun,
+                    listOf(
+                        reservation(freshKey, 101).copy(
+                            requestedFilename = "fresh-provider.mp3",
+                            preferredName = "audio_1",
+                        ),
+                    ),
+                )
+            }
+        }
+
+    /** Releasing a resolved claim's name never lets two live claims hold one name at the same time. */
+    @Test
+    fun twoLiveClaimsForOneNameAreStillRefusedWithinARun() =
+        withStore(JournalCapacityLimits.forTests(4, 8)) { store ->
+            val attached = prepareMedia(store, 82, 1, 1)
+            store.recordProviderEntry(attached.child.id)
+            store.commitMediaReceipt(
+                attached.child.id,
+                attached.claim.id,
+                ProviderReceipt.Media("audio_1.mp3", "file:///audio_1.mp3"),
+                "known attached media",
+            )
+            val note = createRequest(82, 2, 1, MediaBinding(attached.claim.assetId, "audio_1.mp3"))
+            prepareCommittedNote(
+                store,
+                note,
+                8_201,
+                listOf(DurableMediaBinding(attached.claim.assetId, "audio_1.mp3", attached.claim.id)),
+            )
+            advanceToPostcheck(store, note, 8_201)
+            store.completeVerifiedNote(note.key, 0, 8_201, "exact attachment proof")
+            store.releaseMediaLease(attached.claim.runId)
+
+            val freshRun = runId(83)
+            val freshKey = ParentKey(freshRun, requestId(1))
+            store.acquireMediaLease(freshRun)
+            val first =
+                store.reserveMedia(
+                    freshRun,
+                    listOf(reservation(freshKey, 100).copy(requestedFilename = "audio_1.mp3", preferredName = "audio_1")),
+                ).single()
+            assertEquals("audio_1.mp3", first.requestedFilename)
+
+            assertThrows(JournalInvariantViolation::class.java) {
+                store.reserveMedia(
+                    freshRun,
+                    listOf(reservation(freshKey, 101).copy(requestedFilename = "audio_1.mp3", preferredName = "audio_1")),
+                )
+            }
+        }
+
+    /**
+     * The namespace probe must stay on its two partial indexes.
+     *
+     * Both are partial on `state != 'CLEANED_VERIFIED'`, and SQLite only uses a partial index when
+     * the query carries a term from its WHERE. The probe's unresolved-state filter implies that term
+     * but does not replace it, so dropping the redundant-looking clause would turn this into a full
+     * scan of unbounded claim history inside the reservation write transaction — every test still
+     * green, every mining run slower as the collection grows. API 26 ships the oldest SQLite the app
+     * supports, which is where the prover's behaviour has to be pinned.
+     */
+    @Test
+    fun namespaceProbeUsesBothPartialIndexes() =
+        withStore { store ->
+            val db = store.writableDatabase
+            fun plan(where: String): String =
+                db.rawQuery(
+                    """EXPLAIN QUERY PLAN
+                       SELECT run_id, asset_id, COALESCE(actual_filename, requested_filename), provider_prefix
+                       FROM media_claims WHERE $where""".trimIndent(),
+                    null,
+                ).use { cursor ->
+                    buildList {
+                        while (cursor.moveToNext()) add(cursor.getString(cursor.columnCount - 1))
+                    }.joinToString(" | ")
+                }
+
+            val states = "state != 'CLEANED_VERIFIED' AND state IN ('PENDING','STORED','COMMIT_UNCERTAIN','PRESENT_BYTES_VERIFIED')"
+            val direct = plan("$states AND COALESCE(actual_filename, requested_filename) = 'audio_1.mp3'")
+            assertTrue(direct, direct.contains("claim_namespace_direct_index"))
+            val prefix = plan("$states AND provider_prefix = 'audio_1_'")
+            assertTrue(prefix, prefix.contains("claim_namespace_prefix_index"))
         }
 
     @Test

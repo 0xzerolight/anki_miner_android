@@ -698,11 +698,15 @@ internal class AnkiRunStateRegistry(
             for (acknowledgement in mediaAcknowledgements) {
                 val prior = state.mediaAcknowledgements[acknowledgement.assetId]
                 if (prior != null && prior != acknowledgement) fail(RunStateConflictException())
+                // Two assets sharing one claim is corruption: a claim is one asset's durable
+                // identity, and note bindings are keyed on it. Two assets sharing one *filename* is
+                // not — AnkiDroid answers byte-identical content with the file it already holds, so
+                // one run mining a word twice legitimately acknowledges the same name under two
+                // claims. Failing that quarantines the whole run over a correct provider answer.
                 if (
                     state.mediaAcknowledgements.values.any { existing ->
                         existing.assetId != acknowledgement.assetId &&
-                            (existing.actualFilename == acknowledgement.actualFilename ||
-                                existing.durableClaimId == acknowledgement.durableClaimId)
+                            existing.durableClaimId == acknowledgement.durableClaimId
                     }
                 ) {
                     fail(RunStateConflictException())
