@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-05
+
 ### Added
 
 - Audio can be mined on its own. A new Audio tab takes an audio file and a transcript and runs the same pipeline the video lane does, with the audio-only word picker playing the line rather than showing a frame. A note type that maps Picture but not Audio is called out before the run starts, because that is the one configuration where an audio run keeps a word only if the file carries embedded cover art.
