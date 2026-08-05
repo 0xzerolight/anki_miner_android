@@ -4,10 +4,23 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-05
+
 ### Added
 
+- Audio can be mined on its own. A new Audio tab takes an audio file and a transcript and runs the same pipeline the video lane does, with the audio-only word picker playing the line rather than showing a frame. A note type that maps Picture but not Audio is called out before the run starts, because that is the one configuration where an audio run keeps a word only if the file carries embedded cover art.
+- Reading material can be pasted rather than picked from a file. The reading screen takes either a document or pasted text, and switching between the two keeps both, so a paste is not lost by looking at a file. The paste is held in memory for the life of the screen only and is never written to saved state — pasted text can be a password.
 - The card image can be a short looping clip of the line rather than a single frame. It is off by default, and turning it on exposes clip length and quality. Clips are slower to mine than a still and the media is several times larger, which the setting says plainly. Android stores the clip as AVIF where the platform can name that format and WebP everywhere else — the app decides, because a file the platform cannot name would be stored by AnkiDroid as an unusable `.bin`.
 - The word picker's video preview carries its own software decoders, so files the phone's hardware cannot play — 10-bit anime H.264, 10-bit HEVC, VP9 profiles, DTS/TrueHD audio — play in the preview just as they mine. Hardware decoding is still preferred where it works.
+
+### Changed
+
+- The word picker was rebuilt around the list. A word row now reads as a word above its own metadata instead of one run-on line; the heading, search, filter, sort and bulk actions are pinned above the list as a single block rather than scrolling away with it and costing a fifth of the screen; the screen opens with nothing expanded and a header collapses again on a second tap; an expanded word renders as one continuous card; the mined form is highlighted inside each example sentence rather than repeated as a label above it; a re-sort returns to the first result instead of jumping to wherever the old row landed; and at large font scales the video preview folds away so the controls stay reachable.
+- Importing a resource asks for the file first and works the rest out. Known-word lists no longer ask for a format — the parser already detects JSON, CSV, TSV and plain text and reports what it found, and the two entry points that disagreed on this now behave the same. Frequency and pitch imports derive their display name and format from the document that was picked, rather than demanding both before the picker will open. An audio pack derives its internal ID from the archive itself, so a pack no longer has to be named by hand before it is opened.
+
+### Removed
+
+- The permanent Re-check action on the note type is gone. Note type, field mapping, card type and marker edits already re-verify the target, and an inline Retry still appears when a target check actually fails.
 
 ### Fixed
 
@@ -15,6 +28,9 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - A large audio-pack import no longer dies when you leave the app. It runs under a foreground service holding a wake lock, because the import has no resume — an interrupted one starts again from zero. The import itself is also considerably faster: it no longer forces a disk sync for every one of a hundred thousand media files, nor resolves the full symlink path of every row in the pack index.
 - Dictionary media in AVIF format was stored as `.bin` on every device, including ones that handle AVIF. The format a media file is saved under is now decided from the device's own capabilities rather than fixed at build time.
 - A video the device could not decode left the word picker's preview as a silent black rectangle — mining worked, the preview just showed nothing. The preview now names the codec the device cannot play and offers a retry, and a playback error no longer leaves the player dead for the rest of the run.
+- A `.csv` frequency, pitch or known-words file was greyed out in the file browser on some devices, because Android types that extension as `text/comma-separated-values` and the import filters did not carry that spelling. The filters now accept text of any kind plus the spreadsheet types a wildcard cannot reach.
+- A subtitle file the app cannot read was accepted when it was picked and only rejected later, after the video had already been copied. Both the picker and the run now apply the same rule, so the rejection arrives immediately.
+- "Skip for now" in the setup wizard needed two taps: the button raised a confirmation the button itself already stated. It closes the wizard on one tap now, while System Back still confirms, since skipping is remembered and an accidental Back would suppress onboarding for good.
 
 ## [0.3.0] - 2026-08-03
 

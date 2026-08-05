@@ -37,7 +37,7 @@ body:
     attributes:
       label: Anki Miner version
       description: Shown in Settings → About (version name and code). Please update to the latest release first to see if it is already fixed.
-      placeholder: 0.3.0 (code 12)
+      placeholder: 0.4.0 (code 13)
     validations:
       required: true
 
