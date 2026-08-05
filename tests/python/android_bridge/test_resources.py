@@ -2045,6 +2045,60 @@ def test_known_words_json_import_strips_words_and_reports_non_generic(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+def test_jpdb_import_tolerates_mixed_timestamp_types(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hand-edited export mixing str and int timestamps must import, not raise.
+
+    ``_review_timestamp`` coerces a non-numeric timestamp to 0.0 so ``max()``
+    never compares str against int. Android reaches that sort only through the
+    streamed importer, which desktop's own test does not cover.
+    """
+
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "jpdb.json"
+    source.write_text(
+        json.dumps(
+            {
+                "cards_vocabulary_jp_en": [
+                    {
+                        "spelling": "食べる",
+                        "reviews": [
+                            {"grade": "okay", "timestamp": 100},
+                            {"grade": "nothing", "timestamp": "2026-01-01"},
+                        ],
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-jpdb-mixed-timestamps",
+                "sourcePath": str(source),
+                "sourceFormat": "json",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+
+    assert imported.payload["format"] == "jpdb"
+    assert imported.payload["importedCount"] == 1
+
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる"}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 @pytest.mark.parametrize(
     "separator",
     ("\r", "\n", "\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029"),

@@ -7,6 +7,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 ### Fixed
 
 - Local audio stopped being added to cards for any word that had been mined before. The first time a word was mined its audio attached normally; every time after that the card was created silently without it, with no error and nothing on screen to explain it. The app was reserving each media filename permanently, so the second attempt asked for a name the first one still held. Only audio from local packs was affected, because it is the one file that is byte-for-byte the same every run — screenshots and sentence audio are re-extracted each time and never collide. Words already blocked this way work again on the next run; nothing has to be reimported or reset.
+- A note-type field whose name contains a hyphen — `Sentence-Audio`, `Expression-Furigana` — was auto-mapped on Android but not on the desktop app, so the same note type produced two different starting field maps. Android now reads field names the same way the desktop app does. A hyphenated field is no longer filled in for you; pick it once from the field mapping and the choice is kept.
 
 ## [0.4.1] - 2026-08-05
 
