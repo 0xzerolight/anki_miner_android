@@ -109,7 +109,13 @@ class MainActivity : ComponentActivity() {
     }
     private val settingsViewModelFactory by lazy {
         val app = application as AnkiMinerApplication
-        SettingsViewModel.Factory(app.settingsRepository, app.resourceManager)
+        SettingsViewModel.Factory(
+            app.settingsRepository,
+            app.resourceManager,
+            app.settingsDocumentReader,
+            app.resourceDocumentWriter,
+            BuildConfig.VERSION_NAME,
+        )
     }
     private val readingViewModelFactory by lazy {
         val app = application as AnkiMinerApplication

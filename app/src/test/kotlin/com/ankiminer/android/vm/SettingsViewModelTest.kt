@@ -14,11 +14,16 @@ import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.data.settings.SettingsBackupException
+import com.ankiminer.android.data.settings.SettingsBackupFailure
+import com.ankiminer.android.data.settings.SettingsDocumentReader
+import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.engine.BridgeJsonValue
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -28,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -730,6 +736,133 @@ class SettingsViewModelTest {
             assertEquals("Deck", viewModel.draftState.value.draft.deckName)
         }
 
+    @Test
+    fun `export writes the current settings as a backup document`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings(deckName = "Mining"))
+            val io = RecordingDocumentIo()
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentWriter = io,
+                    appVersion = "0.4.1",
+                )
+            advanceUntilIdle()
+
+            viewModel.exportSettings("content://out.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertTrue(io.written.contains("Mining"))
+            assertEquals(SettingsBackupState.Exported, viewModel.backupState.value)
+        }
+
+    @Test
+    fun `import overlays the file and leaves absent keys alone`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings(deckName = "Mining"))
+            val io =
+                RecordingDocumentIo(
+                    content =
+                        """{"ankiMinerAndroidSettings":1,"appVersion":"0.4.1","schemaVersion":2,"settings":{"theme_mode":"light"}}""",
+                )
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentReader = io,
+                )
+            advanceUntilIdle()
+
+            viewModel.importSettings("content://in.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertEquals(ThemeMode.LIGHT, repository.current.theme)
+            assertEquals("Mining", repository.current.deckName)
+            assertEquals(
+                SettingsBackupState.Imported(applied = 1, ignored = 0, rejected = 0),
+                viewModel.backupState.value,
+            )
+        }
+
+    @Test
+    fun `importing a file that is not a backup reports it and writes nothing`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val io = RecordingDocumentIo(content = """{"hello":"world"}""")
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentReader = io,
+                )
+            advanceUntilIdle()
+            val writesBeforeImport = repository.writeCount
+
+            viewModel.importSettings("content://in.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertEquals(writesBeforeImport, repository.writeCount)
+            assertTrue(viewModel.backupState.value is SettingsBackupState.Failed)
+        }
+
+    @Test
+    fun `importing an oversized document reports it as too large`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val reader =
+                SettingsDocumentReader {
+                    throw SettingsBackupException(SettingsBackupFailure.TOO_LARGE)
+                }
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentReader = reader,
+                )
+            advanceUntilIdle()
+
+            viewModel.importSettings("content://in.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            val state = viewModel.backupState.value
+            assertTrue(state is SettingsBackupState.Failed)
+            assertEquals(
+                R.string.settings_backup_too_large,
+                (state as SettingsBackupState.Failed).message.resourceId,
+            )
+            assertEquals(0, repository.writeCount)
+        }
+
+    @Test
+    fun `a failing document writer reports an export failure`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val writer = ResourceDocumentWriter { throw IOException("write failed") }
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentWriter = writer,
+                )
+            advanceUntilIdle()
+
+            viewModel.exportSettings("content://out.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            val state = viewModel.backupState.value
+            assertTrue(state is SettingsBackupState.Failed)
+            assertEquals(
+                R.string.settings_backup_export_failed,
+                (state as SettingsBackupState.Failed).message.resourceId,
+            )
+        }
+
     // READY: startup recovery gates every setup command, so a PENDING fixture reports busy
     // and silently drops deck selection.
     private fun resources(vararg ids: String): ResourceManagerState =
@@ -808,6 +941,21 @@ class SettingsViewModelTest {
                 throw IOException("transient write failure")
             }
         }
+    }
+
+    private class RecordingDocumentIo(var content: String = "") :
+        SettingsDocumentReader,
+        ResourceDocumentWriter {
+        val written = StringBuilder()
+
+        override fun read(uri: String): String = content
+
+        override fun open(uri: String): java.io.OutputStream =
+            object : java.io.ByteArrayOutputStream() {
+                override fun close() {
+                    written.append(toString(Charsets.UTF_8.name()))
+                }
+            }
     }
 
     private class FakeResourceManager(initial: ResourceManagerState) : ResourceManager {

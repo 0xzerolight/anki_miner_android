@@ -759,6 +759,10 @@
     <string name="b3_settings_save_saving">保存中…</string>
     <string name="b3_settings_save_saved">保存済み</string>
     <string name="b3_settings_save_failed">保存できませんでした</string>
+    <string name="settings_backup_export_failed">設定をそのファイルに保存できませんでした。</string>
+    <string name="settings_backup_import_failed">そのファイルから設定を読み込めませんでした。</string>
+    <string name="settings_backup_not_a_backup">このファイルは Anki Miner の設定ファイルではありません。</string>
+    <string name="settings_backup_too_large">このファイルは設定ファイルとしては大きすぎます。</string>
     <string name="b3_settings_android_override_state">カスタム上書き</string>
     <string name="b3_validation_numeric_incomplete">数値を最後まで入力するか、空欄にしてください</string>
     <string name="b3_validation_finite">有限の数値を入力してください</string>
