@@ -1421,6 +1421,52 @@ def test_audio_pack_prefix_refuses_to_widen_the_extraction(tmp_path: Path) -> No
         assert failure.value.code == "invalid_resource_request"
 
 
+def test_audio_member_guard_admits_the_real_collection_nhk16_index() -> None:
+    # The 2023-06-11 upstream collection ships nhk16 entries.json at 43,944,140
+    # bytes. The JSON ceiling must clear the file users actually download, or
+    # every pack in the collection is rejected at preflight.
+    parts = ("user_files", "nhk16_files", "entries.json")
+    assert local_resources._accept_audio_member(parts, 43_944_140, set()) == local_resources._AUDIO_JSON_LIMIT
+
+
+def test_audio_member_guard_names_an_oversized_member() -> None:
+    parts = ("user_files", "nhk16_files", "entries.json")
+    with pytest.raises(BridgeProtocolError, match="oversized") as failure:
+        local_resources._accept_audio_member(parts, local_resources._AUDIO_JSON_LIMIT + 1, set())
+    assert failure.value.code == "resource_archive_member_oversized"
+
+
+def test_audio_extractor_names_a_member_count_rejection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(local_resources, "_AUDIO_MEMBER_LIMIT", 2)
+    members = {f"pack/{index}.mp3": b"a" for index in range(3)}
+    source = _zip_of(tmp_path / "many.zip", members)
+    destination = tmp_path / "extracted"
+    with pytest.raises(BridgeProtocolError, match="member count") as failure:
+        local_resources._extract_audio_zip(
+            source,
+            destination,
+            resources._Operation("audio-many"),
+            (),
+        )
+    assert failure.value.code == "resource_archive_member_count"
+
+
+def test_audio_extractor_names_a_total_size_rejection(tmp_path: Path) -> None:
+    source = _zip_of(tmp_path / "empty-total.zip", {"pack/empty.mp3": b""})
+    destination = tmp_path / "extracted"
+    with pytest.raises(BridgeProtocolError, match="expands beyond") as failure:
+        local_resources._extract_audio_zip(
+            source,
+            destination,
+            resources._Operation("audio-total"),
+            (),
+        )
+    assert failure.value.code == "resource_archive_expands_too_large"
+
+
 @pytest.mark.skipif(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
@@ -1451,6 +1497,36 @@ def test_audio_pack_preflight_reports_every_pack_in_the_collection(
             {"packId": "nhk16", "packPath": "user_files/nhk16_files", "format": "nhk16"},
         ]
     }
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_preflight_clears_the_real_collection_index_size(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: the upstream collection's nhk16 entries.json is 43,944,140
+    # bytes, which the former 32 MiB JSON ceiling rejected — every import of
+    # the collection failed at preflight on a limit no user could see.
+    _local_home(tmp_path, monkeypatch)
+    members = _collection_members()
+    members["user_files/nhk16_files/entries.json"] = bytes(43_944_140)
+    source = _zip_of(tmp_path / "collection.zip", members)
+
+    preflight = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "audio-real-index",
+                "sourcePath": str(source),
+                "displayName": "local-yomichan-audio-collection",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert [pack["packId"] for pack in preflight.payload["packs"]] == ["jpod", "nhk16"]
 
 
 @pytest.mark.skipif(

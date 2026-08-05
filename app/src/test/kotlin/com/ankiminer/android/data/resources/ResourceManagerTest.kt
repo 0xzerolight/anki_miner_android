@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
@@ -810,6 +811,37 @@ class ResourceManagerTest {
             assertTrue(harness.foregroundLease.startedWhileRunning)
             assertTrue(!harness.foregroundLease.isRunning())
             assertEquals("stop", harness.foregroundLease.events.last())
+        }
+
+    @Test
+    fun bridgeArchiveRejectionsNameTheLimitThatTripped() =
+        runTest {
+            // One Python code per limit class, so a rejection says which limit the
+            // archive hit instead of a blanket message that reads as out-of-storage.
+            val expectations =
+                mapOf(
+                    "resource_archive_member_oversized" to
+                        R.string.resource_failure_archive_member_oversized,
+                    "resource_archive_member_count" to
+                        R.string.resource_failure_archive_member_count,
+                    "resource_archive_expands_too_large" to
+                        R.string.resource_failure_archive_expands,
+                )
+            for ((code, resourceId) in expectations) {
+                val harness =
+                    Harness(
+                        rootName = "manager-$code",
+                        sourceLabel = "audio-pack archive",
+                        bridgeFailureCode = code,
+                        autoRecover = false,
+                    )
+
+                assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+                val failure = requireNotNull(harness.manager.state.value.failure)
+                assertEquals(code, failure.code)
+                assertEquals("resource:$resourceId", failure.message)
+            }
         }
 
     @Test
