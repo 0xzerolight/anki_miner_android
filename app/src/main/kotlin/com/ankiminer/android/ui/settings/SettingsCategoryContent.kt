@@ -14,7 +14,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -39,8 +43,11 @@ import com.ankiminer.android.diagnostics.DiagnosticsExportStep
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
+import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.ui.theme.actionBorder
+import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.SettingsDraft
@@ -80,6 +87,11 @@ internal data class SettingsScreenCallbacks(
 internal enum class KnownWordsFailureTarget {
     IMPORT,
     EXPORT,
+}
+
+private enum class ThemeSlot {
+    LIGHT,
+    DARK,
 }
 
 internal fun knownWordsFailureTarget(failure: ResourceFailure): KnownWordsFailureTarget? {
@@ -840,8 +852,10 @@ private fun LazyListScope.uiSettings(
     callbacks: SettingsScreenCallbacks,
 ) {
     settingsCard("ui-options") {
+        var editingSlot by rememberSaveable { mutableStateOf<String?>(null) }
+        val editing = editingSlot?.let(ThemeSlot::valueOf)
         SettingsSection(stringResource(R.string.settings_ui_section)) {
-            Text(stringResource(R.string.settings_theme))
+            Text(stringResource(R.string.settings_theme_mode))
             AdaptiveChoiceSelector(
                 values = ThemeMode.entries,
                 selected = draft.theme,
@@ -856,6 +870,37 @@ private fun LazyListScope.uiSettings(
                 },
                 onSelect = { callbacks.onDraftChange(draft.copy(theme = it)) },
             )
+            val themeChoicesEnabled = !(draft.dynamicColorEnabled && dynamicColorSupported())
+            SecondaryActionButton(
+                onClick = { editingSlot = ThemeSlot.LIGHT.name },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = themeChoicesEnabled,
+            ) {
+                Text(
+                    "${stringResource(R.string.settings_theme_light_choice)}: " +
+                        ThemePalettes.requireByKey(draft.lightThemeKey).displayName,
+                )
+            }
+            SecondaryActionButton(
+                onClick = { editingSlot = ThemeSlot.DARK.name },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = themeChoicesEnabled,
+            ) {
+                Text(
+                    "${stringResource(R.string.settings_theme_dark_choice)}: " +
+                        ThemePalettes.requireByKey(draft.darkThemeKey).displayName,
+                )
+            }
+            if (dynamicColorSupported()) {
+                BooleanSetting(
+                    label = stringResource(R.string.settings_theme_dynamic),
+                    checked = draft.dynamicColorEnabled,
+                    onCheckedChange = {
+                        callbacks.onDraftChange(draft.copy(dynamicColorEnabled = it))
+                    },
+                )
+                SupportingText(stringResource(R.string.settings_theme_dynamic_supporting))
+            }
             callbacks.onRunSetupWizard?.let { runWizard ->
                 OutlinedButton(
                     onClick = runWizard,
@@ -864,6 +909,32 @@ private fun LazyListScope.uiSettings(
                     Text(stringResource(R.string.settings_run_setup_wizard))
                 }
             }
+        }
+        editing?.let { slot ->
+            ThemePickerDialog(
+                title =
+                    stringResource(
+                        when (slot) {
+                            ThemeSlot.LIGHT -> R.string.settings_theme_light_choice
+                            ThemeSlot.DARK -> R.string.settings_theme_dark_choice
+                        },
+                    ),
+                selectedKey =
+                    when (slot) {
+                        ThemeSlot.LIGHT -> draft.lightThemeKey
+                        ThemeSlot.DARK -> draft.darkThemeKey
+                    },
+                onSelect = { key ->
+                    callbacks.onDraftChange(
+                        when (slot) {
+                            ThemeSlot.LIGHT -> draft.copy(lightThemeKey = key)
+                            ThemeSlot.DARK -> draft.copy(darkThemeKey = key)
+                        },
+                    )
+                    editingSlot = null
+                },
+                onDismiss = { editingSlot = null },
+            )
         }
     }
 }
