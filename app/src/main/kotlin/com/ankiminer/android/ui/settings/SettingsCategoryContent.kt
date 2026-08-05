@@ -850,6 +850,7 @@ private fun LazyListScope.uiSettings(
                         when (value) {
                             ThemeMode.LIGHT -> R.string.settings_theme_light
                             ThemeMode.DARK -> R.string.settings_theme_dark
+                            ThemeMode.SYSTEM -> R.string.settings_theme_system
                         },
                     )
                 },

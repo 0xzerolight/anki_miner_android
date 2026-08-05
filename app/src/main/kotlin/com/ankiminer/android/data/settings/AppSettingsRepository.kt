@@ -12,6 +12,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.ui.theme.ThemePalettes
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -184,6 +185,9 @@ class DataStoreAppSettingsRepository internal constructor(
                     maxOf(readSchemaVersion(preferences) ?: 0, CURRENT_SCHEMA_VERSION)
                 candidate[Keys.setupWizardSeen] = value.setupWizardSeen
                 candidate[Keys.themeMode] = value.theme.wireValue
+                candidate[Keys.themeLightPalette] = value.lightThemeKey
+                candidate[Keys.themeDarkPalette] = value.darkThemeKey
+                candidate[Keys.themeDynamicColor] = value.dynamicColorEnabled
                 candidate.setOrRemove(Keys.deckName, value.deckName)
                 candidate.setOrRemove(Keys.excludedDecks, DeckListPreferenceCodec.encode(value.excludedDecks))
                 candidate.setOrRemove(Keys.noteType, value.noteType)
@@ -289,6 +293,15 @@ class DataStoreAppSettingsRepository internal constructor(
                             ThemeMode.entries.singleOrNull { it.wireValue == stored }
                                 ?: invalidStoredPreference()
                         }),
+                    lightThemeKey =
+                        decoder.read(Keys.themeLightPalette, "light", { stored ->
+                            stored.takeIf(ThemePalettes.byKey::containsKey) ?: invalidStoredPreference()
+                        }),
+                    darkThemeKey =
+                        decoder.read(Keys.themeDarkPalette, "dark", { stored ->
+                            stored.takeIf(ThemePalettes.byKey::containsKey) ?: invalidStoredPreference()
+                        }),
+                    dynamicColorEnabled = decoder.read(Keys.themeDynamicColor, false, { it }),
                     deckName =
                         decoder.read(Keys.deckName, null, { it }) { value ->
                             value?.let { AppSettingsValidator.validate(AppSettings(deckName = it)) }
@@ -537,6 +550,9 @@ class DataStoreAppSettingsRepository internal constructor(
             val schemaVersion = register(intPreferencesKey("settings_schema_version"))
             val setupWizardSeen = register(booleanPreferencesKey("setup_wizard_seen"))
             val themeMode = register(stringPreferencesKey("theme_mode"))
+            val themeLightPalette = register(stringPreferencesKey("theme_light_palette"))
+            val themeDarkPalette = register(stringPreferencesKey("theme_dark_palette"))
+            val themeDynamicColor = register(booleanPreferencesKey("theme_dynamic_color"))
             val deckName = register(stringPreferencesKey("deck_name"))
             val excludedDecks = register(stringPreferencesKey("excluded_decks_v1"))
             val noteType = register(stringPreferencesKey("note_type"))

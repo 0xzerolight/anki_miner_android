@@ -156,6 +156,9 @@ internal data class SettingsDraft(
     val sentenceLength: Boolean?,
     val pitchFormat: PitchCategoryFormat?,
     val theme: ThemeMode,
+    val lightThemeKey: String,
+    val darkThemeKey: String,
+    val dynamicColorEnabled: Boolean,
     val dictionarySources: List<ResourceChainSelection>,
     val frequencySources: List<ResourceChainSelection>,
     val pitchSources: List<ResourceChainSelection>,
@@ -247,6 +250,9 @@ internal data class SettingsDraft(
     fun toSettings(base: AppSettings): AppSettings =
         base.copy(
             theme = theme,
+            lightThemeKey = lightThemeKey,
+            darkThemeKey = darkThemeKey,
+            dynamicColorEnabled = dynamicColorEnabled,
             deckName = deckName.takeIf(String::isNotEmpty),
             excludedDecks = excludedDecks,
             tags = tags.takeIf { tagsOverride },
@@ -412,6 +418,9 @@ internal data class SettingsDraft(
                 sentenceLength = settings.useSentenceLengthFilter,
                 pitchFormat = settings.pitchCategoryFormat,
                 theme = settings.theme,
+                lightThemeKey = settings.lightThemeKey,
+                darkThemeKey = settings.darkThemeKey,
+                dynamicColorEnabled = settings.dynamicColorEnabled,
                 dictionarySources = settings.dictionarySources,
                 frequencySources = settings.frequencySources,
                 pitchSources = settings.pitchSources,
@@ -492,6 +501,15 @@ private fun SettingsDraft.rebaseChangesSince(
             changedValue(baseline.sentenceLength, sentenceLength, persisted.sentenceLength),
         pitchFormat = changedValue(baseline.pitchFormat, pitchFormat, persisted.pitchFormat),
         theme = changedValue(baseline.theme, theme, persisted.theme),
+        lightThemeKey =
+            changedValue(baseline.lightThemeKey, lightThemeKey, persisted.lightThemeKey),
+        darkThemeKey = changedValue(baseline.darkThemeKey, darkThemeKey, persisted.darkThemeKey),
+        dynamicColorEnabled =
+            changedValue(
+                baseline.dynamicColorEnabled,
+                dynamicColorEnabled,
+                persisted.dynamicColorEnabled,
+            ),
         dictionarySources =
             changedValue(
                 baseline.dictionarySources,
