@@ -5,18 +5,36 @@ import org.junit.Test
 
 class SystemBarIconAppearanceTest {
     @Test
-    fun lightAppUsesDarkIconsEvenWhenSystemThemeIsDark() {
+    fun darkPaletteBackgroundUsesLightIcons() {
         assertEquals(
-            SystemBarIconAppearance.DARK,
-            systemBarIconAppearance(darkTheme = false),
+            SystemBarIconAppearance.LIGHT,
+            systemBarIconAppearance(ThemePalettes.Dark.color(ThemeSlots.BACKGROUND)),
         )
     }
 
     @Test
-    fun darkAppUsesLightIconsEvenWhenSystemThemeIsLight() {
+    fun lightPaletteBackgroundUsesDarkIcons() {
         assertEquals(
-            SystemBarIconAppearance.LIGHT,
-            systemBarIconAppearance(darkTheme = true),
+            SystemBarIconAppearance.DARK,
+            systemBarIconAppearance(ThemePalettes.Light.color(ThemeSlots.BACKGROUND)),
+        )
+    }
+
+    @Test
+    fun lightPaletteChosenForDarkThemeStillUsesDarkIcons() {
+        val catppuccinLatte = ThemePalettes.requireByKey("catppuccin-latte")
+
+        assertEquals(
+            SystemBarIconAppearance.DARK,
+            systemBarIconAppearance(catppuccinLatte.color(ThemeSlots.BACKGROUND)),
+        )
+    }
+
+    @Test
+    fun launchNeutralMatchesDefaultDarkPaletteBackground() {
+        assertEquals(
+            ThemePalettes.Dark.color(ThemeSlots.BACKGROUND),
+            LaunchNeutral,
         )
     }
 }

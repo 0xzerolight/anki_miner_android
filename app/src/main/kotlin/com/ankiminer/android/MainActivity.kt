@@ -40,6 +40,9 @@ import com.ankiminer.android.ui.navigation.AnkiMinerApp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.LaunchNeutral
 import com.ankiminer.android.ui.theme.SystemBarIconAppearance
+import com.ankiminer.android.ui.theme.ThemePalettes
+import com.ankiminer.android.ui.theme.ThemeSlots
+import com.ankiminer.android.ui.theme.color
 import com.ankiminer.android.ui.theme.systemBarIconAppearance
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MediaMiningViewModel
@@ -153,8 +156,8 @@ class MainActivity : ComponentActivity() {
                 app.diagnosticsSettings.verboseLogging
                     .collectAsStateWithLifecycle(initialValue = false)
                     .value
-            val darkTheme = theme == ThemeMode.DARK
-            val iconAppearance = systemBarIconAppearance(darkTheme)
+            val palette = if (theme == ThemeMode.DARK) ThemePalettes.Dark else ThemePalettes.Light
+            val iconAppearance = systemBarIconAppearance(palette.color(ThemeSlots.BACKGROUND))
             LaunchedEffect(iconAppearance) {
                 val systemBarStyle =
                     // AndroidX style names describe bar backgrounds; icon tones are inverse.
@@ -168,7 +171,7 @@ class MainActivity : ComponentActivity() {
                     navigationBarStyle = systemBarStyle,
                 )
             }
-            AnkiMinerTheme(darkTheme = darkTheme) {
+            AnkiMinerTheme(palette = palette) {
                 val videoMiningViewModel: MediaMiningViewModel =
                     viewModel(
                         key = MiningLane.VIDEO.savedStateKeyPrefix,
