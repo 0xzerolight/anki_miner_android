@@ -175,7 +175,7 @@ class DataStoreAppSettingsRepository internal constructor(
             return candidate.toPreferences()
         }
 
-        private fun encodePreferences(
+        internal fun encodePreferences(
             value: AppSettings,
             preferences: Preferences,
         ): Preferences =
@@ -255,7 +255,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate[Keys.jishoEnabled] = value.jishoEnabled
             }
 
-        private fun decodeWithReport(preferences: Preferences): DecodedPreferences {
+        internal fun decodeWithReport(preferences: Preferences): DecodedPreferences {
             val decoder = IndependentPreferenceDecoder(preferences)
             val schemaVersion =
                 decoder.read(Keys.schemaVersion, null, { it }) { version ->
@@ -519,7 +519,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 }
         }
 
-        private data class DecodedPreferences(
+        internal data class DecodedPreferences(
             val settings: AppSettings,
             val invalidKeys: Set<Preferences.Key<*>>,
             val schemaVersion: Int?,
