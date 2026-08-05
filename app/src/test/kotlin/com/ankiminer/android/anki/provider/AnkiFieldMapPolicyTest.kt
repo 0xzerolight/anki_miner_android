@@ -186,7 +186,7 @@ class AnkiFieldMapPolicyTest {
     }
 
     @Test
-    fun `word picker destinations contain only the required first field and never None`() {
+    fun `word field destinations contain only the required first field and never None`() {
         assertEquals(
             listOf("Expression"),
             AnkiFieldMapPolicy.destinationOptions(
