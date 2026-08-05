@@ -78,8 +78,10 @@ jobs:
           "$HOST_PYTHON" -m unittest discover -s tools/ankidroid-api/tests -v
           "$HOST_PYTHON" tools/ankidroid-api/sync_ankidroid_api.py --check
           "$HOST_PYTHON" -m unittest discover -s tools/anki-contract/tests -v
+          PYTHONDONTWRITEBYTECODE=1 "$HOST_PYTHON" -m unittest discover -s tools/themes/tests -v
           "$HOST_PYTHON" tools/anki-contract/generate_anki_limits.py --check
           "$HOST_PYTHON" tools/anki-contract/generate_unicode_contract.py --check
+          "$HOST_PYTHON" tools/themes/generate_theme_palettes.py --check
           "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" \
             tools/anki-contract/generate_html5_entities.py --check
           "$HOST_PYTHON" -m unittest discover -s tools/dependencies/tests -v

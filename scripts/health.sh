@@ -79,10 +79,14 @@ if [[ -n "${ANKIDROID_API_UPSTREAM_CHECKOUT:-}" ]]; then
 fi
 PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/anki-contract/tests" -v
+PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
+    -s "$REPO_ROOT/tools/themes/tests" -v
 PYTHONDONTWRITEBYTECODE=1 python3.13 \
     "$REPO_ROOT/tools/anki-contract/generate_anki_limits.py" --check
 PYTHONDONTWRITEBYTECODE=1 python3.13 \
     "$REPO_ROOT/tools/anki-contract/generate_unicode_contract.py" --check
+PYTHONDONTWRITEBYTECODE=1 python3.13 \
+    "$REPO_ROOT/tools/themes/generate_theme_palettes.py" --check
 PYTHONDONTWRITEBYTECODE=1 "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" \
     "$REPO_ROOT/tools/anki-contract/generate_html5_entities.py" --check
 PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \

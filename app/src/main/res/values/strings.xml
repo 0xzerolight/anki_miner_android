@@ -599,6 +599,13 @@
     <string name="settings_theme">Theme</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_mode">Theme mode</string>
+    <string name="settings_theme_light_choice">Light theme</string>
+    <string name="settings_theme_dark_choice">Dark theme</string>
+    <string name="settings_theme_dynamic">Use device colours</string>
+    <string name="settings_theme_dynamic_supporting">Takes the palette from your wallpaper. Overrides the themes chosen above.</string>
+    <string name="settings_theme_picker_close">Close</string>
     <string name="settings_run_setup_wizard">Run setup wizard</string>
     <string name="wizard_welcome_title">Welcome to Anki Miner</string>
     <string name="wizard_tokenizer_title">Tokenizer</string>
