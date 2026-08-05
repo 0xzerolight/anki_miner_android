@@ -16,6 +16,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
@@ -27,7 +28,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
-import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
@@ -40,9 +40,9 @@ import com.ankiminer.android.ui.navigation.AnkiMinerApp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.LaunchNeutral
 import com.ankiminer.android.ui.theme.SystemBarIconAppearance
-import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.ui.theme.ThemeSlots
 import com.ankiminer.android.ui.theme.color
+import com.ankiminer.android.ui.theme.resolveTheme
 import com.ankiminer.android.ui.theme.systemBarIconAppearance
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MediaMiningViewModel
@@ -54,13 +54,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
 /**
- * Theme the shell paints with. `null` means "not read yet" and holds the launch placeholder; a
+ * Settings the shell paints with. `null` means "not read yet" and holds the launch placeholder; a
  * store which cannot be read resolves to the fresh-store default instead, so Settings, setup, and
- * diagnostics stay reachable rather than the app sitting on the placeholder forever. Only the
- * theme is taken from here — every settings write still goes through the strict flow.
+ * diagnostics stay reachable rather than the app sitting on the placeholder forever. Every
+ * settings write still goes through the strict flow.
  */
-internal fun AppSettingsRepository.appShellTheme(): Flow<ThemeMode> =
-    settingsOrNull.map { it?.theme ?: AppSettings().theme }
+internal fun AppSettingsRepository.appShellSettings(): Flow<AppSettings> =
+    settingsOrNull.map { it ?: AppSettings() }
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
@@ -132,12 +132,12 @@ class MainActivity : ComponentActivity() {
                 ?: MiningForegroundService.consumeOpenedRunId(intent)
         setContent {
             val app = application as AnkiMinerApplication
-            val shellTheme = remember(app) { app.settingsRepository.appShellTheme() }
-            val theme =
-                shellTheme
+            val shellSettings = remember(app) { app.settingsRepository.appShellSettings() }
+            val settings =
+                shellSettings
                     .collectAsStateWithLifecycle(initialValue = null)
                     .value
-            if (theme == null) {
+            if (settings == null) {
                 LaunchedEffect(Unit) {
                     val launchStyle = SystemBarStyle.dark(LaunchNeutral.toArgb())
                     enableEdgeToEdge(
@@ -156,8 +156,10 @@ class MainActivity : ComponentActivity() {
                 app.diagnosticsSettings.verboseLogging
                     .collectAsStateWithLifecycle(initialValue = false)
                     .value
-            val palette = if (theme == ThemeMode.DARK) ThemePalettes.Dark else ThemePalettes.Light
-            val iconAppearance = systemBarIconAppearance(palette.color(ThemeSlots.BACKGROUND))
+            val resolved = resolveTheme(settings, isSystemInDarkTheme())
+            // Dynamic schemes match the palette's light/dark choice, so its page decides bar icons.
+            val iconAppearance =
+                systemBarIconAppearance(resolved.palette.color(ThemeSlots.BACKGROUND))
             LaunchedEffect(iconAppearance) {
                 val systemBarStyle =
                     // AndroidX style names describe bar backgrounds; icon tones are inverse.
@@ -171,7 +173,7 @@ class MainActivity : ComponentActivity() {
                     navigationBarStyle = systemBarStyle,
                 )
             }
-            AnkiMinerTheme(palette = palette) {
+            AnkiMinerTheme(palette = resolved.palette, dynamicColor = resolved.dynamicColor) {
                 val videoMiningViewModel: MediaMiningViewModel =
                     viewModel(
                         key = MiningLane.VIDEO.savedStateKeyPrefix,

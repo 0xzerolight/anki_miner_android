@@ -1,6 +1,8 @@
 package com.ankiminer.android.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.ui.theme.generated.GeneratedThemePalettes
 
 internal data class ThemePalette(
@@ -68,4 +70,33 @@ internal object ThemePalettes {
         }
         return groups.map { (family, palettes) -> family to palettes.toList() }
     }
+}
+
+/** The palette the shell paints with, plus whether device colours replace it. */
+internal data class ResolvedTheme(
+    val palette: ThemePalette,
+    val dynamicColor: Boolean,
+)
+
+/**
+ * A store that survived validation cannot hold an unknown key, but a shell read that fell back to
+ * defaults can still name one, so an unrecognised key resolves to the shipped palette rather than
+ * throwing on the first frame.
+ */
+internal fun resolveTheme(
+    settings: AppSettings,
+    systemInDarkTheme: Boolean,
+): ResolvedTheme {
+    val useDark =
+        when (settings.theme) {
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK -> true
+            ThemeMode.SYSTEM -> systemInDarkTheme
+        }
+    val key = if (useDark) settings.darkThemeKey else settings.lightThemeKey
+    val fallback = if (useDark) ThemePalettes.Dark else ThemePalettes.Light
+    return ResolvedTheme(
+        palette = ThemePalettes.byKey[key] ?: fallback,
+        dynamicColor = settings.dynamicColorEnabled,
+    )
 }
