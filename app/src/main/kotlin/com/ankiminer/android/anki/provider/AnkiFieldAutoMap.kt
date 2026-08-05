@@ -7,11 +7,12 @@ package com.ankiminer.android.anki.provider
  * `_FIELD_KEYWORDS` table in
  * `anki_miner/gui/widgets/panels/anki_settings_panel.py`, plus the setup-wizard's
  * word/sentence special-casing in `.../setup_wizard/pages.py`. It is kept intentionally pure (no
- * Android dependencies) so it can be exercised directly and is pinned against the desktop table by
- * a parity test — keep [FIELD_KEYWORDS] byte-for-byte in step with desktop `_FIELD_KEYWORDS`.
+ * Android dependencies) so it can be exercised directly. The two repositories are separate, so
+ * nothing mechanically pins [FIELD_KEYWORDS] to desktop `_FIELD_KEYWORDS` — keep them in step by
+ * hand when either moves.
  *
  * Matching semantics are the desktop ones exactly: a field matches a key when its normalized name
- * (lowercased, with spaces/underscores/hyphens stripped) is an EXACT element of that key's keyword
+ * (lowercased, with spaces and underscores stripped) is an EXACT element of that key's keyword
  * list — not a substring test. Exact membership is what keeps e.g. "SentenceFurigana" out of the
  * plain `sentence`/`word` keys while still landing on `sentence_furigana`.
  */
@@ -90,5 +91,4 @@ internal object AnkiFieldAutoMap {
         fieldName.lowercase()
             .replace(" ", "")
             .replace("_", "")
-            .replace("-", "")
 }

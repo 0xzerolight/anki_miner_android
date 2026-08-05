@@ -103,4 +103,27 @@ class AnkiFieldAutoMapTest {
         assertTrue("every key must map to \"\" for an empty field list", map.values.all { it == "" })
         assertEquals(AnkiFieldKeys.ALL.associateWith { "" }, map)
     }
+
+    @Test
+    fun `a hyphenated field name does not match, as on desktop`() {
+        val mapping =
+            AnkiFieldAutoMap.autoMap(
+                listOf("Word", "Sentence-Audio", "Expression-Furigana", "Picture"),
+            )
+
+        assertEquals("", mapping.getValue("audio"))
+        assertEquals("", mapping.getValue("expression_furigana"))
+        assertEquals("Picture", mapping.getValue("picture"))
+    }
+
+    @Test
+    fun `spaces and underscores still normalise away`() {
+        val mapping =
+            AnkiFieldAutoMap.autoMap(
+                listOf("Word", "Sentence Audio", "expression_furigana"),
+            )
+
+        assertEquals("Sentence Audio", mapping.getValue("audio"))
+        assertEquals("expression_furigana", mapping.getValue("expression_furigana"))
+    }
 }
