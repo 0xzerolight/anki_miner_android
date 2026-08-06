@@ -343,6 +343,7 @@
     <string name="anki_deck_save_retry">デッキの保存を再試行</string>
     <string name="anki_note_type_picker">ノートタイプ</string>
     <string name="anki_field_mapping_summary">フィールドの対応付け（%1$d/%2$d）</string>
+    <string name="settings_field_mapping">フィールドの対応</string>
     <string name="disclosure_expanded">展開</string>
     <string name="disclosure_collapsed">折りたたみ</string>
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
@@ -660,6 +661,9 @@
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">このパターンは無効な可能性があります。エンジンが拒否した場合、マイニングはフィルターを適用しません。</string>
     <string name="settings_filtering">フィルタリング</string>
+    <string name="settings_search">設定を検索</string>
+    <string name="settings_search_no_results">一致する設定はありません。</string>
+    <string name="settings_search_clear">検索をクリア</string>
     <string name="settings_known_words">ローカル既知単語データベースを使用</string>
     <string name="settings_exclude_hiragana">ひらがなのみの単語を除外</string>
     <string name="settings_exclude_katakana">カタカナのみの単語を除外</string>

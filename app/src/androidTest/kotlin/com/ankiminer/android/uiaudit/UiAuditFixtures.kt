@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -74,9 +75,10 @@ import com.ankiminer.android.ui.settings.PitchImportCard
 import com.ankiminer.android.ui.settings.ResourceCard
 import com.ankiminer.android.ui.settings.ResourceChainEditor
 import com.ankiminer.android.ui.settings.SettingTextField
-import com.ankiminer.android.ui.settings.SettingsSection
+import com.ankiminer.android.ui.settings.SettingsCardIndexRecorder
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
+import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.mediaSettings
 import com.ankiminer.android.ui.settings.settingsCard
@@ -540,9 +542,11 @@ internal fun UiAuditSettingsFixture(
             SettingsAuditState.MEDIA -> SettingsCategory.MEDIA
             SettingsAuditState.FULL -> SettingsCategory.FILTERING
         }
+    val recorder = remember { SettingsCardIndexRecorder() }
     SettingsCategoryLayout(
         selectedCategory = category,
         onSelectedCategory = {},
+        recorder = recorder,
         header = { SettingsTopFixture(setup) },
         modifier = modifier.testTag(UiAuditTags.SETTINGS_SCROLL),
         listStates = mapOf(category to listState),
@@ -552,7 +556,7 @@ internal fun UiAuditSettingsFixture(
                 // The UniDic card lives in Diagnostics now and only appears when the tokenizer
                 // is missing or failing, so the fixture captures that state rather than the
                 // installed one, which renders nothing.
-                settingsCard("audit-unidic") {
+                settingsCard(selected, recorder, "audit-unidic") {
                     ResourceCard(
                         title = stringResource(R.string.unidic_resource_title),
                         description = stringResource(R.string.unidic_resource_description),
@@ -563,12 +567,14 @@ internal fun UiAuditSettingsFixture(
                     )
                 }
             SettingsCategory.ANKI ->
-                settingsCard("audit-anki") { SettingsAnkiFixture(setup) }
+                settingsCard(selected, recorder, "audit-anki") { SettingsAnkiFixture(setup) }
             SettingsCategory.DICTIONARIES ->
-                settingsCard("audit-resources") { SettingsResourcesFixture(setup) }
+                settingsCard(selected, recorder, "audit-resources") {
+                    SettingsResourcesFixture(setup)
+                }
             SettingsCategory.FILTERING -> {
-                settingsCard("audit-filtering") { SettingsFilteringFixture() }
-                settingsCard("audit-known-words") {
+                settingsCard(selected, recorder, "audit-filtering") { SettingsFilteringFixture() }
+                settingsCard(selected, recorder, "audit-known-words") {
                     KnownWordsImportCard(
                         state = setup,
                         onImport = {},
@@ -591,8 +597,12 @@ internal fun UiAuditSettingsFixture(
                         ),
                         ResourceManagerState(),
                     ),
+                    recorder,
                 ) {}
-            else -> settingsCard("audit-placeholder") { Text(stringResource(selected.label)) }
+            else ->
+                settingsCard(selected, recorder, "audit-placeholder") {
+                    Text(stringResource(selected.label))
+                }
         }
     }
 }

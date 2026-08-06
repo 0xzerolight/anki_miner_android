@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -46,6 +47,14 @@ import com.ankiminer.android.vm.SettingsSaveState
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+
+// This is a dwell, not a transition. At a 120–220 ms motion-token duration, the mark would be
+// gone before the eye arrived at the jumped-to card.
+private const val HIGHLIGHT_MILLIS = 1_200L
 
 // `OpenDocument` greys out anything whose provider-reported MIME is not matched here, and the
 // post-pick classifier (`detectResourceImportFileKind`) is extension-first and far more
@@ -410,8 +419,55 @@ private fun SettingsScreen(
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
     val listStates = rememberSettingsCategoryListStates()
+    val cardIndexRecorder = remember { SettingsCardIndexRecorder() }
+    val breadcrumbs = SettingsCategory.entries.associateWith { stringResource(it.label) }
+    val resolvedEntries =
+        SETTINGS_SEARCH_INDEX.map { entry ->
+            val title = stringResource(entry.title)
+            val detail = entry.detail?.let { stringResource(it) }.orEmpty()
+            val breadcrumb = breadcrumbs.getValue(entry.category)
+            ResolvedSettingsEntry(
+                id = entry.id,
+                category = entry.category,
+                cardKey = entry.cardKey,
+                title = title,
+                breadcrumb = breadcrumb,
+                haystack =
+                    listOf(
+                        normalizeSettingsText(title),
+                        normalizeSettingsText(detail),
+                        normalizeSettingsText(breadcrumb),
+                    ).filter(String::isNotEmpty),
+            )
+        }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    val searchResults = searchSettings(resolvedEntries, searchQuery)
+    var pendingJump by remember { mutableStateOf<ResolvedSettingsEntry?>(null) }
     var resetConfirmation by remember {
         mutableStateOf(SettingsResetConfirmationState())
+    }
+
+    LaunchedEffect(pendingJump) {
+        val entry = pendingJump ?: return@LaunchedEffect
+        // A previously visited category may still have a now-stale index. Clear it first so the
+        // flow below can only resume from the destination's new layout pass.
+        cardIndexRecorder.begin(entry.category)
+        selectedCategory = entry.category
+        searchQuery = ""
+        // The lazy content lambda runs during layout, which can be after this effect starts, so
+        // wait for the index rather than reading it once and giving up.
+        val index =
+            withTimeoutOrNull(2_000) {
+                snapshotFlow { cardIndexRecorder.indexOf(entry.category, entry.cardKey) }
+                    .filterNotNull()
+                    .first()
+            }
+        listStates.getValue(entry.category)
+            .scrollToItem(index ?: SettingsCardIndexRecorder.FIRST_CARD_INDEX)
+        cardIndexRecorder.highlightedKey = entry.cardKey
+        delay(HIGHLIGHT_MILLIS)
+        cardIndexRecorder.highlightedKey = null
+        pendingJump = null
     }
 
     LaunchedEffect(requestedCategory) {
@@ -505,6 +561,11 @@ private fun SettingsScreen(
         onSelectedCategory = { category ->
             selectedCategory = category
         },
+        query = searchQuery,
+        onQueryChange = { searchQuery = it },
+        results = searchResults,
+        onResultChosen = { pendingJump = it },
+        recorder = cardIndexRecorder,
         listStates = listStates,
         modifier = modifier,
         header = {
@@ -589,6 +650,7 @@ private fun SettingsScreen(
             setupViewModel = setupViewModel,
             diagnostics = diagnostics,
             diagnosticsExport = diagnosticsExport,
+            recorder = cardIndexRecorder,
             callbacks = callbacks,
         )
     }

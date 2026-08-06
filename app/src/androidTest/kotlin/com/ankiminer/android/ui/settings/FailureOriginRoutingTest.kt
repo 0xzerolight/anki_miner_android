@@ -39,16 +39,18 @@ class FailureOriginRoutingTest {
         var expected by mutableStateOf(SettingsCategory.ANKI)
         var message by mutableStateOf("not shown")
         var actions by mutableIntStateOf(0)
+        val recorder = SettingsCardIndexRecorder()
 
         composeRule.setContent {
             AnkiMinerTheme {
                 SettingsCategoryLayout(
                     selectedCategory = selected,
                     onSelectedCategory = { selected = it },
+                    recorder = recorder,
                     header = {},
                 ) { category ->
                     if (category == expected) {
-                        settingsCard("failure") {
+                        settingsCard(category, recorder, "failure") {
                             InlineFailureContainer(
                                 message = message,
                                 actionLabel = "Resolve test failure",

@@ -349,6 +349,7 @@
     <string name="anki_deck_save_retry">Retry saving deck</string>
     <string name="anki_note_type_picker">Note type</string>
     <string name="anki_field_mapping_summary">Field mapping (%1$d of %2$d)</string>
+    <string name="settings_field_mapping">Field mapping</string>
     <string name="disclosure_expanded">Expanded</string>
     <string name="disclosure_collapsed">Collapsed</string>
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
@@ -668,6 +669,9 @@
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">This pattern may not be valid. Mining skips the filter if the engine rejects it.</string>
     <string name="settings_filtering">Filtering</string>
+    <string name="settings_search">Search settings</string>
+    <string name="settings_search_no_results">No setting matches that.</string>
+    <string name="settings_search_clear">Clear search</string>
     <string name="settings_known_words">Use the local known-words database</string>
     <string name="settings_exclude_hiragana">Exclude hiragana-only words</string>
     <string name="settings_exclude_katakana">Exclude katakana-only words</string>
