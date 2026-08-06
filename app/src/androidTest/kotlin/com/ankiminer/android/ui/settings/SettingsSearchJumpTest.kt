@@ -10,8 +10,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -61,7 +64,16 @@ class SettingsSearchJumpTest {
         list.performScrollToNode(hasText(katakanaLabel))
         composeRule.onNodeWithText(katakanaLabel).assertIsDisplayed()
         list.performScrollToNode(hasTestTag(SettingsCategoryTestTags.SEARCH))
-        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).assertTextEquals("")
+        // EditableText, not assertTextEquals: a text field's merged Text also carries its label,
+        // so assertTextEquals("") fails against an empty field labelled "Search settings".
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.SEARCH)
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.EditableText,
+                    AnnotatedString(""),
+                ),
+            )
     }
 
     @Test
