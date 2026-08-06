@@ -14,6 +14,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
 import com.ankiminer.android.data.resources.AndroidResourceForegroundLease
 import com.ankiminer.android.data.resources.AndroidResourceManager
+import com.ankiminer.android.data.resources.HttpsDownloadConnectionFactory
 import com.ankiminer.android.data.resources.PinnedResourceDownloader
 import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.data.resources.ResourceManager
@@ -27,6 +28,9 @@ import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.SettingsDocumentReader
+import com.ankiminer.android.data.update.DataStoreUpdateCheckRepository
+import com.ankiminer.android.data.update.GitHubUpdateCheckClient
+import com.ankiminer.android.data.update.UpdateCheckCoordinator
 import com.ankiminer.android.dictionary.BridgeDefinitionLookupService
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.AndroidDiagnosticsExporter
@@ -320,6 +324,16 @@ class AnkiMinerApplication : Application() {
         DataStoreDiagnosticsSettingsRepository(this)
     }
 
+    internal val updateCheckCoordinator: UpdateCheckCoordinator by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        UpdateCheckCoordinator(
+            repository = DataStoreUpdateCheckRepository(this),
+            client = GitHubUpdateCheckClient(HttpsDownloadConnectionFactory()),
+            currentVersion = BuildConfig.VERSION_NAME,
+        )
+    }
+
     internal val ankiSetupManager: AnkiSetupManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         ProcessAnkiSetupManager(
             backend =
@@ -506,6 +520,13 @@ class AnkiMinerApplication : Application() {
                 AppLog.w(LogComponent.DIAG, "bundle.janitor", failure, "outcome" to "fail")
             }
         }
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                updateCheckCoordinator.checkIfDue()
+            } catch (failure: RuntimeException) {
+                AppLog.w(LogComponent.SETTINGS, "update.check", failure, "outcome" to "fail")
+            }
+        }
         applicationScope.launch {
             diagnosticsSettings.verboseLogging.distinctUntilChanged().collect { verbose ->
                 val level = if (verbose) LogLevel.DEBUG else LogLevel.INFO
@@ -633,6 +654,18 @@ class AnkiMinerApplication : Application() {
                 )
             }
         }
+    }
+
+    internal fun setUpdateCheckEnabled(enabled: Boolean) {
+        applicationScope.launch { updateCheckCoordinator.setEnabled(enabled) }
+    }
+
+    internal fun checkForUpdates() {
+        applicationScope.launch { updateCheckCoordinator.checkNow() }
+    }
+
+    internal fun skipAvailableUpdate() {
+        applicationScope.launch { updateCheckCoordinator.skipAvailable() }
     }
 
     /** Refresh process-owned state which may change while an external Android UI is visible. */

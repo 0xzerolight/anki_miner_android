@@ -1,6 +1,7 @@
 package com.ankiminer.android.data.update
 
 import com.ankiminer.android.data.resources.DownloadConnectionFactory
+import com.ankiminer.android.data.settings.readAtMost
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.fasterxml.jackson.core.JsonFactory
@@ -36,7 +37,7 @@ internal class GitHubUpdateCheckClient(
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return null
             val body =
                 connection.inputStream.use { input ->
-                    input.readNBytes(MAX_BODY_BYTES + 1)
+                    input.readAtMost(MAX_BODY_BYTES + 1)
                 }
             if (body.size > MAX_BODY_BYTES) return null
             val release = parseRelease(body) ?: return null
