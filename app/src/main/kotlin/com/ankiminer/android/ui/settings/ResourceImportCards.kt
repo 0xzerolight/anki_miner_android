@@ -126,8 +126,9 @@ internal fun AudioPackImportCard(
                         ),
                         color = MaterialTheme.colorScheme.error,
                     )
-                }
+            }
             if (state.audioPacks.isEmpty()) Text(stringResource(R.string.audio_pack_none_installed))
+            Text(stringResource(R.string.audio_pack_archive_guidance))
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,

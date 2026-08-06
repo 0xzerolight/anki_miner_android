@@ -480,6 +480,8 @@
     <string name="resource_failure_archive_member_count">L\'archive contient plus de fichiers qu\'un pack audio ne peut en contenir</string>
     <string name="resource_failure_archive_expands">L\'archive se décompresse au-delà de la taille qu\'un pack audio peut atteindre</string>
     <string name="resource_failure_archive_invalid">L\'archive est endommagée ou incomplète</string>
+    <string name="resource_failure_archive_unrecognized">Sélectionnez l’archive elle-même (.tar.xz, .tar.gz, .tar ou .zip), et non le fichier .torrent.</string>
+    <string name="resource_failure_archive_provider_representation">Ce fournisseur n’a pas renvoyé les octets d’origine de l’archive. Copiez l’archive dans le stockage de l’appareil, puis sélectionnez-la à nouveau.</string>
     <string name="resource_failure_archive_unsafe">L\'archive contient une entrée non sûre et a été rejetée</string>
     <string name="resource_failure_archive_compression">L\'archive utilise une méthode de compression que l\'application ne peut pas lire</string>
     <string name="resource_failure_slot_exists">Cet emplacement de dictionnaire existe déjà ; choisissez Remplacer pour le mettre à jour</string>
@@ -530,6 +532,7 @@
     <string name="pitch_choose_file">Choisir un fichier d\'accent de hauteur</string>
     <string name="audio_pack_import_title">Importer l\'audio de l\'expression</string>
     <string name="audio_pack_none_installed">Aucun pack audio local n\'est installé.</string>
+    <string name="audio_pack_archive_guidance">Sélectionnez l’archive téléchargée .tar.xz, .tar.gz, .tar ou .zip, et non le fichier .torrent.</string>
     <string name="audio_pack_choose_zip">Choisir une archive de pack audio</string>
     <string name="audio_pack_choice_title">Quel pack ?</string>
     <string name="audio_pack_choice_message">Cette archive contient %1$d packs. L\'importation de l\'un d\'eux n\'extrait que ce pack ; les autres restent dans le fichier, vous pourrez donc revenir les ajouter.</string>

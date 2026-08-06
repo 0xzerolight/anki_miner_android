@@ -480,6 +480,8 @@
     <string name="resource_failure_archive_member_count">El archivo contiene más archivos de los permitidos para un paquete de audio</string>
     <string name="resource_failure_archive_expands">El archivo se expande más allá del tamaño permitido para un paquete de audio</string>
     <string name="resource_failure_archive_invalid">El archivo está dañado o incompleto</string>
+    <string name="resource_failure_archive_unrecognized">Selecciona el archivo comprimido en sí (.tar.xz, .tar.gz, .tar o .zip), no el archivo .torrent.</string>
+    <string name="resource_failure_archive_provider_representation">Este proveedor no devolvió los bytes originales del archivo comprimido. Cópialo al almacenamiento del dispositivo y vuelve a seleccionarlo.</string>
     <string name="resource_failure_archive_unsafe">El archivo contiene una entrada insegura y se rechazó</string>
     <string name="resource_failure_archive_compression">El archivo usa un método de compresión que esta aplicación no puede leer</string>
     <string name="resource_failure_slot_exists">Ese espacio de diccionario ya existe; elija Reemplazar para actualizarlo</string>
@@ -530,6 +532,7 @@
     <string name="pitch_choose_file">Elegir archivo de acento tonal</string>
     <string name="audio_pack_import_title">Importar audio de expresiones</string>
     <string name="audio_pack_none_installed">No hay ningún paquete de audio local instalado.</string>
+    <string name="audio_pack_archive_guidance">Selecciona el archivo comprimido descargado .tar.xz, .tar.gz, .tar o .zip, no el archivo .torrent.</string>
     <string name="audio_pack_choose_zip">Elegir archivo de paquete de audio</string>
     <string name="audio_pack_choice_title">¿Qué paquete?</string>
     <string name="audio_pack_choice_message">Este archivo contiene %1$d paquetes. Al importar uno se extrae solo ese paquete; los demás permanecen en el archivo, por lo que podrá volver y añadirlos.</string>

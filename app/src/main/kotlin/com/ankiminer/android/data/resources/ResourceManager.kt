@@ -9,6 +9,7 @@ import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancelledException
 import com.ankiminer.android.media.SafBroker
+import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
 import com.ankiminer.android.media.SafSelectionRecord
 import com.ankiminer.android.media.SafSelectionSlot
@@ -18,6 +19,7 @@ import java.io.File
 import java.io.IOException
 import java.net.URI
 import java.nio.charset.CharacterCodingException
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -674,17 +676,7 @@ internal class AndroidResourceManager(
                 if (reported != null && reported > budget) {
                     throw archiveTooLarge(AUDIO_SOURCE_LABEL, reported, budget)
                 }
-                staged =
-                    safStager.stage(
-                        sourceUri = retained.uri,
-                        operationId = operation.id,
-                        cancellation = operation.cancellation,
-                        fileSuffix = ".bin",
-                        maximumBytes = budget,
-                        sourceLabel = AUDIO_SOURCE_LABEL,
-                    ) { current, total ->
-                        updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
-                    }
+                staged = stageAudioArchive(retained, operation, budget)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 val stagedArchive = requireNotNull(staged)
@@ -765,17 +757,7 @@ internal class AndroidResourceManager(
                     if (reported != null && reported > budget) {
                         throw archiveTooLarge(AUDIO_SOURCE_LABEL, reported, budget)
                     }
-                    staged =
-                        safStager.stage(
-                            sourceUri = retained.uri,
-                            operationId = operation.id,
-                            cancellation = operation.cancellation,
-                            fileSuffix = ".bin",
-                            maximumBytes = budget,
-                            sourceLabel = AUDIO_SOURCE_LABEL,
-                        ) { current, total ->
-                            updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
-                        }
+                    staged = stageAudioArchive(retained, operation, budget)
                 }
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
@@ -1525,7 +1507,7 @@ internal class AndroidResourceManager(
                     AppLog.e(
                         LogComponent.RESOURCES,
                         "operation.run",
-                        failure,
+                        diagnosticFailure(failureOrigin, failure),
                         "operation" to operation.id,
                         "code" to failure.stableCode,
                         "outcome" to "fail",
@@ -1536,7 +1518,7 @@ internal class AndroidResourceManager(
                 AppLog.e(
                     LogComponent.RESOURCES,
                     "operation.run",
-                    failure,
+                    diagnosticFailure(failureOrigin, failure),
                     "operation" to operation.id,
                     "code" to "insufficient_storage",
                     "outcome" to "fail",
@@ -1559,7 +1541,7 @@ internal class AndroidResourceManager(
                     AppLog.e(
                         LogComponent.RESOURCES,
                         "operation.run",
-                        failure.cause ?: failure,
+                        diagnosticFailure(failureOrigin, failure.cause ?: failure),
                         "operation" to operation.id,
                         "code" to failure.code,
                         "fault" to failure.faultId,
@@ -1572,7 +1554,7 @@ internal class AndroidResourceManager(
                 AppLog.e(
                     LogComponent.RESOURCES,
                     "operation.run",
-                    failure,
+                    diagnosticFailure(failureOrigin, failure),
                     "operation" to operation.id,
                     "code" to "resource_operation_failed",
                     "outcome" to "fail",
@@ -1636,6 +1618,125 @@ internal class AndroidResourceManager(
             }
         }
     }
+
+    private fun stageAudioArchive(
+        source: SafDocument,
+        operation: ActiveOperation,
+        maximumBytes: Long,
+    ): StagedArchive {
+        val result =
+            try {
+                safStager.stageAudioArchive(
+                    sourceUri = source.uri,
+                    operationId = operation.id,
+                    cancellation = operation.cancellation,
+                    maximumBytes = maximumBytes,
+                    sourceLabel = AUDIO_SOURCE_LABEL,
+                ) { current, total ->
+                    updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                }
+            } catch (failure: Exception) {
+                val code = (failure as? ResourceDownloadException)?.stableCode
+                logAudioArchiveStage(
+                    source = source,
+                    operationId = operation.id,
+                    outcome = if (code == "resource_operation_cancelled") "skip" else "fail",
+                    stagedBytes = null,
+                    readMode =
+                        when (code) {
+                            "resource_archive_unrecognized" -> AudioArchiveReadMode.RAW.wireValue
+                            "resource_archive_provider_representation" ->
+                                AudioArchiveReadMode.ASSET_FALLBACK.wireValue
+                            else -> "unknown"
+                        },
+                    container = "unknown",
+                )
+                throw failure
+            }
+        logAudioArchiveStage(
+            source = source,
+            operationId = operation.id,
+            outcome = "ok",
+            stagedBytes = result.archive.sizeBytes,
+            readMode = result.readMode.wireValue,
+            container = result.container.wireValue,
+        )
+        return result.archive
+    }
+
+    private fun logAudioArchiveStage(
+        source: SafDocument,
+        operationId: String,
+        outcome: String,
+        stagedBytes: Long?,
+        readMode: String,
+        container: String,
+    ) {
+        AppLog.i(
+            LogComponent.RESOURCES,
+            "audio.archive.stage",
+            "outcome" to outcome,
+            "operation" to operationId,
+            "authority" to normalizedProviderAuthority(source.uri),
+            "mime" to normalizedMimeType(source.mimeType),
+            "filename_type" to normalizedAudioFilenameType(source.displayName),
+            "reported_bytes" to (source.sizeBytes ?: "unknown"),
+            "staged_bytes" to (stagedBytes ?: "unknown"),
+            "size_agreement" to sizeAgreement(source.sizeBytes, stagedBytes),
+            "read_mode" to readMode,
+            "container" to container,
+        )
+    }
+
+    private fun diagnosticFailure(
+        origin: ResourceFailureOrigin,
+        failure: Throwable,
+    ): Throwable =
+        if (origin == ResourceFailureOrigin.AUDIO) {
+            IOException("Audio resource operation failed")
+        } else {
+            failure
+        }
+
+    private fun normalizedProviderAuthority(uri: String): String =
+        uri.substringAfter("://", missingDelimiterValue = "")
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore('#')
+            .lowercase(Locale.ROOT)
+            .takeIf(PROVIDER_AUTHORITY::matches)
+            ?: "unknown"
+
+    private fun normalizedMimeType(mimeType: String?): String =
+        mimeType
+            ?.substringBefore(';')
+            ?.trim()
+            ?.lowercase(Locale.ROOT)
+            ?.takeIf(MIME_TYPE::matches)
+            ?: "unknown"
+
+    private fun normalizedAudioFilenameType(displayName: String): String {
+        val normalized = displayName.lowercase(Locale.ROOT)
+        return when {
+            normalized.endsWith(".tar.xz") -> "tar.xz"
+            normalized.endsWith(".tar.gz") -> "tar.gz"
+            normalized.endsWith(".tar") -> "tar"
+            normalized.endsWith(".zip") -> "zip"
+            normalized.endsWith(".torrent") -> "torrent"
+            '.' in normalized -> "other"
+            else -> "none"
+        }
+    }
+
+    private fun sizeAgreement(
+        reportedBytes: Long?,
+        stagedBytes: Long?,
+    ): String =
+        when {
+            reportedBytes == null || stagedBytes == null -> "unknown"
+            reportedBytes == stagedBytes -> "match"
+            else -> "mismatch"
+        }
 
     private fun refreshAfterCommittedMutation() {
         try {
@@ -1983,6 +2084,10 @@ internal class AndroidResourceManager(
                     R.string.resource_failure_archive_too_large,
                     failure.formatArguments,
                 )
+            "resource_archive_unrecognized" ->
+                strings.resolve(R.string.resource_failure_archive_unrecognized)
+            "resource_archive_provider_representation" ->
+                strings.resolve(R.string.resource_failure_archive_provider_representation)
             else ->
                 strings.resolve(
                     R.string.resource_failure_unknown_download_code,
@@ -2006,6 +2111,10 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_archive_expands)
             "invalid_resource_archive" ->
                 strings.resolve(R.string.resource_failure_archive_invalid)
+            "resource_archive_unrecognized" ->
+                strings.resolve(R.string.resource_failure_archive_unrecognized)
+            "resource_archive_provider_representation" ->
+                strings.resolve(R.string.resource_failure_archive_provider_representation)
             "unsafe_resource_archive" ->
                 strings.resolve(R.string.resource_failure_archive_unsafe)
             "resource_archive_unsupported_compression" ->
@@ -2137,6 +2246,8 @@ internal class AndroidResourceManager(
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
         const val AUDIO_SOURCE_LABEL = "audio-pack archive"
         val AUDIO_PACK_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+        val PROVIDER_AUTHORITY = Regex("[a-z0-9][a-z0-9._-]{0,127}")
+        val MIME_TYPE = Regex("[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}")
 
         // The retained preflight is one archive of any supported container, so its
         // name carries no format and no pack id. Both are recorded in the index

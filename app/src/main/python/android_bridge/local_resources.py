@@ -567,7 +567,10 @@ def _audio_archive_kind(path: Path) -> str:
         or head[_TAR_USTAR_OFFSET : _TAR_USTAR_OFFSET + 5] == b"ustar"
     ):
         return "tar"
-    raise _fail("invalid_resource_archive", "Audio archive is not a ZIP or a tar archive")
+    raise _fail(
+        "resource_archive_unrecognized",
+        "Selected audio-pack file has no supported archive signature",
+    )
 
 
 def _audio_member_limit(name: str) -> int:

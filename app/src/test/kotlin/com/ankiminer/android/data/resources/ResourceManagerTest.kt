@@ -18,6 +18,7 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.snapshotProductionSettings
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.OutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
@@ -642,8 +643,143 @@ class ResourceManagerTest {
             assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.preflight").size)
             assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.import").size)
             assertEquals(1, harness.stager.stagedFiles.size)
+            assertEquals(1, harness.stager.audioStageCalls)
+            assertEquals(0, harness.stager.genericStageCalls)
             assertTrue(harness.stager.lastMaximumBytes!! > 3L * 1024 * 1024 * 1024)
             assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
+    fun directAudioPackRestagingUsesVerifiedAudioStaging() =
+        runTest {
+            val harness = Harness(sourceLabel = "audio-pack archive")
+
+            harness.manager.importAudioPack(
+                INPUT_URI,
+                AudioPackCandidate("jpod", "jpod_files", "ajt"),
+                replace = false,
+            )
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.stager.audioStageCalls)
+            assertEquals(0, harness.stager.genericStageCalls)
+            assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.import").size)
+        }
+
+    @Test
+    fun audioArchiveStagingLogsOnlyBoundedRepresentationMetadata() =
+        runTest {
+            val recorded = RecordingLogSink()
+            AppLog.install(NoOpSink)
+            AppLog.install(recorded)
+            try {
+                val harness =
+                    Harness(
+                        sourceLabel = "audio-pack archive",
+                        reportedSourceSizeBytes = 7,
+                        sourceDisplayName = "private collection.tar.xz",
+                        sourceMimeType = "application/x-xz; private=value",
+                        audioReadMode = AudioArchiveReadMode.RAW,
+                        audioContainer = AudioArchiveContainer.XZ,
+                    )
+
+                assertTrue(harness.manager.preflightAudioPack(INPUT_URI)!!.isNotEmpty())
+
+                val record = recorded.records.single { it.contains("op=audio.archive.stage") }
+                assertTrue(record.contains("authority=fixtures"))
+                assertTrue(record.contains("mime=application/x-xz"))
+                assertTrue(record.contains("filename_type=tar.xz"))
+                assertTrue(record.contains("reported_bytes=7"))
+                assertTrue(record.contains("staged_bytes=7"))
+                assertTrue(record.contains("size_agreement=match"))
+                assertTrue(record.contains("read_mode=raw"))
+                assertTrue(record.contains("container=xz"))
+                assertFalse(record.contains(INPUT_URI))
+                assertFalse(record.contains("private collection"))
+                assertFalse(record.contains("0".repeat(64)))
+            } finally {
+                AppLog.install(NoOpSink)
+            }
+        }
+
+    @Test
+    fun rejectedAudioArchiveLogsBoundedMetadataWithoutProviderDetails() =
+        runTest {
+            val recorded = RecordingLogSink()
+            val privateHash = "a".repeat(64)
+            val providerDetail = "$INPUT_URI private archive.torrent $privateHash"
+            AppLog.install(NoOpSink)
+            AppLog.install(recorded)
+            try {
+                val expectedModes =
+                    mapOf(
+                        "resource_archive_unrecognized" to "raw",
+                        "resource_archive_provider_representation" to "asset_fallback",
+                    )
+                expectedModes.forEach { (code, readMode) ->
+                    val harness =
+                        Harness(
+                            rootName = "manager-log-$code",
+                            sourceLabel = "audio-pack archive",
+                            reportedSourceSizeBytes = 91,
+                            sourceDisplayName = "private archive.torrent",
+                            sourceMimeType = "text/html; private=value",
+                            stagingFailureCode = code,
+                            stagingFailureDetail = providerDetail,
+                            autoRecover = false,
+                        )
+
+                    assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+                    val record =
+                        recorded.records.last { it.contains("op=audio.archive.stage") }
+                    assertTrue(record.contains("outcome=fail"))
+                    assertTrue(record.contains("authority=fixtures"))
+                    assertTrue(record.contains("mime=text/html"))
+                    assertTrue(record.contains("filename_type=torrent"))
+                    assertTrue(record.contains("reported_bytes=91"))
+                    assertTrue(record.contains("staged_bytes=unknown"))
+                    assertTrue(record.contains("size_agreement=unknown"))
+                    assertTrue(record.contains("read_mode=$readMode"))
+                    assertTrue(record.contains("container=unknown"))
+                }
+
+                recorded.records.forEach { record ->
+                    assertFalse(record.contains(INPUT_URI))
+                    assertFalse(record.contains("private archive"))
+                    assertFalse(record.contains(privateHash))
+                }
+            } finally {
+                AppLog.install(NoOpSink)
+            }
+        }
+
+    @Test
+    fun audioArchiveRepresentationFailuresUseActionableMessages() =
+        runTest {
+            val expectations =
+                mapOf(
+                    "resource_archive_unrecognized" to
+                        R.string.resource_failure_archive_unrecognized,
+                    "resource_archive_provider_representation" to
+                        R.string.resource_failure_archive_provider_representation,
+                )
+            for ((code, messageId) in expectations) {
+                val harness =
+                    Harness(
+                        rootName = "manager-$code",
+                        sourceLabel = "audio-pack archive",
+                        stagingFailureCode = code,
+                        autoRecover = false,
+                    )
+
+                assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+                val failure = requireNotNull(harness.manager.state.value.failure)
+                assertEquals(code, failure.code)
+                assertEquals("resource:$messageId", failure.message)
+                assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+            }
         }
 
     @Test
@@ -860,8 +996,11 @@ class ResourceManagerTest {
         runtimeWorkCoordinator: RuntimeWorkCoordinator = RuntimeWorkCoordinator(),
         sourceLabel: String = "known-word file",
         reportedSourceSizeBytes: Long? = 16,
+        sourceDisplayName: String = "known-words.json",
+        sourceMimeType: String? = "application/json",
         stagingAvailableBytes: Long = Long.MAX_VALUE / 2,
         stagingFailureCode: String? = null,
+        stagingFailureDetail: String? = null,
         bridgeFailureCode: String? = null,
         installedPitchSourceId: String? = null,
         autoRecover: Boolean = true,
@@ -878,14 +1017,29 @@ class ResourceManagerTest {
         onFirstExportWrite: () -> Unit = {},
         committedDictionaryDecodeFailure: Boolean = false,
         committedPitchDecodeFailure: Boolean = false,
+        audioReadMode: AudioArchiveReadMode = AudioArchiveReadMode.RAW,
+        audioContainer: AudioArchiveContainer = AudioArchiveContainer.ZIP,
     ) {
         val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
         val stagingRoot = File(root, "staging").apply { mkdirs() }
         val downloadRoot = File(root, "downloads")
         val pendingRoot = File(root, "resource-pending-known-words")
-        val broker = RecordingSafBroker(reportedSourceSizeBytes)
-        val stager = RecordingArchiveStager(stagingRoot, sourceLabel, stagingFailureCode)
+        val broker =
+            RecordingSafBroker(
+                reportedSourceSizeBytes,
+                sourceDisplayName,
+                sourceMimeType,
+            )
+        val stager =
+            RecordingArchiveStager(
+                stagingRoot,
+                sourceLabel,
+                stagingFailureCode,
+                stagingFailureDetail,
+                audioReadMode,
+                audioContainer,
+            )
         val writer = RecordingDocumentWriter(onFirstExportWrite)
         val foregroundLease = RecordingForegroundLease()
         val bridge =
@@ -949,13 +1103,15 @@ class ResourceManagerTest {
 
     private class RecordingSafBroker(
         private val reportedSizeBytes: Long? = 16,
+        private val displayName: String = "known-words.json",
+        private val mimeType: String? = "application/json",
     ) : SafBroker {
         val retained = mutableListOf<String>()
         val released = mutableListOf<String>()
 
         override suspend fun retainReadAccess(uri: String): SafDocument {
             retained += uri
-            return SafDocument(uri, "known-words.json", "application/json", reportedSizeBytes)
+            return SafDocument(uri, displayName, mimeType, reportedSizeBytes)
         }
 
         override suspend fun releaseReadAccess(uri: String) {
@@ -969,10 +1125,17 @@ class ResourceManagerTest {
         private val stagingRoot: File,
         private val expectedSourceLabel: String = "known-word file",
         private val failureCode: String? = null,
+        private val failureDetail: String? = null,
+        private val audioReadMode: AudioArchiveReadMode = AudioArchiveReadMode.RAW,
+        private val audioContainer: AudioArchiveContainer = AudioArchiveContainer.ZIP,
     ) : ResourceArchiveStager {
         val stagedFiles = mutableListOf<File>()
         var lastMaximumBytes: Long? = null
         var sourceText: String = "fixture"
+        var genericStageCalls = 0
+            private set
+        var audioStageCalls = 0
+            private set
 
         override suspend fun readLeadingBytes(
             sourceUri: String,
@@ -991,9 +1154,61 @@ class ResourceManagerTest {
             sourceLabel: String,
             onProgress: (Long, Long) -> Unit,
         ): StagedArchive {
+            genericStageCalls++
+            return writeStage(
+                sourceUri,
+                operationId,
+                cancellation,
+                fileSuffix,
+                maximumBytes,
+                sourceLabel,
+                onProgress,
+            )
+        }
+
+        override fun stageAudioArchive(
+            sourceUri: String,
+            operationId: String,
+            cancellation: ResourceCancellationSignal,
+            maximumBytes: Long,
+            sourceLabel: String,
+            onProgress: (Long, Long) -> Unit,
+        ): StagedAudioArchive {
+            audioStageCalls++
+            return StagedAudioArchive(
+                archive =
+                    writeStage(
+                        sourceUri,
+                        operationId,
+                        cancellation,
+                        ".bin",
+                        maximumBytes,
+                        sourceLabel,
+                        onProgress,
+                    ),
+                readMode = audioReadMode,
+                container = audioContainer,
+            )
+        }
+
+        private fun writeStage(
+            sourceUri: String,
+            operationId: String,
+            cancellation: ResourceCancellationSignal,
+            fileSuffix: String,
+            maximumBytes: Long,
+            sourceLabel: String,
+            onProgress: (Long, Long) -> Unit,
+        ): StagedArchive {
             assertEquals(INPUT_URI, sourceUri)
             assertEquals(expectedSourceLabel, sourceLabel)
-            failureCode?.let { throw ResourceDownloadException(it, "cancelled") }
+            failureCode?.let {
+                throw ResourceDownloadException(
+                    it,
+                    "cancelled",
+                    failureDetail?.let(::IOException),
+                )
+            }
             lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")

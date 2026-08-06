@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.resources
 
+import android.content.ContentProviderClient
 import android.content.ContentResolver
 import android.net.Uri
 import android.os.CancellationSignal
@@ -11,12 +12,15 @@ import com.ankiminer.android.media.ProviderIoDeadlineScheduler
 import com.ankiminer.android.media.ProviderIoTimeoutException
 import com.ankiminer.android.media.RealProviderIoDeadlineScheduler
 import com.ankiminer.android.media.combine
+import java.io.Closeable
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.FileOutputStream
+import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -37,7 +41,34 @@ internal interface ResourceArchiveStager {
         sourceLabel: String = "resource",
         onProgress: (Long, Long) -> Unit,
     ): StagedArchive
+
+    fun stageAudioArchive(
+        sourceUri: String,
+        operationId: String,
+        cancellation: ResourceCancellationSignal,
+        maximumBytes: Long = AUDIO_ARCHIVE_CEILING_BYTES,
+        sourceLabel: String = "audio-pack archive",
+        onProgress: (Long, Long) -> Unit,
+    ): StagedAudioArchive
 }
+
+internal enum class AudioArchiveReadMode(val wireValue: String) {
+    RAW("raw"),
+    ASSET_FALLBACK("asset_fallback"),
+}
+
+internal enum class AudioArchiveContainer(val wireValue: String) {
+    ZIP("zip"),
+    XZ("xz"),
+    GZIP("gzip"),
+    TAR("tar"),
+}
+
+internal data class StagedAudioArchive(
+    val archive: StagedArchive,
+    val readMode: AudioArchiveReadMode,
+    val container: AudioArchiveContainer,
+)
 
 internal fun interface ResourceDocumentWriter {
     fun open(uri: String): OutputStream?
@@ -78,6 +109,12 @@ internal fun interface ResourceInputOpener {
         uri: String,
         cancellation: ProviderIoCancellation,
     ): InputStream
+
+    /** Raw provider bytes. Null means this provider only exposes an asset representation. */
+    fun openRaw(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): InputStream? = null
 }
 
 private class AndroidResourceInputOpener(
@@ -90,7 +127,7 @@ private class AndroidResourceInputOpener(
         CancellableProviderIo.open(cancellation) { signal ->
             val descriptor =
                 resolver.openAssetFileDescriptor(Uri.parse(uri), "r", signal)
-                    ?: throw FileNotFoundException("DocumentsProvider returned no descriptor for $uri")
+                    ?: throw FileNotFoundException("DocumentsProvider returned no asset descriptor")
             try {
                 descriptor.createInputStream()
             } catch (failure: Throwable) {
@@ -102,6 +139,81 @@ private class AndroidResourceInputOpener(
                 throw failure
             }
         }
+
+    override fun openRaw(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): InputStream? {
+        var opened: InputStream? = null
+        try {
+            return CancellableProviderIo.withCancellationSignal(cancellation) { signal ->
+                val parsed = Uri.parse(uri)
+                // ContentResolver.openFileDescriptor("r") delegates to the typed-asset path.
+                // Call ContentProvider.openFile through its client so this is the provider's raw
+                // representation even when openTypedAssetFile returns transformed bytes.
+                val client =
+                    resolver.acquireContentProviderClient(parsed)
+                        ?: return@withCancellationSignal null
+                val descriptor =
+                    try {
+                        client.openFile(parsed, "r", signal)
+                    } catch (failure: Throwable) {
+                        try {
+                            client.close()
+                        } catch (closeFailure: Throwable) {
+                            failure.addSuppressed(closeFailure)
+                        }
+                        throw failure
+                    }
+                if (descriptor == null) {
+                    client.close()
+                    return@withCancellationSignal null
+                }
+                try {
+                    ProviderClientInputStream(
+                        ParcelFileDescriptor.AutoCloseInputStream(descriptor),
+                        client,
+                    ).also { opened = it }
+                } catch (failure: Throwable) {
+                    try {
+                        descriptor.close()
+                    } catch (closeFailure: Throwable) {
+                        failure.addSuppressed(closeFailure)
+                    }
+                    try {
+                        client.close()
+                    } catch (closeFailure: Throwable) {
+                        failure.addSuppressed(closeFailure)
+                    }
+                    throw failure
+                }
+            }
+        } catch (failure: Throwable) {
+            try {
+                opened?.close()
+            } catch (closeFailure: Throwable) {
+                failure.addSuppressed(closeFailure)
+            }
+            throw failure
+        }
+    }
+}
+
+/** Keeps the provider's stable reference alive until all bytes from its descriptor are consumed. */
+private class ProviderClientInputStream(
+    stream: InputStream,
+    private val client: ContentProviderClient,
+) : FilterInputStream(stream) {
+    private val closed = AtomicBoolean(false)
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        try {
+            super.close()
+        } finally {
+            client.close()
+        }
+    }
 }
 
 internal class SafArchiveStager(
@@ -207,6 +319,61 @@ internal class SafArchiveStager(
         }
     }
 
+    override fun stageAudioArchive(
+        sourceUri: String,
+        operationId: String,
+        cancellation: ResourceCancellationSignal,
+        maximumBytes: Long,
+        sourceLabel: String,
+        onProgress: (Long, Long) -> Unit,
+    ): StagedAudioArchive {
+        require(sourceUri.startsWith("${ContentResolver.SCHEME_CONTENT}://"))
+        require(maximumBytes in 1..MAXIMUM_SUPPORTED_BYTES)
+        require(sourceLabel.isNotBlank() && sourceLabel.length <= 64)
+        if (!stagingRoot.exists() && !stagingRoot.mkdirs()) {
+            throw ResourceDownloadException("import_staging_failed", "Could not create private import staging")
+        }
+        val destination = File(stagingRoot, "$operationId-audio.bin")
+        destination.delete()
+        try {
+            val available = availableBytes(stagingRoot)
+            if (available < FREE_SPACE_RESERVE_BYTES) {
+                throw ResourceStorageException(FREE_SPACE_RESERVE_BYTES, available)
+            }
+            cancellation.check()
+            return runBlocking {
+                CancellableProviderIo.execute(
+                    scope = providerIoScope,
+                    timeoutMillis = providerIoTimeoutMillis,
+                    scheduler = providerIoScheduler,
+                ) { deadline ->
+                    copyAudioProviderInput(
+                        source = sourceUri,
+                        destination = destination,
+                        cancellation = cancellation.combine(deadline),
+                        maximumBytes = maximumBytes,
+                        available = available,
+                        sourceLabel = sourceLabel,
+                        onProviderProgress = deadline::rearm,
+                        onProgress = onProgress,
+                    )
+                }
+            }
+        } catch (failure: Exception) {
+            destination.delete()
+            if (failure is ProviderIoCancelledException) {
+                cancellation.check()
+                throw sourceUnavailable(sourceLabel)
+            }
+            if (failure is ResourceDownloadException || failure is ResourceStorageException) {
+                throw failure
+            }
+            // Provider exceptions may embed the URI or display name. Audio failures are reported
+            // through stable codes and bounded metadata, never by retaining provider text.
+            throw sourceUnavailable(sourceLabel)
+        }
+    }
+
     private fun copyProviderInput(
         source: String,
         destination: File,
@@ -261,13 +428,155 @@ internal class SafArchiveStager(
         )
     }
 
+    private fun copyAudioProviderInput(
+        source: String,
+        destination: File,
+        cancellation: ProviderIoCancellation,
+        maximumBytes: Long,
+        available: Long,
+        sourceLabel: String,
+        onProviderProgress: () -> Unit,
+        onProgress: (Long, Long) -> Unit,
+    ): StagedAudioArchive {
+        return CancellableProviderIo.useResource(
+            cancellation = cancellation,
+            open = { openAudioInput(source, cancellation) },
+        ) { input ->
+            val prefix = readPrefix(input.stream, cancellation, onProviderProgress)
+            val container = classifyAudioArchive(prefix, input.readMode)
+            if (prefix.size.toLong() > maximumBytes) {
+                throw archiveTooLarge(sourceLabel, prefix.size.toLong(), maximumBytes)
+            }
+            if (available - prefix.size < FREE_SPACE_RESERVE_BYTES) {
+                throw ResourceStorageException(prefix.size + FREE_SPACE_RESERVE_BYTES, available)
+            }
+
+            val digest = MessageDigest.getInstance("SHA-256")
+            var total = prefix.size.toLong()
+            FileOutputStream(destination, false).use { output ->
+                output.write(prefix)
+                digest.update(prefix)
+                onProgress(total, 0)
+                val buffer = ByteArray(BUFFER_BYTES)
+                while (true) {
+                    throwIfCancelled(cancellation)
+                    val count = input.stream.read(buffer)
+                    throwIfCancelled(cancellation)
+                    if (count != 0) onProviderProgress()
+                    if (count < 0) break
+                    total += count
+                    if (total > maximumBytes) {
+                        throw archiveTooLarge(sourceLabel, total, maximumBytes)
+                    }
+                    if (available - total < FREE_SPACE_RESERVE_BYTES) {
+                        throw ResourceStorageException(total + FREE_SPACE_RESERVE_BYTES, available)
+                    }
+                    output.write(buffer, 0, count)
+                    digest.update(buffer, 0, count)
+                    onProgress(total, 0)
+                }
+                output.fd.sync()
+                throwIfCancelled(cancellation)
+            }
+            StagedAudioArchive(
+                archive =
+                    StagedArchive(
+                        file = destination,
+                        sha256 = digest.digest().joinToString("") { "%02x".format(it) },
+                        sizeBytes = total,
+                    ),
+                readMode = input.readMode,
+                container = container,
+            )
+        }
+    }
+
+    private fun openAudioInput(
+        source: String,
+        cancellation: ProviderIoCancellation,
+    ): OpenedAudioInput {
+        val raw =
+            try {
+                inputOpener.openRaw(source, cancellation)
+            } catch (failure: FileNotFoundException) {
+                if (cancellation.isCancelled()) throw ProviderIoCancelledException(failure)
+                null
+            }
+        if (raw != null) return OpenedAudioInput(raw, AudioArchiveReadMode.RAW)
+        if (cancellation.isCancelled()) throw ProviderIoCancelledException()
+        return OpenedAudioInput(
+            inputOpener.open(source, cancellation),
+            AudioArchiveReadMode.ASSET_FALLBACK,
+        )
+    }
+
+    private fun readPrefix(
+        stream: InputStream,
+        cancellation: ProviderIoCancellation,
+        onProviderProgress: () -> Unit,
+    ): ByteArray {
+        val prefix = ByteArray(AUDIO_PREFIX_BYTES)
+        var count = 0
+        while (count < prefix.size) {
+            throwIfCancelled(cancellation)
+            val read = stream.read(prefix, count, prefix.size - count)
+            throwIfCancelled(cancellation)
+            if (read != 0) onProviderProgress()
+            if (read < 0) break
+            if (read == 0) continue
+            count += read
+        }
+        return prefix.copyOf(count)
+    }
+
+    private fun classifyAudioArchive(
+        prefix: ByteArray,
+        readMode: AudioArchiveReadMode,
+    ): AudioArchiveContainer {
+        if (
+            prefix.size >= 4 &&
+                prefix[0] == 0x50.toByte() &&
+                prefix[1] == 0x4b.toByte() &&
+                prefix[2] == 0x03.toByte() &&
+                prefix[3] == 0x04.toByte()
+        ) {
+            return AudioArchiveContainer.ZIP
+        }
+        if (prefix.startsWith(XZ_SIGNATURE)) return AudioArchiveContainer.XZ
+        if (prefix.startsWith(GZIP_SIGNATURE)) return AudioArchiveContainer.GZIP
+        if (
+            prefix.size >= TAR_MAGIC_OFFSET + TAR_MAGIC.size &&
+                prefix.copyOfRange(TAR_MAGIC_OFFSET, TAR_MAGIC_OFFSET + TAR_MAGIC.size)
+                    .contentEquals(TAR_MAGIC)
+        ) {
+            return AudioArchiveContainer.TAR
+        }
+        if (readMode == AudioArchiveReadMode.ASSET_FALLBACK) {
+            throw ResourceDownloadException(
+                "resource_archive_provider_representation",
+                "The provider did not expose the selected audio-pack archive",
+            )
+        }
+        throw ResourceDownloadException(
+            "resource_archive_unrecognized",
+            "The selected audio-pack file is not a supported archive",
+        )
+    }
+
+    private data class OpenedAudioInput(
+        val stream: InputStream,
+        val readMode: AudioArchiveReadMode,
+    ) : Closeable {
+        override fun close() = stream.close()
+    }
+
     private fun throwIfCancelled(cancellation: ProviderIoCancellation) {
         if (cancellation.isCancelled()) throw ProviderIoCancelledException()
     }
 
     private fun sourceUnavailable(
         sourceLabel: String,
-        cause: Throwable,
+        cause: Throwable? = null,
     ) = ResourceDownloadException(
         "import_source_unavailable",
         "The selected $sourceLabel cannot be opened",
@@ -281,6 +590,14 @@ internal class SafArchiveStager(
         const val FREE_SPACE_RESERVE_BYTES = ARCHIVE_BUDGET_RESERVE_BYTES
         const val PROVIDER_IO_TIMEOUT_MILLIS = 60_000L
         const val MAXIMUM_PREFIX_BYTES = 64
+        const val AUDIO_PREFIX_BYTES = 265
+        const val TAR_MAGIC_OFFSET = 257
+        val XZ_SIGNATURE = byteArrayOf(0xfd.toByte(), 0x37, 0x7a, 0x58, 0x5a, 0x00)
+        val GZIP_SIGNATURE = byteArrayOf(0x1f, 0x8b.toByte())
+        val TAR_MAGIC = "ustar".encodeToByteArray()
         val FILE_SUFFIX = Regex("\\.[a-z0-9]{1,8}")
     }
 }
+
+private fun ByteArray.startsWith(prefix: ByteArray): Boolean =
+    size >= prefix.size && prefix.indices.all { this[it] == prefix[it] }

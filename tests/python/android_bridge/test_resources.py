@@ -1398,14 +1398,49 @@ def _tar_xz_of(path: Path, members: dict[str, bytes]) -> Path:
 def test_audio_archive_kind_reads_the_container_from_its_bytes(tmp_path: Path) -> None:
     members = {"index.json": b"{}"}
     zipped = _zip_of(tmp_path / "named-wrong.tar.xz", members)
-    tarred = _tar_xz_of(tmp_path / "named-wrong.zip", members)
+    tarred_xz = _tar_xz_of(tmp_path / "named-wrong.zip", members)
+    tarred_gzip = tmp_path / "collection.tar.gz"
+    tarred_plain = tmp_path / "collection.tar"
+    for path, mode in ((tarred_gzip, "w:gz"), (tarred_plain, "w:")):
+        with tarfile.open(path, mode) as archive:
+            info = tarfile.TarInfo("index.json")
+            info.size = 2
+            archive.addfile(info, io.BytesIO(b"{}"))
     plain = tmp_path / "notes.txt"
     plain.write_bytes(b"not an archive at all")
 
     assert local_resources._audio_archive_kind(zipped) == "zip"
-    assert local_resources._audio_archive_kind(tarred) == "tar"
+    assert local_resources._audio_archive_kind(tarred_xz) == "tar"
+    assert local_resources._audio_archive_kind(tarred_gzip) == "tar"
+    assert local_resources._audio_archive_kind(tarred_plain) == "tar"
     with pytest.raises(BridgeProtocolError) as failure:
         local_resources._audio_archive_kind(plain)
+    assert failure.value.code == "resource_archive_unrecognized"
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        b"PK\x03\x04not-a-zip",
+        b"\xfd7zXZ\x00not-xz",
+        b"\x1f\x8bnot-gzip",
+        bytes(257) + b"ustar" + bytes(100),
+    ],
+)
+def test_audio_archive_recognized_but_corrupt_keeps_invalid_code(
+    tmp_path: Path,
+    contents: bytes,
+) -> None:
+    source = tmp_path / "corrupt.archive"
+    source.write_bytes(contents)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources._extract_audio_archive(
+            source,
+            tmp_path / "extracted",
+            resources._Operation("audio-corrupt"),
+        )
+
     assert failure.value.code == "invalid_resource_archive"
 
 

@@ -476,6 +476,8 @@
     <string name="resource_failure_archive_member_count">压缩包中的文件数超过音频包允许的数量</string>
     <string name="resource_failure_archive_expands">压缩包解压后超出音频包可达到的大小</string>
     <string name="resource_failure_archive_invalid">压缩包已损坏或不完整</string>
+    <string name="resource_failure_archive_unrecognized">请选择归档文件本身（.tar.xz、.tar.gz、.tar 或 .zip），不要选择 .torrent 文件。</string>
+    <string name="resource_failure_archive_provider_representation">此提供方未返回归档文件的原始字节。请将归档文件复制到设备存储空间，然后重新选择。</string>
     <string name="resource_failure_archive_unsafe">压缩包包含不安全条目，已被拒绝</string>
     <string name="resource_failure_archive_compression">压缩包使用了此应用无法读取的压缩方法</string>
     <string name="resource_failure_slot_exists">该词典槽位已存在；请选择“替换”以更新</string>
@@ -526,6 +528,7 @@
     <string name="pitch_choose_file">选择音调文件</string>
     <string name="audio_pack_import_title">导入表达音频</string>
     <string name="audio_pack_none_installed">未安装本地音频包。</string>
+    <string name="audio_pack_archive_guidance">请选择下载的 .tar.xz、.tar.gz、.tar 或 .zip 归档文件，不要选择 .torrent 文件。</string>
     <string name="audio_pack_choose_zip">选择音频包归档文件</string>
     <string name="audio_pack_choice_title">选择哪个包？</string>
     <string name="audio_pack_choice_message">此归档文件包含 %1$d 个包。导入一个包只会解压该包；其余包会保留在文件中，你可以返回后再添加。</string>

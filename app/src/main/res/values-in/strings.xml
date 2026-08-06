@@ -476,6 +476,8 @@
     <string name="resource_failure_archive_member_count">Arsip memuat lebih banyak berkas daripada yang dapat dimuat paket audio</string>
     <string name="resource_failure_archive_expands">Arsip mengembang melebihi ukuran yang dapat dicapai paket audio</string>
     <string name="resource_failure_archive_invalid">Arsip rusak atau tidak lengkap</string>
+    <string name="resource_failure_archive_unrecognized">Pilih arsipnya langsung (.tar.xz, .tar.gz, .tar, atau .zip), bukan file .torrent.</string>
+    <string name="resource_failure_archive_provider_representation">Penyedia ini tidak mengembalikan byte asli arsip. Salin arsip ke penyimpanan perangkat, lalu pilih lagi.</string>
     <string name="resource_failure_archive_unsafe">Arsip berisi entri tidak aman dan ditolak</string>
     <string name="resource_failure_archive_compression">Arsip menggunakan metode kompresi yang tidak dapat dibaca aplikasi ini</string>
     <string name="resource_failure_slot_exists">Slot kamus itu sudah ada; pilih Ganti untuk memperbaruinya</string>
@@ -526,6 +528,7 @@
     <string name="pitch_choose_file">Pilih berkas aksen nada</string>
     <string name="audio_pack_import_title">Impor audio ekspresi</string>
     <string name="audio_pack_none_installed">Tidak ada paket audio lokal yang terpasang.</string>
+    <string name="audio_pack_archive_guidance">Pilih arsip .tar.xz, .tar.gz, .tar, atau .zip yang telah diunduh, bukan file .torrent.</string>
     <string name="audio_pack_choose_zip">Pilih arsip paket audio</string>
     <string name="audio_pack_choice_title">Paket yang mana?</string>
     <string name="audio_pack_choice_message">Arsip ini berisi %1$d paket. Mengimpor satu paket hanya mengekstrak paket itu; yang lain tetap di berkas, sehingga Anda dapat kembali dan menambahkannya.</string>

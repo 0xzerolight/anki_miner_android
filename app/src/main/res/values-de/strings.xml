@@ -478,6 +478,8 @@
     <string name="resource_failure_archive_member_count">Das Archiv enthält mehr Dateien, als ein Audiopaket enthalten darf</string>
     <string name="resource_failure_archive_expands">Das Archiv entpackt sich auf eine Größe, die ein Audiopaket nicht erreichen darf</string>
     <string name="resource_failure_archive_invalid">Das Archiv ist beschädigt oder unvollständig</string>
+    <string name="resource_failure_archive_unrecognized">Wähle das Archiv selbst (.tar.xz, .tar.gz, .tar oder .zip), nicht die .torrent-Datei.</string>
+    <string name="resource_failure_archive_provider_representation">Dieser Anbieter hat nicht die Originalbytes des Archivs zurückgegeben. Kopiere das Archiv in den Gerätespeicher und wähle es erneut aus.</string>
     <string name="resource_failure_archive_unsafe">Das Archiv enthält einen unsicheren Eintrag und wurde abgelehnt</string>
     <string name="resource_failure_archive_compression">Das Archiv verwendet eine Komprimierungsmethode, die diese App nicht lesen kann</string>
     <string name="resource_failure_slot_exists">Dieser Wörterbuchplatz existiert bereits; wählen Sie Ersetzen, um ihn zu aktualisieren</string>
@@ -528,6 +530,7 @@
     <string name="pitch_choose_file">Datei für Tonhöhenakzent auswählen</string>
     <string name="audio_pack_import_title">Ausdrucksaudio importieren</string>
     <string name="audio_pack_none_installed">Kein lokales Audiopaket ist installiert.</string>
+    <string name="audio_pack_archive_guidance">Wähle das heruntergeladene Archiv im Format .tar.xz, .tar.gz, .tar oder .zip – nicht die .torrent-Datei.</string>
     <string name="audio_pack_choose_zip">Audiopaket-Archiv auswählen</string>
     <string name="audio_pack_choice_title">Welches Paket?</string>
     <string name="audio_pack_choice_message">Dieses Archiv enthält %1$d Pakete. Der Import eines Pakets entpackt nur dieses; die anderen bleiben in der Datei, sodass Sie später zurückkehren und sie hinzufügen können.</string>

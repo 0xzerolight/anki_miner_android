@@ -480,6 +480,8 @@
     <string name="resource_failure_archive_member_count">O arquivo compactado contém mais arquivos que o permitido para um pacote de áudio</string>
     <string name="resource_failure_archive_expands">O arquivo compactado se expande além do tamanho permitido para um pacote de áudio</string>
     <string name="resource_failure_archive_invalid">O arquivo compactado está corrompido ou incompleto</string>
+    <string name="resource_failure_archive_unrecognized">Selecione o próprio arquivo compactado (.tar.xz, .tar.gz, .tar ou .zip), não o arquivo .torrent.</string>
+    <string name="resource_failure_archive_provider_representation">Este provedor não retornou os bytes originais do arquivo compactado. Copie-o para o armazenamento do dispositivo e selecione-o novamente.</string>
     <string name="resource_failure_archive_unsafe">O arquivo compactado contém uma entrada insegura e foi rejeitado</string>
     <string name="resource_failure_archive_compression">O arquivo compactado usa um método de compressão que este app não pode ler</string>
     <string name="resource_failure_slot_exists">Esse espaço de dicionário já existe; escolha Substituir para atualizá-lo</string>
@@ -530,6 +532,7 @@
     <string name="pitch_choose_file">Escolher arquivo de acento tonal</string>
     <string name="audio_pack_import_title">Importar áudio da expressão</string>
     <string name="audio_pack_none_installed">Nenhum pacote de áudio local está instalado.</string>
+    <string name="audio_pack_archive_guidance">Selecione o arquivo compactado baixado .tar.xz, .tar.gz, .tar ou .zip, não o arquivo .torrent.</string>
     <string name="audio_pack_choose_zip">Escolher arquivo do pacote de áudio</string>
     <string name="audio_pack_choice_title">Qual pacote?</string>
     <string name="audio_pack_choice_message">Este arquivo contém %1$d pacotes. Importar um extrai apenas esse pacote; os outros permanecem no arquivo, para que você possa voltar e adicioná-los.</string>

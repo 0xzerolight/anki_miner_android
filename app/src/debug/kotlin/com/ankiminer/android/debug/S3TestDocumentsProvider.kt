@@ -2,8 +2,11 @@ package com.ankiminer.android.debug
 
 import android.content.ContentProvider
 import android.content.ContentValues
+import android.content.res.AssetFileDescriptor
 import android.database.Cursor
 import android.net.Uri
+import android.os.Bundle
+import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
 import java.io.File
 import java.io.FileNotFoundException
@@ -26,6 +29,9 @@ class S3TestDocumentsProvider : ContentProvider() {
                 "/av1" -> AV1_FIXTURE_NAME
                 "/s5/video" -> S5_VIDEO_FIXTURE_NAME
                 "/s5/subtitle" -> S5_SUBTITLE_FIXTURE_NAME
+                "/audio/raw-preferred" -> AUDIO_RAW_FIXTURE_NAME
+                "/audio/asset-only" ->
+                    throw FileNotFoundException("Raw audio fixture representation unavailable")
                 else -> throw FileNotFoundException("Unknown test fixture URI: $uri")
             }
         val fixture = File(requireNotNull(context).cacheDir, fixtureName)
@@ -33,13 +39,33 @@ class S3TestDocumentsProvider : ContentProvider() {
             throw FileNotFoundException("S3 fixture has not been generated")
         }
         return when (uri.path) {
-            "/seekable", "/av1" ->
+            "/seekable", "/av1", "/audio/raw-preferred" ->
                 ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
             "/pipe" -> pipeFrom(fixture)
             "/s5/video", "/s5/subtitle" ->
                 ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
             else -> throw FileNotFoundException("Unknown test fixture URI: $uri")
         }
+    }
+
+    override fun openTypedAssetFile(
+        uri: Uri,
+        mimeTypeFilter: String,
+        opts: Bundle?,
+        signal: CancellationSignal?,
+    ): AssetFileDescriptor? {
+        val fixtureName =
+            when (uri.path) {
+                "/audio/raw-preferred" -> AUDIO_TRANSFORMED_FIXTURE_NAME
+                "/audio/asset-only" -> AUDIO_ASSET_FIXTURE_NAME
+                else -> return super.openTypedAssetFile(uri, mimeTypeFilter, opts, signal)
+            }
+        val fixture = File(requireNotNull(context).cacheDir, fixtureName)
+        if (!fixture.isFile) {
+            throw FileNotFoundException("Audio SAF fixture has not been generated")
+        }
+        val descriptor = ParcelFileDescriptor.open(fixture, ParcelFileDescriptor.MODE_READ_ONLY)
+        return AssetFileDescriptor(descriptor, 0, fixture.length())
     }
 
     private fun pipeFrom(source: File): ParcelFileDescriptor {
@@ -95,5 +121,8 @@ class S3TestDocumentsProvider : ContentProvider() {
         const val AV1_FIXTURE_NAME = "s3-saf-av1-fixture.mkv"
         const val S5_VIDEO_FIXTURE_NAME = "s5-saf-fixture.mkv"
         const val S5_SUBTITLE_FIXTURE_NAME = "s5-saf-fixture.srt"
+        const val AUDIO_RAW_FIXTURE_NAME = "audio-saf-raw.zip"
+        const val AUDIO_TRANSFORMED_FIXTURE_NAME = "audio-saf-transformed.html"
+        const val AUDIO_ASSET_FIXTURE_NAME = "audio-saf-asset.gz"
     }
 }

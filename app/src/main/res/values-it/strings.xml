@@ -480,6 +480,8 @@
     <string name="resource_failure_archive_member_count">L\'archivio contiene più file di quanti ne possa contenere un pacchetto audio</string>
     <string name="resource_failure_archive_expands">L\'archivio si espande oltre le dimensioni che può raggiungere un pacchetto audio</string>
     <string name="resource_failure_archive_invalid">L\'archivio è danneggiato o incompleto</string>
+    <string name="resource_failure_archive_unrecognized">Seleziona l’archivio stesso (.tar.xz, .tar.gz, .tar o .zip), non il file .torrent.</string>
+    <string name="resource_failure_archive_provider_representation">Questo provider non ha restituito i byte originali dell’archivio. Copia l’archivio nella memoria del dispositivo e selezionalo di nuovo.</string>
     <string name="resource_failure_archive_unsafe">L\'archivio contiene una voce non sicura ed è stato rifiutato</string>
     <string name="resource_failure_archive_compression">L\'archivio usa un metodo di compressione che l\'app non può leggere</string>
     <string name="resource_failure_slot_exists">Quello slot del dizionario esiste già; scegli Sostituisci per aggiornarlo</string>
@@ -530,6 +532,7 @@
     <string name="pitch_choose_file">Scegli file dell\'accento tonale</string>
     <string name="audio_pack_import_title">Importa audio dell\'espressione</string>
     <string name="audio_pack_none_installed">Nessun pacchetto audio locale installato.</string>
+    <string name="audio_pack_archive_guidance">Seleziona l’archivio scaricato .tar.xz, .tar.gz, .tar o .zip, non il file .torrent.</string>
     <string name="audio_pack_choose_zip">Scegli archivio del pacchetto audio</string>
     <string name="audio_pack_choice_title">Quale pacchetto?</string>
     <string name="audio_pack_choice_message">Questo archivio contiene %1$d pacchetti. Importarne uno estrae solo quel pacchetto; gli altri restano nel file, così potrai tornare e aggiungerli.</string>

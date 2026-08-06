@@ -472,6 +472,8 @@
     <string name="resource_failure_archive_member_count">封存檔包含的檔案數量超過音訊包可包含的上限</string>
     <string name="resource_failure_archive_expands">封存檔展開後超出音訊包可達的大小</string>
     <string name="resource_failure_archive_invalid">封存檔已損毀或不完整</string>
+    <string name="resource_failure_archive_unrecognized">請選擇封存檔本身（.tar.xz、.tar.gz、.tar 或 .zip），不要選擇 .torrent 檔案。</string>
+    <string name="resource_failure_archive_provider_representation">此提供者未傳回封存檔的原始位元組。請將封存檔複製到裝置儲存空間，然後重新選擇。</string>
     <string name="resource_failure_archive_unsafe">封存檔包含不安全的項目，已遭拒絕</string>
     <string name="resource_failure_archive_compression">封存檔使用此應用程式無法讀取的壓縮方法</string>
     <string name="resource_failure_slot_exists">該字典槽位已存在；請選擇「取代」以更新</string>
@@ -522,6 +524,7 @@
     <string name="pitch_choose_file">選擇高低音調檔案</string>
     <string name="audio_pack_import_title">匯入表達式音訊</string>
     <string name="audio_pack_none_installed">未安裝本機音訊包。</string>
+    <string name="audio_pack_archive_guidance">請選擇下載的 .tar.xz、.tar.gz、.tar 或 .zip 封存檔，不要選擇 .torrent 檔案。</string>
     <string name="audio_pack_choose_zip">選擇音訊包封存檔</string>
     <string name="audio_pack_choice_title">要匯入哪個音訊包？</string>
     <string name="audio_pack_choice_message">此封存檔含有 %1$d 個音訊包。匯入其中一個時，只會解壓該音訊包；其餘會留在檔案中，之後仍可回來加入。</string>

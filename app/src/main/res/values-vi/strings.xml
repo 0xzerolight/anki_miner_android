@@ -476,6 +476,8 @@
     <string name="resource_failure_archive_member_count">Tệp lưu trữ chứa nhiều tệp hơn mức gói âm thanh được phép chứa</string>
     <string name="resource_failure_archive_expands">Tệp lưu trữ bung ra vượt quá kích thước gói âm thanh có thể đạt</string>
     <string name="resource_failure_archive_invalid">Tệp lưu trữ bị hỏng hoặc chưa hoàn chỉnh</string>
+    <string name="resource_failure_archive_unrecognized">Hãy chọn chính tệp lưu trữ (.tar.xz, .tar.gz, .tar hoặc .zip), không chọn tệp .torrent.</string>
+    <string name="resource_failure_archive_provider_representation">Nhà cung cấp này không trả về dữ liệu byte gốc của tệp lưu trữ. Hãy sao chép tệp vào bộ nhớ thiết bị rồi chọn lại.</string>
     <string name="resource_failure_archive_unsafe">Tệp lưu trữ chứa mục không an toàn và đã bị từ chối</string>
     <string name="resource_failure_archive_compression">Tệp lưu trữ dùng phương thức nén mà ứng dụng không thể đọc</string>
     <string name="resource_failure_slot_exists">Vị trí từ điển đó đã tồn tại; hãy chọn Thay thế để cập nhật</string>
@@ -526,6 +528,7 @@
     <string name="pitch_choose_file">Chọn tệp trọng âm cao độ</string>
     <string name="audio_pack_import_title">Nhập âm thanh biểu thức</string>
     <string name="audio_pack_none_installed">Chưa cài đặt gói âm thanh cục bộ nào.</string>
+    <string name="audio_pack_archive_guidance">Hãy chọn tệp lưu trữ .tar.xz, .tar.gz, .tar hoặc .zip đã tải xuống, không chọn tệp .torrent.</string>
     <string name="audio_pack_choose_zip">Chọn kho lưu trữ gói âm thanh</string>
     <string name="audio_pack_choice_title">Gói nào?</string>
     <string name="audio_pack_choice_message">Kho lưu trữ này chứa %1$d gói. Việc nhập một gói chỉ giải nén gói đó; các gói khác vẫn ở trong tệp, nên bạn có thể quay lại và thêm chúng.</string>

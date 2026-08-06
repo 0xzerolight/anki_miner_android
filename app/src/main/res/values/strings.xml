@@ -487,6 +487,8 @@
     <string name="resource_failure_archive_member_count">The archive holds more files than an audio pack may contain</string>
     <string name="resource_failure_archive_expands">The archive expands beyond the size an audio pack may reach</string>
     <string name="resource_failure_archive_invalid">The archive is damaged or incomplete</string>
+    <string name="resource_failure_archive_unrecognized">Choose the archive itself (.tar.xz, .tar.gz, .tar, or .zip), not its .torrent file</string>
+    <string name="resource_failure_archive_provider_representation">This provider did not return the archive\'s original bytes. Copy the archive to device storage, then select it again.</string>
     <string name="resource_failure_archive_unsafe">The archive contains an unsafe entry and was rejected</string>
     <string name="resource_failure_archive_compression">The archive uses a compression method this app cannot read</string>
     <string name="resource_failure_slot_exists">That dictionary slot already exists; choose Replace to update it</string>
@@ -537,6 +539,7 @@
     <string name="pitch_choose_file">Choose pitch-accent file</string>
     <string name="audio_pack_import_title">Import expression audio</string>
     <string name="audio_pack_none_installed">No local audio pack is installed.</string>
+    <string name="audio_pack_archive_guidance">Choose the downloaded .tar.xz, .tar.gz, .tar, or .zip archive—not the .torrent file.</string>
     <string name="audio_pack_choose_zip">Choose audio-pack archive</string>
     <string name="audio_pack_choice_title">Which pack?</string>
     <string name="audio_pack_choice_message">This archive holds %1$d packs. Importing one extracts only that pack; the others stay in the file, so you can come back and add them.</string>

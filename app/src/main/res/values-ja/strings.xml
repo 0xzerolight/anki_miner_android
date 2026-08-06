@@ -478,6 +478,8 @@
     <string name="resource_failure_archive_member_count">アーカイブのファイル数が音声パックに含められる上限を超えています</string>
     <string name="resource_failure_archive_expands">アーカイブの展開後サイズが音声パックの上限を超えています</string>
     <string name="resource_failure_archive_invalid">アーカイブが破損しているか不完全です</string>
+    <string name="resource_failure_archive_unrecognized">アーカイブ本体（.tar.xz、.tar.gz、.tar、.zip）を選択してください。.torrent ファイルは選択しないでください。</string>
+    <string name="resource_failure_archive_provider_representation">このプロバイダーはアーカイブの元のバイト列を返しませんでした。アーカイブを端末ストレージにコピーして、もう一度選択してください。</string>
     <string name="resource_failure_archive_unsafe">アーカイブに安全でない項目が含まれていたため拒否しました</string>
     <string name="resource_failure_archive_compression">アーカイブはこのアプリが読めない圧縮方式を使っています</string>
     <string name="resource_failure_slot_exists">その辞書スロットは既に存在します。更新するには「置き換え」を選択してください</string>
@@ -528,6 +530,7 @@
     <string name="pitch_choose_file">アクセントファイルを選択</string>
     <string name="audio_pack_import_title">例文音声をインポート</string>
     <string name="audio_pack_none_installed">ローカル音声パックがインストールされていません。</string>
+    <string name="audio_pack_archive_guidance">ダウンロードした .tar.xz、.tar.gz、.tar、.zip アーカイブを選択してください。.torrent ファイルは選択しないでください。</string>
     <string name="audio_pack_choose_zip">音声パックのアーカイブを選択</string>
     <string name="audio_pack_choice_title">どのパックを取り込みますか</string>
     <string name="audio_pack_choice_message">このアーカイブには%1$d個のパックが含まれています。取り込むのは選んだパックだけで、他はファイル内に残るため後から追加できます。</string>
