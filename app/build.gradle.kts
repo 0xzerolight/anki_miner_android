@@ -141,8 +141,8 @@ android {
         applicationId = "com.ankiminer.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 14
-        versionName = "0.4.1"
+        versionCode = 15
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
