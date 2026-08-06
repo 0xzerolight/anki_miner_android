@@ -340,6 +340,7 @@
     <string name="anki_deck_save_retry">Retry saving deck</string>
     <string name="anki_note_type_picker">Note type</string>
     <string name="anki_field_mapping_summary">Field mapping (%1$d of %2$d)</string>
+    <string name="settings_field_mapping">Field mapping</string>
     <string name="disclosure_expanded">Expanded</string>
     <string name="disclosure_collapsed">Collapsed</string>
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>

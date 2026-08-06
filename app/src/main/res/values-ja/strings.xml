@@ -334,6 +334,7 @@
     <string name="anki_deck_save_retry">デッキの保存を再試行</string>
     <string name="anki_note_type_picker">ノートタイプ</string>
     <string name="anki_field_mapping_summary">フィールドの対応付け（%1$d/%2$d）</string>
+    <string name="settings_field_mapping">フィールドの対応</string>
     <string name="disclosure_expanded">展開</string>
     <string name="disclosure_collapsed">折りたたみ</string>
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
