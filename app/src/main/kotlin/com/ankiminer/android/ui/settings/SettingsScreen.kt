@@ -32,6 +32,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
@@ -167,6 +168,10 @@ internal fun SettingsRoute(
     onShareDiagnosticsBundle: (uri: String, fileName: String) -> Boolean,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
+    updateCheck: UpdateCheckUiState,
+    onUpdateCheckEnabledChange: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onSkipUpdate: () -> Unit,
     onReturnToActiveRun: (() -> Unit)? = null,
     onAttributions: () -> Unit,
     onRunSetupWizard: (() -> Unit)? = null,
@@ -341,6 +346,10 @@ internal fun SettingsRoute(
         onExportKnownWords = { knownWordsExportPicker.launch("known_words.txt") },
         verboseLogging = verboseLogging,
         onVerboseLoggingChange = onVerboseLoggingChange,
+        updateCheck = updateCheck,
+        onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
+        onCheckForUpdates = onCheckForUpdates,
+        onSkipUpdate = onSkipUpdate,
         modifier = modifier,
     )
 }
@@ -393,6 +402,10 @@ private fun SettingsScreen(
     onExportKnownWords: () -> Unit,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
+    updateCheck: UpdateCheckUiState,
+    onUpdateCheckEnabledChange: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onSkipUpdate: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
@@ -482,6 +495,10 @@ private fun SettingsScreen(
             onManageKnownWords = onManageKnownWords,
             verboseLogging = verboseLogging,
             onVerboseLoggingChange = onVerboseLoggingChange,
+            updateCheck = updateCheck,
+            onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
+            onCheckForUpdates = onCheckForUpdates,
+            onSkipUpdate = onSkipUpdate,
         )
     SettingsCategoryLayout(
         selectedCategory = selectedCategory,
@@ -520,6 +537,17 @@ private fun SettingsScreen(
                         )
                     },
                 )
+                updateCheck.available?.let { available ->
+                    OutlinedCard(Modifier.fillMaxWidth()) {
+                        Column(
+                            Modifier.padding(AnkiMinerTokens.Space.group),
+                            verticalArrangement =
+                                Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                        ) {
+                            UpdateAvailableActions(available, onSkipUpdate)
+                        }
+                    }
+                }
                 // Both conditions gate controls in every category, so they live where every
                 // category can see them rather than on a tab the user may never open.
                 // The conflict notice yields to the operation card: the RESOURCE work lease is

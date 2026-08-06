@@ -53,6 +53,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
+import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
@@ -409,6 +410,10 @@ internal fun AnkiMinerApp(
     onShareDiagnosticsBundle: (uri: String, fileName: String) -> Boolean,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
+    updateCheck: UpdateCheckUiState,
+    onUpdateCheckEnabledChange: (Boolean) -> Unit,
+    onCheckForUpdates: () -> Unit,
+    onSkipUpdate: () -> Unit,
 ) {
     val navController = rememberNavController()
     val currentEntry by navController.currentBackStackEntryAsState()
@@ -744,6 +749,10 @@ internal fun AnkiMinerApp(
                     onShareDiagnosticsBundle = onShareDiagnosticsBundle,
                     verboseLogging = verboseLogging,
                     onVerboseLoggingChange = onVerboseLoggingChange,
+                    updateCheck = updateCheck,
+                    onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
+                    onCheckForUpdates = onCheckForUpdates,
+                    onSkipUpdate = onSkipUpdate,
                     onReturnToActiveRun =
                         activeWorkflowDestination?.let { destination ->
                             { navigateTo(destination) }

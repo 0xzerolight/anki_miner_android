@@ -280,6 +280,15 @@
     <string name="settings_verbose_logging_section">ログ</string>
     <string name="settings_verbose_logging">詳細ログ</string>
     <string name="settings_verbose_logging_detail">不具合報告用に詳細な情報を記録します。ストレージの使用量が増え、マイニングがわずかに遅くなります。1週間後に自動で解除されます。</string>
+    <string name="settings_update_section">アップデート</string>
+    <string name="settings_update_check_enabled">新しいバージョンを確認する</string>
+    <string name="settings_update_check_detail">1 日に 1 回 GitHub に新しいリリースがあるかを問い合わせます。ダウンロードやインストールは一切行いません。GitHub に渡るのは接続元の IP アドレスのみです。</string>
+    <string name="settings_update_check_now">今すぐ確認</string>
+    <string name="settings_update_available">バージョン %1$s が利用できます</string>
+    <string name="settings_update_view_release">リリースを見る</string>
+    <string name="settings_update_skip">このバージョンをスキップ</string>
+    <string name="settings_update_up_to_date">これが最新のリリースです。</string>
+    <string name="settings_update_failed">GitHub に接続できませんでした。</string>
     <string name="settings_tester_diagnostics">テスター診断情報</string>
     <string name="settings_version_identity">バージョン: %1$s</string>
     <string name="settings_source_identity">ソース: %1$s</string>

@@ -49,13 +49,33 @@ internal data class StagedArchive(
 
 internal fun interface DownloadConnectionFactory {
     fun open(url: String, offset: Long): HttpURLConnection
+
+    fun withRequestProperty(
+        name: String,
+        value: String,
+    ): DownloadConnectionFactory =
+        DownloadConnectionFactory { url, offset ->
+            open(url, offset).apply { setRequestProperty(name, value) }
+        }
 }
 
 internal class HttpsDownloadConnectionFactory(
+    // Declared ahead of [connectionOpener] so the opener stays the trailing parameter: call sites
+    // pass it as a trailing lambda, which would otherwise silently rebind to this map.
+    private val requestProperties: Map<String, String> = emptyMap(),
     private val connectionOpener: (URL) -> HttpURLConnection = {
         it.openConnection() as HttpURLConnection
     },
 ) : DownloadConnectionFactory {
+    override fun withRequestProperty(
+        name: String,
+        value: String,
+    ): DownloadConnectionFactory =
+        HttpsDownloadConnectionFactory(
+            connectionOpener = connectionOpener,
+            requestProperties = requestProperties + (name to value),
+        )
+
     override fun open(url: String, offset: Long): HttpURLConnection {
         var current = requireHttps(url)
         repeat(MAX_REDIRECTS + 1) { redirectCount ->
@@ -69,6 +89,9 @@ internal class HttpsDownloadConnectionFactory(
                 connection.setRequestProperty("Accept-Encoding", "identity")
                 connection.setRequestProperty("User-Agent", "AnkiMinerAndroid/1 resource-installer")
                 if (offset > 0) connection.setRequestProperty("Range", "bytes=$offset-")
+                requestProperties.forEach { (name, value) ->
+                    connection.setRequestProperty(name, value)
+                }
                 val status = connection.responseCode
                 if (status !in REDIRECT_CODES) {
                     handedOff = true

@@ -28,7 +28,14 @@ internal class AndroidSettingsDocumentReader(
     }
 }
 
-private fun InputStream.readAtMost(maximumBytes: Int): ByteArray {
+/**
+ * Read at most [maximumBytes], stopping at end of stream.
+ *
+ * Hand-rolled because `InputStream.readNBytes` is API 33 and this app supports API 26; lint's
+ * `NewApi` check is what catches the mistake. Shared with the update client, which bounds an
+ * untrusted HTTP body the same way.
+ */
+internal fun InputStream.readAtMost(maximumBytes: Int): ByteArray {
     val buffer = ByteArray(maximumBytes)
     var total = 0
     while (total < buffer.size) {

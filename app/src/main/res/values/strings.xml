@@ -286,6 +286,15 @@
     <string name="settings_verbose_logging_section">Logging</string>
     <string name="settings_verbose_logging">Verbose logging</string>
     <string name="settings_verbose_logging_detail">Records extra detail for bug reports. Uses more storage and slows mining slightly. Turns itself off after a week.</string>
+    <string name="settings_update_section">Updates</string>
+    <string name="settings_update_check_enabled">Check for new versions</string>
+    <string name="settings_update_check_detail">Asks GitHub once a day whether a newer release exists. It never downloads or installs anything. GitHub sees the request\'s IP address and nothing else about you.</string>
+    <string name="settings_update_check_now">Check now</string>
+    <string name="settings_update_available">Version %1$s is available</string>
+    <string name="settings_update_view_release">View release</string>
+    <string name="settings_update_skip">Skip this version</string>
+    <string name="settings_update_up_to_date">This is the newest release.</string>
+    <string name="settings_update_failed">The check could not reach GitHub.</string>
     <string name="settings_tester_diagnostics">Tester diagnostics</string>
     <string name="settings_version_identity">Version: %1$s</string>
     <string name="settings_source_identity">Source: %1$s</string>
