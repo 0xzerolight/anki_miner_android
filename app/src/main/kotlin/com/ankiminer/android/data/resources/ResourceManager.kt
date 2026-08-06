@@ -664,6 +664,8 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.AUDIO,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+            persistForRecovery = true,
+            holdsForegroundLease = true,
             requiresStartupReady = false,
             waitForMutex = true,
         ) { operation ->

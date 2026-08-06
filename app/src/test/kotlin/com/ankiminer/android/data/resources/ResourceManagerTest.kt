@@ -254,6 +254,40 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun interruptedAudioPreflightDiscardsPartialStateAndOffersAnotherArchive() =
+        runTest {
+            val harness = Harness(autoRecover = false)
+            ResourceOperationJournal(harness.root, syncDirectory = {}).write(
+                PersistedResourceOperation(
+                    origin = ResourceFailureOrigin.AUDIO,
+                    retry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+                ),
+            )
+            val staged = File(harness.stagingRoot, "interrupted-audio.bin").apply { writeText("partial") }
+            val pendingArchive =
+                File(harness.audioPendingRoot, "pending-audio-archive").apply {
+                    parentFile.mkdirs()
+                    writeText("partial")
+                }
+            val pendingIndex =
+                File(harness.audioPendingRoot, "pending-audio-packs.tsv").apply {
+                    writeText("jpod\tjpod_files\tajt\n")
+                }
+
+            harness.manager.recoverAndRefresh()
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("resource_operation_interrupted", failure.code)
+            assertEquals(ResourceFailureOrigin.AUDIO, failure.origin)
+            assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+            assertFalse(staged.exists())
+            assertFalse(pendingArchive.exists())
+            assertFalse(pendingIndex.exists())
+            assertFalse(harness.audioPendingRoot.exists())
+            assertFalse(ResourceOperationJournal(harness.root).exists())
+        }
+
+    @Test
     fun catalogCommitRefreshFailureRetriesReconciliationWithoutReplayingImport() =
         runTest {
             val harness =
@@ -909,13 +943,71 @@ class ResourceManagerTest {
     }
 
     @Test
+    fun audioPreflightIsProtectedFromBeforeSafAccessThroughPendingPublication() =
+        runTest {
+            lateinit var harness: Harness
+            var safAccessProtected = false
+            var publicationProtected = false
+            val inspectingExecutor =
+                Executor { command ->
+                    command.run()
+                    publicationProtected =
+                        harness.foregroundLease.isRunning() &&
+                        ResourceOperationJournal(harness.root).exists() &&
+                        harness.audioPendingRoot.listFiles().orEmpty().size == 2
+                }
+            harness =
+                Harness(
+                    autoRecover = false,
+                    sourceLabel = "audio-pack archive",
+                    resourceExecutor = inspectingExecutor,
+                    onRetainReadAccess = {
+                        safAccessProtected =
+                            harness.foregroundLease.isRunning() &&
+                            ResourceOperationJournal(harness.root).exists()
+                    },
+                )
+
+            assertTrue(harness.manager.preflightAudioPack(INPUT_URI)!!.isNotEmpty())
+
+            assertTrue(safAccessProtected)
+            assertTrue(publicationProtected)
+            assertFalse(harness.foregroundLease.isRunning())
+            assertEquals("start:PREPARING", harness.foregroundLease.events.first())
+            assertEquals("stop", harness.foregroundLease.events.last())
+            assertFalse(ResourceOperationJournal(harness.root).exists())
+        }
+
+    @Test
+    fun failedAudioPreflightClearsForegroundLeaseJournalAndPartialState() =
+        runTest {
+            val harness =
+                Harness(
+                    autoRecover = false,
+                    sourceLabel = "audio-pack archive",
+                    stagingFailureCode = "import_staging_failed",
+                )
+
+            assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+            assertEquals("import_staging_failed", harness.manager.state.value.failure?.code)
+            assertFalse(harness.foregroundLease.isRunning())
+            assertEquals("start:PREPARING", harness.foregroundLease.events.first())
+            assertEquals("stop", harness.foregroundLease.events.last())
+            assertFalse(ResourceOperationJournal(harness.root).exists())
+            assertTrue(harness.stagingRoot.listFiles().orEmpty().isEmpty())
+            assertFalse(harness.audioPendingRoot.exists())
+        }
+
+    @Test
     fun aLongAudioPackImportHoldsTheForegroundServiceForItsWholeRun() =
         runTest {
             val harness = Harness(sourceLabel = "audio-pack archive")
 
             val packs = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI))
-            // Preflight is bounded and cheap; only the import earns a notification.
-            assertTrue(harness.foregroundLease.events.isEmpty())
+            assertEquals("start:PREPARING", harness.foregroundLease.events.first())
+            assertEquals("stop", harness.foregroundLease.events.last())
+            harness.foregroundLease.events.clear()
 
             harness.manager.importAudioPack(INPUT_URI, packs.single(), replace = false)
 
@@ -1015,6 +1107,7 @@ class ResourceManagerTest {
         failCancelDelivery: Boolean = false,
         onKnownWordsRemoveDispatch: () -> Unit = {},
         onFirstExportWrite: () -> Unit = {},
+        onRetainReadAccess: () -> Unit = {},
         committedDictionaryDecodeFailure: Boolean = false,
         committedPitchDecodeFailure: Boolean = false,
         audioReadMode: AudioArchiveReadMode = AudioArchiveReadMode.RAW,
@@ -1025,11 +1118,13 @@ class ResourceManagerTest {
         val stagingRoot = File(root, "staging").apply { mkdirs() }
         val downloadRoot = File(root, "downloads")
         val pendingRoot = File(root, "resource-pending-known-words")
+        val audioPendingRoot = File(root, "resource-pending-audio-pack")
         val broker =
             RecordingSafBroker(
                 reportedSourceSizeBytes,
                 sourceDisplayName,
                 sourceMimeType,
+                onRetainReadAccess,
             )
         val stager =
             RecordingArchiveStager(
@@ -1105,11 +1200,13 @@ class ResourceManagerTest {
         private val reportedSizeBytes: Long? = 16,
         private val displayName: String = "known-words.json",
         private val mimeType: String? = "application/json",
+        private val onRetainReadAccess: () -> Unit = {},
     ) : SafBroker {
         val retained = mutableListOf<String>()
         val released = mutableListOf<String>()
 
         override suspend fun retainReadAccess(uri: String): SafDocument {
+            onRetainReadAccess()
             retained += uri
             return SafDocument(uri, displayName, mimeType, reportedSizeBytes)
         }
