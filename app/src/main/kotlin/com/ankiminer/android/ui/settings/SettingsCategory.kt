@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.settings
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,7 +14,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -28,6 +33,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -50,6 +56,7 @@ internal enum class SettingsCategory(
 
 internal object SettingsCategoryTestTags {
     const val LIST = "settings-category-list"
+    const val SEARCH = "settings-search"
     const val ANIMATED_SCREENSHOT_DURATION = "settings-animated-screenshot-duration"
     const val ANIMATED_SCREENSHOT_QUALITY = "settings-animated-screenshot-quality"
 }
@@ -139,6 +146,10 @@ internal fun rememberSettingsCategoryListStates(): Map<SettingsCategory, LazyLis
 internal fun SettingsCategoryLayout(
     selectedCategory: SettingsCategory,
     onSelectedCategory: (SettingsCategory) -> Unit,
+    query: String = "",
+    onQueryChange: (String) -> Unit = {},
+    results: List<ResolvedSettingsEntry> = emptyList(),
+    onResultChosen: (ResolvedSettingsEntry) -> Unit = {},
     recorder: SettingsCardIndexRecorder,
     header: @Composable () -> Unit,
     modifier: Modifier = Modifier,
@@ -171,62 +182,111 @@ internal fun SettingsCategoryLayout(
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 2.dp,
             ) {
-                PrimaryScrollableTabRow(
-                    selectedTabIndex = selectedCategory.ordinal,
-                    // Eight word labels are ~1.8 screens wide at 360dp, so the strip still
-                    // scrolls. These fades are the affordance that the rest of it exists;
-                    // shortening the labels would buy ~40dp and cost clarity on the two least
-                    // self-evident tabs.
-                    modifier =
-                        Modifier.drawWithContent {
-                            drawContent()
-                            val fade = SettingsTabEdgeFade.toPx().coerceAtMost(size.width)
-                            if (tabScrollState.canScrollBackward) {
-                                drawRect(
-                                    brush =
-                                        Brush.horizontalGradient(
-                                            colors = listOf(edgeColor, Color.Transparent),
-                                            startX = 0f,
-                                            endX = fade,
-                                        ),
-                                    size = Size(fade, size.height),
+                Column {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = onQueryChange,
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(
+                                    horizontal = AnkiMinerTokens.Space.content,
+                                    vertical = AnkiMinerTokens.Space.related,
                                 )
-                            }
-                            if (tabScrollState.canScrollForward) {
-                                drawRect(
-                                    brush =
-                                        Brush.horizontalGradient(
-                                            colors = listOf(Color.Transparent, edgeColor),
-                                            startX = size.width - fade,
-                                            endX = size.width,
-                                        ),
-                                    topLeft = Offset(size.width - fade, 0f),
-                                    size = Size(fade, size.height),
-                                )
+                                .testTag(SettingsCategoryTestTags.SEARCH),
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.settings_search)) },
+                        trailingIcon = {
+                            if (query.isNotEmpty()) {
+                                IconButton(onClick = { onQueryChange("") }) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.ic_clear),
+                                        contentDescription =
+                                            stringResource(R.string.settings_search_clear),
+                                    )
+                                }
                             }
                         },
-                    scrollState = tabScrollState,
-                    edgePadding = AnkiMinerTokens.Space.related,
-                    // Default is 90.dp, which wastes ~40dp on a label as short as "UI".
-                    minTabWidth = AnkiMinerTokens.Layout.minTouchTarget,
-                ) {
-                    SettingsCategory.entries.forEach { category ->
-                        Tab(
-                            selected = selectedCategory == category,
-                            onClick = { onSelectedCategory(category) },
-                            text = {
-                                Text(
-                                    text = stringResource(category.label),
-                                    maxLines = 1,
-                                )
+                    )
+                    PrimaryScrollableTabRow(
+                        selectedTabIndex = selectedCategory.ordinal,
+                        // Eight word labels are ~1.8 screens wide at 360dp, so the strip still
+                        // scrolls. These fades are the affordance that the rest of it exists;
+                        // shortening the labels would buy ~40dp and cost clarity on the two least
+                        // self-evident tabs.
+                        modifier =
+                            Modifier.drawWithContent {
+                                drawContent()
+                                val fade = SettingsTabEdgeFade.toPx().coerceAtMost(size.width)
+                                if (tabScrollState.canScrollBackward) {
+                                    drawRect(
+                                        brush =
+                                            Brush.horizontalGradient(
+                                                colors = listOf(edgeColor, Color.Transparent),
+                                                startX = 0f,
+                                                endX = fade,
+                                            ),
+                                        size = Size(fade, size.height),
+                                    )
+                                }
+                                if (tabScrollState.canScrollForward) {
+                                    drawRect(
+                                        brush =
+                                            Brush.horizontalGradient(
+                                                colors = listOf(Color.Transparent, edgeColor),
+                                                startX = size.width - fade,
+                                                endX = size.width,
+                                            ),
+                                        topLeft = Offset(size.width - fade, 0f),
+                                        size = Size(fade, size.height),
+                                    )
+                                }
                             },
-                        )
+                        scrollState = tabScrollState,
+                        edgePadding = AnkiMinerTokens.Space.related,
+                        // Default is 90.dp, which wastes ~40dp on a label as short as "UI".
+                        minTabWidth = AnkiMinerTokens.Layout.minTouchTarget,
+                    ) {
+                        SettingsCategory.entries.forEach { category ->
+                            Tab(
+                                selected = selectedCategory == category,
+                                onClick = { onSelectedCategory(category) },
+                                text = {
+                                    Text(
+                                        text = stringResource(category.label),
+                                        maxLines = 1,
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
-        recorder.begin(selectedCategory)
-        content(selectedCategory)
+        if (query.isBlank()) {
+            recorder.begin(selectedCategory)
+            content(selectedCategory)
+        } else if (results.isEmpty()) {
+            item(key = "settings-search-empty", contentType = "search-empty") {
+                Text(
+                    text = stringResource(R.string.settings_search_no_results),
+                    modifier = Modifier.padding(AnkiMinerTokens.Space.content),
+                )
+            }
+        } else {
+            results.forEach { entry ->
+                item(key = "settings-search-${entry.id}", contentType = "search-result") {
+                    ListItem(
+                        headlineContent = { Text(entry.title) },
+                        supportingContent = { Text(entry.breadcrumb) },
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { onResultChosen(entry) },
+                    )
+                }
+            }
+        }
     }
 }
 

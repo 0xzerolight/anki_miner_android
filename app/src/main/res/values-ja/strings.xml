@@ -661,6 +661,9 @@
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">このパターンは無効な可能性があります。エンジンが拒否した場合、マイニングはフィルターを適用しません。</string>
     <string name="settings_filtering">フィルタリング</string>
+    <string name="settings_search">設定を検索</string>
+    <string name="settings_search_no_results">一致する設定はありません。</string>
+    <string name="settings_search_clear">検索をクリア</string>
     <string name="settings_known_words">ローカル既知単語データベースを使用</string>
     <string name="settings_exclude_hiragana">ひらがなのみの単語を除外</string>
     <string name="settings_exclude_katakana">カタカナのみの単語を除外</string>
