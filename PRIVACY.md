@@ -21,6 +21,10 @@ The app only contacts the network for these purposes, and only over HTTPS:
   term to jisho.org. Lookup terms can contain personal or sensitive text. The
   app adds no account identifier, but Jisho receives ordinary connection data
   such as the requester's IP address.
+- **Update check (GitHub):** unless switched off in Settings, the app asks
+  `api.github.com` once a day whether a newer release exists, and shows the
+  answer. It never downloads or installs anything, and sends no identifier —
+  GitHub receives ordinary connection data such as the requester's IP address.
 - **One-time resource downloads:** the Japanese tokenizer dictionary (UniDic) and
   any optional dictionary/frequency/pitch resources you choose are downloaded
   once from their public hosts (for example PyPI and the resource's own site) and

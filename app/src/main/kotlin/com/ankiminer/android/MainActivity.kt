@@ -162,6 +162,10 @@ class MainActivity : ComponentActivity() {
                 app.diagnosticsSettings.verboseLogging
                     .collectAsStateWithLifecycle(initialValue = false)
                     .value
+            val updateCheck =
+                app.updateCheckCoordinator.uiState
+                    .collectAsStateWithLifecycle()
+                    .value
             val resolved = resolveTheme(settings, isSystemInDarkTheme())
             // Dynamic schemes match the palette's light/dark choice, so its page decides bar icons.
             val iconAppearance =
@@ -251,6 +255,10 @@ class MainActivity : ComponentActivity() {
                     onShareDiagnosticsBundle = ::shareDiagnosticsBundle,
                     verboseLogging = verboseLogging,
                     onVerboseLoggingChange = app::setVerboseLogging,
+                    updateCheck = updateCheck,
+                    onUpdateCheckEnabledChange = app::setUpdateCheckEnabled,
+                    onCheckForUpdates = app::checkForUpdates,
+                    onSkipUpdate = app::skipAvailableUpdate,
                 )
             }
         }

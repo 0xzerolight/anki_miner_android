@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -39,6 +40,8 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.data.update.AvailableUpdate
+import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.DiagnosticsExportStep
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
@@ -87,6 +90,10 @@ internal data class SettingsScreenCallbacks(
     val onManageKnownWords: () -> Unit,
     val verboseLogging: Boolean,
     val onVerboseLoggingChange: (Boolean) -> Unit,
+    val updateCheck: UpdateCheckUiState,
+    val onUpdateCheckEnabledChange: (Boolean) -> Unit,
+    val onCheckForUpdates: () -> Unit,
+    val onSkipUpdate: () -> Unit,
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -1022,6 +1029,14 @@ private fun LazyListScope.diagnosticsSettings(
             onDismissBackupState = callbacks.onDismissBackupState,
         )
     }
+    settingsCard("update-check") {
+        UpdateCheckSection(
+            updateCheck = callbacks.updateCheck,
+            onEnabledChange = callbacks.onUpdateCheckEnabledChange,
+            onCheck = callbacks.onCheckForUpdates,
+            onSkip = callbacks.onSkipUpdate,
+        )
+    }
     settingsCard("reset-actions") {
         SettingsSection(stringResource(R.string.settings_reset_section)) {
             SettingsResetAction.entries.forEach { action ->
@@ -1111,6 +1126,66 @@ private fun LazyListScope.diagnosticsSettings(
     settingsCard("attributions") {
         TextButton(onClick = callbacks.onAttributions) {
             Text(stringResource(R.string.settings_attributions))
+        }
+    }
+}
+
+@Composable
+internal fun UpdateCheckSection(
+    updateCheck: UpdateCheckUiState,
+    onEnabledChange: (Boolean) -> Unit,
+    onCheck: () -> Unit,
+    onSkip: () -> Unit,
+) {
+    SettingsSection(stringResource(R.string.settings_update_section)) {
+        BooleanSetting(
+            label = stringResource(R.string.settings_update_check_enabled),
+            checked = updateCheck.enabled,
+            onCheckedChange = onEnabledChange,
+        )
+        Text(
+            stringResource(R.string.settings_update_check_detail),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        val checkEnabled = updateCheck.enabled && !updateCheck.checking
+        OutlinedButton(
+            onClick = onCheck,
+            enabled = checkEnabled,
+            modifier = Modifier.fillMaxWidth(),
+            colors = outlinedActionButtonColors(),
+            border = actionBorder(enabled = checkEnabled),
+        ) {
+            Text(stringResource(R.string.settings_update_check_now))
+        }
+        val available = updateCheck.available
+        when {
+            available != null ->
+                UpdateAvailableActions(available, onSkip)
+            updateCheck.lastCheckFailed ->
+                Text(stringResource(R.string.settings_update_failed))
+            updateCheck.lastCheckedAtMillis > 0L ->
+                Text(stringResource(R.string.settings_update_up_to_date))
+        }
+    }
+}
+
+@Composable
+internal fun UpdateAvailableActions(
+    available: AvailableUpdate,
+    onSkip: () -> Unit,
+) {
+    val uriHandler = LocalUriHandler.current
+    Text(stringResource(R.string.settings_update_available, available.version))
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        TextButton(onClick = { uriHandler.openUri(available.releasePageUrl) }) {
+            Text(stringResource(R.string.settings_update_view_release))
+        }
+        TextButton(onClick = onSkip) {
+            Text(stringResource(R.string.settings_update_skip))
         }
     }
 }
