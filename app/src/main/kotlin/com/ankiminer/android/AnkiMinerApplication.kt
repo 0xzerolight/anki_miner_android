@@ -22,9 +22,11 @@ import com.ankiminer.android.data.resources.SafArchiveStager
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
+import com.ankiminer.android.data.settings.AndroidSettingsDocumentReader
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.dictionary.BridgeDefinitionLookupService
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.AndroidDiagnosticsExporter
@@ -229,10 +231,15 @@ class AnkiMinerApplication : Application() {
     ) {
         DiagnosticsBundleStager(this, logFileSink, safSelectionInventory)
     }
-    private val resourceDocumentWriter: ResourceDocumentWriter by lazy(
+    internal val resourceDocumentWriter: ResourceDocumentWriter by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
         AndroidResourceDocumentWriter(contentResolver)
+    }
+    internal val settingsDocumentReader: SettingsDocumentReader by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        AndroidSettingsDocumentReader(contentResolver)
     }
 
     internal fun createDiagnosticsExporter(buildDiagnostics: () -> String): DiagnosticsExporter =

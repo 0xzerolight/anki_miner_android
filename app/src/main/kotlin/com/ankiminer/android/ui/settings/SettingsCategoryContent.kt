@@ -50,6 +50,7 @@ import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DiagnosticsExportState
+import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsFieldKey
 import com.ankiminer.android.vm.SetupUiState
@@ -69,6 +70,10 @@ internal data class SettingsScreenCallbacks(
     val onShareDiagnosticsBundle: () -> Unit,
     val onRetryDiagnosticsExport: () -> Unit,
     val onDismissDiagnosticsExport: () -> Unit,
+    val backupState: SettingsBackupState,
+    val onExportSettings: () -> Unit,
+    val onImportSettings: () -> Unit,
+    val onDismissBackupState: () -> Unit,
     val onReturnToActiveRun: (() -> Unit)?,
     val onAttributions: () -> Unit,
     val onRunSetupWizard: (() -> Unit)?,
@@ -1009,6 +1014,14 @@ private fun LazyListScope.diagnosticsSettings(
             )
         }
     }
+    settingsCard("settings-backup") {
+        SettingsBackupSection(
+            backupState = callbacks.backupState,
+            onExportSettings = callbacks.onExportSettings,
+            onImportSettings = callbacks.onImportSettings,
+            onDismissBackupState = callbacks.onDismissBackupState,
+        )
+    }
     settingsCard("reset-actions") {
         SettingsSection(stringResource(R.string.settings_reset_section)) {
             SettingsResetAction.entries.forEach { action ->
@@ -1098,6 +1111,68 @@ private fun LazyListScope.diagnosticsSettings(
     settingsCard("attributions") {
         TextButton(onClick = callbacks.onAttributions) {
             Text(stringResource(R.string.settings_attributions))
+        }
+    }
+}
+
+@Composable
+internal fun SettingsBackupSection(
+    backupState: SettingsBackupState,
+    onExportSettings: () -> Unit,
+    onImportSettings: () -> Unit,
+    onDismissBackupState: () -> Unit,
+) {
+    SettingsSection(stringResource(R.string.settings_backup_section)) {
+        Text(
+            stringResource(R.string.settings_backup_detail),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        val actionsEnabled = backupState !is SettingsBackupState.Working
+        OutlinedButton(
+            onClick = onExportSettings,
+            enabled = actionsEnabled,
+            modifier = Modifier.fillMaxWidth(),
+            colors = outlinedActionButtonColors(),
+            border = actionBorder(enabled = actionsEnabled),
+        ) {
+            Text(stringResource(R.string.settings_backup_export))
+        }
+        OutlinedButton(
+            onClick = onImportSettings,
+            enabled = actionsEnabled,
+            modifier = Modifier.fillMaxWidth(),
+            colors = outlinedActionButtonColors(),
+            border = actionBorder(enabled = actionsEnabled),
+        ) {
+            Text(stringResource(R.string.settings_backup_import))
+        }
+        when (val state = backupState) {
+            SettingsBackupState.Idle, SettingsBackupState.Working -> Unit
+            SettingsBackupState.Exported ->
+                Text(
+                    stringResource(R.string.settings_backup_exported),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            is SettingsBackupState.Imported ->
+                Text(
+                    if (state.ignored + state.rejected == 0) {
+                        stringResource(R.string.settings_backup_imported, state.applied)
+                    } else {
+                        stringResource(
+                            R.string.settings_backup_imported_skipped,
+                            state.applied,
+                            state.ignored + state.rejected,
+                        )
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            is SettingsBackupState.Failed ->
+                InlineFailureContainer(
+                    message = state.message.localized(),
+                    actionLabel = stringResource(R.string.b3_retry),
+                    onAction = onImportSettings,
+                    onDismiss = onDismissBackupState,
+                )
         }
     }
 }

@@ -7,6 +7,8 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.ResourceDocumentWriter
+import com.ankiminer.android.data.settings.AppliedSettingsBackup
 import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
@@ -17,12 +19,20 @@ import com.ankiminer.android.data.settings.InvalidAppSettingCode
 import com.ankiminer.android.data.settings.InvalidAppSettingException
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.data.settings.SettingsBackupCodec
+import com.ankiminer.android.data.settings.SettingsBackupException
+import com.ankiminer.android.data.settings.SettingsBackupFailure
+import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.localization.LocalizedStringResource
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -76,6 +86,24 @@ internal sealed interface SettingsSaveState {
     data class Failed(
         override val revision: Long,
     ) : SettingsSaveState
+}
+
+internal sealed interface SettingsBackupState {
+    data object Idle : SettingsBackupState
+
+    data object Working : SettingsBackupState
+
+    data object Exported : SettingsBackupState
+
+    data class Imported(
+        val applied: Int,
+        val ignored: Int,
+        val rejected: Int,
+    ) : SettingsBackupState
+
+    data class Failed(
+        val message: LocalizedStringResource,
+    ) : SettingsBackupState
 }
 
 /**
@@ -870,6 +898,9 @@ private fun subtitleRegexMessage(code: InvalidAppSettingCode): LocalizedStringRe
 internal class SettingsViewModel(
     private val repository: AppSettingsRepository,
     private val resources: ResourceManager,
+    private val documentReader: SettingsDocumentReader? = null,
+    private val documentWriter: ResourceDocumentWriter? = null,
+    private val appVersion: String = "",
 ) : ViewModel() {
     private val settings: StateFlow<AppSettings?> =
         repository.settings
@@ -885,6 +916,9 @@ internal class SettingsViewModel(
     private val mutableSaveState =
         MutableStateFlow<SettingsSaveState>(SettingsSaveState.Saved(0))
     val saveState: StateFlow<SettingsSaveState> = mutableSaveState.asStateFlow()
+    private val mutableBackupState =
+        MutableStateFlow<SettingsBackupState>(SettingsBackupState.Idle)
+    val backupState: StateFlow<SettingsBackupState> = mutableBackupState.asStateFlow()
     val resourceState: StateFlow<ResourceManagerState> = resources.state
     private val persistenceMutex = Mutex()
     private val successfulWrites = SuccessfulSettingsWriteTracker()
@@ -1052,10 +1086,18 @@ internal class SettingsViewModel(
      * autosave. `false` means settings have not loaded, so the caller must keep confirmation
      * visible. An active write never rejects or replaces an accepted reset.
      */
-    private fun save(transform: (AppSettings) -> AppSettings): Boolean {
+    private fun save(transform: (AppSettings) -> AppSettings): Boolean =
+        save(transform, completion = null)
+
+    private fun save(
+        transform: (AppSettings) -> AppSettings,
+        completion: CompletableDeferred<Boolean>?,
+    ): Boolean {
         if (!draftState.value.loaded) return false
         viewModelScope.launch {
             var flushAfterReset = false
+            var completedSuccessfully = false
+            var cancellationFailure: CancellationException? = null
             persistenceMutex.withLock {
                 val started = draftStore.state.value
                 saving.value = true
@@ -1075,7 +1117,9 @@ internal class SettingsViewModel(
                     if (completedRevision == started.editRevision) {
                         mutableSaveState.value = SettingsSaveState.Saved(completedRevision)
                     }
+                    completedSuccessfully = true
                 } catch (failure: CancellationException) {
+                    cancellationFailure = failure
                     throw failure
                 } catch (failure: InvalidAppSettingException) {
                     error.value = settingsValidationError(failure)
@@ -1086,11 +1130,108 @@ internal class SettingsViewModel(
                 } finally {
                     saving.value = false
                     flushAfterReset = draftStore.state.value.dirty
+                    cancellationFailure?.let { failure ->
+                        completion?.completeExceptionally(failure)
+                    } ?: completion?.complete(completedSuccessfully)
                 }
             }
             if (flushAfterReset) flushPendingWrites()
         }
         return true
+    }
+
+    fun dismissBackupState() {
+        mutableBackupState.value = SettingsBackupState.Idle
+    }
+
+    fun exportSettings(uri: String) {
+        val writer = documentWriter ?: return
+        mutableBackupState.value = SettingsBackupState.Working
+        viewModelScope.launch {
+            try {
+                val current = repository.settings.first()
+                val document = SettingsBackupCodec.encode(current, appVersion)
+                val bytes = document.toByteArray(Charsets.UTF_8)
+                withContext(Dispatchers.IO) {
+                    writer.open(uri)?.use { stream -> stream.write(bytes) }
+                        ?: throw IOException("DocumentsProvider returned no stream for $uri")
+                }
+                mutableBackupState.value = SettingsBackupState.Exported
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.SETTINGS,
+                    "backup.export",
+                    failure,
+                    "outcome" to "fail",
+                )
+                mutableBackupState.value =
+                    SettingsBackupState.Failed(
+                        LocalizedStringResource(R.string.settings_backup_export_failed),
+                    )
+            }
+        }
+    }
+
+    fun importSettings(uri: String) {
+        val reader = documentReader ?: return
+        mutableBackupState.value = SettingsBackupState.Working
+        viewModelScope.launch {
+            val parsed =
+                try {
+                    withContext(Dispatchers.IO) {
+                        SettingsBackupCodec.parse(reader.read(uri))
+                    }
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: Exception) {
+                    AppLog.w(
+                        LogComponent.SETTINGS,
+                        "backup.import",
+                        failure,
+                        "outcome" to "fail",
+                    )
+                    mutableBackupState.value =
+                        SettingsBackupState.Failed(settingsBackupImportFailureMessage(failure))
+                    return@launch
+                }
+
+            val saveCompletion = CompletableDeferred<Boolean>()
+            var report: AppliedSettingsBackup? = null
+            val accepted =
+                save(
+                    transform = { current ->
+                        with(SettingsBackupCodec) { parsed.applyTo(current) }
+                            .also { report = it }
+                            .settings
+                    },
+                    completion = saveCompletion,
+                )
+            if (!accepted) {
+                mutableBackupState.value =
+                    SettingsBackupState.Failed(
+                        LocalizedStringResource(R.string.settings_backup_import_failed),
+                    )
+                return@launch
+            }
+
+            val saveSucceeded = saveCompletion.await()
+            val applied = report
+            if (!saveSucceeded || applied == null) {
+                mutableBackupState.value =
+                    SettingsBackupState.Failed(
+                        LocalizedStringResource(R.string.settings_backup_import_failed),
+                    )
+            } else {
+                mutableBackupState.value =
+                    SettingsBackupState.Imported(
+                        applied = applied.appliedCount,
+                        ignored = applied.ignoredKeys.size,
+                        rejected = applied.rejectedKeys.size,
+                    )
+            }
+        }
     }
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
@@ -1121,11 +1262,31 @@ internal class SettingsViewModel(
     class Factory(
         private val repository: AppSettingsRepository,
         private val resources: ResourceManager,
+        private val documentReader: SettingsDocumentReader? = null,
+        private val documentWriter: ResourceDocumentWriter? = null,
+        private val appVersion: String = "",
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
             require(modelClass.isAssignableFrom(SettingsViewModel::class.java))
-            return SettingsViewModel(repository, resources) as T
+            return SettingsViewModel(
+                repository = repository,
+                resources = resources,
+                documentReader = documentReader,
+                documentWriter = documentWriter,
+                appVersion = appVersion,
+            ) as T
         }
     }
 }
+
+private fun settingsBackupImportFailureMessage(failure: Exception): LocalizedStringResource =
+    when ((failure as? SettingsBackupException)?.reason) {
+        SettingsBackupFailure.NOT_A_BACKUP ->
+            LocalizedStringResource(R.string.settings_backup_not_a_backup)
+        SettingsBackupFailure.TOO_LARGE ->
+            LocalizedStringResource(R.string.settings_backup_too_large)
+        SettingsBackupFailure.MALFORMED,
+        null,
+        -> LocalizedStringResource(R.string.settings_backup_import_failed)
+    }

@@ -7,6 +7,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 ### Added
 
 - The app carries the 29 colour themes the desktop version ships, and can follow the phone's own light/dark setting. Settings holds a light theme and a dark theme separately, so following the system swaps between the two you chose rather than between one fixed pair. On Android 12 and newer the app can instead take its colours from the wallpaper.
+- Settings can be saved to a file and loaded back. The file is plain JSON and carries everything on the Settings screen — the Anki target and field mapping, every filter and media option, and the order you put your dictionaries, frequency lists, pitch sources and audio packs in. It deliberately does not carry which resources are installed: on a new phone, import the packs first and the saved order attaches itself to them. Loading a file only changes what the file mentions, so a file written by an older version is safe to load, and anything it asks for that this version cannot use is skipped and counted rather than failing the whole load.
 
 ### Changed
 
