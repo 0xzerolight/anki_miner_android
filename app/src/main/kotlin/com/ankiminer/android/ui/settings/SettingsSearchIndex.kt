@@ -42,6 +42,7 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
                 "unidic",
                 "diagnostic-logging",
                 "settings-backup",
+                "update-check",
                 "reset-actions",
                 "tester-diagnostics",
                 "attributions",
@@ -314,6 +315,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "settings-backup",
             R.string.settings_backup_section,
             R.string.settings_backup_detail,
+        ),
+        entry(
+            "diagnostics.update_check",
+            SettingsCategory.DIAGNOSTICS,
+            "update-check",
+            R.string.settings_update_check_enabled,
+            R.string.settings_update_check_detail,
         ),
         entry(
             "diagnostics.reset",
