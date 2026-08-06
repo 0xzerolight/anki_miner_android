@@ -3,6 +3,7 @@ package com.ankiminer.android.data.settings
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.engine.BridgeJsonValue
+import com.ankiminer.android.ui.theme.ThemePalettes
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -19,15 +20,26 @@ class AppSettingsTest {
     }
 
     @Test
-    fun themeDefaultsToDarkAndWireCodecRoundTrips() {
+    fun themeDefaultsToDarkAndWireCodecRoundTripsAllPersistedModes() {
         assertEquals(ThemeMode.DARK, AppSettings().theme)
         assertFalse(AppSettings().setupWizardSeen)
         ThemeMode.entries.forEach { mode ->
             assertEquals(mode, ThemeMode.fromWire(mode.wireValue))
         }
+        assertEquals(ThemeMode.SYSTEM, ThemeMode.fromWire("system"))
         assertEquals(ThemeMode.DARK, ThemeMode.fromWire(null))
-        assertEquals(ThemeMode.DARK, ThemeMode.fromWire("solarized"))
-        assertEquals(ThemeMode.DARK, ThemeMode.fromWire(""))
+        assertEquals(ThemeMode.DARK, ThemeMode.fromWire("nonsense"))
+    }
+
+    @Test
+    fun themePaletteDefaultsResolveFromTheGeneratedTable() {
+        val settings = AppSettings()
+
+        assertEquals("light", settings.lightThemeKey)
+        assertEquals("dark", settings.darkThemeKey)
+        assertFalse(settings.dynamicColorEnabled)
+        assertTrue(settings.lightThemeKey in ThemePalettes.byKey)
+        assertTrue(settings.darkThemeKey in ThemePalettes.byKey)
     }
 
     @Test
