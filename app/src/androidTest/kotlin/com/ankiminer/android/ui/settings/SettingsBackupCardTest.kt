@@ -17,15 +17,17 @@ class SettingsBackupCardTest {
 
     @Test
     fun diagnosticsOffersEnabledSettingsFileActions() {
+        val recorder = SettingsCardIndexRecorder()
         composeRule.setContent {
             AnkiMinerTheme {
                 SettingsCategoryLayout(
                     selectedCategory = SettingsCategory.DIAGNOSTICS,
                     onSelectedCategory = {},
+                    recorder = recorder,
                     header = {},
                 ) { category ->
                     if (category == SettingsCategory.DIAGNOSTICS) {
-                        settingsCard("settings-backup") {
+                        settingsCard(category, recorder, "settings-backup") {
                             SettingsBackupSection(
                                 backupState = SettingsBackupState.Idle,
                                 onExportSettings = {},

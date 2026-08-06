@@ -130,6 +130,7 @@ internal fun LazyListScope.settingsCategoryContent(
     setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnosticsIdentity,
     diagnosticsExport: DiagnosticsExportState,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
     when (category) {
@@ -138,11 +139,13 @@ internal fun LazyListScope.settingsCategoryContent(
                 draft,
                 setup,
                 setupViewModel,
+                recorder,
                 callbacks,
             )
         SettingsCategory.MEDIA ->
             mediaSettings(
                 draft,
+                recorder,
                 callbacks.onDraftChange,
             )
         SettingsCategory.DICTIONARIES ->
@@ -151,6 +154,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 resources,
                 setup,
                 setupViewModel,
+                recorder,
                 callbacks,
             )
         SettingsCategory.AUDIO ->
@@ -159,6 +163,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 resources,
                 setup,
                 setupViewModel,
+                recorder,
                 callbacks,
             )
         SettingsCategory.FREQUENCY ->
@@ -167,6 +172,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 resources,
                 setup,
                 setupViewModel,
+                recorder,
                 callbacks,
             )
         SettingsCategory.FILTERING ->
@@ -175,11 +181,13 @@ internal fun LazyListScope.settingsCategoryContent(
                 resources,
                 setup,
                 setupViewModel,
+                recorder,
                 callbacks,
             )
         SettingsCategory.UI ->
             uiSettings(
                 draft,
+                recorder,
                 callbacks,
             )
         SettingsCategory.DIAGNOSTICS ->
@@ -188,6 +196,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 setupViewModel,
                 diagnostics,
                 diagnosticsExport,
+                recorder,
                 callbacks,
             )
     }
@@ -197,9 +206,10 @@ private fun LazyListScope.ankiSettings(
     draft: SettingsDraft,
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("anki-deck-options") {
+    settingsCard(SettingsCategory.ANKI, recorder, "anki-deck-options") {
         SettingsSection(stringResource(R.string.settings_anki_target)) {
             SettingTextField(
                 value = draft.deckName,
@@ -259,7 +269,7 @@ private fun LazyListScope.ankiSettings(
             )
         }
     }
-    settingsCard("anki-target") {
+    settingsCard(SettingsCategory.ANKI, recorder, "anki-target") {
         AnkiTargetCard(
             setup,
             setupViewModel::selectNoteType,
@@ -275,7 +285,7 @@ private fun LazyListScope.ankiSettings(
             },
         )
     }
-    settingsCard("anki-recovery") {
+    settingsCard(SettingsCategory.ANKI, recorder, "anki-recovery") {
         AnkiRecoveryCard(
             state = setup,
             onRefresh = setupViewModel::refresh,
@@ -294,16 +304,17 @@ private fun LazyListScope.ankiSettings(
         )
     }
     setup.ankiOperation?.let {
-        settingsCard("anki-operation") { AnkiOperationCard() }
+        settingsCard(SettingsCategory.ANKI, recorder, "anki-operation") { AnkiOperationCard() }
     }
 }
 
 /** Internal rather than private so the instrumented tests can compose the real group. */
 internal fun LazyListScope.mediaSettings(
     draft: SettingsDraft,
+    recorder: SettingsCardIndexRecorder,
     onDraftChange: (SettingsDraft) -> Unit,
 ) {
-    settingsCard("media-options") {
+    settingsCard(SettingsCategory.MEDIA, recorder, "media-options") {
         // Read once per composition: MimeTypeMap is a process-wide singleton and the answer cannot
         // change while the app runs.
         val avifNameable =
@@ -389,7 +400,7 @@ internal fun LazyListScope.mediaSettings(
     }
     // Its own card, after media-options: no failure origin deep-links into MEDIA, so appending here
     // cannot shift the hardcoded item indices in settingsCardIndexFor.
-    settingsCard("subtitle-text") {
+    settingsCard(SettingsCategory.MEDIA, recorder, "subtitle-text") {
         SettingsSection(stringResource(R.string.settings_subtitle_text)) {
             NullableToggle(
                 stringResource(R.string.settings_strip_annotations),
@@ -465,9 +476,10 @@ private fun LazyListScope.dictionarySettings(
     resources: ResourceManagerState,
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("catalog-dictionaries") {
+    settingsCard(SettingsCategory.DICTIONARIES, recorder, "catalog-dictionaries") {
         CatalogDictionaryCards(
             setup,
             setupViewModel::installCatalogDictionary,
@@ -486,7 +498,7 @@ private fun LazyListScope.dictionarySettings(
             }
         }
     }
-    settingsCard("custom-dictionary") {
+    settingsCard(SettingsCategory.DICTIONARIES, recorder, "custom-dictionary") {
         CustomDictionaryImportCard(
             state = setup,
             onSlotChanged = setupViewModel::setCustomSlotId,
@@ -501,7 +513,7 @@ private fun LazyListScope.dictionarySettings(
             },
         )
     }
-    settingsCard("pitch") {
+    settingsCard(SettingsCategory.DICTIONARIES, recorder, "pitch") {
         PitchImportCard(
             state = setup,
             onImport = callbacks.onImportPitch,
@@ -515,7 +527,7 @@ private fun LazyListScope.dictionarySettings(
             },
         )
     }
-    settingsCard("dictionary-chain") {
+    settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-chain") {
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
             ResourceChainEditor(
                 choices = draft.dictionarySources,
@@ -576,7 +588,7 @@ private fun LazyListScope.dictionarySettings(
     // constants. Moving dictionary-inventory back above dictionary-lookup silently shifts the
     // DICTIONARY_LOOKUP index whenever the inventory is hidden.
     if (setup.dictionaries.any { it.isUsable }) {
-        settingsCard("dictionary-lookup") {
+        settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-lookup") {
             DictionaryLookupCard(
                 state = setup,
                 onTermChanged = setupViewModel::setLookupTerm,
@@ -596,7 +608,9 @@ private fun LazyListScope.dictionarySettings(
     // Last card in the category, so gating it shifts no deep-link index. Gated here as well as
     // inside the composable because an empty settingsCard still contributes its own padding.
     if (setup.dictionaries.any { !it.isUsable }) {
-        settingsCard("dictionary-inventory") { DictionaryInventoryCard(setup) }
+        settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-inventory") {
+            DictionaryInventoryCard(setup)
+        }
     }
     // No operation card here: the shared header renders the one ResourceOperationCard for
     // setup.operation, and a second copy on this tab meant two Cancel buttons for one operation.
@@ -607,9 +621,10 @@ private fun LazyListScope.audioSettings(
     resources: ResourceManagerState,
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("audio-chain") {
+    settingsCard(SettingsCategory.AUDIO, recorder, "audio-chain") {
         SettingsSection(stringResource(R.string.settings_audio_pack_chain)) {
             ResourceChainEditor(
                 choices = draft.audioPacks,
@@ -624,7 +639,7 @@ private fun LazyListScope.audioSettings(
             )
         }
     }
-    settingsCard("audio-import") {
+    settingsCard(SettingsCategory.AUDIO, recorder, "audio-import") {
         AudioPackImportCard(
             state = setup,
             onImport = callbacks.onImportAudioPack,
@@ -638,7 +653,7 @@ private fun LazyListScope.audioSettings(
             },
         )
     }
-    settingsCard("reading-audio") {
+    settingsCard(SettingsCategory.AUDIO, recorder, "reading-audio") {
         SettingsSection(stringResource(R.string.settings_reading_audio)) {
             BooleanSetting(
                 label = stringResource(R.string.settings_reading_tts),
@@ -662,9 +677,10 @@ private fun LazyListScope.frequencySettings(
     resources: ResourceManagerState,
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("frequency-chain") {
+    settingsCard(SettingsCategory.FREQUENCY, recorder, "frequency-chain") {
         SettingsSection(stringResource(R.string.settings_frequency_chain)) {
             ResourceChainEditor(
                 choices = draft.frequencySources,
@@ -679,7 +695,7 @@ private fun LazyListScope.frequencySettings(
             )
         }
     }
-    settingsCard("frequency-import") {
+    settingsCard(SettingsCategory.FREQUENCY, recorder, "frequency-import") {
         FrequencyImportCard(
             state = setup,
             onImport = callbacks.onImportFrequency,
@@ -700,9 +716,10 @@ private fun LazyListScope.filteringSettings(
     resources: ResourceManagerState,
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("filtering-options") {
+    settingsCard(SettingsCategory.FILTERING, recorder, "filtering-options") {
         SettingsSection(stringResource(R.string.settings_filtering)) {
             NullableToggle(
                 stringResource(R.string.settings_known_words),
@@ -814,7 +831,7 @@ private fun LazyListScope.filteringSettings(
             }
         }
     }
-    settingsCard("known-words-import") {
+    settingsCard(SettingsCategory.FILTERING, recorder, "known-words-import") {
         KnownWordsImportCard(
             state = setup,
             onImport = callbacks.onImportKnownWords,
@@ -831,7 +848,7 @@ private fun LazyListScope.filteringSettings(
             },
         )
     }
-    settingsCard("word-lists") {
+    settingsCard(SettingsCategory.FILTERING, recorder, "word-lists") {
         WordListImportCard(
             state = setup,
             blacklistEnabled = draft.useBlacklist,
@@ -855,15 +872,18 @@ private fun LazyListScope.filteringSettings(
         )
     }
     setup.lastLocalImport?.let { imported ->
-        settingsCard("filtering-import-result") { LocalImportResultCard(imported) }
+        settingsCard(SettingsCategory.FILTERING, recorder, "filtering-import-result") {
+            LocalImportResultCard(imported)
+        }
     }
 }
 
 private fun LazyListScope.uiSettings(
     draft: SettingsDraft,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("ui-options") {
+    settingsCard(SettingsCategory.UI, recorder, "ui-options") {
         var editingSlot by rememberSaveable { mutableStateOf<String?>(null) }
         val editing = editingSlot?.let(ThemeSlot::valueOf)
         SettingsSection(stringResource(R.string.settings_ui_section)) {
@@ -956,9 +976,10 @@ private fun LazyListScope.diagnosticsSettings(
     setupViewModel: SetupViewModel,
     diagnostics: TesterDiagnosticsIdentity,
     diagnosticsExport: DiagnosticsExportState,
+    recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard("diagnostic-runtime") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "diagnostic-runtime") {
         SettingsSection(stringResource(R.string.b3_diagnostics_runtime)) {
             Text(stringResource(R.string.readiness_python, pythonStatus(setup.python)))
             Text(
@@ -986,7 +1007,7 @@ private fun LazyListScope.diagnosticsSettings(
     // and a permanently visible "Japanese tokenizer - required" card with a Repair button reads
     // as a fault report. Repair re-downloads ~45 MiB and then no-ops when nothing is wrong.
     if (!setup.uniDicInstalled || setup.failure?.origin == ResourceFailureOrigin.UNIDIC) {
-        settingsCard("unidic") {
+        settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "unidic") {
             ResourceCard(
                 title = stringResource(R.string.unidic_resource_title),
                 description = stringResource(R.string.unidic_resource_description),
@@ -1008,7 +1029,7 @@ private fun LazyListScope.diagnosticsSettings(
             )
         }
     }
-    settingsCard("diagnostic-logging") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "diagnostic-logging") {
         SettingsSection(stringResource(R.string.settings_verbose_logging_section)) {
             BooleanSetting(
                 label = stringResource(R.string.settings_verbose_logging),
@@ -1021,7 +1042,7 @@ private fun LazyListScope.diagnosticsSettings(
             )
         }
     }
-    settingsCard("settings-backup") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "settings-backup") {
         SettingsBackupSection(
             backupState = callbacks.backupState,
             onExportSettings = callbacks.onExportSettings,
@@ -1029,7 +1050,7 @@ private fun LazyListScope.diagnosticsSettings(
             onDismissBackupState = callbacks.onDismissBackupState,
         )
     }
-    settingsCard("update-check") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "update-check") {
         UpdateCheckSection(
             updateCheck = callbacks.updateCheck,
             onEnabledChange = callbacks.onUpdateCheckEnabledChange,
@@ -1037,7 +1058,7 @@ private fun LazyListScope.diagnosticsSettings(
             onSkip = callbacks.onSkipUpdate,
         )
     }
-    settingsCard("reset-actions") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "reset-actions") {
         SettingsSection(stringResource(R.string.settings_reset_section)) {
             SettingsResetAction.entries.forEach { action ->
                 OutlinedButton(
@@ -1055,7 +1076,7 @@ private fun LazyListScope.diagnosticsSettings(
             }
         }
     }
-    settingsCard("tester-diagnostics") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "tester-diagnostics") {
         SettingsSection(stringResource(R.string.settings_tester_diagnostics)) {
             Text(
                 stringResource(
@@ -1123,7 +1144,7 @@ private fun LazyListScope.diagnosticsSettings(
             }
         }
     }
-    settingsCard("attributions") {
+    settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "attributions") {
         TextButton(onClick = callbacks.onAttributions) {
             Text(stringResource(R.string.settings_attributions))
         }

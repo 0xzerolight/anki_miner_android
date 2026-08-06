@@ -49,9 +49,11 @@ class AnimatedScreenshotSettingsTest {
                     ),
                 )
             }
+            val recorder = remember { SettingsCardIndexRecorder() }
             AnkiMinerTheme {
                 LazyColumn(Modifier.testTag(SettingsCategoryTestTags.LIST)) {
-                    mediaSettings(draft) { draft = it }
+                    recorder.begin(SettingsCategory.MEDIA)
+                    mediaSettings(draft, recorder) { draft = it }
                 }
             }
         }

@@ -17,15 +17,17 @@ class UpdateCheckCardTest {
     val composeRule = createComposeRule()
 
     private fun setDiagnostics(updateCheck: UpdateCheckUiState) {
+        val recorder = SettingsCardIndexRecorder()
         composeRule.setContent {
             AnkiMinerTheme {
                 SettingsCategoryLayout(
                     selectedCategory = SettingsCategory.DIAGNOSTICS,
                     onSelectedCategory = {},
+                    recorder = recorder,
                     header = {},
                 ) { category ->
                     if (category == SettingsCategory.DIAGNOSTICS) {
-                        settingsCard("update-check") {
+                        settingsCard(category, recorder, "update-check") {
                             UpdateCheckSection(
                                 updateCheck = updateCheck,
                                 onEnabledChange = {},

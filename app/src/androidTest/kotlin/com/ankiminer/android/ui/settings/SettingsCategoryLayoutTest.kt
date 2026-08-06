@@ -22,12 +22,14 @@ class SettingsCategoryLayoutTest {
     fun onlySelectedCategoryExistsAndEachCategoryRestoresItsPosition() {
         var selected by mutableStateOf(SettingsCategory.ANKI)
         val rows = List(100) { it }
+        val recorder = SettingsCardIndexRecorder()
 
         composeRule.setContent {
             AnkiMinerTheme {
                 SettingsCategoryLayout(
                     selectedCategory = selected,
                     onSelectedCategory = { selected = it },
+                    recorder = recorder,
                     header = {},
                 ) { category ->
                     items(

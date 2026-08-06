@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -138,6 +139,7 @@ internal fun rememberSettingsCategoryListStates(): Map<SettingsCategory, LazyLis
 internal fun SettingsCategoryLayout(
     selectedCategory: SettingsCategory,
     onSelectedCategory: (SettingsCategory) -> Unit,
+    recorder: SettingsCardIndexRecorder,
     header: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     listStates: Map<SettingsCategory, LazyListState> = rememberSettingsCategoryListStates(),
@@ -223,6 +225,7 @@ internal fun SettingsCategoryLayout(
                 }
             }
         }
+        recorder.begin(selectedCategory)
         content(selectedCategory)
     }
 }
@@ -232,12 +235,24 @@ internal fun SettingsCategoryLayout(
  * border plus a second inset, so setting text started at x=32dp behind two competing edges.
  */
 internal fun LazyListScope.settingsCard(
+    category: SettingsCategory,
+    recorder: SettingsCardIndexRecorder,
     key: String,
     content: @Composable () -> Unit,
 ) {
+    recorder.record(category, key)
     item(key = key, contentType = "card") {
+        val modifier =
+            if (recorder.highlightedKey == key) {
+                Modifier.background(
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    shape = MaterialTheme.shapes.medium,
+                )
+            } else {
+                Modifier
+            }
         Column(
-            Modifier.padding(
+            modifier.padding(
                 horizontal = AnkiMinerTokens.Space.content,
                 vertical = AnkiMinerTokens.Space.group,
             ),

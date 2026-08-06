@@ -410,6 +410,7 @@ private fun SettingsScreen(
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
     val listStates = rememberSettingsCategoryListStates()
+    val recorder = remember { SettingsCardIndexRecorder() }
     var resetConfirmation by remember {
         mutableStateOf(SettingsResetConfirmationState())
     }
@@ -505,6 +506,7 @@ private fun SettingsScreen(
         onSelectedCategory = { category ->
             selectedCategory = category
         },
+        recorder = recorder,
         listStates = listStates,
         modifier = modifier,
         header = {
@@ -589,6 +591,7 @@ private fun SettingsScreen(
             setupViewModel = setupViewModel,
             diagnostics = diagnostics,
             diagnosticsExport = diagnosticsExport,
+            recorder = recorder,
             callbacks = callbacks,
         )
     }
