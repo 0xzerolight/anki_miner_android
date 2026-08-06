@@ -7,6 +7,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 | Component | Evidence in this repository | Recorded terms or status |
 |---|---|---|
 | Anki Miner Python engine | `app/src/main/python/anki_miner/`, `tools/engine-sync/engine.lock`, `app/src/main/python/.engine-sync-manifest.json` | GPL-3.0-or-later; full text is packaged at `app/src/main/python/anki_miner/LICENSE` |
+| Theme colour palettes | `tools/themes/palettes/`, `tools/themes/themes.lock`, `themes-LICENSE.md` | Per-family MIT palette attributions; published hex values only, no upstream source |
 | AnkiDroid API source | `third_party/ankidroid-api/manifest.json`, `NOTICE.md`, `upstream/` | Per-file LGPL-3.0-only, LGPL-3.0-or-later, and the recorded permissive `FlashCardsContract` notice |
 | MeCab and mecab_for_dart-derived source | `third_party/mecab/source-manifest.json` and both `LICENSE.*` files | BSD-3-Clause |
 | FFmpeg, LAME, Opus, dav1d, libwebp, and libaom CLI build | `third_party/ffmpeg/` (license texts and `NOTICE.md`), `tools/ffmpeg/sources.lock`, build recipes, and committed `jniLibs` executables | FFmpeg 7.1.5 LGPL-2.1-or-later; LAME 3.100 LGPL-2.0-or-later (GNU Library GPL v2); Opus 1.5.2 BSD-3-Clause; dav1d 1.5.0 BSD-2-Clause; libwebp 1.4.0 BSD-3-Clause; libaom 3.12.1 BSD-2-Clause |

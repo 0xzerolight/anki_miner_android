@@ -102,29 +102,13 @@ internal data class DisabledActionColors(
     val enabledContainer: Color,
 )
 
-internal val LightDisabledActionColors =
-    DisabledActionColors(
-        content = Color(0xFF59625F),
-        border = Color(0xFF59625F),
-        container = Color(0xFFE3EAE7),
-        enabledContainer = Color(0xFF006A61),
-    )
-
-internal val DarkDisabledActionColors =
-    DisabledActionColors(
-        content = Color(0xFFAFB9B5),
-        border = Color(0xFFAFB9B5),
-        container = Color(0xFF28312F),
-        enabledContainer = Color(0xFF53DBCC),
-    )
-
 /**
- * Set by [AnkiMinerTheme]. These stay hand-tuned rather than mapping onto scheme roles: the nearest
- * candidates (`outline` on `surfaceContainerHighest`) measure 3.48:1 light and 3.90:1 dark, below
- * the 4.5:1 that `DesignSystemTest` holds these values to.
+ * Set by [AnkiMinerTheme] from the active scheme. Derived rather than mapped onto scheme roles: the
+ * nearest candidates measure below the 4.5:1 that `DesignSystemTest` holds them to, and with 29
+ * palettes plus a runtime Material You scheme there is nothing to hand-tune against.
  */
 internal val LocalDisabledActionColors =
-    staticCompositionLocalOf { DarkDisabledActionColors }
+    staticCompositionLocalOf { disabledActionColorsFor(ThemePalettes.Dark.toColorScheme()) }
 
 private val BaseFontFamily = FontFamily.SansSerif
 

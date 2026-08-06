@@ -40,6 +40,9 @@ enum class PitchCategoryFormat(val wireValue: String) {
 enum class ThemeMode(val wireValue: String) {
     LIGHT("light"),
     DARK("dark"),
+
+    /** Follows the device's light/dark setting, switching between the two palette picks. */
+    SYSTEM("system"),
     ;
 
     companion object {
@@ -69,6 +72,11 @@ data class AppSettings(
     /** The onboarding wizard was offered once and completed or skipped. */
     val setupWizardSeen: Boolean = false,
     val theme: ThemeMode = ThemeMode.DARK,
+    /** Palette keys from the generated theme table; see `ui/theme/ThemePalette.kt`. */
+    val lightThemeKey: String = "light",
+    val darkThemeKey: String = "dark",
+    /** Material You device colours, honoured only on API 31 and above. */
+    val dynamicColorEnabled: Boolean = false,
     val deckName: String? = null,
     /** Anki deck scopes omitted while collecting known vocabulary. Parent names cover children. */
     val excludedDecks: List<String> = emptyList(),

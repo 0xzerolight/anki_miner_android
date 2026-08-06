@@ -4,6 +4,15 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- The app carries the 29 colour themes the desktop version ships, and can follow the phone's own light/dark setting. Settings holds a light theme and a dark theme separately, so following the system swaps between the two you chose rather than between one fixed pair. On Android 12 and newer the app can instead take its colours from the wallpaper.
+- Settings can be saved to a file and loaded back. The file is plain JSON and carries everything on the Settings screen — the Anki target and field mapping, every filter and media option, and the order you put your dictionaries, frequency lists, pitch sources and audio packs in. It deliberately does not carry which resources are installed: on a new phone, import the packs first and the saved order attaches itself to them. Loading a file only changes what the file mentions, so a file written by an older version is safe to load, and anything it asks for that this version cannot use is skipped and counted rather than failing the whole load.
+
+### Changed
+
+- The default look is now the same indigo the desktop app opens with, so the two clients open looking alike. The teal the Android version used until now has been retired rather than kept under a name, so anyone who had not chosen a theme will see the new colours after updating; the theme list offers twenty-nine alternatives, several of them close to the old palette.
+
 ### Fixed
 
 - Local audio stopped being added to cards for any word that had been mined before. The first time a word was mined its audio attached normally; every time after that the card was created silently without it, with no error and nothing on screen to explain it. The app was reserving each media filename permanently, so the second attempt asked for a name the first one still held. Only audio from local packs was affected, because it is the one file that is byte-for-byte the same every run — screenshots and sentence audio are re-extracted each time and never collide. Words already blocked this way work again on the next run; nothing has to be reimported or reset.

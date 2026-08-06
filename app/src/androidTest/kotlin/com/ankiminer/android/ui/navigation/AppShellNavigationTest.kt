@@ -30,6 +30,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.vm.NavigationWorkflowState
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -52,7 +53,7 @@ class AppShellNavigationTest {
             val baseDensity = LocalDensity.current.density
             var destination by remember { mutableStateOf(AnkiMinerDestination.READING) }
             CompositionLocalProvider(LocalDensity provides Density(baseDensity, 2f)) {
-                AnkiMinerTheme(darkTheme = false) {
+                AnkiMinerTheme(palette = ThemePalettes.Light) {
                     AnkiMinerAppShell(
                         currentDestination = destination,
                         videoWorkflow = NavigationWorkflowState.REVIEW,
@@ -109,7 +110,7 @@ class AppShellNavigationTest {
 
         composeRule.setContent {
             focusManager = LocalFocusManager.current
-            AnkiMinerTheme(darkTheme = false) {
+            AnkiMinerTheme(palette = ThemePalettes.Light) {
                 AnkiMinerAppShell(
                     currentDestination = AnkiMinerDestination.VIDEO,
                     snackbarHostState = remember { SnackbarHostState() },

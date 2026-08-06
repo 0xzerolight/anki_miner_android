@@ -38,6 +38,8 @@ import com.ankiminer.android.ui.reading.ReadingMiningScreen
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.MessageSnackbarEffect
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import com.ankiminer.android.ui.theme.ThemePalette
+import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.ui.video.VideoMiningScreen
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizardCallbacks
@@ -292,7 +294,7 @@ class UiAuditScreenshotTest {
             mutableStateOf(
                 CaptureRequest(
                     target = targets.first(),
-                    darkTheme = false,
+                    palette = ThemePalettes.Light,
                     fontScale = FONT_SCALES.first(),
                 ),
             )
@@ -301,13 +303,13 @@ class UiAuditScreenshotTest {
         }
 
         targets.forEach { target ->
-            THEMES.forEach { darkTheme ->
+            THEMES.forEach { palette ->
                 FONT_SCALES.forEach { fontScale ->
                     composeRule.runOnIdle {
                         request =
                             CaptureRequest(
                                 target = target,
-                                darkTheme = darkTheme,
+                                palette = palette,
                                 fontScale = fontScale,
                             )
                     }
@@ -374,11 +376,11 @@ class UiAuditScreenshotTest {
     @Composable
     private fun CaptureFrame(request: CaptureRequest) {
         val baseDensity = LocalDensity.current.density
-        key(request.target.screen, request.target.state, request.darkTheme, request.fontScale) {
+        key(request.target.screen, request.target.state, request.palette.key, request.fontScale) {
             CompositionLocalProvider(
                 LocalDensity provides Density(baseDensity, request.fontScale),
             ) {
-                AnkiMinerTheme(darkTheme = request.darkTheme) {
+                AnkiMinerTheme(palette = request.palette) {
                     val target = request.target
                     if (target.destination == null) {
                         target.content()
@@ -408,12 +410,12 @@ class UiAuditScreenshotTest {
 
     private data class CaptureRequest(
         val target: CaptureTarget,
-        val darkTheme: Boolean,
+        val palette: ThemePalette,
         val fontScale: Float,
     ) {
         val fileName: String
             get() {
-                val theme = if (darkTheme) "dark" else "light"
+                val theme = palette.key
                 val scale =
                     when (fontScale) {
                         1.0f -> 100
@@ -463,7 +465,10 @@ class UiAuditScreenshotTest {
     private companion object {
         const val UI_AUDIT_ARGUMENT = "uiAudit"
         const val NOTICES_LIST_TAG = "ui_audit_notices_list"
-        val THEMES = listOf(false, true)
+        // The capture matrix stays at two palettes on purpose. Adding all 29 would multiply every
+        // screen-and-state capture by 29 for no extra layout coverage, since a palette changes colour
+        // but never measurement.
+        private val THEMES = listOf(ThemePalettes.Light, ThemePalettes.Dark)
         val FONT_SCALES = listOf(1.0f, 1.3f, 2.0f)
     }
 }

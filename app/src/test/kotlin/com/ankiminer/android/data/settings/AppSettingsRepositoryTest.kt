@@ -463,6 +463,18 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `unknown stored light palette is quarantined to the default`() {
+        val preferences =
+            preferencesOf(
+                stringPreferencesKey("theme_light_palette") to "no-such-theme",
+            )
+
+        val settings = DataStoreAppSettingsRepository.decodePreferences(preferences)
+
+        assertEquals("light", settings.lightThemeKey)
+    }
+
+    @Test
     fun `legacy duplicate raw field map is quarantined without erasing unrelated settings`() {
         val preferences =
             preferencesOf(
@@ -543,6 +555,9 @@ class AppSettingsRepositoryTest {
         AppSettings(
             setupWizardSeen = true,
             theme = ThemeMode.LIGHT,
+            lightThemeKey = "solarized-light",
+            darkThemeKey = "catppuccin-mocha",
+            dynamicColorEnabled = true,
             deckName = "Japanese",
             excludedDecks = listOf("Japanese::Known"),
             noteType = "Lapis",
@@ -617,6 +632,18 @@ class AppSettingsRepositoryTest {
             corruptInt("settings_schema_version", original),
             corruptBoolean("setup_wizard_seen", original.copy(setupWizardSeen = defaults.setupWizardSeen)),
             corruptString("theme_mode", original.copy(theme = defaults.theme)),
+            corruptString(
+                "theme_light_palette",
+                original.copy(lightThemeKey = defaults.lightThemeKey),
+            ),
+            corruptString(
+                "theme_dark_palette",
+                original.copy(darkThemeKey = defaults.darkThemeKey),
+            ),
+            corruptBoolean(
+                "theme_dynamic_color",
+                original.copy(dynamicColorEnabled = defaults.dynamicColorEnabled),
+            ),
             corruptString("deck_name", original.copy(deckName = defaults.deckName)),
             corruptString(
                 "excluded_decks_v1",

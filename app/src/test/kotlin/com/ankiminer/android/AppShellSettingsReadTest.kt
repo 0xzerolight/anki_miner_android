@@ -3,6 +3,7 @@ package com.ankiminer.android
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.ui.theme.resolveTheme
 import java.io.IOException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,19 +22,21 @@ import org.junit.Test
  */
 class AppShellSettingsReadTest {
     @Test
-    fun `an unreadable store still yields a shell theme`() =
+    fun `an unreadable store still yields default shell settings`() =
         runTest {
-            val theme = UnreadableSettingsRepository().appShellTheme().first()
+            val settings = UnreadableSettingsRepository().appShellSettings().first()
 
-            assertEquals(AppSettings().theme, theme)
+            assertEquals(AppSettings(), settings)
+            assertEquals("dark", resolveTheme(settings, systemInDarkTheme = true).palette.key)
         }
 
     @Test
-    fun `the shell theme follows the persisted value while the store is readable`() =
+    fun `the shell settings follow the persisted value while the store is readable`() =
         runTest {
-            val repository = StoredSettingsRepository(AppSettings(theme = ThemeMode.LIGHT))
+            val stored = AppSettings(theme = ThemeMode.LIGHT)
+            val repository = StoredSettingsRepository(stored)
 
-            assertEquals(ThemeMode.LIGHT, repository.appShellTheme().first())
+            assertEquals(stored, repository.appShellSettings().first())
         }
 
     @Test
