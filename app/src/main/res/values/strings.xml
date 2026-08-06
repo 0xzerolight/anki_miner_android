@@ -4,7 +4,8 @@
       Localization policy: this English file is the source of truth. Target catalogs mirror the
       desktop set: en, de, es, fr, id, it, ja, pt-BR, ru, vi, zh-CN, and zh-TW. Every committed
       values-<locale>/strings.xml must contain this complete key set and preserve format arguments.
-      Translator workflow and audit commands: docs/localization.md.
+      Indonesian lives in values-in: the legacy code is what older Android resolves.
+      Audit the catalogs with: python tools/localization/audit_android_localizations.py
     -->
     <string name="app_name">Anki Miner</string>
     <string name="video_phase_setup_title">Video Mining</string>
