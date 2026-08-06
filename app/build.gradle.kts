@@ -224,6 +224,12 @@ android {
         compose = true
     }
 
+    androidResources {
+        // Generates res/xml/locales_config from the values-<locale> directories and wires
+        // android:localeConfig, so Android 13+ offers a per-app language without a hand-kept list.
+        generateLocaleConfig = true
+    }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
