@@ -16,8 +16,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
@@ -138,6 +138,9 @@ class DictionarySectionsTest {
                 DictionaryInventoryCard(
                     state =
                         SetupUiState(
+                            // Default startup readiness is PENDING, which makes the state busy and
+                            // renders every Remove disabled; a click on one would be a silent no-op.
+                            resourceStartup = ResourceStartupReadiness.READY,
                             dictionaries =
                                 listOf(
                                     installedDictionary("jmdict", valid = true),
@@ -150,7 +153,7 @@ class DictionarySectionsTest {
         }
 
         composeRule.onAllNodesWithText("Remove").assertCountEquals(2)
-        composeRule.onAllNodesWithText("Remove")[0].performScrollTo().performClick()
+        composeRule.onAllNodesWithText("Remove")[0].performClick()
 
         assertEquals(listOf("jmdict"), removed)
     }
