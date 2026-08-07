@@ -453,4 +453,81 @@ class ResourceBridgeCodecTest {
             ResourceBridgeCodec.decodeLocalResourceList(inconsistentKnownWords)
         }
     }
+
+    @Test
+    fun dictionaryDeleteRequestCarriesTheSlot() {
+        val encoded = ResourceBridgeCodec.encodeDictionaryDeleteRequest("resource-abc", "jmdict")
+
+        assertTrue(encoded.contains(""""type":"resource.dictionary.delete""""))
+        assertTrue(encoded.contains(""""slotId":"jmdict""""))
+    }
+
+    @Test
+    fun localResourceDeleteRequestCarriesKindAndSlot() {
+        val encoded =
+            ResourceBridgeCodec.encodeLocalResourceDeleteRequest(
+                "resource-abc",
+                InstalledResourceKind.AUDIO_PACK,
+                "jpod101",
+            )
+
+        assertTrue(encoded.contains(""""type":"resource.local.delete""""))
+        assertTrue(encoded.contains(""""kind":"audio-pack""""))
+        assertTrue(encoded.contains(""""slotId":"jpod101""""))
+    }
+
+    @Test
+    fun localResourceDeleteRequestRejectsTheDictionaryKind() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ResourceBridgeCodec.encodeLocalResourceDeleteRequest(
+                "resource-abc",
+                InstalledResourceKind.DICTIONARY,
+                "jmdict",
+            )
+        }
+    }
+
+    @Test
+    fun deleteResponseFromAnotherSlotIsRejected() {
+        val raw =
+            """{"schemaVersion":1,"type":"resource.dictionary.deleted","payload":{"slotId":"other","removed":true}}"""
+
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeDictionaryDeleted(raw, "jmdict")
+        }
+    }
+
+    @Test
+    fun deleteResponseFromAnotherKindIsRejected() {
+        val raw =
+            """{"schemaVersion":1,"type":"resource.local.deleted","payload":{"kind":"frequency","slotId":"nhk","removed":true}}"""
+
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeLocalResourceDeleted(raw, InstalledResourceKind.PITCH, "nhk")
+        }
+    }
+
+    @Test
+    fun deleteResponseWithAnExtraFieldIsRejected() {
+        val raw =
+            """{"schemaVersion":1,"type":"resource.local.deleted","payload":{"kind":"pitch","slotId":"nhk","removed":true,"extra":1}}"""
+
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeLocalResourceDeleted(raw, InstalledResourceKind.PITCH, "nhk")
+        }
+    }
+
+    @Test
+    fun deleteResponsesReportWhetherAnythingWasRemoved() {
+        val dictionary =
+            """{"schemaVersion":1,"type":"resource.dictionary.deleted","payload":{"slotId":"jmdict","removed":false}}"""
+        val local =
+            """{"schemaVersion":1,"type":"resource.local.deleted","payload":{"kind":"pitch","slotId":"nhk","removed":true}}"""
+
+        assertEquals(false, ResourceBridgeCodec.decodeDictionaryDeleted(dictionary, "jmdict"))
+        assertEquals(
+            true,
+            ResourceBridgeCodec.decodeLocalResourceDeleted(local, InstalledResourceKind.PITCH, "nhk"),
+        )
+    }
 }
