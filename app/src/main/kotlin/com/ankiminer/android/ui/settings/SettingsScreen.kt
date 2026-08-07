@@ -512,6 +512,12 @@ private fun SettingsScreen(
         onConfirm = setupViewModel::confirmPendingReplace,
         onDismiss = setupViewModel::dismissPendingReplace,
     )
+    ResourceDeleteDialog(
+        pending = setup.pendingDelete,
+        busy = setup.busy,
+        onConfirm = setupViewModel::confirmPendingDelete,
+        onDismiss = setupViewModel::dismissPendingDelete,
+    )
     AudioPackChoiceDialog(
         choices = setup.audioPackChoices,
         busy = setup.busy,

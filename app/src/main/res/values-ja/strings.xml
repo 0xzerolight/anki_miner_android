@@ -519,6 +519,9 @@
     <string name="resource_replace_confirm_message">%1$sはトランザクション処理で置き換えられます。新しいインポートの検証が失敗した場合、Anki Minerは現在インストールされているものを復元します。</string>
     <string name="pitch_replace_confirm_message">%1$sは新しいファイルの検証後ただちに削除されます。バックアップは保持されません。</string>
     <string name="dictionary_replace_confirm">置き換え</string>
+    <string name="resource_remove">削除</string>
+    <string name="resource_delete_confirm_title">%1$sを削除しますか？</string>
+    <string name="resource_delete_confirm_message">%1$sをこの端末から削除します。Ankiからは何も削除されず、バックアップは保持されません。</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
     <string name="custom_dictionary_slot">固定辞書ID</string>
@@ -571,6 +574,7 @@
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 無効な一覧（エントリ%3$d件）。採掘前に置き換えてください</string>
+    <string name="local_resource_installed">%1$s [%2$s] · エントリ%3$d件</string>
     <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
     <string name="local_import_complete">ローカルインポート完了</string>
     <string name="frequency_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
@@ -597,7 +601,7 @@
     <string name="status_database_permission">データベース権限が必要</string>
     <string name="status_ready_api">準備完了 (API %1$d)</string>
     <string name="dictionary_test_title">オフライン辞書テスト</string>
-    <string name="dictionary_inventory_broken_title">修復が必要な辞書スロット</string>
+    <string name="dictionary_inventory_title">インストール済み辞書スロット</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · 無効または不完全（エントリ%3$d件）。採掘前にこのスロットを置き換えてください</string>
     <string name="dictionary_term">日本語の語</string>
     <string name="dictionary_render_html">辞書HTMLをそのまま表示</string>

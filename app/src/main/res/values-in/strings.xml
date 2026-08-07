@@ -517,6 +517,9 @@
     <string name="resource_replace_confirm_message">%1$s diganti secara transaksional. Jika impor baru gagal diverifikasi, Anki Miner memulihkan yang terpasang saat ini.</string>
     <string name="pitch_replace_confirm_message">%1$s dihapus segera setelah berkas baru diverifikasi. Tidak ada cadangan yang disimpan.</string>
     <string name="dictionary_replace_confirm">Ganti</string>
+    <string name="resource_remove">Hapus</string>
+    <string name="resource_delete_confirm_title">Hapus %1$s?</string>
+    <string name="resource_delete_confirm_message">%1$s dihapus dari perangkat ini. Tidak ada yang dihapus dari Anki, dan tidak ada cadangan yang disimpan.</string>
     <string name="dictionary_repair_confirm">Perbaiki slot</string>
     <string name="custom_dictionary_title">Impor ZIP Yomitan lain</string>
     <string name="custom_dictionary_slot">ID kamus stabil</string>
@@ -569,6 +572,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d entri</string>
     <string name="bundled_wordsets_unavailable">Kumpulan kata bawaan tidak dapat diinventarisasi.</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · inventaris tidak valid (%3$d entri); ganti sebelum mining</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d entri</string>
     <string name="pitch_inventory_invalid">%1$s · inventaris tidak valid (%2$d entri); ganti sebelum mining</string>
     <string name="local_import_complete">Impor lokal selesai</string>
     <string name="frequency_import_result">%1$s: %2$d entri; %3$d baris rusak dilewati</string>
@@ -595,7 +599,7 @@
     <string name="status_database_permission">izin database diperlukan</string>
     <string name="status_ready_api">siap (API %1$d)</string>
     <string name="dictionary_test_title">Uji kamus luring</string>
-    <string name="dictionary_inventory_broken_title">Slot kamus yang perlu diperbaiki</string>
+    <string name="dictionary_inventory_title">Slot kamus terpasang</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · tidak valid atau tidak lengkap (%3$d entri); ganti slot ini sebelum mining</string>
     <string name="dictionary_term">Istilah Jepang</string>
     <string name="dictionary_render_html">Render HTML kamus yang tepat</string>

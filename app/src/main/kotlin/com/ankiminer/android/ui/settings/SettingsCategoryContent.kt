@@ -31,6 +31,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.anki.AnkiSetupFailureAction
+import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
@@ -517,6 +518,7 @@ private fun LazyListScope.dictionarySettings(
         PitchImportCard(
             state = setup,
             onImport = callbacks.onImportPitch,
+            onRemove = { setupViewModel.requestResourceDelete(InstalledResourceKind.PITCH, it) },
             inlineFailure = {
                 ResourceOriginFailure(
                     setup,
@@ -607,9 +609,14 @@ private fun LazyListScope.dictionarySettings(
     }
     // Last card in the category, so gating it shifts no deep-link index. Gated here as well as
     // inside the composable because an empty settingsCard still contributes its own padding.
-    if (setup.dictionaries.any { !it.isUsable }) {
+    if (setup.dictionaries.any { it.occupied }) {
         settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-inventory") {
-            DictionaryInventoryCard(setup)
+            DictionaryInventoryCard(
+                state = setup,
+                onRemove = {
+                    setupViewModel.requestResourceDelete(InstalledResourceKind.DICTIONARY, it)
+                },
+            )
         }
     }
     // No operation card here: the shared header renders the one ResourceOperationCard for
@@ -643,6 +650,9 @@ private fun LazyListScope.audioSettings(
         AudioPackImportCard(
             state = setup,
             onImport = callbacks.onImportAudioPack,
+            onRemove = {
+                setupViewModel.requestResourceDelete(InstalledResourceKind.AUDIO_PACK, it)
+            },
             inlineFailure = {
                 ResourceOriginFailure(
                     setup,
@@ -699,6 +709,9 @@ private fun LazyListScope.frequencySettings(
         FrequencyImportCard(
             state = setup,
             onImport = callbacks.onImportFrequency,
+            onRemove = {
+                setupViewModel.requestResourceDelete(InstalledResourceKind.FREQUENCY, it)
+            },
             inlineFailure = {
                 ResourceOriginFailure(
                     setup,

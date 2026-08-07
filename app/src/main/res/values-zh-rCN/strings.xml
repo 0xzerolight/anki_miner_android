@@ -517,6 +517,9 @@
     <string name="resource_replace_confirm_message">将以事务方式替换 %1$s。若新导入未通过验证，Anki Miner 会恢复当前已安装的内容。</string>
     <string name="pitch_replace_confirm_message">新文件一经验证，便会移除 %1$s。不会保留其备份。</string>
     <string name="dictionary_replace_confirm">替换</string>
+    <string name="resource_remove">移除</string>
+    <string name="resource_delete_confirm_title">移除 %1$s？</string>
+    <string name="resource_delete_confirm_message">将从此设备删除 %1$s。不会从 Anki 中移除任何内容，也不会保留备份。</string>
     <string name="dictionary_repair_confirm">修复槽位</string>
     <string name="custom_dictionary_title">导入其他 Yomitan ZIP</string>
     <string name="custom_dictionary_slot">稳定词典 ID</string>
@@ -569,6 +572,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d 个条目</string>
     <string name="bundled_wordsets_unavailable">无法清点内置单词集。</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 清单无效（%3$d 个条目）；请在挖词前替换它</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d 个条目</string>
     <string name="pitch_inventory_invalid">%1$s · 清单无效（%2$d 个条目）；请在挖词前替换它</string>
     <string name="local_import_complete">本地导入完成</string>
     <string name="frequency_import_result">%1$s：%2$d 个条目；已跳过 %3$d 行格式错误的数据</string>
@@ -595,7 +599,7 @@
     <string name="status_database_permission">需要数据库权限</string>
     <string name="status_ready_api">就绪（API %1$d）</string>
     <string name="dictionary_test_title">离线词典测试</string>
-    <string name="dictionary_inventory_broken_title">需要修复的词典槽位</string>
+    <string name="dictionary_inventory_title">已安装的词典槽位</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · 无效或不完整（%3$d 个条目）；请在挖词前替换此确切槽位</string>
     <string name="dictionary_term">日语词条</string>
     <string name="dictionary_render_html">渲染完全一致的词典 HTML</string>

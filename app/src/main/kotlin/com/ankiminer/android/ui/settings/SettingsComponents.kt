@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +84,7 @@ import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
+import com.ankiminer.android.vm.PendingResourceDelete
 import com.ankiminer.android.vm.PendingResourceReplace
 import com.ankiminer.android.vm.ResourceReplaceKind
 import com.ankiminer.android.vm.SettingsSaveState
@@ -571,6 +573,58 @@ internal fun ResourceCard(
             ) { Text(actionLabel) }
         }
     }
+}
+
+/**
+ * Confirms removing an installed resource.
+ *
+ * Deliberately not [ResourceReplaceDialog] with a flag: that dialog's body promises the previous
+ * install is restored if verification fails, which is the opposite of what a delete does. A delete
+ * keeps no backup at all, so the wording and the destructive button colour have to differ.
+ */
+@Composable
+internal fun ResourceDeleteDialog(
+    pending: PendingResourceDelete?,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (pending == null) return
+    AlertDialog(
+        onDismissRequest = { if (!busy) onDismiss() },
+        title = {
+            Text(
+                stringResource(
+                    R.string.resource_delete_confirm_title,
+                    pending.installedLabel,
+                ),
+            )
+        },
+        text = {
+            Text(
+                stringResource(
+                    R.string.resource_delete_confirm_message,
+                    pending.installedLabel,
+                ),
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                enabled = !busy,
+                colors =
+                    ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+            ) { Text(stringResource(R.string.resource_remove)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss, enabled = !busy) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 /**

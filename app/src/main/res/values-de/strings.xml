@@ -519,6 +519,9 @@
     <string name="resource_replace_confirm_message">%1$s wird transaktional ersetzt. Schlägt die Überprüfung des neuen Imports fehl, stellt Anki Miner den aktuell installierten Zustand wieder her.</string>
     <string name="pitch_replace_confirm_message">%1$s wird entfernt, sobald die neue Datei überprüft ist. Es wird keine Sicherung behalten.</string>
     <string name="dictionary_replace_confirm">Ersetzen</string>
+    <string name="resource_remove">Entfernen</string>
+    <string name="resource_delete_confirm_title">%1$s entfernen?</string>
+    <string name="resource_delete_confirm_message">%1$s wird von diesem Gerät gelöscht. Aus Anki wird nichts entfernt, und es wird keine Sicherung behalten.</string>
     <string name="dictionary_repair_confirm">Slot reparieren</string>
     <string name="custom_dictionary_title">Anderes Yomitan-ZIP importieren</string>
     <string name="custom_dictionary_slot">Stabile Wörterbuch-ID</string>
@@ -571,6 +574,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d Einträge</string>
     <string name="bundled_wordsets_unavailable">Inventar der mitgelieferten Wortsets konnte nicht erstellt werden.</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · ungültiges Inventar (%3$d Einträge); vor dem Mining ersetzen</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d Einträge</string>
     <string name="pitch_inventory_invalid">%1$s · ungültiges Inventar (%2$d Einträge); vor dem Mining ersetzen</string>
     <string name="local_import_complete">Lokaler Import abgeschlossen</string>
     <string name="frequency_import_result">%1$s: %2$d Einträge; %3$d fehlerhafte Zeilen übersprungen</string>
@@ -597,7 +601,7 @@
     <string name="status_database_permission">Datenbankberechtigung erforderlich</string>
     <string name="status_ready_api">bereit (API %1$d)</string>
     <string name="dictionary_test_title">Offline-Wörterbuchtest</string>
-    <string name="dictionary_inventory_broken_title">Wörterbuch-Slots mit Reparaturbedarf</string>
+    <string name="dictionary_inventory_title">Installierte Wörterbuch-Slots</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · ungültig oder unvollständig (%3$d Einträge); diesen genauen Slot vor dem Mining ersetzen</string>
     <string name="dictionary_term">Japanischer Begriff</string>
     <string name="dictionary_render_html">Exaktes Wörterbuch-HTML rendern</string>

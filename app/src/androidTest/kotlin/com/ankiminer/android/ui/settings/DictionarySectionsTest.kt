@@ -11,8 +11,13 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
@@ -124,6 +129,46 @@ class DictionarySectionsTest {
             )
         assertTrue(light.contains("content=\"light\""))
     }
+
+    @Test
+    fun dictionaryInventoryCardOffersRemoveForEveryInstalledSlot() {
+        val removed = mutableListOf<String>()
+        composeRule.setContent {
+            AnkiMinerTheme {
+                DictionaryInventoryCard(
+                    state =
+                        SetupUiState(
+                            dictionaries =
+                                listOf(
+                                    installedDictionary("jmdict", valid = true),
+                                    installedDictionary("jitendex", valid = false),
+                                ),
+                        ),
+                    onRemove = removed::add,
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Remove")[0].performScrollTo().performClick()
+
+        assertEquals(listOf("jmdict"), removed)
+    }
+
+    private fun installedDictionary(slotId: String, valid: Boolean) =
+        InstalledDictionary(
+            slotId = slotId,
+            occupied = true,
+            valid = valid,
+            sourceName = slotId.replaceFirstChar(Char::uppercase),
+            sourceRevision = "1",
+            format = "yomitan",
+            entryCount = 10,
+            schemaOk = valid,
+            embeddedAttribution = emptyMap(),
+            catalogResourceId = null,
+            attribution = emptyList(),
+        )
 
     private class CountingWebView(context: Context) : WebView(context) {
         var loadCount = 0

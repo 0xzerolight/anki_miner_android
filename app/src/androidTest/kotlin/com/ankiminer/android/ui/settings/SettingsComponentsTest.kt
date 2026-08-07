@@ -29,7 +29,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.vm.PendingResourceDelete
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -222,6 +224,57 @@ class SettingsComponentsTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun resourceDeleteDialogNamesTheSlotAndConfirms() {
+        var confirmed = false
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ResourceDeleteDialog(
+                    pending =
+                        PendingResourceDelete(
+                            kind = InstalledResourceKind.PITCH,
+                            identity = "kanjium",
+                            installedLabel = "Kanjium",
+                        ),
+                    busy = false,
+                    onConfirm = { confirmed = true },
+                    onDismiss = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Remove Kanjium?").assertIsDisplayed()
+        composeRule.onNodeWithText("Remove").performClick()
+
+        assertTrue(confirmed)
+    }
+
+    @Test
+    fun resourceDeleteDialogDismissDeletesNothing() {
+        var confirmed = false
+        var dismissed = false
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ResourceDeleteDialog(
+                    pending =
+                        PendingResourceDelete(
+                            kind = InstalledResourceKind.PITCH,
+                            identity = "kanjium",
+                            installedLabel = "Kanjium",
+                        ),
+                    busy = false,
+                    onConfirm = { confirmed = true },
+                    onDismiss = { dismissed = true },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Cancel").performClick()
+
+        assertTrue(dismissed)
+        assertEquals(false, confirmed)
     }
 
     private companion object {

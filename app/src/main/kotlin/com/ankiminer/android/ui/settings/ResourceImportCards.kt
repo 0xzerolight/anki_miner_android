@@ -27,31 +27,70 @@ import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 
+/**
+ * One installed slot and its Remove button.
+ *
+ * The id is in the label because the id -- not the display name -- is what the priority chain and
+ * the engine key on, and a duplicate import differs from its twin only by id.
+ */
+@Composable
+private fun InstalledResourceRow(
+    detail: String,
+    invalid: Boolean,
+    busy: Boolean,
+    onRemove: () -> Unit,
+) {
+    Text(
+        detail,
+        color =
+            if (invalid) {
+                MaterialTheme.colorScheme.error
+            } else {
+                MaterialTheme.colorScheme.onSurface
+            },
+    )
+    OutlinedButton(
+        onClick = onRemove,
+        enabled = !busy,
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+        colors = outlinedActionButtonColors(),
+        border = actionBorder(!busy),
+    ) { Text(stringResource(R.string.resource_remove)) }
+}
+
 @Composable
 internal fun FrequencyImportCard(
     state: SetupUiState,
     onImport: () -> Unit,
+    onRemove: (String) -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.frequency_import_title), style = MaterialTheme.typography.titleMedium)
-            // Healthy sources are already listed by the Frequency priority editor. Broken ones are
-            // not: unlike dictionaries, an unusable frequency source raises no fatal inventory
-            // failure and is silently dropped from the chain, so this line is the only signal.
-            state.frequencySources
-                .filterNot { it.schemaOk && it.entryCount > 0 }
-                .forEach { source ->
-                    Text(
+            // Every installed source is listed here, not only broken ones: the priority editor
+            // shows the healthy ones but cannot remove them, and an unusable source is dropped
+            // from the chain entirely, so this card is the only place either can be deleted.
+            state.frequencySources.forEachIndexed { index, source ->
+                if (index > 0) HorizontalDivider()
+                val invalid = !(source.schemaOk && source.entryCount > 0)
+                InstalledResourceRow(
+                    detail =
                         stringResource(
-                            R.string.local_resource_inventory_invalid,
+                            if (invalid) {
+                                R.string.local_resource_inventory_invalid
+                            } else {
+                                R.string.local_resource_installed
+                            },
                             source.sourceName,
                             source.sourceId,
                             source.entryCount,
                         ),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                    invalid = invalid,
+                    busy = state.busy,
+                    onRemove = { onRemove(source.sourceId) },
+                )
+            }
             if (state.frequencySources.isEmpty()) Text(stringResource(R.string.frequency_none_installed))
             inlineFailure?.invoke()
             OutlinedButton(
@@ -69,27 +108,35 @@ internal fun FrequencyImportCard(
 internal fun PitchImportCard(
     state: SetupUiState,
     onImport: () -> Unit,
+    onRemove: (String) -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.pitch_import_title), style = MaterialTheme.typography.titleMedium)
-            // Healthy sources are listed by the pitch priority editor; a broken one is
-            // silently dropped from the chain, so this line is its only signal (the
-            // frequency card says the same thing the same way).
-            state.pitchSources
-                .filterNot { it.schemaOk && it.entryCount > 0 }
-                .forEach { source ->
-                    Text(
+            // Every installed source, healthy or not, for the reason the frequency card gives:
+            // the priority editor lists but cannot remove, and a broken source is not listed
+            // there at all.
+            state.pitchSources.forEachIndexed { index, source ->
+                if (index > 0) HorizontalDivider()
+                val invalid = !(source.schemaOk && source.entryCount > 0)
+                InstalledResourceRow(
+                    detail =
                         stringResource(
-                            R.string.local_resource_inventory_invalid,
+                            if (invalid) {
+                                R.string.local_resource_inventory_invalid
+                            } else {
+                                R.string.local_resource_installed
+                            },
                             source.sourceName,
                             source.sourceId,
                             source.entryCount,
                         ),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
+                    invalid = invalid,
+                    busy = state.busy,
+                    onRemove = { onRemove(source.sourceId) },
+                )
+            }
             if (state.pitchSources.isEmpty()) Text(stringResource(R.string.pitch_none_installed))
             inlineFailure?.invoke()
             OutlinedButton(
@@ -107,25 +154,33 @@ internal fun PitchImportCard(
 internal fun AudioPackImportCard(
     state: SetupUiState,
     onImport: () -> Unit,
+    onRemove: (String) -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.audio_pack_import_title), style = MaterialTheme.typography.titleMedium)
-            // Same as frequency: healthy packs are listed by the audio priority editor, and an
-            // unusable pack raises no fatal inventory failure, so only broken ones are printed.
-            state.audioPacks
-                .filterNot { it.contentAvailable && it.entryCount > 0 }
-                .forEach { pack ->
-                    Text(
+            // Same as frequency and pitch: the priority editor lists the healthy packs but
+            // cannot remove them, and a broken pack never reaches it.
+            state.audioPacks.forEachIndexed { index, pack ->
+                if (index > 0) HorizontalDivider()
+                val invalid = !(pack.contentAvailable && pack.entryCount > 0)
+                InstalledResourceRow(
+                    detail =
                         stringResource(
-                            R.string.local_resource_inventory_invalid,
+                            if (invalid) {
+                                R.string.local_resource_inventory_invalid
+                            } else {
+                                R.string.local_resource_installed
+                            },
                             pack.sourceName,
                             pack.packId,
                             pack.entryCount,
                         ),
-                        color = MaterialTheme.colorScheme.error,
-                    )
+                    invalid = invalid,
+                    busy = state.busy,
+                    onRemove = { onRemove(pack.packId) },
+                )
             }
             if (state.audioPacks.isEmpty()) Text(stringResource(R.string.audio_pack_none_installed))
             Text(stringResource(R.string.audio_pack_archive_guidance))

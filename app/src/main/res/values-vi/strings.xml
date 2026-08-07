@@ -517,6 +517,9 @@
     <string name="resource_replace_confirm_message">%1$s được thay thế theo giao dịch. Nếu lần nhập mới không xác minh được, Anki Miner sẽ khôi phục nội dung hiện đang cài đặt.</string>
     <string name="pitch_replace_confirm_message">%1$s được xóa ngay khi tệp mới được xác minh. Không giữ bản sao lưu của nó.</string>
     <string name="dictionary_replace_confirm">Thay thế</string>
+    <string name="resource_remove">Xóa</string>
+    <string name="resource_delete_confirm_title">Xóa %1$s?</string>
+    <string name="resource_delete_confirm_message">%1$s bị xóa khỏi thiết bị này. Không có gì bị xóa khỏi Anki và không giữ bản sao lưu.</string>
     <string name="dictionary_repair_confirm">Sửa chữa khe</string>
     <string name="custom_dictionary_title">Nhập ZIP Yomitan khác</string>
     <string name="custom_dictionary_slot">ID từ điển ổn định</string>
@@ -569,6 +572,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d mục</string>
     <string name="bundled_wordsets_unavailable">Không thể kiểm kê các bộ từ đi kèm.</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · bản kiểm kê không hợp lệ (%3$d mục); hãy thay thế trước khi khai thác</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d mục</string>
     <string name="pitch_inventory_invalid">%1$s · bản kiểm kê không hợp lệ (%2$d mục); hãy thay thế trước khi khai thác</string>
     <string name="local_import_complete">Đã hoàn tất nhập cục bộ</string>
     <string name="frequency_import_result">%1$s: %2$d mục; đã bỏ qua %3$d hàng sai định dạng</string>
@@ -595,7 +599,7 @@
     <string name="status_database_permission">cần quyền truy cập cơ sở dữ liệu</string>
     <string name="status_ready_api">sẵn sàng (API %1$d)</string>
     <string name="dictionary_test_title">Kiểm tra từ điển ngoại tuyến</string>
-    <string name="dictionary_inventory_broken_title">Các khe từ điển cần sửa chữa</string>
+    <string name="dictionary_inventory_title">Các khe từ điển đã cài đặt</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · không hợp lệ hoặc không đầy đủ (%3$d mục); thay thế đúng khe này trước khi khai thác</string>
     <string name="dictionary_term">Thuật ngữ tiếng Nhật</string>
     <string name="dictionary_render_html">Kết xuất HTML từ điển chính xác</string>
