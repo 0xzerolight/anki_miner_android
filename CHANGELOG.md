@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-08-07
+
 ### Added
 
 - Installed dictionaries, pitch sources, frequency lists and audio packs can be removed. Each import card on the Settings screen now lists everything it has installed, with its slot id and entry count, and a Remove button beside each one; removing asks for confirmation first and deletes only from this device, never from Anki. Until now nothing could be uninstalled, so a file imported twice under slightly different names left two copies with no way to get rid of either. This is also the way out of a resource that will not load: a broken slot blocks mining and says so on startup, and removing it now repairs that without clearing the app's data. UniDic has no Remove button — the tokenizer is what the whole app runs on.
@@ -11,6 +13,14 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 ### Changed
 
 - The long lists in Settings start folded away. A deck list is as long as your collection, and on a phone it buried everything under it and put a checkbox under your thumb on the way past. The decks to exclude from known-word scans, the dictionary, pitch, audio pack and frequency orders, and the bundled word sets each show a single line now — the name and how many of them are switched on — which opens the list when tapped. A list with nothing in it stays open, so the reason it is empty is still on screen.
+- Dictionary definitions are drawn in the colours of whatever theme the app is set to. Until now they were rendered as the dictionary shipped them — black text on white — which on a dark theme meant a white slab in the middle of the screen, and a white flash on every word before it filled in. An imported dictionary's own styling of its entries is left alone, the way Yomitan leaves it, so the parts a dictionary colours on purpose still look like that dictionary. Applies to the definition pane while curating and to the preview in Settings.
+- The mining screens give more of the phone to the words. The curation search box and filter row fold behind a chevron, Continue and Cancel sit side by side rather than stacked however narrow the phone is, the bottom navigation bar is shorter, and the tab screens no longer carry a title bar that only repeated the name of the tab already highlighted below it. Everything here reverses itself at large font scales, where the roomy layout is what keeps labels readable, and screens you reach from a tab keep their bar because that is where the back arrow lives.
+
+### Fixed
+
+- A dictionary definition longer than its pane could not be scrolled — the drag was taken by the word list underneath, so anything past the first few lines was unreachable. Definitions scroll on their own now, and the list still scrolls when the definition has nothing left to show.
+- An audio pack downloaded as a `.tar.xz`, `.tar.gz` or `.tar` archive can be imported directly; only `.zip` worked before, and the packs are not distributed as `.zip`. Two ways of getting it wrong now say what happened instead of failing blankly: picking the `.torrent` file rather than the archive it downloads, and a file provider that hands back something other than the archive's own bytes — the second is answered by copying the archive to the device and picking it again. The import card names the formats up front.
+- An audio-pack import interrupted while it was still examining the archive — the app killed, the phone rebooted — left its half-extracted working files on disk and no sign of them anywhere in the app. The interrupted import is now noticed on the next start, its leftovers are deleted, and it is reported with an offer to pick another archive.
 
 ## [0.5.0] - 2026-08-06
 
