@@ -25,6 +25,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -238,6 +241,33 @@ internal fun DictionaryLookupCard(
     }
 }
 
+private fun cssHex(color: Color): String = "#%06X".format(0xFFFFFF and color.toArgb())
+
+/**
+ * Wraps the engine renderer's HTML fragment in a theme envelope; the fragment itself is untouched.
+ *
+ * Known limitation: an imported dictionary's own CSS may set light backgrounds on entry elements
+ * (the renderer's scoper allows background properties) — those patches keep the dictionary
+ * author's colors, as Yomitan does; only the page canvas and default text follow the app theme.
+ */
+internal fun themedDictionaryHtml(
+    fragment: String,
+    surface: Color,
+    onSurface: Color,
+    accent: Color,
+): String {
+    val scheme = if (surface.luminance() < 0.5f) "dark" else "light"
+    return buildString {
+        append("<meta charset=\"utf-8\">")
+        append("<meta name=\"color-scheme\" content=\"").append(scheme).append("\">")
+        append("<style>:root{color-scheme:").append(scheme).append("}")
+        append("body{background-color:").append(cssHex(surface))
+        append(";color:").append(cssHex(onSurface)).append("}")
+        append("a{color:").append(cssHex(accent)).append("}</style>")
+        append(fragment)
+    }
+}
+
 /**
  * WebView that claims vertical drags from Compose ancestors while its own content overflows.
  *
@@ -263,6 +293,9 @@ internal fun DictionaryHtml(
     updateKey: Any? = null,
     webViewFactory: (Context) -> WebView = { context -> DictionaryWebView(context) },
 ) {
+    val scheme = MaterialTheme.colorScheme
+    val themedHtml = themedDictionaryHtml(html, scheme.surface, scheme.onSurface, scheme.primary)
+    val surfaceArgb = scheme.surface.toArgb()
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -274,17 +307,21 @@ internal fun DictionaryHtml(
                 settings.domStorageEnabled = false
                 settings.databaseEnabled = false
                 setNetworkAvailable(false)
+                // Themed before first paint so a slow load never flashes a white page.
+                setBackgroundColor(surfaceArgb)
             }
         },
         update = { webView ->
             // Keep unrelated lookup edits observable to this update block without reloading the
             // rendered result. AndroidView may update for any captured state change.
             updateKey?.hashCode()
-            // The engine renderer's HTML is loaded byte-for-byte; JavaScript, file/content access,
-            // and all network subresources remain disabled for user-imported dictionaries.
-            if (webView.tag != html) {
-                webView.loadDataWithBaseURL(null, html, "text/html", "UTF-8", null)
-                webView.tag = html
+            webView.setBackgroundColor(surfaceArgb)
+            // The engine renderer's HTML rides behind a theme envelope prefix; JavaScript,
+            // file/content access, and all network subresources remain disabled for
+            // user-imported dictionaries. A palette switch reloads once via the tag mismatch.
+            if (webView.tag != themedHtml) {
+                webView.loadDataWithBaseURL(null, themedHtml, "text/html", "UTF-8", null)
+                webView.tag = themedHtml
             }
         },
         onRelease = WebView::destroy,
