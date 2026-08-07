@@ -346,6 +346,7 @@
     <string name="settings_field_mapping">Pemetaan bidang</string>
     <string name="disclosure_expanded">Diperluas</string>
     <string name="disclosure_collapsed">Diciutkan</string>
+    <string name="settings_disclosure_summary">%1$s (%2$d dari %3$d)</string>
     <string name="anki_field_mapping_changes">Pemetaan berubah untuk tipe catatan ini: %1$s</string>
     <string name="anki_field_none">Tidak dipetakan</string>
     <string name="anki_card_type_title">Tipe kartu</string>

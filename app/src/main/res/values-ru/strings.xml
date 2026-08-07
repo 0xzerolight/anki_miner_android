@@ -346,6 +346,7 @@
     <string name="settings_field_mapping">Сопоставление полей</string>
     <string name="disclosure_expanded">Развёрнуто</string>
     <string name="disclosure_collapsed">Свёрнуто</string>
+    <string name="settings_disclosure_summary">%1$s (%2$d из %3$d)</string>
     <string name="anki_field_mapping_changes">Сопоставления для этого типа заметки изменены: %1$s</string>
     <string name="anki_field_none">Не сопоставлено</string>
     <string name="anki_card_type_title">Тип карточки</string>

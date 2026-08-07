@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- The long lists in Settings start folded away. A deck list is as long as your collection, and on a phone it buried everything under it and put a checkbox under your thumb on the way past. The decks to exclude from known-word scans, the dictionary, pitch, audio pack and frequency orders, and the bundled word sets each show a single line now — the name and how many of them are switched on — which opens the list when tapped. A list with nothing in it stays open, so the reason it is empty is still on screen.
+
 ## [0.5.0] - 2026-08-06
 
 ### Added

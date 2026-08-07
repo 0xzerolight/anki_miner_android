@@ -346,6 +346,7 @@
     <string name="settings_field_mapping">Feldzuordnung</string>
     <string name="disclosure_expanded">Ausgeklappt</string>
     <string name="disclosure_collapsed">Eingeklappt</string>
+    <string name="settings_disclosure_summary">%1$s (%2$d von %3$d)</string>
     <string name="anki_field_mapping_changes">Zuordnungen für diesen Notiztyp geändert: %1$s</string>
     <string name="anki_field_none">Nicht zugeordnet</string>
     <string name="anki_card_type_title">Kartentyp</string>

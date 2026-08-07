@@ -346,6 +346,7 @@
     <string name="settings_field_mapping">Mapeamento de campos</string>
     <string name="disclosure_expanded">Expandido</string>
     <string name="disclosure_collapsed">Recolhido</string>
+    <string name="settings_disclosure_summary">%1$s (%2$d de %3$d)</string>
     <string name="anki_field_mapping_changes">Mapeamentos alterados para este tipo de nota: %1$s</string>
     <string name="anki_field_none">Não mapeado</string>
     <string name="anki_card_type_title">Tipo de cartão</string>

@@ -38,9 +38,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -54,9 +57,11 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -103,6 +108,60 @@ internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
             modifier = Modifier.semantics { heading() },
             style = MaterialTheme.typography.titleMedium,
         )
+        content()
+    }
+}
+
+/**
+ * A sub-group of settings rows behind a disclosure, collapsed until asked.
+ *
+ * A user's deck list is as long as their collection, and every row of it composed inside one
+ * settings card: the settings below it were a scroll away and a stray tap flipped a toggle
+ * (issue #9). The header carries the selected/total counts so the group still says what it holds
+ * while closed.
+ *
+ * The state lives here rather than in the caller because every caller wants the same thing.
+ * [forceOpen] is for the one case that must not hide — an empty or invalid list whose only
+ * explanation is inside [content] — and it locks the header open, matching the field mapper.
+ */
+@Composable
+internal fun CollapsibleSettingGroup(
+    title: String,
+    selectedCount: Int,
+    totalCount: Int,
+    forceOpen: Boolean = false,
+    titleStyle: TextStyle = MaterialTheme.typography.titleSmall,
+    content: @Composable () -> Unit,
+) {
+    val expandedLabel = stringResource(R.string.disclosure_expanded)
+    val collapsedLabel = stringResource(R.string.disclosure_collapsed)
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val showContent = expanded || forceOpen
+    TextButton(
+        onClick = { expanded = !expanded },
+        enabled = !forceOpen,
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+                .semantics {
+                    heading()
+                    stateDescription = if (showContent) expandedLabel else collapsedLabel
+                },
+    ) {
+        Text(
+            stringResource(
+                R.string.settings_disclosure_summary,
+                title,
+                selectedCount,
+                totalCount,
+            ),
+            style = titleStyle,
+            textAlign = TextAlign.Start,
+            modifier = Modifier.weight(1f),
+        )
+    }
+    if (showContent) {
         content()
     }
 }

@@ -348,6 +348,7 @@
     <string name="settings_field_mapping">フィールドの対応</string>
     <string name="disclosure_expanded">展開</string>
     <string name="disclosure_collapsed">折りたたみ</string>
+    <string name="settings_disclosure_summary">%1$s（%2$d/%3$d）</string>
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
     <string name="anki_field_none">未対応付け</string>
     <string name="anki_card_type_title">カードタイプ</string>
