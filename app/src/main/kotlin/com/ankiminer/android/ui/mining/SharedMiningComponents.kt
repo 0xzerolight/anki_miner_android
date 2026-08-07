@@ -399,7 +399,7 @@ internal fun StickyCurationActions(
         shadowElevation = 6.dp,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.group),
+            modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related),
             verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             commandErrorMessage?.let { error ->
@@ -412,7 +412,10 @@ internal fun StickyCurationActions(
                         ),
                 )
             }
+            // Side-by-side at any width: the curation labels are short in every locale, and the
+            // stacked pair cost a full button row on small screens. fontScale >= 1.3 still stacks.
             AdaptiveActionGroup(
+                stackWidthThreshold = 0.dp,
                 primary = { actionModifier ->
                     Button(
                         onClick = onConfirm,

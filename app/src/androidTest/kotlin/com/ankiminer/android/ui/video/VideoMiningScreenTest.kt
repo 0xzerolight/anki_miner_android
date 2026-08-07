@@ -2,6 +2,8 @@ package com.ankiminer.android.ui.video
 
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
@@ -27,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.dictionary.CurationDefinition
@@ -823,6 +826,37 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate("candidate-other"))
             .assertDoesNotExist()
+    }
+
+    @Test
+    fun curationFooterActionsSitSideBySideOnNarrowScreens() {
+        val request = request()
+        composeRule.setContent {
+            AnkiMinerTheme {
+                Box(Modifier.width(320.dp)) {
+                    ScreenUnderTest(
+                        state =
+                            VideoMiningUiState(
+                                runState = MiningRunState.Curating(request),
+                                curation = curationState(request),
+                            ),
+                    )
+                }
+            }
+        }
+
+        val confirm =
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONFIRM_CURATION)
+                .fetchSemanticsNode()
+                .boundsInRoot
+        val cancel =
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CANCEL)
+                .fetchSemanticsNode()
+                .boundsInRoot
+        assertEquals(confirm.top, cancel.top, 1f)
+        assertTrue("cancel should sit left of confirm", cancel.right <= confirm.left)
     }
 
     @Test

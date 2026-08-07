@@ -43,6 +43,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -251,10 +252,11 @@ internal fun AdaptiveActionGroup(
     primary: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
     secondary: (@Composable (Modifier) -> Unit)? = null,
+    stackWidthThreshold: Dp = CompactLayoutWidthDp.dp,
 ) {
     BoxWithConstraints(modifier) {
         val stack =
-            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
+            maxWidth < stackWidthThreshold || LocalDensity.current.fontScale >= 1.3f
         if (stack) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
