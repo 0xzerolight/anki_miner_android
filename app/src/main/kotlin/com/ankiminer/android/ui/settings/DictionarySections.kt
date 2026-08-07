@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.settings
 
 import android.content.Context
+import android.view.MotionEvent
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -237,12 +238,30 @@ internal fun DictionaryLookupCard(
     }
 }
 
+/**
+ * WebView that claims vertical drags from Compose ancestors while its own content overflows.
+ *
+ * Inside a LazyColumn item the ancestor scrollable otherwise consumes the drag and cancels the
+ * interop view's touch stream, leaving clipped definitions unreachable. Disallow-intercept is
+ * reset by the framework at the end of each gesture, so short definitions keep list scrolling.
+ */
+internal open class DictionaryWebView(context: Context) : WebView(context) {
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN &&
+            (canScrollVertically(1) || canScrollVertically(-1))
+        ) {
+            parent?.requestDisallowInterceptTouchEvent(true)
+        }
+        return super.onTouchEvent(event)
+    }
+}
+
 @Composable
 internal fun DictionaryHtml(
     html: String,
     modifier: Modifier = Modifier,
     updateKey: Any? = null,
-    webViewFactory: (Context) -> WebView = { context -> WebView(context) },
+    webViewFactory: (Context) -> WebView = { context -> DictionaryWebView(context) },
 ) {
     AndroidView(
         modifier = modifier,
