@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import shutil
 import stat
 import tarfile
 import zipfile
@@ -2709,3 +2710,149 @@ def test_known_words_import_cancelled_before_commit_writes_nothing(
     database = KnownWordDB(home / "known_words.db")
     monkeypatch.setattr(KnownWordDB, "initialize", real_initialize)
     assert database.get_known_words() == set()
+
+
+def _installed_frequency(tmp_path: Path, home: Path, source_id: str) -> Path:
+    source = tmp_path / f"{source_id}.csv"
+    source.write_text("word,rank\n猫,10\n犬,20\n", encoding="utf-8")
+    local_resources.import_frequency(
+        {
+            "operationId": f"import-{source_id}",
+            "sourcePath": str(source),
+            "sourceId": source_id,
+            "sourceName": source_id.title(),
+            "sourceFormat": "csv",
+            "overwrite": False,
+        }
+    )
+    return home / "freqs" / source_id
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_local_delete_purges_backups_so_inventory_cannot_resurrect_the_slot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    slot = _installed_frequency(tmp_path, home, "fixture-freq")
+    # A replace import leaves exactly this behind, and _recover_indexed_backups
+    # promotes it back onto a missing final slot -- the state a delete creates.
+    stale = home / "resource-work" / "frequency-backups" / "backup-fixture-freq--stale"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(slot, stale)
+
+    deleted = decode_envelope(
+        local_resources.delete_local_resource(
+            {"operationId": "delete-one", "kind": "frequency", "slotId": "fixture-freq"}
+        ),
+        expected_type="resource.local.deleted",
+    )
+
+    assert deleted.payload == {"kind": "frequency", "slotId": "fixture-freq", "removed": True}
+    assert not slot.exists()
+    assert list(stale.parent.glob("backup-fixture-freq--*")) == []
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert listed.payload["frequencies"] == []
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_pitch_delete_removes_the_legacy_csv_so_migration_cannot_republish_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    (home / "pitch_accent.csv").write_text(
+        "reading\tkanji\tpattern\tnasal\tdevoice\nねこ\t猫\t1\t\t\n",
+        encoding="utf-8",
+    )
+    first = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert [item["sourceId"] for item in first.payload["pitchSources"]] == ["legacy-pitch"]
+
+    local_resources.delete_local_resource({"operationId": "delete-legacy", "kind": "pitch", "slotId": "legacy-pitch"})
+
+    assert not (home / "pitch_accent.csv").exists()
+    after = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert after.payload["pitchSources"] == []
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_local_delete_is_idempotent_and_reports_removed_false_the_second_time(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    _installed_frequency(tmp_path, home, "fixture-freq")
+    local_resources.delete_local_resource(
+        {"operationId": "delete-first", "kind": "frequency", "slotId": "fixture-freq"}
+    )
+
+    again = decode_envelope(
+        local_resources.delete_local_resource(
+            {"operationId": "delete-second", "kind": "frequency", "slotId": "fixture-freq"}
+        ),
+        expected_type="resource.local.deleted",
+    )
+
+    assert again.payload["removed"] is False
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_local_delete_leaves_every_other_slot_installed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    _installed_frequency(tmp_path, home, "kept")
+    _installed_frequency(tmp_path, home, "doomed")
+
+    local_resources.delete_local_resource({"operationId": "delete-doomed", "kind": "frequency", "slotId": "doomed"})
+
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert [item["sourceId"] for item in listed.payload["frequencies"]] == ["kept"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"operationId": "delete-bad", "kind": "frequency"},
+        {"operationId": "delete-bad", "kind": "frequency", "slotId": "fixture", "extra": 1},
+        {"operationId": "delete-bad", "kind": "unidic", "slotId": "fixture"},
+        {"operationId": "delete-bad", "kind": "frequency", "slotId": "../escape"},
+        {"operationId": "delete-bad", "kind": "frequency", "slotId": ""},
+    ],
+)
+def test_local_delete_rejects_payloads_outside_the_contract(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    payload: dict[str, object],
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.delete_local_resource(payload)
+
+    assert failure.value.code == "invalid_resource_request"

@@ -19,7 +19,7 @@ import sqlite3
 import stat
 import tarfile
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path, PurePosixPath
 
 from . import resources as core
@@ -183,6 +183,81 @@ def _recover_indexed_backups(
             core._fsync_directory(final_root)
         else:
             core._safe_rmtree(backup)
+
+
+_LOCAL_DELETE_ROOTS: dict[str, Callable[[Path], Path]] = {
+    "pitch": _pitch_root,
+    "frequency": _frequency_root,
+    "audio-pack": _audio_root,
+}
+
+
+def _purge_indexed_backups(home: Path, *, kind: str, identity: str) -> None:
+    """Drop every backup ``_recover_indexed_backups`` would promote back into place.
+
+    Without this a delete is undone by the next inventory: that function renames
+    ``backup-<identity>--*`` onto ``final_root/<identity>`` whenever the final slot
+    is absent, which is exactly the state a delete leaves behind.
+    """
+
+    backups_root = _backup_root(home, kind)
+    if not backups_root.exists():
+        return
+    if backups_root.is_symlink() or not backups_root.is_dir():
+        raise _fail("resource_cleanup_failed", f"{kind} backup root is unsafe")
+    purged = False
+    for backup in sorted(backups_root.iterdir()):
+        if not backup.name.startswith("backup-"):
+            raise _fail("resource_cleanup_failed", f"{kind} backup entry is unsafe")
+        # Same parse as _recover_indexed_backups, so exactly the entries it would
+        # promote onto this identity are the entries removed here.
+        if backup.name.removeprefix("backup-").split("--", 1)[0] != identity:
+            continue
+        _remove_exact_path(backup)
+        purged = True
+    if purged:
+        core._fsync_directory(backups_root)
+
+
+def delete_local_resource(payload: Mapping[str, object]) -> str:
+    core._exact(payload, {"operationId", "kind", "slotId"}, code="invalid_resource_request")
+    operation_id = core._operation_id(payload["operationId"])
+    kind = core._bounded_text(payload["kind"], name="kind", max_bytes=16)
+    if kind not in _LOCAL_DELETE_ROOTS:
+        raise _fail("invalid_resource_request", "kind is invalid")
+    slot_id = core._slot_id(payload["slotId"])
+    home = Path(require_initialized())
+    final_root = _LOCAL_DELETE_ROOTS[kind](home)
+    final = final_root / slot_id
+    grave: Path | None = None
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        with core._PROMOTION_LOCK:
+            _purge_indexed_backups(home, kind=kind, identity=slot_id)
+            if kind == "pitch" and slot_id == _LEGACY_PITCH_SOURCE_ID:
+                # _migrate_legacy_pitch_csv re-imports this file on every
+                # _pitch_inventory call, so the slot returns unless it goes too.
+                _remove_exact_path(home / "pitch_accent.csv")
+                core._fsync_directory(home)
+            if final.exists() or final.is_symlink():
+                operation_root = _work_root(home, operation_id)
+                core._safe_rmtree(operation_root)
+                operation_root.mkdir(parents=True)
+                grave = operation_root / slot_id
+                # Rename, not rmtree: the slot leaves the published root atomically
+                # even for a 600k-file audio pack, and a crash mid-delete leaves only
+                # staging that cleanup_resources already sweeps.
+                final.rename(grave)
+                core._fsync_directory(final_root)
+        # Outside _PROMOTION_LOCK on purpose: unlinking a large pack must not block
+        # every other publication and inventory for the duration.
+        if grave is not None:
+            _remove_exact_path(grave)
+        core._fsync_directory(home)
+        return encode_message(
+            "resource.local.deleted",
+            {"kind": kind, "slotId": slot_id, "removed": grave is not None},
+        )
 
 
 def _publish_indexed_dir(
