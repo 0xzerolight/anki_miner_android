@@ -22,6 +22,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.unit.Density
@@ -40,6 +41,33 @@ import org.junit.Test
 class AppShellNavigationTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun tabDestinationsHideTheTopBarWhileSubScreensKeepIt() {
+        val destination = mutableStateOf(AnkiMinerDestination.VIDEO)
+
+        composeRule.setContent {
+            AnkiMinerTheme(palette = ThemePalettes.Light) {
+                AnkiMinerAppShell(
+                    currentDestination = destination.value,
+                    snackbarHostState = remember { SnackbarHostState() },
+                    onDestinationSelected = {},
+                    onNavigateBack = {},
+                    modifier = Modifier.width(320.dp).height(640.dp),
+                ) { shellModifier ->
+                    Text(destination.value.name, modifier = shellModifier)
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(APP_TOP_BAR_TEST_TAG).assertDoesNotExist()
+
+        composeRule.runOnIdle { destination.value = AnkiMinerDestination.SETTINGS }
+        composeRule.onNodeWithTag(APP_TOP_BAR_TEST_TAG).assertDoesNotExist()
+
+        composeRule.runOnIdle { destination.value = AnkiMinerDestination.KNOWN_WORDS_MANAGER }
+        composeRule.onNodeWithTag(APP_TOP_BAR_TEST_TAG).assertIsDisplayed()
+    }
 
     @Test
     fun fs200CompactNavigationSwitchesTabsAndReturnsToActiveCuration() {

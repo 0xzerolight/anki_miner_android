@@ -94,6 +94,8 @@ import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
+internal const val APP_TOP_BAR_TEST_TAG = "app-top-bar"
+
 internal enum class AnkiMinerDestination(
     val route: String,
     @param:StringRes val label: Int,
@@ -293,13 +295,17 @@ internal fun AnkiMinerAppShell(
         Scaffold(
             modifier = if (overlay == null) Modifier else Modifier.inertBehindOverlay(),
             topBar = {
-                currentDestination?.let { destination ->
-                    AppChrome(
-                        title = stringResource(destination.appBarTitle),
-                        onNavigateBack =
-                            if (destination.showsBottomBar) null else onNavigateBack,
-                    )
-                }
+                // Tab destinations carry no bar: its title only repeated the highlighted tab,
+                // and every mining phase keeps its own focused heading as the TalkBack anchor.
+                currentDestination
+                    ?.takeUnless { it.showsBottomBar }
+                    ?.let { destination ->
+                        AppChrome(
+                            title = stringResource(destination.appBarTitle),
+                            modifier = Modifier.testTag(APP_TOP_BAR_TEST_TAG),
+                            onNavigateBack = onNavigateBack,
+                        )
+                    }
             },
             snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
