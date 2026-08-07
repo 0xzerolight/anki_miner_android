@@ -9,6 +9,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -90,6 +91,7 @@ class ExoCurationPreviewPlayer(
                 }
 
                 override fun onTracksChanged(tracks: Tracks) {
+                    selectPreferredAudio(tracks)
                     val failure = previewFailureFor(tracks)
                     if (failure != null) {
                         val format = firstFormatOfType(tracks, C.TRACK_TYPE_VIDEO)
@@ -130,9 +132,47 @@ class ExoCurationPreviewPlayer(
         if (boundUri == uri) return
         boundUri = uri
         mutableFailure.value = null
+        // Overrides are keyed by the previous item's TrackGroup; drop them so the new item
+        // starts from defaults and picks its own track in onTracksChanged.
+        exo.trackSelectionParameters =
+            exo.trackSelectionParameters
+                .buildUpon()
+                .clearOverridesOfType(C.TRACK_TYPE_AUDIO)
+                .build()
         exo.setMediaItem(MediaItem.fromUri(uri))
         exo.prepare()
         exo.playWhenReady = false
+    }
+
+    /**
+     * Forces the preview onto the same audio track the engine will mine from.
+     *
+     * Left to itself the `DefaultTrackSelector` decides a dual-audio file on
+     * `localeLanguageScore` — derived from `Util.getSystemLanguageCodes()` — because every
+     * higher-ranked criterion (preferred language, default-selection flag, role flags) ties
+     * between two equivalent tracks. An English phone therefore previewed the English dub while
+     * the mined clip came from the Japanese track. An explicit override outranks all scoring.
+     *
+     * Re-applying is idempotent: the second `onTracksChanged` sees the override already in the
+     * parameters and returns, which also stops the loop when the chosen track is one no renderer
+     * can decode (there `isTrackSelected` would stay false forever).
+     */
+    private fun selectPreferredAudio(tracks: Tracks) {
+        val desired = preferredAudioGroup(tracks) ?: return
+        val override = TrackSelectionOverride(desired.mediaTrackGroup, 0)
+        if (exo.trackSelectionParameters.overrides[desired.mediaTrackGroup] == override) return
+
+        AppLog.i(
+            LogComponent.MEDIA,
+            "curation_preview_audio_track_selected",
+            "language" to desired.getTrackFormat(0).language,
+            "audioGroups" to tracks.groups.count { it.type == C.TRACK_TYPE_AUDIO },
+        )
+        exo.trackSelectionParameters =
+            exo.trackSelectionParameters
+                .buildUpon()
+                .setOverrideForType(override)
+                .build()
     }
 
     override fun seekTo(seconds: Double) {

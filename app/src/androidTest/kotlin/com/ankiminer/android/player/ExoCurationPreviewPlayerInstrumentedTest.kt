@@ -80,6 +80,57 @@ class ExoCurationPreviewPlayerInstrumentedTest {
     }
 
     @Test
+    fun dualAudioPreviewSelectsTheJapaneseTrackNotTheDeviceLocale() {
+        val fixture = createDualAudioFixture()
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val playbackError = AtomicReference<PlaybackException?>()
+        val listener =
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) ready.countDown()
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    playbackError.set(error)
+                }
+            }
+        lateinit var player: ExoCurationPreviewPlayer
+
+        instrumentation.runOnMainSync { player = ExoCurationPreviewPlayer(context) }
+        try {
+            instrumentation.runOnMainSync {
+                player.media3Player.addListener(listener)
+                player.bind(Uri.fromFile(fixture))
+            }
+
+            assertTrue(
+                "Player did not reach STATE_READY for the dual-audio fixture",
+                ready.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+            assertNull("Dual-audio preview raised an error: ${playbackError.get()}", playbackError.get())
+
+            instrumentation.runOnMainSync {
+                // The override is applied from onTracksChanged, which lands before STATE_READY.
+                val selected =
+                    player.media3Player.currentTracks.groups
+                        .filter { it.type == C.TRACK_TYPE_AUDIO }
+                        .also { assertEquals("fixture should carry two audio tracks", 2, it.size) }
+                        .single { it.isTrackSelected(0) }
+                // Without the override the DefaultTrackSelector breaks the tie on the device
+                // locale, and the CI emulator is en_US, so this reads "en".
+                assertEquals("ja", selected.getTrackFormat(0).language)
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                player.media3Player.removeListener(listener)
+                player.release()
+            }
+        }
+    }
+
+    @Test
     fun ffmpegRenderersAreLoadedAndHandleTenBitH264() {
         assertTrue("nextlib native library failed to load", FfmpegLibrary.isAvailable())
 
@@ -248,6 +299,18 @@ class ExoCurationPreviewPlayerInstrumentedTest {
         return fixture
     }
 
+    private fun createDualAudioFixture(): File {
+        val fixture = File(context.cacheDir, DUAL_AUDIO_FIXTURE_NAME)
+        fixture.delete()
+        pythonModule().callAttr(
+            "create_dual_audio_fixture",
+            nativeTool("libffmpeg.so").path,
+            fixture.path,
+        )
+        assertTrue(fixture.isFile && fixture.length() > 0L)
+        return fixture
+    }
+
     private fun createAv1Fixture(): File {
         val fixture = File(context.cacheDir, S3TestDocumentsProvider.AV1_FIXTURE_NAME)
         fixture.delete()
@@ -273,6 +336,7 @@ class ExoCurationPreviewPlayerInstrumentedTest {
             Uri.parse("content://${BuildConfig.APPLICATION_ID}.s3.provider/seekable")
         val PIPE_URI: Uri = Uri.parse("content://${BuildConfig.APPLICATION_ID}.s3.provider/pipe")
         val AV1_URI: Uri = Uri.parse("content://${BuildConfig.APPLICATION_ID}.s3.provider/av1")
+        const val DUAL_AUDIO_FIXTURE_NAME = "preview-dual-audio-fixture.mkv"
         const val SEEK_SECONDS = 1.0
         const val POSITION_TOLERANCE_SECONDS = 0.15
         const val READY_TIMEOUT_SECONDS = 20L

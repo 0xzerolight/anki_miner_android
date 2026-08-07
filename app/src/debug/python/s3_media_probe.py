@@ -76,6 +76,69 @@ def create_fixture(ffmpeg: str, output: str) -> None:
         raise RuntimeError("fixture generation produced no MKV")
 
 
+def create_dual_audio_fixture(ffmpeg: str, output: str) -> None:
+    """Dual-audio MKV: Japanese track first, English second, both decodable everywhere.
+
+    The two tracks are deliberately equivalent apart from their language tag and tone, so no
+    channel-count or bitrate tiebreak can decide the selection: only the language does.
+
+    Both default dispositions are cleared, which is the shape that actually reproduces the bug.
+    ffmpeg's matroska muxer flags the first audio stream as default unless told otherwise, and
+    `isDefaultSelectionFlag` outranks the locale tiebreak in ExoPlayer's audio comparator — a
+    fixture keeping that flag selects the Japanese track no matter what the player does. The
+    reported release ([Judas] Jujutsu Kaisen S02) carries default=0 on both audio tracks.
+    """
+    target = Path(output)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    result = _run(
+        [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=160x90:rate=10",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=800:sample_rate=16000",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=300:sample_rate=16000",
+            "-t",
+            "1.5",
+            "-map",
+            "0:v:0",
+            "-map",
+            "1:a:0",
+            "-map",
+            "2:a:0",
+            "-c:v",
+            "mpeg4",
+            "-q:v",
+            "8",
+            "-c:a",
+            "pcm_s16le",
+            "-metadata:s:a:0",
+            "language=jpn",
+            "-metadata:s:a:1",
+            "language=eng",
+            "-disposition:a:0",
+            "0",
+            "-disposition:a:1",
+            "0",
+            str(target),
+        ]
+    )
+    _require_success("dual audio fixture generation", result)
+    if not target.is_file() or target.stat().st_size == 0:
+        raise RuntimeError("dual audio fixture generation produced no MKV")
+
+
 def create_av1_fixture(ffmpeg: str, output: str) -> None:
     """AV1 video the API 26 emulator cannot decode (no platform or nextlib AV1 decoder).
 
