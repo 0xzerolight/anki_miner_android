@@ -117,6 +117,16 @@ interface ResourceManager {
 
     suspend fun searchKnownWords(query: String, loadMore: Boolean = false)
 
+    /**
+     * Delete one installed resource. Idempotent: a slot that is already gone still succeeds.
+     *
+     * UniDic has no delete: it is the tokenizer the whole engine depends on.
+     */
+    suspend fun deleteInstalledResource(
+        kind: InstalledResourceKind,
+        id: String,
+    ) = Unit
+
     suspend fun removeKnownWords(words: List<String>)
 
     suspend fun resetKnownWords(scope: KnownWordsResetScope)
@@ -207,6 +217,7 @@ internal class AndroidResourceManager(
         val failureOrigin: ResourceFailureOrigin,
         val failureRetry: ResourceFailureRetry,
         val knownWordsOperation: KnownWordsFailureOperation?,
+        val deleteTarget: ResourceDeleteTarget? = null,
         val holdsForegroundLease: Boolean = false,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
         val cancelDelivery: AtomicReference<CancelDelivery> =
@@ -1133,6 +1144,52 @@ internal class AndroidResourceManager(
         }
     }
 
+    override suspend fun deleteInstalledResource(
+        kind: InstalledResourceKind,
+        id: String,
+    ) {
+        runOperation(
+            strings.resolve(R.string.resource_operation_delete_resource),
+            ResourceOperationPhase.FINALIZING,
+            failureOrigin =
+                when (kind) {
+                    InstalledResourceKind.DICTIONARY -> ResourceFailureOrigin.CUSTOM_DICTIONARY
+                    InstalledResourceKind.PITCH -> ResourceFailureOrigin.PITCH
+                    InstalledResourceKind.FREQUENCY -> ResourceFailureOrigin.FREQUENCY
+                    InstalledResourceKind.AUDIO_PACK -> ResourceFailureOrigin.AUDIO
+                },
+            failureRetry = ResourceFailureRetry(ResourceFailureAction.RETRY, targetId = id),
+            deleteTarget = ResourceDeleteTarget(kind, id),
+            // No journal: the Python rename is the commit, and recovery would report a
+            // delete that succeeded before process death as an interrupted operation.
+            persistForRecovery = false,
+            holdsForegroundLease = kind == InstalledResourceKind.AUDIO_PACK,
+            // A broken slot leaves readiness FAILED and deleting it is the only repair, so
+            // gating on READY would disable this in the case it matters most.
+            requiresStartupReady = false,
+        ) { operation ->
+            operation.cancellation.check()
+            operation.pythonStarted.set(true)
+            val raw =
+                bridge.dispatch(
+                    if (kind == InstalledResourceKind.DICTIONARY) {
+                        ResourceBridgeCodec.encodeDictionaryDeleteRequest(operation.id, id)
+                    } else {
+                        ResourceBridgeCodec.encodeLocalResourceDeleteRequest(operation.id, kind, id)
+                    },
+                    null,
+                )
+            decodePublishedMutation(raw) { value ->
+                if (kind == InstalledResourceKind.DICTIONARY) {
+                    ResourceBridgeCodec.decodeDictionaryDeleted(value, id)
+                } else {
+                    ResourceBridgeCodec.decodeLocalResourceDeleted(value, kind, id)
+                }
+            }
+            refreshAfterCommittedMutation()
+        }
+    }
+
     override suspend fun removeKnownWords(words: List<String>) {
         runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_remove_known_words),
@@ -1425,6 +1482,7 @@ internal class AndroidResourceManager(
         failureRetry: ResourceFailureRetry =
             ResourceFailureRetry(ResourceFailureAction.RETRY),
         knownWordsOperation: KnownWordsFailureOperation? = null,
+        deleteTarget: ResourceDeleteTarget? = null,
         persistForRecovery: Boolean = false,
         holdsForegroundLease: Boolean = false,
         requiresStartupReady: Boolean = true,
@@ -1453,6 +1511,7 @@ internal class AndroidResourceManager(
                     failureOrigin,
                     failureRetry,
                     knownWordsOperation,
+                    deleteTarget = deleteTarget,
                 )
                 return false
             }
@@ -1464,6 +1523,7 @@ internal class AndroidResourceManager(
                     failureOrigin = failureOrigin,
                     failureRetry = failureRetry,
                     knownWordsOperation = knownWordsOperation,
+                    deleteTarget = deleteTarget,
                     holdsForegroundLease = holdsForegroundLease,
                 )
             val initialProgress = ResourceOperationProgress(operation.id, label, initialPhase)
@@ -2008,7 +2068,15 @@ internal class AndroidResourceManager(
                         ResourceFailureRetry(ResourceFailureAction.RESOLVE)
                 else -> operation.failureOrigin to operation.failureRetry
             }
-        recordFailure(code, message, origin, retry, operation.knownWordsOperation, faultId)
+        recordFailure(
+            code,
+            message,
+            origin,
+            retry,
+            operation.knownWordsOperation,
+            faultId,
+            operation.deleteTarget,
+        )
     }
 
     private fun recordFailure(
@@ -2018,6 +2086,7 @@ internal class AndroidResourceManager(
         retry: ResourceFailureRetry,
         knownWordsOperation: KnownWordsFailureOperation? = null,
         faultId: String? = null,
+        deleteTarget: ResourceDeleteTarget? = null,
     ) {
         mutableState.update {
             it.copy(
@@ -2030,6 +2099,7 @@ internal class AndroidResourceManager(
                         origin = origin,
                         retry = retry,
                         knownWordsOperation = knownWordsOperation,
+                        deleteTarget = deleteTarget,
                     ),
             )
         }
@@ -2147,6 +2217,8 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_dictionary_schema)
             "dictionary_resource_invalid" ->
                 strings.resolve(R.string.resource_failure_dictionary_invalid)
+            "resource_cleanup_failed" ->
+                strings.resolve(R.string.resource_failure_delete)
             else -> strings.resolve(R.string.resource_failure_unknown_bridge_code, listOf(code))
         }
 
@@ -2229,6 +2301,7 @@ internal class AndroidResourceManager(
                 "resource_operation_interrupted",
                 "resource_inventory_failed",
                 "resource_cancel_delivery_failed",
+                "resource_cleanup_failed",
             )
 
         val PINNED_ARCHIVE_INVALID_CODES =

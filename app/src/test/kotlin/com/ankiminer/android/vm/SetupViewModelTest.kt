@@ -14,6 +14,8 @@ import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
+import com.ankiminer.android.data.resources.InstalledResourceKind
+import com.ankiminer.android.data.resources.ResourceDeleteTarget
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.WordListKind
@@ -91,6 +93,152 @@ class SetupViewModelTest {
             )
             assertEquals(listOf("frequency"), resources.frequencySourceNames)
             assertEquals(listOf(FrequencySourceFormat.TSV), resources.frequencyFormats)
+        }
+
+    @Test
+    fun `requesting a delete stages the confirmation and deletes nothing`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            model.requestResourceDelete(InstalledResourceKind.PITCH, "kanjium")
+            advanceUntilIdle()
+
+            val pending = requireNotNull(model.uiState.value.pendingDelete)
+            assertEquals(InstalledResourceKind.PITCH, pending.kind)
+            assertEquals("kanjium", pending.identity)
+            assertEquals("Kanjium", pending.installedLabel)
+            assertEquals(emptyList<Pair<InstalledResourceKind, String>>(), resources.deletedResources)
+        }
+
+    @Test
+    fun `confirming a pending delete dispatches exactly one delete`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+            model.requestResourceDelete(InstalledResourceKind.PITCH, "kanjium")
+            advanceUntilIdle()
+
+            model.confirmPendingDelete()
+            advanceUntilIdle()
+
+            assertEquals(listOf(InstalledResourceKind.PITCH to "kanjium"), resources.deletedResources)
+            assertNull(model.uiState.value.pendingDelete)
+        }
+
+    @Test
+    fun `dismissing a pending delete deletes nothing`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+            model.requestResourceDelete(InstalledResourceKind.PITCH, "kanjium")
+            advanceUntilIdle()
+
+            model.dismissPendingDelete()
+            advanceUntilIdle()
+
+            assertNull(model.uiState.value.pendingDelete)
+            assertEquals(emptyList<Pair<InstalledResourceKind, String>>(), resources.deletedResources)
+        }
+
+    @Test
+    fun `pending delete survives process death through saved state`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val resources = FakeResourceManager()
+            resources.setInstalledPitchSources(listOf(installedPitch("kanjium", "Kanjium")))
+            val repository = FakeSettingsRepository(AppSettings())
+            val original =
+                viewModel(
+                    repository = repository,
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                    savedStateHandle = savedState,
+                )
+            advanceUntilIdle()
+            original.requestResourceDelete(InstalledResourceKind.PITCH, "kanjium")
+            advanceUntilIdle()
+
+            val restored =
+                viewModel(
+                    repository = repository,
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                    savedStateHandle = savedState,
+                )
+            advanceUntilIdle()
+
+            assertEquals("kanjium", restored.uiState.value.pendingDelete?.identity)
+        }
+
+    @Test
+    fun `requesting a delete for an uninstalled id is ignored`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            model.requestResourceDelete(InstalledResourceKind.PITCH, "ghost")
+            advanceUntilIdle()
+
+            assertNull(model.uiState.value.pendingDelete)
+            assertEquals(emptyList<Pair<InstalledResourceKind, String>>(), resources.deletedResources)
+        }
+
+    @Test
+    fun `retry after a failed delete redispatches the same delete`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // A failed delete and a failed import share ResourceFailureOrigin.PITCH, whose retry
+            // branch can only re-open a file picker; only the delete target can route this.
+            val resources = FakeResourceManager()
+            resources.setFailure(
+                ResourceFailure(
+                    code = "resource_cleanup_failed",
+                    message = "resource:delete",
+                    retryable = true,
+                    origin = ResourceFailureOrigin.PITCH,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY, targetId = "kanjium"),
+                    deleteTarget = ResourceDeleteTarget(InstalledResourceKind.PITCH, "kanjium"),
+                ),
+            )
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertEquals(listOf(InstalledResourceKind.PITCH to "kanjium"), resources.deletedResources)
         }
 
     @Test
@@ -1323,6 +1471,7 @@ class SetupViewModelTest {
         var audioPacksInArchive = listOf(AudioPackCandidate("jpod", "jpod_files", "ajt"))
         val retainedResourceImports = mutableListOf<String>()
         val releasedResourceImports = mutableListOf<String>()
+        val deletedResources = mutableListOf<Pair<InstalledResourceKind, String>>()
         private val importDocuments = mutableMapOf<String, ImportDocument>()
         private val mutableState =
             MutableStateFlow(
@@ -1391,6 +1540,13 @@ class SetupViewModelTest {
 
         override suspend fun releaseResourceImport(uri: String) {
             releasedResourceImports += uri
+        }
+
+        override suspend fun deleteInstalledResource(
+            kind: InstalledResourceKind,
+            id: String,
+        ) {
+            deletedResources += kind to id
         }
 
         override suspend fun importFrequencySource(

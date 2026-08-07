@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- Installed dictionaries, pitch sources, frequency lists and audio packs can be removed. Each import card on the Settings screen now lists everything it has installed, with its slot id and entry count, and a Remove button beside each one; removing asks for confirmation first and deletes only from this device, never from Anki. Until now nothing could be uninstalled, so a file imported twice under slightly different names left two copies with no way to get rid of either. This is also the way out of a resource that will not load: a broken slot blocks mining and says so on startup, and removing it now repairs that without clearing the app's data. UniDic has no Remove button — the tokenizer is what the whole app runs on.
+
 ### Changed
 
 - The long lists in Settings start folded away. A deck list is as long as your collection, and on a phone it buried everything under it and put a checkbox under your thumb on the way past. The decks to exclude from known-word scans, the dictionary, pitch, audio pack and frequency orders, and the bundled word sets each show a single line now — the name and how many of them are switched on — which opens the list when tapped. A list with nothing in it stays open, so the reason it is empty is still on screen.

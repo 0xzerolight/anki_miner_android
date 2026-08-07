@@ -53,6 +53,7 @@ def _dispatch_validated(
         "resource.cleanup",
         "resource.audiopack.import",
         "resource.audiopack.preflight",
+        "resource.dictionary.delete",
         "resource.dictionary.import",
         "resource.dictionary.list",
         "resource.dictionary.lookup",
@@ -63,6 +64,7 @@ def _dispatch_validated(
         "resource.knownwords.remove",
         "resource.knownwords.reset",
         "resource.knownwords.export",
+        "resource.local.delete",
         "resource.local.list",
         "resource.operation.cancel",
         "resource.pitch.import",
@@ -91,6 +93,7 @@ def _dispatch_validated(
             "resource.knownwords.remove",
             "resource.knownwords.reset",
             "resource.knownwords.export",
+            "resource.local.delete",
             "resource.local.list",
             "resource.pitch.import",
         }:
@@ -106,6 +109,7 @@ def _dispatch_validated(
                 "resource.knownwords.remove": local_resources.remove_known_words,
                 "resource.knownwords.reset": local_resources.reset_known_words,
                 "resource.knownwords.export": local_resources.export_known_words,
+                "resource.local.delete": local_resources.delete_local_resource,
                 "resource.local.list": local_resources.list_local_resources,
                 "resource.pitch.import": local_resources.import_pitch,
             }
@@ -114,6 +118,7 @@ def _dispatch_validated(
         handlers = {
             "resource.catalog.get": resources.catalog_response,
             "resource.cleanup": resources.cleanup_resources,
+            "resource.dictionary.delete": resources.delete_dictionary,
             "resource.dictionary.import": resources.import_dictionary,
             "resource.dictionary.list": resources.list_dictionaries,
             "resource.dictionary.lookup": resources.lookup_dictionary,

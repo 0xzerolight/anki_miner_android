@@ -703,6 +703,7 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
         PitchImportCard(
             state = setup,
             onImport = {},
+            onRemove = {},
         )
         SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
             ResourceChainEditor(
@@ -719,7 +720,7 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
                 onChange = {},
             )
         }
-        DictionaryInventoryCard(setup)
+        DictionaryInventoryCard(state = setup, onRemove = {})
         DictionaryLookupCard(
             state = setup.copy(lookup = null),
             onTermChanged = {},

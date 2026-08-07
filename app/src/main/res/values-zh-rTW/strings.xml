@@ -442,6 +442,7 @@
     <string name="resource_operation_preview_known_words">預覽已知單字</string>
     <string name="resource_operation_inspect_known_words">檢查已知單字</string>
     <string name="resource_operation_remove_known_words">移除已知單字</string>
+    <string name="resource_operation_delete_resource">移除資源</string>
     <string name="resource_operation_reset_known_words">重設已知單字</string>
     <string name="resource_operation_export_known_words">匯出已知單字</string>
     <string name="resource_operation_dictionary_lookup">字典查詢</string>
@@ -462,6 +463,7 @@
     <string name="resource_failure_import_staging">無法準備私有匯入暫存區</string>
     <string name="resource_failure_word_list_not_utf8">該單字清單不是 UTF-8 文字</string>
     <string name="resource_failure_word_list_remove">無法移除單字清單</string>
+    <string name="resource_failure_delete">無法移除資源</string>
     <string name="resource_failure_import_source_unavailable">無法開啟選取的 %1$s</string>
     <string name="resource_failure_archive_too_large">選取的 %1$s 為 %2$s。此裝置在此處可容納 %3$s。</string>
     <string name="resource_failure_unknown_download_code">資源下載失敗（%1$s）</string>
@@ -512,6 +514,9 @@
     <string name="resource_replace_confirm_message">會以交易方式取代 %1$s。若新匯入未通過驗證，Anki Miner 會還原目前安裝的內容。</string>
     <string name="pitch_replace_confirm_message">新檔案一驗證完成，就會移除 %1$s。系統不會保留其備份。</string>
     <string name="dictionary_replace_confirm">取代</string>
+    <string name="resource_remove">移除</string>
+    <string name="resource_delete_confirm_title">移除 %1$s？</string>
+    <string name="resource_delete_confirm_message">系統會從此裝置刪除 %1$s。不會從 Anki 移除任何內容，也不會保留備份。</string>
     <string name="dictionary_repair_confirm">修復插槽</string>
     <string name="custom_dictionary_title">匯入另一個 Yomitan ZIP</string>
     <string name="custom_dictionary_slot">穩定的字典 ID</string>
@@ -564,6 +569,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d 個項目</string>
     <string name="bundled_wordsets_unavailable">無法盤點內建單字集。</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · 清單無效（%3$d 個項目）；請在採集前取代它</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d 個項目</string>
     <string name="pitch_inventory_invalid">%1$s · 清單無效（%2$d 個項目）；請在採集前取代它</string>
     <string name="local_import_complete">本機匯入完成</string>
     <string name="frequency_import_result">%1$s：%2$d 個項目；略過 %3$d 列格式錯誤的資料</string>
@@ -590,7 +596,7 @@
     <string name="status_database_permission">需要資料庫權限</string>
     <string name="status_ready_api">已就緒（API %1$d）</string>
     <string name="dictionary_test_title">離線字典測試</string>
-    <string name="dictionary_inventory_broken_title">需要修復的字典插槽</string>
+    <string name="dictionary_inventory_title">已安裝的字典插槽</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · 無效或不完整（%3$d 個項目）；請在採集前取代這個插槽</string>
     <string name="dictionary_term">日文詞彙</string>
     <string name="dictionary_render_html">顯示精確的字典 HTML</string>

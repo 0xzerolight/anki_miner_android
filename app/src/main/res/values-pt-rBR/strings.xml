@@ -450,6 +450,7 @@
     <string name="resource_operation_preview_known_words">Visualizar palavras conhecidas</string>
     <string name="resource_operation_inspect_known_words">Inspecionar palavras conhecidas</string>
     <string name="resource_operation_remove_known_words">Remover palavras conhecidas</string>
+    <string name="resource_operation_delete_resource">Remover recurso</string>
     <string name="resource_operation_reset_known_words">Redefinir palavras conhecidas</string>
     <string name="resource_operation_export_known_words">Exportar palavras conhecidas</string>
     <string name="resource_operation_dictionary_lookup">Consulta ao dicionário</string>
@@ -470,6 +471,7 @@
     <string name="resource_failure_import_staging">Não foi possível preparar a preparação privada para importação</string>
     <string name="resource_failure_word_list_not_utf8">Essa lista de palavras não é texto UTF-8</string>
     <string name="resource_failure_word_list_remove">Não foi possível remover a lista de palavras</string>
+    <string name="resource_failure_delete">Não foi possível remover o recurso</string>
     <string name="resource_failure_import_source_unavailable">Não é possível abrir %1$s selecionado</string>
     <string name="resource_failure_archive_too_large">%1$s selecionado tem %2$s. Este dispositivo pode usar %3$s aqui.</string>
     <string name="resource_failure_unknown_download_code">Falha ao baixar o recurso (%1$s)</string>
@@ -520,6 +522,9 @@
     <string name="resource_replace_confirm_message">%1$s é substituído de forma transacional. Se a verificação da nova importação falhar, o Anki Miner restaura o que está instalado agora.</string>
     <string name="pitch_replace_confirm_message">%1$s é removido assim que o novo arquivo é verificado. Nenhum backup é mantido.</string>
     <string name="dictionary_replace_confirm">Substituir</string>
+    <string name="resource_remove">Remover</string>
+    <string name="resource_delete_confirm_title">Remover %1$s?</string>
+    <string name="resource_delete_confirm_message">%1$s é excluído deste dispositivo. Nada é removido do Anki e nenhum backup é mantido.</string>
     <string name="dictionary_repair_confirm">Reparar espaço</string>
     <string name="custom_dictionary_title">Importar outro ZIP do Yomitan</string>
     <string name="custom_dictionary_slot">ID estável do dicionário</string>
@@ -572,6 +577,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d entradas</string>
     <string name="bundled_wordsets_unavailable">Não foi possível inventariar os conjuntos integrados de palavras.</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · inventário inválido (%3$d entradas); substitua-o antes de minerar</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d entradas</string>
     <string name="pitch_inventory_invalid">%1$s · inventário inválido (%2$d entradas); substitua-o antes de minerar</string>
     <string name="local_import_complete">Importação local concluída</string>
     <string name="frequency_import_result">%1$s: %2$d entradas; %3$d linhas malformadas ignoradas</string>
@@ -598,7 +604,7 @@
     <string name="status_database_permission">permissão para o banco de dados necessária</string>
     <string name="status_ready_api">pronto (API %1$d)</string>
     <string name="dictionary_test_title">Teste de dicionário offline</string>
-    <string name="dictionary_inventory_broken_title">Espaços de dicionário que precisam de reparo</string>
+    <string name="dictionary_inventory_title">Espaços de dicionário instalados</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · inválido ou incompleto (%3$d entradas); substitua este espaço exato antes de minerar</string>
     <string name="dictionary_term">Termo japonês</string>
     <string name="dictionary_render_html">Renderizar HTML exato do dicionário</string>

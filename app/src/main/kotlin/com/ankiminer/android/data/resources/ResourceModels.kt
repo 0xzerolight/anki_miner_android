@@ -115,6 +115,33 @@ data class InstalledDictionary(
         get() = occupied && valid && schemaOk
 }
 
+/**
+ * Deletable installed resource kinds.
+ *
+ * UniDic is absent by construction: it is the tokenizer the whole engine depends on and has no
+ * delete. [wireValue] is the `kind` discriminator of `resource.local.delete`; dictionary slots
+ * carry their own bridge op and never put theirs on the wire.
+ */
+enum class InstalledResourceKind(
+    val wireValue: String,
+) {
+    DICTIONARY("dictionary"),
+    PITCH("pitch"),
+    FREQUENCY("frequency"),
+    AUDIO_PACK("audio-pack"),
+}
+
+/**
+ * The resource a failed operation was deleting.
+ *
+ * A failed delete and a failed import share a [ResourceFailureOrigin], so without this Retry
+ * cannot tell which one to redo.
+ */
+data class ResourceDeleteTarget(
+    val kind: InstalledResourceKind,
+    val id: String,
+)
+
 enum class FrequencySourceFormat(
     val wireValue: String,
     val fileSuffix: String,
@@ -492,6 +519,7 @@ data class ResourceFailure(
                 },
         ),
     val knownWordsOperation: KnownWordsFailureOperation? = null,
+    val deleteTarget: ResourceDeleteTarget? = null,
 )
 
 data class ResourceManagerState(

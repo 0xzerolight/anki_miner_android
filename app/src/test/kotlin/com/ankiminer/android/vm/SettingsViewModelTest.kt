@@ -431,6 +431,52 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun deletedResourceDropsOutOfTheDraftChainWithoutMarkingItDirty() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // Deleting a source is a ResourceManager mutation, not a settings edit. The draft
+            // reconciles against every inventory emission, so the stale id must disappear on its
+            // own and must not raise an unsaved-changes badge over a change the user never made.
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(
+                        pitchSources =
+                            listOf(
+                                ResourceChainSelection("kanjium"),
+                                ResourceChainSelection("nhk"),
+                            ),
+                    ),
+                )
+            val resourceManager =
+                FakeResourceManager(
+                    ResourceManagerState(
+                        pitchSources = listOf(pitchSource("kanjium"), pitchSource("nhk")),
+                    ),
+                )
+            val viewModel = SettingsViewModel(repository, resourceManager)
+            advanceUntilIdle()
+            assertEquals(
+                listOf("kanjium", "nhk"),
+                viewModel.draftState.value.draft.pitchSources.map(
+                    ResourceChainSelection::resourceId,
+                ),
+            )
+            val dirtyBefore = viewModel.draftState.value.dirty
+
+            resourceManager.emit(
+                ResourceManagerState(pitchSources = listOf(pitchSource("nhk"))),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("nhk"),
+                viewModel.draftState.value.draft.pitchSources.map(
+                    ResourceChainSelection::resourceId,
+                ),
+            )
+            assertEquals(dirtyBefore, viewModel.draftState.value.dirty)
+        }
+
+    @Test
     fun explicitPitchReorderPersistsWithoutDebounceDelay() =
         runTest(mainDispatcherRule.dispatcher) {
             val inventory =

@@ -590,6 +590,60 @@ object ResourceBridgeCodec {
         )
     }
 
+    fun encodeDictionaryDeleteRequest(
+        operation: String,
+        selectedSlotId: String,
+    ): String {
+        requireOperationId(operation)
+        requireSlotId(selectedSlotId)
+        return encode("resource.dictionary.delete") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("slotId", selectedSlotId)
+        }
+    }
+
+    fun encodeLocalResourceDeleteRequest(
+        operation: String,
+        kind: InstalledResourceKind,
+        selectedSlotId: String,
+    ): String {
+        requireOperationId(operation)
+        require(kind != InstalledResourceKind.DICTIONARY) { "dictionary slots use their own op" }
+        requireSlotId(selectedSlotId)
+        return encode("resource.local.delete") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("kind", kind.wireValue)
+            generator.writeStringField("slotId", selectedSlotId)
+        }
+    }
+
+    /** True when a slot was actually removed; false when it was already gone. */
+    fun decodeDictionaryDeleted(raw: String, expectedSlotId: String): Boolean {
+        val payload = payload(raw, "resource.dictionary.deleted")
+        exact(payload, setOf("slotId", "removed"), "dictionary delete")
+        if (text(payload.getValue("slotId"), "slotId") != expectedSlotId) {
+            invalid("Delete response belongs to another slot")
+        }
+        return bool(payload.getValue("removed"), "removed")
+    }
+
+    /** True when a slot was actually removed; false when it was already gone. */
+    fun decodeLocalResourceDeleted(
+        raw: String,
+        expectedKind: InstalledResourceKind,
+        expectedSlotId: String,
+    ): Boolean {
+        val payload = payload(raw, "resource.local.deleted")
+        exact(payload, setOf("kind", "slotId", "removed"), "local resource delete")
+        if (text(payload.getValue("kind"), "kind") != expectedKind.wireValue) {
+            invalid("Delete response belongs to another resource kind")
+        }
+        if (text(payload.getValue("slotId"), "slotId") != expectedSlotId) {
+            invalid("Delete response belongs to another slot")
+        }
+        return bool(payload.getValue("removed"), "removed")
+    }
+
     fun decodeCancelAccepted(raw: String, expectedOperationId: String): Boolean {
         val payload = payload(raw, "resource.operation.cancel.result")
         exact(payload, setOf("operationId", "accepted"), "resource cancel")

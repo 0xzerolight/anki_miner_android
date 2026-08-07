@@ -457,6 +457,7 @@
     <string name="resource_operation_preview_known_words">Preview known words</string>
     <string name="resource_operation_inspect_known_words">Inspect known words</string>
     <string name="resource_operation_remove_known_words">Remove known words</string>
+    <string name="resource_operation_delete_resource">Remove resource</string>
     <string name="resource_operation_reset_known_words">Reset known words</string>
     <string name="resource_operation_export_known_words">Export known words</string>
     <string name="resource_operation_dictionary_lookup">Dictionary lookup</string>
@@ -477,6 +478,7 @@
     <string name="resource_failure_import_staging">Could not prepare private import staging</string>
     <string name="resource_failure_word_list_not_utf8">That word list is not UTF-8 text</string>
     <string name="resource_failure_word_list_remove">Could not remove the word list</string>
+    <string name="resource_failure_delete">Could not remove the resource</string>
     <string name="resource_failure_import_source_unavailable">The selected %1$s cannot be opened</string>
     <string name="resource_failure_archive_too_large">The selected %1$s is %2$s. This device can take %3$s here.</string>
     <string name="resource_failure_unknown_download_code">Resource download failed (%1$s)</string>
@@ -527,6 +529,9 @@
     <string name="resource_replace_confirm_message">%1$s is replaced transactionally. If the new import fails verification, Anki Miner restores what is installed now.</string>
     <string name="pitch_replace_confirm_message">%1$s is removed as soon as the new file is verified. No backup of it is kept.</string>
     <string name="dictionary_replace_confirm">Replace</string>
+    <string name="resource_remove">Remove</string>
+    <string name="resource_delete_confirm_title">Remove %1$s?</string>
+    <string name="resource_delete_confirm_message">%1$s is deleted from this device. Nothing is removed from Anki, and no backup is kept.</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="custom_dictionary_title">Import another Yomitan ZIP</string>
     <string name="custom_dictionary_slot">Stable dictionary ID</string>
@@ -579,6 +584,7 @@
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be inventoried.</string>
     <string name="local_resource_inventory_invalid">%1$s [%2$s] · invalid inventory (%3$d entries); replace it before mining</string>
+    <string name="local_resource_installed">%1$s [%2$s] · %3$d entries</string>
     <string name="pitch_inventory_invalid">%1$s · invalid inventory (%2$d entries); replace it before mining</string>
     <string name="local_import_complete">Local import complete</string>
     <string name="frequency_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
@@ -605,7 +611,7 @@
     <string name="status_database_permission">database permission needed</string>
     <string name="status_ready_api">ready (API %1$d)</string>
     <string name="dictionary_test_title">Offline dictionary test</string>
-    <string name="dictionary_inventory_broken_title">Dictionary slots needing repair</string>
+    <string name="dictionary_inventory_title">Installed dictionary slots</string>
     <string name="dictionary_inventory_invalid">%1$s [%2$s] · invalid or incomplete (%3$d entries); replace this exact slot before mining</string>
     <string name="dictionary_term">Japanese term</string>
     <string name="dictionary_render_html">Render exact dictionary HTML</string>

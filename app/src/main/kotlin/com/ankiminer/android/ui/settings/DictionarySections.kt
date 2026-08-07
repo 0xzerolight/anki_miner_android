@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
@@ -154,33 +155,55 @@ internal fun CustomDictionaryImportCard(
 }
 
 /**
- * Broken dictionary slots only. A healthy inventory is already listed, with the same names, entry
- * counts and slot ids, by the Dictionary priority editor on this same tab.
+ * Every occupied dictionary slot, with the Remove button for each.
  *
- * The unique thing this card says is *which* slot is broken: an unusable dictionary raises a fatal
- * `dictionary_resource_invalid` inventory failure, and that message does not name the slot.
+ * The priority editor above lists the healthy slots with the same names and counts, but it cannot
+ * remove one, and a broken slot never reaches it. This card also says *which* slot is broken: an
+ * unusable dictionary raises a fatal `dictionary_resource_invalid` inventory failure whose message
+ * does not name the slot, and removing it is the only repair that does not clear app data.
  */
 @Composable
-internal fun DictionaryInventoryCard(state: SetupUiState) {
-    val broken = state.dictionaries.filterNot { it.isUsable }
-    if (broken.isEmpty()) return
+internal fun DictionaryInventoryCard(
+    state: SetupUiState,
+    onRemove: (String) -> Unit,
+) {
+    val installed = state.dictionaries.filter { it.occupied }
+    if (installed.isEmpty()) return
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
-                stringResource(R.string.dictionary_inventory_broken_title),
+                stringResource(R.string.dictionary_inventory_title),
                 modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
             )
-            broken.forEach { dictionary ->
+            installed.forEachIndexed { index, dictionary ->
+                if (index > 0) HorizontalDivider()
+                val invalid = !dictionary.isUsable
                 Text(
                     stringResource(
-                        R.string.dictionary_inventory_invalid,
+                        if (invalid) {
+                            R.string.dictionary_inventory_invalid
+                        } else {
+                            R.string.local_resource_installed
+                        },
                         dictionary.sourceName,
                         dictionary.slotId,
                         dictionary.entryCount,
                     ),
-                    color = MaterialTheme.colorScheme.error,
+                    color =
+                        if (invalid) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
                 )
+                OutlinedButton(
+                    onClick = { onRemove(dictionary.slotId) },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    colors = outlinedActionButtonColors(),
+                    border = actionBorder(!state.busy),
+                ) { Text(stringResource(R.string.resource_remove)) }
             }
         }
     }
