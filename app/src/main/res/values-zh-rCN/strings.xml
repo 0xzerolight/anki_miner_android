@@ -445,6 +445,7 @@
     <string name="resource_operation_preview_known_words">预览已知单词</string>
     <string name="resource_operation_inspect_known_words">检查已知单词</string>
     <string name="resource_operation_remove_known_words">移除已知单词</string>
+    <string name="resource_operation_delete_resource">移除资源</string>
     <string name="resource_operation_reset_known_words">重置已知单词</string>
     <string name="resource_operation_export_known_words">导出已知单词</string>
     <string name="resource_operation_dictionary_lookup">词典查询</string>
@@ -465,6 +466,7 @@
     <string name="resource_failure_import_staging">无法准备私有导入暂存区</string>
     <string name="resource_failure_word_list_not_utf8">该单词列表不是 UTF-8 文本</string>
     <string name="resource_failure_word_list_remove">无法移除单词列表</string>
+    <string name="resource_failure_delete">无法移除资源</string>
     <string name="resource_failure_import_source_unavailable">无法打开所选的 %1$s</string>
     <string name="resource_failure_archive_too_large">所选的 %1$s 为 %2$s。此设备此处可容纳 %3$s。</string>
     <string name="resource_failure_unknown_download_code">资源下载失败（%1$s）</string>

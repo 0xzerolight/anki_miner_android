@@ -445,6 +445,7 @@
     <string name="resource_operation_preview_known_words">Xem trước từ đã biết</string>
     <string name="resource_operation_inspect_known_words">Kiểm tra từ đã biết</string>
     <string name="resource_operation_remove_known_words">Xóa từ đã biết</string>
+    <string name="resource_operation_delete_resource">Xóa tài nguyên</string>
     <string name="resource_operation_reset_known_words">Đặt lại từ đã biết</string>
     <string name="resource_operation_export_known_words">Xuất từ đã biết</string>
     <string name="resource_operation_dictionary_lookup">Tra từ điển</string>
@@ -465,6 +466,7 @@
     <string name="resource_failure_import_staging">Không thể chuẩn bị vùng tạm nhập riêng tư</string>
     <string name="resource_failure_word_list_not_utf8">Danh sách từ đó không phải văn bản UTF-8</string>
     <string name="resource_failure_word_list_remove">Không thể xóa danh sách từ</string>
+    <string name="resource_failure_delete">Không thể xóa tài nguyên</string>
     <string name="resource_failure_import_source_unavailable">Không thể mở %1$s đã chọn</string>
     <string name="resource_failure_archive_too_large">%1$s đã chọn có dung lượng %2$s. Thiết bị này chỉ có thể nhận %3$s ở đây.</string>
     <string name="resource_failure_unknown_download_code">Tải tài nguyên thất bại (%1$s)</string>

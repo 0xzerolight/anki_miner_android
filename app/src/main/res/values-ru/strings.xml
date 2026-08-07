@@ -451,6 +451,7 @@
     <string name="resource_operation_preview_known_words">Предпросмотр известных слов</string>
     <string name="resource_operation_inspect_known_words">Проверить известные слова</string>
     <string name="resource_operation_remove_known_words">Удалить известные слова</string>
+    <string name="resource_operation_delete_resource">Удалить ресурс</string>
     <string name="resource_operation_reset_known_words">Сбросить известные слова</string>
     <string name="resource_operation_export_known_words">Экспортировать известные слова</string>
     <string name="resource_operation_dictionary_lookup">Поиск в словаре</string>
@@ -471,6 +472,7 @@
     <string name="resource_failure_import_staging">Не удалось подготовить закрытое промежуточное хранилище для импорта</string>
     <string name="resource_failure_word_list_not_utf8">Этот список слов не является текстом UTF-8</string>
     <string name="resource_failure_word_list_remove">Не удалось удалить список слов</string>
+    <string name="resource_failure_delete">Не удалось удалить ресурс</string>
     <string name="resource_failure_import_source_unavailable">Не удалось открыть: %1$s</string>
     <string name="resource_failure_archive_too_large">Выбранный %1$s имеет размер %2$s. На этом устройстве здесь доступно %3$s.</string>
     <string name="resource_failure_unknown_download_code">Не удалось загрузить ресурс (%1$s)</string>

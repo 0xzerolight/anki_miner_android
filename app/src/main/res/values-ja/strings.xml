@@ -447,6 +447,7 @@
     <string name="resource_operation_preview_known_words">既知単語をプレビュー</string>
     <string name="resource_operation_inspect_known_words">既知単語を確認</string>
     <string name="resource_operation_remove_known_words">既知単語を削除</string>
+    <string name="resource_operation_delete_resource">リソースを削除</string>
     <string name="resource_operation_reset_known_words">既知単語をリセット</string>
     <string name="resource_operation_export_known_words">既知単語をエクスポート</string>
     <string name="resource_operation_dictionary_lookup">辞書検索</string>
@@ -467,6 +468,7 @@
     <string name="resource_failure_import_staging">非公開インポートの一時領域を準備できませんでした</string>
     <string name="resource_failure_word_list_not_utf8">この単語リストはUTF-8テキストではありません</string>
     <string name="resource_failure_word_list_remove">単語リストを削除できませんでした</string>
+    <string name="resource_failure_delete">リソースを削除できませんでした</string>
     <string name="resource_failure_import_source_unavailable">選択した%1$sを開けません</string>
     <string name="resource_failure_archive_too_large">選択した%1$sは%2$sです。この端末でここに取り込めるのは%3$sまでです。</string>
     <string name="resource_failure_unknown_download_code">リソースのダウンロードが失敗しました（%1$s）</string>

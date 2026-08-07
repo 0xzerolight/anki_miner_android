@@ -1073,6 +1073,99 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun deletingAPitchSourceRefreshesInventoryAndDropsTheSlot() =
+        runTest {
+            val harness = Harness(rootName = "manager-delete-pitch", installedPitchSourceId = "kanjium")
+            assertEquals(listOf("kanjium"), harness.manager.state.value.pitchSources.map { it.sourceId })
+
+            harness.manager.deleteInstalledResource(InstalledResourceKind.PITCH, "kanjium")
+
+            assertEquals(emptyList<String>(), harness.manager.state.value.pitchSources.map { it.sourceId })
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.local.delete").size)
+        }
+
+    @Test
+    fun deletingTheLastBrokenPitchSourceRestoresStartupReadiness() =
+        runTest {
+            // A broken slot is fatal at startup and has no other repair: if delete gated on
+            // READY it would be unavailable in exactly the case it exists for.
+            val harness =
+                Harness(
+                    rootName = "manager-delete-broken",
+                    installedPitchSourceId = "broken",
+                    installedPitchSchemaOk = false,
+                )
+            assertEquals(
+                ResourceStartupReadiness.FAILED,
+                harness.manager.state.value.startupReadiness,
+            )
+
+            harness.manager.deleteInstalledResource(InstalledResourceKind.PITCH, "broken")
+
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertEquals(emptyList<String>(), harness.manager.state.value.pitchSources.map { it.sourceId })
+        }
+
+    @Test
+    fun deleteDoesNotWriteTheRecoveryJournal() =
+        runTest {
+            // A journalled delete that succeeded before process death would be reported as an
+            // interrupted operation on next launch: recovery only recognises UniDic and catalog
+            // dictionary imports as already committed.
+            val harness = Harness(rootName = "manager-delete-journal", installedPitchSourceId = "kanjium")
+
+            harness.manager.deleteInstalledResource(InstalledResourceKind.PITCH, "kanjium")
+
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+        }
+
+    @Test
+    fun failedDeleteOffersRetryCarryingTheDeleteTarget() =
+        runTest {
+            val harness =
+                Harness(
+                    rootName = "manager-delete-failure",
+                    installedPitchSourceId = "kanjium",
+                    bridgeFailureCode = "resource_cleanup_failed",
+                    autoRecover = false,
+                )
+
+            harness.manager.deleteInstalledResource(InstalledResourceKind.PITCH, "kanjium")
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("resource_cleanup_failed", failure.code)
+            assertTrue(failure.retryable)
+            assertEquals(ResourceFailureOrigin.PITCH, failure.origin)
+            assertEquals(
+                ResourceDeleteTarget(InstalledResourceKind.PITCH, "kanjium"),
+                failure.deleteTarget,
+            )
+        }
+
+    @Test
+    fun deleteWhileTheRuntimeLeaseIsHeldRecordsResourceBusy() =
+        runTest {
+            val coordinator = RuntimeWorkCoordinator()
+            val harness =
+                Harness(
+                    rootName = "manager-delete-busy",
+                    runtimeWorkCoordinator = coordinator,
+                    installedPitchSourceId = "kanjium",
+                )
+            val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
+
+            harness.manager.deleteInstalledResource(InstalledResourceKind.PITCH, "kanjium")
+
+            assertEquals("resource_busy", harness.manager.state.value.failure?.code)
+            assertEquals(listOf("kanjium"), harness.manager.state.value.pitchSources.map { it.sourceId })
+            lease.close()
+        }
+
+    @Test
     fun aShortResourceImportRaisesNoNotification() =
         runTest {
             val harness = Harness()
@@ -1095,6 +1188,7 @@ class ResourceManagerTest {
         stagingFailureDetail: String? = null,
         bridgeFailureCode: String? = null,
         installedPitchSourceId: String? = null,
+        installedPitchSchemaOk: Boolean = true,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
         controlExecutor: Executor = DIRECT_EXECUTOR,
@@ -1143,6 +1237,7 @@ class ResourceManagerTest {
                 initialUserCount,
                 bridgeFailureCode,
                 installedPitchSourceId,
+                installedPitchSchemaOk,
                 failRefreshAfterDictionaryImport,
                 failKnownWordsImportOnce,
                 failKnownWordsRemoveOnce,
@@ -1370,7 +1465,8 @@ class ResourceManagerTest {
         private val bridgeFilesRoot: File,
         initialUserCount: Int,
         private val failureCode: String? = null,
-        private val installedPitchSourceId: String?,
+        installedPitchSourceId: String?,
+        private val installedPitchSchemaOk: Boolean = true,
         private val failRefreshAfterDictionaryImport: Boolean,
         failKnownWordsImportOnce: Boolean,
         failKnownWordsRemoveOnce: Boolean,
@@ -1383,6 +1479,9 @@ class ResourceManagerTest {
         private val requests = mutableListOf<String>()
         var userCount = initialUserCount
             private set
+
+        /** Mutable so a delete can drop the slot the next inventory reports. */
+        private var installedPitchSourceId: String? = installedPitchSourceId
         private var catalogDictionaryInstalled = false
         private var failNextDictionaryList = false
         private var knownWordsImportFailures = if (failKnownWordsImportOnce) 1 else 0
@@ -1454,6 +1553,24 @@ class ResourceManagerTest {
                     envelope(
                         "resource.knownwords.imported",
                         """{"format":"migaku_json","importedCount":2,"newRowCount":2,"totalEntries":3,"isGeneric":false}""",
+                    )
+                }
+                "resource.local.delete" -> {
+                    val slotId = stringField(rawRequest, "slotId")
+                    val removed = installedPitchSourceId == slotId
+                    if (removed) installedPitchSourceId = null
+                    envelope(
+                        "resource.local.deleted",
+                        """{"kind":"${stringField(rawRequest, "kind")}","slotId":"$slotId","removed":$removed}""",
+                    )
+                }
+                "resource.dictionary.delete" -> {
+                    val slotId = stringField(rawRequest, "slotId")
+                    val removed = catalogDictionaryInstalled
+                    catalogDictionaryInstalled = false
+                    envelope(
+                        "resource.dictionary.deleted",
+                        """{"slotId":"$slotId","removed":$removed}""",
                     )
                 }
                 "resource.knownwords.list" -> pageResponse(rawRequest)
@@ -1530,7 +1647,7 @@ class ResourceManagerTest {
         private fun inventoryResponse(): String {
             val pitchSources =
                 installedPitchSourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":true,"schemaVersion":1}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1}]"""
                 } ?: "[]"
             return envelope(
                 "resource.local.listed",

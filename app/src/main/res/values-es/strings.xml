@@ -449,6 +449,7 @@
     <string name="resource_operation_preview_known_words">Previsualizar palabras conocidas</string>
     <string name="resource_operation_inspect_known_words">Inspeccionar palabras conocidas</string>
     <string name="resource_operation_remove_known_words">Eliminar palabras conocidas</string>
+    <string name="resource_operation_delete_resource">Eliminar recurso</string>
     <string name="resource_operation_reset_known_words">Restablecer palabras conocidas</string>
     <string name="resource_operation_export_known_words">Exportar palabras conocidas</string>
     <string name="resource_operation_dictionary_lookup">Buscar en el diccionario</string>
@@ -469,6 +470,7 @@
     <string name="resource_failure_import_staging">No se pudo preparar la importación privada</string>
     <string name="resource_failure_word_list_not_utf8">Esa lista de palabras no es texto UTF-8</string>
     <string name="resource_failure_word_list_remove">No se pudo eliminar la lista de palabras</string>
+    <string name="resource_failure_delete">No se pudo eliminar el recurso</string>
     <string name="resource_failure_import_source_unavailable">No se puede abrir %1$s seleccionado</string>
     <string name="resource_failure_archive_too_large">%1$s seleccionado ocupa %2$s. Este dispositivo puede usar %3$s aquí.</string>
     <string name="resource_failure_unknown_download_code">Falló la descarga del recurso (%1$s)</string>

@@ -456,6 +456,7 @@
     <string name="resource_operation_preview_known_words">Preview known words</string>
     <string name="resource_operation_inspect_known_words">Inspect known words</string>
     <string name="resource_operation_remove_known_words">Remove known words</string>
+    <string name="resource_operation_delete_resource">Remove resource</string>
     <string name="resource_operation_reset_known_words">Reset known words</string>
     <string name="resource_operation_export_known_words">Export known words</string>
     <string name="resource_operation_dictionary_lookup">Dictionary lookup</string>
@@ -476,6 +477,7 @@
     <string name="resource_failure_import_staging">Could not prepare private import staging</string>
     <string name="resource_failure_word_list_not_utf8">That word list is not UTF-8 text</string>
     <string name="resource_failure_word_list_remove">Could not remove the word list</string>
+    <string name="resource_failure_delete">Could not remove the resource</string>
     <string name="resource_failure_import_source_unavailable">The selected %1$s cannot be opened</string>
     <string name="resource_failure_archive_too_large">The selected %1$s is %2$s. This device can take %3$s here.</string>
     <string name="resource_failure_unknown_download_code">Resource download failed (%1$s)</string>

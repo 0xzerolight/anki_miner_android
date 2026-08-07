@@ -445,6 +445,7 @@
     <string name="resource_operation_preview_known_words">Pratinjau kata yang dikenal</string>
     <string name="resource_operation_inspect_known_words">Periksa kata yang dikenal</string>
     <string name="resource_operation_remove_known_words">Hapus kata yang dikenal</string>
+    <string name="resource_operation_delete_resource">Hapus sumber daya</string>
     <string name="resource_operation_reset_known_words">Setel ulang kata yang dikenal</string>
     <string name="resource_operation_export_known_words">Ekspor kata yang dikenal</string>
     <string name="resource_operation_dictionary_lookup">Pencarian kamus</string>
@@ -465,6 +466,7 @@
     <string name="resource_failure_import_staging">Tidak dapat menyiapkan staging impor privat</string>
     <string name="resource_failure_word_list_not_utf8">Daftar kata itu bukan teks UTF-8</string>
     <string name="resource_failure_word_list_remove">Daftar kata tidak dapat dihapus</string>
+    <string name="resource_failure_delete">Sumber daya tidak dapat dihapus</string>
     <string name="resource_failure_import_source_unavailable">%1$s yang dipilih tidak dapat dibuka</string>
     <string name="resource_failure_archive_too_large">%1$s yang dipilih berukuran %2$s. Perangkat ini dapat menampung %3$s di sini.</string>
     <string name="resource_failure_unknown_download_code">Pengunduhan sumber daya gagal (%1$s)</string>

@@ -447,6 +447,7 @@
     <string name="resource_operation_preview_known_words">Bekannte Wörter in Vorschau anzeigen</string>
     <string name="resource_operation_inspect_known_words">Bekannte Wörter prüfen</string>
     <string name="resource_operation_remove_known_words">Bekannte Wörter entfernen</string>
+    <string name="resource_operation_delete_resource">Ressource entfernen</string>
     <string name="resource_operation_reset_known_words">Bekannte Wörter zurücksetzen</string>
     <string name="resource_operation_export_known_words">Bekannte Wörter exportieren</string>
     <string name="resource_operation_dictionary_lookup">Wörterbuchsuche</string>
@@ -467,6 +468,7 @@
     <string name="resource_failure_import_staging">Privates Import-Staging konnte nicht vorbereitet werden</string>
     <string name="resource_failure_word_list_not_utf8">Diese Wortliste ist kein UTF-8-Text</string>
     <string name="resource_failure_word_list_remove">Die Wortliste konnte nicht entfernt werden</string>
+    <string name="resource_failure_delete">Die Ressource konnte nicht entfernt werden</string>
     <string name="resource_failure_import_source_unavailable">Das ausgewählte %1$s kann nicht geöffnet werden</string>
     <string name="resource_failure_archive_too_large">Das ausgewählte %1$s ist %2$s groß. Dieses Gerät kann hier %3$s aufnehmen.</string>
     <string name="resource_failure_unknown_download_code">Ressourcen-Download fehlgeschlagen (%1$s)</string>
