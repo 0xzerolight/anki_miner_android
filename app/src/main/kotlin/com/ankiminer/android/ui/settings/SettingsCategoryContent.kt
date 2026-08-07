@@ -218,40 +218,44 @@ private fun LazyListScope.ankiSettings(
                 singleLine = false,
                 maxLines = 2,
             )
-            Text(
-                stringResource(R.string.settings_excluded_decks),
-                style = MaterialTheme.typography.titleSmall,
-            )
             val choices = excludedDeckChoices(setup.availableDeckNames, draft.excludedDecks)
-            if (choices.isEmpty()) {
-                Text(
-                    stringResource(R.string.settings_no_anki_decks),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            } else {
-                choices.forEach { deck ->
-                    BooleanSetting(
-                        label = deck.name,
-                        detail =
-                            if (deck.discovered) {
-                                null
-                            } else {
-                                stringResource(R.string.settings_anki_deck_not_discovered)
-                            },
-                        checked = deck.checked,
-                        onCheckedChange = { checked ->
-                            callbacks.onDraftChange(
-                                draft.copy(
-                                    excludedDecks =
-                                        if (checked) {
-                                            (draft.excludedDecks + deck.name).distinct()
-                                        } else {
-                                            draft.excludedDecks - deck.name
-                                        },
-                                ),
-                            )
-                        },
+            CollapsibleSettingGroup(
+                title = stringResource(R.string.settings_excluded_decks),
+                selectedCount = choices.count { it.checked },
+                totalCount = choices.size,
+                // Nothing to collapse, and the only explanation is the error line inside.
+                forceOpen = choices.isEmpty(),
+            ) {
+                if (choices.isEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_no_anki_decks),
+                        color = MaterialTheme.colorScheme.error,
                     )
+                } else {
+                    choices.forEach { deck ->
+                        BooleanSetting(
+                            label = deck.name,
+                            detail =
+                                if (deck.discovered) {
+                                    null
+                                } else {
+                                    stringResource(R.string.settings_anki_deck_not_discovered)
+                                },
+                            checked = deck.checked,
+                            onCheckedChange = { checked ->
+                                callbacks.onDraftChange(
+                                    draft.copy(
+                                        excludedDecks =
+                                            if (checked) {
+                                                (draft.excludedDecks + deck.name).distinct()
+                                            } else {
+                                                draft.excludedDecks - deck.name
+                                            },
+                                    ),
+                                )
+                            },
+                        )
+                    }
                 }
             }
             BooleanSetting(
