@@ -324,3 +324,52 @@ def test_dispatch_routes_paged_curation_control_without_callbacks(
 
     assert decode_envelope(returned).message_type == "curation.page.accepted"
     assert received == [request]
+
+
+def test_dispatch_routes_resource_delete_to_its_owning_module(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Both ops must be routed, not merely declared supported.
+
+    A request type listed in ``supported_after_bootstrap`` but absent from a handler
+    table falls through to the tail of ``_dispatch_validated``; this pins the routing
+    itself rather than the allowlist entry.
+    """
+
+    import android_bridge.local_resources as local_resources
+    import android_bridge.resources as resources
+
+    seen: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        local_resources,
+        "delete_local_resource",
+        lambda payload: seen.append(("local", dict(payload))) or encode_message("resource.local.deleted", {}),
+    )
+    monkeypatch.setattr(
+        resources,
+        "delete_dictionary",
+        lambda payload: seen.append(("dictionary", dict(payload))) or encode_message("resource.dictionary.deleted", {}),
+    )
+
+    boundary.dispatch(
+        encode_message(
+            "resource.local.delete",
+            {"operationId": "delete-route", "kind": "pitch", "slotId": "fixture"},
+        )
+    )
+    boundary.dispatch(
+        encode_message("resource.dictionary.delete", {"operationId": "delete-route", "slotId": "fixture"})
+    )
+
+    assert [entry[0] for entry in seen] == ["local", "dictionary"]
+    assert seen[0][1]["kind"] == "pitch"
+    assert seen[1][1]["slotId"] == "fixture"
+
+
+def test_dispatch_refuses_a_unidic_delete(initialized_bridge_home: Path) -> None:
+    """UniDic is the tokenizer the whole engine depends on; it has no delete."""
+
+    raw = boundary.dispatch(encode_message("resource.unidic.delete", {"operationId": "delete-unidic"}))
+
+    assert decode_envelope(raw, expected_type="bridge.error").payload["code"] == "unsupported_operation"
