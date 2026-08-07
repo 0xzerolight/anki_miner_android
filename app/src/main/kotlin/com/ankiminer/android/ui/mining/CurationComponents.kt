@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,15 +12,18 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -41,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -64,6 +69,7 @@ import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.ChevronGlyph
 import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -73,6 +79,7 @@ internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
 internal const val CURATION_FILTER_TEST_TAG = "curation_filter"
 internal const val CURATION_SORT_TEST_TAG = "curation_sort"
 internal const val CURATION_BULK_TEST_TAG = "curation_bulk_actions"
+internal const val CURATION_TOOLS_TOGGLE_TEST_TAG = "curation_tools_toggle"
 
 @StringRes
 private fun CurationFilter.label(): Int =
@@ -120,6 +127,7 @@ internal fun CurationChrome(
     onSelectWholePage: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var toolsExpanded by rememberSaveable { mutableStateOf(true) }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
@@ -144,6 +152,30 @@ internal fun CurationChrome(
                 modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.labelLarge,
             )
+            val toggleDescription =
+                stringResource(
+                    if (toolsExpanded) {
+                        R.string.curation_tools_hide
+                    } else {
+                        R.string.curation_tools_show
+                    },
+                )
+            val toggleState =
+                stringResource(
+                    if (toolsExpanded) R.string.disclosure_expanded else R.string.disclosure_collapsed,
+                )
+            IconButton(
+                onClick = { toolsExpanded = !toolsExpanded },
+                modifier =
+                    Modifier
+                        .testTag(CURATION_TOOLS_TOGGLE_TEST_TAG)
+                        .semantics {
+                            contentDescription = toggleDescription
+                            stateDescription = toggleState
+                        },
+            ) {
+                ChevronGlyph(pointsUp = toolsExpanded)
+            }
         }
         page?.let {
             Text(
@@ -167,22 +199,24 @@ internal fun CurationChrome(
                 )
             }
         }
-        CurationControls(
-            query = query,
-            filter = filter,
-            sort = sort,
-            enabled = enabled,
-            visibleCount = visibleCount,
-            allVisibleSelected = allVisibleSelected,
-            selectVisibleEnabled = selectVisibleEnabled,
-            pageCandidateCount = pageCandidateCount,
-            selectAllTestTag = selectAllTestTag,
-            onQueryChanged = onQueryChanged,
-            onFilterChanged = onFilterChanged,
-            onSortChanged = onSortChanged,
-            onSetSelectionForVisible = onSetSelectionForVisible,
-            onSelectWholePage = onSelectWholePage,
-        )
+        if (toolsExpanded) {
+            CurationControls(
+                query = query,
+                filter = filter,
+                sort = sort,
+                enabled = enabled,
+                visibleCount = visibleCount,
+                allVisibleSelected = allVisibleSelected,
+                selectVisibleEnabled = selectVisibleEnabled,
+                pageCandidateCount = pageCandidateCount,
+                selectAllTestTag = selectAllTestTag,
+                onQueryChanged = onQueryChanged,
+                onFilterChanged = onFilterChanged,
+                onSortChanged = onSortChanged,
+                onSetSelectionForVisible = onSetSelectionForVisible,
+                onSelectWholePage = onSelectWholePage,
+            )
+        }
     }
 }
 
@@ -210,21 +244,25 @@ private fun CurationControls(
     onSelectWholePage: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+        // Placeholder instead of a floating label: the label needs the stock 56dp field to
+        // clear its collapsed position, and the compact 48dp height would clip it.
+        val compactSearch = LocalDensity.current.fontScale < 1.3f
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChanged,
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .then(if (compactSearch) Modifier.height(48.dp) else Modifier)
                     .testTag(CURATION_SEARCH_TEST_TAG),
             enabled = enabled,
             singleLine = true,
-            label = { Text(stringResource(R.string.curation_search)) },
+            textStyle = MaterialTheme.typography.bodyMedium,
+            placeholder = { Text(stringResource(R.string.curation_search)) },
         )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth(),
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
             CurationMenuButton(
                 label =
@@ -321,17 +359,18 @@ private fun CurationMenuButton(
 ) {
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
+        // Visually 40dp; minimumInteractiveComponentSize keeps the 48dp touch target.
         OutlinedButton(
             onClick = { expanded = true },
             enabled = enabled,
             modifier =
                 Modifier
-                    .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+                    .heightIn(min = 40.dp)
                     .testTag(testTag),
             colors = outlinedActionButtonColors(),
             border = actionBorder(enabled),
         ) {
-            Text(label)
+            Text(label, style = MaterialTheme.typography.labelMedium)
         }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             items { expanded = false }

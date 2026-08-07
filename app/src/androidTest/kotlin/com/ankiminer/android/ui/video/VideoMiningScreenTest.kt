@@ -49,6 +49,7 @@ import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
+import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -769,6 +770,58 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(tailTag).assertIsDisplayed()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate(candidates.first().candidateId))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun toolsToggleCollapsesAndRestoresSearchAndFilterControls() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+    }
+
+    @Test
+    fun collapsingToolsKeepsTheActiveSearchQueryApplied() {
+        val candidates =
+            listOf(
+                candidate("candidate-match", "懐かしい", listOf(sentence("s-0", "Sentence 0"))),
+                candidate("candidate-other", "食べる", listOf(sentence("s-1", "Sentence 1"))),
+            )
+        val request = CurationRequest("run", "request-collapse", candidates)
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("懐かしい")
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate("candidate-other"))
+            .assertDoesNotExist()
+
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate("candidate-match"))
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate("candidate-other"))
             .assertDoesNotExist()
     }
 

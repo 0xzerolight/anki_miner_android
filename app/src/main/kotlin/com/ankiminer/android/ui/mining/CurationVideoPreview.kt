@@ -32,7 +32,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -50,6 +49,7 @@ import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.PreviewFailure
 import com.ankiminer.android.player.currentCue
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.ChevronGlyph
 import kotlinx.coroutines.delay
 
 object CurationPlayerTestTags {
@@ -332,38 +332,8 @@ private fun PlayPauseGlyph(playing: Boolean) {
     }
 }
 
-@Composable
-private fun ChevronGlyph(pointsUp: Boolean) {
-    val color = LocalContentColor.current
-    Canvas(
-        modifier =
-            Modifier
-                .size(PlayerIconSize)
-                .clearAndSetSemantics {},
-    ) {
-        val outsideY = size.height * if (pointsUp) 0.62f else 0.38f
-        val centerY = size.height * if (pointsUp) 0.36f else 0.64f
-        val strokeWidth = ChevronStrokeWidth.toPx()
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.22f, outsideY),
-            end = Offset(size.width * 0.50f, centerY),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round,
-        )
-        drawLine(
-            color = color,
-            start = Offset(size.width * 0.50f, centerY),
-            end = Offset(size.width * 0.78f, outsideY),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Round,
-        )
-    }
-}
-
 private const val VIDEO_ASPECT_RATIO = 16f / 9f
 private const val POSITION_TICK_MILLIS = 100L
 private const val OVERLAY_SCRIM_ALPHA = 0.68f
 private val AudioSurfaceHeight = 160.dp
 private val PlayerIconSize = 24.dp
-private val ChevronStrokeWidth = 2.dp

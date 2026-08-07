@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.theme
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonColors
@@ -29,9 +31,13 @@ import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -467,3 +473,36 @@ internal fun actionBorder(enabled: Boolean): BorderStroke =
 
 @Composable
 private fun disabledActionColors(): DisabledActionColors = LocalDisabledActionColors.current
+
+/** Hand-drawn disclosure chevron shared by the player collapse and the curation tools toggle. */
+@Composable
+internal fun ChevronGlyph(pointsUp: Boolean) {
+    val color = LocalContentColor.current
+    Canvas(
+        modifier =
+            Modifier
+                .size(ChevronGlyphSize)
+                .clearAndSetSemantics {},
+    ) {
+        val outsideY = size.height * if (pointsUp) 0.62f else 0.38f
+        val centerY = size.height * if (pointsUp) 0.36f else 0.64f
+        val strokeWidth = ChevronStrokeWidth.toPx()
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.22f, outsideY),
+            end = Offset(size.width * 0.50f, centerY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+        drawLine(
+            color = color,
+            start = Offset(size.width * 0.50f, centerY),
+            end = Offset(size.width * 0.78f, outsideY),
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+        )
+    }
+}
+
+private val ChevronGlyphSize = 24.dp
+private val ChevronStrokeWidth = 2.dp

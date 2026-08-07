@@ -38,6 +38,8 @@ import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
+import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
+import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -574,6 +576,25 @@ class ReadingMiningScreenTest {
         composeRule.runOnIdle { assertEquals(false, cancelled) }
         composeRule.onNodeWithText("Cancel run").performClick()
         composeRule.runOnIdle { assertEquals(true, cancelled) }
+    }
+
+    @Test
+    fun readingToolsToggleCollapsesAndRestoresSearchAndFilterControls() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
     }
 
     @Test

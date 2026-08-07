@@ -111,6 +111,8 @@
     <string name="curation_filter_action">Filter: %1$s</string>
     <string name="curation_sort_action">Urutkan: %1$s</string>
     <string name="curation_bulk_action">Pilih…</string>
+    <string name="curation_tools_hide">Sembunyikan pencarian dan filter</string>
+    <string name="curation_tools_show">Tampilkan pencarian dan filter</string>
     <string name="candidate_state_selected">Dipilih</string>
     <string name="candidate_state_excluded">Dikecualikan</string>
     <string name="candidate_part_of_speech_unknown">Jenis kata tidak diketahui</string>

@@ -337,7 +337,19 @@ fun ReadingMiningScreen(
                             .weight(1f)
                             .fillMaxWidth()
                             .testTag(ReadingMiningTestTags.CONTENT),
-                    contentPadding = PaddingValues(AnkiMinerTokens.Space.content),
+                    contentPadding =
+                        if (targetState.runState is MiningRunState.Curating) {
+                            // The pinned chrome above already separates the list; a tighter top
+                            // inset gives the candidate rows the space back on small screens.
+                            PaddingValues(
+                                start = AnkiMinerTokens.Space.content,
+                                top = AnkiMinerTokens.Space.related,
+                                end = AnkiMinerTokens.Space.content,
+                                bottom = AnkiMinerTokens.Space.content,
+                            )
+                        } else {
+                            PaddingValues(AnkiMinerTokens.Space.content)
+                        },
                     // Curation pays its own gaps per item, so an expanded candidate can close ranks
                     // with its detail and read as one card.
                     verticalArrangement =

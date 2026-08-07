@@ -111,6 +111,8 @@
     <string name="curation_filter_action">Filter: %1$s</string>
     <string name="curation_sort_action">Sortieren: %1$s</string>
     <string name="curation_bulk_action">Auswählen…</string>
+    <string name="curation_tools_hide">Suche und Filter ausblenden</string>
+    <string name="curation_tools_show">Suche und Filter anzeigen</string>
     <string name="candidate_state_selected">Ausgewählt</string>
     <string name="candidate_state_excluded">Ausgeschlossen</string>
     <string name="candidate_part_of_speech_unknown">Unbekannte Wortart</string>

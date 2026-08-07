@@ -111,6 +111,8 @@
     <string name="curation_filter_action">Bộ lọc: %1$s</string>
     <string name="curation_sort_action">Sắp xếp: %1$s</string>
     <string name="curation_bulk_action">Chọn…</string>
+    <string name="curation_tools_hide">Ẩn tìm kiếm và bộ lọc</string>
+    <string name="curation_tools_show">Hiện tìm kiếm và bộ lọc</string>
     <string name="candidate_state_selected">Đã chọn</string>
     <string name="candidate_state_excluded">Đã loại trừ</string>
     <string name="candidate_part_of_speech_unknown">Không rõ từ loại</string>
