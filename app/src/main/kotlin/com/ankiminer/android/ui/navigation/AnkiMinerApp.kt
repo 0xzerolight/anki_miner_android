@@ -10,7 +10,11 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -45,6 +49,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -172,6 +177,12 @@ internal fun compactNavigation(
     widthDp: Int,
     fontScale: Float,
 ): Boolean = widthDp < 360 && fontScale >= 1.3f
+
+/**
+ * Compact bar height for ordinary font scales; null keeps the stock M3 80dp bar so large
+ * text is never clipped. The value must still leave every item a >=48dp touch target.
+ */
+internal fun compactBottomBarHeight(fontScale: Float): Dp? = 64.dp.takeIf { fontScale < 1.3f }
 
 internal fun activeWorkflowDestination(
     video: NavigationWorkflowState,
@@ -310,7 +321,20 @@ internal fun AnkiMinerAppShell(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             bottomBar = {
                 if (currentDestination?.showsBottomBar == true) {
-                    NavigationBar {
+                    val compactHeight = compactBottomBarHeight(LocalDensity.current.fontScale)
+                    val barModifier =
+                        if (compactHeight == null) {
+                            Modifier
+                        } else {
+                            // The bar consumes the gesture/nav-bar inset internally, so the
+                            // fixed height must include it or items get squeezed.
+                            val bottomInset =
+                                WindowInsets.navigationBars
+                                    .asPaddingValues()
+                                    .calculateBottomPadding()
+                            Modifier.height(compactHeight + bottomInset)
+                        }
+                    NavigationBar(modifier = barModifier) {
                         listOf(
                             AnkiMinerDestination.VIDEO,
                             AnkiMinerDestination.AUDIO,

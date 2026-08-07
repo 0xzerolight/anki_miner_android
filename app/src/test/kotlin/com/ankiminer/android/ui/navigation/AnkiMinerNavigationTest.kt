@@ -2,9 +2,11 @@ package com.ankiminer.android.ui.navigation
 
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.ui.mining.TimingPreviewState
+import androidx.compose.ui.unit.dp
 import com.ankiminer.android.vm.NavigationWorkflowState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -75,6 +77,14 @@ class AnkiMinerNavigationTest {
         assertFalse(compactNavigation(widthDp = 400, fontScale = 2.0f))
         assertTrue(compactNavigation(widthDp = 320, fontScale = 1.3f))
         assertTrue(compactNavigation(widthDp = 320, fontScale = 2.0f))
+    }
+
+    @Test
+    fun compactBottomBarHeightAppliesOnlyBelowLargeFontScale() {
+        assertEquals(64.dp, compactBottomBarHeight(fontScale = 1.0f))
+        assertEquals(64.dp, compactBottomBarHeight(fontScale = 1.29f))
+        assertNull(compactBottomBarHeight(fontScale = 1.3f))
+        assertNull(compactBottomBarHeight(fontScale = 2.0f))
     }
 
     @Test
