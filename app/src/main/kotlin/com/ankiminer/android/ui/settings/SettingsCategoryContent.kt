@@ -556,7 +556,13 @@ private fun LazyListScope.dictionarySettings(
             HorizontalDivider()
             // Pitch is a first-hit-wins chain now, so the order is editable here and the
             // per-source names live in the editor rather than one installed-file line.
-            SettingsSection(stringResource(R.string.settings_pitch_chain)) {
+            CollapsibleSettingGroup(
+                title = stringResource(R.string.settings_pitch_chain),
+                selectedCount = draft.pitchSources.count { it.enabled },
+                totalCount = draft.pitchSources.size,
+                forceOpen = draft.pitchSources.isEmpty(),
+                titleStyle = MaterialTheme.typography.titleMedium,
+            ) {
                 ResourceChainEditor(
                     choices = draft.pitchSources,
                     labels =
@@ -629,7 +635,14 @@ private fun LazyListScope.audioSettings(
     callbacks: SettingsScreenCallbacks,
 ) {
     settingsCard(SettingsCategory.AUDIO, recorder, "audio-chain") {
-        SettingsSection(stringResource(R.string.settings_audio_pack_chain)) {
+        CollapsibleSettingGroup(
+            title = stringResource(R.string.settings_audio_pack_chain),
+            selectedCount = draft.audioPacks.count { it.enabled },
+            totalCount = draft.audioPacks.size,
+            // The empty message is the whole content; collapsing it would hide the reason.
+            forceOpen = draft.audioPacks.isEmpty(),
+            titleStyle = MaterialTheme.typography.titleMedium,
+        ) {
             ResourceChainEditor(
                 choices = draft.audioPacks,
                 labels =
@@ -685,7 +698,13 @@ private fun LazyListScope.frequencySettings(
     callbacks: SettingsScreenCallbacks,
 ) {
     settingsCard(SettingsCategory.FREQUENCY, recorder, "frequency-chain") {
-        SettingsSection(stringResource(R.string.settings_frequency_chain)) {
+        CollapsibleSettingGroup(
+            title = stringResource(R.string.settings_frequency_chain),
+            selectedCount = draft.frequencySources.count { it.enabled },
+            totalCount = draft.frequencySources.size,
+            forceOpen = draft.frequencySources.isEmpty(),
+            titleStyle = MaterialTheme.typography.titleMedium,
+        ) {
             ResourceChainEditor(
                 choices = draft.frequencySources,
                 labels =
