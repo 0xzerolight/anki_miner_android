@@ -532,7 +532,13 @@ private fun LazyListScope.dictionarySettings(
         )
     }
     settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-chain") {
-        SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
+        CollapsibleSettingGroup(
+            title = stringResource(R.string.settings_dictionary_chain),
+            selectedCount = draft.dictionarySources.count { it.enabled },
+            totalCount = draft.dictionarySources.size,
+            forceOpen = draft.dictionarySources.isEmpty(),
+            titleStyle = MaterialTheme.typography.titleMedium,
+        ) {
             ResourceChainEditor(
                 choices = draft.dictionarySources,
                 labels =
@@ -544,55 +550,55 @@ private fun LazyListScope.dictionarySettings(
                     callbacks.onDraftChange(draft.copy(dictionarySources = it))
                 },
             )
-            HorizontalDivider()
-            BooleanSetting(
-                label = stringResource(R.string.settings_jisho),
-                checked = draft.jisho,
-                onCheckedChange = {
-                    callbacks.onDraftChange(draft.copy(jisho = it))
-                },
-            )
-            SupportingText(stringResource(R.string.settings_jisho_disclosure))
-            HorizontalDivider()
-            // Pitch is a first-hit-wins chain now, so the order is editable here and the
-            // per-source names live in the editor rather than one installed-file line.
-            CollapsibleSettingGroup(
-                title = stringResource(R.string.settings_pitch_chain),
-                selectedCount = draft.pitchSources.count { it.enabled },
-                totalCount = draft.pitchSources.size,
-                forceOpen = draft.pitchSources.isEmpty(),
-                titleStyle = MaterialTheme.typography.titleMedium,
-            ) {
-                ResourceChainEditor(
-                    choices = draft.pitchSources,
-                    labels =
-                        resources.pitchSources.associate {
-                            it.sourceId to "${it.sourceName} (${it.entryCount})"
-                        },
-                    emptyMessage = stringResource(R.string.settings_pitch_not_installed),
-                    onChange = {
-                        callbacks.onDraftChange(draft.copy(pitchSources = it))
+        }
+        HorizontalDivider()
+        BooleanSetting(
+            label = stringResource(R.string.settings_jisho),
+            checked = draft.jisho,
+            onCheckedChange = {
+                callbacks.onDraftChange(draft.copy(jisho = it))
+            },
+        )
+        SupportingText(stringResource(R.string.settings_jisho_disclosure))
+        HorizontalDivider()
+        // Pitch is a first-hit-wins chain now, so the order is editable here and the
+        // per-source names live in the editor rather than one installed-file line.
+        CollapsibleSettingGroup(
+            title = stringResource(R.string.settings_pitch_chain),
+            selectedCount = draft.pitchSources.count { it.enabled },
+            totalCount = draft.pitchSources.size,
+            forceOpen = draft.pitchSources.isEmpty(),
+            titleStyle = MaterialTheme.typography.titleMedium,
+        ) {
+            ResourceChainEditor(
+                choices = draft.pitchSources,
+                labels =
+                    resources.pitchSources.associate {
+                        it.sourceId to "${it.sourceName} (${it.entryCount})"
                     },
-                )
-            }
-            NullableChoice(
-                label = stringResource(R.string.settings_pitch_format),
-                value = draft.pitchFormat,
-                engineDefault = PitchCategoryFormat.JAPANESE,
-                values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
-                optionLabel = { value ->
-                    stringResource(
-                        when (value) {
-                            PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
-                            PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
-                        },
-                    )
-                },
+                emptyMessage = stringResource(R.string.settings_pitch_not_installed),
                 onChange = {
-                    callbacks.onDraftChange(draft.copy(pitchFormat = it))
+                    callbacks.onDraftChange(draft.copy(pitchSources = it))
                 },
             )
         }
+        NullableChoice(
+            label = stringResource(R.string.settings_pitch_format),
+            value = draft.pitchFormat,
+            engineDefault = PitchCategoryFormat.JAPANESE,
+            values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
+            optionLabel = { value ->
+                stringResource(
+                    when (value) {
+                        PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
+                        PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
+                    },
+                )
+            },
+            onChange = {
+                callbacks.onDraftChange(draft.copy(pitchFormat = it))
+            },
+        )
     }
     // Conditional cards trail the deep-link targets so settingsCardIndexFor stays a table of
     // constants. Moving dictionary-inventory back above dictionary-lookup silently shifts the
@@ -818,38 +824,43 @@ private fun LazyListScope.filteringSettings(
                 error = validationMessage(draft, SettingsFieldKey.WORKERS),
             )
             HorizontalDivider()
-            Text(
-                stringResource(R.string.settings_wordsets),
-                style = MaterialTheme.typography.titleSmall,
-            )
-            if (resources.wordsets.isEmpty()) {
-                Text(
-                    stringResource(R.string.bundled_wordsets_unavailable),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            } else {
-                resources.wordsets.forEach { wordset ->
-                    BooleanSetting(
-                        label = wordset.displayName,
-                        detail =
-                            stringResource(
-                                R.string.settings_resource_entries,
-                                wordset.entryCount,
-                            ),
-                        checked = wordset.wordsetId in draft.enabledWordsets,
-                        onCheckedChange = { checked ->
-                            callbacks.onDraftChange(
-                                draft.copy(
-                                    enabledWordsets =
-                                        if (checked) {
-                                            (draft.enabledWordsets + wordset.wordsetId).distinct()
-                                        } else {
-                                            draft.enabledWordsets - wordset.wordsetId
-                                        },
-                                ),
-                            )
-                        },
+            CollapsibleSettingGroup(
+                title = stringResource(R.string.settings_wordsets),
+                selectedCount =
+                    resources.wordsets.count { it.wordsetId in draft.enabledWordsets },
+                totalCount = resources.wordsets.size,
+                forceOpen = resources.wordsets.isEmpty(),
+            ) {
+                if (resources.wordsets.isEmpty()) {
+                    Text(
+                        stringResource(R.string.bundled_wordsets_unavailable),
+                        color = MaterialTheme.colorScheme.error,
                     )
+                } else {
+                    resources.wordsets.forEach { wordset ->
+                        BooleanSetting(
+                            label = wordset.displayName,
+                            detail =
+                                stringResource(
+                                    R.string.settings_resource_entries,
+                                    wordset.entryCount,
+                                ),
+                            checked = wordset.wordsetId in draft.enabledWordsets,
+                            onCheckedChange = { checked ->
+                                callbacks.onDraftChange(
+                                    draft.copy(
+                                        enabledWordsets =
+                                            if (checked) {
+                                                (draft.enabledWordsets + wordset.wordsetId)
+                                                    .distinct()
+                                            } else {
+                                                draft.enabledWordsets - wordset.wordsetId
+                                            },
+                                    ),
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }
