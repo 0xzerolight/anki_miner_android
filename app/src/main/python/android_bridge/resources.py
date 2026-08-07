@@ -339,9 +339,7 @@ def _unidic_manifest(resource: UniDicResource) -> dict[str, object]:
 
 def _compatibility_marker(resource: UniDicResource) -> bytes:
     return (
-        "anki-miner-tokenizer-v1\n"
-        f"resourceId={resource.resource_id}\n"
-        f"treeSha256={resource.install.tree_sha256}\n"
+        f"anki-miner-tokenizer-v1\nresourceId={resource.resource_id}\ntreeSha256={resource.install.tree_sha256}\n"
     ).encode()
 
 
@@ -1456,6 +1454,76 @@ def _recover_dictionary_backups(home: Path) -> None:
             _fsync_directory(dicts_root)
         else:
             _safe_remove_dictionary_entry(backup)
+
+
+def _purge_dictionary_backups(home: Path, slot_id: str) -> None:
+    """Drop every backup ``_recover_dictionary_backups`` would promote back into place.
+
+    That function renames a surviving ``backup-<slot_id>--*`` onto ``dicts/<slot_id>``
+    whenever the slot is missing, which is exactly the state a delete leaves behind.
+    """
+
+    backup_root = _backup_root(home)
+    if not _path_occupied(backup_root):
+        return
+    _ensure_real_directory(
+        backup_root,
+        code="resource_cleanup_failed",
+        message="Dictionary backup root is unsafe",
+    )
+    try:
+        backups = sorted(backup_root.iterdir())
+    except OSError as exc:
+        raise _fail("resource_cleanup_failed", "Cannot inspect dictionary backups") from exc
+    purged = False
+    for backup in backups:
+        # Same parse and same strictness as _recover_dictionary_backups, so exactly
+        # the entries it would promote onto this slot are the entries removed here.
+        if not backup.name.startswith("backup-"):
+            raise _fail("resource_cleanup_failed", "Dictionary backup entry is unsafe")
+        remainder = backup.name.removeprefix("backup-")
+        candidate, separator, operation_id = remainder.partition("--")
+        if separator != "--" or not _SLOT_ID_RE.fullmatch(candidate) or not _OPERATION_ID_RE.fullmatch(operation_id):
+            raise _fail("resource_cleanup_failed", "Dictionary backup slot is invalid")
+        if candidate != slot_id:
+            continue
+        _safe_remove_dictionary_entry(backup)
+        purged = True
+    if purged:
+        _fsync_directory(backup_root)
+
+
+def delete_dictionary(payload: Mapping[str, object]) -> str:
+    _exact(payload, {"operationId", "slotId"}, code="invalid_resource_request")
+    operation_id = _operation_id(payload["operationId"])
+    slot_id = _slot_id(payload["slotId"])
+    home = Path(require_initialized())
+    root = _dictionary_root(home)
+    final = root / slot_id
+    grave: Path | None = None
+    with _OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        with _PROMOTION_LOCK:
+            _purge_dictionary_backups(home, slot_id)
+            if _path_occupied(final):
+                operation_root = _resource_work_root(home) / "operations" / operation_id
+                _safe_rmtree(operation_root)
+                operation_root.mkdir(parents=True)
+                grave = operation_root / slot_id
+                # Rename, not rmtree: the slot leaves the published root atomically, so
+                # an interrupted delete cannot leave a half-tree that inventory reports
+                # as an invalid slot. cleanup_resources sweeps the staging left behind.
+                final.rename(grave)
+                _fsync_directory(root)
+        # Outside _PROMOTION_LOCK: unlinking a large dictionary's media must not block
+        # every other publication and inventory for the duration.
+        if grave is not None:
+            _safe_remove_dictionary_entry(grave)
+        _fsync_directory(home)
+        return encode_message(
+            "resource.dictionary.deleted",
+            {"slotId": slot_id, "removed": grave is not None},
+        )
 
 
 def _publish_dictionary(

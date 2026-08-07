@@ -2856,3 +2856,113 @@ def test_local_delete_rejects_payloads_outside_the_contract(
         local_resources.delete_local_resource(payload)
 
     assert failure.value.code == "invalid_resource_request"
+
+
+def _installed_dictionary(tmp_path: Path, home: Path, slot_id: str) -> Path:
+    archive = _yomitan_zip(tmp_path / f"{slot_id}.zip", term="猫", meaning="cat", revision="1")
+    resources.import_dictionary(
+        {
+            "operationId": f"import-{slot_id}",
+            "sourcePath": str(archive),
+            "slotId": slot_id,
+            "overwrite": False,
+            "catalogResourceId": None,
+        }
+    )
+    return home / "dicts" / slot_id
+
+
+def _listed_dictionary_slots() -> list[str]:
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
+    return [item["slotId"] for item in listed.payload["dictionaries"]]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_dictionary_delete_purges_backups_and_removes_the_sidecar(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    home = initialized_bridge_home
+    slot = _installed_dictionary(tmp_path, home, "delete-sidecar")
+    assert (slot / "android-resource.json").is_file()
+    # _recover_dictionary_backups promotes a surviving backup back onto a missing
+    # slot, which is precisely the state a delete leaves behind.
+    stale = home / "resource-work" / "dictionary-backups" / "backup-delete-sidecar--stale"
+    stale.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(slot, stale)
+
+    deleted = decode_envelope(
+        resources.delete_dictionary({"operationId": "delete-sidecar-op", "slotId": "delete-sidecar"}),
+        expected_type="resource.dictionary.deleted",
+    )
+
+    assert deleted.payload == {"slotId": "delete-sidecar", "removed": True}
+    assert not slot.exists()
+    assert list(stale.parent.glob("backup-delete-sidecar--*")) == []
+    assert "delete-sidecar" not in _listed_dictionary_slots()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_dictionary_delete_is_idempotent_and_leaves_the_tokenizer_root_alone(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    home = initialized_bridge_home
+    tokenizer = home / "resources" / "tokenizer"
+    tokenizer.mkdir(parents=True, exist_ok=True)
+    (tokenizer / "marker").write_text("installed", encoding="utf-8")
+    _installed_dictionary(tmp_path, home, "delete-twice")
+
+    resources.delete_dictionary({"operationId": "delete-twice-first", "slotId": "delete-twice"})
+    again = decode_envelope(
+        resources.delete_dictionary({"operationId": "delete-twice-second", "slotId": "delete-twice"}),
+        expected_type="resource.dictionary.deleted",
+    )
+
+    assert again.payload["removed"] is False
+    assert (tokenizer / "marker").read_text(encoding="utf-8") == "installed"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_dictionary_delete_leaves_every_other_slot_installed(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    home = initialized_bridge_home
+    kept = _installed_dictionary(tmp_path, home, "delete-kept")
+    _installed_dictionary(tmp_path, home, "delete-doomed")
+
+    resources.delete_dictionary({"operationId": "delete-doomed-op", "slotId": "delete-doomed"})
+
+    slots = _listed_dictionary_slots()
+    assert "delete-kept" in slots
+    assert "delete-doomed" not in slots
+    assert (kept / "index.sqlite").is_file()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"operationId": "delete-bad"},
+        {"operationId": "delete-bad", "slotId": "fixture", "extra": 1},
+        {"operationId": "delete-bad", "slotId": "../escape"},
+        {"operationId": "delete-bad", "slotId": ""},
+    ],
+)
+def test_dictionary_delete_rejects_payloads_outside_the_contract(
+    initialized_bridge_home: Path,
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(BridgeProtocolError) as failure:
+        resources.delete_dictionary(payload)
+
+    assert failure.value.code == "invalid_resource_request"
