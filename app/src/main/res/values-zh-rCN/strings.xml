@@ -344,6 +344,7 @@
     <string name="settings_field_mapping">字段映射</string>
     <string name="disclosure_expanded">已展开</string>
     <string name="disclosure_collapsed">已折叠</string>
+    <string name="settings_disclosure_summary">%1$s（%2$d/%3$d）</string>
     <string name="anki_field_mapping_changes">此笔记类型的映射已更改：%1$s</string>
     <string name="anki_field_none">未映射</string>
     <string name="anki_card_type_title">卡片类型</string>

@@ -344,6 +344,7 @@
     <string name="settings_field_mapping">Asignación de campos</string>
     <string name="disclosure_expanded">Expandido</string>
     <string name="disclosure_collapsed">Contraído</string>
+    <string name="settings_disclosure_summary">%1$s (%2$d de %3$d)</string>
     <string name="anki_field_mapping_changes">Asignaciones cambiadas para este tipo de nota: %1$s</string>
     <string name="anki_field_none">Sin asignar</string>
     <string name="anki_card_type_title">Tipo de tarjeta</string>
