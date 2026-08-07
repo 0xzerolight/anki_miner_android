@@ -16,6 +16,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
@@ -91,6 +92,7 @@ internal class SetupViewModel(
         val wordListTarget: WordListKind = WordListKind.BLACKLIST,
         val knownWordsSearch: String = "",
         val pendingReplace: PendingResourceReplace? = null,
+        val pendingDelete: PendingResourceDelete? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
         val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
         val failedDeckName: String? = null,
@@ -110,6 +112,7 @@ internal class SetupViewModel(
                     savedEnum<WordListKind>(STATE_WORD_LIST_TARGET)
                         ?: WordListKind.BLACKLIST,
                 pendingReplace = restorePendingReplace(),
+                pendingDelete = restorePendingDelete(),
             ),
         )
     /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
@@ -172,6 +175,7 @@ internal class SetupViewModel(
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
                 pendingReplace = localState.pendingReplace,
+                pendingDelete = localState.pendingDelete,
                 dictionaries = resourceState.dictionaries,
                 frequencySources = resourceState.frequencySources,
                 pitchSources = resourceState.pitchSources,
@@ -226,6 +230,7 @@ internal class SetupViewModel(
             wizardCompletion = localState.wizardCompletion,
             audioPackChoices = localState.audioPackChoices,
             pendingReplace = localState.pendingReplace,
+            pendingDelete = localState.pendingDelete,
             lookupTerm = localState.lookupTerm,
             customSlotId = localState.customSlotId,
             wordListTarget = localState.wordListTarget,
@@ -599,6 +604,40 @@ internal class SetupViewModel(
             }
         }
     }
+
+    /**
+     * Holds a removal for confirmation. Silently ignored when nothing with that id is installed,
+     * so a stale card cannot raise a dialog for a slot that has already gone.
+     */
+    fun requestResourceDelete(
+        kind: InstalledResourceKind,
+        id: String,
+    ) {
+        val state = currentState()
+        if (state.busy) return
+        val installedLabel =
+            when (kind) {
+                InstalledResourceKind.DICTIONARY ->
+                    state.dictionaries.firstOrNull { it.occupied && it.slotId == id }?.sourceName
+                InstalledResourceKind.PITCH ->
+                    state.pitchSources.firstOrNull { it.sourceId == id }?.sourceName
+                InstalledResourceKind.FREQUENCY ->
+                    state.frequencySources.firstOrNull { it.sourceId == id }?.sourceName
+                InstalledResourceKind.AUDIO_PACK ->
+                    state.audioPacks.firstOrNull { it.packId == id }?.sourceName
+            } ?: return
+        setPendingDelete(PendingResourceDelete(kind, id, installedLabel))
+    }
+
+    fun confirmPendingDelete() {
+        val state = currentState()
+        if (state.busy) return
+        val pending = state.pendingDelete ?: return
+        clearPendingDelete()
+        viewModelScope.launch { resources.deleteInstalledResource(pending.kind, pending.identity) }
+    }
+
+    fun dismissPendingDelete() = clearPendingDelete()
 
     fun dismissPendingReplace() {
         val discardAudioPreflight =
@@ -994,6 +1033,29 @@ internal class SetupViewModel(
         viewModelScope.launch { resources.releaseResourceImport(uri) }
     }
 
+    private fun setPendingDelete(pending: PendingResourceDelete) {
+        savedStateHandle[STATE_DELETE_KIND] = pending.kind.name
+        savedStateHandle[STATE_DELETE_IDENTITY] = pending.identity
+        savedStateHandle[STATE_DELETE_LABEL] = pending.installedLabel
+        local.update { it.copy(pendingDelete = pending) }
+    }
+
+    private fun restorePendingDelete(): PendingResourceDelete? {
+        val kind = savedEnum<InstalledResourceKind>(STATE_DELETE_KIND) ?: return null
+        val identity = savedStateHandle.get<String>(STATE_DELETE_IDENTITY) ?: return null
+        val label = savedStateHandle.get<String>(STATE_DELETE_LABEL) ?: return null
+        return PendingResourceDelete(kind = kind, identity = identity, installedLabel = label)
+    }
+
+    private fun clearPendingDelete() {
+        listOf(
+            STATE_DELETE_KIND,
+            STATE_DELETE_IDENTITY,
+            STATE_DELETE_LABEL,
+        ).forEach { savedStateHandle.remove<Any>(it) }
+        local.update { it.copy(pendingDelete = null) }
+    }
+
     private fun setPendingReplace(pending: PendingResourceReplace) {
         savedStateHandle[STATE_REPLACE_KIND] = pending.kind.name
         savedStateHandle[STATE_REPLACE_IDENTITY] = pending.identity
@@ -1251,6 +1313,12 @@ internal class SetupViewModel(
         ) {
             return
         }
+        // A failed delete carries the same origin as a failed import of the same kind, whose
+        // branch below can only re-open a file picker. Only this target can route it back.
+        failure.deleteTarget?.let { target ->
+            viewModelScope.launch { resources.deleteInstalledResource(target.kind, target.id) }
+            return
+        }
         when (failure.origin) {
             ResourceFailureOrigin.SETUP -> refresh()
             ResourceFailureOrigin.UNIDIC ->
@@ -1394,5 +1462,8 @@ internal class SetupViewModel(
         const val STATE_REPLACE_LABEL = "setup.replace.label"
         const val STATE_REPLACE_URI = "setup.replace.uri"
         const val STATE_REPLACE_REPAIR = "setup.replace.repair"
+        const val STATE_DELETE_KIND = "setup.delete.kind"
+        const val STATE_DELETE_IDENTITY = "setup.delete.identity"
+        const val STATE_DELETE_LABEL = "setup.delete.label"
     }
 }

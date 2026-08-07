@@ -66,6 +66,7 @@ internal data class SetupUiState(
     val uniDicInstalled: Boolean = false,
     val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
     val pendingReplace: PendingResourceReplace? = null,
+    val pendingDelete: PendingResourceDelete? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
     val pitchSources: List<InstalledPitchSource> = emptyList(),
