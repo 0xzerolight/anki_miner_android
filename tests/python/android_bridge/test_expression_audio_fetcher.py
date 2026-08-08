@@ -861,3 +861,26 @@ class TestUnknownContainerParity:
         assert (
             expression_audio_fetcher_module._ffprobe_accepts_audio(payload, tmp_path / "no-such-ffprobe", 1.0) is None
         )
+
+
+class TestRunAudioCache:
+    def test_pin_does_not_prune_unreferenced_cache_entries(self, tmp_path: Path) -> None:
+        """pin() only records the pin; pruning happens at construction and close.
+
+        Prune-on-pin was an O(n²) full walk per hit, and every unlink bumped the
+        cache directory's mtime, invalidating the ``find_cached_by_stem`` index.
+        """
+        root = tmp_path / "cache"
+        root.mkdir()
+        cache = expression_audio_fetcher_module._RunAudioCache(root)
+        stray = root / "stray.mp3"
+        stray.write_bytes(b"x")  # created AFTER the construction prune
+        kept = root / "kept.mp3"
+        kept.write_bytes(b"y")
+
+        assert cache.pin(kept) is True
+        assert stray.exists()  # pin no longer walks or prunes
+
+        cache.close()
+        assert not stray.exists()  # close still prunes unreferenced files
+        assert not kept.exists()

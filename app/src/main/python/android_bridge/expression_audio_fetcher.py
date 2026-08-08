@@ -130,7 +130,13 @@ class _RequestDeadline:
 
 
 class _RunAudioCache:
-    """Pins source copies for one run and removes only unreferenced cache files."""
+    """Pins source copies for one run and removes only unreferenced cache files.
+
+    Pruning happens at construction (prior-run leftovers), via ``discard()``
+    (rejected files), and at ``close()`` (run end) — never on ``pin()``, which
+    would be an O(n²) full walk per hit and would bump the cache directory's
+    mtime, invalidating the ``find_cached_by_stem`` signature index.
+    """
 
     def __init__(self, root: Path) -> None:
         self._root = root.resolve(strict=False)
@@ -151,7 +157,6 @@ class _RunAudioCache:
             if not resolved.is_file():
                 return False
             self._pinned.add(resolved)
-            self._prune_locked()
             return True
 
     def discard(self, path: Path) -> None:
