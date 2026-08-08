@@ -1903,6 +1903,64 @@ def test_replacing_audio_pack_does_not_reuse_previous_run_cache(
     assert fetch_for_one_run() == b"corrected recording"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_corrupt_installed_pack_index_mines_gracefully_and_reports_diagnostics(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pack whose sqlite index is corrupted AFTER import mines to None and is named.
+
+    Kotlin's usable-only filter cannot catch out-of-band corruption between
+    imports; the run must degrade gracefully and the close() summary must name
+    the pack (id only — no terms, no paths).
+    """
+    from types import SimpleNamespace
+
+    import anki_miner.config.paths as engine_paths
+    from android_bridge import mining
+
+    home = _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "audio.zip")
+    local_resources.import_audio_pack(
+        {
+            "operationId": "audio-corrupt",
+            "sourcePath": str(source),
+            "packId": "fixture-pack",
+            "packPath": "fixture-pack",
+            "overwrite": False,
+        }
+    )
+
+    installed = home / "audio_packs" / "fixture-pack"
+    (installed / "index.sqlite").write_bytes(b"garbage, not a sqlite database")
+
+    monkeypatch.setattr(engine_paths, "ANKI_MINER_HOME", home)
+    notices: list[str] = []
+    config = SimpleNamespace(
+        expression_audio_chain=(SimpleNamespace(kind="pack", pack_id="fixture-pack", url=None, enabled=True),),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config, diagnostic_callback=notices.append)
+    assert chain is not None
+    try:
+        assert chain.fetch("猫", "ねこ") is None  # graceful, never raises
+    finally:
+        chain.close()
+
+    # Either diagnosis is correct: "index unreadable" when the registry still
+    # resolved the pack (sidecar meta), "enabled packs unavailable" when the
+    # scan skipped it. Both must name the pack privately.
+    assert len(notices) == 1
+    assert notices[0].startswith("Expression audio:")
+    assert "fixture-pack" in notices[0]
+    assert "猫" not in notices[0]
+    assert str(home) not in notices[0]
+
+
 def test_audio_pack_streaming_extractor_rejects_links(
     tmp_path: Path,
 ) -> None:
