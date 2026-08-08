@@ -55,6 +55,8 @@
     <string name="audio_file_error">Доступ потерян. Выберите снова.</string>
     <string name="audio_selection_error_type">Выберите аудиофайл (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Поле «Аудио» не сопоставлено, но «Изображение» сопоставлено. При обработке аудио слово сохраняется только если в файле есть встроенная обложка, поэтому этот тип заметки может не создать ни одной заметки.</string>
+    <string name="expression_audio_field_unmapped_warning">Аудиопакет установлен, но ни одно поле заметки не сопоставлено с озвучкой слова. Сопоставьте поле с именем «WordAudio» (или настройте сопоставление в настройках Anki), иначе карточки останутся без произношения.</string>
+    <string name="audio_pack_unusable_warning">Импортированный аудиопакет непригоден и будет пропущен. Удалите его и импортируйте заново в разделе Настройки → Аудио.</string>
     <string name="subtitle_file_error">Доступ потерян. Выберите снова.</string>
     <string name="dismiss_error">Скрыть ошибку</string>
     <string name="start_mining">Майнить</string>
@@ -480,6 +482,9 @@
     <string name="resource_failure_unknown_bridge_code">Операция с ресурсом не удалась (%1$s)</string>
     <string name="resource_failure_storage">Недостаточно свободного закрытого хранилища для этого ресурса</string>
     <string name="resource_failure_operation">Операция с ресурсом не завершилась</string>
+    <string name="resource_failure_saf_permission">Поставщик документов не предоставил постоянный доступ к выбранному файлу. Выберите файл заново через системное приложение «Файлы».</string>
+    <string name="resource_failure_saf_provider">Приложение, предоставляющее выбранный файл, не ответило. Откройте файл заново через приложение «Файлы».</string>
+    <string name="resource_failure_saf_uri">Выбранный элемент не является читаемым документом. Выберите файл заново.</string>
     <string name="resource_failure_storage_unavailable">Для этого ресурса недостаточно доступного закрытого хранилища</string>
     <string name="resource_failure_archive_mismatch">Загруженный архив не соответствует закреплённому каталогу</string>
     <string name="resource_failure_bridge_archive_too_large">Архив превышает лимиты импорта приложения</string>

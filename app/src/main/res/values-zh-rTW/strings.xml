@@ -55,6 +55,8 @@
     <string name="audio_file_error">存取遺失。請重新選擇。</string>
     <string name="audio_selection_error_type">選擇音訊檔案（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="audio_field_unmapped_warning">音訊欄位未對應，但圖片欄位已對應。音訊採集時，只有檔案含內嵌封面圖片才會保留單字，因此此筆記類型可能不會產生筆記。</string>
+    <string name="expression_audio_field_unmapped_warning">已安裝音訊包，但沒有筆記欄位對應到單字音訊。請對應名為「WordAudio」的欄位（或在 Anki 設定中設定單字音訊欄位對應），否則卡片將沒有單字發音。</string>
+    <string name="audio_pack_unusable_warning">匯入的某個音訊包無法使用，將被略過。請在 設定 → 音訊 中移除並重新匯入。</string>
     <string name="subtitle_file_error">存取遺失。請重新選擇。</string>
     <string name="dismiss_error">關閉錯誤</string>
     <string name="start_mining">採集</string>
@@ -470,6 +472,9 @@
     <string name="resource_failure_unknown_bridge_code">資源操作失敗（%1$s）</string>
     <string name="resource_failure_storage">此資源沒有足夠的可用私有儲存空間</string>
     <string name="resource_failure_operation">資源操作未完成</string>
+    <string name="resource_failure_saf_permission">文件提供者未授予所選檔案的永久存取權。請透過系統「檔案」應用程式重新選擇該檔案。</string>
+    <string name="resource_failure_saf_provider">提供所選檔案的應用程式沒有回應。請從「檔案」應用程式重新開啟該檔案。</string>
+    <string name="resource_failure_saf_uri">所選項目不是可讀取的文件。請重新選擇檔案。</string>
     <string name="resource_failure_storage_unavailable">此資源沒有足夠的可用私有儲存空間</string>
     <string name="resource_failure_archive_mismatch">下載的封存檔不符合已釘選的目錄</string>
     <string name="resource_failure_bridge_archive_too_large">封存檔超出應用程式的匯入限制</string>

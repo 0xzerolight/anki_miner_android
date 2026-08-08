@@ -2120,6 +2120,23 @@ internal class AndroidResourceManager(
         }
     }
 
+    private fun safAccessCode(kind: SafAccessFailureKind): String =
+        when (kind) {
+            SafAccessFailureKind.PERMISSION_REVOKED -> "saf_permission_not_granted"
+            SafAccessFailureKind.PROVIDER_UNAVAILABLE -> "saf_provider_unavailable"
+            SafAccessFailureKind.INVALID_URI -> "saf_uri_invalid"
+        }
+
+    private fun safAccessUserMessage(kind: SafAccessFailureKind): String =
+        when (kind) {
+            SafAccessFailureKind.PERMISSION_REVOKED ->
+                strings.resolve(R.string.resource_failure_saf_permission)
+            SafAccessFailureKind.PROVIDER_UNAVAILABLE ->
+                strings.resolve(R.string.resource_failure_saf_provider)
+            SafAccessFailureKind.INVALID_URI ->
+                strings.resolve(R.string.resource_failure_saf_uri)
+        }
+
     private fun downloadUserMessage(failure: ResourceDownloadException): String =
         when (failure.stableCode) {
             "resource_operation_cancelled" ->
@@ -2235,23 +2252,6 @@ internal class AndroidResourceManager(
             "resource_cleanup_failed" ->
                 strings.resolve(R.string.resource_failure_delete)
             else -> strings.resolve(R.string.resource_failure_unknown_bridge_code, listOf(code))
-        }
-
-    private fun safAccessCode(kind: SafAccessFailureKind): String =
-        when (kind) {
-            SafAccessFailureKind.PERMISSION_REVOKED -> "saf_permission_not_granted"
-            SafAccessFailureKind.PROVIDER_UNAVAILABLE -> "saf_provider_unavailable"
-            SafAccessFailureKind.INVALID_URI -> "saf_uri_invalid"
-        }
-
-    private fun safAccessUserMessage(kind: SafAccessFailureKind): String =
-        when (kind) {
-            SafAccessFailureKind.PERMISSION_REVOKED ->
-                strings.resolve(R.string.resource_failure_saf_permission)
-            SafAccessFailureKind.PROVIDER_UNAVAILABLE ->
-                strings.resolve(R.string.resource_failure_saf_provider)
-            SafAccessFailureKind.INVALID_URI ->
-                strings.resolve(R.string.resource_failure_saf_uri)
         }
 
     private fun cancelPython(operation: ActiveOperation) {

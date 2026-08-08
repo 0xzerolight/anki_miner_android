@@ -55,6 +55,8 @@
     <string name="audio_file_error">访问已丢失。请重新选择。</string>
     <string name="audio_selection_error_type">请选择音频文件（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="audio_field_unmapped_warning">未映射“音频”字段，但已映射“图片”字段。音频挖词时，只有文件含内嵌封面时才会保留单词，因此此笔记类型可能不会生成笔记。</string>
+    <string name="expression_audio_field_unmapped_warning">已安装音频包，但没有笔记字段映射到单词音频。请映射名为“WordAudio”的字段（或在 Anki 设置中设置单词音频字段映射），否则卡片将没有单词发音。</string>
+    <string name="audio_pack_unusable_warning">导入的某个音频包不可用，将被跳过。请在 设置 → 音频 中移除并重新导入。</string>
     <string name="subtitle_file_error">访问已丢失。请重新选择。</string>
     <string name="dismiss_error">关闭错误</string>
     <string name="start_mining">挖词</string>
@@ -474,6 +476,9 @@
     <string name="resource_failure_unknown_bridge_code">资源操作失败（%1$s）</string>
     <string name="resource_failure_storage">此资源的可用私有存储空间不足</string>
     <string name="resource_failure_operation">资源操作未完成</string>
+    <string name="resource_failure_saf_permission">文档提供程序未授予对所选文件的持久访问权限。请通过系统“文件”应用重新选择该文件。</string>
+    <string name="resource_failure_saf_provider">提供所选文件的应用没有响应。请从“文件”应用重新打开该文件。</string>
+    <string name="resource_failure_saf_uri">所选项目不是可读取的文档。请重新选择文件。</string>
     <string name="resource_failure_storage_unavailable">此资源的可用私有存储空间不足</string>
     <string name="resource_failure_archive_mismatch">下载的压缩包与固定目录不匹配</string>
     <string name="resource_failure_bridge_archive_too_large">压缩包超出应用的导入限制</string>

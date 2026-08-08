@@ -55,6 +55,8 @@
     <string name="audio_file_error">Mất quyền truy cập. Hãy chọn lại.</string>
     <string name="audio_selection_error_type">Chọn tệp âm thanh (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Trường Audio chưa được ánh xạ, nhưng Picture đã được ánh xạ. Khi khai thác âm thanh, từ chỉ được giữ nếu tệp có ảnh bìa nhúng, vì vậy loại ghi chú này có thể không tạo ghi chú nào.</string>
+    <string name="expression_audio_field_unmapped_warning">Đã cài gói âm thanh nhưng chưa có trường ghi chú nào được gán cho âm thanh của từ. Hãy gán một trường tên “WordAudio” (hoặc thiết lập trong cài đặt Anki), nếu không thẻ sẽ không có phát âm của từ.</string>
+    <string name="audio_pack_unusable_warning">Một gói âm thanh đã nhập không dùng được và sẽ bị bỏ qua. Hãy xóa rồi nhập lại trong Cài đặt → Âm thanh.</string>
     <string name="subtitle_file_error">Mất quyền truy cập. Hãy chọn lại.</string>
     <string name="dismiss_error">Đóng</string>
     <string name="start_mining">Khai thác</string>
@@ -474,6 +476,9 @@
     <string name="resource_failure_unknown_bridge_code">Thao tác tài nguyên thất bại (%1$s)</string>
     <string name="resource_failure_storage">Không đủ bộ nhớ riêng tư trống cho tài nguyên này</string>
     <string name="resource_failure_operation">Thao tác tài nguyên chưa hoàn tất</string>
+    <string name="resource_failure_saf_permission">Trình cung cấp tài liệu không cấp quyền truy cập lâu dài vào tệp đã chọn. Hãy chọn lại tệp bằng ứng dụng Tệp của hệ thống.</string>
+    <string name="resource_failure_saf_provider">Ứng dụng cung cấp tệp đã chọn không phản hồi. Hãy mở lại tệp từ ứng dụng Tệp.</string>
+    <string name="resource_failure_saf_uri">Mục đã chọn không phải là tài liệu đọc được. Hãy chọn lại tệp.</string>
     <string name="resource_failure_storage_unavailable">Không đủ bộ nhớ riêng tư cho tài nguyên này</string>
     <string name="resource_failure_archive_mismatch">Tệp lưu trữ đã tải không khớp danh mục đã ghim</string>
     <string name="resource_failure_bridge_archive_too_large">Tệp lưu trữ vượt giới hạn nhập của ứng dụng</string>

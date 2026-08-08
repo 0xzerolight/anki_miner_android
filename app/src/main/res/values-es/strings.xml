@@ -55,6 +55,8 @@
     <string name="audio_file_error">Se perdió el acceso. Elija de nuevo.</string>
     <string name="audio_selection_error_type">Elija un archivo de audio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">El campo Audio no está asignado, pero Imagen sí. Una ejecución de audio solo conserva una palabra si el archivo tiene portada incrustada, por lo que este tipo de nota puede no producir notas.</string>
+    <string name="expression_audio_field_unmapped_warning">Hay un paquete de audio instalado, pero ningún campo de la nota está asignado al audio de palabra. Asigna un campo llamado “WordAudio” (o configura la asignación del audio de palabra en los ajustes de Anki) o las tarjetas no tendrán pronunciación.</string>
+    <string name="audio_pack_unusable_warning">Un paquete de audio importado no se puede usar y se omitirá. Elimínalo y vuelve a importarlo en Ajustes → Audio.</string>
     <string name="subtitle_file_error">Se perdió el acceso. Elija de nuevo.</string>
     <string name="dismiss_error">Descartar error</string>
     <string name="start_mining">Minar</string>
@@ -478,6 +480,9 @@
     <string name="resource_failure_unknown_bridge_code">Falló la operación de recurso (%1$s)</string>
     <string name="resource_failure_storage">No hay suficiente almacenamiento privado libre para este recurso</string>
     <string name="resource_failure_operation">La operación de recurso no se completó</string>
+    <string name="resource_failure_saf_permission">El proveedor de documentos no concedió acceso permanente al archivo seleccionado. Vuelve a elegir el archivo con la app Archivos del sistema.</string>
+    <string name="resource_failure_saf_provider">La app que proporciona el archivo seleccionado no respondió. Vuelve a abrir el archivo desde la app Archivos.</string>
+    <string name="resource_failure_saf_uri">El elemento seleccionado no es un documento legible. Vuelve a elegir el archivo.</string>
     <string name="resource_failure_storage_unavailable">No hay suficiente almacenamiento privado disponible para este recurso</string>
     <string name="resource_failure_archive_mismatch">El archivo descargado no coincidió con el catálogo fijado</string>
     <string name="resource_failure_bridge_archive_too_large">El archivo supera los límites de importación de la aplicación</string>

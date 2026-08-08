@@ -55,6 +55,8 @@
     <string name="audio_file_error">Zugriff verloren. Erneut auswählen.</string>
     <string name="audio_selection_error_type">Wählen Sie eine Audiodatei (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Das Audiofeld ist nicht zugeordnet, Bild jedoch schon. Bei einem Audio-Durchlauf bleibt ein Wort dann nur erhalten, wenn die Datei eingebettetes Coverbild enthält. Dieser Notiztyp erzeugt daher möglicherweise keine Notizen.</string>
+    <string name="expression_audio_field_unmapped_warning">Ein Audiopaket ist installiert, aber kein Notizfeld ist für Wort-Audio zugeordnet. Ordnen Sie ein Feld namens „WordAudio“ zu (oder legen Sie die Wort-Audio-Zuordnung in den Anki-Einstellungen fest), sonst erhalten Karten keine Wortaussprache.</string>
+    <string name="audio_pack_unusable_warning">Ein importiertes Audiopaket ist unbrauchbar und wird übersprungen. Entfernen Sie es unter Einstellungen → Audio und importieren Sie es erneut.</string>
     <string name="subtitle_file_error">Zugriff verloren. Erneut auswählen.</string>
     <string name="dismiss_error">Fehler schließen</string>
     <string name="start_mining">Sammeln</string>
@@ -476,6 +478,9 @@
     <string name="resource_failure_unknown_bridge_code">Ressourcenvorgang fehlgeschlagen (%1$s)</string>
     <string name="resource_failure_storage">Nicht genug freier privater Speicher für diese Ressource</string>
     <string name="resource_failure_operation">Der Ressourcenvorgang wurde nicht abgeschlossen</string>
+    <string name="resource_failure_saf_permission">Der Dokumentanbieter hat keinen dauerhaften Zugriff auf die ausgewählte Datei gewährt. Wählen Sie die Datei erneut über die System-Dateien-App aus.</string>
+    <string name="resource_failure_saf_provider">Die App, die die ausgewählte Datei bereitstellt, hat nicht reagiert. Öffnen Sie die Datei erneut über die Dateien-App.</string>
+    <string name="resource_failure_saf_uri">Das ausgewählte Element ist kein lesbares Dokument. Wählen Sie die Datei erneut aus.</string>
     <string name="resource_failure_storage_unavailable">Nicht genug privater Speicher für diese Ressource verfügbar</string>
     <string name="resource_failure_archive_mismatch">Das heruntergeladene Archiv entsprach nicht dem im Katalog festgelegten Inhalt.</string>
     <string name="resource_failure_bridge_archive_too_large">Das Archiv überschreitet die Importgrenzen der App</string>

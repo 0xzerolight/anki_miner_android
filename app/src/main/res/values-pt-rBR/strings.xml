@@ -55,6 +55,8 @@
     <string name="audio_file_error">Acesso perdido. Escolha novamente.</string>
     <string name="audio_selection_error_type">Escolha um arquivo de áudio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">O campo Audio não está mapeado, mas Picture está. Uma execução de áudio mantém uma palavra apenas se o arquivo tiver arte de capa incorporada; portanto, este tipo de nota pode não produzir notas.</string>
+    <string name="expression_audio_field_unmapped_warning">Um pacote de áudio está instalado, mas nenhum campo da nota está mapeado para o áudio da palavra. Mapeie um campo chamado “WordAudio” (ou defina o mapeamento nas configurações do Anki), ou os cartões ficarão sem pronúncia.</string>
+    <string name="audio_pack_unusable_warning">Um pacote de áudio importado está inutilizável e será ignorado. Remova e reimporte em Configurações → Áudio.</string>
     <string name="subtitle_file_error">Acesso perdido. Escolha novamente.</string>
     <string name="dismiss_error">Fechar erro</string>
     <string name="start_mining">Minerar</string>
@@ -478,6 +480,9 @@
     <string name="resource_failure_unknown_bridge_code">Falha na operação de recurso (%1$s)</string>
     <string name="resource_failure_storage">Não há armazenamento privado livre suficiente para este recurso</string>
     <string name="resource_failure_operation">A operação de recurso não foi concluída</string>
+    <string name="resource_failure_saf_permission">O provedor de documentos não concedeu acesso permanente ao arquivo selecionado. Escolha o arquivo novamente pelo app Arquivos do sistema.</string>
+    <string name="resource_failure_saf_provider">O app que fornece o arquivo selecionado não respondeu. Reabra o arquivo pelo app Arquivos.</string>
+    <string name="resource_failure_saf_uri">O item selecionado não é um documento legível. Escolha o arquivo novamente.</string>
     <string name="resource_failure_storage_unavailable">Não há armazenamento privado suficiente disponível para este recurso</string>
     <string name="resource_failure_archive_mismatch">O arquivo baixado não corresponde ao catálogo fixado</string>
     <string name="resource_failure_bridge_archive_too_large">O arquivo excede os limites de importação do app</string>

@@ -55,6 +55,8 @@
     <string name="audio_file_error">Akses hilang. Pilih lagi.</string>
     <string name="audio_selection_error_type">Pilih berkas audio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Bidang Audio tidak dipetakan, tetapi Picture dipetakan. Proses audio hanya mempertahankan kata jika berkas memiliki sampul tertanam, sehingga tipe catatan ini mungkin tidak menghasilkan catatan.</string>
+    <string name="expression_audio_field_unmapped_warning">Paket audio terpasang, tetapi tidak ada bidang catatan yang dipetakan untuk audio kata. Petakan bidang bernama “WordAudio” (atau atur pemetaan audio kata di pengaturan Anki), atau kartu tidak akan mendapat pelafalan kata.</string>
+    <string name="audio_pack_unusable_warning">Paket audio yang diimpor tidak dapat digunakan dan akan dilewati. Hapus dan impor ulang di Pengaturan → Audio.</string>
     <string name="subtitle_file_error">Akses hilang. Pilih lagi.</string>
     <string name="dismiss_error">Tutup kesalahan</string>
     <string name="start_mining">Mining</string>
@@ -474,6 +476,9 @@
     <string name="resource_failure_unknown_bridge_code">Operasi sumber daya gagal (%1$s)</string>
     <string name="resource_failure_storage">Penyimpanan privat yang tersedia tidak cukup untuk sumber daya ini</string>
     <string name="resource_failure_operation">Operasi sumber daya tidak selesai</string>
+    <string name="resource_failure_saf_permission">Penyedia dokumen tidak memberikan akses permanen ke berkas yang dipilih. Pilih berkas lagi melalui aplikasi Files sistem.</string>
+    <string name="resource_failure_saf_provider">Aplikasi penyedia berkas yang dipilih tidak merespons. Buka kembali berkas dari aplikasi Files.</string>
+    <string name="resource_failure_saf_uri">Item yang dipilih bukan dokumen yang dapat dibaca. Pilih berkas lagi.</string>
     <string name="resource_failure_storage_unavailable">Penyimpanan privat yang tersedia tidak cukup untuk sumber daya ini</string>
     <string name="resource_failure_archive_mismatch">Arsip yang diunduh tidak sesuai dengan katalog yang disematkan</string>
     <string name="resource_failure_bridge_archive_too_large">Arsip melebihi batas impor aplikasi</string>

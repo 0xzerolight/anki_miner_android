@@ -55,6 +55,8 @@
     <string name="audio_file_error">Accesso perso. Scegli di nuovo.</string>
     <string name="audio_selection_error_type">Scegli un file audio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Il campo Audio non è mappato, mentre Picture lo è. Un\'esecuzione audio conserva quindi una parola solo se il file contiene una copertina incorporata; pertanto questo tipo di nota potrebbe non produrre alcuna nota.</string>
+    <string name="expression_audio_field_unmapped_warning">È installato un pacchetto audio, ma nessun campo della nota è associato all\'audio della parola. Associa un campo chiamato “WordAudio” (o imposta l\'associazione nelle impostazioni di Anki), altrimenti le carte non avranno la pronuncia.</string>
+    <string name="audio_pack_unusable_warning">Un pacchetto audio importato è inutilizzabile e verrà saltato. Rimuovilo e reimportalo in Impostazioni → Audio.</string>
     <string name="subtitle_file_error">Accesso perso. Scegli di nuovo.</string>
     <string name="dismiss_error">Ignora errore</string>
     <string name="start_mining">Estrai</string>
@@ -478,6 +480,9 @@
     <string name="resource_failure_unknown_bridge_code">Operazione sulla risorsa non riuscita (%1$s)</string>
     <string name="resource_failure_storage">Spazio di archiviazione privato libero insufficiente per questa risorsa</string>
     <string name="resource_failure_operation">L\'operazione sulla risorsa non è stata completata</string>
+    <string name="resource_failure_saf_permission">Il provider di documenti non ha concesso l\'accesso permanente al file selezionato. Scegli di nuovo il file con l\'app File di sistema.</string>
+    <string name="resource_failure_saf_provider">L\'app che fornisce il file selezionato non ha risposto. Riapri il file dall\'app File.</string>
+    <string name="resource_failure_saf_uri">L\'elemento selezionato non è un documento leggibile. Scegli di nuovo il file.</string>
     <string name="resource_failure_storage_unavailable">Spazio di archiviazione privato insufficiente per questa risorsa</string>
     <string name="resource_failure_archive_mismatch">L\'archivio scaricato non corrisponde al catalogo fissato</string>
     <string name="resource_failure_bridge_archive_too_large">L\'archivio supera i limiti di importazione dell\'app</string>
