@@ -1193,6 +1193,32 @@ def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback(
     assert "/cache" not in notices[0]
 
 
+def test_circuit_skips_appear_in_run_summary() -> None:
+    notices: list[str] = []
+
+    class Localaudio:
+        def fetch(self, *_: object) -> None:
+            return None
+
+        def stats(self) -> dict[str, int]:
+            return {"circuit_skipped": 4, "timeout": 3}
+
+        def close(self) -> None:
+            return None
+
+    localaudio = Localaudio()
+    chain = mining._ExpressionAudioSourceChain(
+        [localaudio],
+        localaudio_fetcher=localaudio,
+        fallback_fetchers=(),
+        diagnostic_callback=notices.append,
+    )
+
+    chain.close()
+
+    assert notices == ["Expression audio: timeouts=3; localaudio skipped after repeated failures=4"]
+
+
 @pytest.mark.parametrize("kind", ["jpod101", "googletts"])
 def test_expression_audio_builder_rejects_cut_network_kinds_before_allocation(kind: str) -> None:
     # custom/custom_json are now deliberately accepted (localaudio + local-audio-

@@ -73,7 +73,12 @@ _BRIDGE_FAILURE_KEYS = (
     "oversized_response",
     "oversized_list",
     "malformed_json",
+    "circuit_skipped",
 )
+# Consecutive whole-fetch transport failures (timeout/connection) that open the
+# per-run circuit: further fetches skip the network and fall through to packs
+# instead of paying the full deadline per word against a hung localaudio server.
+_CIRCUIT_BREAKER_THRESHOLD = 3
 
 
 class _PolicyViolation(requests.RequestException):
@@ -622,6 +627,8 @@ class CustomAudioFetcher:
         self._active_response_lock = threading.Lock()
         self._failure_counts = new_failure_counts()
         self._failure_counts.update(dict.fromkeys(_BRIDGE_FAILURE_KEYS, 0))
+        self._consecutive_transport_failures = 0
+        self._circuit_open = False
 
     def _bump(self, key: str) -> None:
         self._failure_counts[key] += 1
@@ -786,8 +793,11 @@ class CustomAudioFetcher:
         owns_deadline = self._active_deadline is None
         if owns_deadline:
             self._start_deadline()
+        transport_before = self._transport_failure_count()
+        result: Path | None = None
         try:
-            return self._fetch_with_active_deadline(mined_form, reading, cancelled_check)
+            result = self._fetch_with_active_deadline(mined_form, reading, cancelled_check)
+            return result
         except _DeadlineExceeded:
             self._bump("timeout")
             return None
@@ -795,6 +805,23 @@ class CustomAudioFetcher:
             self._active_cancelled_check = None
             if owns_deadline:
                 self._finish_deadline()
+            self._note_transport_outcome(result, transport_before)
+
+    def _transport_failure_count(self) -> int:
+        return self._failure_counts["timeout"] + self._failure_counts["connection"]
+
+    def _note_transport_outcome(self, result: Path | None, transport_before: int) -> None:
+        """Track consecutive transport failures; open the circuit at the threshold.
+
+        A miss that only bumped ``http_status``/``non_audio``/policy counters means
+        the server answered — it neither trips nor resets the streak.
+        """
+        if result is not None:
+            self._consecutive_transport_failures = 0
+        elif self._transport_failure_count() > transport_before:
+            self._consecutive_transport_failures += 1
+            if self._consecutive_transport_failures >= _CIRCUIT_BREAKER_THRESHOLD:
+                self._circuit_open = True
 
     def _fetch_with_active_deadline(
         self,
@@ -816,6 +843,13 @@ class CustomAudioFetcher:
                 return existing if self._cache_lifetime.pin(existing) else None
             else:
                 self._discard_non_audio(existing)
+
+        if self._circuit_open:
+            # The server failed _CIRCUIT_BREAKER_THRESHOLD consecutive fetches on
+            # transport; skip the network for the rest of the run (cache hits
+            # above keep serving) so packs get their fallback chance immediately.
+            self._bump("circuit_skipped")
+            return None
 
         if cancelled_check is not None and cancelled_check():
             return None

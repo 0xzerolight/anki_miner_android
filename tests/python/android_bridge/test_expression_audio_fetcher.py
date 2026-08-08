@@ -884,3 +884,89 @@ class TestRunAudioCache:
         cache.close()
         assert not stray.exists()  # close still prunes unreferenced files
         assert not kept.exists()
+
+
+class TestCircuitBreaker:
+    """Repeated transport failures open a per-run circuit that skips localaudio."""
+
+    _WORDS = [("食べる", "たべる"), ("猫", "ねこ"), ("犬", "いぬ"), ("鳥", "とり"), ("魚", "さかな"), ("山", "やま")]
+
+    def _fetcher(self, tmp_path: Path):
+        f = CustomAudioFetcher(
+            url_template="http://localhost:8765/?t={term}&r={reading}",
+            kind="custom",
+            cache_dir=tmp_path / "cache",
+            file_prefix="custom_abc",
+            delay=0,
+        )
+        f._session = MagicMock()
+        return f
+
+    def test_circuit_opens_after_three_consecutive_connection_failures_and_counts_skips(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.side_effect = requests.ConnectionError("server down")
+
+        for form, reading in self._WORDS[:3]:
+            assert f.fetch(form, reading) is None
+        calls_after_three = f._session.get.call_count
+        assert calls_after_three == 3
+
+        assert f.fetch(*self._WORDS[3]) is None
+        assert f._session.get.call_count == calls_after_three  # no network attempt
+        assert f.stats()["circuit_skipped"] == 1
+
+    def test_circuit_opens_after_consecutive_read_timeouts(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.side_effect = requests.Timeout("read timed out")
+
+        for form, reading in self._WORDS[:3]:
+            assert f.fetch(form, reading) is None
+        assert f.stats()["timeout"] >= 3
+
+        calls_after_three = f._session.get.call_count
+        assert f.fetch(*self._WORDS[3]) is None
+        assert f._session.get.call_count == calls_after_three
+        assert f.stats()["circuit_skipped"] == 1
+
+    def test_hit_resets_consecutive_failure_count(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.side_effect = [
+            requests.ConnectionError("down"),
+            requests.ConnectionError("down"),
+            _audio_response(_VALID_MP3),
+            requests.ConnectionError("down"),
+            requests.ConnectionError("down"),
+            _audio_response(_VALID_MP3),
+        ]
+
+        assert f.fetch(*self._WORDS[0]) is None
+        assert f.fetch(*self._WORDS[1]) is None
+        assert f.fetch(*self._WORDS[2]) is not None  # success resets the streak
+        assert f.fetch(*self._WORDS[3]) is None
+        assert f.fetch(*self._WORDS[4]) is None
+        assert f.fetch(*self._WORDS[5]) is not None  # circuit never opened
+        assert f._session.get.call_count == 6
+        assert f.stats()["circuit_skipped"] == 0
+
+    def test_cache_hit_still_served_while_circuit_open(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.return_value = _audio_response(_VALID_MP3)
+        cached = f.fetch(*self._WORDS[0])
+        assert cached is not None
+
+        f._session.get.side_effect = requests.ConnectionError("server down")
+        for form, reading in self._WORDS[1:4]:
+            assert f.fetch(form, reading) is None
+        calls_after_failures = f._session.get.call_count
+
+        assert f.fetch(*self._WORDS[0]) == cached  # cache hit needs no network
+        assert f._session.get.call_count == calls_after_failures
+
+    def test_http_404_miss_neither_trips_nor_resets(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        f._session.get.return_value = _audio_response(_VALID_MP3, status=404)
+
+        for form, reading in self._WORDS[:4]:
+            assert f.fetch(form, reading) is None
+        assert f._session.get.call_count == 4  # server alive: circuit stays closed
+        assert f.stats()["circuit_skipped"] == 0

@@ -129,6 +129,7 @@ class _ExpressionAudioSourceChain:
             ("oversized lists", int(counts.get("oversized_list", 0))),
             ("malformed JSON", int(counts.get("malformed_json", 0))),
             ("non-audio responses", int(counts.get("non_audio", 0))),
+            ("localaudio skipped after repeated failures", int(counts.get("circuit_skipped", 0))),
             ("fallback pack hits", self._fallback_hits),
         )
         details = [f"{label}={count}" for label, count in fields if count > 0]
