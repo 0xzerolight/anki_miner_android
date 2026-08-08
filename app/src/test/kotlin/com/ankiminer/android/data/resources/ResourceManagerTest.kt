@@ -819,6 +819,24 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun preflightReportsNoneDetectedWhenBridgeReturnsEmptyPackList() =
+        runTest {
+            val harness = Harness(sourceLabel = "audio-pack archive", autoRecover = false)
+            harness.bridge.emptyAudioPackPreflight = true
+
+            assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("audio_pack_none_detected", failure.code)
+            assertEquals(
+                "resource:${R.string.resource_failure_audio_pack_none_detected}",
+                failure.message,
+            )
+            assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+            assertFalse(harness.audioPendingRoot.exists())
+        }
+
+    @Test
     fun safGrantRefusalSurfacesRepickGuidanceInsteadOfGenericFailure() =
         runTest {
             val harness =
@@ -1537,6 +1555,7 @@ class ResourceManagerTest {
         private var knownWordsResetFailures = if (failKnownWordsResetOnce) 1 else 0
         var lastExportFile: File? = null
             private set
+        var emptyAudioPackPreflight = false
 
         val requestTypes: List<String>
             get() = requests.map(::requestType)
@@ -1653,7 +1672,11 @@ class ResourceManagerTest {
                 "resource.audiopack.preflight" ->
                     envelope(
                         "resource.audiopack.preflighted",
-                        """{"packs":[{"packId":"jpod","packPath":"jpod_files","format":"ajt"}]}""",
+                        if (emptyAudioPackPreflight) {
+                            """{"packs":[]}"""
+                        } else {
+                            """{"packs":[{"packId":"jpod","packPath":"jpod_files","format":"ajt"}]}"""
+                        },
                     )
                 "resource.audiopack.import" ->
                     envelope(

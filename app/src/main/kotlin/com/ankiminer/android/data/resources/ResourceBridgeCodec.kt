@@ -408,7 +408,16 @@ object ResourceBridgeCodec {
         val value = payload(raw, "resource.audiopack.preflighted")
         exact(value, setOf("packs"), "audio-pack preflight")
         val packs = array(value.getValue("packs"), "packs").map { audioPackCandidate(it) }
-        if (packs.isEmpty()) invalid("Audio-pack preflight named no pack")
+        // Typed code, not invalid_resource_response: Python raises the same code
+        // for zero detected roots, so a decoded-OK empty list (version skew)
+        // surfaces the actionable "no pack detected" message instead of the
+        // opaque protocol error.
+        if (packs.isEmpty()) {
+            throw ResourceBridgeException(
+                "audio_pack_none_detected",
+                "Audio-pack preflight named no pack",
+            )
+        }
         if (packs.distinctBy { it.packId }.size != packs.size) invalid("Audio-pack preflight repeats a pack id")
         return packs
     }
