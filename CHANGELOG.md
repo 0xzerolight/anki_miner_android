@@ -4,6 +4,18 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- The mining screens warn before a run that would silently produce cards without word audio: when an audio pack is installed but no note field is mapped for word audio, and when an imported pack is unusable and will be skipped. Both are advisories — mining still starts. Until now a pack could sit "installed" while every card came out without a pronunciation, with nothing anywhere saying why.
+- The end-of-run expression-audio notice covers the local packs too. A pack whose index cannot be read any more, or one that is switched on but no longer loadable from disk, is named in the notice by its pack id; those failures previously went to a debug log and every lookup just returned nothing.
+
+### Fixed
+
+- A local audio server that stops answering no longer stalls the run for its full 30-second budget on every word. After three words fail in a row on timeouts or refused connections the run stops asking it and goes straight to the installed packs; audio already fetched keeps being served, and the skips are counted in the end-of-run notice.
+- Expression-audio fetches no longer rescan the entire audio cache after every successful download — on long runs the rescans compounded and also defeated the cache's own index, so each word got slower than the last.
+- Picking a resource file from a provider that refuses lasting access — some cloud storage and file-manager apps do — now says exactly that and suggests picking the file again with the system Files app, instead of the generic "the resource operation did not complete". A provider that stops responding and an item that is not a readable document get their own messages too.
+- An audio-pack archive in which no pack could be detected sometimes reported an opaque protocol error instead of saying no pack was found in it.
+
 ## [0.6.0] - 2026-08-07
 
 ### Added
