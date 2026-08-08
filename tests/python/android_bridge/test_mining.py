@@ -1219,6 +1219,78 @@ def test_circuit_skips_appear_in_run_summary() -> None:
     assert notices == ["Expression audio: timeouts=3; localaudio skipped after repeated failures=4"]
 
 
+def test_unreadable_pack_index_is_counted_and_reported(tmp_path: Path) -> None:
+    notices: list[str] = []
+    garbage_db = tmp_path / "index.sqlite"
+    garbage_db.write_bytes(b"not a sqlite database at all")
+
+    class StubPack:
+        pack_id = "my-pack"
+
+        def fetch(self, *_: object) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    wrapped = mining._DiagnosedPackFetcher(StubPack(), garbage_db)
+    chain = mining._ExpressionAudioSourceChain(
+        [wrapped],
+        fallback_fetchers=(wrapped,),
+        diagnostic_callback=notices.append,
+    )
+
+    assert chain.fetch("猫", "ねこ") is None
+    assert chain.fetch("犬", "いぬ") is None
+    chain.close()
+
+    assert notices == ["Expression audio: pack 'my-pack' index unreadable (2 lookups failed)"]
+    pack_fragment = notices[0].split("pack ")[1]
+    assert "/" not in pack_fragment
+    assert "猫" not in notices[0]
+
+
+def test_enabled_but_unresolvable_pack_ids_reported_on_close(
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    notices: list[str] = []
+
+    config = SimpleNamespace(
+        expression_audio_chain=(SimpleNamespace(kind="pack", pack_id="ghost", url=None, enabled=True),),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=initialized_bridge_home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config, diagnostic_callback=notices.append)
+    assert chain is not None
+    chain.close()
+
+    assert notices == ["Expression audio: enabled packs unavailable: ghost"]
+
+
+def test_pack_wrapper_probe_never_raises_and_memoizes(tmp_path: Path) -> None:
+    class StubPack:
+        pack_id = "my-pack"
+
+        def fetch(self, *_: object) -> None:
+            return None
+
+        def close(self) -> None:
+            return None
+
+    wrapped = mining._DiagnosedPackFetcher(StubPack(), tmp_path / "does-not-exist.sqlite")
+    probes: list[int] = []
+    original = wrapped._probe_once
+    wrapped._probe_once = lambda: probes.append(1) or original()  # type: ignore[method-assign]
+
+    assert wrapped.fetch("猫", "ねこ", None) is None
+    assert wrapped.fetch("犬", "いぬ", None) is None
+    assert wrapped.fetch("鳥", "とり", None) is None
+
+    assert probes == [1]  # memoized after the first miss
+    assert wrapped.pack_stats() == {"attempts": 3, "hits": 0, "index_unreadable": 1}
+
+
 @pytest.mark.parametrize("kind", ["jpod101", "googletts"])
 def test_expression_audio_builder_rejects_cut_network_kinds_before_allocation(kind: str) -> None:
     # custom/custom_json are now deliberately accepted (localaudio + local-audio-
@@ -1357,7 +1429,10 @@ def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
         assert len(fetchers) == 2
         # Config order == source priority: localaudio primary, pack fallback.
         assert isinstance(fetchers[0], CustomAudioFetcher)
-        assert fetchers[1] is fake_pack
+        # The pack fetcher is wrapped for diagnostics; identity holds beneath it.
+        assert isinstance(fetchers[1], mining._DiagnosedPackFetcher)
+        assert fetchers[1].pack_id == "my-pack"
+        assert fetchers[1]._fetcher is fake_pack
     finally:
         chain.close()
 

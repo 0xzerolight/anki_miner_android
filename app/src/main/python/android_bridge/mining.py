@@ -77,6 +77,97 @@ class _VideoRequest:
     android_tts_enabled: bool | None
 
 
+class _DiagnosedPackFetcher:
+    """Counts outcomes for one wrapped ``LocalAudioPackFetcher``, privacy-safe.
+
+    The vendored pack fetcher swallows sqlite open/lookup failures to a debug
+    log and returns None, so a corrupt installed index is indistinguishable
+    from an ordinary miss. This wrapper probes the index once after the first
+    miss (via the same public storage API the fetcher uses) and exposes
+    ``pack_stats()`` — deliberately NOT named ``stats()`` so the vendored
+    ``audio_stage._diagnose`` and the localaudio-only summary path never pick
+    it up. Only the pack id ever appears in diagnostics (no terms, no paths).
+    """
+
+    def __init__(self, fetcher: object, db_path: Path | None) -> None:
+        self._fetcher = fetcher
+        self._db_path = Path(db_path) if db_path is not None else None
+        self._attempts = 0
+        self._hits = 0
+        self._index_unreadable: bool | None = None  # memoized probe result
+
+    @property
+    def pack_id(self) -> str:
+        return self._fetcher.pack_id
+
+    def fetch(
+        self,
+        mined_form: str,
+        reading: str,
+        cancelled_check: Callable[[], bool] | None = None,
+    ) -> Path | None:
+        return self._delegate(lambda: self._fetcher.fetch(mined_form, reading, cancelled_check))
+
+    def fetch_candidates(
+        self,
+        candidates: list[tuple[str, str]],
+        cancelled_check: Callable[[], bool] | None = None,
+    ) -> Path | None:
+        return self._delegate(lambda: self._fetcher.fetch_candidates(candidates, cancelled_check))
+
+    def _delegate(self, call: Callable[[], Path | None]) -> Path | None:
+        self._attempts += 1
+        path = call()
+        if path is not None:
+            self._hits += 1
+        elif self._index_unreadable is None:
+            self._index_unreadable = self._probe_once()
+        return path
+
+    # storage._LOOKUP_SQL, replicated: importing anki_miner.services here would
+    # pull requests via the package __init__, breaking the requests-free lane.
+    _PROBE_SQL = (
+        "SELECT file, source, speaker, reading FROM entries "
+        "WHERE expression = ? AND (? = '' OR reading IS NULL OR reading = ?) "
+        "ORDER BY id"
+    )
+
+    def _probe_once(self) -> bool:
+        """Return True when the pack's sqlite index cannot be opened/queried.
+
+        Same read-only URI open and lookup shape as
+        ``anki_miner.services.audio_packs.storage`` (open_readonly + lookup),
+        stdlib-only.
+        """
+        import sqlite3
+
+        if self._db_path is None:
+            return False
+        try:
+            uri = self._db_path.resolve().as_uri() + "?mode=ro"
+            conn = sqlite3.connect(uri, uri=True)
+            try:
+                conn.execute("PRAGMA query_only=ON")
+                conn.execute(self._PROBE_SQL, ("猫", "ねこ", "ねこ")).fetchone()
+            finally:
+                conn.close()
+        except (sqlite3.Error, OSError):
+            return True
+        return False
+
+    def close(self) -> None:
+        close = getattr(self._fetcher, "close", None)
+        if callable(close):
+            close()
+
+    def pack_stats(self) -> dict[str, int]:
+        return {
+            "attempts": self._attempts,
+            "hits": self._hits,
+            "index_unreadable": 1 if self._index_unreadable else 0,
+        }
+
+
 class _ExpressionAudioSourceChain:
     """Source-priority composite over the ordered expression-audio fetchers.
 
@@ -94,6 +185,7 @@ class _ExpressionAudioSourceChain:
         fallback_fetchers: Sequence[object] = (),
         diagnostic_callback: Callable[[str], None] | None = None,
         cache_lifetime: object | None = None,
+        unavailable_pack_ids: Sequence[str] = (),
     ) -> None:
         self._fetchers = tuple(fetchers)
         self._localaudio_fetcher = localaudio_fetcher
@@ -102,12 +194,13 @@ class _ExpressionAudioSourceChain:
         self._fallback_hits = 0
         self._diagnostic_reported = False
         self._cache_lifetime = cache_lifetime
+        self._unavailable_pack_ids = tuple(unavailable_pack_ids)
 
     def _record_fallback_hit(self, fetcher: object) -> None:
         if any(fetcher is fallback for fallback in self._fallback_fetchers):
             self._fallback_hits += 1
 
-    def _diagnostic_summary(self) -> str | None:
+    def _localaudio_counts(self) -> dict | None:
         if self._localaudio_fetcher is None:
             return None
         stats = getattr(self._localaudio_fetcher, "stats", None)
@@ -117,22 +210,37 @@ class _ExpressionAudioSourceChain:
             counts = stats()
         except Exception:
             return None
-        if not isinstance(counts, dict):
-            return None
+        return counts if isinstance(counts, dict) else None
 
-        unavailable = sum(int(counts.get(key, 0)) for key in ("ssl", "connection", "http_status"))
-        fields = (
-            ("localaudio unavailable", unavailable),
-            ("timeouts", int(counts.get("timeout", 0))),
-            ("rejected sources", int(counts.get("policy_rejection", 0))),
-            ("oversized responses", int(counts.get("oversized_response", 0))),
-            ("oversized lists", int(counts.get("oversized_list", 0))),
-            ("malformed JSON", int(counts.get("malformed_json", 0))),
-            ("non-audio responses", int(counts.get("non_audio", 0))),
-            ("localaudio skipped after repeated failures", int(counts.get("circuit_skipped", 0))),
-            ("fallback pack hits", self._fallback_hits),
-        )
-        details = [f"{label}={count}" for label, count in fields if count > 0]
+    def _diagnostic_summary(self) -> str | None:
+        details: list[str] = []
+        counts = self._localaudio_counts()
+        if counts is not None:
+            unavailable = sum(int(counts.get(key, 0)) for key in ("ssl", "connection", "http_status"))
+            fields = (
+                ("localaudio unavailable", unavailable),
+                ("timeouts", int(counts.get("timeout", 0))),
+                ("rejected sources", int(counts.get("policy_rejection", 0))),
+                ("oversized responses", int(counts.get("oversized_response", 0))),
+                ("oversized lists", int(counts.get("oversized_list", 0))),
+                ("malformed JSON", int(counts.get("malformed_json", 0))),
+                ("non-audio responses", int(counts.get("non_audio", 0))),
+                ("localaudio skipped after repeated failures", int(counts.get("circuit_skipped", 0))),
+                ("fallback pack hits", self._fallback_hits),
+            )
+            details.extend(f"{label}={count}" for label, count in fields if count > 0)
+        for fetcher in self._fallback_fetchers:
+            pack_stats = getattr(fetcher, "pack_stats", None)
+            if not callable(pack_stats):
+                continue
+            try:
+                stats = pack_stats()
+            except Exception:
+                continue
+            if stats.get("index_unreadable") and not stats.get("hits") and stats.get("attempts"):
+                details.append(f"pack '{fetcher.pack_id}' index unreadable ({stats['attempts']} lookups failed)")
+        if self._unavailable_pack_ids:
+            details.append("enabled packs unavailable: " + ", ".join(sorted(self._unavailable_pack_ids)))
         return f"Expression audio: {'; '.join(details)}" if details else None
 
     def fetch(
@@ -394,12 +502,19 @@ def _build_expression_audio_source_chain(
     cache_lifetime = _RunAudioCache(cache_root)
 
     # Lazily scan the packs dir only when an enabled pack entry is present.
+    # Each resolved fetcher is wrapped so pack lookup failures become visible
+    # in the run summary instead of dying in the vendored fetcher's debug log.
     pack_fetchers_by_id: dict[str, object] = {}
     if any(getattr(entry, "kind", None) == "pack" and getattr(entry, "enabled", False) for entry in entries):
         pack_registry = AudioPackRegistry(config.audio_packs_root)
         pack_registry.load()
+        metas = getattr(pack_registry, "packs", None)
+        if not isinstance(metas, dict):
+            metas = {}
         for pack_fetcher in pack_registry.build_fetcher_chain(config, cache_root):
-            pack_fetchers_by_id[pack_fetcher.pack_id] = pack_fetcher
+            meta = metas.get(pack_fetcher.pack_id)
+            db_path = getattr(meta, "db_path", None) if meta is not None else None
+            pack_fetchers_by_id[pack_fetcher.pack_id] = _DiagnosedPackFetcher(pack_fetcher, db_path)
 
     # Config order = source priority. This loop never raises: an empty-url custom
     # entry or an unknown/missing pack is skipped (matching desktop), so combined
@@ -407,6 +522,7 @@ def _build_expression_audio_source_chain(
     fetchers: list[object] = []
     localaudio_fetcher: object | None = None
     fallback_fetchers: list[object] = []
+    unavailable_pack_ids: list[str] = []
     for entry in entries:
         if not getattr(entry, "enabled", False):
             continue
@@ -437,6 +553,10 @@ def _build_expression_audio_source_chain(
                 continue
             resolved = pack_fetchers_by_id.get(pack_id)
             if resolved is None:
+                # Enabled in config but not resolvable on disk (corrupt index
+                # skipped at scan, stale schema, missing content dir) — report
+                # the id in the run summary instead of vanishing silently.
+                unavailable_pack_ids.append(pack_id)
                 continue
             fetchers.append(resolved)
             fallback_fetchers.append(resolved)
@@ -447,6 +567,7 @@ def _build_expression_audio_source_chain(
         fallback_fetchers=fallback_fetchers,
         diagnostic_callback=diagnostic_callback,
         cache_lifetime=cache_lifetime,
+        unavailable_pack_ids=unavailable_pack_ids,
     )
 
 
