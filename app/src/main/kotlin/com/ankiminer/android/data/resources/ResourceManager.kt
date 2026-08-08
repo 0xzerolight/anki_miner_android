@@ -8,6 +8,8 @@ import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancelledException
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
@@ -1612,6 +1614,19 @@ internal class AndroidResourceManager(
                     // userMessage(code) is unchanged; the id rides beside it into diagnostics only.
                     recordFailure(operation, failure.code, userMessage(failure.code), failure.faultId)
                 }
+            } catch (failure: SafAccessException) {
+                // Provider-side access failures (no persistable grant, provider gone,
+                // unreadable document) get an actionable message instead of falling
+                // through to the generic operation failure below.
+                AppLog.e(
+                    LogComponent.RESOURCES,
+                    "operation.run",
+                    diagnosticFailure(failureOrigin, failure),
+                    "operation" to operation.id,
+                    "code" to safAccessCode(failure.kind),
+                    "outcome" to "fail",
+                )
+                recordFailure(operation, safAccessCode(failure.kind), safAccessUserMessage(failure.kind))
             } catch (failure: Exception) {
                 AppLog.e(
                     LogComponent.RESOURCES,
@@ -2220,6 +2235,23 @@ internal class AndroidResourceManager(
             "resource_cleanup_failed" ->
                 strings.resolve(R.string.resource_failure_delete)
             else -> strings.resolve(R.string.resource_failure_unknown_bridge_code, listOf(code))
+        }
+
+    private fun safAccessCode(kind: SafAccessFailureKind): String =
+        when (kind) {
+            SafAccessFailureKind.PERMISSION_REVOKED -> "saf_permission_not_granted"
+            SafAccessFailureKind.PROVIDER_UNAVAILABLE -> "saf_provider_unavailable"
+            SafAccessFailureKind.INVALID_URI -> "saf_uri_invalid"
+        }
+
+    private fun safAccessUserMessage(kind: SafAccessFailureKind): String =
+        when (kind) {
+            SafAccessFailureKind.PERMISSION_REVOKED ->
+                strings.resolve(R.string.resource_failure_saf_permission)
+            SafAccessFailureKind.PROVIDER_UNAVAILABLE ->
+                strings.resolve(R.string.resource_failure_saf_provider)
+            SafAccessFailureKind.INVALID_URI ->
+                strings.resolve(R.string.resource_failure_saf_uri)
         }
 
     private fun cancelPython(operation: ActiveOperation) {

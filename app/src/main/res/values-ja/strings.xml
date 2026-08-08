@@ -476,6 +476,9 @@
     <string name="resource_failure_unknown_bridge_code">リソース操作が失敗しました（%1$s）</string>
     <string name="resource_failure_storage">このリソースに十分な空き非公開ストレージがありません</string>
     <string name="resource_failure_operation">リソース操作が完了しませんでした</string>
+    <string name="resource_failure_saf_permission">ドキュメントプロバイダーが選択したファイルへの継続的なアクセスを許可しませんでした。システムのファイルアプリからもう一度選択してください。</string>
+    <string name="resource_failure_saf_provider">選択したファイルを提供するアプリが応答しませんでした。ファイルアプリからファイルを開き直してください。</string>
+    <string name="resource_failure_saf_uri">選択した項目は読み取り可能なドキュメントではありません。ファイルをもう一度選択してください。</string>
     <string name="resource_failure_storage_unavailable">このリソースに利用可能な非公開ストレージが不足しています</string>
     <string name="resource_failure_archive_mismatch">ダウンロードしたアーカイブが固定カタログと一致しませんでした</string>
     <string name="resource_failure_bridge_archive_too_large">アーカイブがアプリのインポート上限を超えています</string>

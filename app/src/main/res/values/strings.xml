@@ -485,6 +485,9 @@
     <string name="resource_failure_unknown_bridge_code">Resource operation failed (%1$s)</string>
     <string name="resource_failure_storage">Not enough free private storage for this resource</string>
     <string name="resource_failure_operation">The resource operation did not complete</string>
+    <string name="resource_failure_saf_permission">The document provider did not grant lasting access to the selected file. Pick the file again with the system Files app.</string>
+    <string name="resource_failure_saf_provider">The app providing the selected file did not respond. Reopen the file from the Files app.</string>
+    <string name="resource_failure_saf_uri">The selected item is not a readable document. Pick the file again.</string>
     <string name="resource_failure_storage_unavailable">Not enough private storage is available for this resource</string>
     <string name="resource_failure_archive_mismatch">The downloaded archive did not match the pinned catalog</string>
     <string name="resource_failure_bridge_archive_too_large">The archive exceeds the app\'s import limits</string>

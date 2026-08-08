@@ -13,6 +13,8 @@ import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.localization.testStringResourceResolver
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.snapshotProductionSettings
@@ -814,6 +816,52 @@ class ResourceManagerTest {
                 assertEquals("resource:$messageId", failure.message)
                 assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
             }
+        }
+
+    @Test
+    fun safGrantRefusalSurfacesRepickGuidanceInsteadOfGenericFailure() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack archive",
+                    autoRecover = false,
+                    onRetainReadAccess = {
+                        throw SafAccessException(
+                            SafAccessFailureKind.PERMISSION_REVOKED,
+                            "provider refused a persistable grant",
+                        )
+                    },
+                )
+
+            assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("saf_permission_not_granted", failure.code)
+            assertEquals("resource:${R.string.resource_failure_saf_permission}", failure.message)
+            assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+        }
+
+    @Test
+    fun providerTimeoutSurfacesProviderUnavailableGuidance() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "audio-pack archive",
+                    autoRecover = false,
+                    onRetainReadAccess = {
+                        throw SafAccessException(
+                            SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                            "provider did not respond",
+                        )
+                    },
+                )
+
+            assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("saf_provider_unavailable", failure.code)
+            assertEquals("resource:${R.string.resource_failure_saf_provider}", failure.message)
+            assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
         }
 
     @Test
