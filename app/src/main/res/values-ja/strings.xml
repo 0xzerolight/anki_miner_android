@@ -55,6 +55,8 @@
     <string name="audio_file_error">アクセスが失われました。選び直してください。</string>
     <string name="audio_selection_error_type">音声ファイルを選択してください（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="audio_field_unmapped_warning">音声フィールドは対応付けられていませんが、画像フィールドは対応付けられています。この状態で音声マイニングを実行すると、ファイルに埋め込みカバーアートがある場合にのみ単語が保持されるため、このノートタイプではノートが作成されない可能性があります。</string>
+    <string name="expression_audio_field_unmapped_warning">音声パックはインストールされていますが、単語音声用のノートフィールドが対応付けられていません。「WordAudio」という名前のフィールドを対応付けるか、Anki設定で単語音声のフィールド対応付けを設定してください。設定しないとカードに単語の発音が付きません。</string>
+    <string name="audio_pack_unusable_warning">インポートされた音声パックが使用できないためスキップされます。設定 → 音声 から削除して再インポートしてください。</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
     <string name="dismiss_error">エラーを閉じる</string>
     <string name="start_mining">マイニング</string>

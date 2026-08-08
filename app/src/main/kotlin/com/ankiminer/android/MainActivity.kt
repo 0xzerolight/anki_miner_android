@@ -78,6 +78,7 @@ class MainActivity : ComponentActivity() {
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
+            audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
         )
     }
@@ -94,6 +95,7 @@ class MainActivity : ComponentActivity() {
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
+            audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
         )
     }

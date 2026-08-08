@@ -7,6 +7,7 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
@@ -93,6 +94,7 @@ class MediaMiningViewModel internal constructor(
     private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
     effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
     fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+    audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
     private val timingPreviewOpener: TimingPreviewOpener? = null,
     timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
@@ -104,6 +106,7 @@ class MediaMiningViewModel internal constructor(
         val subtitleOffsetDraft: String = "",
         val globalSubtitleOffset: Double? = null,
         val fieldMap: Map<String, String> = emptyMap(),
+        val audioPacks: List<InstalledAudioPack> = emptyList(),
         val curationDraft: SharedCurationDraft? = null,
         val previousPageSelectedCount: Int = 0,
         val pending: MiningPendingState = MiningPendingState(),
@@ -216,6 +219,15 @@ class MediaMiningViewModel internal constructor(
                     lane == MiningLane.AUDIO &&
                         local.fieldMap["audio"].isNullOrBlank() &&
                         !local.fieldMap["picture"].isNullOrBlank(),
+                // Not lane-gated: expression audio applies to every mining lane.
+                // Fires only when a usable pack proves the user wants word audio;
+                // a localaudio-server-only setup (no packs) is an accepted gap --
+                // detecting the server would need a network probe.
+                expressionAudioFieldUnmapped =
+                    local.fieldMap["expression_audio"].isNullOrBlank() &&
+                        local.audioPacks.any { it.contentAvailable && it.entryCount > 0 },
+                unusableAudioPackInstalled =
+                    local.audioPacks.any { !(it.contentAvailable && it.entryCount > 0) },
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -245,6 +257,11 @@ class MediaMiningViewModel internal constructor(
         viewModelScope.launch {
             fieldMap.distinctUntilChanged().collect { currentFieldMap ->
                 localState.update { local -> local.copy(fieldMap = currentFieldMap) }
+            }
+        }
+        viewModelScope.launch {
+            audioPacks.distinctUntilChanged().collect { currentPacks ->
+                localState.update { local -> local.copy(audioPacks = currentPacks) }
             }
         }
         viewModelScope.launch {
@@ -1368,6 +1385,7 @@ class MediaMiningViewModel internal constructor(
         private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         private val effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
         private val fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+        private val audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
         private val timingPreviewOpener: TimingPreviewOpener? = null,
         private val timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
@@ -1392,6 +1410,7 @@ class MediaMiningViewModel internal constructor(
                 cueLookup = cueLookup,
                 effectiveSubtitleOffset = effectiveSubtitleOffset,
                 fieldMap = fieldMap,
+                audioPacks = audioPacks,
                 timingPreviewOpener = timingPreviewOpener,
                 timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
             ) as T

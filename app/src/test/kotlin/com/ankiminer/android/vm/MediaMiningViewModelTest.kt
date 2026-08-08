@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.dictionary.DefinitionResult
@@ -877,6 +878,142 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertFalse(viewModel.uiState.value.audioFieldUnmapped)
+        }
+
+    @Test
+    fun warnsWhenExpressionAudioUnmappedAndUsablePackInstalled() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("word" to "Word")),
+                    audioPacks = flowOf(listOf(usableAudioPack())),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.expressionAudioFieldUnmapped)
+        }
+
+    @Test
+    fun audioLaneAlsoWarnsWhenExpressionAudioUnmapped() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("word" to "Word")),
+                    audioPacks = flowOf(listOf(usableAudioPack())),
+                    lane = MiningLane.AUDIO,
+                )
+
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.expressionAudioFieldUnmapped)
+        }
+
+    @Test
+    fun doesNotWarnWhenExpressionAudioUnmappedWithoutInstalledPacks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("word" to "Word")),
+                    audioPacks = flowOf(emptyList()),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.expressionAudioFieldUnmapped)
+        }
+
+    @Test
+    fun doesNotWarnWhenExpressionAudioMapped() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("expression_audio" to "WordAudio")),
+                    audioPacks = flowOf(listOf(usableAudioPack())),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.expressionAudioFieldUnmapped)
+        }
+
+    @Test
+    fun doesNotWarnWhenInstalledPackIsUnusableForUnmappedField() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("word" to "Word")),
+                    audioPacks = flowOf(listOf(unusableAudioPack())),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            // An unusable pack cannot produce audio, so it must not trigger the
+            // unmapped-field advisory -- it triggers the unusable-pack one instead.
+            assertFalse(viewModel.uiState.value.expressionAudioFieldUnmapped)
+            assertTrue(viewModel.uiState.value.unusableAudioPackInstalled)
+        }
+
+    @Test
+    fun warnsWhenAnInstalledAudioPackIsUnusable() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    audioPacks = flowOf(listOf(usableAudioPack(), unusableAudioPack())),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.unusableAudioPackInstalled)
+        }
+
+    @Test
+    fun doesNotWarnWhenAllInstalledPacksAreUsable() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    audioPacks = flowOf(listOf(usableAudioPack())),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.unusableAudioPackInstalled)
+        }
+
+    @Test
+    fun doesNotWarnWithNoPacksInstalled() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    audioPacks = flowOf(emptyList()),
+                    lane = MiningLane.VIDEO,
+                )
+
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.unusableAudioPackInstalled)
         }
 
     @Test
@@ -1982,6 +2119,7 @@ class MediaMiningViewModelTest {
         cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
         fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+        audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
         timingPreviewOpener: TimingPreviewOpener? = null,
         timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
         lane: MiningLane = MiningLane.VIDEO,
@@ -1998,8 +2136,27 @@ class MediaMiningViewModelTest {
             cueLookup = cueLookup,
             effectiveSubtitleOffset = effectiveSubtitleOffset,
             fieldMap = fieldMap,
+            audioPacks = audioPacks,
             timingPreviewOpener = timingPreviewOpener,
             timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
+        )
+
+    private fun usableAudioPack(packId: String = "nhk16") =
+        InstalledAudioPack(
+            packId = packId,
+            sourceName = packId,
+            format = "nhk16",
+            entryCount = 100,
+            contentAvailable = true,
+        )
+
+    private fun unusableAudioPack(packId: String = "broken") =
+        InstalledAudioPack(
+            packId = packId,
+            sourceName = packId,
+            format = "ajt",
+            entryCount = 0,
+            contentAvailable = false,
         )
 
     private class ImmediateSafBroker : SafBroker {

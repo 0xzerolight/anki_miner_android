@@ -62,6 +62,8 @@
     <string name="audio_file_error">Access lost. Choose again.</string>
     <string name="audio_selection_error_type">Pick an audio file (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">The Audio field is not mapped, but Picture is. An audio run then keeps a word only if the file has embedded cover art, so this note type may produce no notes.</string>
+    <string name="expression_audio_field_unmapped_warning">An audio pack is installed, but no note field is mapped for word audio. Map a field named “WordAudio” (or set the word-audio field mapping in Anki settings) or cards will get no word pronunciation.</string>
+    <string name="audio_pack_unusable_warning">An imported audio pack is unusable and will be skipped. Remove and re-import it under Settings → Audio.</string>
     <string name="subtitle_file_error">Access lost. Choose again.</string>
     <string name="dismiss_error">Dismiss error</string>
     <string name="start_mining">Mine</string>

@@ -715,6 +715,16 @@ private fun LazyListScope.setupItems(
                     message = stringResource(R.string.audio_field_unmapped_warning),
                 )
             }
+            if (state.expressionAudioFieldUnmapped) {
+                MiningFailureCard(
+                    message = stringResource(R.string.expression_audio_field_unmapped_warning),
+                )
+            }
+            if (state.unusableAudioPackInstalled) {
+                MiningFailureCard(
+                    message = stringResource(R.string.audio_pack_unusable_warning),
+                )
+            }
             Button(
                 onClick = onStart,
                 enabled = state.canStart,
