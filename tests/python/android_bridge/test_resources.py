@@ -400,6 +400,28 @@ def _yomitan_zip(path: Path, *, term: str, meaning: str, revision: str) -> Path:
     return path
 
 
+def test_dictionary_preflight_derives_slot_from_archive_title_and_revision(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(tmp_path / "fixture.zip", term="猫", meaning="cat", revision="2026.08")
+
+    preflight = decode_envelope(
+        boundary.dispatch(
+            encode_message(
+                "resource.dictionary.preflight",
+                {
+                    "operationId": "dict-preflight",
+                    "sourcePath": str(source),
+                },
+            )
+        ),
+        expected_type="resource.dictionary.preflighted",
+    )
+
+    assert preflight.payload == {"slotId": "fixture-dictionary-2026-08"}
+
+
 # > the retired 16 MiB per-file cap, so a term/meta bank of this size exercises
 # the relaxed limits while providing enough entries for bounded bank splitting.
 _OVERSIZED_MEMBER_BYTES = 17 * 1024 * 1024

@@ -51,6 +51,10 @@ interface ResourceManager {
 
     suspend fun installCatalogDictionary(resourceId: String, replace: Boolean)
 
+    /** Inspect a retained Yomitan archive and return its desktop-derived base slot. */
+    suspend fun preflightCustomDictionary(uri: String): String? =
+        error("Custom dictionary preflight is unavailable")
+
     suspend fun importCustomDictionary(
         uri: String,
         slotId: String,
@@ -433,11 +437,20 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
         ) { operation ->
-            val retained = runBlocking { safBroker.retainReadAccess(uri) }
+            val remainingRetainedReferences = consumeRetainedResourceImport(uri)
+            val retainedUri =
+                if (remainingRetainedReferences != null) {
+                    uri
+                } else {
+                    runBlocking { safBroker.retainReadAccess(uri) }.uri
+                }
+            val clearSelectionAfterImport =
+                remainingRetainedReferences?.let { it == 0 }
+                    ?: (safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri == uri)
             var staged: StagedArchive? = null
             try {
                 staged =
-                    safStager.stage(retained.uri, operation.id, operation.cancellation) { current, total ->
+                    safStager.stage(retainedUri, operation.id, operation.cancellation) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
@@ -460,9 +473,52 @@ internal class AndroidResourceManager(
                 refreshFromPython()
             } finally {
                 staged?.file?.delete()
-                runBlocking { safBroker.releaseReadAccess(retained.uri) }
+                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
+                runBlocking { safBroker.releaseReadAccess(retainedUri) }
             }
         }
+    }
+
+    override suspend fun preflightCustomDictionary(uri: String): String? {
+        var derivedSlotId: String? = null
+        val succeeded =
+            runOperation(
+                strings.resolve(R.string.resource_operation_import_custom_dictionary),
+                ResourceOperationPhase.PREPARING,
+                failureOrigin = ResourceFailureOrigin.CUSTOM_DICTIONARY,
+                failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+                persistForRecovery = true,
+                requiresStartupReady = false,
+                waitForMutex = true,
+            ) { operation ->
+                var staged: StagedArchive? = null
+                try {
+                    staged =
+                        safStager.stage(
+                            uri,
+                            operation.id,
+                            operation.cancellation,
+                            sourceLabel = "dictionary archive",
+                        ) { current, total ->
+                            updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
+                        }
+                    operation.cancellation.check()
+                    operation.pythonStarted.set(true)
+                    derivedSlotId =
+                        ResourceBridgeCodec.decodeDictionaryPreflight(
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodeDictionaryPreflightRequest(
+                                    operation.id,
+                                    staged.file.canonicalPath,
+                                ),
+                                null,
+                            ),
+                        )
+                } finally {
+                    staged?.file?.delete()
+                }
+            }
+        return derivedSlotId.takeIf { succeeded }
     }
 
     override suspend fun retainResourceImport(uri: String): RetainedResourceImport {

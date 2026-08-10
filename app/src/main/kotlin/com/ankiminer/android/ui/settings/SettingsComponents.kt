@@ -49,6 +49,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
@@ -199,6 +200,19 @@ internal fun SettingTextField(
         modifier = modifier.fillMaxWidth(),
     )
 }
+
+/**
+ * Placeholder naming the engine value an empty field inherits.
+ *
+ * A blank field is not a blank setting: [com.ankiminer.android.data.settings.AppSettings] leaves
+ * unset processing fields null and the snapshot mapper omits them, so the engine applies its own
+ * default. Showing that value where the text would go says so without costing a row, and it is the
+ * same treatment the mining tabs already give their per-run subtitle offset.
+ *
+ * Pass a [com.ankiminer.android.data.settings.EngineDefaults] constant, never a re-typed literal —
+ * the mirror is the side CI checks against the engine.
+ */
+internal fun inheritedDefault(value: Any): @Composable () -> Unit = { Text(value.toString()) }
 
 @Composable
 internal fun NumericField(
@@ -387,6 +401,7 @@ internal fun BooleanSetting(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     detail: String? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         Modifier
@@ -394,6 +409,7 @@ internal fun BooleanSetting(
             .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
             .toggleable(
                 value = checked,
+                enabled = enabled,
                 role = Role.Checkbox,
                 onValueChange = onCheckedChange,
             ).padding(vertical = AnkiMinerTokens.Space.line),
@@ -405,11 +421,22 @@ internal fun BooleanSetting(
             modifier = Modifier.weight(1f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            // Match the checkbox's own disabled treatment; a full-strength label beside a greyed
+            // checkbox reads as an enabled row that simply refuses taps.
+            color =
+                if (enabled) {
+                    Color.Unspecified
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_CONTENT_ALPHA)
+                },
         )
         detail?.takeIf(String::isNotBlank)?.let { SupportingText(it) }
-        Checkbox(checked = checked, onCheckedChange = null)
+        Checkbox(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
+
+/** Material 3's disabled content opacity; `Checkbox` applies the same value internally. */
+private const val DISABLED_CONTENT_ALPHA = 0.38f
 
 /** Segments when they fit; full-width radio rows at compact width or large text. */
 @Composable

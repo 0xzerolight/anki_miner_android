@@ -3,7 +3,6 @@ package com.ankiminer.android.ui.settings
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.diagnostics.StagedBundle
-import com.ankiminer.android.vm.DiagnosticsDelivery
 import com.ankiminer.android.vm.DiagnosticsExportState
 import java.io.File
 import org.junit.Assert.assertEquals
@@ -102,9 +101,9 @@ class SettingsScreenModelTest {
     }
 
     @Test
-    fun retainedReadyExportLaunchesOnePickerPerDeliveryRequest() {
+    fun retainedReadyExportLaunchesOneShareSheetPerRequest() {
         val bundle = stagedBundle("diagnostics-1.zip")
-        val ready = DiagnosticsExportState.Ready(bundle, DiagnosticsDelivery.SAVE)
+        val ready = DiagnosticsExportState.Ready(bundle)
 
         val request = diagnosticsDeliveryToLaunch(ready, launchedRequest = null)
         assertNotNull(request)
@@ -112,25 +111,18 @@ class SettingsScreenModelTest {
         // Rotation: a fresh composition observes an equal retained Ready and must not relaunch.
         assertNull(
             diagnosticsDeliveryToLaunch(
-                DiagnosticsExportState.Ready(stagedBundle("diagnostics-1.zip"), DiagnosticsDelivery.SAVE),
+                DiagnosticsExportState.Ready(stagedBundle("diagnostics-1.zip")),
                 launchedRequest = request,
             ),
         )
-        // Same bundle, other delivery, and a rebuilt bundle are both new requests.
+        // A rebuilt bundle is a new request.
         assertNotNull(
             diagnosticsDeliveryToLaunch(
-                DiagnosticsExportState.Ready(bundle, DiagnosticsDelivery.SHARE),
+                DiagnosticsExportState.Ready(stagedBundle("diagnostics-2.zip")),
                 launchedRequest = request,
             ),
         )
-        assertNotNull(
-            diagnosticsDeliveryToLaunch(
-                DiagnosticsExportState.Ready(stagedBundle("diagnostics-2.zip"), DiagnosticsDelivery.SAVE),
-                launchedRequest = request,
-            ),
-        )
-        // Every non-Ready state ends the request; the composition clears its key there, so a
-        // cancelled picker followed by the same request launches again.
+        // Every non-Ready state ends the request; the composition clears its key there.
         DiagnosticsExportState.Idle
             .let { assertNull(diagnosticsDeliveryToLaunch(it, launchedRequest = request)) }
         assertEquals(request, diagnosticsDeliveryToLaunch(ready, launchedRequest = null))

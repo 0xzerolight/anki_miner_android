@@ -67,7 +67,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             SettingsCategory.ANKI,
             "anki-deck-options",
             R.string.settings_tags,
-            R.string.settings_tags_override,
+            R.string.settings_tags_help,
         ),
         entry("anki.target_deck", SettingsCategory.ANKI, "anki-target", R.string.anki_deck_title),
         entry(
@@ -102,6 +102,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "media-options",
             R.string.settings_animated_screenshots,
             R.string.settings_animated_screenshots_summary,
+        ),
+        entry(
+            "media.animated_match_audio",
+            SettingsCategory.MEDIA,
+            "media-options",
+            R.string.settings_animated_match_audio,
+            R.string.settings_animated_match_audio_help,
         ),
         entry(
             "media.animated_clip_duration",
@@ -156,7 +163,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             SettingsCategory.DICTIONARIES,
             "custom-dictionary",
             R.string.custom_dictionary_title,
-            R.string.custom_dictionary_slot_help,
         ),
         entry("dictionaries.pitch_import", SettingsCategory.DICTIONARIES, "pitch", R.string.pitch_import_title),
         entry(
@@ -333,7 +339,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "diagnostics.diagnostics_bundle",
             SettingsCategory.DIAGNOSTICS,
             "tester-diagnostics",
-            R.string.settings_save_diagnostics_bundle,
+            R.string.settings_share_diagnostics_bundle,
             R.string.settings_diagnostics_bundle_privacy,
         ),
         entry(

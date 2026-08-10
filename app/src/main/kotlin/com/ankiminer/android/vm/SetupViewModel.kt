@@ -87,7 +87,6 @@ internal class SetupViewModel(
     private data class LocalState(
         val lookupTerm: String = "猫",
         val lookupSlotId: String? = null,
-        val customSlotId: String = "custom-dictionary",
         // Which list the last word-list operation touched, so a failed import can offer the right picker.
         val wordListTarget: WordListKind = WordListKind.BLACKLIST,
         val knownWordsSearch: String = "",
@@ -105,9 +104,6 @@ internal class SetupViewModel(
     private val local =
         MutableStateFlow(
             LocalState(
-                customSlotId =
-                    savedStateHandle[STATE_CUSTOM_SLOT_ID]
-                        ?: "custom-dictionary",
                 wordListTarget =
                     savedEnum<WordListKind>(STATE_WORD_LIST_TARGET)
                         ?: WordListKind.BLACKLIST,
@@ -191,7 +187,6 @@ internal class SetupViewModel(
                 lookup = resourceState.lastLookup,
                 lookupTerm = localState.lookupTerm,
                 lookupSlotId = selectedSlot,
-                customSlotId = localState.customSlotId,
                 wordListTarget = localState.wordListTarget,
                 knownWordsSearch = localState.knownWordsSearch,
             )
@@ -232,7 +227,6 @@ internal class SetupViewModel(
             pendingReplace = localState.pendingReplace,
             pendingDelete = localState.pendingDelete,
             lookupTerm = localState.lookupTerm,
-            customSlotId = localState.customSlotId,
             wordListTarget = localState.wordListTarget,
             knownWordsSearch = localState.knownWordsSearch,
         )
@@ -651,31 +645,59 @@ internal class SetupViewModel(
     }
 
     fun beginCustomDictionaryPicker(): Boolean {
-        val state = currentState()
-        if (state.busy) return false
-        val request = customDictionaryPickerRequest(state) ?: return false
-        savePendingPicker(request)
+        if (currentState().busy) return false
+        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY))
         return true
     }
 
-    fun onCustomDictionaryPicked(uri: String?) =
-        finishPicker(
-            ResourcePickerKind.CUSTOM_DICTIONARY,
-            uri,
-            fallback = { customDictionaryPickerRequest(currentState()) },
+    fun beginCustomDictionaryReplacementPicker(slotId: String): Boolean {
+        val state = currentState()
+        if (state.busy) return false
+        val target =
+            ResourceIdentity.customDictionaryReplacementTarget(slotId, state.dictionaries)
+                ?: return false
+        savePendingPicker(
+            PendingResourcePicker(
+                kind = ResourcePickerKind.CUSTOM_DICTIONARY,
+                target = target,
+            ),
         )
-
-    fun importCustomDictionary(uri: String) {
-        savePendingPicker(customDictionaryPickerRequest(currentState()) ?: return)
-        onCustomDictionaryPicked(uri)
+        return true
     }
 
-    fun setCustomSlotId(value: String) {
-        if (value.length <= 64) {
-            val normalized = value.lowercase()
-            savedStateHandle[STATE_CUSTOM_SLOT_ID] = normalized
-            local.update { it.copy(customSlotId = normalized) }
+    fun onCustomDictionaryPicked(uri: String?) {
+        if (uri == null) {
+            discardPendingResourceImport(ResourcePickerKind.CUSTOM_DICTIONARY)
+            return
         }
+        viewModelScope.launch {
+            val launched =
+                pendingPicker?.takeIf { it.kind == ResourcePickerKind.CUSTOM_DICTIONARY }
+                    ?: PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY)
+            val source = resources.retainResourceImport(uri)
+            val target =
+                launched.target
+                    ?: resources.preflightCustomDictionary(source.uri)?.let { derivedSlotId ->
+                        ResourceIdentity.customDictionaryTarget(
+                            derivedSlotId,
+                            currentState().dictionaries,
+                        )
+                    }
+            if (target == null) {
+                if (pendingPicker?.kind == ResourcePickerKind.CUSTOM_DICTIONARY) {
+                    clearPendingPicker()
+                }
+                resources.releaseResourceImport(source.uri)
+                return@launch
+            }
+            savePendingPicker(launched.copy(target = target, uri = source.uri))
+            resumePendingPicker()
+        }
+    }
+
+    fun importCustomDictionary(uri: String) {
+        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY))
+        onCustomDictionaryPicked(uri)
     }
 
     fun beginFrequencyPicker(): Boolean {
@@ -784,18 +806,6 @@ internal class SetupViewModel(
             ),
         )
         return true
-    }
-
-    private fun customDictionaryPickerRequest(state: SetupUiState): PendingResourcePicker? {
-        if (!SLOT_ID.matches(state.customSlotId)) return null
-        return PendingResourcePicker(
-            kind = ResourcePickerKind.CUSTOM_DICTIONARY,
-            target =
-                ResourceIdentity.customDictionaryTarget(
-                    state.customSlotId,
-                    state.dictionaries,
-                ),
-        )
     }
 
     private fun frequencyPickerRequest(
@@ -983,7 +993,7 @@ internal class SetupViewModel(
             )
         return restored.takeIf { request ->
             when (request.kind) {
-                ResourcePickerKind.CUSTOM_DICTIONARY -> request.target != null
+                ResourcePickerKind.CUSTOM_DICTIONARY -> request.uri == null || request.target != null
                 ResourcePickerKind.AUDIO_PACK -> true
                 ResourcePickerKind.FREQUENCY ->
                     request.target != null &&
@@ -1025,6 +1035,7 @@ internal class SetupViewModel(
             picker
                 ?.takeIf {
                     it.kind == ResourcePickerKind.FREQUENCY ||
+                        it.kind == ResourcePickerKind.CUSTOM_DICTIONARY ||
                         it.kind == ResourcePickerKind.PITCH ||
                         it.kind == ResourcePickerKind.KNOWN_WORDS
                 }
@@ -1444,8 +1455,6 @@ internal class SetupViewModel(
     }
 
     private companion object {
-        val SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
-        const val STATE_CUSTOM_SLOT_ID = "setup.customSlotId"
         const val STATE_WORD_LIST_TARGET = "setup.wordListTarget"
         const val STATE_PICKER_KIND = "setup.picker.kind"
         const val STATE_PICKER_TARGET_ID = "setup.picker.targetId"

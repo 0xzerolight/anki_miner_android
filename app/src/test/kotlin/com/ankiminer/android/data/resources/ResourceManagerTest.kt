@@ -944,6 +944,25 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun customDictionaryPreflightReturnsTheArchiveDerivedSlotBeforeImport() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "dictionary archive",
+                    sourceDisplayName = "fixture.zip",
+                    sourceMimeType = "application/zip",
+                )
+            val retained = harness.manager.retainResourceImport(INPUT_URI)
+
+            val slotId = harness.manager.preflightCustomDictionary(retained.uri)
+
+            assertEquals("fixture-dictionary-2026-08", slotId)
+            val request = harness.bridge.requestsOfType("resource.dictionary.preflight").single()
+            assertFalse(request.contains("content://"))
+            assertFalse(request.contains("fixture-dictionary-2026-08"))
+        }
+
+    @Test
     fun committedPitchInventoryRefreshesWhenResponseDecodeFails() =
         runTest {
             val harness =
@@ -1591,6 +1610,11 @@ class ResourceManagerTest {
                         importedDictionaryResponse()
                     }
                 }
+                "resource.dictionary.preflight" ->
+                    envelope(
+                        "resource.dictionary.preflighted",
+                        """{"slotId":"fixture-dictionary-2026-08"}""",
+                    )
                 "resource.pitch.import" -> {
                     if (committedPitchDecodeFailure) {
                         // Same shape as the dictionary case: the slot is published before Kotlin

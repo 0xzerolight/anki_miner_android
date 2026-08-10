@@ -59,7 +59,8 @@ data class ResourceChainSelection(
 
 /**
  * Android-owned preferences. Nullable processing fields mean "use the current engine default";
- * the Android-owned Anki model contract is always emitted explicitly by the snapshot mapper.
+ * tags stay explicit because an empty string means no tags, and the Android-owned Anki model
+ * contract is always emitted explicitly by the snapshot mapper.
  *
  * [deduplicateSentences] is the one deliberate exception: Android defaults it off while the desktop
  * engine defaults it on. See the field for why.
@@ -89,7 +90,7 @@ data class AppSettings(
      */
     val cardType: CardType? = null,
     val cardTypeMarkerField: String? = null,
-    val tags: String? = null,
+    val tags: String = EngineDefaults.TAGS,
     val audioPaddingSeconds: Double? = null,
     val screenshotOffsetSeconds: Double? = null,
     val subtitleOffsetSeconds: Double? = null,
@@ -106,6 +107,13 @@ data class AppSettings(
     val animatedScreenshotsEnabled: Boolean = false,
     val animatedScreenshotDurationSeconds: Double? = null,
     val animatedScreenshotQuality: Int? = null,
+    /**
+     * Clip spans the padded audio window rather than the configured length, matching desktop's
+     * "Match audio duration". It overrides [animatedScreenshotDurationSeconds] outright and is not
+     * bound by that field's 0.5–10 s range, so the UI disables the length field while this is on —
+     * the same answer desktop's media panel gives.
+     */
+    val animatedScreenshotMatchAudio: Boolean = false,
     /**
      * Structural subtitle-annotation strip: whole-line sound-effect captions, leading speaker tags,
      * and inline furigana. Engine default is on, and it runs before the user regex filter.
@@ -153,7 +161,7 @@ data class AppSettings(
     /** Restore processing behavior without changing onboarding, appearance, target, or resources. */
     fun restoreMiningDefaults(): AppSettings =
         copy(
-            tags = null,
+            tags = EngineDefaults.TAGS,
             audioPaddingSeconds = null,
             screenshotOffsetSeconds = null,
             subtitleOffsetSeconds = null,
@@ -162,6 +170,7 @@ data class AppSettings(
             animatedScreenshotsEnabled = false,
             animatedScreenshotDurationSeconds = null,
             animatedScreenshotQuality = null,
+            animatedScreenshotMatchAudio = false,
             stripSubtitleAnnotations = null,
             subtitleRegexFilter = null,
             subtitleRegexReplacement = null,
@@ -182,34 +191,6 @@ data class AppSettings(
             pitchCategoryFormat = null,
             maxParallelWorkers = null,
             readingTtsEnabled = false,
-        )
-
-    /** Clear only the user-owned Anki destination and its mapping. */
-    fun resetAnkiTarget(): AppSettings =
-        copy(
-            deckName = null,
-            noteType = null,
-            fieldMap = emptyMap(),
-            cardType = null,
-            cardTypeMarkerField = null,
-        )
-
-    /** Clear resource priority/enable choices without removing installed resource files. */
-    fun resetResourceChoices(
-        dictionaryIds: List<String> = emptyList(),
-        frequencyIds: List<String> = emptyList(),
-        pitchIds: List<String> = emptyList(),
-        audioPackIds: List<String> = emptyList(),
-    ): AppSettings =
-        copy(
-            // Empty chains mean "newly discovered and enabled". Explicit disabled entries make a
-            // user-requested reset remain visibly clear for resources already installed.
-            dictionarySources = dictionaryIds.map { ResourceChainSelection(it, enabled = false) },
-            frequencySources = frequencyIds.map { ResourceChainSelection(it, enabled = false) },
-            pitchSources = pitchIds.map { ResourceChainSelection(it, enabled = false) },
-            audioPacks = audioPackIds.map { ResourceChainSelection(it, enabled = false) },
-            enabledWordsets = DEFAULT_ENABLED_WORDSETS,
-            jishoEnabled = false,
         )
 
     companion object {
@@ -330,7 +311,7 @@ object AppSettingsValidator {
             it.noteType?.let { value -> canonicalName("Note type", value) }
             fieldMap(it.fieldMap)
             cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
-            it.tags?.let { value -> validScalarText("Tags", value) }
+            validScalarText("Tags", it.tags)
             it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
             it.subtitleRegexReplacement?.let { value ->
                 validScalarText("Subtitle regex replacement", value)
@@ -356,12 +337,16 @@ object AppSettingsValidator {
             // exactly what can reach the wire — a stale value behind a disabled toggle goes nowhere
             // and must not block every other setting from saving.
             if (it.animatedScreenshotsEnabled) {
-                it.animatedScreenshotDurationSeconds?.let { seconds ->
-                    if (!seconds.isFinite() || seconds !in AnimatedScreenshotLimits.CLIP_DURATION_SECONDS) {
-                        invalid(
-                            InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE,
-                            "Clip length must be between 0.5 and 10 seconds",
-                        )
+                // Match-audio disables the length field and the mapper drops it, so the same rule
+                // applies: a value the user cannot reach must not block the write.
+                if (!it.animatedScreenshotMatchAudio) {
+                    it.animatedScreenshotDurationSeconds?.let { seconds ->
+                        if (!seconds.isFinite() || seconds !in AnimatedScreenshotLimits.CLIP_DURATION_SECONDS) {
+                            invalid(
+                                InvalidAppSettingCode.ANIMATED_SCREENSHOT_DURATION_RANGE,
+                                "Clip length must be between 0.5 and 10 seconds",
+                            )
+                        }
                     }
                 }
                 it.animatedScreenshotQuality?.let { quality ->
@@ -626,7 +611,7 @@ internal object EngineSettingsSnapshotMapper {
                 },
             )
         values["card_type"] = text(activeCardType?.wireValue ?: "")
-        settings.tags?.let { values["anki_tags"] = text(it) }
+        values["anki_tags"] = text(settings.tags)
         settings.audioPaddingSeconds?.let { values["audio_padding"] = decimal(it) }
         settings.screenshotOffsetSeconds?.let { values["screenshot_offset"] = decimal(it) }
         settings.subtitleOffsetSeconds?.let { values["subtitle_offset"] = decimal(it) }
@@ -733,13 +718,19 @@ internal object EngineSettingsSnapshotMapper {
             }
         values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain)
         // Emitted unconditionally so the key set does not depend on user settings; the tuning is
-        // emitted only when the feature is on, because the bridge pins fps/height/match_audio and
-        // would reject a stray value anyway.
+        // emitted only when the feature is on, because the bridge pins fps/height and would reject
+        // a stray value anyway.
         values["screenshot_animated"] = bool(settings.animatedScreenshotsEnabled)
         if (settings.animatedScreenshotsEnabled) {
             values["screenshot_animated_format"] = text(if (avifNameable) "avif" else "webp")
-            settings.animatedScreenshotDurationSeconds?.let {
-                values["screenshot_animated_clip_duration"] = decimal(it)
+            values["screenshot_animated_match_audio"] = bool(settings.animatedScreenshotMatchAudio)
+            // Match-audio computes the clip window from the subtitle and the audio padding, so the
+            // engine never reads the configured length. Omit it rather than emit a value this run
+            // will not use.
+            if (!settings.animatedScreenshotMatchAudio) {
+                settings.animatedScreenshotDurationSeconds?.let {
+                    values["screenshot_animated_clip_duration"] = decimal(it)
+                }
             }
             settings.animatedScreenshotQuality?.let {
                 values["screenshot_animated_quality"] = integer(it)

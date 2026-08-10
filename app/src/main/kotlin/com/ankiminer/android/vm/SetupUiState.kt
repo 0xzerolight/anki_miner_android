@@ -82,13 +82,9 @@ internal data class SetupUiState(
     val lookup: DictionaryLookup? = null,
     val lookupTerm: String = "猫",
     val lookupSlotId: String? = null,
-    val customSlotId: String = "custom-dictionary",
     val wordListTarget: WordListKind = WordListKind.BLACKLIST,
     val knownWordsSearch: String = "",
 ) {
-    val customSlotValid: Boolean
-        get() = CUSTOM_SLOT_ID.matches(customSlotId)
-
     val pythonReady: Boolean
         get() = python is PythonRuntimeReadiness.Ready
 
@@ -213,9 +209,6 @@ internal data class SetupUiState(
                 else -> MiningReadinessAction.CHECK_AGAIN
             }
 
-    private companion object {
-        val CUSTOM_SLOT_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
-    }
 }
 
 private fun NoteTypeSetupStatus.ProviderError.readinessAction(): MiningReadinessAction =

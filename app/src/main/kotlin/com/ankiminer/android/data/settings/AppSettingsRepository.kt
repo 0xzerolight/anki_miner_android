@@ -194,7 +194,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
                 candidate.setOrRemove(Keys.cardType, value.cardType?.wireValue)
                 candidate.setOrRemove(Keys.cardTypeMarkerField, value.cardTypeMarkerField)
-                candidate.setOrRemove(Keys.tags, value.tags)
+                candidate[Keys.tags] = value.tags
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
                 candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
                 candidate[Keys.animatedScreenshots] = value.animatedScreenshotsEnabled
@@ -203,6 +203,7 @@ class DataStoreAppSettingsRepository internal constructor(
                     value.animatedScreenshotDurationSeconds,
                 )
                 candidate.setOrRemove(Keys.animatedScreenshotQuality, value.animatedScreenshotQuality)
+                candidate[Keys.animatedScreenshotMatchAudio] = value.animatedScreenshotMatchAudio
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
                 candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
                 candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
@@ -331,8 +332,8 @@ class DataStoreAppSettingsRepository internal constructor(
                             }
                         },
                     tags =
-                        decoder.read(Keys.tags, null, { it }) { value ->
-                            value?.let { AppSettingsValidator.validate(AppSettings(tags = it)) }
+                        decoder.read(Keys.tags, EngineDefaults.TAGS, { it }) { value ->
+                            AppSettingsValidator.validate(AppSettings(tags = value))
                         },
                     audioPaddingSeconds =
                         decoder.validated(Keys.audioPadding) { AppSettings(audioPaddingSeconds = it) },
@@ -350,6 +351,8 @@ class DataStoreAppSettingsRepository internal constructor(
                         decoder.validated(Keys.animatedScreenshotQuality) {
                             AppSettings(animatedScreenshotQuality = it)
                         },
+                    animatedScreenshotMatchAudio =
+                        decoder.read(Keys.animatedScreenshotMatchAudio, false, { it }),
                     subtitleOffsetSeconds =
                         decoder.validated(Keys.subtitleOffset) {
                             AppSettings(subtitleOffsetSeconds = it)
@@ -566,6 +569,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val animatedScreenshotDuration =
                 register(doublePreferencesKey("screenshot_animated_duration_seconds"))
             val animatedScreenshotQuality = register(intPreferencesKey("screenshot_animated_quality"))
+            val animatedScreenshotMatchAudio =
+                register(booleanPreferencesKey("screenshot_animated_match_audio"))
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
             val audioFormat = register(stringPreferencesKey("audio_format"))
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))

@@ -204,7 +204,7 @@ class ResourceIdentityTest {
     }
 
     @Test
-    fun customDictionaryTargetMatchesAnOccupiedSlotEvenWhenItIsUnusable() {
+    fun customDictionaryTargetUsesTheNextFreeSlotWhenTheDerivedSlotIsOccupied() {
         val installed =
             listOf(
                 InstalledDictionary(
@@ -224,18 +224,18 @@ class ResourceIdentityTest {
 
         val target = ResourceIdentity.customDictionaryTarget("jmdict", installed)
 
-        assertEquals("jmdict", target.identity)
-        assertEquals("JMdict", target.installedName)
-        assertTrue(target.collides)
+        assertEquals("jmdict-2", target.identity)
+        assertNull(target.installedName)
+        assertFalse(target.collides)
     }
 
     @Test
-    fun customDictionaryTargetIgnoresAnUnoccupiedSlot() {
+    fun customDictionaryTargetSkipsEveryOccupiedSuffixButReusesAnUnoccupiedOne() {
         val installed =
             listOf(
                 InstalledDictionary(
                     slotId = "jmdict",
-                    occupied = false,
+                    occupied = true,
                     valid = false,
                     sourceName = "JMdict",
                     sourceRevision = "",
@@ -246,9 +246,88 @@ class ResourceIdentityTest {
                     catalogResourceId = null,
                     attribution = emptyList(),
                 ),
+                InstalledDictionary(
+                    slotId = "jmdict-2",
+                    occupied = true,
+                    valid = true,
+                    sourceName = "JMdict copy",
+                    sourceRevision = "",
+                    format = "yomitan",
+                    entryCount = 1,
+                    schemaOk = true,
+                    embeddedAttribution = emptyMap(),
+                    catalogResourceId = null,
+                    attribution = emptyList(),
+                ),
+                InstalledDictionary(
+                    slotId = "jmdict-3",
+                    occupied = false,
+                    valid = false,
+                    sourceName = "Unoccupied",
+                    sourceRevision = "",
+                    format = "unknown",
+                    entryCount = 0,
+                    schemaOk = false,
+                    embeddedAttribution = emptyMap(),
+                    catalogResourceId = null,
+                    attribution = emptyList(),
+                ),
             )
 
-        assertFalse(ResourceIdentity.customDictionaryTarget("jmdict", installed).collides)
+        assertEquals("jmdict-3", ResourceIdentity.customDictionaryTarget("jmdict", installed).identity)
+    }
+
+    @Test
+    fun customDictionaryReplacementTargetPinsTheOccupiedSlotEvenWhenItIsUnusable() {
+        val installed =
+            listOf(
+                InstalledDictionary(
+                    slotId = "legacy-slot",
+                    occupied = true,
+                    valid = false,
+                    sourceName = "Legacy dictionary",
+                    sourceRevision = "1",
+                    format = "yomitan",
+                    entryCount = 0,
+                    schemaOk = false,
+                    embeddedAttribution = emptyMap(),
+                    catalogResourceId = null,
+                    attribution = emptyList(),
+                ),
+            )
+
+        val target = ResourceIdentity.customDictionaryReplacementTarget("legacy-slot", installed)
+
+        assertEquals("legacy-slot", target?.identity)
+        assertEquals("Legacy dictionary", target?.installedName)
+        assertTrue(requireNotNull(target).collides)
+        assertNull(ResourceIdentity.customDictionaryReplacementTarget("missing", installed))
+    }
+
+    @Test
+    fun customDictionarySuffixKeepsTheBridgeSlotLimit() {
+        val derived = "a".repeat(64)
+        val installed =
+            listOf(
+                InstalledDictionary(
+                    slotId = derived,
+                    occupied = true,
+                    valid = true,
+                    sourceName = "Long dictionary",
+                    sourceRevision = "1",
+                    format = "yomitan",
+                    entryCount = 1,
+                    schemaOk = true,
+                    embeddedAttribution = emptyMap(),
+                    catalogResourceId = null,
+                    attribution = emptyList(),
+                ),
+            )
+
+        val target = ResourceIdentity.customDictionaryTarget(derived, installed)
+
+        assertEquals(64, target.identity.length)
+        assertTrue(target.identity.endsWith("-2"))
     }
 
     @Test

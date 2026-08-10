@@ -155,12 +155,12 @@ internal data class SettingsDraft(
     val deckName: String,
     val excludedDecks: List<String>,
     val tags: String,
-    val tagsOverride: Boolean,
     val audioPadding: String,
     val screenshotOffset: String,
     val animatedScreenshots: Boolean,
     val animatedScreenshotDuration: String,
     val animatedScreenshotQuality: String,
+    val animatedScreenshotMatchAudio: Boolean,
     val subtitleOffset: String,
     val bitrate: String,
     val maxDuration: String,
@@ -206,15 +206,19 @@ internal data class SettingsDraft(
                     screenshotOffset,
                     nonNegative = true,
                 )?.let { put(SettingsFieldKey.SCREENSHOT_OFFSET, it) }
-                // Only while the feature is on: the two fields are disabled when it is off, so a
+                // Only while the feature is on: the fields are disabled when it is off, so a
                 // value left over from a previous edit would block every settings write with no way
                 // to reach the field and fix it.
                 if (animatedScreenshots) {
-                    validateOptionalDouble(
-                        animatedScreenshotDuration,
-                        range = AnimatedScreenshotLimits.CLIP_DURATION_SECONDS,
-                        rangeMessage = R.string.b3_validation_animated_clip_duration,
-                    )?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
+                    // Match-audio disables the length field for the same reason, so its leftover
+                    // value must stop blocking writes too.
+                    if (!animatedScreenshotMatchAudio) {
+                        validateOptionalDouble(
+                            animatedScreenshotDuration,
+                            range = AnimatedScreenshotLimits.CLIP_DURATION_SECONDS,
+                            rangeMessage = R.string.b3_validation_animated_clip_duration,
+                        )?.let { put(SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION, it) }
+                    }
                     validateOptionalInt(
                         animatedScreenshotQuality,
                         range = AnimatedScreenshotLimits.QUALITY,
@@ -283,7 +287,7 @@ internal data class SettingsDraft(
             dynamicColorEnabled = dynamicColorEnabled,
             deckName = deckName.takeIf(String::isNotEmpty),
             excludedDecks = excludedDecks,
-            tags = tags.takeIf { tagsOverride },
+            tags = tags,
             audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
             screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
             animatedScreenshotsEnabled = animatedScreenshots,
@@ -291,6 +295,7 @@ internal data class SettingsDraft(
                 AppSettingsDraftParser.optionalDouble(animatedScreenshotDuration),
             animatedScreenshotQuality =
                 AppSettingsDraftParser.optionalInt(animatedScreenshotQuality),
+            animatedScreenshotMatchAudio = animatedScreenshotMatchAudio,
             subtitleOffsetSeconds = AppSettingsDraftParser.optionalDouble(subtitleOffset),
             audioFormat = audioFormat,
             audioBitrateKbps = AppSettingsDraftParser.optionalInt(bitrate),
@@ -414,8 +419,7 @@ internal data class SettingsDraft(
             SettingsDraft(
                 deckName = settings.deckName.orEmpty(),
                 excludedDecks = settings.excludedDecks,
-                tags = settings.tags.orEmpty(),
-                tagsOverride = settings.tags != null,
+                tags = settings.tags,
                 audioPadding = settings.audioPaddingSeconds?.toString().orEmpty(),
                 screenshotOffset = settings.screenshotOffsetSeconds?.toString().orEmpty(),
                 animatedScreenshots = settings.animatedScreenshotsEnabled,
@@ -423,6 +427,7 @@ internal data class SettingsDraft(
                     settings.animatedScreenshotDurationSeconds?.toString().orEmpty(),
                 animatedScreenshotQuality =
                     settings.animatedScreenshotQuality?.toString().orEmpty(),
+                animatedScreenshotMatchAudio = settings.animatedScreenshotMatchAudio,
                 subtitleOffset = settings.subtitleOffsetSeconds?.toString().orEmpty(),
                 bitrate = settings.audioBitrateKbps?.toString().orEmpty(),
                 maxDuration = settings.maxSentenceDurationSeconds?.toString().orEmpty(),
@@ -469,7 +474,6 @@ private fun SettingsDraft.rebaseChangesSince(
         excludedDecks =
             changedValue(baseline.excludedDecks, excludedDecks, persisted.excludedDecks),
         tags = changedValue(baseline.tags, tags, persisted.tags),
-        tagsOverride = changedValue(baseline.tagsOverride, tagsOverride, persisted.tagsOverride),
         audioPadding = changedValue(baseline.audioPadding, audioPadding, persisted.audioPadding),
         screenshotOffset =
             changedValue(baseline.screenshotOffset, screenshotOffset, persisted.screenshotOffset),
@@ -484,6 +488,12 @@ private fun SettingsDraft.rebaseChangesSince(
                 baseline.animatedScreenshotDuration,
                 animatedScreenshotDuration,
                 persisted.animatedScreenshotDuration,
+            ),
+        animatedScreenshotMatchAudio =
+            changedValue(
+                baseline.animatedScreenshotMatchAudio,
+                animatedScreenshotMatchAudio,
+                persisted.animatedScreenshotMatchAudio,
             ),
         animatedScreenshotQuality =
             changedValue(
@@ -1235,20 +1245,6 @@ internal class SettingsViewModel(
     }
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
-
-    fun resetAnkiTarget(): Boolean = save(AppSettings::resetAnkiTarget)
-
-    fun resetResourceChoices(): Boolean {
-        val inventory = resources.state.value
-        return save { current ->
-            current.resetResourceChoices(
-                dictionaryIds = inventory.usableDictionaryIds(),
-                frequencyIds = inventory.usableFrequencyIds(),
-                pitchIds = inventory.usablePitchIds(),
-                audioPackIds = inventory.usableAudioPackIds(),
-            )
-        }
-    }
 
     fun retrySave() {
         if (saving.value) return

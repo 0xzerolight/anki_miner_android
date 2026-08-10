@@ -115,38 +115,19 @@ internal fun CatalogDictionaryCards(
 @Composable
 internal fun CustomDictionaryImportCard(
     state: SetupUiState,
-    onSlotChanged: (String) -> Unit,
     onImport: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.custom_dictionary_title), style = MaterialTheme.typography.titleMedium)
-            OutlinedTextField(
-                value = state.customSlotId,
-                onValueChange = onSlotChanged,
-                label = { Text(stringResource(R.string.custom_dictionary_slot)) },
-                supportingText = {
-                    Text(
-                        if (state.customSlotValid) {
-                            stringResource(R.string.custom_dictionary_slot_help)
-                        } else {
-                            stringResource(R.string.custom_dictionary_slot_invalid)
-                        },
-                    )
-                },
-                isError = !state.customSlotValid,
-                enabled = !state.busy,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
             inlineFailure?.invoke()
             OutlinedButton(
                 onClick = onImport,
-                enabled = !state.busy && state.customSlotValid,
+                enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                 colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = !state.busy && state.customSlotValid),
+                border = actionBorder(enabled = !state.busy),
             ) {
                 Text(stringResource(R.string.custom_dictionary_choose))
             }
@@ -155,16 +136,17 @@ internal fun CustomDictionaryImportCard(
 }
 
 /**
- * Every occupied dictionary slot, with the Remove button for each.
+ * Every occupied dictionary slot, with Replace and Remove buttons for each.
  *
  * The priority editor above lists the healthy slots with the same names and counts, but it cannot
  * remove one, and a broken slot never reaches it. This card also says *which* slot is broken: an
  * unusable dictionary raises a fatal `dictionary_resource_invalid` inventory failure whose message
- * does not name the slot, and removing it is the only repair that does not clear app data.
+ * does not name the slot, so row-scoped actions are the only safe way to target it.
  */
 @Composable
 internal fun DictionaryInventoryCard(
     state: SetupUiState,
+    onReplace: (String) -> Unit,
     onRemove: (String) -> Unit,
 ) {
     val installed = state.dictionaries.filter { it.occupied }
@@ -197,6 +179,13 @@ internal fun DictionaryInventoryCard(
                             MaterialTheme.colorScheme.onSurface
                         },
                 )
+                OutlinedButton(
+                    onClick = { onReplace(dictionary.slotId) },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    colors = outlinedActionButtonColors(),
+                    border = actionBorder(!state.busy),
+                ) { Text(stringResource(R.string.dictionary_replace)) }
                 OutlinedButton(
                     onClick = { onRemove(dictionary.slotId) },
                     enabled = !state.busy,

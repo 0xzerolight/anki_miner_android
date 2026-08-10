@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
@@ -30,6 +31,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.data.resources.InstalledResourceKind
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.vm.PendingResourceDelete
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -275,6 +277,30 @@ class SettingsComponentsTest {
 
         assertTrue(dismissed)
         assertEquals(false, confirmed)
+    }
+
+    @Test
+    fun emptyFieldShowsTheInheritedEngineDefaultAndTypingReplacesIt() {
+        var padding by mutableStateOf("")
+        composeRule.setContent {
+            AnkiMinerTheme {
+                NumericField(
+                    value = padding,
+                    onChange = { padding = it },
+                    label = "Audio padding",
+                    placeholder = inheritedDefault(EngineDefaults.AUDIO_PADDING_SECONDS),
+                )
+            }
+        }
+
+        // Blank field, but the value the engine will actually use is on screen.
+        composeRule.onNodeWithText("0.3").assertIsDisplayed()
+
+        composeRule.onNode(hasSetTextAction()).performTextReplacement("0.8")
+
+        // Once the user owns the value the inherited one must not linger beside it.
+        composeRule.onNodeWithText("0.8").assertIsDisplayed()
+        composeRule.onAllNodesWithText("0.3").assertCountEquals(0)
     }
 
     private companion object {

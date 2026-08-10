@@ -82,7 +82,20 @@ class SettingsBackupCodecTest {
 
         assertEquals(ThemeMode.LIGHT, applied.settings.theme)
         assertEquals("Mining", applied.settings.deckName)
+        assertEquals("mined", applied.settings.tags)
         assertEquals(1, applied.appliedCount)
+    }
+
+    @Test
+    fun `blank tags survive a portable backup round trip`() {
+        val noTags = populated.copy(tags = "")
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(SettingsBackupCodec.encode(noTags, "0.4.1")).applyTo(AppSettings())
+            }
+
+        assertEquals("", applied.settings.tags)
     }
 
     @Test

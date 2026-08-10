@@ -1,6 +1,5 @@
 package com.ankiminer.android.diagnostics
 
-import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import java.io.File
@@ -15,15 +14,11 @@ import kotlinx.coroutines.withContext
 internal enum class DiagnosticsExportStep {
     PREPARING,
     BUILDING,
-    COPYING,
 }
 
 internal enum class DiagnosticsExportFailure {
     BUILD,
-    DESTINATION,
     BUNDLE,
-    DOCUMENT,
-    COPY,
     SHARE,
 }
 
@@ -35,14 +30,7 @@ internal class DiagnosticsExportException(
 internal interface DiagnosticsExporter {
     suspend fun buildBundle(onStep: (DiagnosticsExportStep) -> Unit): StagedBundle
 
-    suspend fun copyToDocument(
-        bundle: StagedBundle,
-        uri: String,
-    )
-
     fun shareUriFor(bundle: StagedBundle): String
-
-    fun discard(bundle: StagedBundle)
 
     /**
      * Whether [bundle] still names the file that was staged for it.
@@ -57,7 +45,6 @@ internal interface DiagnosticsExporter {
 
 internal class AndroidDiagnosticsExporter(
     private val stagingRoot: File,
-    private val documentWriter: ResourceDocumentWriter,
     private val stageBundle: suspend () -> StagedBundle,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : DiagnosticsExporter {
@@ -94,37 +81,6 @@ internal class AndroidDiagnosticsExporter(
             }
         }
 
-    override suspend fun copyToDocument(
-        bundle: StagedBundle,
-        uri: String,
-    ) {
-        withContext(ioDispatcher) {
-            try {
-                validateDestination(uri)
-                val source = requireValidBundle(bundle)
-                documentWriter.open(uri)?.use { output ->
-                    source.inputStream().use { input -> input.copyTo(output) }
-                    output.flush()
-                } ?: throw DiagnosticsExportException(DiagnosticsExportFailure.DOCUMENT)
-                AppLog.i(
-                    LogComponent.DIAG,
-                    "bundle.copy",
-                    "outcome" to "ok",
-                    "bytes" to bundle.sizeBytes,
-                )
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: DiagnosticsExportException) {
-                logCopyFailure(failure)
-                throw failure
-            } catch (failure: Throwable) {
-                val mapped = DiagnosticsExportException(DiagnosticsExportFailure.COPY, failure)
-                logCopyFailure(mapped)
-                throw mapped
-            }
-        }
-    }
-
     override fun shareUriFor(bundle: StagedBundle): String {
         requireValidBundle(bundle)
         val uri = parseUri(bundle.uri, DiagnosticsExportFailure.BUNDLE)
@@ -133,26 +89,6 @@ internal class AndroidDiagnosticsExporter(
         }
         AppLog.i(LogComponent.DIAG, "bundle.share", "outcome" to "ok", "state" to "ready")
         return bundle.uri
-    }
-
-    override fun discard(bundle: StagedBundle) {
-        val root = canonicalOrNull(stagingRoot) ?: return
-        val raw = bundle.file
-        val source = canonicalOrNull(raw) ?: return
-        if (
-            source.toPath().startsWith(root.toPath()) &&
-            source != root &&
-            !Files.isSymbolicLink(raw.toPath())
-        ) {
-            source.delete()
-        }
-    }
-
-    private fun validateDestination(uri: String) {
-        val parsed = parseUri(uri, DiagnosticsExportFailure.DESTINATION)
-        if (parsed.scheme != CONTENT_SCHEME) {
-            throw DiagnosticsExportException(DiagnosticsExportFailure.DESTINATION)
-        }
     }
 
     override fun isStaged(bundle: StagedBundle): Boolean = stagedFileOrNull(bundle) != null
@@ -196,16 +132,6 @@ internal class AndroidDiagnosticsExporter(
         } catch (_: IOException) {
             null
         }
-
-    private fun logCopyFailure(failure: DiagnosticsExportException) {
-        AppLog.e(
-            LogComponent.DIAG,
-            "bundle.copy",
-            failure,
-            "outcome" to "fail",
-            "reason" to failure.kind.name,
-        )
-    }
 
     private companion object {
         const val CONTENT_SCHEME = "content"

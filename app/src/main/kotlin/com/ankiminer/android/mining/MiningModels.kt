@@ -1,6 +1,7 @@
 package com.ankiminer.android.mining
 
 import androidx.compose.runtime.Immutable
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.media.SafSelectionSlot
 
 enum class RuntimeWorkConflict {
@@ -31,12 +32,14 @@ data class MiningSource(
 }
 
 /**
- * Kotlin mirror of the engine dataclass default for `subtitle_offset`
- * (`AnkiMinerConfig().subtitle_offset`). Guarded by the Python side's
- * test_cues_engine_default_offset_is_zero so an engine re-pin cannot
- * silently diverge.
+ * The engine dataclass default for `subtitle_offset`, kept under its mining-side name for the
+ * per-run offset call sites. The value itself lives in
+ * [com.ankiminer.android.data.settings.EngineDefaults]; this is an alias, not a second mirror.
+ *
+ * Guarded twice over: the Python side's test_cues_engine_default_offset_is_zero, and
+ * test_engine_defaults_mirror against `AnkiMinerConfig()`.
  */
-const val ENGINE_DEFAULT_SUBTITLE_OFFSET = 0.0
+const val ENGINE_DEFAULT_SUBTITLE_OFFSET = EngineDefaults.SUBTITLE_OFFSET_SECONDS
 
 data class VideoMiningInput(
     val video: MiningSource,

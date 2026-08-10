@@ -2,8 +2,6 @@ package com.ankiminer.android.ui.settings
 
 internal enum class SettingsResetAction {
     RESTORE_MINING_DEFAULTS,
-    RESET_ANKI_TARGET,
-    RESET_RESOURCE_CHOICES,
 }
 
 internal data class SettingsResetConfirmationState(
@@ -26,13 +24,9 @@ internal data class SettingsResetConfirmationState(
 internal fun dispatchConfirmedSettingsReset(
     action: SettingsResetAction?,
     onRestoreMiningDefaults: () -> Boolean,
-    onResetAnkiTarget: () -> Boolean,
-    onResetResourceChoices: () -> Boolean,
 ): Boolean =
     when (action) {
         SettingsResetAction.RESTORE_MINING_DEFAULTS -> onRestoreMiningDefaults()
-        SettingsResetAction.RESET_ANKI_TARGET -> onResetAnkiTarget()
-        SettingsResetAction.RESET_RESOURCE_CHOICES -> onResetResourceChoices()
         null -> false
     }
 
@@ -44,14 +38,10 @@ internal fun dispatchConfirmedSettingsReset(
  */
 internal fun SettingsResetConfirmationState.confirmDispatching(
     onRestoreMiningDefaults: () -> Boolean,
-    onResetAnkiTarget: () -> Boolean,
-    onResetResourceChoices: () -> Boolean,
 ): SettingsResetConfirmationState =
     confirmIfAccepted(
         dispatchConfirmedSettingsReset(
             action = pendingAction,
             onRestoreMiningDefaults = onRestoreMiningDefaults,
-            onResetAnkiTarget = onResetAnkiTarget,
-            onResetResourceChoices = onResetResourceChoices,
         ),
     )

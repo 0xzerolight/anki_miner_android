@@ -66,6 +66,21 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `missing tags use the desktop default while stored empty tags remain empty`() {
+        val missing = DataStoreAppSettingsRepository.decodePreferences(preferencesOf())
+        val empty =
+            DataStoreAppSettingsRepository.decodePreferences(
+                preferencesOf(stringPreferencesKey("tags") to ""),
+            )
+        val encoded =
+            DataStoreAppSettingsRepository.encodePreferences(empty, preferencesOf())
+
+        assertEquals(EngineDefaults.TAGS, missing.tags)
+        assertEquals("", empty.tags)
+        assertEquals("", encoded[stringPreferencesKey("tags")])
+    }
+
+    @Test
     fun `schema v2 migration enables all wordsets only for a fresh store`() {
         val migrated =
             DataStoreAppSettingsRepository.migratePreferences(
@@ -233,7 +248,7 @@ class AppSettingsRepositoryTest {
                     original.copy(
                         deckName = "After",
                         noteType = null,
-                        tags = null,
+                        tags = "",
                         dictionarySources = emptyList(),
                     ),
                 )
@@ -288,12 +303,13 @@ class AppSettingsRepositoryTest {
 
         assertEquals(
             original.copy(
-                tags = null,
+                tags = EngineDefaults.TAGS,
                 audioPaddingSeconds = null,
                 screenshotOffsetSeconds = null,
                 animatedScreenshotsEnabled = false,
                 animatedScreenshotDurationSeconds = null,
                 animatedScreenshotQuality = null,
+                animatedScreenshotMatchAudio = false,
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
@@ -327,109 +343,42 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
-    fun `reset Anki target changes only deck note type and field map`() {
-        val original = populatedSettings()
-
-        val reset = original.resetAnkiTarget()
-
-        assertEquals(
-            original.copy(
-                deckName = null,
-                noteType = null,
-                fieldMap = emptyMap(),
-                // The marker names a field of the note type being cleared, so it cannot outlive it.
-                cardType = null,
-                cardTypeMarkerField = null,
-            ),
-            reset,
-        )
-    }
-
-    @Test
-    fun `reset resource choices changes only resource selections`() {
-        val original = populatedSettings()
-
-        val reset =
-            original.resetResourceChoices(
-                dictionaryIds = listOf("jitendex"),
-                frequencyIds = listOf("bccwj"),
-                pitchIds = listOf("kanjium"),
-                audioPackIds = listOf("local-audio"),
-            )
-
-        assertEquals(
-            original.copy(
-                dictionarySources = listOf(ResourceChainSelection("jitendex", enabled = false)),
-                frequencySources = listOf(ResourceChainSelection("bccwj", enabled = false)),
-                pitchSources = listOf(ResourceChainSelection("kanjium", enabled = false)),
-                audioPacks = listOf(ResourceChainSelection("local-audio", enabled = false)),
-                enabledWordsets = AppSettings.DEFAULT_ENABLED_WORDSETS,
-                jishoEnabled = false,
-            ),
-            reset,
-        )
-    }
-
-    @Test
-    fun `cancelled reset leaves every callback and persisted store untouched for every action`() =
+    fun `cancelled restore leaves its callback and persisted store untouched`() =
         runTest {
             val dataStore = createDataStore(backgroundScope, "cancelled-reset")
             val repository = DataStoreAppSettingsRepository(dataStore)
             val original = populatedSettings()
             repository.update(original)
 
-            SettingsResetAction.entries.forEach { requestedAction ->
-                val callbackCounts = SettingsResetAction.entries.associateWith { 0 }.toMutableMap()
-                val requested = SettingsResetConfirmationState().request(requestedAction)
-                val finalState = requested.cancel()
-                val confirmedAction = finalState.pendingAction
+            var callbackCount = 0
+            val requestedAction = SettingsResetAction.RESTORE_MINING_DEFAULTS
+            val requested = SettingsResetConfirmationState().request(requestedAction)
+            val finalState = requested.cancel()
+            val confirmedAction = finalState.pendingAction
 
-                dispatchConfirmedSettingsReset(
-                    action = confirmedAction,
-                    onRestoreMiningDefaults = {
-                        callbackCounts[SettingsResetAction.RESTORE_MINING_DEFAULTS] = 1
-                        launch { repository.update(AppSettings::restoreMiningDefaults) }
-                        true
-                    },
-                    onResetAnkiTarget = {
-                        callbackCounts[SettingsResetAction.RESET_ANKI_TARGET] = 1
-                        launch { repository.update(AppSettings::resetAnkiTarget) }
-                        true
-                    },
-                    onResetResourceChoices = {
-                        callbackCounts[SettingsResetAction.RESET_RESOURCE_CHOICES] = 1
-                        launch {
-                            repository.update { current ->
-                                current.resetResourceChoices(
-                                    dictionaryIds = listOf("jitendex"),
-                                    frequencyIds = listOf("bccwj"),
-                                    audioPackIds = listOf("local-audio"),
-                                )
-                            }
-                        }
-                        true
-                    },
-                )
-                advanceUntilIdle()
+            dispatchConfirmedSettingsReset(
+                action = confirmedAction,
+                onRestoreMiningDefaults = {
+                    callbackCount += 1
+                    launch { repository.update(AppSettings::restoreMiningDefaults) }
+                    true
+                },
+            )
+            advanceUntilIdle()
 
-                assertNull(requestedAction.name, finalState.pendingAction)
-                assertNull(requestedAction.name, confirmedAction)
-                assertEquals(
-                    requestedAction.name,
-                    SettingsResetAction.entries.associateWith { 0 },
-                    callbackCounts,
-                )
-                assertEquals(requestedAction.name, original, repository.settings.first())
-            }
+            assertNull(finalState.pendingAction)
+            assertNull(confirmedAction)
+            assertEquals(0, callbackCount)
+            assertEquals(original, repository.settings.first())
         }
 
     @Test
     fun `reset confirmation remains pending until the view model accepts it`() {
         val requested =
-            SettingsResetConfirmationState().request(SettingsResetAction.RESET_ANKI_TARGET)
+            SettingsResetConfirmationState().request(SettingsResetAction.RESTORE_MINING_DEFAULTS)
 
         assertEquals(
-            SettingsResetAction.RESET_ANKI_TARGET,
+            SettingsResetAction.RESTORE_MINING_DEFAULTS,
             requested.confirmIfAccepted(accepted = false).pendingAction,
         )
         assertNull(requested.confirmIfAccepted(accepted = true).pendingAction)
@@ -439,27 +388,22 @@ class AppSettingsRepositoryTest {
     fun `a refused reset keeps its dialog up and a dispatched one closes it`() {
         // `save()` returns false when settings never loaded, so nothing was reset. Closing the
         // dialog anyway left the user with no reset and no reason.
-        SettingsResetAction.entries.forEach { action ->
-            var dispatched = 0
-            val requested = SettingsResetConfirmationState().request(action)
+        val action = SettingsResetAction.RESTORE_MINING_DEFAULTS
+        var dispatched = 0
+        val requested = SettingsResetConfirmationState().request(action)
 
-            val refused =
-                requested.confirmDispatching(
-                    onRestoreMiningDefaults = { dispatched += 1; false },
-                    onResetAnkiTarget = { dispatched += 1; false },
-                    onResetResourceChoices = { dispatched += 1; false },
-                )
-            assertEquals(action.name, action, refused.pendingAction)
+        val refused =
+            requested.confirmDispatching(
+                onRestoreMiningDefaults = { dispatched += 1; false },
+            )
+        assertEquals(action, refused.pendingAction)
 
-            val accepted =
-                requested.confirmDispatching(
-                    onRestoreMiningDefaults = { dispatched += 1; true },
-                    onResetAnkiTarget = { dispatched += 1; true },
-                    onResetResourceChoices = { dispatched += 1; true },
-                )
-            assertNull(action.name, accepted.pendingAction)
-            assertEquals(action.name, 2, dispatched)
-        }
+        val accepted =
+            requested.confirmDispatching(
+                onRestoreMiningDefaults = { dispatched += 1; true },
+            )
+        assertNull(accepted.pendingAction)
+        assertEquals(2, dispatched)
     }
 
     @Test
@@ -574,6 +518,8 @@ class AppSettingsRepositoryTest {
             animatedScreenshotsEnabled = true,
             animatedScreenshotDurationSeconds = 2.0,
             animatedScreenshotQuality = 30,
+            // Non-default, or corrupting the key would quarantine to the value already stored.
+            animatedScreenshotMatchAudio = true,
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
@@ -678,6 +624,12 @@ class AppSettingsRepositoryTest {
             corruptInt(
                 "screenshot_animated_quality",
                 original.copy(animatedScreenshotQuality = defaults.animatedScreenshotQuality),
+            ),
+            corruptBoolean(
+                "screenshot_animated_match_audio",
+                original.copy(
+                    animatedScreenshotMatchAudio = defaults.animatedScreenshotMatchAudio,
+                ),
             ),
             corruptDouble(
                 "subtitle_offset_seconds",

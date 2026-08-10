@@ -45,6 +45,7 @@ _MANIFEST_NAME = "install.manifest.json"
 _COMPATIBILITY_MARKER_NAME = "install.complete"
 _MAX_MANIFEST_BYTES = 16 * 1024
 _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES = 1024 * 1024 * 1024
+_MAX_YOMITAN_INDEX_BYTES = 8 * 1024 * 1024
 # Anti-DoS backstop for archives whose catalog entry declares no member limit,
 # NOT a product limit: it exists only so a hostile central directory cannot make
 # zipfile materialise an unbounded ZipInfo list. Real Yomitan dictionaries are
@@ -1573,6 +1574,79 @@ def _publish_dictionary(
             raise
         if _path_occupied(backup):
             _safe_remove_dictionary_entry(backup)
+
+
+def _derive_dictionary_slot(source: Path) -> str:
+    """Apply the desktop importer's title+revision slot rule without loading the engine."""
+
+    _preflight_zip_member_count(source, _MAX_CUSTOM_ZIP_MEMBERS)
+    try:
+        with zipfile.ZipFile(source, "r") as archive:
+            try:
+                info = archive.getinfo("index.json")
+            except KeyError as exc:
+                raise _fail("dictionary_import_failed", "Dictionary ZIP has no root index.json") from exc
+            if info.file_size > _MAX_YOMITAN_INDEX_BYTES:
+                raise _fail("dictionary_import_failed", "Dictionary index.json exceeds its size limit")
+            with archive.open(info, "r") as stream:
+                raw = stream.read(_MAX_YOMITAN_INDEX_BYTES + 1)
+            if len(raw) > _MAX_YOMITAN_INDEX_BYTES:
+                raise _fail("dictionary_import_failed", "Dictionary index.json exceeds its size limit")
+    except (OSError, zipfile.BadZipFile) as exc:
+        raise _fail("dictionary_import_failed", "The selected dictionary is not a readable ZIP") from exc
+    try:
+        index = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise _fail("dictionary_import_failed", "Dictionary index.json is invalid") from exc
+    if not isinstance(index, dict):
+        raise _fail("dictionary_import_failed", "Dictionary index.json must be an object")
+    title = str(index.get("title", "")).strip()
+    revision = str(index.get("revision", "")).strip()
+    if not title:
+        raise _fail("dictionary_import_failed", "Dictionary index.json has no title")
+
+    def slug(text: str) -> str:
+        parts: list[str] = []
+        buffer: list[str] = []
+        for character in text.strip().lower():
+            if ord(character) < 128:
+                buffer.append(character)
+            else:
+                if buffer:
+                    parts.append("".join(buffer))
+                    buffer.clear()
+                parts.append(f"u{ord(character):x}")
+        if buffer:
+            parts.append("".join(buffer))
+        return re.sub(r"[^a-z0-9]+", "-", "-".join(parts)).strip("-") or "dict"
+
+    return slug(title) + ("-" + slug(revision) if revision else "")
+
+
+def preflight_dictionary(payload: Mapping[str, object]) -> str:
+    _exact(
+        payload,
+        {"operationId", "sourcePath"},
+        code="invalid_resource_request",
+    )
+    operation_id = _operation_id(payload["operationId"])
+    source = _absolute_path(payload["sourcePath"], name="sourcePath")
+    with _OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        try:
+            slot_id = _slot_id(_derive_dictionary_slot(source))
+        except BridgeProtocolError as exc:
+            if exc.code == "dictionary_import_failed":
+                raise
+            raise _fail(
+                "dictionary_import_failed",
+                "The selected dictionary could not be inspected",
+            ) from exc
+        operation.check()
+        return encode_message(
+            "resource.dictionary.preflighted",
+            {"slotId": slot_id},
+        )
 
 
 def import_dictionary(payload: Mapping[str, object]) -> str:

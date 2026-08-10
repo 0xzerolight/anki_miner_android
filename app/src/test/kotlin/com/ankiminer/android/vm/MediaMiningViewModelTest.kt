@@ -10,7 +10,6 @@ import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.dictionary.DefinitionResult
-import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
@@ -440,15 +439,6 @@ class MediaMiningViewModelTest {
             val repository = RecordingRepository()
             val viewModel = mediaViewModel(repository, ImmediateSafBroker())
             val observed = mutableListOf<NavigationWorkflowState>()
-            var diagnosticBuilds = 0
-            val diagnostics =
-                TesterDiagnosticsShareAction(
-                    buildReport = {
-                        diagnosticBuilds += 1
-                        "report"
-                    },
-                    shareReport = {},
-                )
             val collection =
                 backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                     viewModel.navigationWorkflowState.collect { observed += it }
@@ -473,11 +463,6 @@ class MediaMiningViewModelTest {
                 listOf(NavigationWorkflowState.IDLE, NavigationWorkflowState.RUNNING),
                 observed,
             )
-            assertEquals(0, diagnosticBuilds)
-
-            diagnostics.share()
-
-            assertEquals(1, diagnosticBuilds)
             collection.cancel()
         }
 

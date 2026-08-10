@@ -89,6 +89,8 @@ internal class SessionResourceManager(
 
     override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) = Unit
 
+    override suspend fun preflightCustomDictionary(uri: String): String = "custom-dictionary"
+
     override suspend fun importCustomDictionary(uri: String, slotId: String, replace: Boolean) = Unit
 
     override suspend fun importFrequencySource(

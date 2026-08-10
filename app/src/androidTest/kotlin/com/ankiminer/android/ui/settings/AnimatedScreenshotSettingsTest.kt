@@ -23,8 +23,8 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * The animated-screenshot controls follow the same shape as the tags override above them: the two
- * tuning fields stay visible and go disabled, rather than appearing and disappearing.
+ * The animated-screenshot tuning fields stay visible and go disabled, rather than appearing and
+ * disappearing.
  *
  * Nothing else composes [mediaSettings], so this builds its own host. Every assertion scrolls
  * first — the CI emulator is 320x640 @ 160dpi while the local AVD is a Pixel 6, so a control that
@@ -34,7 +34,10 @@ class AnimatedScreenshotSettingsTest {
     @get:Rule
     val composeRule = createComposeRule()
 
-    private fun setMediaSettings(enabled: Boolean) {
+    private fun setMediaSettings(
+        enabled: Boolean,
+        matchAudio: Boolean = false,
+    ) {
         composeRule.setContent {
             // remember, or the toggle test's state resets on every recomposition.
             var draft by remember {
@@ -44,6 +47,7 @@ class AnimatedScreenshotSettingsTest {
                             animatedScreenshotsEnabled = enabled,
                             animatedScreenshotDurationSeconds = 2.0,
                             animatedScreenshotQuality = 30,
+                            animatedScreenshotMatchAudio = matchAudio,
                         ),
                         ResourceManagerState(),
                     ),
@@ -100,5 +104,53 @@ class AnimatedScreenshotSettingsTest {
         composeRule
             .onNodeWithTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
             .assertIsEnabled()
+    }
+
+    /**
+     * Match-audio derives the window from the subtitle and the audio padding, so the configured
+     * length has no effect. Desktop greys the same field out; leaving it live would let the user
+     * tune a number the run ignores.
+     */
+    @Test
+    fun matchAudioDisablesClipLengthButNotQuality() {
+        setMediaSettings(enabled = true, matchAudio = true)
+
+        scrollTo(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+            .assertIsNotEnabled()
+        // Encoding quality is independent of the clip's time range.
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_QUALITY)
+            .assertIsEnabled()
+    }
+
+    @Test
+    fun tickingMatchAudioDisablesClipLengthAndUntickingRestoresIt() {
+        setMediaSettings(enabled = true)
+
+        scrollTo(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+            .assertIsEnabled()
+
+        composeRule.onNodeWithText("Match audio length").performClick()
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+            .assertIsNotEnabled()
+
+        composeRule.onNodeWithText("Match audio length").performClick()
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+            .assertIsEnabled()
+    }
+
+    /** The whole feature being off must still win over match-audio's own state. */
+    @Test
+    fun matchAudioCannotBeChangedWhileAnimatedScreenshotsAreOff() {
+        setMediaSettings(enabled = false)
+
+        scrollTo(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION)
+        composeRule.onNodeWithText("Match audio length").assertIsNotEnabled()
     }
 }

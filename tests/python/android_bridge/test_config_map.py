@@ -250,7 +250,6 @@ def test_animated_screenshot_tuning_outside_the_supported_range_is_rejected(
     [
         ("screenshot_animated_fps", 30),
         ("screenshot_animated_height", 480),
-        ("screenshot_animated_match_audio", True),
     ],
 )
 def test_pinned_animated_screenshot_fields_are_not_settable(
@@ -262,6 +261,28 @@ def test_pinned_animated_screenshot_fields_are_not_settable(
         map_config_settings({field: value}, _paths(tmp_path))
 
     assert error.value.code == "unknown_config_field"
+
+
+def test_match_audio_is_settable_and_still_pins_fps_and_height(tmp_path: Path) -> None:
+    """Desktop offers this control, so Android forwards it instead of pinning it off.
+
+    fps and height stay pinned either way: they exist so a card mined on the phone matches one
+    mined on the desktop, which is unrelated to the clip's time range.
+    """
+    mapped = map_config_settings(
+        {"screenshot_animated": True, "screenshot_animated_match_audio": True},
+        _paths(tmp_path),
+    )
+
+    assert mapped.engine_config.screenshot_animated_match_audio is True
+    assert mapped.engine_config.screenshot_animated_fps == 20
+    assert mapped.engine_config.screenshot_animated_height == 720
+
+
+def test_match_audio_defaults_off_when_the_snapshot_omits_it(tmp_path: Path) -> None:
+    mapped = map_config_settings({"screenshot_animated": True}, _paths(tmp_path))
+
+    assert mapped.engine_config.screenshot_animated_match_audio is False
 
 
 def test_android_tts_flag_satisfies_vendored_gate_without_enabling_papago(

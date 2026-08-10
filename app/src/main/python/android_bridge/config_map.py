@@ -66,6 +66,7 @@ _BOOL_FIELDS = frozenset(
         "use_i_plus_one_filter",
         "use_sentence_length_filter",
         "screenshot_animated",
+        "screenshot_animated_match_audio",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
@@ -621,14 +622,18 @@ def map_config_settings(
         *updates.get("expression_audio_chain", ()),
     )
     # Pinned rather than exposed.  fps/height stay at the desktop defaults so a
-    # card mined on the phone matches one mined on the desktop, and match_audio
-    # is off because it silently overrides clip_duration, which the user can
-    # see.  The format is deliberately NOT pinned here: Kotlin resolves it from
-    # the device MIME table, because a .avif AnkiDroid cannot name is stored as
-    # .bin and the engine has no way to detect that.
+    # card mined on the phone matches one mined on the desktop.  The format is
+    # deliberately NOT pinned here: Kotlin resolves it from the device MIME
+    # table, because a .avif AnkiDroid cannot name is stored as .bin and the
+    # engine has no way to detect that.
+    #
+    # ``screenshot_animated_match_audio`` used to be pinned False on the grounds
+    # that it silently overrides the clip duration the user can see.  Desktop
+    # answers that by disabling the clip-duration widget while the box is
+    # ticked (media_settings_panel.py), so Android exposes the field and does
+    # the same rather than withholding a control desktop offers.
     updates["screenshot_animated_fps"] = 20
     updates["screenshot_animated_height"] = 720
-    updates["screenshot_animated_match_audio"] = False
     # ``AudioStage.reading_tts_active`` has a settled four-part desktop gate:
     # injected fetcher, master flag, mapped audio field, and a provider bit.
     # Android uses the Google-named bit only as the final compatibility gate;
