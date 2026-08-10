@@ -646,8 +646,8 @@
     <string name="settings_excluded_decks">Escludi mazzi dalla scansione delle parole conosciute</string>
     <string name="settings_no_anki_decks">Nessun mazzo Anki rilevato. Controlla l\'accesso ad AnkiDroid e aggiorna.</string>
     <string name="settings_anki_deck_not_discovered">Scelta salvata; al momento non rilevata</string>
-    <string name="settings_tags_override">Sovrascrivi i tag della nota</string>
-    <string name="settings_tags">Tag</string>
+    <string name="settings_tags">Tag delle carte</string>
+    <string name="settings_tags_help">Tag separati da spazi applicati a ogni carta estratta. Lascia vuoto per non usare tag.</string>
     <string name="settings_media">Contenuti multimediali</string>
     <string name="settings_audio_padding">Margine audio (secondi)</string>
     <string name="settings_screenshot_offset">Offset schermata (secondi)</string>

@@ -66,6 +66,21 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `missing tags use the desktop default while stored empty tags remain empty`() {
+        val missing = DataStoreAppSettingsRepository.decodePreferences(preferencesOf())
+        val empty =
+            DataStoreAppSettingsRepository.decodePreferences(
+                preferencesOf(stringPreferencesKey("tags") to ""),
+            )
+        val encoded =
+            DataStoreAppSettingsRepository.encodePreferences(empty, preferencesOf())
+
+        assertEquals(EngineDefaults.TAGS, missing.tags)
+        assertEquals("", empty.tags)
+        assertEquals("", encoded[stringPreferencesKey("tags")])
+    }
+
+    @Test
     fun `schema v2 migration enables all wordsets only for a fresh store`() {
         val migrated =
             DataStoreAppSettingsRepository.migratePreferences(
@@ -233,7 +248,7 @@ class AppSettingsRepositoryTest {
                     original.copy(
                         deckName = "After",
                         noteType = null,
-                        tags = null,
+                        tags = "",
                         dictionarySources = emptyList(),
                     ),
                 )
@@ -288,7 +303,7 @@ class AppSettingsRepositoryTest {
 
         assertEquals(
             original.copy(
-                tags = null,
+                tags = EngineDefaults.TAGS,
                 audioPaddingSeconds = null,
                 screenshotOffsetSeconds = null,
                 animatedScreenshotsEnabled = false,

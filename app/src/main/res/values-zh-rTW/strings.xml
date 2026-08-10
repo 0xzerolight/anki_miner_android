@@ -638,8 +638,8 @@
     <string name="settings_excluded_decks">從已知單字掃描中排除牌組</string>
     <string name="settings_no_anki_decks">找不到 Anki 牌組。請檢查 AnkiDroid 存取權並重新整理。</string>
     <string name="settings_anki_deck_not_discovered">已儲存選擇；目前未找到</string>
-    <string name="settings_tags_override">覆寫筆記標籤</string>
-    <string name="settings_tags">標籤</string>
+    <string name="settings_tags">卡片標籤</string>
+    <string name="settings_tags_help">套用到每張挖掘卡片的標籤，以空格分隔。留空表示不加標籤。</string>
     <string name="settings_media">媒體</string>
     <string name="settings_audio_padding">音訊留白（秒）</string>
     <string name="settings_screenshot_offset">螢幕截圖偏移（秒）</string>

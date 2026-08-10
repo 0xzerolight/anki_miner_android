@@ -194,7 +194,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.fieldMap, FieldMapPreferenceCodec.encode(value.fieldMap))
                 candidate.setOrRemove(Keys.cardType, value.cardType?.wireValue)
                 candidate.setOrRemove(Keys.cardTypeMarkerField, value.cardTypeMarkerField)
-                candidate.setOrRemove(Keys.tags, value.tags)
+                candidate[Keys.tags] = value.tags
                 candidate.setOrRemove(Keys.audioPadding, value.audioPaddingSeconds)
                 candidate.setOrRemove(Keys.screenshotOffset, value.screenshotOffsetSeconds)
                 candidate[Keys.animatedScreenshots] = value.animatedScreenshotsEnabled
@@ -332,8 +332,8 @@ class DataStoreAppSettingsRepository internal constructor(
                             }
                         },
                     tags =
-                        decoder.read(Keys.tags, null, { it }) { value ->
-                            value?.let { AppSettingsValidator.validate(AppSettings(tags = it)) }
+                        decoder.read(Keys.tags, EngineDefaults.TAGS, { it }) { value ->
+                            AppSettingsValidator.validate(AppSettings(tags = value))
                         },
                     audioPaddingSeconds =
                         decoder.validated(Keys.audioPadding) { AppSettings(audioPaddingSeconds = it) },

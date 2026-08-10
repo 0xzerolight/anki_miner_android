@@ -646,8 +646,8 @@
     <string name="settings_excluded_decks">Exclure des paquets de l\'analyse des mots connus</string>
     <string name="settings_no_anki_decks">Aucun paquet Anki détecté. Vérifiez l\'accès à AnkiDroid et actualisez.</string>
     <string name="settings_anki_deck_not_discovered">Choix enregistré ; non détecté actuellement</string>
-    <string name="settings_tags_override">Remplacer les étiquettes de note</string>
-    <string name="settings_tags">Étiquettes</string>
+    <string name="settings_tags">Étiquettes des cartes</string>
+    <string name="settings_tags_help">Étiquettes séparées par des espaces appliquées à chaque carte extraite. Laissez ce champ vide pour n’ajouter aucune étiquette.</string>
     <string name="settings_media">Médias</string>
     <string name="settings_audio_padding">Marge audio (secondes)</string>
     <string name="settings_screenshot_offset">Décalage de la capture d\'écran (secondes)</string>

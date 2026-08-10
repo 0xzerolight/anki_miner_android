@@ -23,8 +23,8 @@ import org.junit.Rule
 import org.junit.Test
 
 /**
- * The animated-screenshot controls follow the same shape as the tags override above them: the two
- * tuning fields stay visible and go disabled, rather than appearing and disappearing.
+ * The animated-screenshot tuning fields stay visible and go disabled, rather than appearing and
+ * disappearing.
  *
  * Nothing else composes [mediaSettings], so this builds its own host. Every assertion scrolls
  * first — the CI emulator is 320x640 @ 160dpi while the local AVD is a Pixel 6, so a control that

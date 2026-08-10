@@ -648,8 +648,8 @@
     <string name="settings_excluded_decks">Исключить колоды из проверки известных слов</string>
     <string name="settings_no_anki_decks">Колоды Anki не обнаружены. Проверьте доступ к AnkiDroid и обновите.</string>
     <string name="settings_anki_deck_not_discovered">Сохранённый выбор пока не обнаружен</string>
-    <string name="settings_tags_override">Переопределить теги заметок</string>
-    <string name="settings_tags">Теги</string>
+    <string name="settings_tags">Теги карточек</string>
+    <string name="settings_tags_help">Разделённые пробелами теги, применяемые к каждой созданной карточке. Оставьте поле пустым, чтобы не добавлять теги.</string>
     <string name="settings_media">Медиа</string>
     <string name="settings_audio_padding">Запас аудио (секунды)</string>
     <string name="settings_screenshot_offset">Смещение скриншота (секунды)</string>

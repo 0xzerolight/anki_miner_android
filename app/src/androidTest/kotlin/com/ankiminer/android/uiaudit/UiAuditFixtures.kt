@@ -82,6 +82,7 @@ import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.mediaSettings
 import com.ankiminer.android.ui.settings.settingsCard
+import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.video.CurationPlayerUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
@@ -644,16 +645,12 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
                     onCheckedChange = {},
                 )
             }
-            BooleanSetting(
-                label = stringResource(R.string.settings_tags_override),
-                checked = true,
-                onCheckedChange = {},
-            )
             SettingTextField(
                 value = "ankiminer japanese subs2srs",
                 onChange = {},
                 label = stringResource(R.string.settings_tags),
             )
+            SupportingText(stringResource(R.string.settings_tags_help))
         }
         AnkiTargetCard(
             state = setup,

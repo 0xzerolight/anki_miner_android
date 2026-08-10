@@ -642,8 +642,8 @@
     <string name="settings_excluded_decks">Kecualikan dek dari pemindaian kata yang dikenal</string>
     <string name="settings_no_anki_decks">Tidak ada dek Anki yang ditemukan. Periksa akses AnkiDroid dan segarkan.</string>
     <string name="settings_anki_deck_not_discovered">Pilihan tersimpan; saat ini tidak ditemukan</string>
-    <string name="settings_tags_override">Timpa tag catatan</string>
-    <string name="settings_tags">Tag</string>
+    <string name="settings_tags">Tag kartu</string>
+    <string name="settings_tags_help">Tag yang dipisahkan spasi dan diterapkan ke setiap kartu yang ditambang. Biarkan kosong agar tidak memakai tag.</string>
     <string name="settings_media">Media</string>
     <string name="settings_audio_padding">Jeda audio (detik)</string>
     <string name="settings_screenshot_offset">Offset tangkapan layar (detik)</string>

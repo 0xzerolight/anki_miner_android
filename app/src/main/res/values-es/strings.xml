@@ -646,8 +646,8 @@
     <string name="settings_excluded_decks">Excluir mazos de los análisis de palabras conocidas</string>
     <string name="settings_no_anki_decks">No se detectaron mazos de Anki. Compruebe el acceso a AnkiDroid y actualice.</string>
     <string name="settings_anki_deck_not_discovered">Elección guardada; no se detecta actualmente</string>
-    <string name="settings_tags_override">Anular etiquetas de la nota</string>
-    <string name="settings_tags">Etiquetas</string>
+    <string name="settings_tags">Etiquetas de las tarjetas</string>
+    <string name="settings_tags_help">Etiquetas separadas por espacios que se aplican a cada tarjeta minada. Deja el campo en blanco para no usar etiquetas.</string>
     <string name="settings_media">Multimedia</string>
     <string name="settings_audio_padding">Relleno de audio (segundos)</string>
     <string name="settings_screenshot_offset">Desfase de captura de pantalla (segundos)</string>

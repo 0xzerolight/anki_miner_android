@@ -642,8 +642,8 @@
     <string name="settings_excluded_decks">Loại trừ bộ thẻ khỏi quá trình quét từ đã biết</string>
     <string name="settings_no_anki_decks">Không phát hiện bộ thẻ Anki nào. Kiểm tra quyền truy cập AnkiDroid và làm mới.</string>
     <string name="settings_anki_deck_not_discovered">Đã lưu lựa chọn; hiện chưa phát hiện bộ thẻ này</string>
-    <string name="settings_tags_override">Ghi đè nhãn của ghi chú</string>
-    <string name="settings_tags">Nhãn</string>
+    <string name="settings_tags">Nhãn thẻ</string>
+    <string name="settings_tags_help">Các nhãn cách nhau bằng dấu cách được áp dụng cho mọi thẻ đã khai thác. Để trống nếu không muốn dùng nhãn.</string>
     <string name="settings_media">Phương tiện</string>
     <string name="settings_audio_padding">Đệm âm thanh (giây)</string>
     <string name="settings_screenshot_offset">Độ lệch ảnh chụp màn hình (giây)</string>

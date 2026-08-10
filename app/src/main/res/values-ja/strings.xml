@@ -645,8 +645,8 @@
     <string name="settings_excluded_decks">除外デッキ</string>
     <string name="settings_no_anki_decks">Ankiデッキが見つかりません。AnkiDroidへのアクセスを確認し、更新してください。</string>
     <string name="settings_anki_deck_not_discovered">保存済み(現在未検出)</string>
-    <string name="settings_tags_override">ノートタグを上書き</string>
-    <string name="settings_tags">タグ</string>
+    <string name="settings_tags">カードタグ</string>
+    <string name="settings_tags_help">採掘したすべてのカードに適用するタグをスペースで区切って入力します。タグを付けない場合は空欄のままにしてください。</string>
     <string name="settings_media">メディア</string>
     <string name="settings_audio_padding">音声パディング(秒)</string>
     <string name="settings_screenshot_offset">スクリーンショットのオフセット(秒)</string>

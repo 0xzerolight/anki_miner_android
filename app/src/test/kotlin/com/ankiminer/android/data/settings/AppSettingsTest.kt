@@ -54,19 +54,21 @@ class AppSettingsTest {
                 "anki_fields",
                 "card_type_marker_fields",
                 "card_type",
+                "anki_tags",
                 "dictionary_chain",
                 "frequency_chain",
                 "pitch_chain",
                 "expression_audio_chain",
                 "excluded_wordsets",
                 "screenshot_animated",
-                // Android defaults sentence dedup off, against the desktop engine's True, so it is
-                // emitted rather than omitted. Every other processing field stays absent.
+                // Tags and Android's sentence-dedup default differ from nullable processing fields,
+                // so both stay explicit while every other processing field remains absent.
                 "deduplicate_sentences",
             ),
             snapshot.settings.keys,
         )
         assertEquals(BridgeJsonValue.Bool(false), snapshot.settings["deduplicate_sentences"])
+        assertEquals(BridgeJsonValue.Text(EngineDefaults.TAGS), snapshot.settings["anki_tags"])
         assertEquals(BridgeJsonValue.ArrayValue(emptyList()), snapshot.settings["dictionary_chain"])
         assertEquals(false, snapshot.androidTtsEnabled)
         assertEquals(
@@ -139,7 +141,7 @@ class AppSettingsTest {
         assertThrows(InvalidAppSettingException::class.java) {
             AppSettingsValidator.validate(AppSettings(maxParallelWorkers = 33))
         }
-        assertTrue(AppSettingsValidator.validate(AppSettings(tags = "")).tags!!.isEmpty())
+        assertTrue(AppSettingsValidator.validate(AppSettings(tags = "")).tags.isEmpty())
     }
 
     @Test
@@ -184,11 +186,14 @@ class AppSettingsTest {
     }
 
     @Test
-    fun explicitEmptyTagsRemainDifferentFromDesktopDefault() {
-        val defaultSnapshot = EngineSettingsSnapshotMapper.map(AppSettings(tags = null), emptyList())
+    fun defaultAndEmptyTagsAreAlwaysExplicit() {
+        val defaultSnapshot = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList())
         val noTagsSnapshot = EngineSettingsSnapshotMapper.map(AppSettings(tags = ""), emptyList())
 
-        assertFalse(defaultSnapshot.settings.containsKey("anki_tags"))
+        assertEquals(
+            BridgeJsonValue.Text(EngineDefaults.TAGS),
+            defaultSnapshot.settings["anki_tags"],
+        )
         assertEquals(BridgeJsonValue.Text(""), noTagsSnapshot.settings["anki_tags"])
     }
 

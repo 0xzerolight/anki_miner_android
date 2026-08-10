@@ -67,7 +67,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             SettingsCategory.ANKI,
             "anki-deck-options",
             R.string.settings_tags,
-            R.string.settings_tags_override,
+            R.string.settings_tags_help,
         ),
         entry("anki.target_deck", SettingsCategory.ANKI, "anki-target", R.string.anki_deck_title),
         entry(

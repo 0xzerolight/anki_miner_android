@@ -262,19 +262,12 @@ private fun LazyListScope.ankiSettings(
                     }
                 }
             }
-            BooleanSetting(
-                label = stringResource(R.string.settings_tags_override),
-                checked = draft.tagsOverride,
-                onCheckedChange = {
-                    callbacks.onDraftChange(draft.copy(tagsOverride = it))
-                },
-            )
             SettingTextField(
                 value = draft.tags,
                 onChange = { callbacks.onDraftChange(draft.copy(tags = it)) },
                 label = stringResource(R.string.settings_tags),
-                enabled = draft.tagsOverride,
             )
+            SupportingText(stringResource(R.string.settings_tags_help))
         }
     }
     settingsCard(SettingsCategory.ANKI, recorder, "anki-target") {
