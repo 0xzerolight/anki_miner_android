@@ -19,6 +19,7 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupException
 import com.ankiminer.android.data.settings.SettingsBackupFailure
@@ -74,6 +75,23 @@ class SettingsViewModelTest {
             // draft stays dirty because auto-save never markClean-rebuilds the controlled fields.
             assertEquals("1.50", viewModel.draftState.value.draft.audioPadding)
             assertTrue(viewModel.draftState.value.dirty)
+        }
+
+    @Test
+    fun blankTagsPersistAndReachTheEngineAsNoTags() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(tags = ""))
+            advanceUntilIdle()
+
+            assertEquals("", repository.current.tags)
+            assertEquals(
+                BridgeJsonValue.Text(""),
+                repository.snapshot(listOf("first")).settings["anki_tags"],
+            )
         }
 
     @Test
@@ -629,7 +647,6 @@ class SettingsViewModelTest {
             settingsViewModel.updateDraft(
                 settingsViewModel.draftState.value.draft.copy(
                     tags = "mined",
-                    tagsOverride = true,
                 ),
             )
             advanceUntilIdle()
@@ -777,9 +794,10 @@ class SettingsViewModelTest {
 
             assertEquals("Deck", repository.current.deckName)
             assertEquals("note", repository.current.noteType)
-            assertNull(repository.current.tags)
+            assertEquals(EngineDefaults.TAGS, repository.current.tags)
             assertFalse(viewModel.draftState.value.dirty)
             assertEquals("Deck", viewModel.draftState.value.draft.deckName)
+            assertEquals(EngineDefaults.TAGS, viewModel.draftState.value.draft.tags)
         }
 
     @Test

@@ -647,8 +647,8 @@
     <string name="settings_excluded_decks">Stapel von Scans Bekannter Wörter ausschließen</string>
     <string name="settings_no_anki_decks">Keine Anki-Stapel gefunden. Prüfen Sie AnkiDroid-Zugriff und aktualisieren Sie.</string>
     <string name="settings_anki_deck_not_discovered">Gespeicherte Auswahl; derzeit nicht gefunden</string>
-    <string name="settings_tags_override">Notiz-Tags überschreiben</string>
-    <string name="settings_tags">Tags</string>
+    <string name="settings_tags">Karten-Tags</string>
+    <string name="settings_tags_help">Durch Leerzeichen getrennte Tags, die auf jede erstellte Karte angewendet werden. Leer lassen, um keine Tags zu verwenden.</string>
     <string name="settings_media">Medien</string>
     <string name="settings_audio_padding">Audio-Polsterung (Sekunden)</string>
     <string name="settings_screenshot_offset">Screenshot-Versatz (Sekunden)</string>

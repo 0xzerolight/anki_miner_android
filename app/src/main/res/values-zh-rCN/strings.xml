@@ -645,8 +645,8 @@
     <string name="settings_excluded_decks">从已知单词扫描中排除牌组</string>
     <string name="settings_no_anki_decks">未发现 Anki 牌组。请检查 AnkiDroid 访问权限并刷新。</string>
     <string name="settings_anki_deck_not_discovered">已保存选择；当前未发现</string>
-    <string name="settings_tags_override">覆盖笔记标签</string>
-    <string name="settings_tags">标签</string>
+    <string name="settings_tags">卡片标签</string>
+    <string name="settings_tags_help">应用于每张挖掘卡片的标签，以空格分隔。留空表示不添加标签。</string>
     <string name="settings_media">媒体</string>
     <string name="settings_audio_padding">音频填充（秒）</string>
     <string name="settings_screenshot_offset">截图偏移（秒）</string>

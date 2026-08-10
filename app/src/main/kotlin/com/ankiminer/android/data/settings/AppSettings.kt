@@ -59,7 +59,8 @@ data class ResourceChainSelection(
 
 /**
  * Android-owned preferences. Nullable processing fields mean "use the current engine default";
- * the Android-owned Anki model contract is always emitted explicitly by the snapshot mapper.
+ * tags stay explicit because an empty string means no tags, and the Android-owned Anki model
+ * contract is always emitted explicitly by the snapshot mapper.
  *
  * [deduplicateSentences] is the one deliberate exception: Android defaults it off while the desktop
  * engine defaults it on. See the field for why.
@@ -89,7 +90,7 @@ data class AppSettings(
      */
     val cardType: CardType? = null,
     val cardTypeMarkerField: String? = null,
-    val tags: String? = null,
+    val tags: String = EngineDefaults.TAGS,
     val audioPaddingSeconds: Double? = null,
     val screenshotOffsetSeconds: Double? = null,
     val subtitleOffsetSeconds: Double? = null,
@@ -160,7 +161,7 @@ data class AppSettings(
     /** Restore processing behavior without changing onboarding, appearance, target, or resources. */
     fun restoreMiningDefaults(): AppSettings =
         copy(
-            tags = null,
+            tags = EngineDefaults.TAGS,
             audioPaddingSeconds = null,
             screenshotOffsetSeconds = null,
             subtitleOffsetSeconds = null,
@@ -338,7 +339,7 @@ object AppSettingsValidator {
             it.noteType?.let { value -> canonicalName("Note type", value) }
             fieldMap(it.fieldMap)
             cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
-            it.tags?.let { value -> validScalarText("Tags", value) }
+            validScalarText("Tags", it.tags)
             it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
             it.subtitleRegexReplacement?.let { value ->
                 validScalarText("Subtitle regex replacement", value)
@@ -638,7 +639,7 @@ internal object EngineSettingsSnapshotMapper {
                 },
             )
         values["card_type"] = text(activeCardType?.wireValue ?: "")
-        settings.tags?.let { values["anki_tags"] = text(it) }
+        values["anki_tags"] = text(settings.tags)
         settings.audioPaddingSeconds?.let { values["audio_padding"] = decimal(it) }
         settings.screenshotOffsetSeconds?.let { values["screenshot_offset"] = decimal(it) }
         settings.subtitleOffsetSeconds?.let { values["subtitle_offset"] = decimal(it) }

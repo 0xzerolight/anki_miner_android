@@ -657,8 +657,8 @@
     <string name="settings_excluded_decks">Exclude decks from known-word scans</string>
     <string name="settings_no_anki_decks">No Anki decks were discovered. Check AnkiDroid access and refresh.</string>
     <string name="settings_anki_deck_not_discovered">Saved choice; not currently discovered</string>
-    <string name="settings_tags_override">Override note tags</string>
-    <string name="settings_tags">Tags</string>
+    <string name="settings_tags">Card tags</string>
+    <string name="settings_tags_help">Space-separated tags applied to every mined card. Leave blank for no tags.</string>
     <string name="settings_media">Media</string>
     <string name="settings_audio_padding">Audio padding (seconds)</string>
     <string name="settings_screenshot_offset">Screenshot offset (seconds)</string>

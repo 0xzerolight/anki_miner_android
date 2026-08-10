@@ -155,7 +155,6 @@ internal data class SettingsDraft(
     val deckName: String,
     val excludedDecks: List<String>,
     val tags: String,
-    val tagsOverride: Boolean,
     val audioPadding: String,
     val screenshotOffset: String,
     val animatedScreenshots: Boolean,
@@ -288,7 +287,7 @@ internal data class SettingsDraft(
             dynamicColorEnabled = dynamicColorEnabled,
             deckName = deckName.takeIf(String::isNotEmpty),
             excludedDecks = excludedDecks,
-            tags = tags.takeIf { tagsOverride },
+            tags = tags,
             audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
             screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
             animatedScreenshotsEnabled = animatedScreenshots,
@@ -420,8 +419,7 @@ internal data class SettingsDraft(
             SettingsDraft(
                 deckName = settings.deckName.orEmpty(),
                 excludedDecks = settings.excludedDecks,
-                tags = settings.tags.orEmpty(),
-                tagsOverride = settings.tags != null,
+                tags = settings.tags,
                 audioPadding = settings.audioPaddingSeconds?.toString().orEmpty(),
                 screenshotOffset = settings.screenshotOffsetSeconds?.toString().orEmpty(),
                 animatedScreenshots = settings.animatedScreenshotsEnabled,
@@ -476,7 +474,6 @@ private fun SettingsDraft.rebaseChangesSince(
         excludedDecks =
             changedValue(baseline.excludedDecks, excludedDecks, persisted.excludedDecks),
         tags = changedValue(baseline.tags, tags, persisted.tags),
-        tagsOverride = changedValue(baseline.tagsOverride, tagsOverride, persisted.tagsOverride),
         audioPadding = changedValue(baseline.audioPadding, audioPadding, persisted.audioPadding),
         screenshotOffset =
             changedValue(baseline.screenshotOffset, screenshotOffset, persisted.screenshotOffset),

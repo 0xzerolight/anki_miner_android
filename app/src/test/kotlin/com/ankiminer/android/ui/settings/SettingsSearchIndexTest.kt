@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.settings
 
+import com.ankiminer.android.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -38,5 +39,12 @@ class SettingsSearchIndexTest {
                 entry.id.startsWith("${entry.category.name.lowercase()}."),
             )
         }
+    }
+
+    @Test
+    fun `tags search detail explains that blank means no tags`() {
+        val tags = SETTINGS_SEARCH_INDEX.single { it.id == "anki.tags" }
+
+        assertEquals(R.string.settings_tags_help, tags.detail)
     }
 }

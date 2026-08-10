@@ -649,8 +649,8 @@
     <string name="settings_excluded_decks">Excluir baralhos das verificações de palavras conhecidas</string>
     <string name="settings_no_anki_decks">Nenhum baralho do Anki foi encontrado. Verifique o acesso ao AnkiDroid e atualize.</string>
     <string name="settings_anki_deck_not_discovered">Escolha salva; não encontrada no momento</string>
-    <string name="settings_tags_override">Substituir etiquetas da nota</string>
-    <string name="settings_tags">Etiquetas</string>
+    <string name="settings_tags">Etiquetas dos cartões</string>
+    <string name="settings_tags_help">Etiquetas separadas por espaços aplicadas a cada cartão minerado. Deixe em branco para não usar etiquetas.</string>
     <string name="settings_media">Mídia</string>
     <string name="settings_audio_padding">Preenchimento de áudio (segundos)</string>
     <string name="settings_screenshot_offset">Deslocamento da captura de tela (segundos)</string>
