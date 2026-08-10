@@ -249,7 +249,6 @@ class AnkiMinerApplication : Application() {
     internal fun createDiagnosticsExporter(buildDiagnostics: () -> String): DiagnosticsExporter =
         AndroidDiagnosticsExporter(
             stagingRoot = File(cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME),
-            documentWriter = resourceDocumentWriter,
             stageBundle = {
                 diagnosticsBundleStager.stage(
                     diagnostics = buildDiagnostics(),

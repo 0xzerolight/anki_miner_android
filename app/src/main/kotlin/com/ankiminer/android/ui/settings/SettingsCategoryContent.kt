@@ -70,8 +70,6 @@ internal data class SettingsScreenCallbacks(
     val onInstallAnkiDroid: () -> Unit,
     val onOpenAnkiDroid: () -> Unit,
     val onOpenSpeechSettings: () -> Unit,
-    val onShareDiagnostics: () -> Unit,
-    val onSaveDiagnosticsBundle: () -> Unit,
     val onShareDiagnosticsBundle: () -> Unit,
     val onRetryDiagnosticsExport: () -> Unit,
     val onDismissDiagnosticsExport: () -> Unit,
@@ -1169,27 +1167,11 @@ private fun LazyListScope.diagnosticsSettings(
                 ),
             )
             Text(
-                stringResource(R.string.settings_diagnostics_privacy),
-                style = MaterialTheme.typography.bodySmall,
-            )
-            OutlinedButton(
-                onClick = callbacks.onShareDiagnostics,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.settings_share_diagnostics))
-            }
-            Text(
                 stringResource(R.string.settings_diagnostics_bundle_privacy),
                 style = MaterialTheme.typography.bodySmall,
             )
-            OutlinedButton(
-                onClick = callbacks.onSaveDiagnosticsBundle,
-                enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
-                    diagnosticsExport !is DiagnosticsExportState.Ready,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.settings_save_diagnostics_bundle))
-            }
+            // diagnostics.txt already carries the bounded report, and the share sheet can save
+            // this same ZIP, so separate text-share and SAF-save routes would duplicate delivery.
             OutlinedButton(
                 onClick = callbacks.onShareDiagnosticsBundle,
                 enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
@@ -1205,11 +1187,6 @@ private fun LazyListScope.diagnosticsSettings(
                 is DiagnosticsExportState.Working ->
                     Text(
                         stringResource(diagnosticsExportStepLabel(diagnosticsExport.step)),
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                DiagnosticsExportState.Saved ->
-                    Text(
-                        stringResource(R.string.diagnostics_export_saved),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 is DiagnosticsExportState.Failed ->
@@ -1358,8 +1335,6 @@ private fun diagnosticsExportStepLabel(step: DiagnosticsExportStep): Int =
             R.string.diagnostics_export_preparing
         DiagnosticsExportStep.BUILDING ->
             R.string.diagnostics_export_building
-        DiagnosticsExportStep.COPYING ->
-            R.string.diagnostics_export_copying
     }
 
 /** Internal rather than private: the shared Settings header renders the SETUP-origin failure. */

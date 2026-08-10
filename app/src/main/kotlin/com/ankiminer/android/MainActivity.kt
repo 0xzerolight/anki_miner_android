@@ -253,7 +253,6 @@ class MainActivity : ComponentActivity() {
                     onInstallAnkiDroid = ::installAnkiDroid,
                     onOpenAnkiDroid = ::openAnkiDroid,
                     onOpenSpeechSettings = ::openSpeechSettings,
-                    onShareDiagnostics = ::shareDiagnostics,
                     onShareDiagnosticsBundle = ::shareDiagnosticsBundle,
                     verboseLogging = verboseLogging,
                     onVerboseLoggingChange = app::setVerboseLogging,
@@ -344,10 +343,6 @@ class MainActivity : ComponentActivity() {
         openAppSettings()
     }
 
-    private fun shareDiagnostics(report: String) {
-        shareText(getString(R.string.diagnostics_share_subject), report)
-    }
-
     private fun shareDiagnosticsBundle(
         uri: String,
         fileName: String,
@@ -369,22 +364,6 @@ class MainActivity : ComponentActivity() {
             false
         } catch (_: SecurityException) {
             false
-        }
-    }
-
-    private fun shareText(subject: String, text: String) {
-        val send =
-            Intent(Intent.ACTION_SEND).apply {
-                type = "text/plain"
-                putExtra(Intent.EXTRA_SUBJECT, subject)
-                putExtra(Intent.EXTRA_TEXT, text)
-            }
-        try {
-            startActivity(Intent.createChooser(send, subject))
-        } catch (_: ActivityNotFoundException) {
-            Toast.makeText(this, R.string.diagnostics_report_action_unavailable, Toast.LENGTH_LONG).show()
-        } catch (_: SecurityException) {
-            Toast.makeText(this, R.string.diagnostics_report_action_unavailable, Toast.LENGTH_LONG).show()
         }
     }
 

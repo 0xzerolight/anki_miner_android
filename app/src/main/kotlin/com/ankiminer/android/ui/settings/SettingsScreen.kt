@@ -38,7 +38,6 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.vm.DiagnosticsDelivery
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.SettingsBackupState
@@ -127,21 +126,23 @@ internal data class ExcludedDeckChoice(
 )
 
 /**
- * The diagnostics delivery request that still has to reach a launcher, or null when there is none.
+ * The diagnostics delivery request that still has to reach the share sheet, or null when absent.
  *
- * [DiagnosticsExportState.Ready] is a latch held until delivery or explicit cancellation, not an
+ * [DiagnosticsExportState.Ready] is a latch held until the share launch finishes or fails, not an
  * event. An Activity recreation composes `SettingsRoute` from scratch against the same retained
  * value the previous composition already acted on, so an effect keyed on that value opens a second
- * picker on top of the first. The returned key identifies one request; the composition remembers
- * it across recreation as [launchedRequest], which makes the launch one-shot per request instead
- * of one per composition.
+ * share sheet. The returned key identifies one request; the composition remembers it across
+ * recreation as [launchedRequest], making the launch one-shot per request instead of one per
+ * composition.
  */
 internal fun diagnosticsDeliveryToLaunch(
     state: DiagnosticsExportState,
     launchedRequest: String?,
 ): String? =
     (state as? DiagnosticsExportState.Ready)
-        ?.let { ready -> "${ready.delivery.name}@${ready.bundle.file.path}" }
+        ?.bundle
+        ?.file
+        ?.path
         ?.takeIf { it != launchedRequest }
 
 internal fun excludedDeckChoices(
@@ -173,7 +174,6 @@ internal fun SettingsRoute(
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
-    onShareDiagnostics: () -> Unit,
     onShareDiagnosticsBundle: (uri: String, fileName: String) -> Boolean,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
@@ -253,33 +253,18 @@ internal fun SettingsRoute(
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { viewModel.importSettings(it.toString()) }
         }
-    val diagnosticsBundlePicker =
-        rememberLauncherForActivityResult(
-            ActivityResultContracts.CreateDocument("application/zip"),
-        ) { uri ->
-            if (uri == null) {
-                diagnosticsViewModel.deliveryCancelled()
-            } else {
-                diagnosticsViewModel.copyToDocument(uri.toString())
-            }
-        }
     var launchedDeliveryRequest by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(diagnosticsExport) {
         val ready = diagnosticsExport as? DiagnosticsExportState.Ready
         if (ready == null) {
-            // Idle, Failed and Saved all end the request, so the next Ready is a new one even when
-            // the ViewModel hands back the same staged bundle after a cancelled picker.
+            // Idle and Failed end the request, so a later Ready is always a new share attempt.
             launchedDeliveryRequest = null
             return@LaunchedEffect
         }
         val request =
             diagnosticsDeliveryToLaunch(ready, launchedDeliveryRequest) ?: return@LaunchedEffect
         launchedDeliveryRequest = request
-        when (ready.delivery) {
-            DiagnosticsDelivery.SAVE -> diagnosticsBundlePicker.launch(ready.bundle.file.name)
-            DiagnosticsDelivery.SHARE ->
-                diagnosticsViewModel.deliverShare(onShareDiagnosticsBundle)
-        }
+        diagnosticsViewModel.deliverShare(onShareDiagnosticsBundle)
     }
     SettingsScreen(
         draft = draftState.draft,
@@ -302,13 +287,7 @@ internal fun SettingsRoute(
         onInstallAnkiDroid = onInstallAnkiDroid,
         onOpenAnkiDroid = onOpenAnkiDroid,
         onOpenSpeechSettings = onOpenSpeechSettings,
-        onShareDiagnostics = onShareDiagnostics,
-        onSaveDiagnosticsBundle = {
-            diagnosticsViewModel.export(DiagnosticsDelivery.SAVE)
-        },
-        onShareDiagnosticsBundle = {
-            diagnosticsViewModel.export(DiagnosticsDelivery.SHARE)
-        },
+        onShareDiagnosticsBundle = diagnosticsViewModel::export,
         onRetryDiagnosticsExport = diagnosticsViewModel::retry,
         onDismissDiagnosticsExport = diagnosticsViewModel::dismissFailure,
         onExportSettings = { settingsExportPicker.launch("anki-miner-settings.json") },
@@ -387,8 +366,6 @@ private fun SettingsScreen(
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
-    onShareDiagnostics: () -> Unit,
-    onSaveDiagnosticsBundle: () -> Unit,
     onShareDiagnosticsBundle: () -> Unit,
     onRetryDiagnosticsExport: () -> Unit,
     onDismissDiagnosticsExport: () -> Unit,
@@ -535,8 +512,6 @@ private fun SettingsScreen(
             onInstallAnkiDroid = onInstallAnkiDroid,
             onOpenAnkiDroid = onOpenAnkiDroid,
             onOpenSpeechSettings = onOpenSpeechSettings,
-            onShareDiagnostics = onShareDiagnostics,
-            onSaveDiagnosticsBundle = onSaveDiagnosticsBundle,
             onShareDiagnosticsBundle = onShareDiagnosticsBundle,
             onRetryDiagnosticsExport = onRetryDiagnosticsExport,
             onDismissDiagnosticsExport = onDismissDiagnosticsExport,

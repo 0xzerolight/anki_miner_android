@@ -59,9 +59,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
 import com.ankiminer.android.data.update.UpdateCheckUiState
-import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
-import com.ankiminer.android.diagnostics.TesterDiagnosticsShareAction
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
@@ -436,7 +434,6 @@ internal fun AnkiMinerApp(
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onOpenSpeechSettings: () -> Unit,
-    onShareDiagnostics: (String) -> Unit,
     onShareDiagnosticsBundle: (uri: String, fileName: String) -> Boolean,
     verboseLogging: Boolean,
     onVerboseLoggingChange: (Boolean) -> Unit,
@@ -470,29 +467,6 @@ internal fun AnkiMinerApp(
     val diagnosticsIdentity =
         remember(buildIdentity) {
             TesterDiagnosticsBuilder.identity(buildIdentity)
-        }
-    val diagnosticsShareAction =
-        remember(
-            buildIdentity,
-            setupViewModel,
-            videoViewModel,
-            audioViewModel,
-            readingViewModel,
-            onShareDiagnostics,
-        ) {
-            TesterDiagnosticsShareAction(
-                buildReport = {
-                    TesterDiagnosticsBuilder.build(
-                        build = buildIdentity,
-                        setup = setupViewModel.uiState.value,
-                        video = videoViewModel.uiState.value,
-                        audio = audioViewModel.uiState.value,
-                        reading = readingViewModel.uiState.value,
-                        lastAnkiFault = AnkiFaultRecorder.lastFault(),
-                    ).report
-                },
-                shareReport = onShareDiagnostics,
-            )
         }
     var wizardRerunRequested by rememberSaveable { mutableStateOf(false) }
     var wizardRedirectedToSettings by rememberSaveable { mutableStateOf(false) }
@@ -775,7 +749,6 @@ internal fun AnkiMinerApp(
                     onInstallAnkiDroid = onInstallAnkiDroid,
                     onOpenAnkiDroid = onOpenAnkiDroid,
                     onOpenSpeechSettings = onOpenSpeechSettings,
-                    onShareDiagnostics = diagnosticsShareAction::share,
                     onShareDiagnosticsBundle = onShareDiagnosticsBundle,
                     verboseLogging = verboseLogging,
                     onVerboseLoggingChange = onVerboseLoggingChange,
