@@ -494,7 +494,12 @@ internal class AndroidResourceManager(
                 var staged: StagedArchive? = null
                 try {
                     staged =
-                        safStager.stage(uri, operation.id, operation.cancellation) { current, total ->
+                        safStager.stage(
+                            uri,
+                            operation.id,
+                            operation.cancellation,
+                            sourceLabel = "dictionary archive",
+                        ) { current, total ->
                             updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                         }
                     operation.cancellation.check()
