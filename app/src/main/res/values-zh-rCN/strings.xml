@@ -528,9 +528,6 @@
     <string name="resource_delete_confirm_message">将从此设备删除 %1$s。不会从 Anki 中移除任何内容，也不会保留备份。</string>
     <string name="dictionary_repair_confirm">修复槽位</string>
     <string name="custom_dictionary_title">导入其他 Yomitan ZIP</string>
-    <string name="custom_dictionary_slot">稳定词典 ID</string>
-    <string name="custom_dictionary_slot_help">小写字母、数字、点、下划线和连字符</string>
-    <string name="custom_dictionary_slot_invalid">请选择 ZIP 前输入有效的稳定 ID</string>
     <string name="custom_dictionary_choose">选择 Yomitan ZIP</string>
     <string name="frequency_import_title">导入词频来源</string>
     <string name="frequency_none_installed">未安装词频来源。</string>

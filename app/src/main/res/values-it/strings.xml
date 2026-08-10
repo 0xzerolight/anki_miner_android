@@ -532,9 +532,6 @@
     <string name="resource_delete_confirm_message">%1$s viene eliminato da questo dispositivo. Non viene rimosso nulla da Anki e non ne viene conservato alcun backup.</string>
     <string name="dictionary_repair_confirm">Ripara lo slot</string>
     <string name="custom_dictionary_title">Importa un altro ZIP Yomitan</string>
-    <string name="custom_dictionary_slot">ID stabile del dizionario</string>
-    <string name="custom_dictionary_slot_help">Lettere minuscole, numeri, punti, trattini bassi e trattini</string>
-    <string name="custom_dictionary_slot_invalid">Inserisci un ID stabile valido prima di scegliere uno ZIP</string>
     <string name="custom_dictionary_choose">Scegli ZIP Yomitan</string>
     <string name="frequency_import_title">Importa una fonte di frequenza</string>
     <string name="frequency_none_installed">Nessuna fonte di frequenza installata.</string>

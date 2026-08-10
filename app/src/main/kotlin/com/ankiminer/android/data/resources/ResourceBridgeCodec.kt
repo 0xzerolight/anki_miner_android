@@ -51,6 +51,18 @@ object ResourceBridgeCodec {
 
     fun encodeLocalResourceListRequest(): String = encode("resource.local.list") {}
 
+    fun encodeDictionaryPreflightRequest(
+        operation: String,
+        sourcePath: String,
+    ): String {
+        requireOperationId(operation)
+        requireAbsolutePath(sourcePath)
+        return encode("resource.dictionary.preflight") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("sourcePath", sourcePath)
+        }
+    }
+
     fun encodeUniDicInstallRequest(
         operation: String,
         selectedResourceId: String,
@@ -342,6 +354,12 @@ object ResourceBridgeCodec {
             requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
             attributions(value.getValue("attribution"), allowEmpty = true),
         )
+    }
+
+    fun decodeDictionaryPreflight(raw: String): String {
+        val value = payload(raw, "resource.dictionary.preflighted")
+        exact(value, setOf("slotId"), "dictionary preflight")
+        return requireSlotId(text(value.getValue("slotId"), "slotId"))
     }
 
     fun decodeImportedFrequency(raw: String): ImportedFrequencySource {

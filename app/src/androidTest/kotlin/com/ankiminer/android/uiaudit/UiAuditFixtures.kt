@@ -500,7 +500,6 @@ internal fun setupAuditState(): SetupUiState {
             ),
         lookupTerm = "掛ける",
         lookupSlotId = dictionaries.first().slotId,
-        customSlotId = "custom-classical-japanese",
         knownWordsSearch = "美",
     )
 }
@@ -697,7 +696,6 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
         }
         CustomDictionaryImportCard(
             state = setup,
-            onSlotChanged = {},
             onImport = {},
         )
         PitchImportCard(
@@ -720,7 +718,7 @@ private fun SettingsResourcesFixture(setup: SetupUiState) {
                 onChange = {},
             )
         }
-        DictionaryInventoryCard(state = setup, onRemove = {})
+        DictionaryInventoryCard(state = setup, onReplace = {}, onRemove = {})
         DictionaryLookupCard(
             state = setup.copy(lookup = null),
             onTermChanged = {},

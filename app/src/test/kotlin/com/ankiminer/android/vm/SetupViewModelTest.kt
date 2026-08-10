@@ -12,6 +12,7 @@ import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledAudioPack
+import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.InstalledResourceKind
@@ -59,6 +60,75 @@ import org.junit.Test
 class SetupViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
+
+    @Test
+    fun `new custom dictionary import derives its slot and advances to the next free suffix`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources =
+                FakeResourceManager().apply {
+                    customDictionaryDerivedSlot = "fixture-dictionary-2026-08"
+                    setInstalledDictionaries(
+                        listOf(
+                            installedDictionary("fixture-dictionary-2026-08", "First"),
+                            installedDictionary("fixture-dictionary-2026-08-2", "Second"),
+                        ),
+                    )
+                }
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginCustomDictionaryPicker())
+            model.onCustomDictionaryPicked("content://test/fixture.zip")
+            advanceUntilIdle()
+
+            assertEquals(listOf("content://test/fixture.zip"), resources.customDictionaryPreflights)
+            assertEquals(
+                listOf(Triple("content://test/fixture.zip", "fixture-dictionary-2026-08-3", false)),
+                resources.customDictionaryImports,
+            )
+            assertNull(model.uiState.value.pendingReplace)
+        }
+
+    @Test
+    fun `per-row custom dictionary replacement pins the installed slot`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources =
+                FakeResourceManager().apply {
+                    setInstalledDictionaries(
+                        listOf(installedDictionary("legacy-slot", "Legacy dictionary", valid = false)),
+                    )
+                }
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginCustomDictionaryReplacementPicker("legacy-slot"))
+            model.onCustomDictionaryPicked("content://test/replacement.zip")
+            advanceUntilIdle()
+
+            assertEquals(emptyList<String>(), resources.customDictionaryPreflights)
+            val pending = requireNotNull(model.uiState.value.pendingReplace)
+            assertEquals(ResourceReplaceKind.CUSTOM_DICTIONARY, pending.kind)
+            assertEquals("legacy-slot", pending.identity)
+            assertEquals("Legacy dictionary", pending.installedLabel)
+
+            model.confirmPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://test/replacement.zip", "legacy-slot", true)),
+                resources.customDictionaryImports,
+            )
+        }
 
     @Test
     fun `picker result after recreation keeps the launched frequency import metadata`() =
@@ -1328,6 +1398,24 @@ class SetupViewModelTest {
             isCategorical = false,
         )
 
+    private fun installedDictionary(
+        slotId: String,
+        sourceName: String,
+        valid: Boolean = true,
+    ) = InstalledDictionary(
+        slotId = slotId,
+        occupied = true,
+        valid = valid,
+        sourceName = sourceName,
+        sourceRevision = "1",
+        format = "yomitan",
+        entryCount = if (valid) 1 else 0,
+        schemaOk = valid,
+        embeddedAttribution = emptyMap(),
+        catalogResourceId = null,
+        attribution = emptyList(),
+    )
+
     private fun installedPitch(
         sourceId: String,
         sourceName: String,
@@ -1462,6 +1550,9 @@ class SetupViewModelTest {
         val frequencyImports = mutableListOf<Triple<String, String, Boolean>>()
         val frequencySourceNames = mutableListOf<String>()
         val frequencyFormats = mutableListOf<FrequencySourceFormat>()
+        val customDictionaryPreflights = mutableListOf<String>()
+        val customDictionaryImports = mutableListOf<Triple<String, String, Boolean>>()
+        var customDictionaryDerivedSlot = "fixture-dictionary"
         val pitchImports = mutableListOf<Pair<String, Boolean>>()
         val pitchSourceNames = mutableListOf<String>()
         val pitchFormats = mutableListOf<PitchAccentSourceFormat>()
@@ -1482,6 +1573,10 @@ class SetupViewModelTest {
 
         fun setInstalledFrequencySources(sources: List<InstalledFrequencySource>) {
             mutableState.value = mutableState.value.copy(frequencySources = sources)
+        }
+
+        fun setInstalledDictionaries(dictionaries: List<InstalledDictionary>) {
+            mutableState.value = mutableState.value.copy(dictionaries = dictionaries)
         }
 
         fun setInstalledPitchSources(sources: List<InstalledPitchSource>) {
@@ -1515,7 +1610,14 @@ class SetupViewModelTest {
 
         override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) = Unit
 
-        override suspend fun importCustomDictionary(uri: String, slotId: String, replace: Boolean) = Unit
+        override suspend fun preflightCustomDictionary(uri: String): String {
+            customDictionaryPreflights += uri
+            return customDictionaryDerivedSlot
+        }
+
+        override suspend fun importCustomDictionary(uri: String, slotId: String, replace: Boolean) {
+            customDictionaryImports += Triple(uri, slotId, replace)
+        }
 
         override suspend fun retainResourceImport(uri: String): RetainedResourceImport {
             retainedResourceImports += uri

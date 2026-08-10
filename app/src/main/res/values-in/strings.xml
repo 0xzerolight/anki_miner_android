@@ -528,9 +528,6 @@
     <string name="resource_delete_confirm_message">%1$s dihapus dari perangkat ini. Tidak ada yang dihapus dari Anki, dan tidak ada cadangan yang disimpan.</string>
     <string name="dictionary_repair_confirm">Perbaiki slot</string>
     <string name="custom_dictionary_title">Impor ZIP Yomitan lain</string>
-    <string name="custom_dictionary_slot">ID kamus stabil</string>
-    <string name="custom_dictionary_slot_help">Huruf kecil, angka, titik, garis bawah, dan tanda hubung</string>
-    <string name="custom_dictionary_slot_invalid">Masukkan ID stabil yang valid sebelum memilih ZIP</string>
     <string name="custom_dictionary_choose">Pilih ZIP Yomitan</string>
     <string name="frequency_import_title">Impor sumber frekuensi</string>
     <string name="frequency_none_installed">Tidak ada sumber frekuensi yang terpasang.</string>

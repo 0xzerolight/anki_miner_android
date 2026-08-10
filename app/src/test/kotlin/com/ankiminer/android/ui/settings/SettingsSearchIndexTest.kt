@@ -39,4 +39,11 @@ class SettingsSearchIndexTest {
             )
         }
     }
+
+    @Test
+    fun `custom dictionary search has no removed slot-picker detail`() {
+        val custom = SETTINGS_SEARCH_INDEX.single { it.id == "dictionaries.custom" }
+
+        assertEquals(null, custom.detail)
+    }
 }

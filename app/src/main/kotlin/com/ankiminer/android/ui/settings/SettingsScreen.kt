@@ -326,6 +326,11 @@ internal fun SettingsRoute(
                 dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES)
             }
         },
+        onReplaceCustom = { slotId ->
+            if (setupViewModel.beginCustomDictionaryReplacementPicker(slotId)) {
+                dictionaryPicker.launch(CUSTOM_DICTIONARY_MIME_TYPES)
+            }
+        },
         onImportFrequency = {
             if (setupViewModel.beginFrequencyPicker()) {
                 frequencyPicker.launch(FREQUENCY_MIME_TYPES)
@@ -403,6 +408,7 @@ private fun SettingsScreen(
     requestedCategoryItemIndex: Int,
     onCategoryRequestConsumed: () -> Unit,
     onImportCustom: () -> Unit,
+    onReplaceCustom: (String) -> Unit,
     onImportFrequency: () -> Unit,
     onImportPitch: () -> Unit,
     onImportAudioPack: () -> Unit,
@@ -548,6 +554,7 @@ private fun SettingsScreen(
             onAttributions = onAttributions,
             onRunSetupWizard = onRunSetupWizard,
             onImportCustom = onImportCustom,
+            onReplaceCustom = onReplaceCustom,
             onImportFrequency = onImportFrequency,
             onImportPitch = onImportPitch,
             onImportAudioPack = onImportAudioPack,

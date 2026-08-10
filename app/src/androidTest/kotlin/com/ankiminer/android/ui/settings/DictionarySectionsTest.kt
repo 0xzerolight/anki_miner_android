@@ -12,6 +12,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -28,6 +29,24 @@ import org.junit.Test
 class DictionarySectionsTest {
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Test
+    fun customDictionaryCardChoosesAZipWithoutRequestingASlot() {
+        var imports = 0
+        composeRule.setContent {
+            AnkiMinerTheme {
+                CustomDictionaryImportCard(
+                    state = SetupUiState(resourceStartup = ResourceStartupReadiness.READY),
+                    onImport = { imports += 1 },
+                )
+            }
+        }
+
+        composeRule.onAllNodes(hasSetTextAction()).assertCountEquals(0)
+        composeRule.onNodeWithText("Choose Yomitan ZIP").performClick()
+
+        assertEquals(1, imports)
+    }
 
     @Test
     fun dictionaryLookupTitleIsHeading() {
@@ -131,7 +150,8 @@ class DictionarySectionsTest {
     }
 
     @Test
-    fun dictionaryInventoryCardOffersRemoveForEveryInstalledSlot() {
+    fun dictionaryInventoryCardOffersReplaceAndRemoveForEveryInstalledSlot() {
+        val replaced = mutableListOf<String>()
         val removed = mutableListOf<String>()
         composeRule.setContent {
             AnkiMinerTheme {
@@ -147,14 +167,18 @@ class DictionarySectionsTest {
                                     installedDictionary("jitendex", valid = false),
                                 ),
                         ),
+                    onReplace = replaced::add,
                     onRemove = removed::add,
                 )
             }
         }
 
+        composeRule.onAllNodesWithText("Replace safely").assertCountEquals(2)
         composeRule.onAllNodesWithText("Remove").assertCountEquals(2)
+        composeRule.onAllNodesWithText("Replace safely")[1].performClick()
         composeRule.onAllNodesWithText("Remove")[0].performClick()
 
+        assertEquals(listOf("jitendex"), replaced)
         assertEquals(listOf("jmdict"), removed)
     }
 

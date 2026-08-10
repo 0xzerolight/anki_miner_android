@@ -101,10 +101,10 @@ class SetupUiStateTest {
     }
 
     @Test
-    fun customDictionarySlotMustUseTheStableWireFormat() {
-        assertTrue(SetupUiState(customSlotId = "custom-dictionary.v2").customSlotValid)
-        assertFalse(SetupUiState(customSlotId = "Custom Dictionary").customSlotValid)
-        assertFalse(SetupUiState(customSlotId = "custom..dictionary").customSlotValid)
+    fun customDictionaryImportCarriesNoUserChosenSlotState() {
+        assertFalse(
+            SetupUiState::class.java.declaredFields.any { field -> field.name == "custom" + "SlotId" },
+        )
     }
 
     @Test

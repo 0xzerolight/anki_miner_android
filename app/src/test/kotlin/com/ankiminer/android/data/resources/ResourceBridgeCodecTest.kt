@@ -233,6 +233,11 @@ class ResourceBridgeCodecTest {
 
     @Test
     fun localResourceRequestsPreserveTypedFormatsAndPrivatePaths() {
+        val dictionaryPreflight =
+            ResourceBridgeCodec.encodeDictionaryPreflightRequest(
+                operation = "resource_dictionary_preflight",
+                sourcePath = "/private/dictionary.zip",
+            )
         val frequency =
             ResourceBridgeCodec.encodeFrequencyImportRequest(
                 operation = "resource_frequency",
@@ -272,6 +277,13 @@ class ResourceBridgeCodecTest {
                 sourceFormat = KnownWordsSourceFormat.JSON,
             )
 
+        assertTrue(dictionaryPreflight.contains("\"type\":\"resource.dictionary.preflight\""))
+        assertEquals(
+            "fixture-dictionary-2026-08",
+            ResourceBridgeCodec.decodeDictionaryPreflight(
+                """{"schemaVersion":1,"type":"resource.dictionary.preflighted","payload":{"slotId":"fixture-dictionary-2026-08"}}""",
+            ),
+        )
         assertTrue(frequency.contains("\"sourceFormat\":\"tsv\""))
         assertTrue(pitch.contains("\"type\":\"resource.pitch.import\""))
         assertTrue(audio.contains("\"packId\":\"nhk16\""))
@@ -325,7 +337,10 @@ class ResourceBridgeCodecTest {
             )
         }
         assertTrue(known.contains("\"sourceFormat\":\"json\""))
-        assertTrue(listOf(frequency, pitch, audio, audioPreflight, known).none { it.contains("content://") })
+        assertTrue(
+            listOf(dictionaryPreflight, frequency, pitch, audio, audioPreflight, known)
+                .none { it.contains("content://") },
+        )
     }
 
     @Test
