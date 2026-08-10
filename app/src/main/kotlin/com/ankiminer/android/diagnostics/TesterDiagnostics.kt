@@ -36,16 +36,6 @@ internal data class TesterDiagnosticsIdentity(
     val sourceLabel: String,
 )
 
-/** Defers report construction until the explicit Share diagnostics action. */
-internal class TesterDiagnosticsShareAction(
-    private val buildReport: () -> String,
-    private val shareReport: (String) -> Unit,
-) {
-    fun share() {
-        shareReport(buildReport())
-    }
-}
-
 internal fun currentTesterBuildIdentity(): TesterBuildIdentity =
     TesterBuildIdentity(
         applicationId = BuildConfig.APPLICATION_ID,

@@ -21,11 +21,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 
-internal enum class DiagnosticsDelivery {
-    SAVE,
-    SHARE,
-}
-
 internal sealed interface DiagnosticsExportState {
     data object Idle : DiagnosticsExportState
 
@@ -33,10 +28,7 @@ internal sealed interface DiagnosticsExportState {
 
     data class Ready(
         val bundle: StagedBundle,
-        val delivery: DiagnosticsDelivery,
     ) : DiagnosticsExportState
-
-    data object Saved : DiagnosticsExportState
 
     data class Failed(val message: LocalizedStringResource) : DiagnosticsExportState
 }
@@ -50,18 +42,16 @@ internal class DiagnosticsViewModel(
     val state: StateFlow<DiagnosticsExportState> = mutableState.asStateFlow()
 
     private var pendingBundle: StagedBundle? = null
-    private var lastDelivery = DiagnosticsDelivery.SAVE
 
-    fun export(delivery: DiagnosticsDelivery) {
+    fun export() {
         launchExclusive {
-            lastDelivery = delivery
             pendingBundle?.let { bundle ->
                 // The staged ZIP lives in cacheDir, which the platform reclaims and the janitor
                 // prunes, so the handle kept for a second delivery attempt may name a file that is
                 // no longer there. Republishing it made export and Retry fail identically for the
                 // rest of this ViewModel's life.
                 if (withContext(ioDispatcher) { exporter.isStaged(bundle) }) {
-                    mutableState.value = DiagnosticsExportState.Ready(bundle, delivery)
+                    mutableState.value = DiagnosticsExportState.Ready(bundle)
                     return@launchExclusive
                 }
                 pendingBundle = null
@@ -73,7 +63,7 @@ internal class DiagnosticsViewModel(
                         mutableState.value = DiagnosticsExportState.Working(step)
                     }
                 pendingBundle = bundle
-                mutableState.value = DiagnosticsExportState.Ready(bundle, delivery)
+                mutableState.value = DiagnosticsExportState.Ready(bundle)
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: DiagnosticsExportException) {
@@ -84,31 +74,8 @@ internal class DiagnosticsViewModel(
         }
     }
 
-    fun copyToDocument(uri: String) {
-        val ready = mutableState.value as? DiagnosticsExportState.Ready ?: return
-        if (ready.delivery != DiagnosticsDelivery.SAVE) return
-        launchExclusive {
-            mutableState.value = DiagnosticsExportState.Working(DiagnosticsExportStep.COPYING)
-            try {
-                exporter.copyToDocument(ready.bundle, uri)
-                withContext(ioDispatcher) {
-                    exporter.discard(ready.bundle)
-                }
-                pendingBundle = null
-                mutableState.value = DiagnosticsExportState.Saved
-            } catch (cancellation: CancellationException) {
-                throw cancellation
-            } catch (failure: DiagnosticsExportException) {
-                publishFailure(failure.kind)
-            } catch (_: Throwable) {
-                publishFailure(DiagnosticsExportFailure.COPY)
-            }
-        }
-    }
-
     fun deliverShare(launch: (uri: String, fileName: String) -> Boolean) {
         val ready = mutableState.value as? DiagnosticsExportState.Ready ?: return
-        if (ready.delivery != DiagnosticsDelivery.SHARE) return
         launchExclusive {
             try {
                 val uri = withContext(ioDispatcher) {
@@ -120,7 +87,7 @@ internal class DiagnosticsViewModel(
                 // The chooser target may read after this process dies, so janitorial age/count
                 // policy owns shared-file cleanup instead of this ViewModel.
                 pendingBundle = null
-                mutableState.value = DiagnosticsExportState.Saved
+                mutableState.value = DiagnosticsExportState.Idle
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: DiagnosticsExportException) {
@@ -131,14 +98,8 @@ internal class DiagnosticsViewModel(
         }
     }
 
-    fun deliveryCancelled() {
-        if (mutableState.value is DiagnosticsExportState.Ready) {
-            mutableState.value = DiagnosticsExportState.Idle
-        }
-    }
-
     fun retry() {
-        export(lastDelivery)
+        export()
     }
 
     fun dismissFailure() {
@@ -171,12 +132,7 @@ internal class DiagnosticsViewModel(
         LocalizedStringResource(
             when (kind) {
                 DiagnosticsExportFailure.BUILD -> R.string.diagnostics_bundle_build_failed
-                DiagnosticsExportFailure.DESTINATION ->
-                    R.string.diagnostics_bundle_destination_invalid
                 DiagnosticsExportFailure.BUNDLE -> R.string.diagnostics_bundle_invalid
-                DiagnosticsExportFailure.DOCUMENT ->
-                    R.string.diagnostics_bundle_document_unavailable
-                DiagnosticsExportFailure.COPY -> R.string.diagnostics_bundle_copy_failed
                 DiagnosticsExportFailure.SHARE -> R.string.diagnostics_action_unavailable
             },
         )
