@@ -539,9 +539,6 @@
     <string name="resource_delete_confirm_message">%1$s is deleted from this device. Nothing is removed from Anki, and no backup is kept.</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="custom_dictionary_title">Import another Yomitan ZIP</string>
-    <string name="custom_dictionary_slot">Stable dictionary ID</string>
-    <string name="custom_dictionary_slot_help">Lowercase letters, numbers, dots, underscores, and hyphens</string>
-    <string name="custom_dictionary_slot_invalid">Enter a valid stable ID before choosing a ZIP</string>
     <string name="custom_dictionary_choose">Choose Yomitan ZIP</string>
     <string name="frequency_import_title">Import a frequency source</string>
     <string name="frequency_none_installed">No frequency source is installed.</string>

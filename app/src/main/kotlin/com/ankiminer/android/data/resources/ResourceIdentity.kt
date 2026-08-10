@@ -12,11 +12,10 @@ import java.util.Locale
  * inventory round-trips, the entry persisted in the priority chain, and the id the engine looks the
  * source up by. It is also not something a user should have to invent.
  *
- * Derivation is a pure function of the display name. It deliberately does NOT consult the installed
- * inventory to dodge collisions: a suffix would resolve the collision before the user could be asked
- * about it, and an inventory-dependent id is unstable, which loses the source's place in the chain
- * (see `resolveResourceChain`). Collisions are resolved by [frequencyTarget] and friends, which hand
- * the caller the existing id so a replace writes in place.
+ * Name derivation is pure for local resources. Frequency and pitch collisions resolve to the
+ * existing id so their chain entries survive. Custom dictionaries differ: their base id comes from
+ * archive metadata, a new import takes the next free slot, and a row-scoped replacement pins the
+ * occupied id explicitly.
  */
 internal object ResourceIdentity {
     /**
@@ -25,6 +24,8 @@ internal object ResourceIdentity {
     private const val MAX_SLUG_LENGTH = 40
 
     private const val DIGEST_LENGTH = 10
+
+    private const val MAX_SLOT_LENGTH = 64
 
     private val COMBINING_MARKS = Regex("\\p{Mn}+")
 
@@ -96,17 +97,33 @@ internal object ResourceIdentity {
         return ResourceImportTarget(identity = packId, installedName = match?.sourceName)
     }
 
-    /**
-     * Custom dictionaries keep an explicit slot: repairing a broken slot means targeting that exact
-     * slot. Matches on `occupied` rather than usability, because an unusable slot still blocks the
-     * write on the Python side.
-     */
+    /** Allocate the desktop-derived slot, adding the first free numeric suffix when occupied. */
     fun customDictionaryTarget(
-        slotId: String,
+        derivedSlotId: String,
         installed: List<InstalledDictionary>,
     ): ResourceImportTarget {
-        val match = installed.firstOrNull { it.occupied && it.slotId == slotId }
-        return ResourceImportTarget(identity = slotId, installedName = match?.sourceName)
+        val occupied = installed.filter(InstalledDictionary::occupied).mapTo(mutableSetOf()) { it.slotId }
+        if (derivedSlotId !in occupied) return ResourceImportTarget(derivedSlotId, installedName = null)
+        var suffix = 2
+        while (true) {
+            val tail = "-$suffix"
+            val base =
+                derivedSlotId
+                    .take(MAX_SLOT_LENGTH - tail.length)
+                    .trimEnd('-', '.', '_')
+            val candidate = base + tail
+            if (candidate !in occupied) return ResourceImportTarget(candidate, installedName = null)
+            suffix += 1
+        }
+    }
+
+    /** Replacement is row-scoped, so even an unusable dictionary keeps its exact occupied slot. */
+    fun customDictionaryReplacementTarget(
+        slotId: String,
+        installed: List<InstalledDictionary>,
+    ): ResourceImportTarget? {
+        val match = installed.firstOrNull { it.occupied && it.slotId == slotId } ?: return null
+        return ResourceImportTarget(identity = match.slotId, installedName = match.sourceName)
     }
 
     /**

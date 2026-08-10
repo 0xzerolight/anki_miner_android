@@ -83,6 +83,7 @@ internal data class SettingsScreenCallbacks(
     val onAttributions: () -> Unit,
     val onRunSetupWizard: (() -> Unit)?,
     val onImportCustom: () -> Unit,
+    val onReplaceCustom: (String) -> Unit,
     val onImportFrequency: () -> Unit,
     val onImportPitch: () -> Unit,
     val onImportAudioPack: () -> Unit,
@@ -532,7 +533,6 @@ private fun LazyListScope.dictionarySettings(
     settingsCard(SettingsCategory.DICTIONARIES, recorder, "custom-dictionary") {
         CustomDictionaryImportCard(
             state = setup,
-            onSlotChanged = setupViewModel::setCustomSlotId,
             onImport = callbacks.onImportCustom,
             inlineFailure = {
                 ResourceOriginFailure(
@@ -655,6 +655,7 @@ private fun LazyListScope.dictionarySettings(
         settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-inventory") {
             DictionaryInventoryCard(
                 state = setup,
+                onReplace = callbacks.onReplaceCustom,
                 onRemove = {
                     setupViewModel.requestResourceDelete(InstalledResourceKind.DICTIONARY, it)
                 },

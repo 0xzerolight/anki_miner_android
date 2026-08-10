@@ -57,6 +57,7 @@ def _dispatch_validated(
         "resource.dictionary.import",
         "resource.dictionary.list",
         "resource.dictionary.lookup",
+        "resource.dictionary.preflight",
         "resource.frequency.import",
         "resource.knownwords.import",
         "resource.knownwords.preview",
@@ -122,6 +123,7 @@ def _dispatch_validated(
             "resource.dictionary.import": resources.import_dictionary,
             "resource.dictionary.list": resources.list_dictionaries,
             "resource.dictionary.lookup": resources.lookup_dictionary,
+            "resource.dictionary.preflight": resources.preflight_dictionary,
             "resource.operation.cancel": resources.cancel_operation,
             "resource.unidic.install": resources.install_unidic,
         }

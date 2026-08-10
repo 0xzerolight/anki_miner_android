@@ -530,9 +530,6 @@
     <string name="resource_delete_confirm_message">%1$s wird von diesem Gerät gelöscht. Aus Anki wird nichts entfernt, und es wird keine Sicherung behalten.</string>
     <string name="dictionary_repair_confirm">Slot reparieren</string>
     <string name="custom_dictionary_title">Anderes Yomitan-ZIP importieren</string>
-    <string name="custom_dictionary_slot">Stabile Wörterbuch-ID</string>
-    <string name="custom_dictionary_slot_help">Kleinbuchstaben, Ziffern, Punkte, Unterstriche und Bindestriche</string>
-    <string name="custom_dictionary_slot_invalid">Geben Sie vor Auswahl einer ZIP eine gültige stabile ID ein</string>
     <string name="custom_dictionary_choose">Yomitan-ZIP auswählen</string>
     <string name="frequency_import_title">Häufigkeitsquelle importieren</string>
     <string name="frequency_none_installed">Keine Häufigkeitsquelle ist installiert.</string>

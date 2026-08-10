@@ -534,9 +534,6 @@
     <string name="resource_delete_confirm_message">%1$s удаляется с этого устройства. Из Anki ничего не удаляется, резервная копия не сохраняется.</string>
     <string name="dictionary_repair_confirm">Восстановить слот</string>
     <string name="custom_dictionary_title">Импортировать другой ZIP Yomitan</string>
-    <string name="custom_dictionary_slot">Постоянный ID словаря</string>
-    <string name="custom_dictionary_slot_help">Строчные буквы, цифры, точки, подчёркивания и дефисы</string>
-    <string name="custom_dictionary_slot_invalid">Введите допустимый постоянный ID перед выбором ZIP</string>
     <string name="custom_dictionary_choose">Выбрать ZIP Yomitan</string>
     <string name="frequency_import_title">Импортировать источник частотности</string>
     <string name="frequency_none_installed">Источник частотности не установлен.</string>

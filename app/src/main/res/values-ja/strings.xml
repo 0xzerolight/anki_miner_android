@@ -530,9 +530,6 @@
     <string name="resource_delete_confirm_message">%1$sをこの端末から削除します。Ankiからは何も削除されず、バックアップは保持されません。</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
-    <string name="custom_dictionary_slot">固定辞書ID</string>
-    <string name="custom_dictionary_slot_help">小文字英字・数字・ピリオド・アンダースコア・ハイフン</string>
-    <string name="custom_dictionary_slot_invalid">ZIPを選択する前に有効な固定IDを入力してください</string>
     <string name="custom_dictionary_choose">Yomitan ZIPを選択</string>
     <string name="frequency_import_title">頻度ソースをインポート</string>
     <string name="frequency_none_installed">頻度ソースがインストールされていません。</string>

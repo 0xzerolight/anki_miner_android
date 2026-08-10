@@ -528,9 +528,6 @@
     <string name="resource_delete_confirm_message">%1$s bị xóa khỏi thiết bị này. Không có gì bị xóa khỏi Anki và không giữ bản sao lưu.</string>
     <string name="dictionary_repair_confirm">Sửa chữa khe</string>
     <string name="custom_dictionary_title">Nhập ZIP Yomitan khác</string>
-    <string name="custom_dictionary_slot">ID từ điển ổn định</string>
-    <string name="custom_dictionary_slot_help">Chữ cái thường, số, dấu chấm, dấu gạch dưới và dấu gạch nối</string>
-    <string name="custom_dictionary_slot_invalid">Nhập ID ổn định hợp lệ trước khi chọn ZIP</string>
     <string name="custom_dictionary_choose">Chọn ZIP Yomitan</string>
     <string name="frequency_import_title">Nhập nguồn tần suất</string>
     <string name="frequency_none_installed">Chưa cài đặt nguồn tần suất nào.</string>
