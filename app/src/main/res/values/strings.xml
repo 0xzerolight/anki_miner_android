@@ -748,10 +748,6 @@
     <string name="settings_reset_section">Reset settings</string>
     <string name="settings_restore_mining_defaults">Restore mining defaults</string>
     <string name="settings_restore_mining_defaults_confirmation">Resets tags, media timing and format, filtering, sentence limits, pitch labels, worker count, and reading text-to-speech. Onboarding, theme, Anki target and field map, and resource choices stay unchanged.</string>
-    <string name="settings_reset_anki_target">Reset Anki target</string>
-    <string name="settings_reset_anki_target_confirmation">Clears the selected deck, note type, and field map. Mining settings and resource choices stay unchanged.</string>
-    <string name="settings_reset_resource_choices">Reset resource choices</string>
-    <string name="settings_reset_resource_choices_confirmation">Clears dictionary priority, frequency priority, local audio-pack priority, proper-name wordsets, and the Jisho choice. Installed resource files stay on device. Mining settings and the Anki target stay unchanged.</string>
     <string name="settings_attributions">Licenses, data sources, and privacy notices</string>
     <string name="attribution_title">Licenses and data sources</string>
     <string name="attribution_intro">Downloaded language resources are data, are stored privately, and are verified against the immutable catalog before installation.</string>

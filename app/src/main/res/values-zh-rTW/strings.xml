@@ -732,10 +732,6 @@
     <string name="settings_reset_section">重設設定</string>
     <string name="settings_restore_mining_defaults">還原採集預設值</string>
     <string name="settings_restore_mining_defaults_confirmation">會重設標籤、媒體時間與格式、篩選器、句子限制、高低音調標籤、工作執行緒數量及閱讀文字轉語音。初始設定、主題、Anki 目標和欄位對應，以及資源選擇會維持不變。</string>
-    <string name="settings_reset_anki_target">重設 Anki 目標</string>
-    <string name="settings_reset_anki_target_confirmation">會清除所選牌組、筆記類型和欄位對應。採集設定和資源選擇會維持不變。</string>
-    <string name="settings_reset_resource_choices">重設資源選擇</string>
-    <string name="settings_reset_resource_choices_confirmation">會清除字典優先順序、頻率優先順序、本機音訊包優先順序、專有名詞單字集及 Jisho 選項。已安裝的資源檔案會保留在裝置上。採集設定和 Anki 目標會維持不變。</string>
     <string name="settings_attributions">授權、資料來源與隱私權聲明</string>
     <string name="attribution_title">授權與資料來源</string>
     <string name="attribution_intro">下載的語言資源是資料，會私密儲存，並在安裝前依不可變目錄驗證。</string>

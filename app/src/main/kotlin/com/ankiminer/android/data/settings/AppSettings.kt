@@ -192,34 +192,6 @@ data class AppSettings(
             readingTtsEnabled = false,
         )
 
-    /** Clear only the user-owned Anki destination and its mapping. */
-    fun resetAnkiTarget(): AppSettings =
-        copy(
-            deckName = null,
-            noteType = null,
-            fieldMap = emptyMap(),
-            cardType = null,
-            cardTypeMarkerField = null,
-        )
-
-    /** Clear resource priority/enable choices without removing installed resource files. */
-    fun resetResourceChoices(
-        dictionaryIds: List<String> = emptyList(),
-        frequencyIds: List<String> = emptyList(),
-        pitchIds: List<String> = emptyList(),
-        audioPackIds: List<String> = emptyList(),
-    ): AppSettings =
-        copy(
-            // Empty chains mean "newly discovered and enabled". Explicit disabled entries make a
-            // user-requested reset remain visibly clear for resources already installed.
-            dictionarySources = dictionaryIds.map { ResourceChainSelection(it, enabled = false) },
-            frequencySources = frequencyIds.map { ResourceChainSelection(it, enabled = false) },
-            pitchSources = pitchIds.map { ResourceChainSelection(it, enabled = false) },
-            audioPacks = audioPackIds.map { ResourceChainSelection(it, enabled = false) },
-            enabledWordsets = DEFAULT_ENABLED_WORDSETS,
-            jishoEnabled = false,
-        )
-
     companion object {
         val DEFAULT_ENABLED_WORDSETS =
             listOf("surnames", "given-names", "place-names", "org-product")

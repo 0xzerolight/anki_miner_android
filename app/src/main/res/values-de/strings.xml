@@ -738,10 +738,6 @@
     <string name="settings_reset_section">Einstellungen zurücksetzen</string>
     <string name="settings_restore_mining_defaults">Mining-Standardeinstellungen wiederherstellen</string>
     <string name="settings_restore_mining_defaults_confirmation">Setzt Tags, Medientiming und -format, Filterung, Satzbegrenzungen, Tonhöhenbezeichnungen, Worker-Anzahl und Sprachsynthese für Lesungen zurück. Onboarding, Design, Anki-Ziel und Feldzuordnung sowie Ressourcenauswahl bleiben unverändert.</string>
-    <string name="settings_reset_anki_target">Anki-Ziel zurücksetzen</string>
-    <string name="settings_reset_anki_target_confirmation">Löscht den ausgewählten Stapel, Notiztyp und die Feldzuordnung. Mining-Einstellungen und Ressourcenauswahl bleiben unverändert.</string>
-    <string name="settings_reset_resource_choices">Ressourcenauswahl zurücksetzen</string>
-    <string name="settings_reset_resource_choices_confirmation">Löscht Wörterbuch-Priorität, Häufigkeits-Priorität, lokale Audiopaket-Priorität, Eigennamen-Wortsets und die Jisho-Auswahl. Installierte Ressourcendateien bleiben auf dem Gerät. Mining-Einstellungen und das Anki-Ziel bleiben unverändert.</string>
     <string name="settings_attributions">Lizenzen, Datenquellen und Datenschutzhinweise</string>
     <string name="attribution_title">Lizenzen und Datenquellen</string>
     <string name="attribution_intro">Heruntergeladene Sprachressourcen sind Daten, werden privat gespeichert und vor der Installation anhand des unveränderlichen Katalogs überprüft.</string>

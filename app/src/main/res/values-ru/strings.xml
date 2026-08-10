@@ -742,10 +742,6 @@
     <string name="settings_reset_section">Сбросить настройки</string>
     <string name="settings_restore_mining_defaults">Восстановить настройки майнинга по умолчанию</string>
     <string name="settings_restore_mining_defaults_confirmation">Сбрасывает теги, тайминг и формат медиа, фильтрацию, ограничения предложений, метки тонального ударения, число обработчиков и синтез речи для чтения. Начальная настройка, тема, цель Anki и карта полей, а также выбор ресурсов не изменяются.</string>
-    <string name="settings_reset_anki_target">Сбросить цель Anki</string>
-    <string name="settings_reset_anki_target_confirmation">Очищает выбранные колоду, тип заметки и карту полей. Настройки майнинга и выбор ресурсов не изменяются.</string>
-    <string name="settings_reset_resource_choices">Сбросить выбор ресурсов</string>
-    <string name="settings_reset_resource_choices_confirmation">Очищает приоритет словарей, частотности, локальных пакетов аудио, наборы собственных имён и выбор Jisho. Установленные файлы ресурсов остаются на устройстве. Настройки майнинга и цель Anki не изменяются.</string>
     <string name="settings_attributions">Лицензии, источники данных и уведомления о конфиденциальности</string>
     <string name="attribution_title">Лицензии и источники данных</string>
     <string name="attribution_intro">Загруженные языковые ресурсы являются данными, хранятся приватно и проверяются по неизменяемому каталогу перед установкой.</string>

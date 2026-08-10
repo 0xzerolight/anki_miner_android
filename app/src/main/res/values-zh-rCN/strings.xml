@@ -736,10 +736,6 @@
     <string name="settings_reset_section">重置设置</string>
     <string name="settings_restore_mining_defaults">恢复挖词默认设置</string>
     <string name="settings_restore_mining_defaults_confirmation">将重置标签、媒体时间与格式、过滤、句子限制、音调标签、工作线程数和阅读文字转语音。引导设置、主题、Anki 目标与字段映射及资源选择保持不变。</string>
-    <string name="settings_reset_anki_target">重置 Anki 目标</string>
-    <string name="settings_reset_anki_target_confirmation">清除所选牌组、笔记类型和字段映射。挖词设置和资源选择保持不变。</string>
-    <string name="settings_reset_resource_choices">重置资源选择</string>
-    <string name="settings_reset_resource_choices_confirmation">清除词典优先级、词频优先级、本地音频包优先级、专有名词单词集和 Jisho 选项。已安装的资源文件保留在设备上。挖词设置和 Anki 目标保持不变。</string>
     <string name="settings_attributions">许可证、数据来源和隐私声明</string>
     <string name="attribution_title">许可证和数据来源</string>
     <string name="attribution_intro">下载的语言资源属于数据，会私密存储，并在安装前根据不可变目录进行验证。</string>

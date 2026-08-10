@@ -740,10 +740,6 @@
     <string name="settings_reset_section">Reimposta impostazioni</string>
     <string name="settings_restore_mining_defaults">Ripristina impostazioni predefinite del mining</string>
     <string name="settings_restore_mining_defaults_confirmation">Reimposta tag, tempi e formato dei contenuti multimediali, filtri, limiti delle frasi, etichette dell\'accento tonale, numero di processi e sintesi vocale della lettura. Procedura guidata, tema, destinazione Anki e mappatura dei campi, nonché le risorse scelte, restano invariati.</string>
-    <string name="settings_reset_anki_target">Reimposta destinazione Anki</string>
-    <string name="settings_reset_anki_target_confirmation">Cancella il mazzo, il tipo di nota e la mappatura dei campi selezionati. Le impostazioni di mining e le risorse scelte restano invariate.</string>
-    <string name="settings_reset_resource_choices">Reimposta risorse scelte</string>
-    <string name="settings_reset_resource_choices_confirmation">Cancella la priorità dei dizionari, delle frequenze e dei pacchetti audio locali, gli elenchi di parole di nomi propri e la scelta di Jisho. I file di risorse installati restano sul dispositivo. Le impostazioni di mining e la destinazione Anki restano invariate.</string>
     <string name="settings_attributions">Licenze, fonti di dati e informative sulla privacy</string>
     <string name="attribution_title">Licenze e fonti di dati</string>
     <string name="attribution_intro">Le risorse linguistiche scaricate sono dati, vengono archiviate privatamente e verificate rispetto al catalogo immutabile prima dell\'installazione.</string>

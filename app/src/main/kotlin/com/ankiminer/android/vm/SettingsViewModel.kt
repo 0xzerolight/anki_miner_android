@@ -1249,20 +1249,6 @@ internal class SettingsViewModel(
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
 
-    fun resetAnkiTarget(): Boolean = save(AppSettings::resetAnkiTarget)
-
-    fun resetResourceChoices(): Boolean {
-        val inventory = resources.state.value
-        return save { current ->
-            current.resetResourceChoices(
-                dictionaryIds = inventory.usableDictionaryIds(),
-                frequencyIds = inventory.usableFrequencyIds(),
-                pitchIds = inventory.usablePitchIds(),
-                audioPackIds = inventory.usableAudioPackIds(),
-            )
-        }
-    }
-
     fun retrySave() {
         if (saving.value) return
         viewModelScope.launch { persistLatest() }

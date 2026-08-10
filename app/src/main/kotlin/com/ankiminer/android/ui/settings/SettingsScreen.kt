@@ -295,8 +295,6 @@ internal fun SettingsRoute(
         onRetrySave = viewModel::retrySave,
         onDraftChange = viewModel::updateDraft,
         onRestoreMiningDefaults = viewModel::restoreMiningDefaults,
-        onResetAnkiTarget = viewModel::resetAnkiTarget,
-        onResetResourceChoices = viewModel::resetResourceChoices,
         onRequestPermissions = onRequestPermissions,
         onOpenAppSettings = onOpenAppSettings,
         onInstallAnkiDroid = onInstallAnkiDroid,
@@ -380,8 +378,6 @@ private fun SettingsScreen(
     // Boolean: a reset that the store refuses must leave the confirmation queued
     // instead of being silently dismissed.
     onRestoreMiningDefaults: () -> Boolean,
-    onResetAnkiTarget: () -> Boolean,
-    onResetResourceChoices: () -> Boolean,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
@@ -489,8 +485,6 @@ private fun SettingsScreen(
                         resetConfirmation =
                             resetConfirmation.confirmDispatching(
                                 onRestoreMiningDefaults = onRestoreMiningDefaults,
-                                onResetAnkiTarget = onResetAnkiTarget,
-                                onResetResourceChoices = onResetResourceChoices,
                             )
                     },
                 ) {
@@ -678,8 +672,6 @@ internal fun settingsRuntimeWorkMessage(kind: RuntimeWorkCoordinator.Kind): Int 
 internal fun settingsResetLabel(action: SettingsResetAction): Int =
     when (action) {
         SettingsResetAction.RESTORE_MINING_DEFAULTS -> R.string.settings_restore_mining_defaults
-        SettingsResetAction.RESET_ANKI_TARGET -> R.string.settings_reset_anki_target
-        SettingsResetAction.RESET_RESOURCE_CHOICES -> R.string.settings_reset_resource_choices
     }
 
 @StringRes
@@ -687,8 +679,4 @@ private fun settingsResetDescription(action: SettingsResetAction): Int =
     when (action) {
         SettingsResetAction.RESTORE_MINING_DEFAULTS ->
             R.string.settings_restore_mining_defaults_confirmation
-        SettingsResetAction.RESET_ANKI_TARGET ->
-            R.string.settings_reset_anki_target_confirmation
-        SettingsResetAction.RESET_RESOURCE_CHOICES ->
-            R.string.settings_reset_resource_choices_confirmation
     }

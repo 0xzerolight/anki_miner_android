@@ -739,10 +739,6 @@
     <string name="settings_reset_section">設定のリセット</string>
     <string name="settings_restore_mining_defaults">マイニング設定をデフォルトに戻す</string>
     <string name="settings_restore_mining_defaults_confirmation">タグ、メディアのタイミングと形式、フィルタリング、例文の上限、ピッチ表示、ワーカー数、読書音声合成をリセットします。オンボーディング、テーマ、Ankiターゲットとフィールドマップ、リソース選択は変更されません。</string>
-    <string name="settings_reset_anki_target">Ankiターゲットをリセット</string>
-    <string name="settings_reset_anki_target_confirmation">選択したデッキ、ノートタイプ、フィールドマップをクリアします。マイニング設定とリソース選択は変更されません。</string>
-    <string name="settings_reset_resource_choices">リソース選択をリセット</string>
-    <string name="settings_reset_resource_choices_confirmation">辞書優先順位、頻度優先順位、ローカル音声パック優先順位、固有名詞ワードセット、Jisho選択をクリアします。インストール済みのリソースファイルは端末に残ります。マイニング設定とAnkiターゲットは変更されません。</string>
     <string name="settings_attributions">ライセンス、データソース、プライバシー通知</string>
     <string name="attribution_title">ライセンスとデータソース</string>
     <string name="attribution_intro">ダウンロードされる言語リソースはデータであり、非公開で保存され、インストール前に不変のカタログと照合して検証されます。</string>

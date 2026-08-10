@@ -740,10 +740,6 @@
     <string name="settings_reset_section">Réinitialiser les paramètres</string>
     <string name="settings_restore_mining_defaults">Restaurer les paramètres d\'extraction par défaut</string>
     <string name="settings_restore_mining_defaults_confirmation">Réinitialise les étiquettes, le minutage et le format des médias, le filtrage, les limites de phrases, les libellés d\'accent de hauteur, le nombre d\'agents et la synthèse vocale de lecture. La configuration initiale, le thème, la cible Anki et le mappage des champs, ainsi que les choix de ressources, restent inchangés.</string>
-    <string name="settings_reset_anki_target">Réinitialiser la cible Anki</string>
-    <string name="settings_reset_anki_target_confirmation">Efface le paquet sélectionné, le type de note et le mappage des champs. Les paramètres d\'extraction et les choix de ressources restent inchangés.</string>
-    <string name="settings_reset_resource_choices">Réinitialiser les choix de ressources</string>
-    <string name="settings_reset_resource_choices_confirmation">Efface la priorité des dictionnaires, la priorité de fréquence, la priorité des packs audio locaux, les listes de mots de noms propres et le choix de Jisho. Les fichiers de ressources installés restent sur l\'appareil. Les paramètres d\'extraction et la cible Anki restent inchangés.</string>
     <string name="settings_attributions">Licences, sources de données et avis de confidentialité</string>
     <string name="attribution_title">Licences et sources de données</string>
     <string name="attribution_intro">Les ressources linguistiques téléchargées sont des données, stockées de manière privée et vérifiées par rapport au catalogue immuable avant l\'installation.</string>

@@ -736,10 +736,6 @@
     <string name="settings_reset_section">Setel ulang pengaturan</string>
     <string name="settings_restore_mining_defaults">Pulihkan default mining</string>
     <string name="settings_restore_mining_defaults_confirmation">Menyetel ulang tag, pengaturan waktu dan format media, pemfilteran, batas kalimat, label aksen nada, jumlah pekerja, dan TTS bacaan. Penyiapan awal, tema, target Anki dan pemetaan bidang, serta pilihan sumber daya tetap tidak berubah.</string>
-    <string name="settings_reset_anki_target">Setel ulang target Anki</string>
-    <string name="settings_reset_anki_target_confirmation">Menghapus dek, tipe catatan, dan pemetaan bidang yang dipilih. Pengaturan mining dan pilihan sumber daya tetap tidak berubah.</string>
-    <string name="settings_reset_resource_choices">Setel ulang pilihan sumber daya</string>
-    <string name="settings_reset_resource_choices_confirmation">Menghapus prioritas kamus, prioritas frekuensi, prioritas paket audio lokal, kumpulan kata nama diri, dan pilihan Jisho. Berkas sumber daya yang terpasang tetap ada di perangkat. Pengaturan mining dan target Anki tetap tidak berubah.</string>
     <string name="settings_attributions">Lisensi, sumber data, dan pemberitahuan privasi</string>
     <string name="attribution_title">Lisensi dan sumber data</string>
     <string name="attribution_intro">Sumber daya bahasa yang diunduh adalah data, disimpan secara privat, dan diverifikasi terhadap katalog yang tidak dapat diubah sebelum pemasangan.</string>

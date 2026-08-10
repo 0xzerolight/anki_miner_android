@@ -740,10 +740,6 @@
     <string name="settings_reset_section">Restablecer ajustes</string>
     <string name="settings_restore_mining_defaults">Restaurar valores predeterminados de minería</string>
     <string name="settings_restore_mining_defaults_confirmation">Restablece las etiquetas, el tiempo y formato de los medios, el filtrado, los límites de oraciones, las etiquetas de acento tonal, el número de procesos y el texto a voz de lectura. La configuración inicial, el tema, el destino de Anki y la asignación de campos, así como las opciones de recursos, no cambian.</string>
-    <string name="settings_reset_anki_target">Restablecer destino de Anki</string>
-    <string name="settings_reset_anki_target_confirmation">Borra el mazo, el tipo de nota y la asignación de campos seleccionados. Los ajustes de minería y las opciones de recursos no cambian.</string>
-    <string name="settings_reset_resource_choices">Restablecer opciones de recursos</string>
-    <string name="settings_reset_resource_choices_confirmation">Borra la prioridad de diccionarios, de frecuencia, de paquetes de audio locales, los conjuntos de palabras de nombres propios y la opción de Jisho. Los archivos de recursos instalados permanecen en el dispositivo. Los ajustes de minería y el destino de Anki no cambian.</string>
     <string name="settings_attributions">Licencias, fuentes de datos y avisos de privacidad</string>
     <string name="attribution_title">Licencias y fuentes de datos</string>
     <string name="attribution_intro">Los recursos lingüísticos descargados son datos, se almacenan de forma privada y se verifican con el catálogo inmutable antes de instalarlos.</string>
