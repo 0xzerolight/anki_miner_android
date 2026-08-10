@@ -653,11 +653,13 @@
     <string name="settings_animated_screenshots">Tangkapan layar animasi</string>
     <string name="settings_animated_screenshots_summary">Gunakan klip berulang pendek untuk gambar kartu alih-alih satu bingkai. Media lebih besar dan mining lebih lambat.</string>
     <string name="settings_animated_screenshots_webp_only">Perangkat ini menyimpan klip sebagai WebP.</string>
-    <string name="settings_animated_clip_duration">Panjang klip (detik)</string>
+    <string name="settings_animated_match_audio">Samakan dengan durasi audio</string>
+    <string name="settings_animated_match_audio_help">Klip mencakup audio kalimat beserta jedanya. Menggantikan panjang klip.</string>
+    <string name="settings_animated_clip_duration">Panjang klip maks. (detik)</string>
     <string name="settings_animated_clip_duration_help">0.5 hingga 10. Dibatasi oleh panjang baris.</string>
     <string name="settings_animated_quality">Kualitas klip</string>
     <string name="settings_animated_quality_help">0 hingga 100. Lebih tinggi berarti berkas lebih besar.</string>
-    <string name="settings_subtitle_offset">Offset waktu subtitel</string>
+    <string name="settings_subtitle_offset">Offset waktu subtitle bawaan</string>
     <string name="settings_audio_bitrate">Bitrate audio (kbps)</string>
     <string name="settings_audio_format">Format audio</string>
     <string name="settings_mp3">MP3</string>
@@ -666,7 +668,7 @@
     <string name="settings_strip_annotations">Hapus anotasi (efek suara, tag pembicara, furigana)</string>
     <string name="settings_subtitle_regex">Filter regex</string>
     <string name="settings_subtitle_replacement">Penggantian (kosong menghapus kecocokan)</string>
-    <string name="settings_use_subtitle_regex">Terapkan filter regex pada subtitel video</string>
+    <string name="settings_use_subtitle_regex">Terapkan filter regex ke subtitle</string>
     <string name="settings_subtitle_presets">Tambahkan preset</string>
     <string name="settings_subtitle_preset_parens">Tanda kurung</string>
     <string name="settings_subtitle_preset_brackets">Tanda kurung siku</string>
@@ -794,7 +796,7 @@
     <string name="settings_backup_section">Berkas pengaturan</string>
     <string name="settings_backup_export">Simpan pengaturan ke berkas</string>
     <string name="settings_backup_import">Muat pengaturan dari berkas</string>
-    <string name="settings_backup_detail">Berkas pengaturan memuat semua yang ada di layar ini kecuali sumber daya yang terpasang. Memuatnya mempertahankan setiap pengaturan yang tidak disebutkan berkas.</string>
+    <string name="settings_backup_detail">Berkas pengaturan memuat pengaturan pada layar ini. Berkas ini tidak memuat sumber daya terpasang, pencatatan terperinci, preferensi pembaruan, atau kemajuan penyiapan. Memuatnya tetap mempertahankan pengaturan yang tidak disebut berkas.</string>
     <string name="settings_backup_exported">Pengaturan disimpan.</string>
     <string name="settings_backup_imported">%1$d pengaturan dimuat.</string>
     <string name="settings_backup_imported_skipped">%1$d pengaturan dimuat, %2$d dilewati.</string>

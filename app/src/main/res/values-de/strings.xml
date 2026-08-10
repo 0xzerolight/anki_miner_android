@@ -655,11 +655,13 @@
     <string name="settings_animated_screenshots">Animierte Screenshots</string>
     <string name="settings_animated_screenshots_summary">Kurzen Endlosclip statt eines Einzelbilds für das Kartenbild verwenden. Größere Medien und langsameres Mining.</string>
     <string name="settings_animated_screenshots_webp_only">Dieses Gerät speichert Clips als WebP.</string>
-    <string name="settings_animated_clip_duration">Cliplänge (Sekunden)</string>
+    <string name="settings_animated_match_audio">An Audiolänge anpassen</string>
+    <string name="settings_animated_match_audio_help">Der Clip umfasst das Satzaudio samt Puffer. Überschreibt die Cliplänge.</string>
+    <string name="settings_animated_clip_duration">Max. Cliplänge (Sekunden)</string>
     <string name="settings_animated_clip_duration_help">0,5 bis 10. Begrenzt durch die Länge der Zeile.</string>
     <string name="settings_animated_quality">Clipqualität</string>
     <string name="settings_animated_quality_help">0 bis 100. Höher bedeutet größere Dateien.</string>
-    <string name="settings_subtitle_offset">Untertitel-Timing-Versatz</string>
+    <string name="settings_subtitle_offset">Standard-Zeitversatz für Untertitel</string>
     <string name="settings_audio_bitrate">Audio-Bitrate (kbps)</string>
     <string name="settings_audio_format">Audioformat</string>
     <string name="settings_mp3">MP3</string>
@@ -668,7 +670,7 @@
     <string name="settings_strip_annotations">Anmerkungen entfernen (Soundeffekte, Sprecher-Tags, Furigana)</string>
     <string name="settings_subtitle_regex">Regex-Filter</string>
     <string name="settings_subtitle_replacement">Ersetzung (leer löscht Treffer)</string>
-    <string name="settings_use_subtitle_regex">Regex-Filter auf Video-Untertitel anwenden</string>
+    <string name="settings_use_subtitle_regex">Regex-Filter auf Untertitel anwenden</string>
     <string name="settings_subtitle_presets">Voreinstellung hinzufügen</string>
     <string name="settings_subtitle_preset_parens">Klammern</string>
     <string name="settings_subtitle_preset_brackets">Eckige Klammern</string>
@@ -796,7 +798,7 @@
     <string name="settings_backup_section">Einstellungsdatei</string>
     <string name="settings_backup_export">Einstellungen in einer Datei speichern</string>
     <string name="settings_backup_import">Einstellungen aus einer Datei laden</string>
-    <string name="settings_backup_detail">Eine Einstellungsdatei enthält alles auf diesem Bildschirm außer den installierten Ressourcen. Beim Laden bleiben alle Einstellungen erhalten, die in der Datei nicht erwähnt werden.</string>
+    <string name="settings_backup_detail">Eine Einstellungsdatei enthält die Einstellungen dieses Bildschirms. Nicht enthalten sind installierte Ressourcen, ausführliche Protokollierung, Update-Einstellungen und der Einrichtungsfortschritt. Beim Laden bleibt jede Einstellung erhalten, die die Datei nicht nennt.</string>
     <string name="settings_backup_exported">Einstellungen gespeichert.</string>
     <string name="settings_backup_imported">%1$d Einstellungen geladen.</string>
     <string name="settings_backup_imported_skipped">%1$d Einstellungen geladen, %2$d übersprungen.</string>

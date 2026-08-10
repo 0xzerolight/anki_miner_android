@@ -657,11 +657,13 @@
     <string name="settings_animated_screenshots">Capturas de pantalla animadas</string>
     <string name="settings_animated_screenshots_summary">Use un clip corto en bucle para la imagen de la tarjeta en vez de un solo fotograma. Archivos multimedia más grandes y minería más lenta.</string>
     <string name="settings_animated_screenshots_webp_only">Este dispositivo guarda clips como WebP.</string>
-    <string name="settings_animated_clip_duration">Duración del clip (segundos)</string>
+    <string name="settings_animated_match_audio">Ajustar a la duración del audio</string>
+    <string name="settings_animated_match_audio_help">El clip abarca el audio de la frase, con el margen incluido. Anula la duración del clip.</string>
+    <string name="settings_animated_clip_duration">Duración máxima del clip (segundos)</string>
     <string name="settings_animated_clip_duration_help">0,5 a 10. Limitado por la duración de la línea.</string>
     <string name="settings_animated_quality">Calidad del clip</string>
     <string name="settings_animated_quality_help">De 0 a 100. Un valor más alto implica archivos más grandes.</string>
-    <string name="settings_subtitle_offset">Desfase de sincronización de subtítulos</string>
+    <string name="settings_subtitle_offset">Desfase de tiempo de subtítulos predeterminado</string>
     <string name="settings_audio_bitrate">Tasa de bits de audio (kbps)</string>
     <string name="settings_audio_format">Formato de audio</string>
     <string name="settings_mp3">MP3</string>
@@ -670,7 +672,7 @@
     <string name="settings_strip_annotations">Quitar anotaciones (efectos de sonido, etiquetas de hablante, furigana)</string>
     <string name="settings_subtitle_regex">Filtro de expresiones regulares</string>
     <string name="settings_subtitle_replacement">Reemplazo (vacío elimina la coincidencia)</string>
-    <string name="settings_use_subtitle_regex">Aplicar el filtro de expresiones regulares a los subtítulos de vídeo</string>
+    <string name="settings_use_subtitle_regex">Aplicar el filtro regex a los subtítulos</string>
     <string name="settings_subtitle_presets">Añadir un preajuste</string>
     <string name="settings_subtitle_preset_parens">Paréntesis</string>
     <string name="settings_subtitle_preset_brackets">Corchetes</string>
@@ -798,7 +800,7 @@
     <string name="settings_backup_section">Archivo de ajustes</string>
     <string name="settings_backup_export">Guardar ajustes en un archivo</string>
     <string name="settings_backup_import">Cargar ajustes desde un archivo</string>
-    <string name="settings_backup_detail">Un archivo de ajustes contiene todo lo de esta pantalla salvo los recursos instalados. Al cargarlo se conserva cualquier ajuste que no mencione.</string>
+    <string name="settings_backup_detail">Un archivo de ajustes incluye los ajustes de esta pantalla. No incluye los recursos instalados, el registro detallado, las preferencias de actualización ni el progreso de configuración. Al cargarlo se conserva cualquier ajuste que el archivo no mencione.</string>
     <string name="settings_backup_exported">Ajustes guardados.</string>
     <string name="settings_backup_imported">Se cargaron %1$d ajustes.</string>
     <string name="settings_backup_imported_skipped">Se cargaron %1$d ajustes; se omitieron %2$d.</string>

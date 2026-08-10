@@ -39,6 +39,7 @@ import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AudioFormat
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.data.update.AvailableUpdate
@@ -218,6 +219,7 @@ private fun LazyListScope.ankiSettings(
                 label = stringResource(R.string.settings_deck_name),
                 singleLine = false,
                 maxLines = 2,
+                placeholder = inheritedDefault(EngineDefaults.DECK_NAME),
             )
             val choices = excludedDeckChoices(setup.availableDeckNames, draft.excludedDecks)
             CollapsibleSettingGroup(
@@ -331,6 +333,7 @@ internal fun LazyListScope.mediaSettings(
                 stringResource(R.string.settings_audio_padding),
                 error = validationMessage(draft, SettingsFieldKey.AUDIO_PADDING),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.AUDIO_PADDING_SECONDS),
             )
             NumericField(
                 draft.screenshotOffset,
@@ -338,6 +341,7 @@ internal fun LazyListScope.mediaSettings(
                 stringResource(R.string.settings_screenshot_offset),
                 error = validationMessage(draft, SettingsFieldKey.SCREENSHOT_OFFSET),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.SCREENSHOT_OFFSET_SECONDS),
             )
             BooleanSetting(
                 label = stringResource(R.string.settings_animated_screenshots),
@@ -350,14 +354,28 @@ internal fun LazyListScope.mediaSettings(
             if (draft.animatedScreenshots && !avifNameable) {
                 SupportingText(stringResource(R.string.settings_animated_screenshots_webp_only))
             }
+            BooleanSetting(
+                label = stringResource(R.string.settings_animated_match_audio),
+                checked = draft.animatedScreenshotMatchAudio,
+                enabled = draft.animatedScreenshots,
+                onCheckedChange = {
+                    onDraftChange(draft.copy(animatedScreenshotMatchAudio = it))
+                },
+            )
+            SupportingText(stringResource(R.string.settings_animated_match_audio_help))
             NumericField(
                 draft.animatedScreenshotDuration,
                 { onDraftChange(draft.copy(animatedScreenshotDuration = it)) },
                 stringResource(R.string.settings_animated_clip_duration),
-                enabled = draft.animatedScreenshots,
+                // Match-audio derives the window from the subtitle and the audio padding, so the
+                // configured length has no effect while it is on. Desktop's media panel greys the
+                // same field out rather than letting it read as if it still applied.
+                enabled = draft.animatedScreenshots && !draft.animatedScreenshotMatchAudio,
                 error = validationMessage(draft, SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION),
                 imeAction = ImeAction.Next,
                 modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_DURATION),
+                placeholder =
+                    inheritedDefault(EngineDefaults.ANIMATED_SCREENSHOT_DURATION_SECONDS),
             )
             SupportingText(stringResource(R.string.settings_animated_clip_duration_help))
             NumericField(
@@ -369,6 +387,7 @@ internal fun LazyListScope.mediaSettings(
                 error = validationMessage(draft, SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY),
                 imeAction = ImeAction.Next,
                 modifier = Modifier.testTag(SettingsCategoryTestTags.ANIMATED_SCREENSHOT_QUALITY),
+                placeholder = inheritedDefault(EngineDefaults.ANIMATED_SCREENSHOT_QUALITY),
             )
             SupportingText(stringResource(R.string.settings_animated_quality_help))
             NumericField(
@@ -378,6 +397,7 @@ internal fun LazyListScope.mediaSettings(
                 allowNegative = true,
                 error = validationMessage(draft, SettingsFieldKey.SUBTITLE_OFFSET),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.SUBTITLE_OFFSET_SECONDS),
             )
             NumericField(
                 draft.bitrate,
@@ -385,11 +405,12 @@ internal fun LazyListScope.mediaSettings(
                 stringResource(R.string.settings_audio_bitrate),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.BITRATE),
+                placeholder = inheritedDefault(EngineDefaults.AUDIO_BITRATE_KBPS),
             )
             NullableChoice(
                 label = stringResource(R.string.settings_audio_format),
                 value = draft.audioFormat,
-                engineDefault = AudioFormat.MP3,
+                engineDefault = EngineDefaults.AUDIO_FORMAT,
                 values = listOf(AudioFormat.MP3, AudioFormat.OPUS),
                 optionLabel = { value ->
                     stringResource(
@@ -410,7 +431,7 @@ internal fun LazyListScope.mediaSettings(
             NullableToggle(
                 stringResource(R.string.settings_strip_annotations),
                 draft.stripAnnotations,
-                true,
+                EngineDefaults.STRIP_SUBTITLE_ANNOTATIONS,
             ) { onDraftChange(draft.copy(stripAnnotations = it)) }
             SettingTextField(
                 value = draft.subtitleRegex,
@@ -432,7 +453,7 @@ internal fun LazyListScope.mediaSettings(
             NullableToggle(
                 stringResource(R.string.settings_use_subtitle_regex),
                 draft.useSubtitleRegex,
-                false,
+                EngineDefaults.USE_SUBTITLE_REGEX_FILTER,
             ) { onDraftChange(draft.copy(useSubtitleRegex = it)) }
             Text(
                 stringResource(R.string.settings_subtitle_presets),
@@ -460,6 +481,11 @@ internal fun LazyListScope.mediaSettings(
                                             draft.subtitleRegex,
                                             preset.pattern,
                                         ),
+                                    // Appending a pattern while the filter is off looked like the
+                                    // preset did nothing. Tapping one is a request to filter, so
+                                    // turn the filter on with it; the toggle stays available for
+                                    // parking a pattern afterwards.
+                                    useSubtitleRegex = true,
                                 ),
                             )
                         },
@@ -587,7 +613,7 @@ private fun LazyListScope.dictionarySettings(
         NullableChoice(
             label = stringResource(R.string.settings_pitch_format),
             value = draft.pitchFormat,
-            engineDefault = PitchCategoryFormat.JAPANESE,
+            engineDefault = EngineDefaults.PITCH_CATEGORY_FORMAT,
             values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
             optionLabel = { value ->
                 stringResource(
@@ -766,37 +792,37 @@ private fun LazyListScope.filteringSettings(
             NullableToggle(
                 stringResource(R.string.settings_known_words),
                 draft.knownWords,
-                false,
+                EngineDefaults.USE_KNOWN_WORDS_DATABASE,
             ) { callbacks.onDraftChange(draft.copy(knownWords = it)) }
             NullableToggle(
                 stringResource(R.string.settings_exclude_hiragana),
                 draft.hiragana,
-                false,
+                EngineDefaults.EXCLUDE_HIRAGANA_ONLY,
             ) { callbacks.onDraftChange(draft.copy(hiragana = it)) }
             NullableToggle(
                 stringResource(R.string.settings_exclude_katakana),
                 draft.katakana,
-                false,
+                EngineDefaults.EXCLUDE_KATAKANA_ONLY,
             ) { callbacks.onDraftChange(draft.copy(katakana = it)) }
             NullableToggle(
                 stringResource(R.string.settings_bold_target),
                 draft.boldTarget,
-                false,
+                EngineDefaults.BOLD_TARGET_IN_SENTENCE,
             ) { callbacks.onDraftChange(draft.copy(boldTarget = it)) }
             NullableToggle(
                 stringResource(R.string.settings_deduplicate),
                 draft.deduplicate,
-                true,
+                EngineDefaults.DEDUPLICATE_SENTENCES,
             ) { callbacks.onDraftChange(draft.copy(deduplicate = it)) }
             NullableToggle(
                 stringResource(R.string.settings_i_plus_one),
                 draft.iPlusOne,
-                false,
+                EngineDefaults.USE_I_PLUS_ONE_FILTER,
             ) { callbacks.onDraftChange(draft.copy(iPlusOne = it)) }
             NullableToggle(
                 stringResource(R.string.settings_sentence_length),
                 draft.sentenceLength,
-                false,
+                EngineDefaults.USE_SENTENCE_LENGTH_FILTER,
             ) { callbacks.onDraftChange(draft.copy(sentenceLength = it)) }
             NumericField(
                 draft.maxDuration,
@@ -804,6 +830,7 @@ private fun LazyListScope.filteringSettings(
                 stringResource(R.string.settings_max_duration),
                 error = validationMessage(draft, SettingsFieldKey.MAX_DURATION),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.MAX_SENTENCE_DURATION_SECONDS),
             )
             NumericField(
                 draft.maxCharacters,
@@ -812,6 +839,7 @@ private fun LazyListScope.filteringSettings(
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.MAX_CHARACTERS),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.MAX_SENTENCE_CHARACTERS),
             )
             NumericField(
                 draft.readingOccurrence,
@@ -820,6 +848,7 @@ private fun LazyListScope.filteringSettings(
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.READING_OCCURRENCE),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.READING_MINIMUM_OCCURRENCE),
             )
             NumericField(
                 draft.maxFrequency,
@@ -828,6 +857,7 @@ private fun LazyListScope.filteringSettings(
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.MAX_FREQUENCY),
                 imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.MAX_FREQUENCY_RANK),
             )
             NumericField(
                 draft.workers,
@@ -835,6 +865,7 @@ private fun LazyListScope.filteringSettings(
                 stringResource(R.string.settings_workers),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.WORKERS),
+                placeholder = inheritedDefault(EngineDefaults.MAX_PARALLEL_WORKERS),
             )
             HorizontalDivider()
             CollapsibleSettingGroup(

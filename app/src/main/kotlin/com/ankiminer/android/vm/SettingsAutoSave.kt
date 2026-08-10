@@ -25,8 +25,9 @@ internal fun settingsWriteCadence(
             tags = previous.tags,
             audioPadding = previous.audioPadding,
             screenshotOffset = previous.screenshotOffset,
-            // The two animated tuning fields are free text and debounce like the rest; the toggle
-            // is a discrete tap and is deliberately not carried, so it saves immediately.
+            // The two animated tuning fields are free text and debounce like the rest; the
+            // enable and match-audio toggles are discrete taps and are deliberately not carried,
+            // so they save immediately.
             animatedScreenshotDuration = previous.animatedScreenshotDuration,
             animatedScreenshotQuality = previous.animatedScreenshotQuality,
             subtitleOffset = previous.subtitleOffset,

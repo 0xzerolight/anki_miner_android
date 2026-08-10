@@ -19,6 +19,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SupportingText
@@ -281,8 +282,16 @@ private fun WordListRow(
             stringResource(R.string.word_list_installed, installed.entryCount)
         },
     )
-    // The toggle only takes effect once a file exists; without one the snapshot keeps it off.
-    NullableToggle(toggleLabel, enabled, false, onEnabledChange)
+    // Only once a file exists. The snapshot mapper forces the engine flag off while the list is
+    // absent, so a ticked box here would claim a filter that is not running.
+    if (installed != null) {
+        val engineDefault =
+            when (kind) {
+                WordListKind.BLACKLIST -> EngineDefaults.USE_BLACKLIST
+                WordListKind.WHITELIST -> EngineDefaults.USE_WHITELIST
+            }
+        NullableToggle(toggleLabel, enabled, engineDefault, onEnabledChange)
+    }
     AdaptivePairedActions(
         first = { modifier ->
             OutlinedButton(

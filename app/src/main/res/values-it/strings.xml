@@ -657,11 +657,13 @@
     <string name="settings_animated_screenshots">Schermate animate</string>
     <string name="settings_animated_screenshots_summary">Usa una breve clip in loop per l\'immagine della carta anziché un singolo fotogramma. Contenuti multimediali più grandi e mining più lento.</string>
     <string name="settings_animated_screenshots_webp_only">Questo dispositivo salva le clip come WebP.</string>
-    <string name="settings_animated_clip_duration">Durata clip (secondi)</string>
+    <string name="settings_animated_match_audio">Adatta alla durata dell’audio</string>
+    <string name="settings_animated_match_audio_help">La clip copre l’audio della frase, margine incluso. Sostituisce la durata della clip.</string>
+    <string name="settings_animated_clip_duration">Durata massima della clip (secondi)</string>
     <string name="settings_animated_clip_duration_help">Da 0,5 a 10. Limitata dalla durata della riga.</string>
     <string name="settings_animated_quality">Qualità clip</string>
     <string name="settings_animated_quality_help">Da 0 a 100. Più alto significa file più grandi.</string>
-    <string name="settings_subtitle_offset">Offset temporale dei sottotitoli</string>
+    <string name="settings_subtitle_offset">Sfasamento predefinito dei sottotitoli</string>
     <string name="settings_audio_bitrate">Bitrate audio (kbps)</string>
     <string name="settings_audio_format">Formato audio</string>
     <string name="settings_mp3">MP3</string>
@@ -670,7 +672,7 @@
     <string name="settings_strip_annotations">Rimuovi annotazioni (effetti sonori, tag del parlante, furigana)</string>
     <string name="settings_subtitle_regex">Filtro regex</string>
     <string name="settings_subtitle_replacement">Sostituzione (vuota elimina la corrispondenza)</string>
-    <string name="settings_use_subtitle_regex">Applica il filtro regex ai sottotitoli video</string>
+    <string name="settings_use_subtitle_regex">Applica il filtro regex ai sottotitoli</string>
     <string name="settings_subtitle_presets">Aggiungi preimpostazione</string>
     <string name="settings_subtitle_preset_parens">Parentesi</string>
     <string name="settings_subtitle_preset_brackets">Parentesi quadre</string>
@@ -798,7 +800,7 @@
     <string name="settings_backup_section">File delle impostazioni</string>
     <string name="settings_backup_export">Salva le impostazioni in un file</string>
     <string name="settings_backup_import">Carica le impostazioni da un file</string>
-    <string name="settings_backup_detail">Un file delle impostazioni contiene tutto ciò che è in questa schermata, tranne le risorse installate. Caricandone uno vengono mantenute le impostazioni non menzionate nel file.</string>
+    <string name="settings_backup_detail">Un file di impostazioni contiene le impostazioni di questa schermata. Non contiene le risorse installate, la registrazione dettagliata, le preferenze di aggiornamento o l’avanzamento della configurazione. Caricandolo restano invariate le impostazioni che il file non menziona.</string>
     <string name="settings_backup_exported">Impostazioni salvate.</string>
     <string name="settings_backup_imported">%1$d impostazioni caricate.</string>
     <string name="settings_backup_imported_skipped">%1$d impostazioni caricate, %2$d ignorate.</string>

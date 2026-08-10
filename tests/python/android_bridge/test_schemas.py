@@ -134,6 +134,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "screenshot_animated_format": "webp",
         "screenshot_animated_clip_duration": 2.0,
         "screenshot_animated_quality": 30,
+        "screenshot_animated_match_audio": False,
         "subtitle_offset": -0.2,
         "allowed_pos": ["名詞", "動詞"],
         "excluded_subtypes": ["数詞"],

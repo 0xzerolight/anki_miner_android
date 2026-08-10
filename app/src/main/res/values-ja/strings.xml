@@ -656,11 +656,13 @@
     <string name="settings_animated_screenshots">アニメーションスクリーンショット</string>
     <string name="settings_animated_screenshots_summary">カード画像に静止画ではなく短いループ動画を使用します。メディアが大きくなり、作成も遅くなります。</string>
     <string name="settings_animated_screenshots_webp_only">この端末では WebP 形式で保存されます。</string>
-    <string name="settings_animated_clip_duration">クリップの長さ(秒)</string>
+    <string name="settings_animated_match_audio">音声の長さに合わせる</string>
+    <string name="settings_animated_match_audio_help">文の音声を余白ごと含む長さになります。クリップの長さより優先されます。</string>
+    <string name="settings_animated_clip_duration">クリップの最大長（秒）</string>
     <string name="settings_animated_clip_duration_help">0.5〜10。字幕の長さが上限になります。</string>
     <string name="settings_animated_quality">クリップの画質</string>
     <string name="settings_animated_quality_help">0〜100。値が大きいほどファイルも大きくなります。</string>
-    <string name="settings_subtitle_offset">字幕タイミングオフセット</string>
+    <string name="settings_subtitle_offset">字幕タイミングの既定オフセット</string>
     <string name="settings_audio_bitrate">音声ビットレート(kbps)</string>
     <string name="settings_audio_format">音声フォーマット</string>
     <string name="settings_mp3">MP3</string>
@@ -669,7 +671,7 @@
     <string name="settings_strip_annotations">注記を除去(効果音・話者名・ふりがな)</string>
     <string name="settings_subtitle_regex">正規表現フィルター</string>
     <string name="settings_subtitle_replacement">置換文字列(空欄で削除)</string>
-    <string name="settings_use_subtitle_regex">動画字幕に正規表現フィルターを適用</string>
+    <string name="settings_use_subtitle_regex">字幕に正規表現フィルターを適用</string>
     <string name="settings_subtitle_presets">プリセットを追加</string>
     <string name="settings_subtitle_preset_parens">丸括弧</string>
     <string name="settings_subtitle_preset_brackets">角括弧</string>
@@ -799,7 +801,7 @@
     <string name="settings_backup_section">設定ファイル</string>
     <string name="settings_backup_export">設定をファイルに保存</string>
     <string name="settings_backup_import">ファイルから設定を読み込む</string>
-    <string name="settings_backup_detail">設定ファイルにはこの画面の内容がすべて含まれます（インストール済みリソース自体は除く）。読み込んでも、ファイルに含まれない設定はそのまま残ります。</string>
+    <string name="settings_backup_detail">設定ファイルにはこの画面の設定が含まれます。インストール済みリソース、詳細ログ、更新設定、初期設定の進捗は含まれません。読み込んでも、ファイルに記載のない設定はそのまま残ります。</string>
     <string name="settings_backup_exported">設定を保存しました。</string>
     <string name="settings_backup_imported">%1$d 件の設定を読み込みました。</string>
     <string name="settings_backup_imported_skipped">%1$d 件の設定を読み込み、%2$d 件をスキップしました。</string>

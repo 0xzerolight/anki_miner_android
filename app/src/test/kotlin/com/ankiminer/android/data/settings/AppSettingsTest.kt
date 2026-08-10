@@ -524,6 +524,60 @@ class AppSettingsTest {
         assertEquals(BridgeJsonValue.Bool(true), settings["screenshot_animated"])
         assertEquals(BridgeJsonValue.Decimal(2.0), settings["screenshot_animated_clip_duration"])
         assertEquals(BridgeJsonValue.Integer(30L), settings["screenshot_animated_quality"])
+        assertEquals(BridgeJsonValue.Bool(false), settings["screenshot_animated_match_audio"])
+    }
+
+    @Test
+    fun matchAudioReplacesTheClipLengthRatherThanRidingAlongsideIt() {
+        // The engine computes the window from the subtitle plus the audio padding and never reads
+        // the configured length, so emitting one would describe a run that does not happen.
+        val settings =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    animatedScreenshotsEnabled = true,
+                    animatedScreenshotDurationSeconds = 2.0,
+                    animatedScreenshotQuality = 30,
+                    animatedScreenshotMatchAudio = true,
+                ),
+                emptyList(),
+            ).settings
+
+        assertEquals(BridgeJsonValue.Bool(true), settings["screenshot_animated_match_audio"])
+        assertFalse("screenshot_animated_clip_duration" in settings)
+        // Encoding quality is independent of the clip's time range.
+        assertEquals(BridgeJsonValue.Integer(30L), settings["screenshot_animated_quality"])
+    }
+
+    @Test
+    fun matchAudioIsNotEmittedWhileAnimatedScreenshotsAreOff() {
+        val settings =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    animatedScreenshotsEnabled = false,
+                    animatedScreenshotMatchAudio = true,
+                ),
+                emptyList(),
+            ).settings
+
+        assertEquals(BridgeJsonValue.Bool(false), settings["screenshot_animated"])
+        assertFalse("screenshot_animated_match_audio" in settings)
+    }
+
+    @Test
+    fun matchAudioSuppressesAnOutOfRangeClipLengthInsteadOfRejectingTheWrite() {
+        // The length field is disabled under match-audio, so a value left behind by an earlier edit
+        // must not be able to block every settings write from a field the user cannot reach.
+        val stale =
+            AppSettings(
+                animatedScreenshotsEnabled = true,
+                animatedScreenshotDurationSeconds = 12.0,
+                animatedScreenshotMatchAudio = true,
+            )
+
+        val settings = EngineSettingsSnapshotMapper.map(stale, emptyList()).settings
+
+        assertEquals(BridgeJsonValue.Bool(true), settings["screenshot_animated_match_audio"])
+        assertFalse("screenshot_animated_clip_duration" in settings)
     }
 
     @Test

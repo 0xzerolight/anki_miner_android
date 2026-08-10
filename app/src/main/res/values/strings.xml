@@ -665,11 +665,13 @@
     <string name="settings_animated_screenshots">Animated screenshots</string>
     <string name="settings_animated_screenshots_summary">Use a short looping clip for the card image instead of a single frame. Larger media and slower mining.</string>
     <string name="settings_animated_screenshots_webp_only">This device saves clips as WebP.</string>
-    <string name="settings_animated_clip_duration">Clip length (seconds)</string>
+    <string name="settings_animated_match_audio">Match audio length</string>
+    <string name="settings_animated_match_audio_help">Clip spans the sentence audio, padding included. Overrides clip length.</string>
+    <string name="settings_animated_clip_duration">Max clip length (seconds)</string>
     <string name="settings_animated_clip_duration_help">0.5 to 10. Capped by the length of the line.</string>
     <string name="settings_animated_quality">Clip quality</string>
     <string name="settings_animated_quality_help">0 to 100. Higher means larger files.</string>
-    <string name="settings_subtitle_offset">Subtitle timing offset</string>
+    <string name="settings_subtitle_offset">Default subtitle timing offset</string>
     <string name="settings_audio_bitrate">Audio bitrate (kbps)</string>
     <string name="settings_audio_format">Audio format</string>
     <string name="settings_mp3">MP3</string>
@@ -678,7 +680,7 @@
     <string name="settings_strip_annotations">Strip annotations (sound effects, speaker tags, furigana)</string>
     <string name="settings_subtitle_regex">Regex filter</string>
     <string name="settings_subtitle_replacement">Replacement (empty deletes the match)</string>
-    <string name="settings_use_subtitle_regex">Apply the regex filter to video subtitles</string>
+    <string name="settings_use_subtitle_regex">Apply the regex filter to subtitles</string>
     <string name="settings_subtitle_presets">Add a preset</string>
     <string name="settings_subtitle_preset_parens">Parentheses</string>
     <string name="settings_subtitle_preset_brackets">Brackets</string>
@@ -808,7 +810,7 @@
     <string name="settings_backup_section">Settings file</string>
     <string name="settings_backup_export">Save settings to a file</string>
     <string name="settings_backup_import">Load settings from a file</string>
-    <string name="settings_backup_detail">A settings file carries everything on this screen except which resources are installed. Loading one keeps any setting the file does not mention.</string>
+    <string name="settings_backup_detail">A settings file carries the settings on this screen. It does not carry installed resources, verbose logging, update preferences, or setup progress. Loading one keeps any setting the file does not mention.</string>
     <string name="settings_backup_exported">Settings saved.</string>
     <string name="settings_backup_imported">%1$d settings loaded.</string>
     <string name="settings_backup_imported_skipped">%1$d settings loaded, %2$d skipped.</string>

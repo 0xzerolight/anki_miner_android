@@ -104,6 +104,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_animated_screenshots_summary,
         ),
         entry(
+            "media.animated_match_audio",
+            SettingsCategory.MEDIA,
+            "media-options",
+            R.string.settings_animated_match_audio,
+            R.string.settings_animated_match_audio_help,
+        ),
+        entry(
             "media.animated_clip_duration",
             SettingsCategory.MEDIA,
             "media-options",

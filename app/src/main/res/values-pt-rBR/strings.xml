@@ -657,11 +657,13 @@
     <string name="settings_animated_screenshots">Capturas de tela animadas</string>
     <string name="settings_animated_screenshots_summary">Use um clipe curto em loop para a imagem do cartão em vez de um único quadro. Mídia maior e mineração mais lenta.</string>
     <string name="settings_animated_screenshots_webp_only">Este dispositivo salva clipes como WebP.</string>
-    <string name="settings_animated_clip_duration">Duração do clipe (segundos)</string>
+    <string name="settings_animated_match_audio">Ajustar à duração do áudio</string>
+    <string name="settings_animated_match_audio_help">O clipe abrange o áudio da frase, com a margem incluída. Substitui a duração do clipe.</string>
+    <string name="settings_animated_clip_duration">Duração máxima do clipe (segundos)</string>
     <string name="settings_animated_clip_duration_help">0,5 a 10. Limitada pela duração da linha.</string>
     <string name="settings_animated_quality">Qualidade do clipe</string>
     <string name="settings_animated_quality_help">0 a 100. Valores maiores geram arquivos maiores.</string>
-    <string name="settings_subtitle_offset">Deslocamento de tempo da legenda</string>
+    <string name="settings_subtitle_offset">Deslocamento padrão de tempo das legendas</string>
     <string name="settings_audio_bitrate">Taxa de bits do áudio (kbps)</string>
     <string name="settings_audio_format">Formato de áudio</string>
     <string name="settings_mp3">MP3</string>
@@ -670,7 +672,7 @@
     <string name="settings_strip_annotations">Remover anotações (efeitos sonoros, etiquetas de falante, furigana)</string>
     <string name="settings_subtitle_regex">Filtro regex</string>
     <string name="settings_subtitle_replacement">Substituição (vazio exclui a correspondência)</string>
-    <string name="settings_use_subtitle_regex">Aplicar o filtro regex às legendas do vídeo</string>
+    <string name="settings_use_subtitle_regex">Aplicar o filtro regex às legendas</string>
     <string name="settings_subtitle_presets">Adicionar uma predefinição</string>
     <string name="settings_subtitle_preset_parens">Parênteses</string>
     <string name="settings_subtitle_preset_brackets">Colchetes</string>
@@ -798,7 +800,7 @@
     <string name="settings_backup_section">Arquivo de configurações</string>
     <string name="settings_backup_export">Salvar configurações em um arquivo</string>
     <string name="settings_backup_import">Carregar configurações de um arquivo</string>
-    <string name="settings_backup_detail">Um arquivo de configurações contém tudo nesta tela, exceto os recursos instalados. Carregar um mantém as configurações não mencionadas no arquivo.</string>
+    <string name="settings_backup_detail">Um arquivo de configurações contém as configurações desta tela. Ele não contém os recursos instalados, o registro detalhado, as preferências de atualização nem o progresso da configuração inicial. Ao carregá-lo, qualquer configuração que o arquivo não mencione é mantida.</string>
     <string name="settings_backup_exported">Configurações salvas.</string>
     <string name="settings_backup_imported">%1$d configurações carregadas.</string>
     <string name="settings_backup_imported_skipped">%1$d configurações carregadas, %2$d ignoradas.</string>

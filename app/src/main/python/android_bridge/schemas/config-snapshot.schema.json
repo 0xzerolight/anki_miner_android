@@ -143,6 +143,10 @@
         },
         "screenshot_animated_clip_duration": {"type": "number", "minimum": 0.5, "maximum": 10},
         "screenshot_animated_quality": {"type": "integer", "minimum": 0, "maximum": 100},
+        "screenshot_animated_match_audio": {
+          "type": "boolean",
+          "description": "Clip spans the padded audio window; overrides screenshot_animated_clip_duration"
+        },
         "subtitle_offset": {"type": "number"},
         "allowed_pos": {"type": "array", "items": {"type": "string"}},
         "excluded_subtypes": {"type": "array", "items": {"type": "string"}},

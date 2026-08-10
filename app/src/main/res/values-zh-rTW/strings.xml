@@ -649,11 +649,13 @@
     <string name="settings_animated_screenshots">動態螢幕截圖</string>
     <string name="settings_animated_screenshots_summary">使用短循環片段作為卡片圖片，而非單一影格。媒體會較大，採集也會較慢。</string>
     <string name="settings_animated_screenshots_webp_only">此裝置會將片段儲存為 WebP。</string>
-    <string name="settings_animated_clip_duration">片段長度（秒）</string>
+    <string name="settings_animated_match_audio">符合音訊長度</string>
+    <string name="settings_animated_match_audio_help">片段涵蓋整句音訊，含前後留白。會覆蓋片段長度設定。</string>
+    <string name="settings_animated_clip_duration">片段最長長度（秒）</string>
     <string name="settings_animated_clip_duration_help">0.5 到 10。上限為該行長度。</string>
     <string name="settings_animated_quality">片段品質</string>
     <string name="settings_animated_quality_help">0 到 100。數值越高，檔案越大。</string>
-    <string name="settings_subtitle_offset">字幕時間偏移</string>
+    <string name="settings_subtitle_offset">預設字幕時間偏移</string>
     <string name="settings_audio_bitrate">音訊位元率（kbps）</string>
     <string name="settings_audio_format">音訊格式</string>
     <string name="settings_mp3">MP3</string>
@@ -662,7 +664,7 @@
     <string name="settings_strip_annotations">移除註解（音效、說話者標籤、振假名）</string>
     <string name="settings_subtitle_regex">正規表示式篩選器</string>
     <string name="settings_subtitle_replacement">取代文字（留空會刪除比對結果）</string>
-    <string name="settings_use_subtitle_regex">將正規表示式篩選器套用至影片字幕</string>
+    <string name="settings_use_subtitle_regex">對字幕套用正規表示式過濾</string>
     <string name="settings_subtitle_presets">新增預設</string>
     <string name="settings_subtitle_preset_parens">圓括號</string>
     <string name="settings_subtitle_preset_brackets">方括號</string>
@@ -790,7 +792,7 @@
     <string name="settings_backup_section">設定檔案</string>
     <string name="settings_backup_export">將設定儲存至檔案</string>
     <string name="settings_backup_import">從檔案載入設定</string>
-    <string name="settings_backup_detail">設定檔案包含此畫面上的所有內容，但不包含已安裝的資源。載入時會保留檔案未提及的設定。</string>
+    <string name="settings_backup_detail">設定檔包含此畫面上的設定。它不包含已安裝的資源、詳細記錄、更新偏好或初始設定進度。載入時，檔案未提及的設定將維持不變。</string>
     <string name="settings_backup_exported">設定已儲存。</string>
     <string name="settings_backup_imported">已載入 %1$d 項設定。</string>
     <string name="settings_backup_imported_skipped">已載入 %1$d 項設定，略過 %2$d 項。</string>

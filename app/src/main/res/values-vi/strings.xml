@@ -653,11 +653,13 @@
     <string name="settings_animated_screenshots">Ảnh chụp màn hình động</string>
     <string name="settings_animated_screenshots_summary">Dùng một đoạn lặp ngắn cho ảnh thẻ thay vì một khung hình. Tệp phương tiện sẽ lớn hơn và việc khai thác sẽ chậm hơn.</string>
     <string name="settings_animated_screenshots_webp_only">Thiết bị này lưu đoạn clip dưới dạng WebP.</string>
-    <string name="settings_animated_clip_duration">Độ dài clip (giây)</string>
+    <string name="settings_animated_match_audio">Khớp với độ dài âm thanh</string>
+    <string name="settings_animated_match_audio_help">Đoạn clip bao trọn âm thanh của câu, kể cả phần đệm. Ghi đè độ dài clip.</string>
+    <string name="settings_animated_clip_duration">Độ dài clip tối đa (giây)</string>
     <string name="settings_animated_clip_duration_help">0.5 đến 10. Bị giới hạn bởi độ dài của dòng.</string>
     <string name="settings_animated_quality">Chất lượng clip</string>
     <string name="settings_animated_quality_help">0 đến 100. Cao hơn nghĩa là tệp lớn hơn.</string>
-    <string name="settings_subtitle_offset">Độ lệch thời gian phụ đề</string>
+    <string name="settings_subtitle_offset">Độ lệch thời gian phụ đề mặc định</string>
     <string name="settings_audio_bitrate">Bitrate âm thanh (kbps)</string>
     <string name="settings_audio_format">Định dạng âm thanh</string>
     <string name="settings_mp3">MP3</string>
@@ -666,7 +668,7 @@
     <string name="settings_strip_annotations">Loại bỏ chú thích (hiệu ứng âm thanh, thẻ nhãn người nói, furigana)</string>
     <string name="settings_subtitle_regex">Bộ lọc regex</string>
     <string name="settings_subtitle_replacement">Thay thế (để trống sẽ xóa phần khớp)</string>
-    <string name="settings_use_subtitle_regex">Áp dụng bộ lọc regex cho phụ đề video</string>
+    <string name="settings_use_subtitle_regex">Áp dụng bộ lọc regex cho phụ đề</string>
     <string name="settings_subtitle_presets">Thêm một cài đặt sẵn</string>
     <string name="settings_subtitle_preset_parens">Dấu ngoặc đơn</string>
     <string name="settings_subtitle_preset_brackets">Dấu ngoặc vuông</string>
@@ -794,7 +796,7 @@
     <string name="settings_backup_section">Tệp cài đặt</string>
     <string name="settings_backup_export">Lưu cài đặt vào tệp</string>
     <string name="settings_backup_import">Tải cài đặt từ tệp</string>
-    <string name="settings_backup_detail">Tệp cài đặt chứa mọi thứ trên màn hình này, trừ các tài nguyên đã cài đặt. Khi tải tệp, mọi cài đặt không được nêu trong tệp vẫn giữ nguyên.</string>
+    <string name="settings_backup_detail">Tệp cài đặt chứa các cài đặt trên màn hình này. Tệp không chứa tài nguyên đã cài, nhật ký chi tiết, tuỳ chọn cập nhật hay tiến trình thiết lập. Khi nạp, mọi cài đặt không được nêu trong tệp vẫn được giữ nguyên.</string>
     <string name="settings_backup_exported">Đã lưu cài đặt.</string>
     <string name="settings_backup_imported">Đã tải %1$d cài đặt.</string>
     <string name="settings_backup_imported_skipped">Đã tải %1$d cài đặt, bỏ qua %2$d.</string>

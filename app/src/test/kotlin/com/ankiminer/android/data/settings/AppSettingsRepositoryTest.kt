@@ -294,6 +294,7 @@ class AppSettingsRepositoryTest {
                 animatedScreenshotsEnabled = false,
                 animatedScreenshotDurationSeconds = null,
                 animatedScreenshotQuality = null,
+                animatedScreenshotMatchAudio = false,
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
@@ -574,6 +575,8 @@ class AppSettingsRepositoryTest {
             animatedScreenshotsEnabled = true,
             animatedScreenshotDurationSeconds = 2.0,
             animatedScreenshotQuality = 30,
+            // Non-default, or corrupting the key would quarantine to the value already stored.
+            animatedScreenshotMatchAudio = true,
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
@@ -678,6 +681,12 @@ class AppSettingsRepositoryTest {
             corruptInt(
                 "screenshot_animated_quality",
                 original.copy(animatedScreenshotQuality = defaults.animatedScreenshotQuality),
+            ),
+            corruptBoolean(
+                "screenshot_animated_match_audio",
+                original.copy(
+                    animatedScreenshotMatchAudio = defaults.animatedScreenshotMatchAudio,
+                ),
             ),
             corruptDouble(
                 "subtitle_offset_seconds",

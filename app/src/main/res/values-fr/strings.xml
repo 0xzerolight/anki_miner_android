@@ -657,11 +657,13 @@
     <string name="settings_animated_screenshots">Captures d\'écran animées</string>
     <string name="settings_animated_screenshots_summary">Utilise un court clip en boucle pour l\'image de la carte au lieu d\'une seule image. Médias plus volumineux et extraction plus lente.</string>
     <string name="settings_animated_screenshots_webp_only">Cet appareil enregistre les clips au format WebP.</string>
-    <string name="settings_animated_clip_duration">Durée du clip (secondes)</string>
+    <string name="settings_animated_match_audio">Aligner sur la durée de l’audio</string>
+    <string name="settings_animated_match_audio_help">Le clip couvre l’audio de la phrase, marge comprise. Remplace la durée du clip.</string>
+    <string name="settings_animated_clip_duration">Durée max. du clip (secondes)</string>
     <string name="settings_animated_clip_duration_help">0,5 à 10. Limitée par la longueur de la ligne.</string>
     <string name="settings_animated_quality">Qualité du clip</string>
     <string name="settings_animated_quality_help">0 à 100. Plus la valeur est élevée, plus les fichiers sont volumineux.</string>
-    <string name="settings_subtitle_offset">Décalage temporel des sous-titres</string>
+    <string name="settings_subtitle_offset">Décalage de synchronisation des sous-titres par défaut</string>
     <string name="settings_audio_bitrate">Débit audio (kbps)</string>
     <string name="settings_audio_format">Format audio</string>
     <string name="settings_mp3">MP3</string>
@@ -670,7 +672,7 @@
     <string name="settings_strip_annotations">Retirer les annotations (effets sonores, étiquettes de locuteur, furigana)</string>
     <string name="settings_subtitle_regex">Filtre regex</string>
     <string name="settings_subtitle_replacement">Remplacement (vide supprime la correspondance)</string>
-    <string name="settings_use_subtitle_regex">Appliquer le filtre regex aux sous-titres vidéo</string>
+    <string name="settings_use_subtitle_regex">Appliquer le filtre regex aux sous-titres</string>
     <string name="settings_subtitle_presets">Ajouter un préréglage</string>
     <string name="settings_subtitle_preset_parens">Parenthèses</string>
     <string name="settings_subtitle_preset_brackets">Crochets</string>
@@ -798,7 +800,7 @@
     <string name="settings_backup_section">Fichier de paramètres</string>
     <string name="settings_backup_export">Enregistrer les paramètres dans un fichier</string>
     <string name="settings_backup_import">Charger les paramètres depuis un fichier</string>
-    <string name="settings_backup_detail">Un fichier de paramètres contient tout ce qui figure sur cet écran, sauf les ressources installées. Son chargement conserve tout paramètre qu\'il ne mentionne pas.</string>
+    <string name="settings_backup_detail">Un fichier de réglages contient les réglages de cet écran. Il ne contient ni les ressources installées, ni la journalisation détaillée, ni les préférences de mise à jour, ni la progression de la configuration. Le charger conserve tout réglage que le fichier ne mentionne pas.</string>
     <string name="settings_backup_exported">Paramètres enregistrés.</string>
     <string name="settings_backup_imported">%1$d paramètres chargés.</string>
     <string name="settings_backup_imported_skipped">%1$d paramètres chargés, %2$d ignorés.</string>
