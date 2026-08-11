@@ -24,6 +24,7 @@ private val Context.ankiMinerUpdatesDataStore by
 internal data class UpdateCheckPreferences(
     val enabled: Boolean = true,
     val lastCheckedAtMillis: Long = 0L,
+    val lastAutomaticAttemptAtMillis: Long = lastCheckedAtMillis,
     val availableVersion: String? = null,
     val availableUrl: String? = null,
     val skippedVersion: String? = null,
@@ -38,6 +39,8 @@ internal interface UpdateCheckRepository {
         atMillis: Long,
         found: AvailableUpdate?,
     )
+
+    suspend fun recordAutomaticAttempt(atMillis: Long)
 
     suspend fun skip(version: String)
 }
@@ -85,6 +88,14 @@ internal class DataStoreUpdateCheckRepository internal constructor(
         }
     }
 
+    override suspend fun recordAutomaticAttempt(atMillis: Long) {
+        store.updateData { preferences ->
+            preferences.toMutablePreferences().apply {
+                this[UPDATE_LAST_AUTOMATIC_ATTEMPT_AT] = atMillis
+            }.toPreferences()
+        }
+    }
+
     override suspend fun skip(version: String) {
         store.updateData { preferences ->
             preferences.toMutablePreferences().apply {
@@ -96,18 +107,24 @@ internal class DataStoreUpdateCheckRepository internal constructor(
     private companion object {
         val UPDATE_CHECK_ENABLED = booleanPreferencesKey("update_check_enabled")
         val UPDATE_LAST_CHECKED_AT = longPreferencesKey("update_last_checked_at")
+        val UPDATE_LAST_AUTOMATIC_ATTEMPT_AT =
+            longPreferencesKey("update_last_automatic_attempt_at")
         val UPDATE_AVAILABLE_VERSION = stringPreferencesKey("update_available_version")
         val UPDATE_AVAILABLE_URL = stringPreferencesKey("update_available_url")
         val UPDATE_SKIPPED_VERSION = stringPreferencesKey("update_skipped_version")
 
-        fun decode(preferences: Preferences): UpdateCheckPreferences =
-            UpdateCheckPreferences(
+        fun decode(preferences: Preferences): UpdateCheckPreferences {
+            val lastCheckedAtMillis = read(preferences, UPDATE_LAST_CHECKED_AT) ?: 0L
+            return UpdateCheckPreferences(
                 enabled = read(preferences, UPDATE_CHECK_ENABLED) ?: true,
-                lastCheckedAtMillis = read(preferences, UPDATE_LAST_CHECKED_AT) ?: 0L,
+                lastCheckedAtMillis = lastCheckedAtMillis,
+                lastAutomaticAttemptAtMillis =
+                    read(preferences, UPDATE_LAST_AUTOMATIC_ATTEMPT_AT) ?: lastCheckedAtMillis,
                 availableVersion = read(preferences, UPDATE_AVAILABLE_VERSION),
                 availableUrl = read(preferences, UPDATE_AVAILABLE_URL),
                 skippedVersion = read(preferences, UPDATE_SKIPPED_VERSION),
             )
+        }
 
         fun <T> read(
             preferences: Preferences,
