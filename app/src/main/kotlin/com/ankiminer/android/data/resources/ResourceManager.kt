@@ -226,6 +226,7 @@ internal class AndroidResourceManager(
         val deleteTarget: ResourceDeleteTarget? = null,
         val holdsForegroundLease: Boolean = false,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
+        val retainJournalForRecovery: AtomicBoolean = AtomicBoolean(false),
         val cancelDelivery: AtomicReference<CancelDelivery> =
             AtomicReference(CancelDelivery.NOT_REQUESTED),
     )
@@ -282,7 +283,11 @@ internal class AndroidResourceManager(
     private var pendingAudioPackImport: PendingAudioPackImport? = null
     private var pendingKnownWordsMutation: PendingKnownWordsMutation? = null
 
+    @Volatile
+    private var startupRecoveryTailPending = false
+
     override suspend fun recoverAndRefresh() {
+        startupRecoveryTailPending = false
         mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
         val interrupted = runOnExecutor(resourceExecutor) { operationJournal.read() }
         val clearInterruptedAudioInput = interrupted?.origin == ResourceFailureOrigin.AUDIO
@@ -297,6 +302,7 @@ internal class AndroidResourceManager(
                 requiresStartupReady = false,
                 waitForMutex = true,
             ) { operation ->
+                cleanupInterruptedResourceImport(interrupted)
                 if (clearInterruptedAudioInput || !restorePendingAudioPackImport()) {
                     clearPendingAudioPackImport()
                 }
@@ -311,10 +317,10 @@ internal class AndroidResourceManager(
                 ResourceBridgeCodec.decodeCleanup(
                     bridge.dispatch(ResourceBridgeCodec.encodeCleanupRequest(), null),
                 )
+                startupRecoveryTailPending = true
                 refreshFromPython()
-                wordListStore.recover()
-                refreshWordLists()
-                discardInstalledCatalogDownloads()
+                finishStartupRecovery()
+                startupRecoveryTailPending = false
             }
         mutableState.update {
             it.copy(
@@ -373,6 +379,9 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) {
+        val allowFailedReadiness =
+            replace && mutableState.value.startupReadiness == ResourceStartupReadiness.FAILED
+        val completesFailedStartupRecovery = allowFailedReadiness && startupRecoveryTailPending
         runOperation(
             strings.resolve(R.string.resource_operation_import_catalog_dictionary),
             ResourceOperationPhase.PREPARING,
@@ -384,6 +393,7 @@ internal class AndroidResourceManager(
                     replace = replace,
                 ),
             persistForRecovery = true,
+            requiresStartupReady = !allowFailedReadiness,
         ) { operation ->
             val resource =
                 catalog().dictionary(resourceId)
@@ -420,7 +430,7 @@ internal class AndroidResourceManager(
                         ),
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
-                refreshAfterCommittedMutation()
+                refreshAfterCommittedMutation(completesFailedStartupRecovery)
             }
         }
     }
@@ -436,6 +446,7 @@ internal class AndroidResourceManager(
             failureOrigin = ResourceFailureOrigin.CUSTOM_DICTIONARY,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
+            resourceImportUri = uri,
         ) { operation ->
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
             val retainedUri =
@@ -450,7 +461,12 @@ internal class AndroidResourceManager(
             var staged: StagedArchive? = null
             try {
                 staged =
-                    safStager.stage(retainedUri, operation.id, operation.cancellation) { current, total ->
+                    safStager.stage(
+                        retainedUri,
+                        operation.id,
+                        operation.cancellation,
+                        sourceLabel = "dictionary archive",
+                    ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
@@ -473,8 +489,11 @@ internal class AndroidResourceManager(
                 refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
-                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
-                runBlocking { safBroker.releaseReadAccess(retainedUri) }
+                releaseResourceImportAfterOperation(
+                    operation,
+                    retainedUri,
+                    clearSelectionAfterImport,
+                )
             }
         }
     }
@@ -488,6 +507,7 @@ internal class AndroidResourceManager(
                 failureOrigin = ResourceFailureOrigin.CUSTOM_DICTIONARY,
                 failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
                 persistForRecovery = true,
+                resourceImportUri = uri,
                 requiresStartupReady = false,
                 waitForMutex = true,
             ) { operation ->
@@ -599,6 +619,7 @@ internal class AndroidResourceManager(
             failureOrigin = ResourceFailureOrigin.FREQUENCY,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
+            resourceImportUri = uri,
         ) { operation ->
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
             val retainedUri =
@@ -630,27 +651,35 @@ internal class AndroidResourceManager(
                     }
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
+                if (format == FrequencySourceFormat.YOMITAN_ZIP) {
+                    ResourceBridgeCodec.validateFrequencyArchiveMetadata(staged.file)
+                }
                 operation.pythonStarted.set(true)
                 val imported =
-                    ResourceBridgeCodec.decodeImportedFrequency(
-                        bridge.dispatch(
-                            ResourceBridgeCodec.encodeFrequencyImportRequest(
-                                operation.id,
-                                staged.file.canonicalPath,
-                                sourceId,
-                                sourceName,
-                                format,
-                                replace,
+                    decodePublishedMutation(
+                        raw =
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodeFrequencyImportRequest(
+                                    operation.id,
+                                    staged.file.canonicalPath,
+                                    sourceId,
+                                    sourceName,
+                                    format,
+                                    replace,
+                                ),
+                                null,
                             ),
-                            null,
-                        ),
+                        decode = ResourceBridgeCodec::decodeImportedFrequency,
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
                 refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
-                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
-                runBlocking { safBroker.releaseReadAccess(retainedUri) }
+                releaseResourceImportAfterOperation(
+                    operation,
+                    retainedUri,
+                    clearSelectionAfterImport,
+                )
             }
         }
     }
@@ -668,6 +697,7 @@ internal class AndroidResourceManager(
             failureOrigin = ResourceFailureOrigin.PITCH,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
+            resourceImportUri = uri,
         ) { operation ->
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
             val retainedUri =
@@ -720,8 +750,11 @@ internal class AndroidResourceManager(
                 refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
-                if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
-                runBlocking { safBroker.releaseReadAccess(retainedUri) }
+                releaseResourceImportAfterOperation(
+                    operation,
+                    retainedUri,
+                    clearSelectionAfterImport,
+                )
             }
         }
     }
@@ -1043,6 +1076,8 @@ internal class AndroidResourceManager(
             failureOrigin = ResourceFailureOrigin.KNOWN_WORDS,
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             knownWordsOperation = KnownWordsFailureOperation.PREVIEW,
+            persistForRecovery = true,
+            resourceImportUri = uri,
         ) { operation ->
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
@@ -1102,8 +1137,11 @@ internal class AndroidResourceManager(
                 mutableState.update { it.copy(knownWordsImportPreview = preview) }
             } finally {
                 staged?.file?.delete()
-                if (clearSelectionAfterPreview) clearResourceImportSelection(retainedUri)
-                runBlocking { safBroker.releaseReadAccess(retainedUri) }
+                releaseResourceImportAfterOperation(
+                    operation,
+                    retainedUri,
+                    clearSelectionAfterPreview,
+                )
             }
         }
     }
@@ -1228,6 +1266,9 @@ internal class AndroidResourceManager(
         kind: InstalledResourceKind,
         id: String,
     ) {
+        val completesFailedStartupRecovery =
+            mutableState.value.startupReadiness == ResourceStartupReadiness.FAILED &&
+                startupRecoveryTailPending
         runOperation(
             strings.resolve(R.string.resource_operation_delete_resource),
             ResourceOperationPhase.FINALIZING,
@@ -1266,7 +1307,7 @@ internal class AndroidResourceManager(
                     ResourceBridgeCodec.decodeLocalResourceDeleted(value, kind, id)
                 }
             }
-            refreshAfterCommittedMutation()
+            refreshAfterCommittedMutation(completesFailedStartupRecovery)
         }
     }
 
@@ -1563,6 +1604,7 @@ internal class AndroidResourceManager(
         knownWordsOperation: KnownWordsFailureOperation? = null,
         deleteTarget: ResourceDeleteTarget? = null,
         persistForRecovery: Boolean = false,
+        resourceImportUri: String? = null,
         holdsForegroundLease: Boolean = false,
         requiresStartupReady: Boolean = true,
         waitForMutex: Boolean = false,
@@ -1609,11 +1651,15 @@ internal class AndroidResourceManager(
             val initialProgress = ResourceOperationProgress(operation.id, label, initialPhase)
             synchronized(activeMonitor) { active = operation }
             mutableState.update { it.copy(activeOperation = initialProgress) }
-            // Before the work starts, not after: the window this closes is exactly
-            // the one where a user taps import and immediately leaves the app.
-            if (holdsForegroundLease) foregroundLease.start(initialProgress)
             var completed = false
+            var foregroundStarted = false
             try {
+                // Before journal admission and work: without foreground process importance this
+                // non-resumable operation must not start.
+                if (holdsForegroundLease) {
+                    foregroundLease.start(initialProgress)
+                    foregroundStarted = true
+                }
                 onAdmitted(operation)
                 runOnExecutor(resourceExecutor) {
                     if (persistForRecovery) {
@@ -1622,6 +1668,11 @@ internal class AndroidResourceManager(
                                 origin = failureOrigin,
                                 retry = failureRetry,
                                 knownWordsOperation = knownWordsOperation,
+                                resourceImportUri = resourceImportUri,
+                                resourceImportOwnership =
+                                    resourceImportUri?.let {
+                                        ResourceImportOwnershipPhase.INVENTORY_RETAINED
+                                    },
                             ),
                         )
                     }
@@ -1745,13 +1796,18 @@ internal class AndroidResourceManager(
                             try {
                                 clearStaging()
                             } finally {
-                                if (persistForRecovery) operationJournal.clear()
+                                if (
+                                    persistForRecovery &&
+                                        !operation.retainJournalForRecovery.get()
+                                ) {
+                                    operationJournal.clear()
+                                }
                             }
                         }
                     }
                 } finally {
                     try {
-                        if (holdsForegroundLease) foregroundLease.stop()
+                        if (foregroundStarted) foregroundLease.stop()
                     } finally {
                         synchronized(activeMonitor) { if (active === operation) active = null }
                         mutableState.update { it.copy(activeOperation = null) }
@@ -1900,9 +1956,22 @@ internal class AndroidResourceManager(
             else -> "mismatch"
         }
 
-    private fun refreshAfterCommittedMutation() {
+    private fun refreshAfterCommittedMutation(completesFailedStartupRecovery: Boolean = false) {
         try {
             refreshFromPython()
+            if (completesFailedStartupRecovery) {
+                finishStartupRecovery()
+                startupRecoveryTailPending = false
+                mutableState.update {
+                    it.copy(
+                        startupReadiness = ResourceStartupReadiness.READY,
+                        failure =
+                            it.failure?.takeUnless { failure ->
+                                failure.origin == ResourceFailureOrigin.SETUP
+                            },
+                    )
+                }
+            }
         } catch (failure: Exception) {
             recordFailure(
                 code = "resource_inventory_failed",
@@ -1912,6 +1981,12 @@ internal class AndroidResourceManager(
             )
             throw ResourceInventoryReconciliationException(failure)
         }
+    }
+
+    private fun finishStartupRecovery() {
+        wordListStore.recover()
+        refreshWordLists()
+        discardInstalledCatalogDownloads()
     }
 
     /**
@@ -2061,8 +2136,6 @@ internal class AndroidResourceManager(
                 startupReadiness =
                     if (fatalInventoryFailure != null) {
                         ResourceStartupReadiness.FAILED
-                    } else if (it.startupReadiness == ResourceStartupReadiness.FAILED) {
-                        ResourceStartupReadiness.READY
                     } else {
                         it.startupReadiness
                     },
@@ -2382,6 +2455,29 @@ internal class AndroidResourceManager(
         val selection = safSelectionInventory.selection(SafSelectionSlot.RESOURCE_IMPORT)
         if (selection?.uri == uri) {
             safSelectionInventory.putSelection(SafSelectionSlot.RESOURCE_IMPORT, null)
+        }
+    }
+
+    private fun cleanupInterruptedResourceImport(operation: PersistedResourceOperation?) {
+        if (operation?.resourceImportOwnership != ResourceImportOwnershipPhase.INVENTORY_RETAINED) {
+            return
+        }
+        val uri = checkNotNull(operation.resourceImportUri)
+        clearResourceImportSelection(uri)
+        runBlocking { safBroker.releaseReadAccess(uri) }
+    }
+
+    private fun releaseResourceImportAfterOperation(
+        operation: ActiveOperation,
+        uri: String,
+        clearSelection: Boolean,
+    ) {
+        try {
+            if (clearSelection) clearResourceImportSelection(uri)
+            runBlocking { safBroker.releaseReadAccess(uri) }
+        } catch (failure: Throwable) {
+            operation.retainJournalForRecovery.set(true)
+            throw failure
         }
     }
 

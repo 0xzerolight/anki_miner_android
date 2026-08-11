@@ -76,4 +76,15 @@ class WordListFileFormatTest {
         assertEquals(1, entryCount)
         assertEquals("# comment\n猫\n", file.readText(Charsets.UTF_8))
     }
+
+    @Test
+    fun installNormalizationComposesDecomposedJapaneseEntriesToNfc() {
+        val file = temporaryFolder.newFile("decomposed.txt")
+        file.writeText("は\u3099\n", Charsets.UTF_8)
+
+        val entryCount = WordListFileFormat.normalizeForInstall(file)
+
+        assertEquals(1, entryCount)
+        assertEquals("ば\n", file.readText(Charsets.UTF_8))
+    }
 }

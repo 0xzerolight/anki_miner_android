@@ -1,6 +1,11 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.R
+import com.ankiminer.android.localization.ByteSizeArgument
+import com.ankiminer.android.localization.StringResourceArgument
+import com.ankiminer.android.localization.localizeFormatArguments
 import java.io.File
+import java.util.Locale
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -68,6 +73,37 @@ class ArchiveSizeBudgetTest {
         val failure = archiveTooLarge("audio-pack ZIP", 3L * 1024 * 1024 * 1024, 2L * 1024 * 1024 * 1024)
 
         assertEquals("resource_archive_too_large", failure.stableCode)
-        assertEquals(listOf("audio-pack ZIP", "3.0 GB", "2.0 GB"), failure.formatArguments)
+        assertEquals(
+            listOf(
+                StringResourceArgument(R.string.b3_settings_category_audio),
+                ByteSizeArgument(3L * 1024 * 1024 * 1024),
+                ByteSizeArgument(2L * 1024 * 1024 * 1024),
+            ),
+            failure.formatArguments,
+        )
+    }
+
+    @Test
+    fun rejectionLocalizesItsSourceLabelAndDecimalSeparatorAtResolutionTime() {
+        val failure =
+            archiveTooLarge(
+                "audio-pack archive",
+                8L * 1024 * 1024 * 1024,
+                2L * 1024 * 1024 * 1024,
+            )
+
+        val japanese =
+            localizeFormatArguments(failure.formatArguments, Locale.JAPAN) { resourceId ->
+                assertEquals(R.string.b3_settings_category_audio, resourceId)
+                "音声"
+            }
+        val german =
+            localizeFormatArguments(failure.formatArguments, Locale.GERMANY) { resourceId ->
+                assertEquals(R.string.b3_settings_category_audio, resourceId)
+                "Audio"
+            }
+
+        assertEquals(listOf("音声", "8.0 GB", "2.0 GB"), japanese)
+        assertEquals(listOf("Audio", "8,0 GB", "2,0 GB"), german)
     }
 }

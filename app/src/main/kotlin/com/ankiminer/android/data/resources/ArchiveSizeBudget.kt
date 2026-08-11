@@ -1,5 +1,9 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.R
+import com.ankiminer.android.localization.ByteSizeArgument
+import com.ankiminer.android.localization.StringResourceArgument
+import com.ankiminer.android.localization.formatByteSize
 import java.io.File
 import java.util.Locale
 
@@ -59,21 +63,28 @@ internal fun archiveTooLarge(
             "the limit here is ${formatArchiveBytes(limitBytes)}",
         formatArguments =
             listOf(
-                sourceLabel,
-                formatArchiveBytes(actualBytes),
-                formatArchiveBytes(limitBytes),
+                localizedSourceLabel(sourceLabel),
+                ByteSizeArgument(actualBytes),
+                ByteSizeArgument(limitBytes),
             ),
     )
 
-/** Byte count for a user-facing message, in the units people read sizes in. */
-internal fun formatArchiveBytes(bytes: Long): String {
-    if (bytes < 1024L) return "$bytes B"
-    val units = listOf("KB", "MB", "GB", "TB")
-    var value = bytes.toDouble() / 1024
-    var unit = 0
-    while (value >= 1024 && unit < units.lastIndex) {
-        value /= 1024
-        unit += 1
+private fun localizedSourceLabel(sourceLabel: String): Any =
+    when (sourceLabel) {
+        "audio-pack archive", "audio-pack ZIP" ->
+            StringResourceArgument(R.string.b3_settings_category_audio)
+        "dictionary archive" ->
+            StringResourceArgument(R.string.wizard_dictionary_title)
+        "frequency source" ->
+            StringResourceArgument(R.string.b3_settings_category_frequency)
+        "pitch-accent source" ->
+            StringResourceArgument(R.string.pitch_import_title)
+        "known-word file" ->
+            StringResourceArgument(R.string.known_words_import_title)
+        "word-list file" ->
+            StringResourceArgument(R.string.word_lists_title)
+        else -> sourceLabel
     }
-    return String.format(Locale.ROOT, "%.1f %s", value, units[unit])
-}
+
+/** Byte count for a user-facing message, in the units people read sizes in. */
+internal fun formatArchiveBytes(bytes: Long): String = formatByteSize(bytes, Locale.ROOT)

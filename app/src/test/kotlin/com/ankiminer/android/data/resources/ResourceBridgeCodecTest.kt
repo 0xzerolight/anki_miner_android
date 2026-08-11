@@ -1,11 +1,19 @@
 package com.ankiminer.android.data.resources
 
+import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class ResourceBridgeCodecTest {
+    @get:Rule
+    val temporary = TemporaryFolder()
+
     @Test
     fun frozenCatalogCarriesEveryRequiredIdentityAndAttribution() {
         val catalog = FrozenResourceCatalog.value
@@ -364,6 +372,22 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun frequencyArchiveRevisionIsBoundedBeforePythonCanPublishItsSlot() {
+        ResourceBridgeCodec.validateFrequencyArchiveMetadata(
+            frequencyArchive("a".repeat(4096)),
+        )
+
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.validateFrequencyArchiveMetadata(
+                    frequencyArchive("a".repeat(4097)),
+                )
+            }
+
+        assertEquals("frequency_import_failed", failure.code)
+    }
+
+    @Test
     fun insufficientStorageBridgeErrorMapsToTypedStorageFailure() {
         val failure =
             assertThrows(ResourceStorageException::class.java) {
@@ -544,5 +568,18 @@ class ResourceBridgeCodecTest {
             true,
             ResourceBridgeCodec.decodeLocalResourceDeleted(local, InstalledResourceKind.PITCH, "nhk"),
         )
+    }
+
+    private fun frequencyArchive(revision: String): File {
+        val archive = File(temporary.root, "frequency-${revision.length}.zip")
+        ZipOutputStream(archive.outputStream()).use { output ->
+            output.putNextEntry(ZipEntry("index.json"))
+            output.write(
+                """{"title":"Fixture Frequency","revision":"$revision"}"""
+                    .toByteArray(Charsets.UTF_8),
+            )
+            output.closeEntry()
+        }
+        return archive
     }
 }

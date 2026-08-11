@@ -11,13 +11,16 @@ import com.fasterxml.jackson.core.StreamReadConstraints
 import com.fasterxml.jackson.core.StreamReadFeature
 import com.fasterxml.jackson.core.json.JsonReadFeature
 import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.URI
 import java.nio.charset.StandardCharsets
+import java.util.zip.ZipFile
 
 /** Strict codec for the resource-only Python protocol and its immutable catalog. */
 object ResourceBridgeCodec {
     private const val MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
     private const val MAX_TEXT_BYTES = 2 * 1024 * 1024
+    private const val MAX_SOURCE_REVISION_BYTES = 4096
     private val operationId = Regex("[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
     private val slotId = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
     private val resourceId = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
@@ -383,7 +386,13 @@ object ResourceBridgeCodec {
         return ImportedFrequencySource(
             sourceId = requireSlotId(text(value.getValue("sourceId"), "sourceId")),
             sourceName = boundedText(value.getValue("sourceName"), "sourceName", 4096),
-            sourceRevision = boundedText(value.getValue("sourceRevision"), "sourceRevision", 4096, allowEmpty = true),
+            sourceRevision =
+                boundedText(
+                    value.getValue("sourceRevision"),
+                    "sourceRevision",
+                    MAX_SOURCE_REVISION_BYTES,
+                    allowEmpty = true,
+                ),
             format = boundedText(value.getValue("format"), "format", 64),
             entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
             skippedDisplayOnly = nonNegative(value.getValue("skippedDisplayOnly"), "skippedDisplayOnly"),
@@ -392,6 +401,46 @@ object ResourceBridgeCodec {
             isCategorical = bool(value.getValue("isCategorical"), "isCategorical"),
             archiveSha256 = requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
         )
+    }
+
+    /** Rejects Yomitan metadata Kotlin cannot represent before Python publishes the slot. */
+    fun validateFrequencyArchiveMetadata(archive: File) {
+        try {
+            ZipFile(archive).use { zip ->
+                val index = zip.getEntry("index.json") ?: return
+                if (index.isDirectory) invalidFrequencyArchive()
+                zip.getInputStream(index).use { input ->
+                    factory.createParser(input).use { parser ->
+                        if (parser.nextToken() != JsonToken.START_OBJECT) invalidFrequencyArchive()
+                        val root = readObject(parser, "frequency index")
+                        if (parser.nextToken() != null) invalidFrequencyArchive()
+                        val revision = root["revision"] ?: return
+                        when (revision) {
+                            is BridgeJsonValue.Text -> {
+                                if (
+                                    revision.value
+                                        .trim()
+                                        .toByteArray(StandardCharsets.UTF_8)
+                                        .size > MAX_SOURCE_REVISION_BYTES
+                                ) {
+                                    invalidFrequencyArchive()
+                                }
+                            }
+                            is BridgeJsonValue.Integer,
+                            is BridgeJsonValue.Bool,
+                            BridgeJsonValue.Null,
+                            -> Unit
+                            else -> invalidFrequencyArchive()
+                        }
+                    }
+                }
+            }
+        } catch (failure: ResourceBridgeException) {
+            if (failure.code == "frequency_import_failed") throw failure
+            invalidFrequencyArchive(failure)
+        } catch (failure: Exception) {
+            invalidFrequencyArchive(failure)
+        }
     }
 
     fun decodeImportedPitch(raw: String): ImportedPitchSource {
@@ -1042,6 +1091,14 @@ object ResourceBridgeCodec {
             }
             else -> invalid("$context contains an unsupported JSON value")
         }
+
+    private fun invalidFrequencyArchive(cause: Exception? = null): Nothing {
+        throw ResourceBridgeException(
+            "frequency_import_failed",
+            "The selected file is not a supported frequency source",
+            cause = cause,
+        )
+    }
 
     private fun encode(type: String, writer: (JsonGenerator) -> Unit): String {
         val output = ByteArrayOutputStream()

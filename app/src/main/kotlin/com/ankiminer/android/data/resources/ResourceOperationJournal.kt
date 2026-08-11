@@ -16,7 +16,17 @@ internal data class PersistedResourceOperation(
     val origin: ResourceFailureOrigin,
     val retry: ResourceFailureRetry,
     val knownWordsOperation: KnownWordsFailureOperation? = null,
-)
+    val resourceImportUri: String? = null,
+    val resourceImportOwnership: ResourceImportOwnershipPhase? = null,
+) {
+    init {
+        require((resourceImportUri == null) == (resourceImportOwnership == null))
+    }
+}
+
+internal enum class ResourceImportOwnershipPhase {
+    INVENTORY_RETAINED,
+}
 
 internal class ResourceOperationJournal(
     private val root: File,
@@ -35,7 +45,9 @@ internal class ResourceOperationJournal(
             )
         }
         val target = operation.retry.targetId.orEmpty()
+        val resourceImportUri = operation.resourceImportUri.orEmpty()
         require('\n' !in target && '\r' !in target)
+        require('\n' !in resourceImportUri && '\r' !in resourceImportUri)
         val bytes =
             listOf(
                 FORMAT,
@@ -44,6 +56,8 @@ internal class ResourceOperationJournal(
                 target,
                 operation.retry.replace.toString(),
                 operation.knownWordsOperation?.name.orEmpty(),
+                resourceImportUri,
+                operation.resourceImportOwnership?.name.orEmpty(),
             ).joinToString(separator = "\n", postfix = "\n")
                 .toByteArray(Charsets.UTF_8)
         candidate.delete()
@@ -84,7 +98,21 @@ internal class ResourceOperationJournal(
                 return malformedRecord()
             }
         return try {
-            require(lines.size == FIELD_COUNT && lines[0] == FORMAT)
+            val format = lines.firstOrNull()
+            require(
+                (format == FORMAT && lines.size == FIELD_COUNT) ||
+                    (format == LEGACY_FORMAT && lines.size == LEGACY_FIELD_COUNT),
+            )
+            val resourceImportUri =
+                if (format == FORMAT) lines[6].takeIf { it.isNotEmpty() } else null
+            val resourceImportOwnership =
+                if (format == FORMAT) {
+                    lines[7]
+                        .takeIf { it.isNotEmpty() }
+                        ?.let(ResourceImportOwnershipPhase::valueOf)
+                } else {
+                    null
+                }
             PersistedResourceOperation(
                 origin = ResourceFailureOrigin.valueOf(lines[1]),
                 retry =
@@ -102,6 +130,8 @@ internal class ResourceOperationJournal(
                     lines[5]
                         .takeIf { it.isNotEmpty() }
                         ?.let(KnownWordsFailureOperation::valueOf),
+                resourceImportUri = resourceImportUri,
+                resourceImportOwnership = resourceImportOwnership,
             )
             // instrumentation: silent — invalid fields enter malformed-record recovery
         } catch (_: Exception) {
@@ -132,8 +162,10 @@ internal class ResourceOperationJournal(
     }
 
     private companion object {
-        const val FORMAT = "resource-operation-v1"
-        const val FIELD_COUNT = 6
+        const val FORMAT = "resource-operation-v2"
+        const val FIELD_COUNT = 8
+        const val LEGACY_FORMAT = "resource-operation-v1"
+        const val LEGACY_FIELD_COUNT = 6
         const val RECORD_NAME = "resource-operation-v1.pending"
         const val CANDIDATE_NAME = "resource-operation-v1.candidate"
     }

@@ -16,34 +16,64 @@ import java.util.concurrent.atomic.AtomicLong
  * binder traffic.
  */
 internal class AndroidResourceForegroundLease(
-    private val context: Context,
+    private val startService: (ResourceOperationProgress) -> Unit,
+    private val stopService: () -> Unit,
     private val elapsedMillis: () -> Long = System::currentTimeMillis,
 ) : ResourceForegroundLease {
+    constructor(
+        context: Context,
+        elapsedMillis: () -> Long = System::currentTimeMillis,
+    ) : this(
+        startService = { progress ->
+            val intent =
+                ResourceImportForegroundService.startIntent(
+                    context,
+                    progress.label,
+                    progress.completed.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                    progress.total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                )
+            ContextCompat.startForegroundService(context, intent)
+            Unit
+        },
+        stopService = {
+            context.startService(ResourceImportForegroundService.stopIntent(context))
+            Unit
+        },
+        elapsedMillis = elapsedMillis,
+    )
+
     private val lastPostedAt = AtomicLong(0)
 
     @Volatile
     private var lastPhase: ResourceOperationPhase? = null
 
+    @Volatile
+    private var started = false
+
     override fun start(progress: ResourceOperationProgress) {
+        started = false
+        startService(progress)
         lastPhase = progress.phase
         lastPostedAt.set(elapsedMillis())
-        post(progress)
+        started = true
     }
 
     override fun update(progress: ResourceOperationProgress) {
+        if (!started) return
         val now = elapsedMillis()
         val phaseChanged = progress.phase != lastPhase
         if (!phaseChanged && now - lastPostedAt.get() < MINIMUM_REPOST_MILLIS) return
         lastPhase = progress.phase
         lastPostedAt.set(now)
-        post(progress)
+        postBestEffort(progress)
     }
 
     override fun stop() {
+        started = false
         lastPhase = null
         // Not startForegroundService: a stop must never be the call that promotes
         // a dead service back into the foreground and then fails to be finished.
-        runCatching { context.startService(ResourceImportForegroundService.stopIntent(context)) }
+        runCatching(stopService)
             .onFailure { failure ->
                 AppLog.w(
                     LogComponent.RESOURCES,
@@ -54,17 +84,8 @@ internal class AndroidResourceForegroundLease(
             }
     }
 
-    private fun post(progress: ResourceOperationProgress) {
-        val intent =
-            ResourceImportForegroundService.startIntent(
-                context,
-                progress.label,
-                progress.completed.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-                progress.total.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
-            )
-        // A failure here loses the notification, never the import: the work runs on
-        // the resource executor either way, so this must not propagate.
-        runCatching { ContextCompat.startForegroundService(context, intent) }
+    private fun postBestEffort(progress: ResourceOperationProgress) {
+        runCatching { startService(progress) }
             .onFailure { failure ->
                 AppLog.w(
                     LogComponent.RESOURCES,
