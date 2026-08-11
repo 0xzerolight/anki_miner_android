@@ -78,22 +78,7 @@ internal class ChaquopyPythonRuntime(
                     .toJava(String::class.java)
             }
         pythonBootstrapStage(PythonBootstrapStage.HANDSHAKE) {
-            val ready = BridgeJsonCodec.decode(rawReady)
-            // ANKI_MINER_HOME freezes at import, so a mismatch here means every later path resolves
-            // somewhere else. The check message cannot name the two homes; this record can.
-            if (ready !is BridgeMessage.BootstrapReady || ready.home != requestedHome) {
-                val mismatch =
-                    IllegalStateException("Python bootstrap did not confirm the requested engine home")
-                AppLog.e(
-                    LogComponent.BOOTSTRAP,
-                    "python.home",
-                    mismatch,
-                    "outcome" to "fail",
-                    "requested" to requestedHome,
-                    "confirmed" to (ready as? BridgeMessage.BootstrapReady)?.home,
-                )
-                throw mismatch
-            }
+            confirmPythonBootstrapHandshake(rawReady, requestedHome)
         }
         AppLog.i(
             LogComponent.BOOTSTRAP,
@@ -115,6 +100,46 @@ internal class ChaquopyPythonRuntime(
         val home: String,
         val boundary: PyObject,
     )
+}
+
+internal fun confirmPythonBootstrapHandshake(
+    rawReady: String,
+    requestedHome: String,
+) {
+    val ready = BridgeJsonCodec.decode(rawReady)
+    if (ready is BridgeMessage.Error) {
+        val rejected =
+            PythonBootstrapRejectedException(
+                code = ready.code,
+                requestType = ready.requestType,
+                faultId = ready.faultId,
+            )
+        AppLog.e(
+            LogComponent.BOOTSTRAP,
+            "python.home",
+            rejected,
+            "outcome" to "fail",
+            "code" to ready.code,
+            "type" to ready.requestType,
+            "fault" to ready.faultId,
+        )
+        throw rejected
+    }
+    // ANKI_MINER_HOME freezes at import, so a mismatch here means every later path resolves
+    // somewhere else. The check message cannot name the two homes; this record can.
+    if (ready !is BridgeMessage.BootstrapReady || ready.home != requestedHome) {
+        val mismatch =
+            IllegalStateException("Python bootstrap did not confirm the requested engine home")
+        AppLog.e(
+            LogComponent.BOOTSTRAP,
+            "python.home",
+            mismatch,
+            "outcome" to "fail",
+            "requested" to requestedHome,
+            "confirmed" to (ready as? BridgeMessage.BootstrapReady)?.home,
+        )
+        throw mismatch
+    }
 }
 
 /** Every bridge and Python-backed resource operation waits for the eager process bootstrap. */

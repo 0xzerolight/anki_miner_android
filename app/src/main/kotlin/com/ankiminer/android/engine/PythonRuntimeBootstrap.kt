@@ -23,8 +23,9 @@ internal sealed interface PythonRuntimeReadiness {
      * catastrophic state to the UI — one line, `status_failed_restart`, for all four — but completely
      * different bugs. The tester report is the only place [stage] and [fault] are shown at all.
      *
-     * [fault] is a [compactFaultToken], never the throwable: this value is compared by the JVM tests
-     * and a `Throwable` field would give the data class identity equality.
+     * [fault] is either a [compactFaultToken] or a validated bridge-error correlation token, never
+     * the throwable: this value is compared by the JVM tests and a `Throwable` field would give the
+     * data class identity equality.
      */
     data class Failed(
         val stage: PythonBootstrapStage,
@@ -38,6 +39,16 @@ internal enum class PythonBootstrapStage {
     START,
     DISPATCH,
     HANDSHAKE,
+}
+
+/** A generic handshake failure which retains only validated, non-message protocol diagnostics. */
+internal class PythonBootstrapRejectedException(
+    val code: String,
+    val requestType: String?,
+    val faultId: String?,
+) : IllegalStateException("Python bootstrap failed") {
+    val diagnosticToken: String =
+        "bridge.error/$code/${requestType ?: "none"}/${faultId ?: "none"}"
 }
 
 /**
@@ -118,7 +129,10 @@ internal class PythonRuntimeBootstrapGate<T>(
                         "outcome" to "fail",
                         "stage" to stage.name,
                     )
-                    mutableReadiness.value = PythonRuntimeReadiness.Failed(stage, compactFaultToken(origin))
+                    val fault =
+                        (origin as? PythonBootstrapRejectedException)?.diagnosticToken
+                            ?: compactFaultToken(origin)
+                    mutableReadiness.value = PythonRuntimeReadiness.Failed(stage, fault)
                     completion.completeExceptionally(origin)
                     if (origin is Error) throw origin
                 }
