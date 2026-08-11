@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/engine-events.json",
   "title": "Anki Miner Android engine callback events",
-  "$comment": "Complete envelopes emitted by AndroidProgressCallback and AndroidPresenter. protocol.decode_envelope first enforces the shared finite signed-64 wire domain and strict Unicode scalar JSON contract.",
+  "$comment": "Complete envelopes emitted by AndroidProgressCallback and AndroidPresenter. protocol.encode_message and decode_envelope enforce the shared finite signed-64 wire domain, strict Unicode scalar JSON contract, and the progress-stage semantic refinement 1 <= index <= total <= 32.",
   "oneOf": [
     {
       "$ref": "#/$defs/progressStartMessage"
@@ -147,7 +147,8 @@
         "index": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 32
+          "maximum": 32,
+          "$comment": "The shared runtime semantic validator additionally enforces index <= total."
         },
         "total": {
           "type": "integer",

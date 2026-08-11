@@ -281,7 +281,7 @@ internal class CachedSentenceAudioSynthesizer(
         const val DEFAULT_CACHE_BUDGET_BYTES = 64L * 1024L * 1024L
         const val DEFAULT_MAX_FILE_BYTES = 16L * 1024L * 1024L
         const val DEFAULT_RESERVE_BYTES = 64L * 1024L * 1024L
-        const val MAX_INPUT_UTF16_UNITS = 4_000
+        const val MAX_INPUT_UTF16_UNITS = SentenceAudioBridgeCodec.MAX_SENTENCE_UTF16_UNITS
         private const val CACHE_DOMAIN = "anki-miner-android-sentence-tts-v1"
         private const val CACHE_PREFIX = "android_tts_v1_"
         private val PUBLISHED_FILENAME = Regex("${CACHE_PREFIX}[0-9a-f]{64}\\.wav")

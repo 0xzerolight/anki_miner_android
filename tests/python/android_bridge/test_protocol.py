@@ -92,6 +92,19 @@ def test_non_finite_and_recursive_values_are_rejected() -> None:
     assert cycle.value.code == "recursive_value"
 
 
+def test_progress_stage_encoder_rejects_index_above_total() -> None:
+    with pytest.raises(BridgeProtocolError, match="1 <= index <= total <= 32"):
+        encode_message(
+            "progress.stage",
+            {
+                "runId": "run_" + "a" * 32,
+                "index": 2,
+                "total": 1,
+                "name": "Extracting media",
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "payload",
     [

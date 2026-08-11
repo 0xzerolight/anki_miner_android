@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/subtitle-cues.json",
   "title": "Anki Miner Android raw subtitle cue payload",
-  "$comment": "Payload-only request/result schema. Cue count is capped at 20000; runtime also caps staged input and total cue text bytes.",
+  "$comment": "Payload-only request/result schema. Cue count is capped at 20000; runtime also caps staged input and total cue text bytes. The shared runtime semantic validator enforces end >= start >= 0 because Draft 2020-12 cannot compare sibling properties.",
   "oneOf": [
     {"$ref": "#/$defs/request"},
     {"$ref": "#/$defs/result"}
