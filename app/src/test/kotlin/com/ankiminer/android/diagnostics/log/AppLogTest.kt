@@ -1,6 +1,8 @@
 package com.ankiminer.android.diagnostics.log
 
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -83,6 +85,44 @@ class AppLogTest {
             replayed.records.map(::opOf),
         )
         assertTrue(replayed.records[1].contains("java.io.IOException: no such file"))
+    }
+
+    @Test
+    fun `a record that captured the pre-install sink before install is still replayed`() {
+        AppLog.install(PreInstallBufferSink())
+        val rendering = CountDownLatch(1)
+        val continueRendering = CountDownLatch(1)
+        val emitting =
+            Thread {
+                AppLog.i(
+                    LogComponent.BOOTSTRAP,
+                    "python.initialize",
+                    "detail" to
+                        object {
+                            override fun toString(): String {
+                                rendering.countDown()
+                                continueRendering.await(5, TimeUnit.SECONDS)
+                                return "late record"
+                            }
+                        },
+                    "outcome" to "ok",
+                )
+            }
+        emitting.start()
+
+        try {
+            assertTrue(rendering.await(5, TimeUnit.SECONDS))
+            val replayed = RecordingLogSink()
+            AppLog.install(replayed)
+            continueRendering.countDown()
+            emitting.join(5_000)
+
+            assertFalse(emitting.isAlive)
+            assertEquals(listOf("python.initialize"), replayed.records.map(::opOf))
+        } finally {
+            continueRendering.countDown()
+            emitting.join(5_000)
+        }
     }
 
     @Test
@@ -275,6 +315,23 @@ class AppLogTest {
         assertTrue(record.contains(" E run=- c=bootstrap op=python.initialize outcome=fail unrenderable="))
         assertTrue(record.contains("UnreadableFailure"))
         assertTrue(record.contains("renderFault=java.lang.IllegalStateException"))
+    }
+
+    @Test
+    fun `an unrenderable failure keeps the active run id`() {
+        LogContext.withRunId("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa") {
+            AppLog.e(
+                LogComponent.BRIDGE,
+                "dispatch",
+                UnreadableFailure(),
+                "outcome" to "fail",
+            )
+        }
+
+        assertEquals(
+            "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            runOf(recorded.records.single()),
+        )
     }
 
     private class UnreadableFailure : RuntimeException() {

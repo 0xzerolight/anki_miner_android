@@ -4,6 +4,11 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -136,6 +141,72 @@ class FileLogSinkTest {
         }
 
     @Test
+    fun `flush completes while later writes keep the queue nonempty`() =
+        runTest {
+            val directory = temporaryFolder.newFolder("flush-cutoff")
+            val replenisher = QueueReplenisher()
+            val sink =
+                FileLogSink(
+                    directory = directory,
+                    maxBytes = Long.MAX_VALUE,
+                    scope = backgroundScope,
+                    lineCapacity = REPLENISH_LINES,
+                    dispatcher = Dispatchers.IO,
+                    openStream = replenisher::open,
+                )
+            replenisher.sink = sink
+            sink.write("warmup")
+            withContext(Dispatchers.IO) { sink.flush() }
+
+            replenisher.enabled.set(true)
+            sink.write("before-flush")
+            try {
+                withContext(Dispatchers.IO) {
+                    withTimeout(COMMAND_TIMEOUT_MILLIS) { sink.flush() }
+                }
+            } finally {
+                replenisher.enabled.set(false)
+            }
+
+            assertTrue(replenisher.written.get() >= REPLENISH_LINES)
+            assertTrue(logIn(directory).readLines().contains("before-flush"))
+        }
+
+    @Test
+    fun `snapshot completes while later writes keep the queue nonempty`() =
+        runTest {
+            val directory = temporaryFolder.newFolder("snapshot-cutoff")
+            val destination = temporaryFolder.newFolder("snapshot-cutoff-bundle")
+            val replenisher = QueueReplenisher()
+            val sink =
+                FileLogSink(
+                    directory = directory,
+                    maxBytes = Long.MAX_VALUE,
+                    scope = backgroundScope,
+                    lineCapacity = REPLENISH_LINES,
+                    dispatcher = Dispatchers.IO,
+                    openStream = replenisher::open,
+                )
+            replenisher.sink = sink
+            sink.write("warmup")
+            withContext(Dispatchers.IO) { sink.flush() }
+
+            replenisher.enabled.set(true)
+            sink.write("before-snapshot")
+            val copies =
+                try {
+                    withContext(Dispatchers.IO) {
+                        withTimeout(COMMAND_TIMEOUT_MILLIS) { sink.snapshot(destination) }
+                    }
+                } finally {
+                    replenisher.enabled.set(false)
+                }
+
+            assertTrue(replenisher.written.get() >= REPLENISH_LINES)
+            assertTrue(copies.single().readLines().contains("before-snapshot"))
+        }
+
+    @Test
     fun `a failed snapshot leaves the sink writing`() =
         runTest {
             val directory = temporaryFolder.newFolder("snapshot-failure")
@@ -251,6 +322,36 @@ class FileLogSinkTest {
         }
     }
 
+    private class QueueReplenisher {
+        val enabled = AtomicBoolean()
+        val written = AtomicInteger()
+        lateinit var sink: FileLogSink
+
+        fun open(file: File): OutputStream =
+            object : OutputStream() {
+                private val delegate = FileOutputStream(file, true)
+
+                override fun write(b: Int) = delegate.write(b)
+
+                override fun write(
+                    b: ByteArray,
+                    off: Int,
+                    len: Int,
+                ) = delegate.write(b, off, len)
+
+                override fun flush() {
+                    delegate.flush()
+                    if (enabled.get()) {
+                        repeat(REPLENISH_LINES) { index ->
+                            sink.write("later-${written.getAndIncrement()}-$index")
+                        }
+                    }
+                }
+
+                override fun close() = delegate.close()
+            }
+    }
+
     private fun TestScope.newSink(
         directory: File,
         maxBytes: Long = 4L * 1024 * 1024,
@@ -272,5 +373,7 @@ class FileLogSinkTest {
     private companion object {
         const val PRODUCERS = 8
         const val LINES_PER_PRODUCER = 200
+        const val REPLENISH_LINES = 128
+        const val COMMAND_TIMEOUT_MILLIS = 5_000L
     }
 }
