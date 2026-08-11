@@ -1,9 +1,11 @@
 """Bridge-side custom URL / custom-JSON expression-audio fetcher.
 
-Ported from the desktop ``anki_miner.services.custom_audio_fetcher`` so the
-Android port can query AnkiConnect-Android's on-device local-audio server
-(``http://localhost:8765/localaudio/...``) without importing the desktop
-service factory (which eagerly pulls the cut JPod101/Google-TTS fetchers).
+Ported from the desktop ``anki_miner.services.custom_audio_fetcher`` without
+importing the desktop service factory (which eagerly pulls the cut
+JPod101/Google-TTS fetchers). Android does not enable AnkiConnect-Android's
+loopback endpoint: its HTTP protocol cannot authenticate the process serving
+port 8765. Loopback remains fail-closed unless a trusted caller has established
+an authenticated peer contract out of band.
 
 The local-audio-yomichan integration contract: a URL template containing
 ``{term}`` / ``{reading}`` / ``{language}`` placeholders.
@@ -79,6 +81,8 @@ _BRIDGE_FAILURE_KEYS = (
 # per-run circuit: further fetches skip the network and fall through to packs
 # instead of paying the full deadline per word against a hung localaudio server.
 _CIRCUIT_BREAKER_THRESHOLD = 3
+_FILESYSTEM_NAME_MAX_BYTES = 255
+_CACHE_DIGEST_HEX_CHARS = 32
 
 
 class _PolicyViolation(requests.RequestException):
@@ -322,7 +326,20 @@ def _normalize_approved_origin(origin: str) -> tuple[str, str, int]:
     except _PolicyViolation as exc:
         raise ValueError("approved audio origin is invalid") from exc
     if normalized[1] in _LOOPBACK_HOSTS:
-        raise ValueError("loopback origins are already allowed by policy")
+        raise ValueError("loopback origins require separate peer authentication")
+    return normalized
+
+
+def _normalize_authenticated_loopback_origin(origin: str) -> tuple[str, str, int]:
+    parsed = urlsplit(origin)
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise ValueError("authenticated loopback origins must not contain paths, queries, or fragments")
+    try:
+        normalized = _parse_http_origin(origin)
+    except _PolicyViolation as exc:
+        raise ValueError("authenticated loopback origin is invalid") from exc
+    if normalized not in _REVIEWED_LOOPBACK_ORIGINS:
+        raise ValueError("authenticated loopback origin is not eligible")
     return normalized
 
 
@@ -349,6 +366,35 @@ def custom_audio_slug(url_template: str) -> str:
     keeps the name short and free of URL metacharacters.
     """
     return hashlib.sha1(url_template.encode("utf-8")).hexdigest()[:10]
+
+
+def _truncate_utf8(value: str, byte_budget: int) -> str:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= byte_budget:
+        return value
+    return encoded[:byte_budget].decode("utf-8", errors="ignore")
+
+
+def _cache_stem(
+    file_prefix: str,
+    url_template: str,
+    mined_form: str,
+    reading: str,
+    max_extension_bytes: int,
+) -> str:
+    """Return a collision-resistant stem with room for the final extension."""
+    from anki_miner.utils.file_utils import safe_filename
+
+    digest = hashlib.sha256()
+    for value in (url_template, mined_form, reading):
+        encoded = value.encode("utf-8")
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    digest_suffix = f"_{digest.hexdigest()[:_CACHE_DIGEST_HEX_CHARS]}"
+    stem_budget = _FILESYSTEM_NAME_MAX_BYTES - max_extension_bytes
+    readable = safe_filename(f"{file_prefix}_{mined_form}_{reading}")
+    readable_budget = stem_budget - len(digest_suffix.encode("ascii"))
+    return f"{_truncate_utf8(readable, readable_budget)}{digest_suffix}"
 
 
 def _mp3_frame_length(header: bytes) -> int | None:
@@ -567,6 +613,7 @@ class CustomAudioFetcher:
         delay: float = 0.2,
         language: str = "ja",
         approved_audio_origins: Iterable[str] = (),
+        authenticated_loopback_origins: Iterable[str] = (),
         deadline_seconds: float = _FETCH_DEADLINE_SECONDS,
         monotonic: Callable[[], float] = time.monotonic,
         ffprobe_path: Path | None = None,
@@ -585,8 +632,10 @@ class CustomAudioFetcher:
             delay: Seconds to wait before the first network request per word.
             language: Value substituted for ``{language}`` (fixed "ja" here).
             approved_audio_origins: Exact remote HTTP(S) origins allowed for
-                custom audio URLs and their redirects. Loopback remains allowed
-                without listing it; all other origins fail closed.
+                custom audio URLs and their redirects.
+            authenticated_loopback_origins: Loopback origins whose serving peer
+                the trusted caller authenticated out of band. Empty by default;
+                an origin tuple alone never authenticates the process owning it.
         """
         # Function-local: the vendored toolkit imports through
         # ``anki_miner.services.audio_fetch_common``, which must not load before
@@ -608,6 +657,9 @@ class CustomAudioFetcher:
         self._session.trust_env = False
         self._approved_audio_origins = frozenset(
             _normalize_approved_origin(origin) for origin in approved_audio_origins
+        )
+        self._authenticated_loopback_origins = frozenset(
+            _normalize_authenticated_loopback_origin(origin) for origin in authenticated_loopback_origins
         )
         if not math.isfinite(deadline_seconds) or deadline_seconds <= 0:
             raise ValueError("deadline_seconds must be finite and positive")
@@ -709,7 +761,7 @@ class CustomAudioFetcher:
 
     def _validate_url(self, url: str, *, directory_only: bool) -> None:
         origin = _parse_http_origin(url)
-        if origin in _REVIEWED_LOOPBACK_ORIGINS:
+        if origin in self._authenticated_loopback_origins:
             return
         if origin[1] in _LOOPBACK_HOSTS:
             raise _PolicyViolation("Loopback origin is not approved")
@@ -830,13 +882,20 @@ class CustomAudioFetcher:
         cancelled_check: Callable[[], bool] | None,
     ) -> Path | None:
         from anki_miner.services.audio_fetch_common import (
+            AUDIO_MEDIA_TYPE_EXTENSIONS,
             download_audio_to_cache,
             find_cached_by_stem,
         )
-        from anki_miner.utils.file_utils import safe_filename
 
         self._check_deadline()
-        stem = safe_filename(f"{self._file_prefix}_{mined_form}_{reading}")
+        max_extension_bytes = max(len(extension.encode("utf-8")) for extension in AUDIO_MEDIA_TYPE_EXTENSIONS.values())
+        stem = _cache_stem(
+            self._file_prefix,
+            self._url_template,
+            mined_form,
+            reading,
+            max_extension_bytes,
+        )
         existing = find_cached_by_stem(self._cache_dir, stem)
         if existing is not None:
             if self._accept_audio(existing):

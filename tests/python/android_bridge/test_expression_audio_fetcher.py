@@ -30,6 +30,7 @@ from android_bridge.expression_audio_fetcher import (  # noqa: E402
 
 # Minimal ID3v2-tagged MPEG-1 Layer III frame (128 kbps, 44.1 kHz, 417 bytes).
 _VALID_MP3 = b"ID3" + b"\x00" * 7 + b"\xff\xfb\x90\x00" + b"\x00" * 413
+_VALID_WEBM = b"\x1aE\xdf\xa3" + b"\x00" * 12 + b"webm" + b"\x00" * 8 + b"A_OPUS" + b"\x00" * 8
 
 
 @pytest.fixture(autouse=True)
@@ -128,6 +129,10 @@ class TestCustomAudioFetcherDirect:
         template: str = "http://localhost:8765/?t={term}&r={reading}",
         **options: object,
     ):
+        options.setdefault(
+            "authenticated_loopback_origins",
+            ("http://localhost:8765", "http://127.0.0.1:8765"),
+        )
         f = CustomAudioFetcher(
             url_template=template,
             kind=kind,
@@ -138,6 +143,14 @@ class TestCustomAudioFetcherDirect:
         )
         f._session = MagicMock()
         return f
+
+    def test_unauthenticated_loopback_is_rejected_before_term_disclosure(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path, authenticated_loopback_origins=())
+        f._session.get.return_value = _audio_response(_VALID_MP3)
+
+        assert f.fetch("食べる", "たべる") is None
+        f._session.get.assert_not_called()
+        assert f.stats()["policy_rejection"] == 1
 
     def test_empty_reading_or_form_skips(self, tmp_path: Path) -> None:
         f = self._fetcher(tmp_path)
@@ -150,7 +163,8 @@ class TestCustomAudioFetcherDirect:
         f._session.get.return_value = _audio_response(_VALID_MP3)
         result = f.fetch("食べる", "たべる")
         assert result is not None
-        assert result.name == "custom_abc_食べる_たべる.mp3"
+        assert result.name.startswith("custom_abc_食べる_たべる_")
+        assert result.suffix == ".mp3"
         assert result.exists()
 
     def test_url_template_substituted(self, tmp_path: Path) -> None:
@@ -177,6 +191,58 @@ class TestCustomAudioFetcherDirect:
         second = f.fetch("食べる", "たべる")
         assert second == first
         f._session.get.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("first_pair", "second_pair"),
+        [
+            (("語/彙", "ごい"), ("語_彙", "ごい")),
+            (("a_b", "c"), ("a", "b_c")),
+        ],
+    )
+    def test_distinct_pairs_cannot_share_a_lossy_cache_key(
+        self,
+        tmp_path: Path,
+        first_pair: tuple[str, str],
+        second_pair: tuple[str, str],
+    ) -> None:
+        f = self._fetcher(tmp_path)
+        first_audio = _VALID_MP3 + b"first"
+        second_audio = _VALID_MP3 + b"second"
+        f._session.get.side_effect = [
+            _audio_response(first_audio),
+            _audio_response(second_audio),
+        ]
+
+        first = f.fetch(*first_pair)
+        second = f.fetch(*second_pair)
+
+        assert first is not None and second is not None
+        assert first != second
+        assert first.read_bytes() == first_audio
+        assert second.read_bytes() == second_audio
+        assert f._session.get.call_count == 2
+
+    def test_long_multibyte_cache_key_reserves_extension_and_keeps_identity(self, tmp_path: Path) -> None:
+        f = self._fetcher(tmp_path)
+        first_audio = _VALID_WEBM + b"first"
+        second_audio = _VALID_WEBM + b"second"
+        f._session.get.side_effect = [
+            _audio_response(first_audio, content_type="audio/webm"),
+            _audio_response(second_audio, content_type="audio/webm"),
+        ]
+        shared = "語" * 100
+
+        first = f.fetch(shared + "甲", "ご" * 100)
+        second = f.fetch(shared + "乙", "ご" * 100)
+
+        assert first is not None and second is not None
+        assert first != second
+        assert first.suffix == second.suffix == ".webm"
+        assert len(first.name.encode("utf-8")) <= 255
+        assert len(second.name.encode("utf-8")) <= 255
+        assert first.read_bytes() == first_audio
+        assert second.read_bytes() == second_audio
+        assert f.stats()["connection"] == 0
 
     def test_non_audio_returns_none(self, tmp_path: Path) -> None:
         f = self._fetcher(tmp_path)
@@ -268,6 +334,10 @@ class TestCustomAudioFetcherJson:
         **extra_options: object,
     ):
         options: dict[str, object] = {}
+        options["authenticated_loopback_origins"] = (
+            "http://localhost:8765",
+            "http://127.0.0.1:8765",
+        )
         if approved_audio_origins:
             options["approved_audio_origins"] = approved_audio_origins
         options.update(extra_options)
@@ -297,7 +367,8 @@ class TestCustomAudioFetcherJson:
         ]
         result = f.fetch("食べる", "たべる")
         assert result is not None
-        assert result.name == "custom_json1_食べる_たべる.mp3"
+        assert result.name.startswith("custom_json1_食べる_たべる_")
+        assert result.suffix == ".mp3"
         # first GET = the JSON list, second GET = the first audio source URL
         assert f._session.get.call_args_list[0][0][0] == "http://localhost:8765/list?t=食べる"
         assert f._session.get.call_args_list[1][0][0] == "http://localhost:8765/media/a.mp3"
@@ -898,6 +969,7 @@ class TestCircuitBreaker:
             cache_dir=tmp_path / "cache",
             file_prefix="custom_abc",
             delay=0,
+            authenticated_loopback_origins=("http://localhost:8765",),
         )
         f._session = MagicMock()
         return f
