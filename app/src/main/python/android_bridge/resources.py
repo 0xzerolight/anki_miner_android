@@ -22,6 +22,7 @@ import stat
 import struct
 import tarfile
 import threading
+import unicodedata
 import zipfile
 from collections import OrderedDict
 from collections.abc import Iterator, Mapping
@@ -2125,10 +2126,13 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
     provider = IndexedDictProvider(meta.dict_id, meta.db_path, meta.source_name)
     if not provider.load():
         raise _fail("dictionary_unavailable", "Dictionary index cannot be opened")
+    lookup_key = unicodedata.normalize("NFC", term)
     try:
-        html = provider.lookup(term)
+        html = provider.lookup(lookup_key)
     finally:
         provider.close()
+    if html is None:
+        html = ""
     _validate_lookup_html(html)
     return encode_message(
         "resource.dictionary.lookup.result",
