@@ -1851,6 +1851,10 @@ def test_audio_tar_rejects_crossing_member_before_materialization(
     assert not (destination / "pack" / "crossing.mp3").exists()
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
 def test_audio_pack_root_detection_rejects_indexless_candidates_while_streaming(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2243,6 +2247,10 @@ def test_audio_metadata_commit_reports_sqlite_full_as_insufficient_storage(
     assert failure.value.code == "insufficient_storage"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
 def test_audio_index_open_reports_sqlite_full_as_insufficient_storage(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
