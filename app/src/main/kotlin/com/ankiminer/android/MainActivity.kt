@@ -2,6 +2,7 @@ package com.ankiminer.android
 
 import android.content.ActivityNotFoundException
 import android.content.ClipData
+import android.content.ContentResolver
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -24,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
 import com.ankiminer.android.data.settings.AppSettings
@@ -31,6 +33,8 @@ import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
@@ -49,9 +53,18 @@ import com.ankiminer.android.vm.MediaMiningViewModel
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val DIAGNOSTICS_MIME_TYPE = "application/zip"
 
 /**
  * Settings the shell paints with. `null` means "not read yet" and holds the launch placeholder; a
@@ -62,8 +75,65 @@ import kotlinx.coroutines.flow.map
 internal fun AppSettingsRepository.appShellSettings(): Flow<AppSettings> =
     settingsOrNull.map { it ?: AppSettings() }
 
+/** Keeps SAF local-save available even when no installed app accepts the ZIP send intent. */
+internal fun diagnosticsDeliveryChooserIntent(
+    resolver: ContentResolver,
+    attachment: Uri,
+    fileName: String,
+    subject: String,
+): Intent {
+    val send =
+        Intent(Intent.ACTION_SEND).apply {
+            type = DIAGNOSTICS_MIME_TYPE
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_STREAM, attachment)
+            clipData = ClipData.newUri(resolver, fileName, attachment)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+    val save =
+        Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = DIAGNOSTICS_MIME_TYPE
+            putExtra(Intent.EXTRA_TITLE, fileName)
+        }
+    return Intent.createChooser(send, subject).apply {
+        putExtra(Intent.EXTRA_INITIAL_INTENTS, arrayOf(save))
+    }
+}
+
+internal fun copyDiagnosticsBundle(
+    openSource: () -> InputStream?,
+    openDestination: () -> OutputStream?,
+) {
+    val source = openSource() ?: throw IOException("Diagnostics source returned no stream")
+    source.use { input ->
+        val destination =
+            openDestination() ?: throw IOException("Diagnostics destination returned no stream")
+        destination.use { output -> input.copyTo(output) }
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
+    private var pendingDiagnosticsAttachment: Uri? = null
+    private val diagnosticsDeliveryLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val source = pendingDiagnosticsAttachment
+            pendingDiagnosticsAttachment = null
+            val resultData = result.data
+            val destination = resultData?.data
+            val hasWriteGrant =
+                resultData != null &&
+                    resultData.flags.and(Intent.FLAG_GRANT_WRITE_URI_PERMISSION) != 0
+            if (
+                result.resultCode == RESULT_OK &&
+                    source != null &&
+                    destination != null &&
+                    hasWriteGrant
+            ) {
+                saveDiagnosticsBundle(source, destination)
+            }
+        }
 
     private val viewModelFactory by lazy {
         val app = application as AnkiMinerApplication
@@ -135,6 +205,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingDiagnosticsAttachment =
+            savedInstanceState
+                ?.getString(PENDING_DIAGNOSTICS_ATTACHMENT)
+                ?.let(Uri::parse)
         notificationRunId.value =
             savedInstanceState?.getString(PENDING_NOTIFICATION_RUN_ID)
                 ?: MiningForegroundService.consumeOpenedRunId(intent)
@@ -272,6 +346,9 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        pendingDiagnosticsAttachment?.let { attachment ->
+            outState.putString(PENDING_DIAGNOSTICS_ATTACHMENT, attachment.toString())
+        }
         notificationRunId.value?.let { runId ->
             outState.putString(PENDING_NOTIFICATION_RUN_ID, runId)
         }
@@ -349,26 +426,59 @@ class MainActivity : ComponentActivity() {
     ): Boolean {
         val attachment = Uri.parse(uri)
         val subject = getString(R.string.diagnostics_bundle_share_subject)
-        val send =
-            Intent(Intent.ACTION_SEND).apply {
-                type = "application/zip"
-                putExtra(Intent.EXTRA_SUBJECT, subject)
-                putExtra(Intent.EXTRA_STREAM, attachment)
-                clipData = ClipData.newUri(contentResolver, fileName, attachment)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
+        val chooser =
+            diagnosticsDeliveryChooserIntent(
+                resolver = contentResolver,
+                attachment = attachment,
+                fileName = fileName,
+                subject = subject,
+            )
+        pendingDiagnosticsAttachment = attachment
         return try {
-            startActivity(Intent.createChooser(send, subject))
+            diagnosticsDeliveryLauncher.launch(chooser)
             true
         } catch (_: ActivityNotFoundException) {
+            pendingDiagnosticsAttachment = null
             false
         } catch (_: SecurityException) {
+            pendingDiagnosticsAttachment = null
             false
+        }
+    }
+
+    private fun saveDiagnosticsBundle(
+        source: Uri,
+        destination: Uri,
+    ) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                copyDiagnosticsBundle(
+                    openSource = { contentResolver.openInputStream(source) },
+                    openDestination = { contentResolver.openOutputStream(destination, "wt") },
+                )
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (failure: Exception) {
+                AppLog.w(
+                    LogComponent.DIAG,
+                    "bundle.save",
+                    failure,
+                    "outcome" to "fail",
+                )
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        this@MainActivity,
+                        R.string.diagnostics_action_unavailable,
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            }
         }
     }
 
     private companion object {
         const val PENDING_NOTIFICATION_RUN_ID = "pending_notification_run_id"
+        const val PENDING_DIAGNOSTICS_ATTACHMENT = "pending_diagnostics_attachment"
         const val ACTION_TTS_SETTINGS = "com.android.settings.TTS_SETTINGS"
         const val ANKIDROID_RELEASES_URL =
             "https://github.com/ankidroid/Anki-Android/releases"
