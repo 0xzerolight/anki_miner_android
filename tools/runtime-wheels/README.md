@@ -52,3 +52,5 @@ python3.13 tools/runtime-wheels/runtime_wheels.py verify-publication \
   --manifest "$(realpath tools/runtime-wheels/out/current/manifest.json)"
 python3.13 -m unittest discover -s tools/runtime-wheels/tests -v
 ```
+
+Both `scripts/health.sh` and the secretless CI job run this test suite.
