@@ -61,12 +61,12 @@ anki_miner_run_gradle ./gradlew "${gradle_args[@]}" ":app:assemble$VARIANT"
 }
 
 anki_miner_require_no_gradle
+anki_miner_acquire_workload_lock
 anki_miner_acquire_emulator_lock
 if anki_miner_emulator_is_running; then
     echo "An emulator started during the build; refusing to start another." >&2
     exit 1
 fi
-anki_miner_require_emulator_capacity
 
 echo "Starting emulator $ANDROID_AVD_API26_NAME ..."
 window_args=()

@@ -16,6 +16,12 @@ from typing import Iterator
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 KOTLIN_ROOT = Path("app/src/main/kotlin")
+KOTLIN_SOURCE_ROOTS = (
+    KOTLIN_ROOT,
+    Path("app/src/main/ankidroidApi/kotlin"),
+    Path("app/src/release/kotlin"),
+)
+LOGCAT_SINK_PATH = Path("app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogcatSink.kt")
 PYTHON_BRIDGE_ROOT = Path("app/src/main/python/android_bridge")
 ALLOWLIST_PATH = Path("tools/instrumentation/bare_catch_allowlist.tsv")
 CONTRACT_PATH = Path("app/src/test/resources/contracts/mining_protocol_v1.json")
@@ -32,6 +38,17 @@ KOTLIN_SILENCE_ANNOTATION = re.compile(r"^\s*// instrumentation: silent — \S.*
 PYTHON_SILENCE_ANNOTATION = re.compile(r"^\s*# instrumentation: intentionally silent — \S.*$")
 CATCH_PATTERN = re.compile(r"\bcatch\s*\(\s*(?P<name>_|[A-Za-z][A-Za-z0-9_]*)\s*:\s*[^)]*\)\s*\{")
 LOG_METHODS = {"debug", "info", "warning", "error", "exception", "critical"}
+DIRECT_LOG_CONSOLE_PATTERNS = (
+    re.compile(r"\bandroid\s*\.\s*util\s*\.\s*Log\b"),
+    re.compile(r"\bimport\s+android\s*\.\s*util\s*\.\s*\*"),
+    re.compile(r"\bkotlin\s*\.\s*io\s*\.\s*println\s*\("),
+    re.compile(r"(?<![A-Za-z0-9_.])println\s*\("),
+    re.compile(r"\bkotlin\s*\.\s*io\s*\.\s*print\s*\("),
+    re.compile(r"(?<![A-Za-z0-9_.])print\s*\("),
+    re.compile(r"\bSystem\s*\.\s*(?:out|err)\b"),
+    re.compile(r"\bprintStackTrace\s*\("),
+    re.compile(r"::\s*printStackTrace\b"),
+)
 
 
 class InstrumentationError(ValueError):
@@ -218,6 +235,38 @@ def _chain_methods(masked: str, cursor: int) -> list[str]:
     return methods
 
 
+def _has_unconditional_top_level_throw(body: str) -> bool:
+    pattern = re.compile(r"\bthrow\b")
+    for match in pattern.finditer(body):
+        prefix = body[: match.start()]
+        if prefix.count("{") != prefix.count("}"):
+            continue
+        statement_prefix = prefix[max(prefix.rfind("\n"), prefix.rfind(";")) + 1 :]
+        if statement_prefix.strip():
+            continue
+        if re.search(r"\b(?:return|break|continue)\b", prefix):
+            continue
+        return True
+    return False
+
+
+def _audit_applog_boundary(path: Path, repo_root: Path) -> list[str]:
+    relative = _relative(path, repo_root)
+    if Path(relative) == LOGCAT_SINK_PATH:
+        return []
+    source = path.read_text(encoding="utf-8")
+    masked = _mask_kotlin(source)
+    failures: list[str] = []
+    reported_lines: set[int] = set()
+    for pattern in DIRECT_LOG_CONSOLE_PATTERNS:
+        for direct_output in pattern.finditer(masked):
+            line = _line_number(source, direct_output.start())
+            if line not in reported_lines:
+                failures.append(f"{relative}:{line}: direct Log/console usage outside AppLog")
+                reported_lines.add(line)
+    return failures
+
+
 def _audit_kotlin_file(
     path: Path,
     repo_root: Path,
@@ -249,7 +298,7 @@ def _audit_kotlin_file(
             continue
 
         body = masked[opening + 1 : closing]
-        if re.search(r"\bthrow\b", body):
+        if _has_unconditional_top_level_throw(body):
             continue
         significant = [line.strip() for line in body.splitlines() if line.strip()]
         if "AppLog." in body:
@@ -259,7 +308,12 @@ def _audit_kotlin_file(
         # Forwarding the caught value to a typed error, aggregate, continuation, or
         # throwing helper gives the failure an owner. This gate targets a bound value
         # which is silently discarded; `_` catches have their separate pinned audit.
-        if re.search(rf"\b{re.escape(name)}\b", body):
+        body_without_direct_rethrows = re.sub(
+            rf"\bthrow\s+{re.escape(name)}\b",
+            "throw",
+            body,
+        )
+        if re.search(rf"\b{re.escape(name)}\b", body_without_direct_rethrows):
             continue
         if re.search(r"\b(?:fail[A-Za-z0-9_]*|invalid|resumeWithException)\s*\(", body):
             continue
@@ -337,8 +391,16 @@ def _audit_python_file(path: Path, repo_root: Path) -> list[str]:
                 method = _logger_method(descendant)
                 if method not in {"warning", "error"}:
                     continue
-                if not any(keyword.arg == "exc_info" for keyword in descendant.keywords):
-                    failures.append(f"{relative}:{descendant.lineno}: logger.{method} inside except requires exc_info=")
+                exc_info = next(
+                    (keyword.value for keyword in descendant.keywords if keyword.arg == "exc_info"),
+                    None,
+                )
+                disabled = isinstance(exc_info, ast.Constant) and (exc_info.value is False or exc_info.value is None)
+                if exc_info is None or disabled:
+                    requirement = "traceback-preserving exc_info=" if disabled else "exc_info="
+                    failures.append(
+                        f"{relative}:{descendant.lineno}: logger.{method} inside except requires {requirement}"
+                    )
         elif isinstance(node, ast.Call):
             if (
                 _logger_method(node) is not None
@@ -523,6 +585,12 @@ def audit(repo_root: Path) -> AuditSummary:
     failures: list[str] = []
     found_allowlist_sites: set[tuple[str, int]] = set()
     bare_catches = 0
+    production_kotlin_files = sorted(
+        path for source_root in KOTLIN_SOURCE_ROOTS for path in (repo_root / source_root).rglob("*.kt")
+    )
+    for path in production_kotlin_files:
+        failures.extend(_audit_applog_boundary(path, repo_root))
+
     kotlin_files = sorted((repo_root / KOTLIN_ROOT).rglob("*.kt"))
     for path in kotlin_files:
         file_failures, found, count = _audit_kotlin_file(path, repo_root, allowlist)

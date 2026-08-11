@@ -185,6 +185,12 @@ runtime_main
 
 
 class LockContractTests(unittest.TestCase):
+    def test_official_gates_run_runtime_wheel_tests(self) -> None:
+        for relative in ("scripts/health.sh", ".github/workflows/pull-request.yml"):
+            with self.subTest(relative=relative):
+                source = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("tools/runtime-wheels/tests", source)
+
     def test_source_lock_has_exact_runtime_inventory_and_licenses(self) -> None:
         entries = runtime_wheels.source_entries()
         self.assertEqual(set(runtime_wheels.SOURCE_SPECS), set(entries))
