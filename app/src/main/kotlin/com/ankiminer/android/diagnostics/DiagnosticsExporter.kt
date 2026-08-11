@@ -6,6 +6,7 @@ import java.io.File
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -18,6 +19,7 @@ internal enum class DiagnosticsExportStep {
 
 internal enum class DiagnosticsExportFailure {
     BUILD,
+    STORAGE,
     BUNDLE,
     SHARE,
 }
@@ -67,9 +69,7 @@ internal class AndroidDiagnosticsExporter(
             } catch (cancellation: CancellationException) {
                 throw cancellation
             } catch (failure: Throwable) {
-                val mapped =
-                    failure as? DiagnosticsExportException
-                        ?: DiagnosticsExportException(DiagnosticsExportFailure.BUILD, failure)
+                val mapped = mapBuildFailure(failure)
                 AppLog.e(
                     LogComponent.DIAG,
                     "bundle.build",
@@ -132,6 +132,35 @@ internal class AndroidDiagnosticsExporter(
         } catch (_: IOException) {
             null
         }
+
+    private fun mapBuildFailure(failure: Throwable): DiagnosticsExportException {
+        if (failure is DiagnosticsExportException) return failure
+        val kind =
+            if (isStorageExhaustion(failure)) {
+                DiagnosticsExportFailure.STORAGE
+            } else {
+                DiagnosticsExportFailure.BUILD
+            }
+        return DiagnosticsExportException(kind, failure)
+    }
+
+    private fun isStorageExhaustion(failure: Throwable): Boolean {
+        var current: Throwable? = failure
+        while (current != null) {
+            val message = current.message?.lowercase(Locale.ROOT).orEmpty()
+            if (
+                "enospc" in message ||
+                    "no space left on device" in message ||
+                    "edquot" in message ||
+                    "disk quota exceeded" in message ||
+                    "quota exceeded" in message
+            ) {
+                return true
+            }
+            current = current.cause
+        }
+        return false
+    }
 
     private companion object {
         const val CONTENT_SCHEME = "content"

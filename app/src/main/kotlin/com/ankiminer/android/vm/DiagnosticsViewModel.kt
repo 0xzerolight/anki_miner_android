@@ -132,6 +132,7 @@ internal class DiagnosticsViewModel(
         LocalizedStringResource(
             when (kind) {
                 DiagnosticsExportFailure.BUILD -> R.string.diagnostics_bundle_build_failed
+                DiagnosticsExportFailure.STORAGE -> R.string.resource_failure_storage
                 DiagnosticsExportFailure.BUNDLE -> R.string.diagnostics_bundle_invalid
                 DiagnosticsExportFailure.SHARE -> R.string.diagnostics_action_unavailable
             },

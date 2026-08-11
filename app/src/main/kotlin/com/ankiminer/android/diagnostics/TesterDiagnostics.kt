@@ -72,6 +72,9 @@ internal object TesterDiagnosticsBuilder {
         val identity = identity(build)
         val versionName = identity.versionLabel.substringBeforeLast(" (")
         val sourceCommit = identity.sourceLabel
+        // Terminal states remain lane-local; one state must own every exported correlation field.
+        val failedMiningRun =
+            firstFailedMiningRun(video.runState, audio.runState, reading.runState)
         val report =
             buildString {
                 appendLine("Anki Miner tester diagnostics v1")
@@ -126,15 +129,15 @@ internal object TesterDiagnosticsBuilder {
                 line("resources.fault_id", safeCode(setup.failure?.faultId))
                 line(
                     "mining.fault_id",
-                    miningFaultId(video.runState, audio.runState, reading.runState),
+                    safeCode(failedMiningRun?.failure?.faultId),
                 )
                 line(
                     "mining.run_id",
-                    miningRunId(video.runState, audio.runState, reading.runState),
+                    safeCode(failedMiningRun?.runId),
                 )
                 line(
                     "mining.failure_code",
-                    miningFailureCode(video.runState, audio.runState, reading.runState),
+                    safeCode(failedMiningRun?.failure?.diagnostic),
                 )
                 line("anki.provider", ankiReadiness(setup.anki))
                 line("anki.recovery_startup", ankiRecoveryReadiness(setup.ankiRecovery))
@@ -231,32 +234,8 @@ internal object TesterDiagnosticsBuilder {
             is MiningRunState.Failed -> "failed"
         }
 
-    /**
-     * The one value in this report that points into the exported log: it joins the failure a tester
-     * pasted to the Python traceback behind it. One mining run is admitted at a time, so at most one
-     * lane holds a fresh failure and the scan order is not a tie-break in practice.
-     */
-    private fun miningFaultId(vararg states: MiningRunState): String =
-        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.faultId })
-
-    /**
-     * The run id the failed lane has always carried and never shown. Records emitted underneath the
-     * run carry it as `run=`, so it selects that run's story out of the exported log.
-     *
-     * It is present in cases the fault id is not: a Kotlin-side failure has no Python traceback and
-     * so no fault id, but it still carries the run id whenever the run got far enough to be assigned
-     * one. A run that failed before that has neither.
-     */
-    private fun miningRunId(vararg states: MiningRunState): String =
-        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.runId })
-
-    /**
-     * The locale-independent half of the failure. `MiningFailure.message` is localized and is never
-     * put in this report, so without a code a report from a non-English device says only that a
-     * mining run failed.
-     */
-    private fun miningFailureCode(vararg states: MiningRunState): String =
-        safeCode(states.firstNotNullOfOrNull { (it as? MiningRunState.Failed)?.failure?.diagnostic })
+    private fun firstFailedMiningRun(vararg states: MiningRunState): MiningRunState.Failed? =
+        states.firstNotNullOfOrNull { it as? MiningRunState.Failed }
 
     private fun videoPending(state: VideoMiningUiState): String =
         pendingLabels(

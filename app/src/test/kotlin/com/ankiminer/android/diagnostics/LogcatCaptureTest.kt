@@ -4,7 +4,10 @@ import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -202,6 +205,24 @@ class LogcatCaptureTest {
             assertEquals(1, process.timedWaits)
         }
 
+    @Test
+    fun `timeout closes blocked stdout before awaiting the reader`() =
+        runBlocking {
+            val process = TimeoutWithBlockedStdoutProcess()
+            val reader = ProcessLogcatCommandReader(start = { process })
+
+            val result =
+                withTimeout(2_000) {
+                    reader.read(listOf("logcat"), timeoutMillis = 1, maxBytes = 1024)
+                }
+
+            assertTrue(result.timedOut)
+            assertNull(result.exitCode)
+            assertEquals("", result.tail.text)
+            assertTrue(process.forciblyDestroyed)
+            assertTrue(process.inputClosed)
+        }
+
     private class StdinCloseFailingProcess : Process() {
         var forciblyDestroyed = false
             private set
@@ -264,5 +285,69 @@ class LogcatCaptureTest {
                     super.close()
                 }
             }
+    }
+
+    private class TimeoutWithBlockedStdoutProcess : Process() {
+        var forciblyDestroyed = false
+            private set
+        var inputClosed = false
+            private set
+        private var timedWaits = 0
+        private var alive = true
+        private val readStarted = CountDownLatch(1)
+        private val readReleased = CountDownLatch(1)
+
+        private val input =
+            object : InputStream() {
+                override fun read(): Int {
+                    readStarted.countDown()
+                    readReleased.await()
+                    return -1
+                }
+
+                override fun close() {
+                    inputClosed = true
+                    readReleased.countDown()
+                }
+            }
+        private val error = ByteArrayInputStream(ByteArray(0))
+        private val output =
+            object : OutputStream() {
+                override fun write(value: Int) = Unit
+            }
+
+        override fun getOutputStream(): OutputStream = output
+
+        override fun getInputStream(): InputStream = input
+
+        override fun getErrorStream(): InputStream = error
+
+        override fun waitFor(): Int = 0
+
+        override fun waitFor(
+            timeout: Long,
+            unit: TimeUnit,
+        ): Boolean {
+            timedWaits++
+            if (timedWaits == 1) {
+                check(readStarted.await(1, TimeUnit.SECONDS)) { "stdout reader did not start" }
+                return false
+            }
+            return true
+        }
+
+        override fun exitValue(): Int = 0
+
+        override fun destroy() {
+            alive = false
+        }
+
+        override fun destroyForcibly(): Process {
+            forciblyDestroyed = true
+            alive = false
+            return this
+        }
+
+        override fun isAlive(): Boolean = alive
     }
 }

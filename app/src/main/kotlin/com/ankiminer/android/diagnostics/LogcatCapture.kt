@@ -100,17 +100,17 @@ internal class ProcessLogcatCommandReader(
     ): LogcatReadResult =
         coroutineScope {
             val process = start(command)
+            var timedOut = false
             try {
                 process.outputStream.close()
                 val reading = async(Dispatchers.IO) { LogTail.of(process.inputStream, maxBytes) }
-                var timedOut = false
                 val completed =
                     withContext(Dispatchers.IO) {
                         process.waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
                     }
                 if (!completed) {
                     timedOut = true
-                    process.destroyForcibly()
+                    tearDown(process)
                 }
                 val tail = reading.await()
                 LogcatReadResult(
@@ -119,15 +119,19 @@ internal class ProcessLogcatCommandReader(
                     timedOut = timedOut,
                 )
             } finally {
-                withContext(NonCancellable + Dispatchers.IO) {
-                    bestEffort { process.destroyForcibly() }
-                    bestEffort { process.inputStream.close() }
-                    bestEffort { process.errorStream.close() }
-                    bestEffort { process.outputStream.close() }
-                    bestEffort { process.waitFor(TEARDOWN_MILLIS, TimeUnit.MILLISECONDS) }
-                }
+                if (!timedOut) tearDown(process)
             }
         }
+
+    private suspend fun tearDown(process: Process) {
+        withContext(NonCancellable + Dispatchers.IO) {
+            bestEffort { process.destroyForcibly() }
+            bestEffort { process.inputStream.close() }
+            bestEffort { process.errorStream.close() }
+            bestEffort { process.outputStream.close() }
+            bestEffort { process.waitFor(TEARDOWN_MILLIS, TimeUnit.MILLISECONDS) }
+        }
+    }
 
     private fun bestEffort(action: () -> Unit) {
         try {
