@@ -60,6 +60,7 @@ _ANKIMORPHS_LEMMA_HEADER = "morph-lemma"
 # read rather than buffer+decode an arbitrary blob off-thread.
 _MAX_IMPORT_BYTES = 50 * 1024 * 1024
 _READ_CHUNK_BYTES = 1024 * 1024
+_MAX_JSON_NESTING_DEPTH = 256
 _LINE_BOUNDARY_RE = re.compile(r"\r\n|[\n\r\v\f\x1c-\x1e\x85\u2028\u2029]")
 
 
@@ -273,7 +274,7 @@ def _row(line: str) -> list[str]:
 
 
 class _JsonReader:
-    """Incremental JSON reader that materializes at most one array item."""
+    """Incremental JSON reader with token-wise container skipping."""
 
     def __init__(
         self,
@@ -322,7 +323,33 @@ class _JsonReader:
             raise KnownWordsImportError("invalid_json")
         self._position += 1
 
+    def _decode_number(self) -> int | float:
+        self._skip_whitespace()
+        self._compact()
+        while True:
+            end = 0
+            while end < len(self._buffer):
+                character = self._buffer[end]
+                if character.isspace() or character in ",]}":
+                    break
+                end += 1
+            if end == len(self._buffer) and not self._eof:
+                self._fill()
+                continue
+            token = self._buffer[:end]
+            try:
+                value, decoded_end = self._decoder.raw_decode(token)
+            except json.JSONDecodeError as exc:
+                raise KnownWordsImportError("invalid_json") from exc
+            if decoded_end != len(token) or type(value) not in (int, float):
+                raise KnownWordsImportError("invalid_json")
+            self._position = end
+            return value
+
     def decode_value(self) -> Any:
+        first = self.peek()
+        if first is not None and (first == "-" or first.isdigit()):
+            return self._decode_number()
         self._skip_whitespace()
         self._compact()
         while True:
@@ -336,13 +363,16 @@ class _JsonReader:
             self._position = end
             return value
 
-    def iter_array(self) -> Iterator[Any]:
+    def iter_array(
+        self,
+        read_item: Callable[[], Any] | None = None,
+    ) -> Iterator[Any]:
         self.consume("[")
         if self.peek() == "]":
             self._position += 1
             return
         while True:
-            yield self.decode_value()
+            yield self.decode_value() if read_item is None else read_item()
             delimiter = self.peek()
             if delimiter == "]":
                 self._position += 1
@@ -351,9 +381,228 @@ class _JsonReader:
                 raise KnownWordsImportError("invalid_json")
             self._position += 1
 
+    def iter_object(self) -> Iterator[str]:
+        self.consume("{")
+        if self.peek() == "}":
+            self._position += 1
+            return
+        while True:
+            key = self.decode_value()
+            if not isinstance(key, str):
+                raise KnownWordsImportError("invalid_json")
+            self.consume(":")
+            yield key
+            delimiter = self.peek()
+            if delimiter == "}":
+                self._position += 1
+                return
+            if delimiter != ",":
+                raise KnownWordsImportError("invalid_json")
+            self._position += 1
+
+    def skip_value(self) -> None:
+        first = self.peek()
+        if first not in {"[", "{"}:
+            self.decode_value()
+            return
+        if _MAX_JSON_NESTING_DEPTH < 1:
+            raise KnownWordsImportError("limit_exceeded")
+        self._position += 1
+        stack: list[tuple[str, str]] = [
+            ("array", "value_or_end") if first == "[" else ("object", "key_or_end")
+        ]
+        while stack:
+            kind, state = stack[-1]
+            if kind == "array":
+                if state == "value_or_end" and self.peek() == "]":
+                    self._position += 1
+                    stack.pop()
+                elif state in {"value_or_end", "value"}:
+                    stack[-1] = (kind, "comma_or_end")
+                    self._skip_scalar_or_push(stack)
+                elif self.peek() == "]":
+                    self._position += 1
+                    stack.pop()
+                else:
+                    self.consume(",")
+                    stack[-1] = (kind, "value")
+            elif state == "key_or_end" and self.peek() == "}":
+                self._position += 1
+                stack.pop()
+            elif state in {"key_or_end", "key"}:
+                key = self.decode_value()
+                if not isinstance(key, str):
+                    raise KnownWordsImportError("invalid_json")
+                self.consume(":")
+                stack[-1] = (kind, "value")
+            elif state == "value":
+                stack[-1] = (kind, "comma_or_end")
+                self._skip_scalar_or_push(stack)
+            elif self.peek() == "}":
+                self._position += 1
+                stack.pop()
+            else:
+                self.consume(",")
+                stack[-1] = (kind, "key")
+
+    def _skip_scalar_or_push(self, stack: list[tuple[str, str]]) -> None:
+        first = self.peek()
+        if first == "[":
+            if len(stack) >= _MAX_JSON_NESTING_DEPTH:
+                raise KnownWordsImportError("limit_exceeded")
+            self._position += 1
+            stack.append(("array", "value_or_end"))
+        elif first == "{":
+            if len(stack) >= _MAX_JSON_NESTING_DEPTH:
+                raise KnownWordsImportError("limit_exceeded")
+            self._position += 1
+            stack.append(("object", "key_or_end"))
+        else:
+            self.decode_value()
+
     def finish(self) -> None:
         if self.peek() is not None:
             raise KnownWordsImportError("invalid_json")
+
+
+_JSON_CONTAINER = object()
+
+
+def _read_json_leaf(reader: _JsonReader) -> Any:
+    if reader.peek() in {"[", "{"}:
+        reader.skip_value()
+        return _JSON_CONTAINER
+    return reader.decode_value()
+
+
+def _read_migaku_item(reader: _JsonReader) -> tuple[bool, str, Any]:
+    _raise_if_cancelled(reader._cancel_check)
+    if reader.peek() != "{":
+        reader.skip_value()
+        return False, "", None
+    word: Any = _JSON_CONTAINER
+    status: Any = _JSON_CONTAINER
+    word_seen = False
+    status_seen = False
+    for key in reader.iter_object():
+        if key == "word":
+            word_seen = True
+            word = _read_json_leaf(reader)
+        elif key == "status":
+            status_seen = True
+            status = _read_json_leaf(reader)
+        else:
+            reader.skip_value()
+    return word_seen and status_seen, _clean(word), status
+
+
+def _read_migaku_legacy_pair(reader: _JsonReader) -> tuple[str, int] | None:
+    if reader.peek() != "[":
+        reader.skip_value()
+        return None
+    first: Any = _JSON_CONTAINER
+    second: Any = _JSON_CONTAINER
+    count = 0
+    for value in reader.iter_array(lambda: _read_json_leaf(reader)):
+        count += 1
+        if count == 1:
+            first = value
+        elif count == 2:
+            second = value
+    if count != 2 or not isinstance(first, str) or not isinstance(second, int):
+        return None
+    return first, second
+
+
+def _read_jpdb_review(reader: _JsonReader) -> tuple[str, float] | None:
+    if reader.peek() != "{":
+        reader.skip_value()
+        return None
+    grade: Any = _JSON_CONTAINER
+    timestamp: Any = 0
+    for key in reader.iter_object():
+        if key == "grade":
+            grade = _read_json_leaf(reader)
+        elif key == "timestamp":
+            timestamp = _read_json_leaf(reader)
+        else:
+            reader.skip_value()
+    if not isinstance(grade, str) or not grade:
+        return None
+    numeric_timestamp = float(timestamp) if isinstance(timestamp, (int, float)) else 0.0
+    return grade, numeric_timestamp
+
+
+def _read_jpdb_reviews(reader: _JsonReader) -> tuple[str | None, int]:
+    latest_grade: str | None = None
+    latest_timestamp = 0.0
+    skipped_malformed = 0
+    for review in reader.iter_array(lambda: _read_jpdb_review(reader)):
+        if review is None:
+            skipped_malformed += 1
+            continue
+        grade, timestamp = review
+        if latest_grade is None or timestamp > latest_timestamp:
+            latest_grade = grade
+            latest_timestamp = timestamp
+    return latest_grade, skipped_malformed
+
+
+def _read_jpdb_card(reader: _JsonReader) -> tuple[int, int, str | None]:
+    _raise_if_cancelled(reader._cancel_check)
+    if reader.peek() != "{":
+        reader.skip_value()
+        return 0, 1, None
+    spelling: Any = _JSON_CONTAINER
+    reviews_valid = True
+    latest_grade: str | None = None
+    review_skips = 0
+    for key in reader.iter_object():
+        if key == "spelling":
+            spelling = _read_json_leaf(reader)
+        elif key == "reviews":
+            if reader.peek() == "[":
+                latest_grade, review_skips = _read_jpdb_reviews(reader)
+                reviews_valid = True
+            else:
+                raw_reviews = _read_json_leaf(reader)
+                reviews_valid = raw_reviews is None
+                latest_grade = None
+                review_skips = 0
+        else:
+            reader.skip_value()
+    word = _clean(spelling)
+    if not word:
+        return 0, 1, None
+    if not reviews_valid:
+        return 1, 1, None
+    if latest_grade is not None and latest_grade not in _JPDB_EXCLUDED_GRADES:
+        return 1, review_skips, word
+    return 1, review_skips, None
+
+
+def _collect_jpdb_streamed(
+    reader: _JsonReader,
+    *,
+    max_words: int | None,
+    max_word_bytes: int | None,
+) -> tuple[set[str], int, int]:
+    words: set[str] = set()
+    total = 0
+    skipped_malformed = 0
+    for card_total, card_skips, word in reader.iter_array(
+        lambda: _read_jpdb_card(reader)
+    ):
+        total += card_total
+        skipped_malformed += card_skips
+        if word is not None:
+            _add_bounded(
+                words,
+                word,
+                max_words=max_words,
+                max_word_bytes=max_word_bytes,
+            )
+    return words, total, skipped_malformed
 
 
 def _collect_jpdb(
@@ -417,20 +666,16 @@ def _parse_json_streamed(
                 words: set[str] = set()
                 total = 0
                 valid = True
-                for pair in reader.iter_array():
+                for pair in reader.iter_array(lambda: _read_migaku_legacy_pair(reader)):
                     total += 1
-                    if not (
-                        isinstance(pair, list)
-                        and len(pair) == 2
-                        and isinstance(pair[0], str)
-                        and isinstance(pair[1], int)
-                    ):
+                    if pair is None:
                         valid = False
                         continue
-                    if pair[1] == 2 and _clean(pair[0]):
+                    word, status = pair
+                    if status == 2 and _clean(word):
                         _add_bounded(
                             words,
-                            pair[0],
+                            word,
                             max_words=max_words,
                             max_word_bytes=max_word_bytes,
                         )
@@ -440,56 +685,42 @@ def _parse_json_streamed(
                 raise KnownWordsImportError("unrecognized")
 
             if first != "{":
-                reader.decode_value()
+                reader.skip_value()
                 reader.finish()
                 raise KnownWordsImportError("unrecognized")
 
-            reader.consume("{")
             jpdb: tuple[set[str], int, int] | None = None
             migaku: tuple[set[str], int] | None = None
-            if reader.peek() != "}":
-                while True:
-                    key = reader.decode_value()
-                    if not isinstance(key, str):
-                        raise KnownWordsImportError("invalid_json")
-                    reader.consume(":")
-                    if key == "cards_vocabulary_jp_en" and reader.peek() == "[":
-                        jpdb = _collect_jpdb(
-                            reader.iter_array(),
-                            max_words=max_words,
-                            max_word_bytes=max_word_bytes,
-                            cancel_check=cancel_check,
-                        )
-                    elif key == "words" and reader.peek() == "[":
-                        found_words: set[str] = set()
-                        entries = 0
-                        for item in reader.iter_array():
-                            _raise_if_cancelled(cancel_check)
-                            if not isinstance(item, dict) or "word" not in item or "status" not in item:
-                                continue
-                            entries += 1
-                            word = _clean(item["word"])
-                            if item["status"] == "KNOWN" and word:
-                                _add_bounded(
-                                    found_words,
-                                    word,
-                                    max_words=max_words,
-                                    max_word_bytes=max_word_bytes,
-                                )
-                        migaku = (found_words, entries) if entries else None
-                    else:
-                        reader.decode_value()
-                        if key == "cards_vocabulary_jp_en":
-                            jpdb = None
-                        elif key == "words":
-                            migaku = None
-                    delimiter = reader.peek()
-                    if delimiter == "}":
-                        break
-                    if delimiter != ",":
-                        raise KnownWordsImportError("invalid_json")
-                    reader.consume(",")
-            reader.consume("}")
+            for key in reader.iter_object():
+                if key == "cards_vocabulary_jp_en" and reader.peek() == "[":
+                    jpdb = _collect_jpdb_streamed(
+                        reader,
+                        max_words=max_words,
+                        max_word_bytes=max_word_bytes,
+                    )
+                elif key == "words" and reader.peek() == "[":
+                    found_words: set[str] = set()
+                    entries = 0
+                    for valid_item, word, status in reader.iter_array(
+                        lambda: _read_migaku_item(reader)
+                    ):
+                        if not valid_item:
+                            continue
+                        entries += 1
+                        if status == "KNOWN" and word:
+                            _add_bounded(
+                                found_words,
+                                word,
+                                max_words=max_words,
+                                max_word_bytes=max_word_bytes,
+                            )
+                    migaku = (found_words, entries) if entries else None
+                else:
+                    reader.skip_value()
+                    if key == "cards_vocabulary_jp_en":
+                        jpdb = None
+                    elif key == "words":
+                        migaku = None
             reader.finish()
     except KnownWordsImportError:
         raise

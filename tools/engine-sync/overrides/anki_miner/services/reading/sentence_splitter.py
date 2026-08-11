@@ -13,7 +13,12 @@ suppress splitting. The unterminated tail is flushed.
 
 from __future__ import annotations
 
-from anki_miner.models.reading import check_reading_unit_capacity
+from array import array
+
+from anki_miner.models.reading import (
+    check_reading_unit_capacity,
+    check_reading_unit_text_capacity,
+)
 
 # Terminators that always end a sentence at depth 0.
 _HARD_TERMINATORS = frozenset("。！？!?‼⁉⁇⁈")
@@ -52,7 +57,7 @@ def _run_is_terminating(run: str) -> bool:
     return False
 
 
-def _matched_openers(text: str) -> set[int]:
+def _matched_openers(text: str) -> bytearray:
     """Indices of openers that have a matching closer later in ``text``.
 
     A plain LIFO stack: any closer pops the nearest still-open opener (bracket
@@ -61,16 +66,45 @@ def _matched_openers(text: str) -> set[int]:
     gate depth, so an unbalanced ``「`` no longer suppresses every terminator
     after it (the mokuro cover-blurb "wall of text" bug).
     """
-    stack: list[int] = []
-    matched: set[int] = set()
+    stack = array("I")
+    matched = bytearray((len(text) + 7) // 8)
     for i, ch in enumerate(text):
         if i % _CANCELLATION_CHECK_INTERVAL == 0:
             check_reading_unit_capacity(0)
         if ch in _OPENERS:
             stack.append(i)
         elif ch in _CLOSERS and stack:
-            matched.add(stack.pop())
+            opener = stack.pop()
+            matched[opener >> 3] |= 1 << (opener & 7)
     return matched
+
+
+def _is_matched_opener(matched: bytearray, index: int) -> bool:
+    return bool(matched[index >> 3] & (1 << (index & 7)))
+
+
+def _utf8_bytes(character: str) -> int:
+    code_point = ord(character)
+    if code_point <= 0x7F:
+        return 1
+    if code_point <= 0x7FF:
+        return 2
+    if code_point <= 0xFFFF:
+        return 3
+    return 4
+
+
+def _append_text(
+    buf: list[str], value: str, retained_bytes: int, value_bytes: int | None = None
+) -> int:
+    observed = retained_bytes + (
+        sum(_utf8_bytes(character) for character in value)
+        if value_bytes is None
+        else value_bytes
+    )
+    check_reading_unit_text_capacity(observed)
+    buf.append(value)
+    return observed
 
 
 def _append_segment(segments: list[str], segment: str) -> None:
@@ -88,6 +122,7 @@ def split_sentences(text: str, *, split_adjacent_quotes: bool = False) -> list[s
     matched_openers = _matched_openers(text)
     segments: list[str] = []
     buf: list[str] = []
+    segment_bytes = 0
     depth = 0
     i = 0
     n = len(text)
@@ -96,30 +131,37 @@ def split_sentences(text: str, *, split_adjacent_quotes: bool = False) -> list[s
             check_reading_unit_capacity(0)
         c = text[i]
         if c in _OPENERS:
-            if i in matched_openers:  # unmatched openers stay depth-neutral
+            if _is_matched_opener(
+                matched_openers, i
+            ):  # unmatched openers stay depth-neutral
                 depth += 1
-            buf.append(c)
+            segment_bytes = _append_text(buf, c, segment_bytes)
             i += 1
         elif c in _CLOSERS:
             if depth > 0:  # unmatched closer: never goes negative
                 depth -= 1
-            buf.append(c)
+            segment_bytes = _append_text(buf, c, segment_bytes)
             i += 1
             if split_adjacent_quotes and c == "」" and depth == 0 and i < n and text[i] == "「":
                 _append_segment(segments, "".join(buf))
                 buf = []
+                segment_bytes = 0
         elif depth == 0 and c in _SENTENCE_PUNCT:
             j = i
+            run_bytes = 0
             while j < n and text[j] in _SENTENCE_PUNCT:  # absorb the run
+                run_bytes += _utf8_bytes(text[j])
+                check_reading_unit_text_capacity(segment_bytes + run_bytes)
                 j += 1
             run = text[i:j]
-            buf.append(run)
+            segment_bytes = _append_text(buf, run, segment_bytes, run_bytes)
             i = j
             if _run_is_terminating(run):
                 _append_segment(segments, "".join(buf))
                 buf = []
+                segment_bytes = 0
         else:
-            buf.append(c)
+            segment_bytes = _append_text(buf, c, segment_bytes)
             i += 1
     if buf:  # flush the unterminated tail
         _append_segment(segments, "".join(buf))
