@@ -135,7 +135,7 @@ internal fun AnkiTargetCard(
                     onSelect = { selected ->
                         if (selected != state.noteType) onSelectNoteType(selected)
                     },
-                    isOptionEnabled = { it != state.noteType },
+                    isOptionEnabled = { !state.busy && it != state.noteType },
                 )
                 if (state.noteType != null) {
                     val fields =
@@ -189,14 +189,15 @@ internal fun AnkiTargetCard(
                             selected = state.fieldMap[key] ?: "",
                             onSelect = { field -> onSetFieldMapping(key, field) },
                             isOptionEnabled = { field ->
-                                AnkiFieldMapPolicy.isDestinationAvailable(
-                                    currentFieldMap = state.fieldMap,
-                                    logicalKey = key,
-                                    destination = field,
-                                    fieldNames = fields,
-                                    reservedDestinations =
-                                        setOfNotNull(state.cardTypeMarkerField),
-                                )
+                                !state.busy &&
+                                    AnkiFieldMapPolicy.isDestinationAvailable(
+                                        currentFieldMap = state.fieldMap,
+                                        logicalKey = key,
+                                        destination = field,
+                                        fieldNames = fields,
+                                        reservedDestinations =
+                                            setOfNotNull(state.cardTypeMarkerField),
+                                    )
                             },
                         )
                     }
@@ -265,7 +266,9 @@ private fun CardTypeMarkerSection(
                 CardType.entries.map { it.wireValue to cardTypeLabel(it) },
         selected = state.cardType?.wireValue ?: "",
         onSelect = { selected -> onSelectCardType(CardType.fromWire(selected)) },
-        isOptionEnabled = { it != (state.cardType?.wireValue ?: "") },
+        isOptionEnabled = {
+            !state.busy && it != (state.cardType?.wireValue ?: "")
+        },
     )
     if (state.cardType != null) {
         NoteTypeDropdown(
@@ -276,7 +279,8 @@ private fun CardTypeMarkerSection(
             // A marker sharing a destination with a mapped field is rejected at the snapshot
             // boundary, so those fields are not offered.
             isOptionEnabled = { field ->
-                field.isEmpty() || state.fieldMap.none { (_, mapped) -> mapped == field }
+                !state.busy &&
+                    (field.isEmpty() || state.fieldMap.none { (_, mapped) -> mapped == field })
             },
         )
         if (state.cardTypeMarkerField.isNullOrEmpty()) {
@@ -444,7 +448,7 @@ internal fun AnkiRecoveryCard(
     onResolveReview: (Long, AnkiExternalReviewOutcome) -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
-    var confirmation by remember { mutableStateOf<AnkiRecoveryConfirmation?>(null) }
+    var confirmationKey by rememberSaveable { mutableStateOf<String?>(null) }
     val presentation = state.recoveryPresentation
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
@@ -517,7 +521,8 @@ internal fun AnkiRecoveryCard(
                     if (AnkiRemediationActionKind.ACKNOWLEDGE_UNATTACHED_MEDIA in item.availableActions) {
                         OutlinedButton(
                             onClick = {
-                                confirmation = AnkiRecoveryConfirmation.UnattachedMedia(item.id)
+                                confirmationKey =
+                                    AnkiRecoveryConfirmation.UnattachedMedia(item.id).saveableKey
                             },
                             enabled = !state.busy,
                             colors = outlinedActionButtonColors(),
@@ -528,7 +533,8 @@ internal fun AnkiRecoveryCard(
                         Text(stringResource(R.string.anki_recovery_media_uncertain_help))
                         OutlinedButton(
                             onClick = {
-                                confirmation = AnkiRecoveryConfirmation.UncertainMedia(item.id)
+                                confirmationKey =
+                                    AnkiRecoveryConfirmation.UncertainMedia(item.id).saveableKey
                             },
                             enabled = !state.busy,
                             colors = outlinedActionButtonColors(),
@@ -541,16 +547,18 @@ internal fun AnkiRecoveryCard(
                             item.type,
                             state.busy || !state.ankiReady,
                         ) { id, outcome ->
-                            confirmation = AnkiRecoveryConfirmation.ExternalReview(id, outcome)
+                            confirmationKey =
+                                AnkiRecoveryConfirmation.ExternalReview(id, outcome).saveableKey
                         }
                     }
                 }
             }
         }
     }
+    val confirmation = confirmationKey?.let { AnkiRecoveryConfirmation.fromSaveableKey(it) }
     confirmation?.let { pending ->
         AlertDialog(
-            onDismissRequest = { confirmation = null },
+            onDismissRequest = { confirmationKey = null },
             title = { Text(stringResource(R.string.anki_recovery_confirm_title)) },
             text = {
                 Text(
@@ -578,7 +586,7 @@ internal fun AnkiRecoveryCard(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        confirmation = null
+                        confirmationKey = null
                         when (pending) {
                             is AnkiRecoveryConfirmation.UnattachedMedia ->
                                 onAcknowledgeMedia(pending.remediationId)
@@ -591,7 +599,7 @@ internal fun AnkiRecoveryCard(
                 ) { Text(stringResource(R.string.anki_recovery_confirm_action)) }
             },
             dismissButton = {
-                TextButton(onClick = { confirmation = null }) {
+                TextButton(onClick = { confirmationKey = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -601,6 +609,13 @@ internal fun AnkiRecoveryCard(
 
 private sealed interface AnkiRecoveryConfirmation {
     val remediationId: Long
+    val saveableKey: String
+        get() =
+            when (this) {
+                is UnattachedMedia -> "unattached:$remediationId"
+                is UncertainMedia -> "uncertain:$remediationId"
+                is ExternalReview -> "external:$remediationId:${outcome.name}"
+            }
 
     data class UnattachedMedia(
         override val remediationId: Long,
@@ -614,6 +629,26 @@ private sealed interface AnkiRecoveryConfirmation {
         override val remediationId: Long,
         val outcome: AnkiExternalReviewOutcome,
     ) : AnkiRecoveryConfirmation
+
+    companion object {
+        fun fromSaveableKey(key: String): AnkiRecoveryConfirmation? {
+            val parts = key.split(':', limit = 3)
+            val remediationId = parts.getOrNull(1)?.toLongOrNull() ?: return null
+            return when (parts.firstOrNull()) {
+                "unattached" -> UnattachedMedia(remediationId)
+                "uncertain" -> UncertainMedia(remediationId)
+                "external" -> {
+                    val outcomeName = parts.getOrNull(2) ?: return null
+                    val outcome =
+                        AnkiExternalReviewOutcome.entries
+                            .firstOrNull { it.name == outcomeName }
+                            ?: return null
+                    ExternalReview(remediationId, outcome)
+                }
+                else -> null
+            }
+        }
+    }
 }
 
 @Composable
