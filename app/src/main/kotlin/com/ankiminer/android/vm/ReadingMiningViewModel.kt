@@ -115,7 +115,6 @@ class ReadingMiningViewModel internal constructor(
     private var sourceDocumentJob: Job? = null
     private var archiveDocumentJob: Job? = null
     private var sourceRestoreInFlight = false
-    private var pendingArchiveReplacedUri: String? = null
     private val sourceSelection =
         SavedDocumentSelectionStore(
             savedStateHandle = savedStateHandle,
@@ -810,8 +809,6 @@ class ReadingMiningViewModel internal constructor(
                     rejectPendingArchive()
                 } else if (localState.value.sourceKind == ReadingSourceKindUi.MOKURO) {
                     if (pendingArchiveUri != null) {
-                        pendingArchiveReplacedUri =
-                            archiveSelection.restore()?.uri?.takeIf { it != pendingArchiveUri }
                         resolvePendingArchive()
                     } else {
                         archiveSelection.restore()?.let { archive ->
@@ -886,7 +883,7 @@ class ReadingMiningViewModel internal constructor(
                     val accepted =
                         when (result) {
                             is SafSelectionOwnershipResult.Published -> {
-                                finishDocumentPublication(kind, result.value)
+                                finishDocumentPublication(kind, result)
                                 true
                             }
                             is SafSelectionOwnershipResult.Rejected -> {
@@ -1048,27 +1045,33 @@ class ReadingMiningViewModel internal constructor(
 
     private suspend fun finishDocumentPublication(
         kind: DocumentKind,
-        publication: DocumentPublication,
+        result: SafSelectionOwnershipResult.Published<DocumentPublication>,
     ) {
-        if (kind == DocumentKind.SOURCE) {
-            // Any archive picker was launched against the previous primary filename. Even when an
-            // installed archive remains compatible, a late result for the previous source is stale.
-            archiveDocumentRequest += 1
-            archiveDocumentJob?.cancel()
-            if (publication.clearArchive) {
-                SafSelectionOwnershipTransaction(safBroker, archiveSelection)
-                    .clearPersistPublishRelease(publication.archiveToClear) {
-                        localState.update {
-                            it.copy(archive = ReadingDocumentSlotState())
+        val publication = result.value
+        try {
+            if (kind == DocumentKind.SOURCE) {
+                // Any archive picker was launched against the previous primary filename. Even
+                // when an installed archive remains compatible, a late result is stale.
+                archiveDocumentRequest += 1
+                archiveDocumentJob?.cancel()
+                if (publication.clearArchive) {
+                    SafSelectionOwnershipTransaction(safBroker, archiveSelection)
+                        .clearPersistPublishRelease(publication.archiveToClear) {
+                            localState.update {
+                                it.copy(archive = ReadingDocumentSlotState())
+                            }
                         }
-                    }
+                }
+                if (publication.clearSeries) {
+                    subtitleSeriesSelection.clear()
+                    localState.update { it.copy(subtitleSeriesName = "") }
+                }
             }
-            if (publication.clearSeries) {
-                subtitleSeriesSelection.clear()
-                localState.update { it.copy(subtitleSeriesName = "") }
-            }
+        } finally {
+            result
+                .supersededDocuments(publication.replacedDocument)
+                .forEach(::releaseDocument)
         }
-        publication.replacedDocument?.let(::releaseDocument)
     }
 
     private suspend fun clearRestoredSourceDependents() {
@@ -1093,13 +1096,9 @@ class ReadingMiningViewModel internal constructor(
         resolveDocument(
             kind = DocumentKind.ARCHIVE,
             uri = uri,
-            onResolved = { accepted ->
+            onResolved = {
                 if (pendingArchiveUri == uri) {
                     pendingArchiveUri = null
-                    if (accepted) {
-                        pendingArchiveReplacedUri?.let(safBroker::releaseReadAccessEventually)
-                    }
-                    pendingArchiveReplacedUri = null
                 }
             },
         )
@@ -1108,7 +1107,6 @@ class ReadingMiningViewModel internal constructor(
     private fun rejectPendingArchive() {
         if (pendingArchiveUri == null) return
         pendingArchiveUri = null
-        pendingArchiveReplacedUri = null
         localState.update { local ->
             local.copy(
                 archive =

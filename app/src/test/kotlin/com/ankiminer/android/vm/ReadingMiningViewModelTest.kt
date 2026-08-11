@@ -674,6 +674,44 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun replacingTransientlyUnavailableSavedSourceReleasesItsDurableGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val oldUri = "content://test/temporarily-unavailable.txt"
+            val newUri = "content://test/replacement.epub"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.READING_SOURCE,
+                SafSelectionRecord(oldUri, "temporarily-unavailable.txt"),
+            )
+            val broker = ControlledSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+            broker.fail(
+                oldUri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            viewModel.onSourcePicked(newUri)
+            runCurrent()
+            broker.succeed(newUri)
+            runCurrent()
+
+            assertEquals(newUri, inventory.selection(SafSelectionSlot.READING_SOURCE)?.uri)
+            assertEquals("replacement.epub", viewModel.uiState.value.source.document?.displayName)
+            assertEquals(listOf(oldUri), broker.releasedUris)
+        }
+
+    @Test
     fun transientSubtitleProviderFailurePreservesSeriesForRetry() =
         runTest(mainDispatcherRule.dispatcher) {
             val sourceUri = "content://test/episode.srt"
@@ -856,6 +894,34 @@ class ReadingMiningViewModelTest {
                 broker.eventualReleaseUris,
             )
             assertEquals(listOf("content://test/book.cbz"), broker.releasedUris)
+        }
+
+    @Test
+    fun archiveClearFailureStillReleasesTheReplacedSourceGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = FailArchiveClearSelectionInventory()
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository = RecordingReadingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            viewModel.onSourcePicked("content://test/book.mokuro")
+            runCurrent()
+            viewModel.onArchivePicked("content://test/book.cbz")
+            runCurrent()
+            inventory.failArchiveClear = true
+
+            viewModel.onSourcePicked("content://test/novel.txt")
+            runCurrent()
+
+            assertEquals("novel.txt", viewModel.uiState.value.source.document?.displayName)
+            assertEquals(
+                listOf("content://test/book.mokuro"),
+                broker.eventualReleaseUris,
+            )
         }
 
     @Test
@@ -1309,6 +1375,21 @@ class ReadingMiningViewModelTest {
                 failNextSave = false
                 throw SafSelectionPersistenceException("injected commit failure")
             }
+        }
+    }
+
+    private class FailArchiveClearSelectionInventory : RecordingSelectionInventory() {
+        var failArchiveClear = false
+
+        override fun putSelections(selections: Map<SafSelectionSlot, SafSelectionRecord?>) {
+            if (
+                failArchiveClear &&
+                selections.containsKey(SafSelectionSlot.READING_ARCHIVE) &&
+                selections[SafSelectionSlot.READING_ARCHIVE] == null
+            ) {
+                throw SafSelectionPersistenceException("injected archive clear failure")
+            }
+            selections.forEach(::putSelection)
         }
     }
 
