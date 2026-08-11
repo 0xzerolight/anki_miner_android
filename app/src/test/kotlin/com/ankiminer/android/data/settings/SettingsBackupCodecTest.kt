@@ -1,5 +1,9 @@
 package com.ankiminer.android.data.settings
 
+import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.InstalledFrequencySource
+import com.ankiminer.android.data.resources.InstalledPitchSource
+import com.ankiminer.android.data.resources.ResourceManagerState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -179,4 +183,156 @@ class SettingsBackupCodecTest {
 
         assertEquals(expected, SettingsBackupCodec.portableKeyNames)
     }
+
+    @Test
+    fun `portable chains follow semantic content across slot and filename changes`() {
+        val sourceInventory =
+            ResourceManagerState(
+                dictionaries =
+                    listOf(
+                        dictionary("dictionary", "Shared title", entries = 10),
+                        dictionary("dictionary-2", "Shared title", entries = 20),
+                    ),
+                frequencySources =
+                    listOf(frequency("legacy-frequency", "old-frequency-name", entries = 30)),
+                pitchSources =
+                    listOf(pitch("legacy-pitch", "old-pitch-name", entries = 40)),
+            )
+        val restoredInventory =
+            ResourceManagerState(
+                dictionaries =
+                    listOf(
+                        dictionary("dictionary", "Shared title", entries = 20),
+                        dictionary("dictionary-2", "Shared title", entries = 10),
+                    ),
+                frequencySources =
+                    listOf(frequency("renamed-frequency", "new-frequency-name", entries = 30)),
+                pitchSources =
+                    listOf(pitch("renamed-pitch", "new-pitch-name", entries = 40)),
+            )
+        val source =
+            AppSettings(
+                dictionarySources =
+                    listOf(
+                        ResourceChainSelection("dictionary-2", enabled = true),
+                        ResourceChainSelection("dictionary", enabled = false),
+                    ),
+                frequencySources =
+                    listOf(ResourceChainSelection("legacy-frequency", enabled = false)),
+                pitchSources = listOf(ResourceChainSelection("legacy-pitch", enabled = true)),
+            )
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(encode(source, "0.5.0", sourceInventory))
+                    .applyTo(AppSettings(), restoredInventory)
+            }.settings
+
+        assertEquals(
+            listOf(
+                ResourceChainSelection("dictionary", enabled = true),
+                ResourceChainSelection("dictionary-2", enabled = false),
+            ),
+            applied.dictionarySources,
+        )
+        assertEquals(
+            listOf(ResourceChainSelection("renamed-frequency", enabled = false)),
+            applied.frequencySources,
+        )
+        assertEquals(
+            listOf(ResourceChainSelection("renamed-pitch", enabled = true)),
+            applied.pitchSources,
+        )
+    }
+
+    @Test
+    fun `ambiguous portable resource identities are left visible and disabled`() {
+        val sourceInventory =
+            ResourceManagerState(
+                dictionaries =
+                    listOf(
+                        dictionary("dictionary", "Shared title", entries = 10),
+                        dictionary("dictionary-2", "Shared title", entries = 10),
+                    ),
+            )
+        val restoredInventory =
+            ResourceManagerState(
+                dictionaries =
+                    listOf(
+                        dictionary("dictionary", "Shared title", entries = 10),
+                        dictionary("dictionary-2", "Shared title", entries = 10),
+                    ),
+            )
+        val source =
+            AppSettings(
+                dictionarySources =
+                    listOf(
+                        ResourceChainSelection("dictionary-2", enabled = true),
+                        ResourceChainSelection("dictionary", enabled = false),
+                    ),
+            )
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(encode(source, "0.5.0", sourceInventory))
+                    .applyTo(AppSettings(), restoredInventory)
+            }.settings
+
+        assertEquals(
+            listOf(
+                ResourceChainSelection("dictionary", enabled = false),
+                ResourceChainSelection("dictionary-2", enabled = false),
+            ),
+            applied.dictionarySources,
+        )
+    }
+
+    private fun dictionary(
+        id: String,
+        title: String,
+        entries: Long,
+    ) =
+        InstalledDictionary(
+            slotId = id,
+            occupied = true,
+            valid = true,
+            sourceName = title,
+            sourceRevision = "same-revision",
+            format = "yomitan",
+            entryCount = entries,
+            schemaOk = true,
+            embeddedAttribution = emptyMap(),
+            catalogResourceId = null,
+            attribution = emptyList(),
+        )
+
+    private fun frequency(
+        id: String,
+        name: String,
+        entries: Long,
+    ) =
+        InstalledFrequencySource(
+            sourceId = id,
+            sourceName = name,
+            format = "yomitan",
+            entryCount = entries,
+            schemaOk = true,
+            schemaVersion = 1,
+            isCategorical = false,
+        )
+
+    private fun pitch(
+        id: String,
+        name: String,
+        entries: Long,
+    ) =
+        InstalledPitchSource(
+            sourceId = id,
+            sourceName = name,
+            sourceRevision = "same-revision",
+            format = "yomitan",
+            entryCount = entries,
+            schemaOk = true,
+            schemaVersion = 1,
+        )
 }

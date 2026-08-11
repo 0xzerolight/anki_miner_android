@@ -14,7 +14,6 @@ import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
-import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
@@ -24,10 +23,12 @@ import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupException
 import com.ankiminer.android.data.settings.SettingsBackupFailure
 import com.ankiminer.android.data.settings.SettingsBackupCodec
+import com.ankiminer.android.data.settings.SettingsBackupWriter
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.engine.BridgeJsonValue
 import java.io.IOException
+import java.util.Locale
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -76,6 +77,27 @@ class SettingsViewModelTest {
             // draft stays dirty because auto-save never markClean-rebuilds the controlled fields.
             assertEquals("1.50", viewModel.draftState.value.draft.audioPadding)
             assertTrue(viewModel.draftState.value.dirty)
+        }
+
+    @Test
+    fun commaDecimalEditAutoPersistsUnderACommaDecimalLocale() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val previousLocale = Locale.getDefault()
+            try {
+                Locale.setDefault(Locale.GERMANY)
+                val repository = FakeAppSettingsRepository(AppSettings())
+                val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+                advanceUntilIdle()
+
+                viewModel.updateDraft(viewModel.draftState.value.draft.copy(audioPadding = "1,5"))
+                advanceUntilIdle()
+
+                assertEquals(1, repository.writeCount)
+                assertEquals(1.5, repository.current.audioPaddingSeconds!!, 0.0)
+                assertEquals("1,5", viewModel.draftState.value.draft.audioPadding)
+            } finally {
+                Locale.setDefault(previousLocale)
+            }
         }
 
     @Test
@@ -845,7 +867,7 @@ class SettingsViewModelTest {
                 SettingsViewModel(
                     repository = repository,
                     resources = FakeResourceManager(resources("first")),
-                    documentWriter = io,
+                    backupWriter = io,
                     appVersion = "0.4.1",
                 )
             advanceUntilIdle()
@@ -867,7 +889,7 @@ class SettingsViewModelTest {
                 SettingsViewModel(
                     repository = repository,
                     resources = FakeResourceManager(resources("first")),
-                    documentWriter = io,
+                    backupWriter = io,
                 )
             advanceUntilIdle()
 
@@ -905,7 +927,7 @@ class SettingsViewModelTest {
                 SettingsViewModel(
                     repository = repository,
                     resources = FakeResourceManager(resources("first")),
-                    documentWriter = io,
+                    backupWriter = io,
                 )
             advanceUntilIdle()
 
@@ -945,7 +967,7 @@ class SettingsViewModelTest {
                 SettingsViewModel(
                     repository = repository,
                     resources = FakeResourceManager(resources("first")),
-                    documentWriter = io,
+                    backupWriter = io,
                 )
             advanceUntilIdle()
 
@@ -1047,12 +1069,12 @@ class SettingsViewModelTest {
     fun `a failing document writer reports an export failure`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings())
-            val writer = ResourceDocumentWriter { throw IOException("write failed") }
+            val writer = SettingsBackupWriter { _, _ -> throw IOException("write failed") }
             val viewModel =
                 SettingsViewModel(
                     repository = repository,
                     resources = FakeResourceManager(resources("first")),
-                    documentWriter = writer,
+                    backupWriter = writer,
                 )
             advanceUntilIdle()
 
@@ -1150,17 +1172,14 @@ class SettingsViewModelTest {
 
     private class RecordingDocumentIo(var content: String = "") :
         SettingsDocumentReader,
-        ResourceDocumentWriter {
+        SettingsBackupWriter {
         val written = StringBuilder()
 
-        override fun read(uri: String): String = content
+        override suspend fun read(uri: String): String = content
 
-        override fun open(uri: String): java.io.OutputStream =
-            object : java.io.ByteArrayOutputStream() {
-                override fun close() {
-                    written.append(toString(Charsets.UTF_8.name()))
-                }
-            }
+        override suspend fun write(uri: String, bytes: ByteArray) {
+            written.append(bytes.toString(Charsets.UTF_8))
+        }
     }
 
     private class FakeResourceManager(initial: ResourceManagerState) : ResourceManager {

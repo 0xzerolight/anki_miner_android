@@ -7,6 +7,7 @@ import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.MiningConfigSnapshot
+import java.text.DecimalFormatSymbols
 
 enum class AudioFormat(val wireValue: String) {
     MP3("mp3"),
@@ -253,26 +254,41 @@ internal class InvalidAppSettingException(
 /**
  * Parsing rules for editable settings fields, kept separate from persisted-value validation.
  *
- * Decimal text is intentionally locale-invariant: a comma is malformed input rather than a decimal
- * separator, so a locale can never silently change a persisted or engine-bound value.
+ * Persisted values stay locale-invariant [Double]s. Editable decimal text also accepts the current
+ * locale's decimal separator because [androidx.compose.ui.text.input.KeyboardType.Decimal] may emit
+ * it; invariant dots remain valid so a value rendered by [Double.toString] survives a locale change.
  */
 internal object AppSettingsDraftParser {
-    fun isOptionalDouble(value: String): Boolean =
-        value.isEmpty() || value.toDoubleOrNull()?.isFinite() == true
+    fun isOptionalDouble(
+        value: String,
+        decimalSeparator: Char = DecimalFormatSymbols.getInstance().decimalSeparator,
+    ): Boolean =
+        value.isEmpty() || doubleOrNull(value, decimalSeparator)?.isFinite() == true
 
     fun isOptionalInt(value: String): Boolean = value.isEmpty() || value.toIntOrNull() != null
 
-    fun optionalDouble(value: String): Double? =
+    fun optionalDouble(
+        value: String,
+        decimalSeparator: Char = DecimalFormatSymbols.getInstance().decimalSeparator,
+    ): Double? =
         if (value.isEmpty()) {
             null
         } else {
-            value.toDoubleOrNull()?.takeIf { it.isFinite() }
+            doubleOrNull(value, decimalSeparator)?.takeIf { it.isFinite() }
                 ?: throw InvalidAppSettingException(
                     code = InvalidAppSettingCode.NUMERIC_INCOMPLETE,
                     arguments = emptyList(),
                     message = "Complete or clear every numeric value",
                 )
         }
+
+    fun doubleOrNull(
+        value: String,
+        decimalSeparator: Char = DecimalFormatSymbols.getInstance().decimalSeparator,
+    ): Double? =
+        value
+            .let { if (decimalSeparator == '.') it else it.replace(decimalSeparator, '.') }
+            .toDoubleOrNull()
 
     fun optionalInt(value: String): Int? =
         if (value.isEmpty()) {
@@ -579,7 +595,7 @@ object AppSettingsValidator {
     }
 
     /**
-     * The two size caps, the nested-repeat reject, and the replacement's group references. Checked
+     * The two size caps, the unsafe-repeat rejects, and the replacement's group references. Checked
      * even when the filter is switched off, so a stored pattern can never become dangerous by
      * flipping one toggle — the same reason desktop validates the trio together.
      */
@@ -603,7 +619,7 @@ object AppSettingsValidator {
                     SubtitleRegexCheck.MAX_REPLACEMENT_CHARS,
                 )
             InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT ->
-                invalid(code, "Subtitle filter must not nest unbounded repeats")
+                invalid(code, "Subtitle filter must not contain unsafe repeated expressions")
             else ->
                 invalid(code, "Replacement references a group the subtitle filter does not capture")
         }
