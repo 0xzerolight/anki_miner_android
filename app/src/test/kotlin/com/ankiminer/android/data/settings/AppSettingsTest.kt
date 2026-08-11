@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.settings
 
+import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.engine.BridgeJsonValue
@@ -142,6 +143,121 @@ class AppSettingsTest {
             AppSettingsValidator.validate(AppSettings(maxParallelWorkers = 33))
         }
         assertTrue(AppSettingsValidator.validate(AppSettings(tags = "")).tags.isEmpty())
+    }
+
+    @Test
+    fun ankiNamesAcceptExactLimitsAndRejectTheNextCodePoint() {
+        AppSettingsValidator.validate(
+            AppSettings(
+                deckName = "d".repeat(AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS),
+                noteType = "m".repeat(AnkiLimitsV1.Names.Model.MAX_CODE_POINTS),
+                fieldMap =
+                    mapOf(
+                        "word" to "f".repeat(AnkiLimitsV1.Names.Field.MAX_CODE_POINTS),
+                    ),
+                cardTypeMarkerField =
+                    "c".repeat(AnkiLimitsV1.Names.Field.MAX_CODE_POINTS),
+            ),
+        )
+
+        listOf(
+            AppSettings(
+                deckName = "d".repeat(AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS + 1),
+            ),
+            AppSettings(
+                noteType = "m".repeat(AnkiLimitsV1.Names.Model.MAX_CODE_POINTS + 1),
+            ),
+            AppSettings(
+                fieldMap =
+                    mapOf(
+                        "word" to "f".repeat(AnkiLimitsV1.Names.Field.MAX_CODE_POINTS + 1),
+                    ),
+            ),
+            AppSettings(
+                cardTypeMarkerField =
+                    "c".repeat(AnkiLimitsV1.Names.Field.MAX_CODE_POINTS + 1),
+            ),
+        ).forEach { settings ->
+            assertThrows(InvalidAppSettingException::class.java) {
+                AppSettingsValidator.validate(settings)
+            }
+        }
+    }
+
+    @Test
+    fun ankiNamesEnforceUtf8ByteLimitsIndependentlyOfCodePointCounts() {
+        AppSettingsValidator.validate(
+            AppSettings(
+                deckName = "é".repeat(AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES / 2),
+                noteType = "é".repeat(AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES / 2),
+                fieldMap =
+                    mapOf(
+                        "word" to "é".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2),
+                    ),
+                cardTypeMarkerField =
+                    "é".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2),
+            ),
+        )
+
+        listOf(
+            AppSettings(
+                deckName = "é".repeat(AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES / 2 + 1),
+            ),
+            AppSettings(
+                noteType = "é".repeat(AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES / 2 + 1),
+            ),
+            AppSettings(
+                fieldMap =
+                    mapOf(
+                        "word" to
+                            "é".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2 + 1),
+                    ),
+            ),
+            AppSettings(
+                cardTypeMarkerField =
+                    "é".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2 + 1),
+            ),
+        ).forEach { settings ->
+            assertThrows(InvalidAppSettingException::class.java) {
+                AppSettingsValidator.validate(settings)
+            }
+        }
+    }
+
+    @Test
+    fun tagsMatchEngineSplitAndExactRequestLimits() {
+        val maximumCount =
+            List(AnkiLimitsV1.CreateNotes.MAX_TAG_COUNT_PER_NOTE) { index -> "tag$index" }
+                .joinToString(" ")
+        val maximumTag = "t".repeat(AnkiLimitsV1.CreateNotes.TAG_MAX_UTF8_BYTES)
+        val maximumUtf8Tag = "é".repeat(AnkiLimitsV1.CreateNotes.TAG_MAX_UTF8_BYTES / 2)
+        val maximumAggregate =
+            List(
+                AnkiLimitsV1.CreateNotes.TAGS_PER_NOTE_MAX_UTF8_BYTES /
+                    AnkiLimitsV1.CreateNotes.TAG_MAX_UTF8_BYTES,
+            ) { maximumTag }.joinToString(" ")
+
+        listOf(
+            maximumCount,
+            maximumTag,
+            maximumUtf8Tag,
+            maximumAggregate,
+            "one\u00a0two\u2007three\u202Ffour",
+        )
+            .forEach { tags -> AppSettingsValidator.validate(AppSettings(tags = tags)) }
+
+        val tooMany =
+            List(AnkiLimitsV1.CreateNotes.MAX_TAG_COUNT_PER_NOTE + 1) { index -> "tag$index" }
+                .joinToString(" ")
+        val oversizedTag = "t".repeat(AnkiLimitsV1.CreateNotes.TAG_MAX_UTF8_BYTES + 1)
+        val oversizedUtf8Tag =
+            "é".repeat(AnkiLimitsV1.CreateNotes.TAG_MAX_UTF8_BYTES / 2 + 1)
+        val oversizedAggregate = "$maximumAggregate x"
+        listOf(tooMany, oversizedTag, oversizedUtf8Tag, oversizedAggregate).forEach { tags ->
+            assertThrows(InvalidAppSettingException::class.java) {
+                AppSettingsValidator.validate(AppSettings(tags = tags))
+            }
+        }
     }
 
     @Test
