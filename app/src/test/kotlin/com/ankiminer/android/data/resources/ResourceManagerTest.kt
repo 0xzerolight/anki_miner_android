@@ -27,7 +27,6 @@ import java.util.concurrent.Executor
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -213,8 +212,11 @@ class ResourceManagerTest {
             harness.manager.installUniDic()
             assertEquals(1, executor.queued.size)
 
-            executor.runNext()
-            advanceUntilIdle()
+            while (!recovery.isCompleted) {
+                assertTrue(executor.queued.isNotEmpty())
+                executor.runNext()
+                runCurrent()
+            }
             recovery.join()
 
             assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
@@ -312,6 +314,87 @@ class ResourceManagerTest {
             assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
             assertTrue(resource.slotId in harness.manager.installedDictionaryIds())
             assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun committedLocalMutationsRetryReconciliationWithoutReplayingMutation() =
+        runTest {
+            val scenarios: List<Triple<String, String, suspend (Harness) -> Unit>> =
+                listOf(
+                    Triple("resource.dictionary.import", "resource") { harness ->
+                        harness.manager.importCustomDictionary(
+                            INPUT_URI,
+                            slotId = "fixture-dictionary",
+                            replace = false,
+                        )
+                    },
+                    Triple("resource.frequency.import", "frequency source") { harness ->
+                        harness.manager.importFrequencySource(
+                            INPUT_URI,
+                            sourceId = "fixture-frequency",
+                            sourceName = "Fixture Frequency",
+                            format = FrequencySourceFormat.CSV,
+                            replace = false,
+                        )
+                    },
+                    Triple("resource.pitch.import", "pitch-accent source") { harness ->
+                        harness.manager.importPitchAccent(
+                            INPUT_URI,
+                            sourceId = "fixture-pitch",
+                            sourceName = "Fixture Pitch",
+                            format = PitchAccentSourceFormat.YOMITAN_ZIP,
+                            replace = false,
+                        )
+                    },
+                    Triple("resource.audiopack.import", "audio-pack archive") { harness ->
+                        harness.manager.importAudioPack(
+                            INPUT_URI,
+                            AudioPackCandidate("jpod", "jpod_files", "ajt"),
+                            replace = false,
+                        )
+                    },
+                    Triple("resource.knownwords.import", "known-word file") { harness ->
+                        harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+                    },
+                    Triple("resource.knownwords.import", "known-word file") { harness ->
+                        harness.manager.previewKnownWords(
+                            INPUT_URI,
+                            ResourceImportFileKind.JSON,
+                        )
+                        harness.manager.confirmKnownWordsImport()
+                        assertFalse(harness.pendingRoot.exists())
+                        assertNull(harness.manager.state.value.knownWordsImportPreview)
+                    },
+                    Triple("resource.knownwords.remove", "known-word file") { harness ->
+                        harness.manager.removeKnownWords(listOf("mutable0"))
+                    },
+                    Triple("resource.knownwords.reset", "known-word file") { harness ->
+                        harness.manager.resetKnownWords(KnownWordsResetScope.CACHE)
+                    },
+                )
+
+            scenarios.forEachIndexed { index, (requestType, sourceLabel, mutate) ->
+                val harness =
+                    Harness(
+                        rootName = "manager-committed-local-$index",
+                        initialUserCount = 2,
+                        sourceLabel = sourceLabel,
+                        failRefreshAfterMutation = requestType,
+                    )
+
+                mutate(harness)
+
+                val failure = requireNotNull(harness.manager.state.value.failure)
+                assertEquals(requestType, "resource_inventory_failed", failure.code)
+                assertEquals(requestType, ResourceFailureOrigin.SETUP, failure.origin)
+                assertEquals(requestType, ResourceFailureAction.RETRY, failure.retry.action)
+                assertEquals(requestType, 1, harness.bridge.requestsOfType(requestType).size)
+
+                harness.manager.recoverAndRefresh()
+
+                assertEquals(requestType, 1, harness.bridge.requestsOfType(requestType).size)
+                assertNull(requestType, harness.manager.state.value.failure)
+            }
         }
 
     @Test
@@ -446,6 +529,51 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun dismissWhileConfirmOwnsKnownWordsPreviewPreservesRetryInput() =
+        runTest {
+            val executor = PausableExecutor()
+            val harness =
+                Harness(
+                    resourceExecutor = executor,
+                    failKnownWordsImportOnce = true,
+                )
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+            val retained = harness.pendingRoot.listFiles().single()
+            executor.paused = true
+
+            val confirmation = launch { harness.manager.confirmKnownWordsImport() }
+            runCurrent()
+            assertEquals(1, executor.queued.size)
+
+            harness.manager.dismissKnownWordsImportPreview()
+
+            assertTrue(retained.isFile)
+            assertTrue(harness.manager.state.value.knownWordsImportPreview != null)
+
+            executor.runNext()
+            runCurrent()
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            confirmation.join()
+
+            assertTrue(retained.isFile)
+            assertEquals(
+                KnownWordsFailureOperation.IMPORT,
+                harness.manager.state.value.failure?.knownWordsOperation,
+            )
+
+            executor.paused = false
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(2, harness.bridge.requestsOfType("resource.knownwords.import").size)
+            assertFalse(harness.pendingRoot.exists())
+            assertNull(harness.manager.state.value.knownWordsImportPreview)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
     fun failedKnownWordRemoveRetryKeepsPayloadAndSearchCannotClearFailure() =
         runTest {
             val harness = Harness(initialUserCount = 2, failKnownWordsRemoveOnce = true)
@@ -480,6 +608,44 @@ class ResourceManagerTest {
                     stringField(it, "scope")
                 },
             )
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun rejectedKnownWordMutationCannotReplaceAdmittedOperationsRetryPayload() =
+        runTest {
+            val executor = PausableExecutor()
+            val harness =
+                Harness(
+                    initialUserCount = 2,
+                    resourceExecutor = executor,
+                    failKnownWordsRemoveOnce = true,
+                )
+            executor.paused = true
+
+            val admitted = launch { harness.manager.removeKnownWords(listOf("mutable0")) }
+            runCurrent()
+            assertEquals(1, executor.queued.size)
+
+            val rejected = launch { harness.manager.removeKnownWords(listOf("mutable1")) }
+            runCurrent()
+            rejected.join()
+            assertEquals(1, executor.queued.size)
+
+            executor.runNext()
+            runCurrent()
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            admitted.join()
+
+            executor.paused = false
+            harness.manager.retryKnownWordsFailure()
+
+            val requests = harness.bridge.requestsOfType("resource.knownwords.remove")
+            assertEquals(2, requests.size)
+            assertTrue(requests.all { it.contains("\"words\":[\"mutable0\"]") })
             assertNull(harness.manager.state.value.failure)
         }
 
@@ -682,6 +848,26 @@ class ResourceManagerTest {
             assertEquals(1, harness.stager.audioStageCalls)
             assertEquals(0, harness.stager.genericStageCalls)
             assertTrue(harness.stager.lastMaximumBytes!! > 3L * 1024 * 1024 * 1024)
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
+    fun audioPackImportReusesPreflightWhenPickerDropsDetectedFormat() =
+        runTest {
+            val harness = Harness(sourceLabel = "audio-pack archive")
+            val detected = requireNotNull(harness.manager.preflightAudioPack(INPUT_URI)).single()
+
+            harness.manager.importAudioPack(
+                INPUT_URI,
+                detected.copy(format = ""),
+                replace = false,
+            )
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.stager.audioStageCalls)
+            assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.preflight").size)
+            assertEquals(1, harness.bridge.requestsOfType("resource.audiopack.import").size)
+            assertEquals(listOf(INPUT_URI), harness.broker.retained)
             assertEquals(listOf(INPUT_URI), harness.broker.released)
         }
 
@@ -1002,6 +1188,50 @@ class ResourceManagerTest {
             }
         }
 
+    @Test
+    fun mutationJournalAndStagingCleanupRunOnResourceExecutor() =
+        runTest {
+            val executor = TrackingExecutor()
+            val syncContexts = mutableListOf<Boolean>()
+            val harness =
+                Harness(
+                    resourceExecutor = executor,
+                    resourceDirectorySync = { syncContexts += executor.executing },
+                )
+            syncContexts.clear()
+            val leftover = File(harness.stagingRoot, "leftover").apply { writeText("stale") }
+            var cleanupObservedOnExecutor = false
+            executor.afterTask = {
+                if (!leftover.exists()) cleanupObservedOnExecutor = true
+            }
+
+            harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+
+            assertEquals(listOf(true, true), syncContexts)
+            assertTrue(cleanupObservedOnExecutor)
+            assertFalse(leftover.exists())
+        }
+
+    @Test
+    fun recoveryJournalReadAndClearRunOnResourceExecutor() =
+        runTest {
+            val executor = TrackingExecutor()
+            val syncContexts = mutableListOf<Boolean>()
+            val harness =
+                Harness(
+                    autoRecover = false,
+                    resourceExecutor = executor,
+                    resourceDirectorySync = { syncContexts += executor.executing },
+                )
+            File(harness.root, "resource-operation-v1.pending").writeText("malformed")
+
+            harness.manager.recoverAndRefresh()
+
+            assertTrue(syncContexts.isNotEmpty())
+            assertTrue(syncContexts.all { it })
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+        }
+
     /** Records the foreground-service lifecycle a long import is supposed to drive. */
     private class RecordingForegroundLease : ResourceForegroundLease {
         val events = mutableListOf<String>()
@@ -1037,9 +1267,12 @@ class ResourceManagerTest {
                 Executor { command ->
                     command.run()
                     publicationProtected =
-                        harness.foregroundLease.isRunning() &&
-                        ResourceOperationJournal(harness.root).exists() &&
-                        harness.audioPendingRoot.listFiles().orEmpty().size == 2
+                        publicationProtected ||
+                            (
+                                harness.foregroundLease.isRunning() &&
+                                    ResourceOperationJournal(harness.root).exists() &&
+                                    harness.audioPendingRoot.listFiles().orEmpty().size == 2
+                            )
                 }
             harness =
                 Harness(
@@ -1279,7 +1512,9 @@ class ResourceManagerTest {
         controlExecutor: Executor = DIRECT_EXECUTOR,
         fakePinnedDownloads: Boolean = false,
         failRefreshAfterDictionaryImport: Boolean = false,
+        failRefreshAfterMutation: String? = null,
         wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
+        resourceDirectorySync: (File) -> Unit = {},
         failKnownWordsImportOnce: Boolean = false,
         failKnownWordsRemoveOnce: Boolean = false,
         failKnownWordsResetOnce: Boolean = false,
@@ -1324,6 +1559,7 @@ class ResourceManagerTest {
                 installedPitchSourceId,
                 installedPitchSchemaOk,
                 failRefreshAfterDictionaryImport,
+                failRefreshAfterMutation,
                 failKnownWordsImportOnce,
                 failKnownWordsRemoveOnce,
                 failKnownWordsResetOnce,
@@ -1365,7 +1601,7 @@ class ResourceManagerTest {
                         null
                     },
                 wordListMover = wordListMover,
-                resourceDirectorySync = {},
+                resourceDirectorySync = resourceDirectorySync,
             )
 
         init {
@@ -1553,6 +1789,7 @@ class ResourceManagerTest {
         installedPitchSourceId: String?,
         private val installedPitchSchemaOk: Boolean = true,
         private val failRefreshAfterDictionaryImport: Boolean,
+        private val failRefreshAfterMutation: String?,
         failKnownWordsImportOnce: Boolean,
         failKnownWordsRemoveOnce: Boolean,
         failKnownWordsResetOnce: Boolean,
@@ -1567,8 +1804,11 @@ class ResourceManagerTest {
 
         /** Mutable so a delete can drop the slot the next inventory reports. */
         private var installedPitchSourceId: String? = installedPitchSourceId
+        private var installedFrequencySourceId: String? = null
+        private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = false
         private var failNextDictionaryList = false
+        private var failNextLocalList = false
         private var knownWordsImportFailures = if (failKnownWordsImportOnce) 1 else 0
         private var knownWordsRemoveFailures = if (failKnownWordsRemoveOnce) 1 else 0
         private var knownWordsResetFailures = if (failKnownWordsResetOnce) 1 else 0
@@ -1598,7 +1838,9 @@ class ResourceManagerTest {
                     envelope("resource.cleanup.result", """{"clean":true}""")
                 "resource.dictionary.import" -> {
                     catalogDictionaryInstalled = true
-                    failNextDictionaryList = failRefreshAfterDictionaryImport
+                    failNextDictionaryList =
+                        failRefreshAfterDictionaryImport ||
+                            failRefreshAfterMutation == "resource.dictionary.import"
                     if (committedDictionaryDecodeFailure) {
                         // Python has already published the slot; the response carries a shape
                         // Kotlin refuses, which must not lose the committed install.
@@ -1615,7 +1857,17 @@ class ResourceManagerTest {
                         "resource.dictionary.preflighted",
                         """{"slotId":"fixture-dictionary-2026-08"}""",
                     )
+                "resource.frequency.import" -> {
+                    installedFrequencySourceId = stringField(rawRequest, "sourceId")
+                    armLocalRefreshFailure("resource.frequency.import")
+                    envelope(
+                        "resource.frequency.imported",
+                        """{"sourceId":"${stringField(rawRequest, "sourceId")}","sourceName":"${stringField(rawRequest, "sourceName")}","sourceRevision":"1","format":"csv","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"convertedToRanks":false,"isCategorical":false,"archiveSha256":"${"0".repeat(64)}"}""",
+                    )
+                }
                 "resource.pitch.import" -> {
+                    installedPitchSourceId = stringField(rawRequest, "sourceId")
+                    armLocalRefreshFailure("resource.pitch.import")
                     if (committedPitchDecodeFailure) {
                         // Same shape as the dictionary case: the slot is published before Kotlin
                         // rejects the response, so inventory must still reconcile.
@@ -1641,6 +1893,7 @@ class ResourceManagerTest {
                         error("simulated known-word import failure")
                     }
                     userCount = 2
+                    armLocalRefreshFailure("resource.knownwords.import")
                     envelope(
                         "resource.knownwords.imported",
                         """{"format":"migaku_json","importedCount":2,"newRowCount":2,"totalEntries":3,"isGeneric":false}""",
@@ -1672,6 +1925,7 @@ class ResourceManagerTest {
                         error("simulated known-word remove failure")
                     }
                     userCount = (userCount - 1).coerceAtLeast(0)
+                    armLocalRefreshFailure("resource.knownwords.remove")
                     envelope("resource.knownwords.removed", """{"removedCount":1}""")
                 }
                 "resource.knownwords.reset" -> {
@@ -1680,6 +1934,7 @@ class ResourceManagerTest {
                         error("simulated known-word reset failure")
                     }
                     userCount = 0
+                    armLocalRefreshFailure("resource.knownwords.reset")
                     envelope(
                         "resource.knownwords.reset",
                         """{"scope":"${stringField(rawRequest, "scope")}","removedCount":1}""",
@@ -1702,13 +1957,20 @@ class ResourceManagerTest {
                             """{"packs":[{"packId":"jpod","packPath":"jpod_files","format":"ajt"}]}"""
                         },
                     )
-                "resource.audiopack.import" ->
+                "resource.audiopack.import" -> {
+                    installedAudioPackId = stringField(rawRequest, "packId")
+                    armLocalRefreshFailure("resource.audiopack.import")
                     envelope(
                         "resource.audiopack.imported",
                         """{"packId":"jpod","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"archiveSha256":"${"0".repeat(64)}"}""",
                     )
+                }
                 else -> error("Unexpected request: $rawRequest")
             }
+        }
+
+        private fun armLocalRefreshFailure(requestType: String) {
+            if (failRefreshAfterMutation == requestType) failNextLocalList = true
         }
 
         private fun dictionaryListResponse(): String {
@@ -1740,13 +2002,25 @@ class ResourceManagerTest {
         }
 
         private fun inventoryResponse(): String {
+            if (failNextLocalList) {
+                failNextLocalList = false
+                error("simulated inventory failure after commit")
+            }
+            val frequencies =
+                installedFrequencySourceId?.let { sourceId ->
+                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false}]"""
+                } ?: "[]"
             val pitchSources =
                 installedPitchSourceId?.let { sourceId ->
                     """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1}]"""
                 } ?: "[]"
+            val audioPacks =
+                installedAudioPackId?.let { packId ->
+                    """[{"packId":"$packId","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"contentAvailable":true}]"""
+                } ?: "[]"
             return envelope(
                 "resource.local.listed",
-                """{"frequencies":[],"pitchSources":$pitchSources,"audioPacks":[],"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
             )
         }
 
@@ -1834,5 +2108,37 @@ class ResourceManagerTest {
         }
 
         fun runNext() = queued.removeFirst().run()
+    }
+
+    private class PausableExecutor : Executor {
+        val queued = ArrayDeque<Runnable>()
+        var paused = false
+
+        override fun execute(command: Runnable) {
+            if (paused) {
+                queued.addLast(command)
+            } else {
+                command.run()
+            }
+        }
+
+        fun runNext() = queued.removeFirst().run()
+    }
+
+    private class TrackingExecutor : Executor {
+        private var depth = 0
+        val executing: Boolean
+            get() = depth > 0
+        var afterTask: (() -> Unit)? = null
+
+        override fun execute(command: Runnable) {
+            depth += 1
+            try {
+                command.run()
+            } finally {
+                afterTask?.invoke()
+                depth -= 1
+            }
+        }
     }
 }
