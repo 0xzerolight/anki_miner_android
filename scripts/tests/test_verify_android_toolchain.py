@@ -1,14 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import verify_android_toolchain as toolchain_verifier  # noqa: E402
 from verify_android_toolchain import VerificationError, verify  # noqa: E402
 
 
@@ -71,6 +75,27 @@ class ToolchainVerificationTest(unittest.TestCase):
     def test_accepts_exact_package_and_avd_lock(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             verify(self.fixture(Path(directory)))
+
+    def test_main_reports_package_only_verification_when_no_avd_was_checked(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            arguments = self.fixture(Path(directory))
+            arguments.avd = []
+            output = io.StringIO()
+
+            with (
+                mock.patch.object(
+                    toolchain_verifier,
+                    "parse_args",
+                    return_value=arguments,
+                ),
+                contextlib.redirect_stdout(output),
+            ):
+                result = toolchain_verifier.main()
+
+        self.assertEqual(0, result)
+        self.assertEqual("Android SDK packages match the lock\n", output.getvalue())
 
     def test_rejects_sdkmanager_revision_drift(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

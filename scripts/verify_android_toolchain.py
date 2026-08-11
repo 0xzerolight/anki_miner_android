@@ -192,11 +192,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     try:
-        verify(parse_args())
+        args = parse_args()
+        verify(args)
     except (OSError, ET.ParseError, VerificationError, ValueError) as error:
         print(f"toolchain verification failed: {error}", file=sys.stderr)
         return 1
-    print("Android SDK packages and AVD definitions match the lock")
+    if args.avd:
+        print("Android SDK packages and AVD definitions match the lock")
+    else:
+        print("Android SDK packages match the lock")
     return 0
 
 

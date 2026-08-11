@@ -75,17 +75,31 @@ class TaggerOverlayTests(unittest.TestCase):
 
         tagger.configure_tagger_factory(factory)
         results: list[str] = []
+        errors: list[BaseException] = []
+
+        def invoke() -> None:
+            try:
+                results.append(tagger.get_shared_tagger()("猫"))
+            except BaseException as error:
+                errors.append(error)
+
         threads = [
             threading.Thread(
-                target=lambda: results.append(tagger.get_shared_tagger()("猫"))
+                target=invoke,
+                name=f"tagger-worker-{index}",
+                daemon=True,
             )
-            for _ in range(6)
+            for index in range(6)
         ]
         for thread in threads:
             thread.start()
+        deadline = time.monotonic() + 2
         for thread in threads:
-            thread.join()
+            thread.join(max(0.0, deadline - time.monotonic()))
 
+        alive = [thread.name for thread in threads if thread.is_alive()]
+        self.assertEqual([], alive, f"tagger workers did not stop; errors={errors!r}")
+        self.assertEqual([], errors)
         self.assertEqual(1, builds)
         self.assertEqual(1, maximum)
         self.assertEqual(["猫"] * 6, sorted(results))

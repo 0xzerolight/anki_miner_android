@@ -6,6 +6,7 @@ import logging
 import subprocess
 import sys
 import threading
+import time
 import types
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -302,29 +303,50 @@ class MediaProcessCancellationTests(unittest.TestCase):
         registry = media._FfmpegProcRegistry()
         calls: list[object] = []
         release = threading.Event()
+        probe_started = threading.Event()
 
         def find(*_args: object, **kwargs: object):
             calls.append(kwargs.get("proc_registry"))
+            probe_started.set()
             release.wait(1)
             return SimpleNamespace(global_index=7)
 
         results: list[int | None] = []
+        errors: list[BaseException] = []
+
+        def resolve() -> None:
+            try:
+                results.append(
+                    service._get_japanese_audio_stream(Path("video.mkv"), registry)
+                )
+            except BaseException as error:
+                errors.append(error)
+
         with mock.patch.object(media, "find_japanese_audio_stream", side_effect=find):
             workers = [
                 threading.Thread(
-                    target=lambda: results.append(
-                        service._get_japanese_audio_stream(Path("video.mkv"), registry)
-                    )
+                    target=resolve,
+                    name=f"audio-stream-worker-{index}",
+                    daemon=True,
                 )
-                for _ in range(2)
+                for index in range(2)
             ]
             for worker in workers:
                 worker.start()
-            while not calls:
-                threading.Event().wait(0.01)
-            release.set()
+            try:
+                reached_probe = probe_started.wait(1)
+            finally:
+                release.set()
+            deadline = time.monotonic() + 2
             for worker in workers:
-                worker.join(2)
+                worker.join(max(0.0, deadline - time.monotonic()))
+        alive = [worker.name for worker in workers if worker.is_alive()]
+        self.assertEqual([], alive, f"audio stream workers did not stop; errors={errors!r}")
+        self.assertTrue(
+            reached_probe,
+            f"audio stream probe was not reached; errors={errors!r}",
+        )
+        self.assertEqual([], errors)
         self.assertEqual([registry], calls)
         self.assertEqual([7, 7], sorted(results))
 
