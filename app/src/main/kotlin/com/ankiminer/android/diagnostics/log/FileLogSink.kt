@@ -8,7 +8,6 @@ import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.nio.charset.StandardCharsets
 import java.time.Instant
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineDispatcher
@@ -21,10 +20,21 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.selects.select
 
 internal sealed interface LogCommand {
-    class Flush(val done: CompletableDeferred<Unit>) : LogCommand
+    val throughSequence: Long
 
-    class Snapshot(val destDir: File, val done: CompletableDeferred<List<File>>) : LogCommand
+    class Flush(
+        override val throughSequence: Long,
+        val done: CompletableDeferred<Unit>,
+    ) : LogCommand
+
+    class Snapshot(
+        override val throughSequence: Long,
+        val destDir: File,
+        val done: CompletableDeferred<List<File>>,
+    ) : LogCommand
 }
+
+private data class QueuedLine(val sequence: Long, val rendered: String)
 
 /**
  * Appends rendered records to a rotating file, from a single writer coroutine.
@@ -52,9 +62,10 @@ internal class FileLogSink(
     dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val openStream: (File) -> OutputStream = { file -> FileOutputStream(file, true) },
 ) : LogSink, AutoCloseable {
-    private val dropped = AtomicLong()
+    private val enqueueLock = Any()
+    private var acceptedSequence = 0L
     private val lines =
-        Channel<String>(lineCapacity, BufferOverflow.DROP_OLDEST) { dropped.incrementAndGet() }
+        Channel<QueuedLine>(lineCapacity, BufferOverflow.DROP_OLDEST)
     private val commands = Channel<LogCommand>(Channel.RENDEZVOUS)
     private val target = File(directory, baseName)
 
@@ -65,6 +76,8 @@ internal class FileLogSink(
 
     /** Writer state. Touched only by the writer coroutine, so it needs no synchronization. */
     private var open: OpenFile? = null
+    private var accountedSequence = 0L
+    private var pending: QueuedLine? = null
 
     init {
         val writer = scope.launch(dispatcher) { consume() }
@@ -75,14 +88,21 @@ internal class FileLogSink(
 
     override fun write(rendered: String) {
         // Main-thread safe by construction: trySend never suspends, and DROP_OLDEST means it never
-        // fails for a full buffer either — the dropped element is counted by the channel's
-        // undelivered-element handler and reported in the next batch.
-        lines.trySend(rendered)
+        // fails for a full buffer either. Sequencing and enqueue share one short critical section
+        // so a command cutoff cannot include a line which has not reached the channel yet.
+        synchronized(enqueueLock) {
+            val queued = QueuedLine(acceptedSequence + 1L, rendered)
+            if (lines.trySend(queued).isSuccess) acceptedSequence = queued.sequence
+        }
     }
 
     override suspend fun flush() {
         val done = CompletableDeferred<Unit>()
-        if (submit(LogCommand.Flush(done))) done.await()
+        val command =
+            synchronized(enqueueLock) {
+                LogCommand.Flush(acceptedSequence, done)
+            }
+        if (submit(command)) done.await()
     }
 
     /**
@@ -93,14 +113,18 @@ internal class FileLogSink(
      */
     suspend fun snapshot(destDir: File): List<File> {
         val done = CompletableDeferred<List<File>>()
-        if (!submit(LogCommand.Snapshot(destDir, done))) return emptyList()
+        val command =
+            synchronized(enqueueLock) {
+                LogCommand.Snapshot(acceptedSequence, destDir, done)
+            }
+        if (!submit(command)) return emptyList()
         return done.await()
     }
 
     override fun close() {
         // Closing the lines channel drains what is already queued and then stops the writer, which
         // closes the command channel on its way out so a concurrent flush() fails fast.
-        lines.close()
+        synchronized(enqueueLock) { lines.close() }
     }
 
     private suspend fun submit(command: LogCommand): Boolean =
@@ -117,10 +141,15 @@ internal class FileLogSink(
             var running = true
             while (running) {
                 try {
+                    val pendingLine = pending
+                    if (pendingLine != null) {
+                        pending = null
+                        appendBatch(pendingLine)
+                        continue
+                    }
                     select {
                         // Commands are offered first so a busy producer cannot starve a rendezvous
-                        // send. Ordering is not what this buys: the drain at the top of execute()
-                        // is what puts every queued record on disk ahead of the command.
+                        // send. Each command's sequence cutoff supplies its ordering barrier.
                         commands.onReceive { command -> execute(command) }
                         lines.onReceiveCatching { received ->
                             val line = received.getOrNull()
@@ -154,9 +183,9 @@ internal class FileLogSink(
      */
     private fun execute(command: LogCommand) {
         try {
-            // Getting the queue onto disk is this sink's own work, so a failure here is the file
-            // being gone and disable() owns it, exactly as it does on the write path.
-            drainQueuedLines()
+            // Only the finite prefix accepted before command submission belongs to this barrier.
+            // Later writes stay queued for the normal writer path.
+            drainQueuedLines(command.throughSequence)
             flushFile()
         } catch (failure: Throwable) {
             fail(command, failure)
@@ -189,11 +218,18 @@ internal class FileLogSink(
         }
     }
 
-    private fun appendBatch(first: String) {
+    private fun appendBatch(
+        first: QueuedLine,
+        throughSequence: Long? = null,
+    ) {
         appendRecord(first)
         var budget = BATCH_LINES - 1
         while (budget > 0) {
             val next = lines.tryReceive().getOrNull() ?: break
+            if (throughSequence != null && next.sequence > throughSequence) {
+                pending = next
+                break
+            }
             appendRecord(next)
             budget--
         }
@@ -205,18 +241,41 @@ internal class FileLogSink(
      * [flushFile], so a bare loop would write the whole queue — up to `lineCapacity` records, which
      * with 200-frame stacks is far past the size cap — before any rotation could fire.
      */
-    private fun drainQueuedLines() {
+    private fun drainQueuedLines(throughSequence: Long? = null) {
+        if (throughSequence != null && accountedSequence >= throughSequence) return
         while (true) {
-            appendBatch(lines.tryReceive().getOrNull() ?: return)
+            val next =
+                pending?.also { pending = null }
+                    ?: lines.tryReceive().getOrNull()
+            if (next == null) {
+                if (throughSequence != null) accountDroppedThrough(throughSequence)
+                return
+            }
+            if (throughSequence != null && next.sequence > throughSequence) {
+                pending = next
+                accountDroppedThrough(throughSequence)
+                return
+            }
+            appendBatch(next, throughSequence)
+            if (throughSequence != null && accountedSequence >= throughSequence) return
         }
     }
 
-    private fun appendRecord(record: String) {
-        val file = openFile() ?: return
-        // A silent gap is not acceptable: report the drop before the record that survived it.
-        val gap = dropped.getAndSet(0L)
-        if (gap > 0L) writeLine(file, droppedRecord(gap))
-        writeLine(file, record)
+    private fun appendRecord(record: QueuedLine) {
+        openFile()?.let { file ->
+            // A silent gap is not acceptable: report the drop before the record that survived it.
+            val gap = record.sequence - accountedSequence - 1L
+            if (gap > 0L) writeLine(file, droppedRecord(gap))
+            writeLine(file, record.rendered)
+        }
+        accountedSequence = record.sequence
+    }
+
+    private fun accountDroppedThrough(sequence: Long) {
+        val gap = sequence - accountedSequence
+        if (gap <= 0L) return
+        openFile()?.let { file -> writeLine(file, droppedRecord(gap)) }
+        accountedSequence = sequence
     }
 
     private fun writeLine(

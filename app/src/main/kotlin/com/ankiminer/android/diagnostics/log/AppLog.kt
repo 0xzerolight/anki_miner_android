@@ -36,16 +36,15 @@ internal object AppLog {
     /**
      * Swaps in the real sink and replays whatever was buffered before it existed.
      *
-     * Neither swap-then-drain nor drain-then-swap is race-free against a concurrent [emit]: closing
-     * the window needs a lock on the write path, which is not worth paying on every record for one
-     * call made once during startup. A record emitted at that instant lands in one sink or the
-     * other and may sort ahead of the replayed ones.
+     * The old buffer enters forwarding mode before it is drained, so an [emit] which captured it
+     * before the swap but finishes rendering afterwards still reaches the installed sink. A record
+     * emitted at that instant may sort ahead of the replayed ones.
      */
     @Synchronized
     fun install(sink: LogSink) {
         val previous = this.sink
         this.sink = sink
-        if (previous is PreInstallBufferSink) previous.drain().forEach(sink::write)
+        if (previous is PreInstallBufferSink) previous.retireTo(sink).forEach(sink::write)
     }
 
     suspend fun flush() {
@@ -174,6 +173,7 @@ internal object AppLog {
         fields: Array<out Pair<String, Any?>>,
     ) {
         if (level < minLevel) return
+        val runId = LogContext.runId()
         try {
             // Rendering is inside the try because it is the part that runs caller-controlled code:
             // toString() on every field and on every link of the cause chain. A Chaquopy
@@ -184,7 +184,7 @@ internal object AppLog {
                 renderLogRecord(
                     Instant.now(),
                     level,
-                    LogContext.runId(),
+                    runId,
                     component,
                     op,
                     fields,
@@ -192,7 +192,7 @@ internal object AppLog {
                 ),
             )
         } catch (broken: Throwable) {
-            emitRenderFailure(level, component, op, failure, broken)
+            emitRenderFailure(level, runId, component, op, failure, broken)
         }
     }
 
@@ -203,6 +203,7 @@ internal object AppLog {
      */
     private fun emitRenderFailure(
         level: LogLevel,
+        runId: String?,
         component: LogComponent,
         op: String,
         failure: Throwable?,
@@ -223,7 +224,7 @@ internal object AppLog {
                 renderLogRecord(
                     Instant.now(),
                     level,
-                    null,
+                    runId,
                     component,
                     op,
                     arrayOf(
