@@ -69,7 +69,7 @@ class SqliteAnkiMutationStoreInstrumentedTest {
 
     @Test
     fun legacyVersionUpgradesLosslesslyBackfillAndRebuildAuthenticTables() {
-        listOf(1 to false, 1 to true, 2 to false, 3 to false).forEach { (oldVersion, withStoredMedia) ->
+        listOf(1 to false, 1 to true, 2 to false, 3 to false, 4 to false).forEach { (oldVersion, withStoredMedia) ->
             val name = databaseName()
             val scenario = oldVersion * 10 + if (withStoredMedia) 1 else 0
             val request = createRequest(200 + scenario, 1, 1)
@@ -136,14 +136,18 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                     null,
                     SQLiteDatabase.OPEN_READWRITE,
                 ).use { db ->
-                    // Freeze the authentic pre-v3 table incompatibility instead of merely changing
-                    // user_version on a current schema. v1's persisted CHECK lacks the v2
-                    // MEDIA_STORED_UNATTACHED kind; v2 already carries the widened CHECK.
-                    dropProjectIndexesAndTriggers(db)
-                    db.execSQL("DROP TABLE journal_maintenance")
-                    if (oldVersion <= 2) db.execSQL("DROP TABLE routing_observations")
-                    if (oldVersion == 1) {
-                        replaceRemediationsWithAuthenticVersionOneDdl(db)
+                    if (oldVersion <= 3) {
+                        // Freeze the authentic pre-v3 table incompatibility instead of merely
+                        // changing user_version on a current schema. v1's persisted CHECK lacks
+                        // the v2 MEDIA_STORED_UNATTACHED kind; v2 already carries the widened CHECK.
+                        dropProjectIndexesAndTriggers(db)
+                        db.execSQL("DROP TABLE journal_maintenance")
+                        if (oldVersion <= 2) db.execSQL("DROP TABLE routing_observations")
+                        if (oldVersion == 1) {
+                            replaceRemediationsWithAuthenticVersionOneDdl(db)
+                        }
+                    } else {
+                        replaceMediaClaimDeleteTriggerWithAuthenticVersionFourDdl(db)
                     }
                     db.execSQL("PRAGMA user_version = $oldVersion")
                 }
@@ -1781,7 +1785,7 @@ class SqliteAnkiMutationStoreInstrumentedTest {
     }
 
     @Test
-    fun retentionPrunesResolvedRemediationOwnedByAPrunedCohortExactlyOnce() {
+    fun retentionPrunesResolvedRemediationsAndFinalizedMediaClaimsExactlyOnce() {
         // Age trigger: one prunable cohort whose resolved remediation ages with it, pruned on open.
         val ageName = databaseName()
         var ageNow = 1_000L
@@ -1870,6 +1874,119 @@ class SqliteAnkiMutationStoreInstrumentedTest {
             }
         } finally {
             context.deleteDatabase(countName)
+        }
+
+        val claimsName = databaseName()
+        var claimsNow = 1_000L
+        val claimsPolicy =
+            JournalRetentionPolicy.forTests(
+                completedCohortLimit = 64,
+                resolvedRemediationLimit = 64,
+                maxAgeMillis = 1_000L,
+            )
+        lateinit var attachedMediaRequest: JournalRequest
+        lateinit var attachedNoteRequest: JournalRequest
+        lateinit var acknowledgedRequest: JournalRequest
+        var attachedClaimId = 0L
+        var acknowledgedClaimId = 0L
+        try {
+            SqliteAnkiMutationStore(
+                context,
+                claimsName,
+                clock = JournalClock { claimsNow },
+                retentionPolicy = claimsPolicy,
+                enforceBackgroundThread = false,
+            ).use { store ->
+                val (mediaRequest, attached) = readyStoredMedia(store, 703, 1, 1)
+                attachedMediaRequest = mediaRequest
+                attachedClaimId = attached.claim.id
+                attachedNoteRequest =
+                    createRequest(
+                        703,
+                        2,
+                        1,
+                        MediaBinding(attached.claim.assetId, "audio_1.mp3"),
+                    )
+                prepareCommittedNote(
+                    store,
+                    attachedNoteRequest,
+                    70_301,
+                    listOf(DurableMediaBinding(attached.claim.assetId, "audio_1.mp3", attached.claim.id)),
+                )
+                advanceToPostcheck(store, attachedNoteRequest, 70_301)
+                store.completeVerifiedNote(
+                    attachedNoteRequest.key,
+                    0,
+                    70_301,
+                    "exact attachment proof before retention",
+                )
+                store.markResultReady(
+                    attachedNoteRequest,
+                    JournalResponse.CreateNotes(
+                        attachedNoteRequest.key,
+                        store.alignedResults(attachedNoteRequest.key),
+                        error = null,
+                    ),
+                )
+                assertTrue(
+                    store.cleanupRun(
+                        attachedMediaRequest.key.runId,
+                        acknowledgeAuthorized = true,
+                        frozenDurableRequestIds =
+                            listOf(
+                                attachedMediaRequest.key.requestId,
+                                attachedNoteRequest.key.requestId,
+                            ),
+                    ).evidenceAccepted,
+                )
+                assertEquals(
+                    MediaClaimState.ATTACHED_VERIFIED.name,
+                    claimState(store.writableDatabase, attachedClaimId),
+                )
+
+                val (request, acknowledged) = readyStoredMedia(store, 704, 1, 2)
+                acknowledgedRequest = request
+                acknowledgedClaimId = acknowledged.claim.id
+                assertTrue(
+                    store.cleanupRun(
+                        acknowledgedRequest.key.runId,
+                        acknowledgeAuthorized = true,
+                        frozenDurableRequestIds = listOf(acknowledgedRequest.key.requestId),
+                    ).evidenceAccepted,
+                )
+                val remediation =
+                    store.openRemediations().single {
+                        it.kind == RemediationKind.MEDIA_STORED_UNATTACHED &&
+                            it.claimId == acknowledgedClaimId
+                    }
+                store.acknowledgeUnattachedMedia(
+                    remediation.id,
+                    "user accepted unattached media before retention",
+                )
+                assertEquals(
+                    MediaClaimState.ACKNOWLEDGED_BY_USER.name,
+                    claimState(store.writableDatabase, acknowledgedClaimId),
+                )
+                assertEquals(2L, count(store.writableDatabase, "media_claims"))
+            }
+
+            claimsNow = 10_000L
+            SqliteAnkiMutationStore(
+                context,
+                claimsName,
+                clock = JournalClock { claimsNow },
+                retentionPolicy = claimsPolicy,
+                enforceBackgroundThread = false,
+            ).use { reopened ->
+                assertNull(reopened.parent(attachedMediaRequest.key))
+                assertNull(reopened.parent(attachedNoteRequest.key))
+                assertNull(reopened.parent(acknowledgedRequest.key))
+                assertEquals(0L, count(reopened.writableDatabase, "media_claims"))
+                assertEquals(0L, count(reopened.writableDatabase, "media_reservations"))
+                assertEquals(0L, count(reopened.writableDatabase, "media_leases"))
+            }
+        } finally {
+            context.deleteDatabase(claimsName)
         }
     }
 
@@ -3564,6 +3681,19 @@ class SqliteAnkiMutationStoreInstrumentedTest {
                 }
             }
         objects.forEach { (type, name) -> db.execSQL("DROP ${type.uppercase()} $name") }
+    }
+
+    private fun replaceMediaClaimDeleteTriggerWithAuthenticVersionFourDdl(db: SQLiteDatabase) {
+        db.execSQL("DROP TRIGGER media_claim_delete_forbidden")
+        db.execSQL(
+            """
+            CREATE TRIGGER media_claim_delete_forbidden BEFORE DELETE ON media_claims
+            WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
+                 OLD.state != 'CLEANED_VERIFIED' OR EXISTS(
+                SELECT 1 FROM remediations r WHERE r.claim_id = OLD.id AND r.state = 'OPEN')
+            BEGIN SELECT RAISE(ABORT, 'media claim still owns bytes or recovery evidence'); END
+            """.trimIndent(),
+        )
     }
 
     private fun replaceRemediationsWithAuthenticVersionOneDdl(db: SQLiteDatabase) {
