@@ -11,6 +11,7 @@ from pathlib import Path
 RESOURCE_SCRIPT = Path(__file__).resolve().parents[1] / "android-test-resources.sh"
 EMULATOR_SCRIPT = Path(__file__).resolve().parents[1] / "emulator.sh"
 EMULATOR_LANES_SCRIPT = Path(__file__).resolve().parents[1] / "emulator-lanes.sh"
+RUN_APP_SCRIPT = Path(__file__).resolve().parents[1] / "run-app.sh"
 
 
 class AndroidTestResourceTest(unittest.TestCase):
@@ -108,39 +109,13 @@ class AndroidTestResourceTest(unittest.TestCase):
             self.assertIn("while Gradle is running", result.stderr)
             self.assertFalse((Path(temporary.name) / "gradle-ran").exists())
 
-    def test_emulator_capacity_rejects_low_memory_and_low_swap(self) -> None:
-        cases = (
-            (
-                "MemAvailable: 1024 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
-                "less than 6 GiB",
-            ),
-            (
-                "MemAvailable: 8388608 kB\nSwapTotal: 8388608 kB\nSwapFree: 512 kB\n",
-                "less than 1 GiB of free swap",
-            ),
-        )
-        for contents, message in cases:
-            with self.subTest(message=message):
-                with tempfile.TemporaryDirectory() as directory:
-                    meminfo = Path(directory) / "meminfo"
-                    meminfo.write_text(contents, encoding="utf-8")
-                    environment = os.environ.copy()
-                    environment["ANKI_MINER_MEMINFO_PATH"] = str(meminfo)
-                    result = subprocess.run(
-                        [
-                            "bash",
-                            "-c",
-                            'source "$1"; anki_miner_require_emulator_capacity',
-                            "resource-test",
-                            str(RESOURCE_SCRIPT),
-                        ],
-                        check=False,
-                        capture_output=True,
-                        env=environment,
-                        text=True,
-                    )
-                    self.assertNotEqual(0, result.returncode)
-                    self.assertIn(message, result.stderr)
+    def test_emulator_launchers_do_not_call_retired_capacity_gate(self) -> None:
+        for launcher in (EMULATOR_SCRIPT, RUN_APP_SCRIPT):
+            with self.subTest(launcher=launcher.name):
+                self.assertNotIn(
+                    "anki_miner_require_emulator_capacity",
+                    launcher.read_text(encoding="utf-8"),
+                )
 
     def test_emulator_lock_stays_held_after_launcher_exec(self) -> None:
         temporary, _, environment = self._fixture()
@@ -196,7 +171,9 @@ class AndroidTestResourceTest(unittest.TestCase):
             holder.terminate()
             holder.wait(timeout=2)
 
-    def test_emulator_launcher_rejects_a_running_different_lane(self) -> None:
+    def test_emulator_launcher_ignores_low_memory_and_swap_when_checking_process_exclusion(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             checkout = root / "checkout"
@@ -248,7 +225,7 @@ fi
             self._script(fake_bin / "ss", "exit 1\n")
             meminfo = root / "meminfo"
             meminfo.write_text(
-                "MemAvailable: 8388608 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n",
+                "MemAvailable: 1024 kB\nSwapTotal: 8388608 kB\nSwapFree: 512 kB\n",
                 encoding="utf-8",
             )
             environment = os.environ.copy()
