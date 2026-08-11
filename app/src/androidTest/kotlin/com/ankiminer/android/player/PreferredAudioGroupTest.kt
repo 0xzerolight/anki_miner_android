@@ -75,25 +75,25 @@ class PreferredAudioGroupTest {
     }
 
     @Test
-    fun anUndecodableJapaneseTrackIsStillPreferred() {
-        // Surfacing AudioTrackUnsupported is the honest outcome; silently playing the dub is not.
-        val japanese =
-            audioGroup("a", "jpn", support = C.FORMAT_UNSUPPORTED_SUBTYPE)
-        val tracks = Tracks(listOf(audioGroup("b", "eng"), japanese))
+    fun sourceOrderWinsWhenJapaneseTracksMapToDifferentRenderers() {
+        val sourceFirstDts = audioGroup("1", "jpn", sampleMimeType = MimeTypes.AUDIO_DTS)
+        val sourceSecondAac = audioGroup("2", "jpn", sampleMimeType = MimeTypes.AUDIO_AAC)
+        val rendererOrderedTracks = Tracks(listOf(sourceSecondAac, sourceFirstDts))
 
-        assertSame(japanese, preferredAudioGroup(tracks))
+        assertSame(sourceFirstDts, preferredAudioGroup(rendererOrderedTracks))
     }
 
     private fun audioGroup(
         id: String,
         language: String?,
         support: Int = C.FORMAT_HANDLED,
+        sampleMimeType: String = MimeTypes.AUDIO_AAC,
     ): Tracks.Group =
         Tracks.Group(
             TrackGroup(
                 id,
                 Format.Builder()
-                    .setSampleMimeType(MimeTypes.AUDIO_AAC)
+                    .setSampleMimeType(sampleMimeType)
                     .setLanguage(language)
                     .build(),
             ),

@@ -204,13 +204,24 @@ class ExoCurationPreviewPlayer(
     /**
      * Recovers from a [PreviewFailure]. Decoder-init failures are often transient (another app
      * holding the hardware codec), and a `PlaybackException` leaves the player IDLE where only
-     * `prepare()` resumes it. Clearing [boundUri] also lets a later [bind] of the same URI
-     * re-prepare instead of early-returning against a dead player.
+     * `prepare()` resumes it. Unsupported tracks leave the player READY, so stop them first to
+     * force a real re-prepare while their honest failure stays visible.
      */
     override fun retry() {
-        boundUri = null
-        mutableFailure.value = null
-        exo.prepare()
+        when (mutableFailure.value) {
+            is PreviewFailure.PlaybackFailed -> {
+                boundUri = null
+                mutableFailure.value = null
+                exo.prepare()
+            }
+            is PreviewFailure.VideoTrackUnsupported,
+            is PreviewFailure.AudioTrackUnsupported,
+            -> {
+                exo.stop()
+                exo.prepare()
+            }
+            null -> Unit
+        }
     }
 
     private fun millis(seconds: Double): Long =
@@ -231,7 +242,8 @@ private fun firstFormatOfType(
 /**
  * Mode-2 detection (`FORMAT_UNSUPPORTED_SUBTYPE`): the track selector silently deselects a track
  * no renderer handles — the player reaches `STATE_READY` with a black picture and no exception.
- * `isTypeSupportedOrEmpty` means "supported, or absent", so the audio-only lane never trips it.
+ * Video stays type-level so absent video is valid for audio-only media. Audio checks the exact
+ * engine-preferred group, so a supported dub cannot mask an unsupported Japanese track.
  */
 @OptIn(UnstableApi::class)
 fun previewFailureFor(tracks: Tracks): PreviewFailure? {
@@ -240,9 +252,10 @@ fun previewFailureFor(tracks: Tracks): PreviewFailure? {
             codecLabel(firstFormatOfType(tracks, C.TRACK_TYPE_VIDEO)),
         )
     }
-    if (!tracks.isTypeSupportedOrEmpty(C.TRACK_TYPE_AUDIO)) {
+    val preferredAudio = preferredAudioGroup(tracks)
+    if (preferredAudio != null && !preferredAudio.isTrackSupported(0)) {
         return PreviewFailure.AudioTrackUnsupported(
-            codecLabel(firstFormatOfType(tracks, C.TRACK_TYPE_AUDIO)),
+            codecLabel(preferredAudio.getTrackFormat(0)),
         )
     }
     return null
