@@ -64,7 +64,7 @@ class DiagnosticsViewModelTest {
             val root = Files.createTempDirectory("diagnostics-view-model").toFile()
             try {
                 val messages =
-                    DiagnosticsExportFailure.entries.map { kind ->
+                    DiagnosticsExportFailure.entries.associateWith { kind ->
                         val exporter = FakeDiagnosticsExporter(staged(root)).apply {
                             buildBlock = { throw DiagnosticsExportException(kind) }
                         }
@@ -76,8 +76,11 @@ class DiagnosticsViewModelTest {
                         (viewModel.state.value as DiagnosticsExportState.Failed).message.resourceId
                     }
 
-                assertEquals(DiagnosticsExportFailure.entries.size, messages.toSet().size)
-                assertTrue(R.string.diagnostics_action_unavailable in messages)
+                assertEquals(DiagnosticsExportFailure.entries.size, messages.values.toSet().size)
+                assertEquals(
+                    R.string.resource_failure_storage,
+                    messages.getValue(DiagnosticsExportFailure.STORAGE),
+                )
             } finally {
                 root.deleteRecursively()
             }

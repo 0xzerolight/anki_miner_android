@@ -80,6 +80,35 @@ class DiagnosticsExporterTest {
         }
 
     @Test
+    fun `storage exhaustion has its own failure kind`() =
+        runTest {
+            val root = Files.createTempDirectory("diagnostics-export").toFile()
+            try {
+                listOf(
+                    IOException("ENOSPC: No space left on device"),
+                    IOException(
+                        "diagnostics bundle publication failed",
+                        IOException("EDQUOT: Disk quota exceeded"),
+                    ),
+                ).forEach { cause ->
+                    val exporter =
+                        AndroidDiagnosticsExporter(
+                            stagingRoot = root,
+                            stageBundle = { throw cause },
+                            ioDispatcher = StandardTestDispatcher(testScheduler),
+                        )
+
+                    val failure = expectFailure { exporter.buildBundle {} }
+
+                    assertEquals(DiagnosticsExportFailure.STORAGE, failure.kind)
+                    assertEquals(cause, failure.cause)
+                }
+            } finally {
+                root.deleteRecursively()
+            }
+        }
+
+    @Test
     fun `share rejects a staged file outside its canonical root`() =
         runTest {
             val parent = Files.createTempDirectory("diagnostics-export").toFile()
