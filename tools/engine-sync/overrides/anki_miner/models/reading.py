@@ -11,7 +11,7 @@ from typing import Literal
 
 
 class ReadingUnitLimitExceeded(Exception):
-    """Android load context reached an allocation ceiling."""
+    """Android load context reached its existing retained-unit ceiling."""
 
     def __init__(self, maximum: int, observed: int) -> None:
         super().__init__(f"Reading unit limit exceeded ({observed:,} > {maximum:,})")
@@ -26,7 +26,6 @@ class ReadingUnitLoadCancelled(Exception):
 @dataclass(slots=True)
 class _ReadingUnitBudget:
     maximum: int
-    maximum_unit_text_bytes: int
     cancellation_check: Callable[[], bool] | None
     precount_sentences: bool
     retained: int = 0
@@ -36,10 +35,6 @@ class _ReadingUnitBudget:
             raise ReadingUnitLoadCancelled
         if self.precount_sentences and self.retained + additional > self.maximum:
             raise ReadingUnitLimitExceeded(self.maximum, self.retained + additional)
-
-    def check_text(self, observed: int) -> None:
-        if observed > self.maximum_unit_text_bytes:
-            raise ReadingUnitLimitExceeded(self.maximum_unit_text_bytes, observed)
 
     def reserve(self) -> None:
         if self.cancellation_check is not None and self.cancellation_check():
@@ -54,14 +49,12 @@ _READING_UNIT_BUDGET: ContextVar[_ReadingUnitBudget | None] = ContextVar(
     "anki_miner_reading_unit_budget",
     default=None,
 )
-_DEFAULT_MAX_UNIT_TEXT_UTF8_BYTES = 64 * 1024
 
 
 @contextmanager
 def reading_unit_budget(
     maximum: int,
     *,
-    maximum_unit_text_bytes: int = _DEFAULT_MAX_UNIT_TEXT_UTF8_BYTES,
     cancellation_check: Callable[[], bool] | None = None,
     precount_sentences: bool = False,
 ) -> Iterator[None]:
@@ -69,12 +62,9 @@ def reading_unit_budget(
 
     if maximum <= 0:
         raise ValueError("Reading unit limit must be positive")
-    if maximum_unit_text_bytes <= 0:
-        raise ValueError("Reading unit text limit must be positive")
     token = _READING_UNIT_BUDGET.set(
         _ReadingUnitBudget(
             maximum=maximum,
-            maximum_unit_text_bytes=maximum_unit_text_bytes,
             cancellation_check=cancellation_check,
             precount_sentences=precount_sentences,
         )
@@ -93,16 +83,6 @@ def check_reading_unit_capacity(additional: int) -> None:
     budget = _READING_UNIT_BUDGET.get()
     if budget is not None:
         budget.check(additional)
-
-
-def check_reading_unit_text_capacity(observed: int) -> None:
-    """Reject an oversized pending unit before its text buffer grows."""
-
-    if observed < 0:
-        raise ValueError("Observed reading unit text bytes must not be negative")
-    budget = _READING_UNIT_BUDGET.get()
-    if budget is not None:
-        budget.check_text(observed)
 
 
 def _reserve_reading_unit() -> None:

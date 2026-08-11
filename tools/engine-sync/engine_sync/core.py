@@ -6,7 +6,6 @@ import ast
 import hashlib
 import json
 import os
-import shutil
 import subprocess
 import symtable
 import tempfile
@@ -878,9 +877,6 @@ def _actual_managed_files(destination: Path, snapshot: EngineSnapshot) -> set[st
             )
         if not root.exists():
             continue
-        if root.is_file():
-            actual.add(root_name)
-            continue
         for path in root.rglob("*"):
             if path.is_symlink():
                 raise EngineSyncError(
@@ -910,7 +906,7 @@ def check_destination(destination: Path, snapshot: EngineSnapshot) -> tuple[str,
     return tuple(differences)
 
 
-def _sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
+def sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
     _validate_destination(destination)
     destination.mkdir(parents=True, exist_ok=True)
     expected = snapshot.expected_files()
@@ -919,8 +915,6 @@ def _sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
         (destination / path).unlink()
     for path, content in sorted(expected.items()):
         target = destination / path
-        if target.is_dir():
-            shutil.rmtree(target)
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.is_file() and target.read_bytes() == content:
             continue
@@ -952,12 +946,3 @@ def _sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
             root.rmdir()
         except OSError:
             pass
-
-
-def sync_destination(destination: Path, snapshot: EngineSnapshot) -> None:
-    try:
-        _sync_destination(destination, snapshot)
-    except OSError as exc:
-        raise EngineSyncError(
-            f"cannot synchronize engine destination {destination}: {exc}"
-        ) from exc

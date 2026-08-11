@@ -25,9 +25,9 @@ from engine_sync.core import (
 PINNED_MEDIA_EXTRACTOR_BLOB = "7798b8c1733ff59523424ecb6e95d178dc8b8b93"
 PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
 PINNED_KNOWN_WORDS_IMPORT_BLOB = "9353f416baec93f6c7e5dd1ed2231110bbe9f20b"
-REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "7c738eb74c8bbc0c4c93d1f6b8fb9b401337558f68bea485e320e47765fe3639"
+REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "8eea3756190b27f78298402d8797b3d8d6872a3a9c6a30016e0165b70b98c88d"
 REVIEWED_MEDIA_EXTRACTOR_SHA256 = (
-    "8ab59f5fa87f761756e0278c14323b1a779ffa75ac8a1783d9cd18be05de77f4"
+    "88155d34fc5f88b0292d054e83c31c6fdb9f3061a5958918620d301a35de9844"
 )
 REVIEWED_AUDIO_TRACK_DETECTOR_SHA256 = (
     "429663d08bc19ac9591a78e4d480eeaa209939563e02822c8fe8b6ea37fb0f88"
@@ -303,56 +303,6 @@ target = "anki_miner.services.youtube_fetcher"
 
         sync_destination(destination, snapshot)
         self.assertEqual(check_destination(destination, snapshot), ())
-
-    def test_sync_repairs_expected_file_replaced_by_a_directory(self) -> None:
-        snapshot = self._minimal_sync_snapshot()
-        destination = self.root / "vendor"
-        collision = destination / "anki_miner/root.py"
-        collision.mkdir(parents=True)
-        (collision / "stale.py").write_text("stale\n", encoding="utf-8")
-
-        sync_destination(destination, snapshot)
-
-        self.assertTrue(collision.is_file())
-        self.assertEqual(b"VALUE = 1\n", collision.read_bytes())
-        self.assertEqual((), check_destination(destination, snapshot))
-
-    def test_sync_repairs_managed_root_replaced_by_a_file(self) -> None:
-        snapshot = self._minimal_sync_snapshot()
-        destination = self.root / "vendor"
-        destination.mkdir()
-        collision = destination / "anki_miner"
-        collision.write_text("stale\n", encoding="utf-8")
-
-        sync_destination(destination, snapshot)
-
-        self.assertTrue(collision.is_dir())
-        self.assertEqual(
-            b"VALUE = 1\n",
-            (collision / "root.py").read_bytes(),
-        )
-        self.assertEqual((), check_destination(destination, snapshot))
-
-    def test_sync_translates_unrecoverable_filesystem_failures(self) -> None:
-        snapshot = self._minimal_sync_snapshot()
-        destination = self.root / "vendor"
-        sync_destination(destination, snapshot)
-        (destination / "anki_miner/root.py").write_text(
-            "modified\n",
-            encoding="utf-8",
-        )
-
-        with (
-            mock.patch(
-                "engine_sync.core.os.replace",
-                side_effect=PermissionError("read-only destination"),
-            ),
-            self.assertRaisesRegex(
-                EngineSyncError,
-                "cannot synchronize engine destination",
-            ),
-        ):
-            sync_destination(destination, snapshot)
 
     def test_sync_removes_a_top_level_root_dropped_from_the_snapshot(self) -> None:
         snapshot = self._snapshot(self._fixture())
