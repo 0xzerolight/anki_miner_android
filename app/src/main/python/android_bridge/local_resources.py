@@ -18,8 +18,10 @@ import os
 import sqlite3
 import stat
 import tarfile
+import unicodedata
 import zipfile
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 
 from . import resources as core
@@ -703,11 +705,9 @@ def _copy_audio_member(
 ) -> int:
     """Write *source* to *target*, bounded by the member's own declared length.
 
-    No per-file fsync: nothing here is durable until
-    :func:`_publish_indexed_dir` renames a complete tree, and a crash before
-    that discards the operation root, so a hundred thousand fsyncs buy latency
-    and nothing else. The index, its metadata, and the directory pass are still
-    synced at the points where atomicity is actually claimed.
+    The completed file is synced before the candidate tree can be published,
+    so a durable directory rename never exposes an index whose media data is
+    still dirty.
     """
     written = 0
     with target.open("xb", buffering=0) as output:
@@ -723,11 +723,12 @@ def _copy_audio_member(
                     "Audio pack expands beyond its limit",
                 )
             core._write_all(output, chunk)
-    if written != size:
-        raise _fail(
-            "invalid_resource_archive",
-            "Audio pack member length is inconsistent",
-        )
+        if written != size:
+            raise _fail(
+                "invalid_resource_archive",
+                "Audio pack member length is inconsistent",
+            )
+        os.fsync(output.fileno())
     return written
 
 
@@ -1324,6 +1325,18 @@ def _parse_known_words_copy(source: Path, source_format: str, operation: object,
             "known_words_import_failed",
             "The selected file contains no supported known-word export",
         ) from exc
+    from anki_miner.utils.ja_normalize import (
+        normalize_for_tokenization,
+        standardize_kanji_variants,
+    )
+
+    parsed = replace(
+        parsed,
+        words=frozenset(
+            standardize_kanji_variants(normalize_for_tokenization(word))
+            for word in parsed.words
+        ),
+    )
     if len(parsed.words) > _MAX_KNOWN_WORDS or any(
         not word
         or len(word.encode("utf-8")) > _MAX_WORD_BYTES
@@ -1459,10 +1472,11 @@ def list_known_words(payload: Mapping[str, object]) -> str:
         operation.check()
         database, db_path = _known_words_database(home)
         del database
-        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        search_query = unicodedata.normalize("NFC", query)
+        escaped = search_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         where = "source = 'user'"
         parameters: list[object] = []
-        if query:
+        if search_query:
             where += " AND lemma LIKE ? ESCAPE '\\' COLLATE NOCASE"
             parameters.append(f"%{escaped}%")
         connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
@@ -1505,6 +1519,7 @@ def remove_known_words(payload: Mapping[str, object]) -> str:
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
         database, db_path = _known_words_database(home)
+        operation.check()
         removed = database.remove_words(set(words), source="user")
         _fsync_file(db_path)
         core._fsync_directory(home)
@@ -1521,6 +1536,7 @@ def reset_known_words(payload: Mapping[str, object]) -> str:
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
         database, db_path = _known_words_database(home)
+        operation.check()
         removed = database.clear_user() if scope == "user" else database.clear(preserve_user=True)
         _fsync_file(db_path)
         core._fsync_directory(home)
