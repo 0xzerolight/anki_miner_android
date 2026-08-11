@@ -848,6 +848,7 @@ class _AndroidOnlineDictionaryProvider:
             return self._cache[word]
         if self._cancelled_check():
             return None
+        self._cache[word] = None
         result = self._lookup_uncached(word)
         if self._cancelled_check():
             return None
