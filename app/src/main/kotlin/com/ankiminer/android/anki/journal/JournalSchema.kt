@@ -6,7 +6,7 @@ import java.security.MessageDigest
 
 /** Clean pre-release schema. There is intentionally no migration from the discarded JSON scratch schema. */
 internal object JournalSchema {
-    const val VERSION = 4
+    const val VERSION = 5
 
     private fun names(values: Iterable<Enum<*>>) = values.joinToString(",") { "'${it.name}'" }
 
@@ -71,53 +71,55 @@ internal object JournalSchema {
         statements.forEach(db::execSQL)
     }
 
-    /** Lossless migration for every durable journal version shipped before bounded retention. */
+    /** Lossless migration for every previously shipped durable journal version. */
     fun upgrade(
         db: SQLiteDatabase,
         oldVersion: Int,
         newVersion: Int,
     ) {
-        if (oldVersion !in 1..3 || newVersion != VERSION) {
+        if (oldVersion !in 1..4 || newVersion != VERSION) {
             throw JournalCorruptionException(
                 "Unsupported journal schema migration $oldVersion -> $newVersion",
             )
         }
 
         dropKnownNonTableObjects(db)
-        if (requiresRemediationRebuild(oldVersion)) rebuildVersionOneRemediations(db)
-        db.execSQL(requireStatement("CREATE TABLE journal_maintenance"))
-        db.execSQL("INSERT INTO journal_maintenance (id, retention_active) VALUES (1, 0)")
-        if (oldVersion <= 2) {
-            db.execSQL(requireStatement("CREATE TABLE routing_observations"))
-            db.execSQL(
-                """
-                INSERT INTO routing_observations (
-                    intent_id, parent_id, request_index, card_id, note_id, ordinal, deck_id, observed_at_ms
+        if (oldVersion <= 3) {
+            if (requiresRemediationRebuild(oldVersion)) rebuildVersionOneRemediations(db)
+            db.execSQL(requireStatement("CREATE TABLE journal_maintenance"))
+            db.execSQL("INSERT INTO journal_maintenance (id, retention_active) VALUES (1, 0)")
+            if (oldVersion <= 2) {
+                db.execSQL(requireStatement("CREATE TABLE routing_observations"))
+                db.execSQL(
+                    """
+                    INSERT INTO routing_observations (
+                        intent_id, parent_id, request_index, card_id, note_id, ordinal, deck_id, observed_at_ms
+                    )
+                    SELECT id, parent_id, request_index, card_id, note_id, ordinal, target_deck_id, updated_at_ms
+                    FROM routing_intents
+                    WHERE child_id IS NULL AND state = 'VERIFIED' AND pre_update_deck_id = target_deck_id
+                    """.trimIndent(),
                 )
-                SELECT id, parent_id, request_index, card_id, note_id, ordinal, target_deck_id, updated_at_ms
-                FROM routing_intents
-                WHERE child_id IS NULL AND state = 'VERIFIED' AND pre_update_deck_id = target_deck_id
-                """.trimIndent(),
-            )
-            db.execSQL(
-                """
-                INSERT INTO remediations (
-                    parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
-                    compact_evidence, created_at_ms, updated_at_ms
+                db.execSQL(
+                    """
+                    INSERT INTO remediations (
+                        parent_id, claim_id, staging_id, staging_subject_id, kind, state, summary,
+                        compact_evidence, created_at_ms, updated_at_ms
+                    )
+                    SELECT p.id, c.id, NULL, NULL, 'MEDIA_STORED_UNATTACHED', 'OPEN',
+                        'Stored Anki media was not attached to a verified note',
+                        'schema=v3;reason=stored-unattached-backfill',
+                        max(p.updated_at_ms, c.updated_at_ms), max(p.updated_at_ms, c.updated_at_ms)
+                    FROM parents p JOIN media_claims c
+                        ON c.run_id = p.run_id AND c.request_id = p.request_id
+                    WHERE p.operation_kind = 'STORE_MEDIA' AND
+                        p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
+                        c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
+                            SELECT 1 FROM remediations r
+                            WHERE r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED')
+                    """.trimIndent(),
                 )
-                SELECT p.id, c.id, NULL, NULL, 'MEDIA_STORED_UNATTACHED', 'OPEN',
-                    'Stored Anki media was not attached to a verified note',
-                    'schema=v3;reason=stored-unattached-backfill',
-                    max(p.updated_at_ms, c.updated_at_ms), max(p.updated_at_ms, c.updated_at_ms)
-                FROM parents p JOIN media_claims c
-                    ON c.run_id = p.run_id AND c.request_id = p.request_id
-                WHERE p.operation_kind = 'STORE_MEDIA' AND
-                    p.state IN ('RESPONSE_ACKNOWLEDGED', 'ABANDONED') AND
-                    c.state IN ('STORED', 'PRESENT_BYTES_VERIFIED') AND NOT EXISTS(
-                        SELECT 1 FROM remediations r
-                        WHERE r.claim_id = c.id AND r.kind = 'MEDIA_STORED_UNATTACHED')
-                """.trimIndent(),
-            )
+            }
         }
         nonTableStatements.forEach(db::execSQL)
     }
@@ -1703,7 +1705,7 @@ internal object JournalSchema {
             """
             CREATE TRIGGER media_claim_delete_forbidden BEFORE DELETE ON media_claims
             WHEN NOT EXISTS(SELECT 1 FROM journal_maintenance WHERE id = 1 AND retention_active = 1) OR
-                 OLD.state != 'CLEANED_VERIFIED' OR EXISTS(
+                 OLD.state NOT IN ('ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER') OR EXISTS(
                 SELECT 1 FROM remediations r WHERE r.claim_id = OLD.id AND r.state = 'OPEN')
             BEGIN SELECT RAISE(ABORT, 'media claim still owns bytes or recovery evidence'); END
             """.trimIndent(),

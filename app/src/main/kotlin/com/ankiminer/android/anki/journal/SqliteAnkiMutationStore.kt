@@ -4363,7 +4363,8 @@ internal class SqliteAnkiMutationStore(
         )
         db.delete(
             "media_claims",
-            "run_id = ? AND request_id = ? AND state = 'CLEANED_VERIFIED'",
+            "run_id = ? AND request_id = ? AND " +
+                "state IN ('ATTACHED_VERIFIED', 'CLEANED_VERIFIED', 'ACKNOWLEDGED_BY_USER')",
             requestArguments,
         )
         leaseIds.forEach { leaseId ->
