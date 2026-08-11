@@ -67,6 +67,12 @@ class BridgeMiningRepositoryTest {
     @After
     fun stopExecutors() {
         executors.forEach(ExecutorService::shutdownNow)
+        executors.forEach { executor ->
+            assertTrue(
+                "executor did not terminate after shutdown",
+                executor.awaitTermination(2, TimeUnit.SECONDS),
+            )
+        }
         AppLog.install(NoOpSink)
     }
 
@@ -166,6 +172,7 @@ class BridgeMiningRepositoryTest {
         assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
+        awaitWorkerCompletion(harness)
 
         assertEquals(
             listOf("c=mining op=run.terminal outcome=fail code=engine_error retryable=true notices=0"),
@@ -1126,6 +1133,7 @@ class BridgeMiningRepositoryTest {
         runBlocking { harness.repository.cancel(curating.request.runId) }
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
+        awaitWorkerCompletion(harness)
 
         val resourceLease = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE)
         assertNotNull(resourceLease)
@@ -1553,6 +1561,7 @@ class BridgeMiningRepositoryTest {
         lane: MiningLane = MiningLane.VIDEO,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
+        val runTaskCompleted = CountDownLatch(1)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlFailure = AtomicReference<Throwable?>()
         val controlTaskCompleted = CountDownLatch(1)
@@ -1593,7 +1602,16 @@ class BridgeMiningRepositoryTest {
                 runtimePaths = MiningRuntimePaths(File("/tmp/cache"), File("/tmp/native")),
                 sourceGrantReleaser = SourceGrantReleaser(releases::add),
                 foregroundStarter = foreground,
-                runExecutor = runExecutor.asMiningTaskExecutor(),
+                runExecutor =
+                    MiningTaskExecutor { task ->
+                        runExecutor.execute {
+                            try {
+                                task()
+                            } finally {
+                                runTaskCompleted.countDown()
+                            }
+                        }
+                    },
                 controlExecutor =
                     if (rejectControlTasks) {
                         MiningTaskExecutor { throw IllegalStateException("test control rejection") }
@@ -1625,6 +1643,7 @@ class BridgeMiningRepositoryTest {
             foreground,
             controlFailure,
             controlTaskCompleted,
+            runTaskCompleted,
         )
     }
 
@@ -1679,6 +1698,13 @@ class BridgeMiningRepositoryTest {
         throw AssertionError("Timed out waiting for repository state; current=${repository.state.value}")
     }
 
+    private fun awaitWorkerCompletion(harness: Harness) {
+        assertTrue(
+            "run worker did not complete after terminal state publication",
+            harness.runTaskCompleted.await(2, TimeUnit.SECONDS),
+        )
+    }
+
     private data class Harness(
         val repository: BridgeMiningRepository,
         val bridge: FakePyBridge,
@@ -1687,6 +1713,7 @@ class BridgeMiningRepositoryTest {
         val foreground: FakeForegroundStarter,
         val controlFailure: AtomicReference<Throwable?>,
         val controlTaskCompleted: CountDownLatch,
+        val runTaskCompleted: CountDownLatch,
     )
 
     private class FakeInputOwner(
