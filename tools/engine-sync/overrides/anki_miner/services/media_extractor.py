@@ -843,7 +843,7 @@ class MediaExtractorService:
         (``libsvtav1`` upstream), WebP needs ``libwebp_anim``. The encoder name
         is whatever ``_encoder_for_format`` returned, so the probe and the
         eventual command can never disagree. Distro ffmpeg packages vary, so
-        this probes once and caches; a missing encoder logs a clear error and
+        completed probes are cached; a missing encoder logs a clear error and
         returns False rather than silently producing broken files.
         """
         with self._encoder_probe_lock:
@@ -865,7 +865,7 @@ class MediaExtractorService:
                 )
             except (subprocess.SubprocessError, OSError) as e:
                 logger.warning(f"ffmpeg encoder probe failed: {e}")
-                available = False
+                return False
             else:
                 if proc_registry is not None and not proc_registry.register(proc):
                     with proc:
@@ -881,18 +881,20 @@ class MediaExtractorService:
                             _kill_quietly(proc)
                             proc.communicate()
                             logger.warning("ffmpeg encoder probe timed out")
-                            available = False
+                            return False
                         except (subprocess.SubprocessError, OSError, ValueError) as e:
                             _kill_quietly(proc)
                             logger.warning(f"ffmpeg encoder probe failed: {e}")
-                            available = False
-                        else:
-                            available = proc.returncode == 0 and encoder in stdout
+                            return False
                 finally:
                     if proc_registry is not None:
                         proc_registry.unregister(proc)
                 if proc_registry is not None and proc_registry.cancelled:
                     return False
+                if proc.returncode != 0:
+                    logger.warning(f"ffmpeg encoder probe failed with exit code {proc.returncode}")
+                    return False
+                available = encoder in stdout
             self._animated_encoder_ok[encoder] = available
             if not available:
                 logger.error(
