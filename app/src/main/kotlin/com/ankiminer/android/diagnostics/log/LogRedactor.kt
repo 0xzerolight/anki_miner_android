@@ -241,7 +241,9 @@ internal object RedactionRulesFactory {
      * text and a caller passing a list would predictably forget the second: `selection(slot)`
      * carries the picked file's display name, and `text(slot)` carries the reading subtitle series
      * name, which the user types by hand. Collecting over [SafSelectionSlot.entries] also means a
-     * slot added later is covered without anyone remembering to come back here.
+     * slot added later is covered without anyone remembering to come back here. Video and audio
+     * display names also contribute the canonical extensionless episode label sent to the engine,
+     * because engine warnings can log that transformed value.
      */
     fun forExport(
         context: Context,
@@ -270,13 +272,27 @@ internal object RedactionRulesFactory {
             SafSelectionSlot.entries.flatMap { slot ->
                 listOfNotNull(inventory.selection(slot)?.displayName, inventory.text(slot))
             }
-        return forExport(roots, settings, safUserText, Build.USER, newSalt())
+        val safEpisodeDisplayNames =
+            listOfNotNull(
+                inventory.selection(SafSelectionSlot.VIDEO)?.displayName,
+                inventory.selection(SafSelectionSlot.AUDIO)?.displayName,
+            )
+        return forExport(
+            roots,
+            settings,
+            safUserText,
+            Build.USER,
+            newSalt(),
+            safEpisodeDisplayNames,
+        )
     }
 
     /**
      * The seam the tests drive. Everything the platform owns — the directories, the build user, the
      * randomness — is a parameter, because the unit test build has neither Robolectric nor
      * `returnDefaultValues`, so touching [Build] or a real [Context] there throws.
+     * [safEpisodeDisplayNames] stays separate so dotted typed text is never mistaken for a selected
+     * filename.
      */
     fun forExport(
         roots: Map<String, File>,
@@ -284,6 +300,7 @@ internal object RedactionRulesFactory {
         safUserText: List<String>,
         buildUser: String?,
         salt: ByteArray,
+        safEpisodeDisplayNames: List<String> = emptyList(),
     ): RedactionRules {
         val tokens = TokenMint(salt)
         val replacements = LinkedHashMap<String, String>()
@@ -303,15 +320,18 @@ internal object RedactionRulesFactory {
         // runs at rule 5's position rather than with the roots: folding them forward would let a
         // deck named "data" consume the head of an absolute path before rule 2 could match it.
         val literals = LinkedHashMap<String, String>()
+        val boundedLiterals = LinkedHashMap<String, String>()
         fun literal(
             kind: String,
             value: String?,
             keepExtension: Boolean = false,
+            wholeValueOnly: Boolean = false,
         ) {
             val text = value ?: return
-            // A one- or two-character literal replaced everywhere shreds the file: it would hit
-            // every English word that happens to contain those characters.
-            if (text.length < MIN_LITERAL_LENGTH) return
+            // A one- or two-character literal replaced everywhere shreds the file. Short episode
+            // labels are still sensitive, so they enter a boundary-constrained alternation below.
+            val minimumLength = if (wholeValueOnly) 1 else MIN_LITERAL_LENGTH
+            if (text.length < minimumLength) return
             // Every spelling the file can hold, not just the one the user typed. The renderer
             // escapes a value before writing it, so a deck named `My "Best" Deck` is only ever on
             // disk as `My \"Best\" Deck` and an alternation built from the raw setting could never
@@ -320,18 +340,29 @@ internal object RedactionRulesFactory {
             val spellings =
                 linkedSetOf(text, escapeForValue(text), escapeForText(text))
                     .filter { spelling ->
-                        spelling.length >= MIN_LITERAL_LENGTH &&
+                        spelling.length >= minimumLength &&
                             spelling !in replacements &&
-                            spelling !in literals
+                            spelling !in literals &&
+                            spelling !in boundedLiterals
                     }
             if (spellings.isEmpty()) return
             // One token for all of them: they are the same secret written three ways, and a
             // maintainer correlating across lines must not see two.
             val replacement =
                 tokens.token(kind, text) + if (keepExtension) extensionOf(text) else ""
-            spellings.forEach { spelling -> literals[spelling] = replacement }
+            val destination = if (wholeValueOnly) boundedLiterals else literals
+            spellings.forEach { spelling -> destination[spelling] = replacement }
         }
         safUserText.forEach { literal("saf", it, keepExtension = true) }
+        safEpisodeDisplayNames
+            .map(::canonicalEpisodeLabel)
+            .forEach { label ->
+                literal(
+                    "saf",
+                    label,
+                    wholeValueOnly = label.length < MIN_LITERAL_LENGTH,
+                )
+            }
         literal("deck", settings.deckName)
         settings.excludedDecks.forEach { literal("deck", it) }
         literal("notetype", settings.noteType)
@@ -341,7 +372,9 @@ internal object RedactionRulesFactory {
         settings.fieldMap.values.forEach { literal("field", it) }
         literal("tag", settings.tags)
         replacements.putAll(literals)
+        replacements.putAll(boundedLiterals)
         val literalAlternation = alternation(literals.keys)
+        val boundedLiteralAlternation = boundedAlternation(boundedLiterals.keys)
 
         // Whatever an absorbed match dragged in past the path, hidden under its own token so the
         // path's token stays the same across every carrier. Blank remainders are pure spacing and
@@ -408,6 +441,9 @@ internal object RedactionRulesFactory {
             buildList<Pair<Regex, (MatchResult) -> String>> {
                 literalAlternation?.let { regex ->
                     add(regex to { match -> literals[match.value] ?: match.value })
+                }
+                boundedLiteralAlternation?.let { regex ->
+                    add(regex to { match -> boundedLiterals[match.value] ?: match.value })
                 }
                 add(
                     JAPANESE_RUN to { match ->
@@ -487,11 +523,44 @@ internal object RedactionRulesFactory {
         return Regex(ordered.joinToString("|") { Regex.escape(it) })
     }
 
+    /** Short labels match only as complete units, never as substrings of words or identifiers. */
+    private fun boundedAlternation(literals: Collection<String>): Regex? {
+        val alternatives = alternation(literals) ?: return null
+        val word = "\\p{L}\\p{M}\\p{N}\\p{Pc}"
+        return Regex("(?<![$word])(?:${alternatives.pattern})(?![$word])")
+    }
+
     private fun canonicalOrNull(directory: File): String? =
         try {
             directory.canonicalPath
         } catch (_: java.io.IOException) {
             null
+        }
+
+    /** Mirrors the label sent to the engine by BridgeMiningRepository. */
+    private fun canonicalEpisodeLabel(displayName: String): String {
+        val withoutExtension = displayName.substringBeforeLast('.', displayName)
+        val filtered =
+            buildString(withoutExtension.length) {
+                var index = 0
+                while (index < withoutExtension.length) {
+                    val codePoint = withoutExtension.codePointAt(index)
+                    if (!isCategoryC(codePoint)) appendCodePoint(codePoint)
+                    index += Character.charCount(codePoint)
+                }
+            }.trim { Character.isWhitespace(it) || Character.isSpaceChar(it) }
+        return Normalizer.normalize(filtered, Normalizer.Form.NFC)
+    }
+
+    private fun isCategoryC(codePoint: Int): Boolean =
+        when (Character.getType(codePoint)) {
+            Character.CONTROL.toInt(),
+            Character.FORMAT.toInt(),
+            Character.PRIVATE_USE.toInt(),
+            Character.SURROGATE.toInt(),
+            Character.UNASSIGNED.toInt(),
+            -> true
+            else -> false
         }
 
     private const val MIN_LITERAL_LENGTH = 3
@@ -667,7 +736,7 @@ private fun endOfQuotedValue(
     return null
 }
 
-private const val PATH_ROOTS = "storage|sdcard|mnt|data|system"
+private const val PATH_ROOTS = "storage|sdcard|mnt|data|system|home"
 
 private const val APP_ROOTS = "files|cache|nobackup|nativelib|extfiles-\\d+"
 
@@ -813,13 +882,13 @@ private val CONTINUATION_CONTENT_URI = contentUri(CONTINUATION_TAIL)
 private val UNSTRUCTURED_CONTENT_URI = contentUri(CONTINUATION_TAIL, stopAtField = false)
 
 /**
- * Rule 7. Hiragana, katakana including the halfwidth forms, CJK Unified Ideographs with Extension A
- * and Extension B, both compatibility ideograph blocks, and the iteration marks.
+ * Rule 7. Hiragana, katakana including the halfwidth forms, CJK Unified Ideographs with Extensions
+ * A through I, both compatibility ideograph blocks, and the iteration marks.
  *
  * The iteration marks are not decoration: 々 sits outside every CJK block, so without it 時々, 人々
  * and 色々 split into two runs of one character each.
  *
- * Extension B and the supplementary compatibility ideographs are written as `\x{…}` rather than as
+ * The supplementary extensions and compatibility ideographs are written as `\x{…}` rather than as
  * `\uXXXX` ranges because they are above the BMP. Kotlin regex runs over UTF-16, and a BMP-shaped
  * class silently matches neither half of a surrogate pair — the rare given names and rare vocabulary
  * that live up there would have passed straight through. This repo's tokenizer corpus already
@@ -833,7 +902,9 @@ private val JAPANESE_RUN =
     Regex(
         "[\\u3005\\u3006\\u303B\\u3040-\\u309F\\u30A0-\\u30FF" +
             "\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uF900-\\uFAFF\\uFF66-\\uFF9F" +
-            "\\x{20000}-\\x{2A6DF}\\x{2F800}-\\x{2FA1F}]+",
+            "\\x{20000}-\\x{2A6DF}\\x{2A700}-\\x{2B73F}\\x{2B740}-\\x{2B81F}" +
+            "\\x{2B820}-\\x{2CEAF}\\x{2CEB0}-\\x{2EBEF}\\x{2EBF0}-\\x{2EE5F}" +
+            "\\x{30000}-\\x{3134F}\\x{31350}-\\x{323AF}\\x{2F800}-\\x{2FA1F}]+",
     )
 
 /** Rule 8. Three triplets minimum: one CJK character is three bytes in UTF-8. */
@@ -949,6 +1020,13 @@ private fun isJapanese(codePoint: Int): Boolean =
         codePoint in 0xF900..0xFAFF ||
         codePoint in 0xFF66..0xFF9F ||
         codePoint in 0x20000..0x2A6DF ||
+        codePoint in 0x2A700..0x2B73F ||
+        codePoint in 0x2B740..0x2B81F ||
+        codePoint in 0x2B820..0x2CEAF ||
+        codePoint in 0x2CEB0..0x2EBEF ||
+        codePoint in 0x2EBF0..0x2EE5F ||
+        codePoint in 0x30000..0x3134F ||
+        codePoint in 0x31350..0x323AF ||
         codePoint in 0x2F800..0x2FA1F
 
 /**
