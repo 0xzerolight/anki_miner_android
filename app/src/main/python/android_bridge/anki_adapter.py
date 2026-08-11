@@ -1189,8 +1189,8 @@ class AndroidAnkiAdapter:
                 row_error = _expect_error_detail(row["error"], operation="storeMedia")
                 if row_error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
                     _raise_callback_error(row_error)
-                # The asset id is what ties this line to an identity named in the error itself
-                # (a namespace refusal reports the colliding pair by id, never by filename).
+                # A prior successful mapping line lets a later run resolve the refusal's opaque
+                # held asset id after the adapter that created that claim has closed.
                 logger.warning(
                     "Failed to store media asset %s [%s]: %s",
                     asset.original_name,
@@ -1251,6 +1251,15 @@ class AndroidAnkiAdapter:
                     "A partial media write cannot be declared safely retryable",
                 )
         self._stored_media_name_owners.update(pending_name_owners)
+        for asset in assets:
+            actual = stored.get(asset.asset_id)
+            if actual is not None:
+                logger.info(
+                    "Stored media asset %s [%s] as %s",
+                    asset.original_name,
+                    asset.asset_id,
+                    actual,
+                )
         return _StoreAssetsOutcome(stored, error)
 
     def _validate_asset_provider_namespaces(
