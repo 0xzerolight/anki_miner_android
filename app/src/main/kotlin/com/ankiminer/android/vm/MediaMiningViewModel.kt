@@ -434,9 +434,11 @@ class MediaMiningViewModel internal constructor(
         val opener = timingPreviewOpener ?: return
         while (true) {
             val local = localState.value
+            val video = local.video.document ?: return
             val subtitle = local.subtitle.document ?: return
             if (
-                local.video.document == null ||
+                local.video.isResolving ||
+                local.subtitle.isResolving ||
                 repository.state.value != MiningRunState.Idle ||
                 local.subtitleOffsetDraftInvalid ||
                 local.pending.start ||
@@ -455,6 +457,8 @@ class MediaMiningViewModel internal constructor(
                     ),
                 )
             ) {
+                val videoRequest = videoDocumentRequest
+                val subtitleRequest = subtitleDocumentRequest
                 val initialOffset =
                     local.subtitleOffsetOverride
                         ?: local.globalSubtitleOffset
@@ -468,7 +472,18 @@ class MediaMiningViewModel internal constructor(
                                     val current = localState.value
                                     if (
                                         repository.state.value != MiningRunState.Idle ||
+                                        current.video.isResolving ||
+                                        current.subtitle.isResolving ||
+                                        current.video.document?.uri != video.uri ||
                                         current.subtitle.document?.uri != subtitle.uri ||
+                                        !isCurrentDocumentRequest(
+                                            DocumentKind.VIDEO,
+                                            videoRequest,
+                                        ) ||
+                                        !isCurrentDocumentRequest(
+                                            DocumentKind.SUBTITLE,
+                                            subtitleRequest,
+                                        ) ||
                                         mutableTimingPreviewState.value != null
                                     ) {
                                         queueTimingPreviewClose(session)
@@ -946,7 +961,9 @@ class MediaMiningViewModel internal constructor(
     ) {
         if (uri.isBlank() ||
             (!restoring && repository.state.value != MiningRunState.Idle) ||
-            localState.value.pending.start
+            localState.value.pending.start ||
+            localState.value.timingPreviewPending ||
+            mutableTimingPreviewState.value != null
         ) {
             return
         }

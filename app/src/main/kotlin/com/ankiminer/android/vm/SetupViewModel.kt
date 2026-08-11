@@ -20,7 +20,10 @@ import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceIdentity
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceImportTarget
@@ -35,6 +38,8 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.localization.StringResourceResolver
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -81,6 +86,7 @@ internal class SetupViewModel(
         val wordListKind: WordListKind? = null,
         /** Where the chosen pack sits inside the picked archive; empty means its root. */
         val audioPackPath: String? = null,
+        val audioPackFormat: String? = null,
         val uri: String? = null,
     )
 
@@ -96,9 +102,8 @@ internal class SetupViewModel(
         val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
         val failedDeckName: String? = null,
         val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
-        // In memory only. The staged archive survives a process death; this dialog does
-        // not, and re-opening the picker is cheaper than persisting a candidate list.
         val audioPackChoices: List<AudioPackCandidate> = emptyList(),
+        val resourcePickerFailure: ResourceFailure? = null,
     )
 
     private val local =
@@ -109,6 +114,7 @@ internal class SetupViewModel(
                         ?: WordListKind.BLACKLIST,
                 pendingReplace = restorePendingReplace(),
                 pendingDelete = restorePendingDelete(),
+                audioPackChoices = restoreAudioPackChoices(),
             ),
         )
     /** In-memory only: failed persistence must re-open the wizard in a fresh ViewModel. */
@@ -123,6 +129,7 @@ internal class SetupViewModel(
     private val settingsMutationMutex = Mutex()
     private var pendingPicker = restorePendingPicker()
     private var pendingPickerJob: Job? = null
+    private var pendingPickerRetentionJob: Job? = null
     private val settingsAnkiAndRuntime =
         combine(settings, ankiSetup.state, runtimeWorkState) { appSettings, ankiState, runtimeKind ->
             Triple(appSettings, ankiState, runtimeKind)
@@ -183,7 +190,7 @@ internal class SetupViewModel(
                 wordLists = resourceState.wordLists,
                 lastLocalImport = resourceState.lastLocalImport,
                 operation = resourceState.activeOperation,
-                failure = resourceState.failure,
+                failure = localState.resourcePickerFailure ?: resourceState.failure,
                 lookup = resourceState.lastLookup,
                 lookupTerm = localState.lookupTerm,
                 lookupSlotId = selectedSlot,
@@ -199,9 +206,10 @@ internal class SetupViewModel(
     init {
         val retainedAudioPreflight =
             pendingPicker?.let {
-                it.kind == ResourcePickerKind.AUDIO_PACK && it.target != null
+                it.kind == ResourcePickerKind.AUDIO_PACK && it.uri != null
             } == true
         if (!retainedAudioPreflight) {
+            setAudioPackChoices(emptyList())
             viewModelScope.launch { resources.discardAudioPackPreflight() }
         }
         resumePendingPicker()
@@ -229,6 +237,7 @@ internal class SetupViewModel(
             lookupTerm = localState.lookupTerm,
             wordListTarget = localState.wordListTarget,
             knownWordsSearch = localState.knownWordsSearch,
+            failure = localState.resourcePickerFailure ?: resources.state.value.failure,
         )
     }
 
@@ -591,7 +600,7 @@ internal class SetupViewModel(
                         AudioPackCandidate(
                             packId = pending.identity,
                             packPath = picker?.audioPackPath.orEmpty(),
-                            format = "",
+                            format = picker?.audioPackFormat.orEmpty(),
                         ),
                         replace = true,
                     )
@@ -645,9 +654,9 @@ internal class SetupViewModel(
     }
 
     fun beginCustomDictionaryPicker(): Boolean {
-        if (currentState().busy) return false
-        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY))
-        return true
+        return reservePendingPicker(
+            PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY),
+        )
     }
 
     fun beginCustomDictionaryReplacementPicker(slotId: String): Boolean {
@@ -656,13 +665,12 @@ internal class SetupViewModel(
         val target =
             ResourceIdentity.customDictionaryReplacementTarget(slotId, state.dictionaries)
                 ?: return false
-        savePendingPicker(
+        return reservePendingPicker(
             PendingResourcePicker(
                 kind = ResourcePickerKind.CUSTOM_DICTIONARY,
                 target = target,
             ),
         )
-        return true
     }
 
     fun onCustomDictionaryPicked(uri: String?) {
@@ -670,11 +678,11 @@ internal class SetupViewModel(
             discardPendingResourceImport(ResourcePickerKind.CUSTOM_DICTIONARY)
             return
         }
-        viewModelScope.launch {
-            val launched =
-                pendingPicker?.takeIf { it.kind == ResourcePickerKind.CUSTOM_DICTIONARY }
-                    ?: PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY)
-            val source = resources.retainResourceImport(uri)
+        retainPickedResource(
+            kind = ResourcePickerKind.CUSTOM_DICTIONARY,
+            uri = uri,
+            fallback = { PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY) },
+        ) { launched, source ->
             val target =
                 launched.target
                     ?: resources.preflightCustomDictionary(source.uri)?.let { derivedSlotId ->
@@ -688,7 +696,7 @@ internal class SetupViewModel(
                     clearPendingPicker()
                 }
                 resources.releaseResourceImport(source.uri)
-                return@launch
+                return@retainPickedResource
             }
             savePendingPicker(launched.copy(target = target, uri = source.uri))
             resumePendingPicker()
@@ -696,13 +704,11 @@ internal class SetupViewModel(
     }
 
     fun importCustomDictionary(uri: String) {
-        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.CUSTOM_DICTIONARY))
-        onCustomDictionaryPicked(uri)
+        if (beginCustomDictionaryPicker()) onCustomDictionaryPicked(uri)
     }
 
     fun beginFrequencyPicker(): Boolean {
-        if (currentState().busy) return false
-        return true
+        return reservePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.FREQUENCY))
     }
 
     fun onFrequencyPicked(uri: String?) {
@@ -710,18 +716,22 @@ internal class SetupViewModel(
             discardPendingResourceImport(ResourcePickerKind.FREQUENCY)
             return
         }
-        viewModelScope.launch {
-            val source = resources.retainResourceImport(uri)
+        retainPickedResource(
+            kind = ResourcePickerKind.FREQUENCY,
+            uri = uri,
+            fallback = { PendingResourcePicker(kind = ResourcePickerKind.FREQUENCY) },
+        ) { _, source ->
             savePendingPicker(frequencyPickerRequest(source, currentState()))
             resumePendingPicker()
         }
     }
 
-    fun importFrequencySource(uri: String) = onFrequencyPicked(uri)
+    fun importFrequencySource(uri: String) {
+        if (beginFrequencyPicker()) onFrequencyPicked(uri)
+    }
 
     fun beginPitchPicker(): Boolean {
-        if (currentState().busy) return false
-        return true
+        return reservePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.PITCH))
     }
 
     fun onPitchPicked(uri: String?) {
@@ -729,14 +739,19 @@ internal class SetupViewModel(
             discardPendingResourceImport(ResourcePickerKind.PITCH)
             return
         }
-        viewModelScope.launch {
-            val source = resources.retainResourceImport(uri)
+        retainPickedResource(
+            kind = ResourcePickerKind.PITCH,
+            uri = uri,
+            fallback = { PendingResourcePicker(kind = ResourcePickerKind.PITCH) },
+        ) { _, source ->
             savePendingPicker(pitchPickerRequest(source, currentState()))
             resumePendingPicker()
         }
     }
 
-    fun importPitchAccent(uri: String) = onPitchPicked(uri)
+    fun importPitchAccent(uri: String) {
+        if (beginPitchPicker()) onPitchPicked(uri)
+    }
 
     /**
      * Commits to one pack out of a multi-pack archive and lets the import proceed.
@@ -747,7 +762,7 @@ internal class SetupViewModel(
     fun chooseAudioPack(packId: String) {
         val choices = currentLocal().audioPackChoices
         val chosen = choices.firstOrNull { it.packId == packId } ?: return
-        local.update { it.copy(audioPackChoices = emptyList()) }
+        setAudioPackChoices(emptyList())
         val request = pendingPicker?.takeIf { it.kind == ResourcePickerKind.AUDIO_PACK } ?: return
         savePendingPicker(request.withAudioPack(chosen))
         resumePendingPicker()
@@ -756,7 +771,7 @@ internal class SetupViewModel(
     /** Abandons a multi-pack archive without importing any of it. */
     fun dismissAudioPackChoice() {
         if (currentLocal().audioPackChoices.isEmpty()) return
-        local.update { it.copy(audioPackChoices = emptyList()) }
+        setAudioPackChoices(emptyList())
         val picker = pendingPicker
         clearPendingPicker()
         releaseRetainedResourceImport(picker)
@@ -767,12 +782,11 @@ internal class SetupViewModel(
         copy(
             target = ResourceIdentity.audioPackTarget(pack.packId, resources.state.value.audioPacks),
             audioPackPath = pack.packPath,
+            audioPackFormat = pack.format,
         )
 
     fun beginAudioPackPicker(): Boolean {
-        if (currentState().busy) return false
-        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.AUDIO_PACK))
-        return true
+        return reservePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.AUDIO_PACK))
     }
 
     fun onAudioPackPicked(uri: String?) =
@@ -783,8 +797,7 @@ internal class SetupViewModel(
         )
 
     fun importAudioPack(uri: String) {
-        savePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.AUDIO_PACK))
-        onAudioPackPicked(uri)
+        if (beginAudioPackPicker()) onAudioPackPicked(uri)
     }
 
     /**
@@ -856,6 +869,99 @@ internal class SetupViewModel(
         resumePendingPicker()
     }
 
+    private fun reservePendingPicker(request: PendingResourcePicker): Boolean {
+        if (
+            currentState().busy ||
+                pendingPicker != null ||
+                pendingPickerRetentionJob?.isActive == true
+        ) {
+            return false
+        }
+        local.update { it.copy(resourcePickerFailure = null) }
+        savePendingPicker(request)
+        return true
+    }
+
+    private fun retainPickedResource(
+        kind: ResourcePickerKind,
+        uri: String,
+        fallback: () -> PendingResourcePicker,
+        onRetained: suspend (PendingResourcePicker, RetainedResourceImport) -> Unit,
+    ) {
+        if (pendingPickerRetentionJob?.isActive == true) return
+        val existing = pendingPicker
+        if (existing != null && (existing.kind != kind || existing.uri != null)) return
+        val request = existing ?: fallback().also(::savePendingPicker)
+        local.update { it.copy(resourcePickerFailure = null) }
+        pendingPickerRetentionJob =
+            viewModelScope.launch {
+                try {
+                    val source = resources.retainResourceImport(uri)
+                    val stillOwnsSlot =
+                        pendingPicker?.let { it.kind == kind && it.uri == null } == true
+                    if (!stillOwnsSlot) {
+                        resources.releaseResourceImport(source.uri)
+                        return@launch
+                    }
+                    onRetained(request, source)
+                } catch (failure: CancellationException) {
+                    throw failure
+                } catch (failure: SafAccessException) {
+                    val stillOwnsSlot =
+                        pendingPicker?.let { it.kind == kind && it.uri == null } == true
+                    if (!stillOwnsSlot) return@launch
+                    clearPendingPicker()
+                    publishResourcePickerFailure(kind, failure.kind)
+                }
+            }
+    }
+
+    private fun publishResourcePickerFailure(
+        kind: ResourcePickerKind,
+        failureKind: SafAccessFailureKind,
+    ) {
+        val code =
+            when (failureKind) {
+                SafAccessFailureKind.PERMISSION_REVOKED -> "saf_permission_not_granted"
+                SafAccessFailureKind.PROVIDER_UNAVAILABLE -> "saf_provider_unavailable"
+                SafAccessFailureKind.INVALID_URI -> "saf_uri_invalid"
+            }
+        val message =
+            when (failureKind) {
+                SafAccessFailureKind.PERMISSION_REVOKED ->
+                    strings.resolve(R.string.resource_failure_saf_permission)
+                SafAccessFailureKind.PROVIDER_UNAVAILABLE ->
+                    strings.resolve(R.string.resource_failure_saf_provider)
+                SafAccessFailureKind.INVALID_URI ->
+                    strings.resolve(R.string.resource_failure_saf_uri)
+            }
+        val origin =
+            when (kind) {
+                ResourcePickerKind.CUSTOM_DICTIONARY -> ResourceFailureOrigin.CUSTOM_DICTIONARY
+                ResourcePickerKind.FREQUENCY -> ResourceFailureOrigin.FREQUENCY
+                ResourcePickerKind.PITCH -> ResourceFailureOrigin.PITCH
+                ResourcePickerKind.AUDIO_PACK -> ResourceFailureOrigin.AUDIO
+                ResourcePickerKind.KNOWN_WORDS -> ResourceFailureOrigin.KNOWN_WORDS
+                ResourcePickerKind.WORD_LIST -> ResourceFailureOrigin.WORD_LIST
+            }
+        local.update {
+            it.copy(
+                resourcePickerFailure =
+                    ResourceFailure(
+                        code = code,
+                        message = message,
+                        retryable = false,
+                        origin = origin,
+                        retry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+                        knownWordsOperation =
+                            KnownWordsFailureOperation.PREVIEW.takeIf {
+                                kind == ResourcePickerKind.KNOWN_WORDS
+                            },
+                    ),
+            )
+        }
+    }
+
     private fun resumePendingPicker() {
         if (pendingPicker?.uri == null || pendingPickerJob?.isActive == true) return
         pendingPickerJob =
@@ -863,8 +969,11 @@ internal class SetupViewModel(
                 var request = pendingPicker?.takeIf { it.uri != null } ?: return@launch
                 if (request.kind == ResourcePickerKind.AUDIO_PACK && request.target == null) {
                     val uri = requireNotNull(request.uri)
-                    val packs = resources.preflightAudioPack(uri)
-                    if (packs.isNullOrEmpty()) {
+                    val packs =
+                        currentLocal().audioPackChoices.ifEmpty {
+                            resources.preflightAudioPack(uri).orEmpty()
+                        }
+                    if (packs.isEmpty()) {
                         clearPendingPicker()
                         return@launch
                     }
@@ -872,7 +981,7 @@ internal class SetupViewModel(
                     // all of them at once would be tens of gigabytes and an hour, so
                     // the user names the one they want and the rest stay in the file.
                     if (packs.size > 1) {
-                        local.update { it.copy(audioPackChoices = packs) }
+                        setAudioPackChoices(packs)
                         return@launch
                     }
                     request = request.withAudioPack(packs.single())
@@ -931,7 +1040,7 @@ internal class SetupViewModel(
                     AudioPackCandidate(
                         packId = requireNotNull(request.target).identity,
                         packPath = request.audioPackPath.orEmpty(),
-                        format = "",
+                        format = request.audioPackFormat.orEmpty(),
                     ),
                     replace = false,
                 )
@@ -966,7 +1075,40 @@ internal class SetupViewModel(
         saveString(STATE_PICKER_RESOURCE_FILE_KIND, request.resourceFileKind?.name)
         saveString(STATE_PICKER_WORD_LIST_KIND, request.wordListKind?.name)
         saveString(STATE_PICKER_AUDIO_PACK_PATH, request.audioPackPath)
+        saveString(STATE_PICKER_AUDIO_PACK_FORMAT, request.audioPackFormat)
         saveString(STATE_PICKER_URI, request.uri)
+    }
+
+    private fun setAudioPackChoices(choices: List<AudioPackCandidate>) {
+        if (choices.isEmpty()) {
+            savedStateHandle.remove<ArrayList<String>>(STATE_AUDIO_PACK_CHOICE_IDS)
+            savedStateHandle.remove<ArrayList<String>>(STATE_AUDIO_PACK_CHOICE_PATHS)
+            savedStateHandle.remove<ArrayList<String>>(STATE_AUDIO_PACK_CHOICE_FORMATS)
+        } else {
+            savedStateHandle[STATE_AUDIO_PACK_CHOICE_IDS] =
+                ArrayList(choices.map(AudioPackCandidate::packId))
+            savedStateHandle[STATE_AUDIO_PACK_CHOICE_PATHS] =
+                ArrayList(choices.map(AudioPackCandidate::packPath))
+            savedStateHandle[STATE_AUDIO_PACK_CHOICE_FORMATS] =
+                ArrayList(choices.map(AudioPackCandidate::format))
+        }
+        local.update { it.copy(audioPackChoices = choices) }
+    }
+
+    private fun restoreAudioPackChoices(): List<AudioPackCandidate> {
+        val ids =
+            savedStateHandle.get<ArrayList<String>>(STATE_AUDIO_PACK_CHOICE_IDS)
+                ?: return emptyList()
+        val paths =
+            savedStateHandle.get<ArrayList<String>>(STATE_AUDIO_PACK_CHOICE_PATHS)
+                ?: return emptyList()
+        val formats =
+            savedStateHandle.get<ArrayList<String>>(STATE_AUDIO_PACK_CHOICE_FORMATS)
+                ?: return emptyList()
+        if (ids.isEmpty() || ids.size != paths.size || ids.size != formats.size) return emptyList()
+        return ids.indices.map { index ->
+            AudioPackCandidate(ids[index], paths[index], formats[index])
+        }
     }
 
     private fun restorePendingPicker(): PendingResourcePicker? {
@@ -989,6 +1131,7 @@ internal class SetupViewModel(
                 resourceFileKind = savedEnum<ResourceImportFileKind>(STATE_PICKER_RESOURCE_FILE_KIND),
                 wordListKind = savedEnum<WordListKind>(STATE_PICKER_WORD_LIST_KIND),
                 audioPackPath = savedStateHandle[STATE_PICKER_AUDIO_PACK_PATH],
+                audioPackFormat = savedStateHandle[STATE_PICKER_AUDIO_PACK_FORMAT],
                 uri = savedStateHandle[STATE_PICKER_URI],
             )
         return restored.takeIf { request ->
@@ -996,14 +1139,21 @@ internal class SetupViewModel(
                 ResourcePickerKind.CUSTOM_DICTIONARY -> request.uri == null || request.target != null
                 ResourcePickerKind.AUDIO_PACK -> true
                 ResourcePickerKind.FREQUENCY ->
-                    request.target != null &&
-                        request.sourceName != null &&
-                        request.frequencyFormat != null
+                    request.uri == null ||
+                        (
+                            request.target != null &&
+                                request.sourceName != null &&
+                                request.frequencyFormat != null
+                        )
                 ResourcePickerKind.PITCH ->
-                    request.target != null &&
-                        request.sourceName != null &&
-                        request.pitchFormat != null
-                ResourcePickerKind.KNOWN_WORDS -> request.resourceFileKind != null
+                    request.uri == null ||
+                        (
+                            request.target != null &&
+                                request.sourceName != null &&
+                                request.pitchFormat != null
+                        )
+                ResourcePickerKind.KNOWN_WORDS ->
+                    request.uri == null || request.resourceFileKind != null
                 ResourcePickerKind.WORD_LIST -> request.wordListKind != null
             }
         }
@@ -1011,6 +1161,7 @@ internal class SetupViewModel(
 
     private fun clearPendingPicker() {
         pendingPicker = null
+        setAudioPackChoices(emptyList())
         listOf(
             STATE_PICKER_KIND,
             STATE_PICKER_TARGET_ID,
@@ -1020,6 +1171,8 @@ internal class SetupViewModel(
             STATE_PICKER_PITCH_FORMAT,
             STATE_PICKER_RESOURCE_FILE_KIND,
             STATE_PICKER_WORD_LIST_KIND,
+            STATE_PICKER_AUDIO_PACK_PATH,
+            STATE_PICKER_AUDIO_PACK_FORMAT,
             STATE_PICKER_URI,
         ).forEach { savedStateHandle.remove<Any>(it) }
     }
@@ -1180,8 +1333,7 @@ internal class SetupViewModel(
         }
 
     fun beginKnownWordsPicker(): Boolean {
-        if (currentState().busy) return false
-        return true
+        return reservePendingPicker(PendingResourcePicker(kind = ResourcePickerKind.KNOWN_WORDS))
     }
 
     fun onKnownWordsPicked(uri: String?) {
@@ -1189,8 +1341,11 @@ internal class SetupViewModel(
             discardPendingResourceImport(ResourcePickerKind.KNOWN_WORDS)
             return
         }
-        viewModelScope.launch {
-            val source = resources.retainResourceImport(uri)
+        retainPickedResource(
+            kind = ResourcePickerKind.KNOWN_WORDS,
+            uri = uri,
+            fallback = { PendingResourcePicker(kind = ResourcePickerKind.KNOWN_WORDS) },
+        ) { _, source ->
             savePendingPicker(
                 PendingResourcePicker(
                     kind = ResourcePickerKind.KNOWN_WORDS,
@@ -1202,7 +1357,9 @@ internal class SetupViewModel(
         }
     }
 
-    fun importKnownWords(uri: String) = onKnownWordsPicked(uri)
+    fun importKnownWords(uri: String) {
+        if (beginKnownWordsPicker()) onKnownWordsPicked(uri)
+    }
 
     /**
      * The SAF result, not a picker launch: a recreated ViewModel is still recovering when it
@@ -1310,7 +1467,10 @@ internal class SetupViewModel(
 
     fun cancelOperation() = resources.cancelActive()
 
-    fun dismissFailure() = resources.dismissFailure()
+    fun dismissFailure() {
+        local.update { it.copy(resourcePickerFailure = null) }
+        resources.dismissFailure()
+    }
 
     fun retryResourceFailure() {
         val state = currentState()
@@ -1465,7 +1625,11 @@ internal class SetupViewModel(
         const val STATE_PICKER_RESOURCE_FILE_KIND = "setup.picker.resourceFileKind"
         const val STATE_PICKER_WORD_LIST_KIND = "setup.picker.wordListKind"
         const val STATE_PICKER_AUDIO_PACK_PATH = "setup.picker.audioPackPath"
+        const val STATE_PICKER_AUDIO_PACK_FORMAT = "setup.picker.audioPackFormat"
         const val STATE_PICKER_URI = "setup.picker.uri"
+        const val STATE_AUDIO_PACK_CHOICE_IDS = "setup.audioPackChoices.ids"
+        const val STATE_AUDIO_PACK_CHOICE_PATHS = "setup.audioPackChoices.paths"
+        const val STATE_AUDIO_PACK_CHOICE_FORMATS = "setup.audioPackChoices.formats"
         const val STATE_REPLACE_KIND = "setup.replace.kind"
         const val STATE_REPLACE_IDENTITY = "setup.replace.identity"
         const val STATE_REPLACE_LABEL = "setup.replace.label"
