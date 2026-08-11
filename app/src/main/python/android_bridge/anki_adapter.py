@@ -1901,7 +1901,7 @@ class AndroidAnkiAdapter:
 
         for source in prepared.confirmed_missing_sources:
             if source not in self._dict_media_uploaded:
-                logger.warning("Dict media file missing on disk: %s", source)
+                logger.warning("Dict media file missing on disk")
                 self._dict_media_uploaded.add(source)
                 self._dict_media_missing_sources.add(source)
 
