@@ -8,6 +8,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.ScrollableState
 import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.SnackbarHostState
@@ -16,6 +17,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -27,6 +29,9 @@ import com.ankiminer.android.ui.navigation.AnkiMinerAppShell
 import com.ankiminer.android.ui.navigation.AnkiMinerDestination
 import com.ankiminer.android.ui.reading.ReadingMiningScreen
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
+import com.ankiminer.android.ui.settings.SettingsCardIndexRecorder
+import com.ankiminer.android.ui.settings.SettingsCategory
+import com.ankiminer.android.ui.settings.rememberSettingsCategoryListStates
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.video.VideoMiningScreen
 import com.ankiminer.android.ui.video.VideoMiningTestTags
@@ -41,6 +46,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -103,14 +110,22 @@ class UiAuditJankFlowTest {
     @Test
     fun settingsFullScrollsDownThenUp() {
         runRealTimeFlow("settings-full") { onComplete ->
-            val listState = rememberLazyListState()
+            var selectedCategory by remember { mutableStateOf(SettingsCategory.ANKI) }
+            val listStates = rememberSettingsCategoryListStates()
+            val recorder = remember { SettingsCardIndexRecorder() }
             AuditShell(AnkiMinerDestination.SETTINGS) {
-                UiAuditSettingsFixture(
-                    focus = SettingsAuditState.FULL,
-                    listState = listState,
+                UiAuditFullSettingsFixture(
+                    selectedCategory = selectedCategory,
+                    listStates = listStates,
+                    recorder = recorder,
                 )
             }
-            MarkedScrollFlow("settings-full", listState, onComplete)
+            FullSettingsScrollFlow(
+                listStates = listStates,
+                recorder = recorder,
+                onSelectedCategory = { selectedCategory = it },
+                onComplete = onComplete,
+            )
         }
     }
 
@@ -262,6 +277,50 @@ class UiAuditJankFlowTest {
         }
     }
 
+    @Composable
+    private fun FullSettingsScrollFlow(
+        listStates: Map<SettingsCategory, LazyListState>,
+        recorder: SettingsCardIndexRecorder,
+        onSelectedCategory: (SettingsCategory) -> Unit,
+        onComplete: (Throwable?) -> Unit,
+    ) {
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            Log.i(LOG_TAG, "START settings-full")
+            var failure: Throwable? = null
+            try {
+                SettingsCategory.entries.forEach { category ->
+                    onSelectedCategory(category)
+                    recorder.awaitCards(
+                        category = category,
+                        expectedKeys = FULL_SETTINGS_CARD_KEYS.getValue(category),
+                    )
+                    withFrameNanos { }
+                    listStates.getValue(category).apply {
+                        auditScroll(DOWN_DISTANCE, SETTINGS_CATEGORY_HALF_FLOW_MILLIS)
+                        auditScroll(-DOWN_DISTANCE, SETTINGS_CATEGORY_HALF_FLOW_MILLIS)
+                    }
+                }
+            } catch (caught: Throwable) {
+                failure = caught
+            } finally {
+                Log.i(LOG_TAG, "END settings-full")
+                onComplete(failure)
+            }
+        }
+    }
+
+    private suspend fun SettingsCardIndexRecorder.awaitCards(
+        category: SettingsCategory,
+        expectedKeys: List<String>,
+    ) {
+        withTimeout(SETTINGS_CATEGORY_COMPOSITION_TIMEOUT_MILLIS) {
+            snapshotFlow {
+                expectedKeys.all { key -> indexOf(category, key) != null }
+            }.first { allComposed -> allComposed }
+        }
+    }
+
     private suspend fun ScrollableState.auditWizardScroll(distance: Float) {
         val startedAtMillis = SystemClock.uptimeMillis()
         try {
@@ -295,7 +354,23 @@ class UiAuditJankFlowTest {
         const val LOG_TAG = "UiAuditFlow"
         const val DOWN_DISTANCE = 1_000_000f
         const val HALF_FLOW_MILLIS = 2_800
+        const val SETTINGS_CATEGORY_HALF_FLOW_MILLIS = 350
+        const val SETTINGS_CATEGORY_COMPOSITION_TIMEOUT_MILLIS = 2_000L
         const val WIZARD_HALF_STEP_MILLIS = 450
         const val FLOW_TIMEOUT_SECONDS = 15L
+
+        val FULL_SETTINGS_CARD_KEYS =
+            mapOf(
+                SettingsCategory.ANKI to listOf("anki-deck-options", "anki-recovery"),
+                SettingsCategory.MEDIA to listOf("media-options", "subtitle-text"),
+                SettingsCategory.DICTIONARIES to
+                    listOf("catalog-dictionaries", "dictionary-inventory"),
+                SettingsCategory.AUDIO to listOf("audio-chain", "reading-audio"),
+                SettingsCategory.FREQUENCY to listOf("frequency-chain", "frequency-import"),
+                SettingsCategory.FILTERING to listOf("filtering-options", "word-lists"),
+                SettingsCategory.UI to listOf("ui-options"),
+                SettingsCategory.DIAGNOSTICS to
+                    listOf("diagnostic-runtime", "attributions"),
+            )
     }
 }
