@@ -548,6 +548,10 @@ internal object AnkiValidators {
         return stats
     }
 
+    fun validateMediaBasename(value: String) {
+        validateMediaBasename(value, actual = false)
+    }
+
     private fun validateMediaBasename(value: String, actual: Boolean): StringStats {
         val stats = validatePlainString(value, "media basename", allowEmpty = false, maxScalars = AnkiLimitsV1.StoreMedia.FILENAME_MAX_CODE_POINTS, maxUtf8Bytes = AnkiLimitsV1.StoreMedia.FILENAME_MAX_UTF8_BYTES)
         if (value == "." || value == ".." || '/' in value || '\\' in value || containsCategoryC(value)) failValue("media filename is not a safe basename")

@@ -65,6 +65,7 @@ internal class AnkiProviderReadinessProbe(
     private fun probeProvider(cancellation: AnkiCancellation): AnkiProviderReadiness {
         val available =
             when (val access = accessStatusSafely()) {
+                null -> return AnkiProviderReadiness.NotChecked
                 ProviderAccessStatus.Absent -> return AnkiProviderReadiness.NotInstalled
                 ProviderAccessStatus.ApiDisabled -> return AnkiProviderReadiness.Incompatible(null)
                 is ProviderAccessStatus.Incompatible ->
@@ -99,17 +100,17 @@ internal class AnkiProviderReadinessProbe(
         )
     }
 
-    private fun accessStatusSafely(): ProviderAccessStatus =
+    private fun accessStatusSafely(): ProviderAccessStatus? =
         try {
             accessStatus()
         } catch (failure: ProviderGatewayException) {
             when (failure.kind) {
                 ProviderFailureKind.PERMISSION_REQUIRED -> ProviderAccessStatus.PermissionRequired
                 ProviderFailureKind.API_DISABLED -> ProviderAccessStatus.ApiDisabled
-                else -> ProviderAccessStatus.Absent
+                else -> null
             }
         } catch (failure: RuntimeException) {
             AppLog.e(LogComponent.ANKI, "readiness.access", failure, "outcome" to "fail")
-            ProviderAccessStatus.Absent
+            null
         }
 }

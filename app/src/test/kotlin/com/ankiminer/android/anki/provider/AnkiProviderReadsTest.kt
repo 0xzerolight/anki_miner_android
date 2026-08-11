@@ -755,9 +755,10 @@ class AnkiProviderReadsTest {
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
                 as KnownVocabularyResult
         val continuation = knownRequest(cursor = requireNotNull(first.nextCursor), requestId = SECOND_REQUEST_ID)
-        fixture.gateway.queryHandler = { _, _ ->
-            throw ProviderGatewayException(ProviderFailureKind.TIMEOUT)
-        }
+        val platformFailure = SecurityException("provider timed out")
+        val gatewayFailure =
+            ProviderGatewayException(ProviderFailureKind.TIMEOUT, platformFailure)
+        fixture.gateway.queryHandler = { _, _ -> throw gatewayFailure }
 
         val failure =
             assertThrows(AnkiReadFailure::class.java) {
@@ -765,9 +766,58 @@ class AnkiProviderReadsTest {
             }
         assertEquals(AnkiErrorCode.TIMEOUT, failure.code)
         assertFalse(failure.retryable)
+        assertEquals(NoteTypeProviderErrorReason.TIMEOUT, failure.providerErrorReason)
+        assertSame(gatewayFailure, failure.cause)
+        assertSame(platformFailure, failure.cause?.cause)
         assertThrows(InvalidCapabilityException::class.java) {
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, continuation) }
         }
+    }
+
+    @Test
+    fun `invalidating baseline failure preserves provider reason and cause after consumption`() {
+        val fixture = fixture(tokens = listOf("baseline_${"a".repeat(32)}"))
+        fixture.gateway.checksum = { 42L }
+        fixture.gateway.queryHandler = targetThenDuplicateHandler()
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        val initialScope =
+            DuplicateScanScope(
+                modelName = "Mining",
+                firstFieldName = "Expression",
+                candidates = listOf(DuplicateCandidate("cat", "<b>cat</b>")),
+                occurrences = listOf(0),
+                invalidateBaselineToken = null,
+            )
+        val initial =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, duplicateRequest(initialScope))
+            } as DuplicateLookupResult
+        val platformFailure = IllegalStateException("provider process died")
+        val gatewayFailure =
+            ProviderGatewayException(ProviderFailureKind.PROVIDER_UNAVAILABLE, platformFailure)
+        fixture.gateway.queryHandler = { _, _ -> throw gatewayFailure }
+
+        val failure =
+            assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(
+                        owner,
+                        duplicateRequest(
+                            initialScope.copy(invalidateBaselineToken = initial.baselineToken),
+                            SECOND_REQUEST_ID,
+                        ),
+                    )
+                }
+            }
+
+        assertEquals(AnkiErrorCode.PROVIDER_UNAVAILABLE, failure.code)
+        assertFalse(failure.retryable)
+        assertEquals(
+            NoteTypeProviderErrorReason.PROVIDER_BECAME_UNAVAILABLE,
+            failure.providerErrorReason,
+        )
+        assertSame(gatewayFailure, failure.cause)
+        assertSame(platformFailure, failure.cause?.cause)
     }
 
     @Test

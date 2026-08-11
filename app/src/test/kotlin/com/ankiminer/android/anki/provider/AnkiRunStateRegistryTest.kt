@@ -744,6 +744,24 @@ class AnkiRunStateRegistryTest {
     }
 
     @Test
+    fun `durable mutation response admits quoted direct fallback filename`() {
+        val registry = AnkiRunStateRegistry()
+        assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))
+        registry.withOwner(RUN_ID) { owner ->
+            val acknowledgement =
+                MediaAcknowledgement(ASSET_ID, "dict__a\";b.svg", durableClaimId = 1L)
+
+            registry.commitDurableMutationResponse(
+                owner,
+                REQUEST_ID,
+                listOf(acknowledgement),
+            )
+
+            assertEquals(acknowledgement, registry.mediaAcknowledgement(owner, ASSET_ID))
+        }
+    }
+
+    @Test
     fun `invalid second acknowledgement installs no part of durable response`() {
         val cleanup = mutableListOf<Set<String>?>()
         val registry = AnkiRunStateRegistry { _, ids -> cleanup += ids }
@@ -867,14 +885,15 @@ class AnkiRunStateRegistryTest {
     }
 
     @Test
-    fun `durable mutation admission enforces canonical provider filenames`() {
+    fun `durable mutation admission rejects invalid media basenames`() {
         listOf(
-            " clip.mp3",
-            "clip.mp3 ",
-            "e\u0301.mp3",
-            "clip:bad.mp3",
-            "[clip].mp3",
-            "clip\".mp3",
+            ".",
+            "..",
+            "path/clip.mp3",
+            "path\\clip.mp3",
+            "clip\u0000.mp3",
+            "[sound:clip.mp3]",
+            "<IMG src=clip.mp3>",
         ).forEach { filename ->
             val registry = AnkiRunStateRegistry()
             assertTrue(registry.register(RUN_ID, AnkiCancellation.NONE))

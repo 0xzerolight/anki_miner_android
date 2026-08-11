@@ -905,13 +905,6 @@ internal class AnkiRunStateRegistry(
         ) {
             throw RunStateConflictException()
         }
-        acknowledgements.forEach { acknowledgement ->
-            requireSafeCanonicalMediaName(
-                acknowledgement.actualFilename,
-                "acknowledged provider media filename",
-                minimumScalarCount = 1,
-            )
-        }
         if (acknowledgements.isNotEmpty()) {
             AnkiValidators.validateResponse(
                 StoreMediaResult(

@@ -98,6 +98,20 @@ class MiningRunAdmissionTest {
     }
 
     @Test
+    fun `failed AnkiDroid access check asks for another check instead of installation`() {
+        val failure =
+            MiningRunAdmissionState(
+                anki = AnkiProviderReadiness.NotChecked,
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
+                notifications = NotificationPermissionReadiness.READY,
+                target = AnkiMiningTargetReadiness.NotChecked,
+            ).stableFailure(testStringResourceResolver)
+
+        assertEquals("AnkiDroid readiness has not been checked", requireNotNull(failure).message)
+        assertTrue(failure.retryable)
+    }
+
+    @Test
     fun `notification denial is reported but does not block mining admission`() {
         val ankiReady = AnkiProviderReadiness.Ready(2, 24L)
         val denied =
