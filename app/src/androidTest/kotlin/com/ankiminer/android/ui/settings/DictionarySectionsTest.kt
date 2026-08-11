@@ -17,8 +17,12 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.ResourceArchive
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.YomitanCatalogResource
+import com.ankiminer.android.data.resources.YomitanDictionaryIdentity
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
@@ -181,6 +185,61 @@ class DictionarySectionsTest {
         assertEquals(listOf("jitendex"), replaced)
         assertEquals(listOf("jmdict"), removed)
     }
+
+    @Test
+    fun installedCatalogDictionaryCanBeRevealedBesideMissingPeer() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                CatalogDictionaryCards(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            catalogDictionaries =
+                                listOf(
+                                    catalogDictionary("jmdict", installed = false),
+                                    catalogDictionary("jitendex", installed = true),
+                                ),
+                        ),
+                    onInstall = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("JMdict dictionary (English)").assertIsDisplayed()
+        composeRule.onNodeWithText("Jitendex dictionary — recommended").assertDoesNotExist()
+        composeRule
+            .onNodeWithText("Reinstall or replace a bundled dictionary")
+            .assertIsDisplayed()
+            .performClick()
+        composeRule.onNodeWithText("Jitendex dictionary — recommended").assertIsDisplayed()
+    }
+
+    private fun catalogDictionary(
+        slotId: String,
+        installed: Boolean,
+    ) = CatalogDictionaryStatus(
+        resource =
+            YomitanCatalogResource(
+                resourceId = slotId,
+                displayName = slotId,
+                slotId = slotId,
+                archive = ResourceArchive("https://example.invalid/$slotId.zip", "sha", 1L, "zip"),
+                dictionary =
+                    YomitanDictionaryIdentity(
+                        title = slotId,
+                        revision = "1",
+                        format = 3L,
+                        memberCount = 1L,
+                        uncompressedBytes = 1L,
+                        archiveMemberLimit = 1L,
+                        uncompressedBytesLimit = 1L,
+                        fileBytesLimit = 1L,
+                    ),
+                attribution = emptyList(),
+            ),
+        installed = installed,
+        slotOccupied = installed,
+    )
 
     private fun installedDictionary(slotId: String, valid: Boolean) =
         InstalledDictionary(

@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -150,5 +151,43 @@ class KnownWordsManagerScreenTest {
             assertEquals(2, imports)
             assertEquals(1, exports)
         }
+    }
+
+    @Test
+    fun resetConfirmationSurvivesStateRestoration() {
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            AnkiMinerTheme {
+                KnownWordsManagerScreen(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            knownWords =
+                                KnownWordsInventory(
+                                    totalCount = 1,
+                                    userCount = 1,
+                                    ankiCount = 0,
+                                    minedCount = 0,
+                                    schemaOk = true,
+                                ),
+                        ),
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Reset user list").performClick()
+        composeRule
+            .onNodeWithText(
+                "Remove every word you added? Anki-cache rows are unchanged. " +
+                    "This cannot be undone.",
+            ).assertIsDisplayed()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule
+            .onNodeWithText(
+                "Remove every word you added? Anki-cache rows are unchanged. " +
+                    "This cannot be undone.",
+            ).assertIsDisplayed()
     }
 }

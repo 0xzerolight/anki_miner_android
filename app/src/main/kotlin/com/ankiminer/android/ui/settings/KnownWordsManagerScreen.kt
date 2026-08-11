@@ -23,7 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -148,10 +148,14 @@ internal fun KnownWordsManagerScreen(
     callbacks: KnownWordsManagerCallbacks = KnownWordsManagerCallbacks(),
     modifier: Modifier = Modifier,
 ) {
-    var pendingReset by remember { mutableStateOf<KnownWordsResetScope?>(null) }
+    var pendingResetName by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingReset =
+        pendingResetName?.let { saved ->
+            KnownWordsResetScope.entries.firstOrNull { it.name == saved }
+        }
     pendingReset?.let { scope ->
         AlertDialog(
-            onDismissRequest = { pendingReset = null },
+            onDismissRequest = { pendingResetName = null },
             title = {
                 Text(
                     stringResource(
@@ -177,13 +181,13 @@ internal fun KnownWordsManagerScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        pendingReset = null
+                        pendingResetName = null
                         callbacks.onReset(scope)
                     },
                 ) { Text(stringResource(R.string.confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingReset = null }) {
+                TextButton(onClick = { pendingResetName = null }) {
                     Text(stringResource(R.string.cancel))
                 }
             },
@@ -339,7 +343,7 @@ internal fun KnownWordsManagerScreen(
                 },
                 secondary = { actionModifier ->
                     OutlinedButton(
-                        onClick = { pendingReset = KnownWordsResetScope.USER },
+                        onClick = { pendingResetName = KnownWordsResetScope.USER.name },
                         enabled = !state.busy && state.knownWords.userCount > 0,
                         modifier = actionModifier,
                         colors = outlinedActionButtonColors(),
@@ -351,7 +355,7 @@ internal fun KnownWordsManagerScreen(
                 },
             )
             OutlinedButton(
-                onClick = { pendingReset = KnownWordsResetScope.CACHE },
+                onClick = { pendingResetName = KnownWordsResetScope.CACHE.name },
                 enabled =
                     !state.busy &&
                         state.knownWords.ankiCount + state.knownWords.minedCount > 0,

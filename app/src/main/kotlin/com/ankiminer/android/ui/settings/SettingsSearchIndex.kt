@@ -2,6 +2,8 @@ package com.ankiminer.android.ui.settings
 
 import androidx.annotation.StringRes
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.vm.SetupUiState
 
 internal data class SettingsSearchEntry(
     val id: String,
@@ -69,7 +71,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_tags,
             R.string.settings_tags_help,
         ),
-        entry("anki.target_deck", SettingsCategory.ANKI, "anki-target", R.string.anki_deck_title),
+        entry("anki.target_deck", SettingsCategory.ANKI, "anki-deck-options", R.string.anki_deck_title),
         entry(
             "anki.note_type",
             SettingsCategory.ANKI,
@@ -294,7 +296,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         ),
 
         // UI
-        entry("ui.theme", SettingsCategory.UI, "ui-options", R.string.settings_theme),
+        entry("ui.theme", SettingsCategory.UI, "ui-options", R.string.settings_theme_mode),
         entry("ui.light_theme", SettingsCategory.UI, "ui-options", R.string.settings_theme_light_choice),
         entry("ui.dark_theme", SettingsCategory.UI, "ui-options", R.string.settings_theme_dark_choice),
         entry("ui.dynamic_color", SettingsCategory.UI, "ui-options", R.string.settings_theme_dynamic),
@@ -349,3 +351,19 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_attributions,
         ),
     )
+
+internal fun availableSettingsSearchEntries(
+    entries: List<SettingsSearchEntry>,
+    setup: SetupUiState,
+    dynamicColorSupported: Boolean,
+): List<SettingsSearchEntry> =
+    entries.filter { entry ->
+        when (entry.id) {
+            "dictionaries.lookup_test" -> setup.dictionaries.any { it.isUsable }
+            "diagnostics.unidic" ->
+                !setup.uniDicInstalled ||
+                    setup.failure?.origin == ResourceFailureOrigin.UNIDIC
+            "ui.dynamic_color" -> dynamicColorSupported
+            else -> true
+        }
+    }
