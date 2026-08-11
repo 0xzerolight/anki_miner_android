@@ -4,6 +4,7 @@ import com.ankiminer.android.media.ManualProviderIoDeadlineScheduler
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.ProviderIoDeadlineScheduler
 import com.ankiminer.android.media.RealProviderIoDeadlineScheduler
+import com.ankiminer.android.media.awaitProviderIoWorkerRelease
 import java.io.ByteArrayInputStream
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -19,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -31,6 +33,9 @@ import org.junit.rules.TemporaryFolder
 class SafArchiveStagerTest {
     @get:Rule
     val temporary = TemporaryFolder()
+
+    @After
+    fun awaitCancelledProviderWorker() = awaitProviderIoWorkerRelease()
 
     @Test
     fun audioArchivePrefersRawBytesAndClassifiesZip() {

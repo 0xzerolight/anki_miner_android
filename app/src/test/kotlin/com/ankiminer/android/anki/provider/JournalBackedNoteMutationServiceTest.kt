@@ -144,6 +144,7 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(1, harness.provider.routeCalls)
             assertTrue(harness.journal.readyResponse?.results?.single() is AlignedResult.NoteCreated)
         }
+    }
 
     @Test
     fun `routing preflight preserves typed access failure after note commit`() {
@@ -209,7 +210,6 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(listOf(CreatedNote(CLIENT_NOTE_ID, NOTE_ID)), outcome.result.results)
             assertNull(outcome.result.error)
         }
-    }
 
     @Test
     fun `release winning before note provider entry is reported as cancellation`() =

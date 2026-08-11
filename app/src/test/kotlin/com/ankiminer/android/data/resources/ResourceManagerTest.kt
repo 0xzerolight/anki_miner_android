@@ -433,7 +433,7 @@ class ResourceManagerTest {
         runTest {
             val scenarios: List<Triple<String, String, suspend (Harness) -> Unit>> =
                 listOf(
-                    Triple("resource.dictionary.import", "resource") { harness ->
+                    Triple("resource.dictionary.import", "dictionary archive") { harness ->
                         harness.manager.importCustomDictionary(
                             INPUT_URI,
                             slotId = "fixture-dictionary",
@@ -1229,7 +1229,7 @@ class ResourceManagerTest {
         runTest {
             val harness =
                 Harness(
-                    sourceLabel = "resource",
+                    sourceLabel = "dictionary archive",
                     committedDictionaryDecodeFailure = true,
                 )
 

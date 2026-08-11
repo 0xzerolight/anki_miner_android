@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -31,6 +32,9 @@ class CancellableProviderIoTest {
                 Dispatchers.IO +
                 CoroutineExceptionHandler { _, failure -> uncaught.add(failure) },
         )
+
+    @After
+    fun awaitCancelledProviderWorker() = awaitProviderIoWorkerRelease()
 
     @Test
     fun deadlineFailsAnOperationThatNeverReportsProgress() {

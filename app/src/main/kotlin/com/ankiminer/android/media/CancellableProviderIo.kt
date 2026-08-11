@@ -263,6 +263,8 @@ internal object CancellableProviderIo {
             val deadline = AtomicReference<ProviderIoCancellationRegistration?>()
             val externalRegistration = AtomicReference<ProviderIoCancellationRegistration?>()
             val worker = AtomicReference<Job?>()
+            val workerStarted = AtomicBoolean(false)
+            val workerFinished = AtomicBoolean(false)
 
             fun closeDeadline() {
                 deadline.getAndSet(CLOSED_REGISTRATION)?.close()
@@ -276,12 +278,18 @@ internal object CancellableProviderIo {
                 val job = worker.getAndSet(CANCELLED_WORKER)
                 if (job != null && job !== CANCELLED_WORKER) {
                     job.cancel()
-                    retainAbortedWorker(job)
+                    retainAbortedWorker(workerFinished)
                 }
             }
 
             fun installWorker(job: Job) {
-                if (!worker.compareAndSet(null, job)) job.cancel()
+                job.invokeOnCompletion {
+                    if (!workerStarted.get()) finishWorker(workerFinished)
+                }
+                if (!worker.compareAndSet(null, job)) {
+                    job.cancel()
+                    retainAbortedWorker(workerFinished)
+                }
             }
 
             fun installDeadline(scheduled: ProviderIoCancellationRegistration) {
@@ -356,11 +364,16 @@ internal object CancellableProviderIo {
                 }
             installWorker(
                 scope.launch(PROVIDER_WORKER_DISPATCHER) {
-                    val result = runCatching { operation(handle) }
-                    if (completed.compareAndSet(false, true)) {
-                        closeDeadline()
-                        closeExternalRegistration()
-                        continuation.resumeWith(result)
+                    workerStarted.set(true)
+                    try {
+                        val result = runCatching { operation(handle) }
+                        if (completed.compareAndSet(false, true)) {
+                            closeDeadline()
+                            closeExternalRegistration()
+                            continuation.resumeWith(result)
+                        }
+                    } finally {
+                        finishWorker(workerFinished)
                     }
                 },
             )
@@ -374,7 +387,7 @@ internal object CancellableProviderIo {
     private fun rejectWhileAbortedWorkerIsBlocked() {
         while (true) {
             val stalled = ABORTED_WORKER.get() ?: return
-            if (!stalled.isCompleted) {
+            if (!stalled.get()) {
                 throw ProviderIoTimeoutException(
                     "Previous provider I/O is still blocked after cancellation",
                 )
@@ -383,9 +396,14 @@ internal object CancellableProviderIo {
         }
     }
 
-    private fun retainAbortedWorker(worker: Job) {
-        if (worker.isCompleted || !ABORTED_WORKER.compareAndSet(null, worker)) return
-        worker.invokeOnCompletion { ABORTED_WORKER.compareAndSet(worker, null) }
+    private fun retainAbortedWorker(workerFinished: AtomicBoolean) {
+        if (workerFinished.get()) return
+        ABORTED_WORKER.compareAndSet(null, workerFinished)
+    }
+
+    private fun finishWorker(workerFinished: AtomicBoolean) {
+        workerFinished.set(true)
+        ABORTED_WORKER.compareAndSet(workerFinished, null)
     }
 
     private fun cancelSafely(cancel: () -> Unit) {
@@ -456,7 +474,8 @@ internal object CancellableProviderIo {
             },
         ).asCoroutineDispatcher()
 
-    private val ABORTED_WORKER = AtomicReference<Job?>()
+    /** Physical completion, which may outlive the coroutine job after cancellation. */
+    private val ABORTED_WORKER = AtomicReference<AtomicBoolean?>()
 
     /**
      * Sentinel published by `cancelWorker` so a worker installed after the abort is cancelled by

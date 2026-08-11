@@ -16,6 +16,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -24,6 +25,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafJobFileOwnerTest {
+    @After
+    fun awaitCancelledProviderWorker() = awaitProviderIoWorkerRelease()
+
     @Test
     fun videoDescriptorAlwaysCopiesToCacheAndCleansUpOnClose() {
         val directory = Files.createTempDirectory("saf-video-copy-test").toFile()

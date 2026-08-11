@@ -49,6 +49,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -785,11 +786,14 @@ class ReadingMiningViewModelTest {
                     selectionInventory = inventory,
                     selectionIoDispatcher = mainDispatcherRule.dispatcher,
                 )
-            runCurrent()
+            val restoredState =
+                viewModel.uiState.first {
+                    it.source.error == ReadingDocumentSelectionError.SOURCE_TYPE
+                }
 
             assertEquals(
                 ReadingDocumentSelectionError.SOURCE_TYPE,
-                viewModel.uiState.value.source.error,
+                restoredState.source.error,
             )
             assertNull(inventory.selection(SafSelectionSlot.READING_SOURCE))
             assertTrue(events.indexOf("clear:READING_SOURCE") >= 0)

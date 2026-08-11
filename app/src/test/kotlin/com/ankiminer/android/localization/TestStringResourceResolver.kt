@@ -32,6 +32,8 @@ internal val testStringResourceResolver =
                 "Install the Japanese tokenizer resource before mining"
             R.string.mining_admission_recovery_required ->
                 "Anki recovery must be resolved before another mining run"
+            R.string.mining_admission_not_checked ->
+                "AnkiDroid readiness has not been checked"
             R.string.mining_notice_no_definition ->
                 "No dictionary entry for ${localizedArguments[0]} word(s), " +
                     "so no card was made: ${localizedArguments[1]}"

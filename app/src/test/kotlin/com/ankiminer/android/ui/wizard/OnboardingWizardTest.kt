@@ -168,6 +168,7 @@ class OnboardingWizardTest {
             assertFalse(repository.current.setupWizardSeen)
 
             firstSession.dismissWizardForSession()
+            advanceUntilIdle()
             assertTrue(firstSession.wizardDismissedForSession.value)
             assertFalse(
                 wizardVisible(
