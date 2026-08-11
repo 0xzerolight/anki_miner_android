@@ -104,6 +104,8 @@ data class VideoMiningUiState(
             runState == MiningRunState.Idle &&
                 video.document != null &&
                 subtitle.document != null &&
+                !video.isResolving &&
+                !subtitle.isResolving &&
                 !subtitleOffsetDraftInvalid &&
                 !startPending &&
                 !timingPreviewPending
