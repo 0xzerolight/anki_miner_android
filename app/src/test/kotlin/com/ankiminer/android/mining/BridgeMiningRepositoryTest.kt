@@ -112,6 +112,45 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `stage start and update retain the whole run progress band`() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        awaitState(harness.repository) { it is MiningRunState.Running }
+
+        val callbacks = requireNotNull(harness.bridge.runCallbacks)
+        callbacks.onStage(PROGRESS_STAGE)
+        val entered = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0L, entered.progress.current)
+        assertEquals(0L, entered.progress.total)
+        assertEquals(MiningStage(2, 5, "Extracting media"), entered.progress.stage)
+        assertEquals(0.2f, entered.progress.fraction)
+
+        callbacks.onStart(PROGRESS_STAGE_START)
+        val started = harness.repository.state.value as MiningRunState.Running
+        assertEquals(MiningStage(2, 5, "Extracting media"), started.progress.stage)
+        assertEquals(0.2f, started.progress.fraction)
+
+        callbacks.onProgress(PROGRESS_STAGE_UPDATE)
+        val updated = harness.repository.state.value as MiningRunState.Running
+        assertEquals(MiningStage(2, 5, "Extracting media"), updated.progress.stage)
+        assertEquals(0.3f, updated.progress.fraction)
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `the terminal mapping is logged with its outcome, code and notice count`() {
         val harness = harness(raisedFailure = true)
 
@@ -2104,6 +2143,10 @@ class BridgeMiningRepositoryTest {
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":3,"description":"Preparing curation"}}"""
         val PROGRESS_STAGE =
             """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":2,"total":5,"name":"Extracting media"}}"""
+        val PROGRESS_STAGE_START =
+            """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":10,"description":"Extracting media"}}"""
+        val PROGRESS_STAGE_UPDATE =
+            """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":5,"description":"Extracting media: 猫"}}"""
         const val MINED_TERM = "猫"
         const val ANKI_VERIFY_REQUEST =
             """{"schemaVersion":1,"type":"anki.verify.request","payload":{}}"""

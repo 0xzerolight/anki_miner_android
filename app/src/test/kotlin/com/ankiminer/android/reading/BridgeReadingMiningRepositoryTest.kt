@@ -31,6 +31,7 @@ import com.ankiminer.android.mining.MiningCommandException
 import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningRuntimePaths
+import com.ankiminer.android.mining.MiningStage
 import com.ankiminer.android.mining.MiningTaskExecutor
 import com.ankiminer.android.mining.SourceGrantReleaser
 import com.ankiminer.android.mining.StartupInterruption
@@ -133,6 +134,45 @@ class BridgeReadingMiningRepositoryTest {
             recorded.records.single { it.contains("op=engine_stage") }
                 .contains("outcome=ok"),
         )
+    }
+
+    @Test
+    fun `stage start and update retain the whole run progress band`() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        harness.bridge.runCallbacks!!.onProgress(HOSTILE_PROGRESS)
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        awaitState(harness.repository) { it is MiningRunState.Running }
+
+        val callbacks = requireNotNull(harness.bridge.runCallbacks)
+        callbacks.onStage(PROGRESS_STAGE)
+        val entered = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0L, entered.progress.current)
+        assertEquals(0L, entered.progress.total)
+        assertEquals(MiningStage(2, 5, "Extracting media"), entered.progress.stage)
+        assertEquals(0.2f, entered.progress.fraction)
+
+        callbacks.onStart(PROGRESS_STAGE_START)
+        val started = harness.repository.state.value as MiningRunState.Running
+        assertEquals(MiningStage(2, 5, "Extracting media"), started.progress.stage)
+        assertEquals(0.2f, started.progress.fraction)
+
+        callbacks.onProgress(PROGRESS_STAGE_UPDATE)
+        val updated = harness.repository.state.value as MiningRunState.Running
+        assertEquals(MiningStage(2, 5, "Extracting media"), updated.progress.stage)
+        assertEquals(0.3f, updated.progress.fraction)
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
     @Test
@@ -1251,6 +1291,29 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `nonfatal progress error is retained in successful result`() {
+        val harness = harness(progressError = PROGRESS_ERROR)
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val success =
+            awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Success
+        assertEquals(listOf("猫: Audio extraction failed"), success.result.errors)
+    }
+
+    @Test
     fun `engine no-definition warning reaches the result restated`() {
         val harness = harness(presenterWarning = NO_DEFINITION_WARNING)
 
@@ -1531,6 +1594,7 @@ class BridgeReadingMiningRepositoryTest {
         sentenceAudioFactory: SentenceAudioSynthesizerFactory? = null,
         expressionAudioFieldMapped: Boolean = false,
         presenterWarning: String? = null,
+        progressError: String? = null,
         terminalErrorCount: Int = 0,
         readingRunFailure: RuntimeException? = null,
         raisedFailure: Boolean = false,
@@ -1559,6 +1623,7 @@ class BridgeReadingMiningRepositoryTest {
                 pagedCuration = pagedCuration,
                 invokeTts = invokeTts,
                 presenterWarning = presenterWarning,
+                progressError = progressError,
                 terminalErrorCount = terminalErrorCount,
                 readingRunFailure = readingRunFailure,
                 raisedFailure = raisedFailure,
@@ -2009,6 +2074,7 @@ class BridgeReadingMiningRepositoryTest {
         private val pagedCuration: Boolean = false,
         private val invokeTts: Boolean = false,
         private val presenterWarning: String? = null,
+        private val progressError: String? = null,
         private val terminalErrorCount: Int = 0,
         private val readingRunFailure: RuntimeException? = null,
         private val raisedFailure: Boolean = false,
@@ -2133,6 +2199,7 @@ class BridgeReadingMiningRepositoryTest {
                 callbacks.onComplete(CANCELLED_TERMINAL)
                 return CANCELLED_TERMINAL
             }
+            progressError?.let(callbacks::onError)
             val terminal = terminalPayload()
             if (terminalErrorCount == 0 && !raisedFailure) {
                 callbacks.onComplete(terminal)
@@ -2216,6 +2283,10 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":3,"description":"Preparing curation"}}"""
         val PROGRESS_STAGE =
             """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":2,"total":5,"name":"Extracting media"}}"""
+        val PROGRESS_STAGE_START =
+            """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":10,"description":"Extracting media"}}"""
+        val PROGRESS_STAGE_UPDATE =
+            """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":5,"description":"Extracting media: 猫"}}"""
         const val MINED_TERM = "猫"
         const val ANKI_VERIFY_REQUEST =
             """{"schemaVersion":1,"type":"anki.verify.request","payload":{}}"""
@@ -2228,6 +2299,8 @@ class BridgeReadingMiningRepositoryTest {
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val PRESENTER_WARNING =
             """{"schemaVersion":1,"type":"presenter.event","payload":{"runId":"$RUN_ID","kind":"warning","message":"$PRESENTER_WARNING_PLACEHOLDER"}}"""
+        val PROGRESS_ERROR =
+            """{"schemaVersion":1,"type":"progress.error","payload":{"runId":"$RUN_ID","description":"猫","message":"Audio extraction failed"}}"""
         const val TTS_REQUEST =
             """{"schemaVersion":1,"type":"tts.sentence.request","payload":{"runId":"$RUN_ID","requestId":"tts_11111111111111111111111111111111","sentence":"猫だ。"}}"""
         val CURATION_REQUEST =

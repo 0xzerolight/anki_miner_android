@@ -59,6 +59,14 @@ internal fun interface FileCopyProgressListener {
     }
 }
 
+internal fun interface FileCopyReadListener {
+    fun onRead()
+
+    companion object {
+        val NONE = FileCopyReadListener { }
+    }
+}
+
 internal sealed class BoundedFileCopyException(
     message: String,
     cause: Throwable? = null,
@@ -104,6 +112,7 @@ internal class BoundedFileCopier(
         policy: BoundedFileCopyPolicy,
         cancellation: ProviderIoCancellation = FileCopyCancellation.NONE,
         progressListener: FileCopyProgressListener = FileCopyProgressListener.NONE,
+        readListener: FileCopyReadListener = FileCopyReadListener.NONE,
     ): Long {
         require(knownSizeBytes == null || knownSizeBytes >= 0L) {
             "Known source size must not be negative"
@@ -133,6 +142,7 @@ internal class BoundedFileCopier(
                         while (true) {
                             checkCancellation(cancellation)
                             val count = input.read(buffer)
+                            if (count > 0) readListener.onRead()
                             checkCancellation(cancellation)
                             if (count < 0) break
                             if (count == 0) continue

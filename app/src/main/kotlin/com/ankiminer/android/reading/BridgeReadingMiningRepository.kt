@@ -216,6 +216,7 @@ internal class BridgeReadingMiningRepository(
         var requiresMediaForeground = false
         var hasSelectedCandidate = false
         val presenterNotices = mutableListOf<String>()
+        val progressErrors = mutableListOf<String>()
     }
 
     private val monitor = Any()
@@ -786,12 +787,15 @@ internal class BridgeReadingMiningRepository(
 
             val detachedInput: ReadingMiningInput?
             val runFault: ProtocolFault?
-            val presenterNotices: List<String>
+            val terminalNotices: List<String>
             synchronized(monitor) {
                 val run = activeFor(generation) ?: return
                 detachedInput = run.input.takeIf { run.sourcesDetached }
                 runFault = run.stickyFault ?: run.cancellationDispatchFault
-                presenterNotices = run.presenterNotices.toList()
+                terminalNotices =
+                    (run.presenterNotices + run.progressErrors)
+                        .distinct()
+                        .take(MAX_RESULT_ERRORS)
                 // A cancellation dispatch can still be in flight here. Remember which run
                 // reported terminal so a late no_active_job reply is recognised as the
                 // acknowledgement for THIS run instead of being retried.
@@ -810,11 +814,11 @@ internal class BridgeReadingMiningRepository(
                         terminal = terminalForState,
                         fault = runFault ?: detachedCleanupFault,
                         cancelled = cancelled,
-                        presenterNotices = presenterNotices,
+                        terminalNotices = terminalNotices,
                     )
                 mutableState.value = finalState
             }
-            logTerminal(finalState, presenterNotices.size)
+            logTerminal(finalState, terminalNotices.size)
         } finally {
             runtimeWorkLease.close()
         }
@@ -885,9 +889,9 @@ internal class BridgeReadingMiningRepository(
         terminal: BridgeMessage.Terminal?,
         fault: ProtocolFault?,
         cancelled: Boolean,
-        presenterNotices: List<String>,
+        terminalNotices: List<String>,
     ): MiningRunState {
-        val result = terminal?.result.withPresenterNotices(presenterNotices)
+        val result = terminal?.result.withTerminalNotices(terminalNotices)
         // A Kotlin fault outranks the Python terminal's message, but not its fault id: this pairing
         // is a Kotlin protocol failure and a Python traceback describing the same run, which is
         // exactly the case a maintainer needs the log key for.
@@ -907,7 +911,7 @@ internal class BridgeReadingMiningRepository(
                         MiningFailure(
                             message =
                                 terminal.error?.message
-                                    ?: presenterNotices.firstOrNull()
+                                    ?: terminalNotices.firstOrNull()
                                     ?: strings.resolve(R.string.mining_failure_generic),
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
                             faultId = terminal.error?.faultId,
@@ -1586,22 +1590,31 @@ internal class BridgeReadingMiningRepository(
         generation: Long,
         message: BridgeMessage.ProgressStart,
     ) {
-        updateProgress(generation, MiningProgress(0, message.total, message.description))
+        val stage = synchronized(monitor) { activeFor(generation)?.progress?.stage }
+        updateProgress(
+            generation,
+            MiningProgress(0, message.total, message.description, stage = stage),
+        )
     }
 
     private fun onProgressUpdate(
         generation: Long,
         message: BridgeMessage.ProgressUpdate,
     ) {
-        val total =
+        val (total, stage) =
             synchronized(monitor) {
-                activeFor(generation)?.progress?.total
-                    ?: throw IllegalStateException("Progress update arrived before progress start")
+                val progress =
+                    activeFor(generation)?.progress
+                        ?: throw IllegalStateException("Progress update arrived before progress start")
+                progress.total to progress.stage
             }
         if (total != 0L && message.current > total) {
             throw IllegalStateException("Progress exceeded its declared total")
         }
-        updateProgress(generation, MiningProgress(message.current, total, message.description))
+        updateProgress(
+            generation,
+            MiningProgress(message.current, total, message.description, stage = stage),
+        )
     }
 
     private fun onProgressStage(
@@ -1616,21 +1629,31 @@ internal class BridgeReadingMiningRepository(
             "total" to message.total,
             "name" to message.name,
         )
-        // The stage becomes the outer band of the bar and its label; the per-stage
-        // item counts restart inside it. Keep the current counts so the bar does
-        // not jump backwards between an on_stage and the on_start that follows.
+        // A stage boundary starts a fresh inner count at the completed edge of the prior band.
+        // The following start/update callbacks retain this stage.
         val stage = MiningStage(message.index, message.total, message.name)
-        val current = synchronized(monitor) { activeFor(generation)?.progress }
         updateProgress(
             generation,
-            current?.copy(description = message.name, stage = stage)
-                ?: MiningProgress(0, 0, message.name, stage = stage),
+            MiningProgress(0, 0, message.name, stage = stage),
         )
     }
 
     private fun onProgressComplete(generation: Long) {
         val progress = synchronized(monitor) { activeFor(generation)?.progress } ?: return
         updateProgress(generation, progress.copy(current = progress.total))
+    }
+
+    private fun handleProgressError(
+        generation: Long,
+        message: BridgeMessage.ProgressError,
+    ) {
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Progress error is stale")
+            val detail = "${message.description}: ${message.message}"
+            if (run.progressErrors.size < MAX_RESULT_ERRORS && detail !in run.progressErrors) {
+                run.progressErrors += detail
+            }
+        }
     }
 
     private fun handlePresenter(
@@ -1765,7 +1788,7 @@ internal class BridgeReadingMiningRepository(
         override fun onError(message: String) =
             callbackFailure(generation, "onError") {
                 when (val decoded = decodeCallback(generation, message)) {
-                    is BridgeMessage.ProgressError -> Unit
+                    is BridgeMessage.ProgressError -> handleProgressError(generation, decoded)
                     is BridgeMessage.Terminal -> {
                         if (decoded.outcome != MiningOutcome.FAILED) {
                             throw IllegalStateException("Non-failed terminal arrived on onError")
@@ -2022,7 +2045,7 @@ internal class BridgeReadingMiningRepository(
             result = result,
         )
 
-    private fun ProcessingResult?.withPresenterNotices(notices: List<String>): ProcessingResult? =
+    private fun ProcessingResult?.withTerminalNotices(notices: List<String>): ProcessingResult? =
         this?.copy(errors = (notices + errors).distinct().take(MAX_RESULT_ERRORS))
 
     private fun canonicalLabel(raw: String): String {
