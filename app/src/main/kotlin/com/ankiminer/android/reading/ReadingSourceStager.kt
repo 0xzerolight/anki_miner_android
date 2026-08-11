@@ -413,19 +413,18 @@ internal class ReadingSourceStager(
             }
             checkCancellation(cancellation)
             val selected =
-                when {
-                    candidates.isEmpty() ->
+                when (candidates.size) {
+                    0 ->
                         throw EmbeddedSidecarException(
                             EmbeddedSidecarFailure.NO_MOKURO_MEMBER,
                             "Mokuro image archive contains no .mokuro member",
                         )
-                    candidates.size == 1 -> candidates.single()
+                    1 -> candidates.single()
                     else ->
-                        candidates.singleOrNull { member -> '/' !in member.name }
-                            ?: throw EmbeddedSidecarException(
-                                EmbeddedSidecarFailure.MULTIPLE_MOKURO_MEMBERS,
-                                "Mokuro image archive contains multiple .mokuro members",
-                            )
+                        throw EmbeddedSidecarException(
+                            EmbeddedSidecarFailure.MULTIPLE_MOKURO_MEMBERS,
+                            "Mokuro image archive contains multiple .mokuro members",
+                        )
                 }
             if (selected.size == 0L) {
                 throw EmptyReadingSourceException(ReadingSourceStageRole.MOKURO_SIDECAR)
@@ -833,7 +832,9 @@ private fun isSafeSidecarMemberName(name: String): Boolean {
     if (name.any { Character.isISOControl(it) }) return false
     val segments = name.split('/')
     return segments.none { segment ->
-        segment.isEmpty() || segment.startsWith(".") || segment == "__MACOSX"
+        segment == ".." ||
+            segment in ARCHIVE_JUNK_NAMES ||
+            segment.startsWith("._")
     }
 }
 
@@ -1060,5 +1061,6 @@ private val OWNED_STAGE_DIRECTORY = Regex("${STAGE_DIRECTORY_PREFIX}[0-9a-f]{32}
 private const val MAX_DISPLAY_NAME_UTF8_BYTES = 255
 private val SUBTITLE_EXTENSIONS = setOf("ass", "srt", "ssa", "vtt")
 private val ARCHIVE_EXTENSIONS = setOf("cbz", "zip")
+private val ARCHIVE_JUNK_NAMES = setOf("__MACOSX", ".DS_Store", "Thumbs.db", "\$RECYCLE.BIN")
 private val SINGLE_EXTENSIONS = setOf("txt", "text", "epub", "mokuro") + SUBTITLE_EXTENSIONS
 private val ALL_READING_EXTENSIONS = SINGLE_EXTENSIONS + ARCHIVE_EXTENSIONS

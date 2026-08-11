@@ -774,8 +774,8 @@ class ReadingSourceStagerTest {
     }
 
     @Test
-    fun `top level embedded sidecar wins over nested duplicates`() {
-        val root = File(temporary.root, "top-level-wins")
+    fun `top level embedded sidecar does not override a nested duplicate`() {
+        val root = File(temporary.root, "top-level-duplicate")
         val archiveBytes =
             zipBytes(
                 "volume.mokuro" to "top".toByteArray(),
@@ -784,12 +784,14 @@ class ReadingSourceStagerTest {
         val document = document("content://reading/top", "volume.cbz", archiveBytes.size.toLong())
         val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
 
-        val staged =
-            stager(root, opener, limits = archiveLimits())
-                .stage(ReadingSourceSelection.Single(document))
+        val failure =
+            assertThrows(EmbeddedSidecarException::class.java) {
+                stager(root, opener, limits = archiveLimits())
+                    .stage(ReadingSourceSelection.Single(document))
+            }
 
-        assertArrayEquals("top".toByteArray(), File(staged.detectorPath).readBytes())
-        staged.close()
+        assertEquals(EmbeddedSidecarFailure.MULTIPLE_MOKURO_MEMBERS, failure.failure)
+        assertTrue(root.listFiles().orEmpty().isEmpty())
     }
 
     @Test
@@ -831,14 +833,16 @@ class ReadingSourceStagerTest {
     }
 
     @Test
-    fun `zip slip and junk members are never candidates and never escape the stage`() {
+    fun `zip slip and OS junk members are never candidates and never escape the stage`() {
         val root = File(temporary.root, "junk-members")
         val archiveBytes =
             zipBytes(
                 "../evil.mokuro" to "evil".toByteArray(),
                 "__MACOSX/resource.mokuro" to "junk".toByteArray(),
-                ".hidden.mokuro" to "hidden".toByteArray(),
-                "nested/.also-hidden.mokuro" to "hidden".toByteArray(),
+                ".DS_Store/resource.mokuro" to "junk".toByteArray(),
+                "Thumbs.db/resource.mokuro" to "junk".toByteArray(),
+                "\$RECYCLE.BIN/resource.mokuro" to "junk".toByteArray(),
+                "nested/._resource.mokuro" to "junk".toByteArray(),
             )
         val document = document("content://reading/junk", "volume.cbz", archiveBytes.size.toLong())
         val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
@@ -852,6 +856,22 @@ class ReadingSourceStagerTest {
         assertEquals(EmbeddedSidecarFailure.NO_MOKURO_MEMBER, failure.failure)
         assertTrue(root.listFiles().orEmpty().isEmpty())
         assertFalse(File(temporary.root, "evil.mokuro").exists())
+    }
+
+    @Test
+    fun `sole dot-prefixed embedded sidecar remains a candidate`() {
+        val root = File(temporary.root, "hidden-member")
+        val archiveBytes = zipBytes(".hidden.mokuro" to "hidden".toByteArray())
+        val document = document("content://reading/hidden", "volume.cbz", archiveBytes.size.toLong())
+        val opener = FakeReadingSourceOpener(mapOf(document.uri to archiveBytes))
+
+        val staged =
+            stager(root, opener, limits = archiveLimits())
+                .stage(ReadingSourceSelection.Single(document))
+
+        assertArrayEquals("hidden".toByteArray(), File(staged.detectorPath).readBytes())
+        staged.close()
+        assertTrue(root.listFiles().orEmpty().isEmpty())
     }
 
     @Test
