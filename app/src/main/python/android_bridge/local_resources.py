@@ -60,6 +60,7 @@ _AUDIO_JSON_LIMIT = 128 * 1024 * 1024
 # through single-child wrapper directories.
 _AUDIO_PACK_WRAPPER_DEPTH = 4
 _AUDIO_PACK_METADATA_LIMIT = 64
+_AUDIO_PACK_CANDIDATE_LIMIT = 64
 _MAX_KNOWN_WORDS = 500_000
 _MAX_WORD_BYTES = 1024
 _MAX_KNOWN_WORD_PAGE = 200
@@ -329,10 +330,12 @@ def _fsync_file(path: Path) -> None:
     try:
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
     except OSError as exc:
+        core._raise_if_storage_exhausted(exc)
         raise _fail("resource_install_failed", "Cannot open imported resource") from exc
     try:
         os.fsync(descriptor)
     except OSError as exc:
+        core._raise_if_storage_exhausted(exc)
         raise _fail("resource_install_failed", "Cannot persist imported resource") from exc
     finally:
         os.close(descriptor)
@@ -366,6 +369,59 @@ def _fsync_small_tree(root: Path) -> None:
                 )
             _fsync_file(child)
     _fsync_tree_directories(root)
+
+
+def _frequency_import_payload(result: object, source_id: str, archive_sha256: str) -> dict[str, object]:
+    def text(value: object, *, label: str, max_bytes: int, allow_empty: bool = False) -> str:
+        if not isinstance(value, str) or (not allow_empty and not value):
+            raise _fail(
+                "frequency_import_failed",
+                f"Imported frequency {label} exceeds the bridge contract",
+            )
+        try:
+            encoded_size = len(value.encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise _fail(
+                "frequency_import_failed",
+                f"Imported frequency {label} exceeds the bridge contract",
+            ) from exc
+        if encoded_size > max_bytes:
+            raise _fail(
+                "frequency_import_failed",
+                f"Imported frequency {label} exceeds the bridge contract",
+            )
+        return value
+
+    def count(value: object, *, label: str) -> int:
+        if type(value) is not int or value < 0 or value > (1 << 63) - 1:
+            raise _fail(
+                "frequency_import_failed",
+                f"Imported frequency {label} exceeds the bridge contract",
+            )
+        return value
+
+    result_source_id = text(result.source_id, label="source ID", max_bytes=64)
+    if result_source_id != source_id or not core._SLOT_ID_RE.fullmatch(result_source_id):
+        raise _fail("frequency_import_failed", "Imported frequency identity is invalid")
+    if type(result.converted_to_ranks) is not bool or type(result.is_categorical) is not bool:
+        raise _fail("frequency_import_failed", "Imported frequency flags are invalid")
+    return {
+        "sourceId": result_source_id,
+        "sourceName": text(result.source_name, label="source name", max_bytes=4096),
+        "sourceRevision": text(
+            result.source_revision,
+            label="source revision",
+            max_bytes=4096,
+            allow_empty=True,
+        ),
+        "format": text(result.format, label="format", max_bytes=64),
+        "entryCount": count(result.entry_count, label="entry count"),
+        "skippedDisplayOnly": count(result.skipped_display_only, label="display-only count"),
+        "skippedMalformed": count(result.skipped_malformed, label="malformed count"),
+        "convertedToRanks": result.converted_to_ranks,
+        "isCategorical": result.is_categorical,
+        "archiveSha256": archive_sha256,
+    }
 
 
 def import_frequency(payload: Mapping[str, object]) -> str:
@@ -448,6 +504,10 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 ) from exc
             operation.check()
             candidate = import_root / source_id
+            response = encode_message(
+                "resource.frequency.imported",
+                _frequency_import_payload(result, source_id, copied.sha256),
+            )
             if source_format == "zip":
                 core._restore_original_yomitan_zip(candidate, copied)
             _write_sidecar(
@@ -471,21 +531,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 final_root=_frequency_root(home),
                 require_content=False,
             )
-            return encode_message(
-                "resource.frequency.imported",
-                {
-                    "sourceId": result.source_id,
-                    "sourceName": result.source_name,
-                    "sourceRevision": result.source_revision,
-                    "format": result.format,
-                    "entryCount": result.entry_count,
-                    "skippedDisplayOnly": result.skipped_display_only,
-                    "skippedMalformed": result.skipped_malformed,
-                    "convertedToRanks": result.converted_to_ranks,
-                    "isCategorical": result.is_categorical,
-                    "archiveSha256": copied.sha256,
-                },
-            )
+            return response
         finally:
             if operation_root.exists():
                 core._safe_rmtree(operation_root)
@@ -738,11 +784,20 @@ def _extract_audio_zip(
     operation: core._Operation,
     prefix: tuple[str, ...],
 ) -> None:
+    try:
+        declared_member_count = core._preflight_zip_member_count(path, _AUDIO_MEMBER_LIMIT)
+    except BridgeProtocolError as exc:
+        if exc.code == "resource_archive_too_large":
+            raise _fail(
+                "resource_archive_member_count",
+                "Audio pack member count is outside its limit",
+            ) from exc
+        raise
     # Open through _open_source so the staged ZIP keeps the no-symlink and
     # changed-underneath-us guards it had when it was copied first.
     with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
         infos = archive.infolist()
-        if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
+        if len(infos) != declared_member_count:
             raise _fail(
                 "resource_archive_member_count",
                 "Audio pack member count is outside its limit",
@@ -813,15 +868,14 @@ def _extract_audio_tar(
 ) -> None:
     """Extract the *prefix* subtree of a streamed tar archive.
 
-    A tar has no central directory, so unlike the ZIP path there is no total to
-    reserve against or to reconcile at the end. The member count, the per-file
-    ceiling, and the running total are enforced as the stream is read, and a
-    device that fills up surfaces through ``_raise_if_storage_exhausted``.
+    A tar has no central directory, so its selected declared total is checked
+    incrementally before each file is materialised. A device that fills up
+    surfaces through ``_raise_if_storage_exhausted``.
     """
     destination.mkdir(parents=True)
     seen: set[tuple[str, ...]] = set()
     members = 0
-    actual_total = 0
+    declared_total = 0
     with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
         for member in archive:
             operation.check()
@@ -841,6 +895,13 @@ def _extract_audio_tar(
             relative = _under_prefix(parts, prefix)
             if relative is None:
                 continue
+            if member.isreg():
+                if member.size > _AUDIO_TOTAL_LIMIT - declared_total:
+                    raise _fail(
+                        "resource_archive_expands_too_large",
+                        "Audio pack expands beyond its limit",
+                    )
+                declared_total += member.size
             target = destination.joinpath(*relative)
             if member.isdir():
                 if target.exists():
@@ -857,10 +918,8 @@ def _extract_audio_tar(
                 raise _fail("unsafe_resource_archive", "Audio pack member cannot be read")
             target.parent.mkdir(parents=True, exist_ok=True)
             with source:
-                actual_total += _copy_audio_member(source, target, member.size, limit, operation)
-            if actual_total > _AUDIO_TOTAL_LIMIT:
-                raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
-    if actual_total <= 0:
+                _copy_audio_member(source, target, member.size, limit, operation)
+    if declared_total <= 0:
         raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
 
 
@@ -887,14 +946,6 @@ def _extract_audio_archive(
         raise _fail("invalid_resource_archive", "Audio pack archive is corrupt") from exc
 
 
-def _audio_pack_children(directory: Path) -> list[Path]:
-    return [
-        child
-        for child in sorted(directory.iterdir())
-        if child.is_dir() and not child.is_symlink() and child.name != "__MACOSX"
-    ]
-
-
 def _detect_audio_pack_roots(projected: Path) -> list[Path]:
     """Every supported pack in the projected tree, at the outermost level that matches.
 
@@ -908,15 +959,30 @@ def _detect_audio_pack_roots(projected: Path) -> list[Path]:
 
     current = projected
     for _ in range(_AUDIO_PACK_WRAPPER_DEPTH):
-        children = _audio_pack_children(current)
-        matches = [child for child in children if detect_pack_format(child) is not None]
+        child_count = 0
+        only_child: Path | None = None
+        matches: list[Path] = []
+        for child in current.iterdir():
+            if not child.is_dir() or child.is_symlink() or child.name == "__MACOSX":
+                continue
+            child_count += 1
+            only_child = child
+            if detect_pack_format(child) is None:
+                continue
+            if len(matches) >= _AUDIO_PACK_CANDIDATE_LIMIT:
+                raise _fail(
+                    "resource_archive_member_count",
+                    "Audio archive holds too many packs",
+                )
+            matches.append(child)
         if matches:
-            return matches
+            return sorted(matches)
         if detect_pack_format(current) is not None:
             return [current]
-        if len(children) != 1:
+        if child_count != 1:
             return []
-        current = children[0]
+        assert only_child is not None
+        current = only_child
     return []
 
 
@@ -967,9 +1033,18 @@ def _project_audio_zip(
     operation: core._Operation,
     audio_extensions: set[str],
 ) -> None:
+    try:
+        declared_member_count = core._preflight_zip_member_count(path, _AUDIO_MEMBER_LIMIT)
+    except BridgeProtocolError as exc:
+        if exc.code == "resource_archive_too_large":
+            raise _fail(
+                "resource_archive_member_count",
+                "Audio pack member count is outside its limit",
+            ) from exc
+        raise
     with core._open_source(path) as (stream, _), zipfile.ZipFile(stream, "r") as archive:
         infos = archive.infolist()
-        if not infos or len(infos) > _AUDIO_MEMBER_LIMIT:
+        if len(infos) != declared_member_count:
             raise _fail(
                 "resource_archive_member_count",
                 "Audio pack member count is outside its limit",
@@ -1014,6 +1089,7 @@ def _project_audio_tar(
     seen: set[tuple[str, ...]] = set()
     members = 0
     metadata_files = 0
+    declared_total = 0
     with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
         for member in archive:
             operation.check()
@@ -1032,6 +1108,12 @@ def _project_audio_tar(
             _accept_audio_member(parts, 0 if member.isdir() else member.size, seen)
             if member.isdir():
                 continue
+            if member.size > _AUDIO_TOTAL_LIMIT - declared_total:
+                raise _fail(
+                    "resource_archive_expands_too_large",
+                    "Audio pack expands beyond its limit",
+                )
+            declared_total += member.size
             member_kind = _projected_member_kind(parts, audio_extensions)
             if member_kind is None:
                 continue
@@ -1046,6 +1128,8 @@ def _project_audio_tar(
                 raise _fail("unsafe_resource_archive", "Audio pack member cannot be read")
             with source:
                 _copy_audio_member(source, target, member.size, _AUDIO_JSON_LIMIT, operation)
+    if declared_total <= 0:
+        raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
 
 
 def _accept_projected_metadata(count: int) -> int:
@@ -1179,6 +1263,7 @@ def _validate_audio_index(db_path: Path, content: Path, operation: core._Operati
         finally:
             connection.close()
     except sqlite3.Error as exc:
+        core._raise_if_storage_exhausted(exc)
         raise _fail("audio_pack_import_failed", "Audio pack index is invalid") from exc
 
 
@@ -1247,8 +1332,16 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
                     cancel_check=operation.cancelled.is_set,
                     overwrite=False,
                 )
-            except (SetupError, ValueError, UnicodeError, json.JSONDecodeError) as exc:
+            except (
+                SetupError,
+                ValueError,
+                UnicodeError,
+                json.JSONDecodeError,
+                OSError,
+                sqlite3.Error,
+            ) as exc:
                 operation.check()
+                core._raise_if_storage_exhausted(exc)
                 raise _fail(
                     "audio_pack_index_malformed",
                     "The chosen pack's index could not be read",
@@ -1256,9 +1349,17 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
             operation.check()
             built = index_root / pack_id
             db_path = built / "index.sqlite"
-            metadata = storage.read_meta(db_path)
-            metadata["pack_dir"] = str(_audio_root(home) / pack_id / "content")
-            storage.write_meta(db_path, metadata)
+            try:
+                metadata = storage.read_meta(db_path)
+                metadata["pack_dir"] = str(_audio_root(home) / pack_id / "content")
+                storage.write_meta(db_path, metadata)
+            except (OSError, sqlite3.Error) as exc:
+                operation.check()
+                core._raise_if_storage_exhausted(exc)
+                raise _fail(
+                    "audio_pack_import_failed",
+                    "Audio pack index could not be persisted",
+                ) from exc
             _validate_audio_index(db_path, content, operation)
             for name in ("index.sqlite", "meta.json"):
                 (built / name).rename(candidate / name)
@@ -1555,27 +1656,40 @@ def export_known_words(payload: Mapping[str, object]) -> str:
         operation.check()
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
-        database, _db_path = _known_words_database(home)
-        words = sorted(database.get_words_by_source("user"))
+        _database, db_path = _known_words_database(home)
         export_path = operation_root / "known_words.txt"
         size_bytes = 0
+        exported_count = 0
         try:
-            with export_path.open("xb", buffering=0) as stream:
-                for index, word in enumerate(words):
-                    if index % 1024 == 0:
-                        operation.check()
-                    encoded = f"{word}\n".encode()
-                    size_bytes += len(encoded)
-                    if size_bytes > _KNOWN_WORD_EXPORT_LIMIT:
-                        raise _fail("known_words_export_failed", "Known-word export exceeds its limit")
-                    core._write_all(stream, encoded)
-                os.fsync(stream.fileno())
+            connection = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
+            try:
+                cursor = connection.execute(
+                    "SELECT lemma FROM known_words WHERE source = ? ORDER BY lemma",
+                    ("user",),
+                )
+                with export_path.open("xb", buffering=0) as stream:
+                    for row in cursor:
+                        if exported_count % 1024 == 0:
+                            operation.check()
+                        word = row[0]
+                        encoded = f"{word}\n".encode()
+                        size_bytes += len(encoded)
+                        if size_bytes > _KNOWN_WORD_EXPORT_LIMIT:
+                            raise _fail(
+                                "known_words_export_failed",
+                                "Known-word export exceeds its limit",
+                            )
+                        core._write_all(stream, encoded)
+                        exported_count += 1
+                    os.fsync(stream.fileno())
+            finally:
+                connection.close()
             core._fsync_directory(operation_root)
             return encode_message(
                 "resource.knownwords.exported",
                 {
                     "exportPath": str(export_path),
-                    "exportedCount": len(words),
+                    "exportedCount": exported_count,
                     "sizeBytes": size_bytes,
                 },
             )
@@ -1872,6 +1986,15 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
             continue
         meta = _read_index_meta(child)
         if meta is None or meta.get("pack_id", child.name) != child.name:
+            result.append(
+                {
+                    "packId": child.name,
+                    "sourceName": child.name,
+                    "format": "unknown",
+                    "entryCount": 0,
+                    "contentAvailable": False,
+                }
+            )
             continue
         try:
             version = int(meta.get("schema_version", "0"))
