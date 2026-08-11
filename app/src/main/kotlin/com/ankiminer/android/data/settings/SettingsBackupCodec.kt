@@ -39,6 +39,7 @@ internal data class AppliedSettingsBackup(
 
 internal object SettingsBackupCodec {
     const val MAX_DOCUMENT_BYTES = 512 * 1024
+    private const val BACKUP_FORMAT_VERSION = 2
 
     /**
      * Store-local metadata never copied between devices. `setup_wizard_seen` is first-run state;
@@ -136,6 +137,8 @@ internal object SettingsBackupCodec {
 
     private object RejectedValue
 
+    private object ClearedValue
+
     private data class DecodeAttempt(
         val settings: AppSettings?,
         val invalidKeyNames: Set<String>,
@@ -161,26 +164,24 @@ internal object SettingsBackupCodec {
         factory.createGenerator(output).use { generator ->
             generator.useDefaultPrettyPrinter()
             generator.writeStartObject()
-            generator.writeNumberField("ankiMinerAndroidSettings", 1)
+            generator.writeNumberField("ankiMinerAndroidSettings", BACKUP_FORMAT_VERSION)
             generator.writeStringField("appVersion", appVersion)
             generator.writeNumberField(
                 "schemaVersion",
                 DataStoreAppSettingsRepository.CURRENT_SCHEMA_VERSION,
             )
             generator.writeObjectFieldStart("settings")
-            preferences.asMap()
-                .asSequence()
-                .filter { (key, _) -> key.name in portableKeyNames }
-                .sortedBy { (key, _) -> key.name }
-                .forEach { (key, value) ->
-                    when (value) {
-                        is Boolean -> generator.writeBooleanField(key.name, value)
-                        is Int -> generator.writeNumberField(key.name, value)
-                        is Double -> generator.writeNumberField(key.name, value)
-                        is String -> generator.writeStringField(key.name, value)
-                        else -> error("Unsupported portable preference type for ${key.name}")
-                    }
+            val preferenceValues = preferences.asMap().mapKeys { (key, _) -> key.name }
+            portableKeyNames.sorted().forEach { name ->
+                when (val value = preferenceValues[name]) {
+                    null -> generator.writeNullField(name)
+                    is Boolean -> generator.writeBooleanField(name, value)
+                    is Int -> generator.writeNumberField(name, value)
+                    is Double -> generator.writeNumberField(name, value)
+                    is String -> generator.writeStringField(name, value)
+                    else -> error("Unsupported portable preference type for $name")
                 }
+            }
             generator.writeEndObject()
             generator.writeEndObject()
         }
@@ -246,7 +247,7 @@ internal object SettingsBackupCodec {
         if (parser.nextToken() != JsonToken.START_OBJECT) {
             throw SettingsBackupException(SettingsBackupFailure.NOT_A_BACKUP)
         }
-        var validMarker = false
+        var backupVersion: Int? = null
         var settingsIsObject = false
         var settingsSeen = false
         val values = linkedMapOf<String, Any>()
@@ -256,8 +257,12 @@ internal object SettingsBackupCodec {
             parser.nextToken()
             when (name) {
                 "ankiMinerAndroidSettings" -> {
-                    validMarker =
-                        parser.currentToken() == JsonToken.VALUE_NUMBER_INT && parser.text == "1"
+                    backupVersion =
+                        if (parser.currentToken() == JsonToken.VALUE_NUMBER_INT) {
+                            parser.text.toIntOrNull()?.takeIf { it in 1..BACKUP_FORMAT_VERSION }
+                        } else {
+                            null
+                        }
                     parser.skipChildren()
                 }
                 "settings" -> {
@@ -275,8 +280,14 @@ internal object SettingsBackupCodec {
         if (parser.nextToken() != null) {
             throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
         }
-        if (!validMarker || !settingsSeen || !settingsIsObject) {
+        val version = backupVersion
+        if (version == null || !settingsSeen || !settingsIsObject) {
             throw SettingsBackupException(SettingsBackupFailure.NOT_A_BACKUP)
+        }
+        if (version < 2) {
+            values.keys
+                .filter { name -> values.getValue(name) === ClearedValue }
+                .forEach { name -> values[name] = RejectedValue }
         }
         return ParsedSettingsBackup(values = values, ignoredKeys = ignoredKeys)
     }
@@ -300,6 +311,7 @@ internal object SettingsBackupCodec {
 
     private fun readPortableValue(parser: JsonParser, name: String): Any =
         when {
+            parser.currentToken() == JsonToken.VALUE_NULL -> ClearedValue
             name in booleanKeyNames &&
                 parser.currentToken() in setOf(JsonToken.VALUE_TRUE, JsonToken.VALUE_FALSE) ->
                 parser.booleanValue
@@ -368,11 +380,18 @@ internal object SettingsBackupCodec {
 
     private fun MutablePreferences.writePortable(name: String, value: Any) {
         when (name) {
-            in booleanKeyNames -> this[booleanPreferencesKey(name)] = value as Boolean
-            in intKeyNames -> this[intPreferencesKey(name)] = value as Int
-            in doubleKeyNames -> this[doublePreferencesKey(name)] = value as Double
-            in stringKeyNames -> this[stringPreferencesKey(name)] = value as String
+            in booleanKeyNames -> writeOrClear(booleanPreferencesKey(name), value)
+            in intKeyNames -> writeOrClear(intPreferencesKey(name), value)
+            in doubleKeyNames -> writeOrClear(doublePreferencesKey(name), value)
+            in stringKeyNames -> writeOrClear(stringPreferencesKey(name), value)
             else -> error("Unknown portable preference key: $name")
         }
+    }
+
+    private inline fun <reified T : Any> MutablePreferences.writeOrClear(
+        key: Preferences.Key<T>,
+        value: Any,
+    ) {
+        if (value === ClearedValue) remove(key) else this[key] = value as T
     }
 }
