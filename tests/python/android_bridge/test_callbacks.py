@@ -127,18 +127,45 @@ def test_progress_and_presenter_methods_emit_versioned_events(caplog: pytest.Log
     assert "outcome=ok" in stage_record.getMessage()
 
 
-def test_terminal_notifications_are_distinct_from_stage_progress() -> None:
+def test_validation_result_projects_real_engine_dataclass_to_supported_wire_fields() -> None:
+    from anki_miner.models.processing import ValidationIssue, ValidationResult
+
     registry = JobRegistry()
     handle = registry.begin()
     callbacks = RecordingCallbacks()
     adapters = CallbackAdapters(callbacks, registry, handle)
 
-    adapters.notify_job_complete(FakeResult(cards_created=1, errors=[]))
-    adapters.notify_job_error(RuntimeError("boom"))
+    adapters.presenter.show_validation_result(
+        ValidationResult(
+            ankiconnect_ok=True,
+            ffmpeg_ok=True,
+            deck_exists=True,
+            note_type_exists=True,
+            issues=[ValidationIssue("ffprobe", "WARNING", "old")],
+            ffprobe_ok=False,
+            tool_versions={"ffmpeg": "7.1.1 [bundled]"},
+        )
+    )
 
-    assert callbacks.calls[0][1]["type"] == "mining.complete"
-    assert callbacks.calls[1][1]["type"] == "mining.error"
-    assert callbacks.calls[1][1]["payload"]["errorType"] == "RuntimeError"
+    assert callbacks.calls[-1][1]["payload"]["result"] == {
+        "ankiconnectOk": True,
+        "ffmpegOk": True,
+        "deckExists": True,
+        "noteTypeExists": True,
+        "issues": [
+            {
+                "component": "ffprobe",
+                "severity": "WARNING",
+                "message": "old",
+            }
+        ],
+        "ffprobeOk": False,
+    }
+
+
+def test_legacy_terminal_notification_helpers_are_not_exposed() -> None:
+    assert not hasattr(CallbackAdapters, "notify_job_complete")
+    assert not hasattr(CallbackAdapters, "notify_job_error")
 
 
 def test_job_registration_is_synchronous_strict_and_correlated() -> None:

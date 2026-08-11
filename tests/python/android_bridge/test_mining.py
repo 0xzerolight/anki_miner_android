@@ -1554,6 +1554,51 @@ def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run(
     assert calls[-2:] == [("session-close", None), ("provider-close", None)]
 
 
+def test_online_dictionary_provider_memoizes_exact_term_before_malformed_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_count = 0
+
+    class Response:
+        status_code = 200
+
+        def iter_content(self, *, chunk_size: int) -> object:
+            assert chunk_size == 8192
+            yield b"[]"
+
+        def close(self) -> None:
+            return None
+
+    class Session:
+        def get(self, _url: str, **_kwargs: object) -> Response:
+            nonlocal request_count
+            request_count += 1
+            return Response()
+
+        def close(self) -> None:
+            return None
+
+    provider = SimpleNamespace(
+        name="Jisho API",
+        is_online=True,
+        _api_url="https://jisho.org/api/v1/search/words",
+        _delay=0.0,
+        is_available=lambda: True,
+        load=lambda: True,
+        close=lambda: None,
+    )
+    monkeypatch.setattr(mining, "_new_jisho_session", Session)
+    wrapped = mining._AndroidOnlineDictionaryProvider(provider, lambda: False)
+    try:
+        with pytest.raises(AttributeError):
+            wrapped.lookup("猫")
+
+        assert wrapped.lookup("猫") is None
+        assert request_count == 1
+    finally:
+        wrapped.close()
+
+
 def test_online_dictionary_cancellation_closes_trickling_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

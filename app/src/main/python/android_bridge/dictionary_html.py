@@ -8,10 +8,11 @@ Anki seam instead.
 
 The sanitizer is deliberately lexical rather than a parse-and-reserialize
 round trip: ordinary text and all unrelated renderer markup remain byte exact.
-Only attributes capable of loading an image, plus renderer-envelope attributes
-which repeat a rejected image URL, are removed.  A caller-provided predicate
-admits renderer-marked media only after it has been resolved to an app-private
-dictionary file or an already acknowledged Anki media name.
+Only attributes capable of loading an image, external link targets, plus
+renderer-envelope attributes which repeat a rejected image URL, are removed. A
+caller-provided predicate admits renderer-marked media only after it has been
+resolved to an app-private dictionary file or an already acknowledged Anki
+media name.
 """
 
 from __future__ import annotations
@@ -114,10 +115,11 @@ def sanitize_dictionary_html(
     """Remove auto-loading dictionary media except acknowledged local files.
 
     The function never changes character data or unrelated tags/attributes.
-    Unrelated HTTP(S) links in ordinary ``<a href>`` glossary prose remain
-    links; unlike image sources, they require explicit user action. If a link
-    repeats a rejected image URL, that attribute is removed too so the image
-    endpoint does not survive anywhere in the stored renderer envelope.
+    External HTTP(S) link targets are removed because the same untrusted
+    dictionary controls their layout CSS and can enlarge or hide the clickable
+    area. If a link repeats a rejected image URL, that attribute is removed too
+    so the image endpoint does not survive anywhere in the stored renderer
+    envelope.
     """
 
     if not value or "<" not in value:
@@ -156,7 +158,9 @@ def sanitize_dictionary_html(
                 # Android product admits. srcset/background remain forbidden.
                 remove = not (allowed_image and name == "src")
             elif (
-                name in _AUTOLOAD_ATTRIBUTES
+                name == "href"
+                and _is_remote_url(decoded)
+                or name in _AUTOLOAD_ATTRIBUTES
                 and _contains_remote_url(decoded)
                 or name in _REPEATED_URL_ATTRIBUTES
                 and _contains_remote_url(decoded)
@@ -165,7 +169,7 @@ def sanitize_dictionary_html(
             elif any(remote in decoded for remote in rejected_remote_urls):
                 # The renderer repeats an image path in data-path, style and
                 # occasionally title/alt. Remove those copies without touching
-                # visible character data or deliberate hyperlink hrefs.
+                # visible character data.
                 remove = True
 
             if remove:

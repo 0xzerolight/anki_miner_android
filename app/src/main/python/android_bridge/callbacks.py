@@ -20,6 +20,15 @@ from .protocol import (
 
 logger = logging.getLogger(__name__)
 
+_VALIDATION_RESULT_FIELDS = (
+    "ankiconnectOk",
+    "ffmpegOk",
+    "deckExists",
+    "noteTypeExists",
+    "issues",
+    "ffprobeOk",
+)
+
 
 def _invoke(callbacks: object, method_name: str, message: str) -> None:
     method = getattr(callbacks, method_name, None)
@@ -412,7 +421,16 @@ class AndroidPresenter:
         """
 
     def show_validation_result(self, result: object) -> None:
-        self._event("validation", result=to_json_value(result))
+        serialized = to_json_value(result)
+        if not isinstance(serialized, dict) or any(field not in serialized for field in _VALIDATION_RESULT_FIELDS):
+            raise BridgeProtocolError(
+                "invalid_validation_result",
+                "Validation result is missing a supported field",
+            )
+        self._event(
+            "validation",
+            result={field: serialized[field] for field in _VALIDATION_RESULT_FIELDS},
+        )
 
     def show_processing_result(self, result: object) -> None:
         self._event("processingResult", result=to_json_value(result))
@@ -482,30 +500,6 @@ class CallbackAdapters:
 
         callback = getattr(self._callbacks, "cancellationRequested", None)
         return bool(callback()) if callable(callback) else False
-
-    def notify_job_complete(self, result: object) -> None:
-        _invoke(
-            self._callbacks,
-            "onComplete",
-            encode_message(
-                "mining.complete",
-                {"runId": self._handle.run_id, "result": to_json_value(result)},
-            ),
-        )
-
-    def notify_job_error(self, error: BaseException) -> None:
-        _invoke(
-            self._callbacks,
-            "onError",
-            encode_message(
-                "mining.error",
-                {
-                    "runId": self._handle.run_id,
-                    "errorType": type(error).__name__,
-                    "message": str(error),
-                },
-            ),
-        )
 
     def notify_terminal(self, raw_terminal: str, *, failed: bool) -> None:
         """Deliver the same canonical terminal envelope returned by dispatch."""
