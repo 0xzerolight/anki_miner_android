@@ -157,6 +157,43 @@ class PythonRuntimeBootstrapTest {
     }
 
     @Test
+    fun `a bridge error handshake preserves correlation diagnostics without its private message`() {
+        val queued = AtomicReference<Runnable>()
+        val gate = PythonRuntimeBootstrapGate<String> { it }
+        val rawError =
+            """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"internal_error","message":"secret engine import path","requestType":"bootstrap.initialize","faultId":"f0123abcd"}}"""
+        gate.enqueueFirst(Executor(queued::set)) {
+            pythonBootstrapStage(PythonBootstrapStage.HANDSHAKE) {
+                confirmPythonBootstrapHandshake(rawError, "/files")
+            }
+            "/files"
+        }
+
+        queued.get().run()
+
+        val readiness = gate.readiness.value as PythonRuntimeReadiness.Failed
+        assertEquals(PythonBootstrapStage.HANDSHAKE, readiness.stage)
+        assertEquals(
+            "bridge.error/internal_error/bootstrap.initialize/f0123abcd",
+            readiness.fault,
+        )
+        assertFalse(readiness.fault.contains("secret engine import path"))
+        val unavailable =
+            try {
+                gate.await { }
+                throw AssertionError("failure expected")
+            } catch (expected: PythonRuntimeUnavailableException) {
+                expected
+            }
+        assertEquals("The embedded Python runtime is unavailable", unavailable.message)
+        val rejected = unavailable.cause as PythonBootstrapRejectedException
+        assertEquals("internal_error", rejected.code)
+        assertEquals("bootstrap.initialize", rejected.requestType)
+        assertEquals("f0123abcd", rejected.faultId)
+        assertEquals("Python bootstrap failed", rejected.message)
+    }
+
+    @Test
     fun `a bootstrap error is reported as a startup fault and still escapes the runnable`() {
         val queued = AtomicReference<Runnable>()
         val gate = PythonRuntimeBootstrapGate<Any> { error("unreachable") }

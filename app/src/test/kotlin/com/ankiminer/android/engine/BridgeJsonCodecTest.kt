@@ -516,6 +516,19 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `callback rejects a progress stage from another run`() {
+        val currentRun = "run_${"a".repeat(32)}"
+        val staleRun = "run_${"b".repeat(32)}"
+        val raw =
+            """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$staleRun","index":4,"total":5,"name":"Creating cards"}}"""
+
+        assertEquals(
+            BridgeProtocolCategory.STALE_RUN,
+            protocolFailure { BridgeJsonCodec.decodeCallback(raw, expectedRunId = currentRun) }.category,
+        )
+    }
+
+    @Test
     fun `terminal keeps exact raw envelope for callback reconciliation`() {
         val fixture = fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "successful terminal" }
         val terminal = BridgeJsonCodec.decode(fixture.message) as BridgeMessage.Terminal
