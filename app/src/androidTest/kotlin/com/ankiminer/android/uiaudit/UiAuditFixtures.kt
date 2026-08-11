@@ -10,13 +10,19 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ankiminer.android.AnkiMinerApplication
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
@@ -43,6 +49,8 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.data.update.UpdateCheckUiState
+import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
@@ -78,9 +86,11 @@ import com.ankiminer.android.ui.settings.SettingTextField
 import com.ankiminer.android.ui.settings.SettingsCardIndexRecorder
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
+import com.ankiminer.android.ui.settings.SettingsScreenCallbacks
 import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.mediaSettings
+import com.ankiminer.android.ui.settings.settingsCategoryContent
 import com.ankiminer.android.ui.settings.settingsCard
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.video.CurationPlayerUiState
@@ -88,8 +98,11 @@ import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSlotState
 import com.ankiminer.android.ui.video.MiningCommandError
 import com.ankiminer.android.ui.video.VideoMiningUiState
+import com.ankiminer.android.vm.DiagnosticsExportState
+import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SetupUiState
+import com.ankiminer.android.vm.SetupViewModel
 
 internal enum class MiningAuditState(val fileName: String) {
     IDLE("idle"),
@@ -106,7 +119,6 @@ internal enum class SettingsAuditState(val fileName: String) {
     RESOURCES("dictionaries-resources"),
     ERROR_SNACKBAR("error-snackbar"),
     MEDIA("media"),
-    FULL("full"),
 }
 
 internal object UiAuditTags {
@@ -540,7 +552,6 @@ internal fun UiAuditSettingsFixture(
             SettingsAuditState.ERROR_SNACKBAR,
             -> SettingsCategory.DICTIONARIES
             SettingsAuditState.MEDIA -> SettingsCategory.MEDIA
-            SettingsAuditState.FULL -> SettingsCategory.FILTERING
         }
     val recorder = remember { SettingsCardIndexRecorder() }
     SettingsCategoryLayout(
@@ -606,6 +617,129 @@ internal fun UiAuditSettingsFixture(
         }
     }
 }
+
+@Composable
+internal fun UiAuditFullSettingsFixture(
+    selectedCategory: SettingsCategory,
+    listStates: Map<SettingsCategory, LazyListState>,
+    recorder: SettingsCardIndexRecorder,
+    modifier: Modifier = Modifier,
+) {
+    val setup = remember { setupAuditState() }
+    val resources = remember(setup) { setup.auditResourceState() }
+    var draft by
+        remember(resources) {
+            mutableStateOf(
+                SettingsDraft.from(
+                    AppSettings(
+                        animatedScreenshotsEnabled = true,
+                        animatedScreenshotDurationSeconds = 2.0,
+                        animatedScreenshotQuality = 30,
+                    ),
+                    resources,
+                ),
+            )
+        }
+    val setupViewModel = uiAuditSetupViewModel()
+    val callbacks =
+        SettingsScreenCallbacks(
+            onDraftChange = { draft = it },
+            onRequestReset = { _ -> },
+            resetEnabled = true,
+            onRequestPermissions = {},
+            onOpenAppSettings = {},
+            onInstallAnkiDroid = {},
+            onOpenAnkiDroid = {},
+            onOpenSpeechSettings = {},
+            onShareDiagnosticsBundle = {},
+            onRetryDiagnosticsExport = {},
+            onDismissDiagnosticsExport = {},
+            backupState = SettingsBackupState.Idle,
+            onExportSettings = {},
+            onImportSettings = {},
+            onDismissBackupState = {},
+            onReturnToActiveRun = null,
+            onAttributions = {},
+            onRunSetupWizard = {},
+            onImportCustom = {},
+            onReplaceCustom = { _ -> },
+            onImportFrequency = {},
+            onImportPitch = {},
+            onImportAudioPack = {},
+            onImportKnownWords = {},
+            onImportWordList = { _ -> },
+            onExportKnownWords = {},
+            onManageKnownWords = {},
+            verboseLogging = false,
+            onVerboseLoggingChange = { _ -> },
+            updateCheck = UpdateCheckUiState(),
+            onUpdateCheckEnabledChange = { _ -> },
+            onCheckForUpdates = {},
+            onSkipUpdate = {},
+        )
+    SettingsCategoryLayout(
+        selectedCategory = selectedCategory,
+        onSelectedCategory = {},
+        recorder = recorder,
+        header = { SettingsTopFixture(setup) },
+        modifier = modifier.testTag(UiAuditTags.SETTINGS_SCROLL),
+        listStates = listStates,
+    ) { category ->
+        settingsCategoryContent(
+            category = category,
+            draft = draft,
+            resources = resources,
+            setup = setup,
+            setupViewModel = setupViewModel,
+            diagnostics =
+                TesterDiagnosticsIdentity(
+                    versionLabel = "UI audit",
+                    sourceLabel = "fixture",
+                ),
+            diagnosticsExport = DiagnosticsExportState.Idle,
+            recorder = recorder,
+            callbacks = callbacks,
+        )
+    }
+}
+
+@Composable
+private fun uiAuditSetupViewModel(): SetupViewModel {
+    val app = LocalContext.current.applicationContext as AnkiMinerApplication
+    val factory =
+        remember(app) {
+            SetupViewModel.Factory(
+                resources = app.resourceManager,
+                settings = app.settingsRepository,
+                ankiSetup = app.ankiSetupManager,
+                python = app.pythonRuntimeReadiness,
+                admission = app.miningAdmissionState,
+                runtimeWorkState = app.runtimeWorkState,
+                refreshExternalReadiness = app::refreshExternalReadiness,
+                strings = app.stringResourceResolver,
+            )
+        }
+    return viewModel(key = "ui-audit-full-settings", factory = factory)
+}
+
+private fun SetupUiState.auditResourceState(): ResourceManagerState =
+    ResourceManagerState(
+        startupReadiness = resourceStartup,
+        catalog = FrozenResourceCatalog.value,
+        dictionaries = dictionaries,
+        frequencySources = frequencySources,
+        pitchSources = pitchSources,
+        audioPacks = audioPacks,
+        knownWords = knownWords,
+        wordsets = wordsets,
+        wordLists = wordLists,
+        lastLocalImport = lastLocalImport,
+        knownWordsImportPreview = knownWordsImportPreview,
+        knownWordsPage = knownWordsPage,
+        activeOperation = operation,
+        failure = failure,
+        lastLookup = lookup,
+    )
 
 @Composable
 private fun SettingsTopFixture(setup: SetupUiState) {
