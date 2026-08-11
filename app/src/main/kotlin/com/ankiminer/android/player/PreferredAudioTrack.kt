@@ -32,6 +32,10 @@ private val JAPANESE_LANGUAGE_CODES: Set<String> =
  * audio stream (`find_japanese_audio_stream`), else the first audio stream (its `-map 0:a:0`
  * fallback). Returns null when the media has no audio.
  *
+ * Progressive media groups carry numeric IDs in extractor/source order, but [Tracks.groups] is
+ * rebuilt in renderer order. Sort those IDs before applying the engine rule; retain list order for
+ * any non-progressive source whose group IDs have another shape.
+ *
  * Language only, with no renderer-support filter. If the Japanese track is a codec this device
  * cannot decode, selecting it anyway surfaces [PreviewFailure.AudioTrackUnsupported], which is the
  * honest answer; quietly dropping to the English dub is the behaviour this replaces.
@@ -39,7 +43,14 @@ private val JAPANESE_LANGUAGE_CODES: Set<String> =
 @OptIn(UnstableApi::class)
 fun preferredAudioGroup(tracks: Tracks): Tracks.Group? {
     val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
-    return audioGroups.firstOrNull { group ->
+    val sourceIndexes = audioGroups.map { it.mediaTrackGroup.id.toIntOrNull() }
+    val sourceOrderedGroups =
+        if (sourceIndexes.all { it != null }) {
+            audioGroups.zip(sourceIndexes).sortedBy { (_, index) -> index }.map { it.first }
+        } else {
+            audioGroups
+        }
+    return sourceOrderedGroups.firstOrNull { group ->
         JAPANESE_LANGUAGE_CODES.contains(group.getTrackFormat(0).language ?: "")
-    } ?: audioGroups.firstOrNull()
+    } ?: sourceOrderedGroups.firstOrNull()
 }
