@@ -55,6 +55,46 @@ import kotlinx.coroutines.withTimeoutOrNull
 // gone before the eye arrived at the jumped-to card.
 private const val HIGHLIGHT_MILLIS = 1_200L
 
+internal data class ExternalSettingsCategoryJump(
+    val category: SettingsCategory,
+    val itemIndex: Int,
+    val targetCardKey: String?,
+    val searchQuery: String,
+)
+
+internal fun externalSettingsCategoryJump(
+    currentSearchQuery: String,
+    requestedCategory: SettingsCategory?,
+    requestedItemIndex: Int,
+): ExternalSettingsCategoryJump? {
+    val category = requestedCategory ?: return null
+    return ExternalSettingsCategoryJump(
+        category = category,
+        itemIndex = requestedItemIndex,
+        targetCardKey = externalSettingsTargetCardKey(category, requestedItemIndex),
+        searchQuery = if (currentSearchQuery.isEmpty()) currentSearchQuery else "",
+    )
+}
+
+private fun externalSettingsTargetCardKey(
+    category: SettingsCategory,
+    itemIndex: Int,
+): String? =
+    when (category to itemIndex) {
+        SettingsCategory.ANKI to 3 -> "anki-target"
+        SettingsCategory.ANKI to 4 -> "anki-recovery"
+        SettingsCategory.DICTIONARIES to 2 -> "catalog-dictionaries"
+        SettingsCategory.DICTIONARIES to 3 -> "custom-dictionary"
+        SettingsCategory.DICTIONARIES to 4 -> "pitch"
+        SettingsCategory.DICTIONARIES to 6 -> "dictionary-lookup"
+        SettingsCategory.AUDIO to 3 -> "audio-import"
+        SettingsCategory.FREQUENCY to 3 -> "frequency-import"
+        SettingsCategory.FILTERING to 3 -> "known-words-import"
+        SettingsCategory.FILTERING to 4 -> "word-lists"
+        SettingsCategory.DIAGNOSTICS to 3 -> "unidic"
+        else -> null
+    }
+
 // `OpenDocument` greys out anything whose provider-reported MIME is not matched here, and the
 // post-pick classifier (`detectResourceImportFileKind`) is extension-first and far more
 // permissive, so this list is the only thing that can reject a file the import path would have
@@ -449,12 +489,34 @@ private fun SettingsScreen(
         pendingJump = null
     }
 
-    LaunchedEffect(requestedCategory) {
-        requestedCategory?.let { category ->
-            selectedCategory = category
-            listStates.getValue(category).scrollToItem(requestedCategoryItemIndex)
-            onCategoryRequestConsumed()
-        }
+    LaunchedEffect(requestedCategory, requestedCategoryItemIndex) {
+        val jump =
+            externalSettingsCategoryJump(
+                currentSearchQuery = searchQuery,
+                requestedCategory = requestedCategory,
+                requestedItemIndex = requestedCategoryItemIndex,
+            ) ?: return@LaunchedEffect
+        // Clear stale indices and the saved query first. Normal category content records the
+        // destination card only after the query-cleared layout replaces the search results.
+        cardIndexRecorder.begin(jump.category)
+        selectedCategory = jump.category
+        searchQuery = jump.searchQuery
+        val recordedTargetIndex =
+            jump.targetCardKey?.let { cardKey ->
+                withTimeoutOrNull(2_000) {
+                    snapshotFlow { cardIndexRecorder.indexOf(jump.category, cardKey) }
+                        .filterNotNull()
+                        .first()
+                }
+            }
+        val targetIndex =
+            when {
+                recordedTargetIndex != null -> recordedTargetIndex
+                jump.targetCardKey == null -> jump.itemIndex
+                else -> SettingsCardIndexRecorder.FIRST_CARD_INDEX
+            }
+        listStates.getValue(jump.category).scrollToItem(targetIndex)
+        onCategoryRequestConsumed()
     }
 
     resetConfirmation.pendingAction?.let { action ->
