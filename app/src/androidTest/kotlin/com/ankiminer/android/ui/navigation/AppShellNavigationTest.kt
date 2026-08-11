@@ -29,9 +29,14 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
+import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
+import com.ankiminer.android.ui.settings.SettingsCategory
+import com.ankiminer.android.ui.settings.settingsCardIndexFor
+import com.ankiminer.android.ui.settings.settingsCategoryFor
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.ThemePalettes
+import com.ankiminer.android.vm.MiningReadinessAction
 import com.ankiminer.android.vm.NavigationWorkflowState
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -206,6 +211,47 @@ class AppShellNavigationTest {
         }
         composeRule.runOnIdle {
             assertFalse("focus search reached the shell behind the overlay", shellFocused)
+        }
+    }
+
+    @Test
+    fun readinessRemediationsTargetTheirAnkiSettingsCards() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        var action by mutableStateOf(MiningReadinessAction.CHOOSE_NOTE_TYPE)
+        var openedOrigin: AnkiSetupFailureOrigin? = null
+
+        composeRule.setContent {
+            AnkiMinerTheme(palette = ThemePalettes.Light) {
+                MiningReadinessActions(
+                    action = action,
+                    onRequestPermissions = {},
+                    onInstallUniDic = {},
+                    onInstallAnkiDroid = {},
+                    onOpenAnkiDroid = {},
+                    onCheckAgain = {},
+                    onOpenSettings = { openedOrigin = it },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.readiness_choose_note_type))
+            .performClick()
+        composeRule.runOnIdle {
+            assertTrue(openedOrigin == AnkiSetupFailureOrigin.TARGET)
+            assertTrue(settingsCategoryFor(requireNotNull(openedOrigin)) == SettingsCategory.ANKI)
+            assertTrue(settingsCardIndexFor(requireNotNull(openedOrigin)) == 3)
+            openedOrigin = null
+            action = MiningReadinessAction.RESOLVE_RECOVERY
+        }
+
+        composeRule
+            .onNodeWithText(context.getString(R.string.readiness_resolve_recovery))
+            .performClick()
+        composeRule.runOnIdle {
+            assertTrue(openedOrigin == AnkiSetupFailureOrigin.RECOVERY)
+            assertTrue(settingsCategoryFor(requireNotNull(openedOrigin)) == SettingsCategory.ANKI)
+            assertTrue(settingsCardIndexFor(requireNotNull(openedOrigin)) == 4)
         }
     }
 

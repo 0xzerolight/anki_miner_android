@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.navigation
 
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
@@ -19,6 +20,7 @@ import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.vm.MiningReadinessAction
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.Parameterized
@@ -223,5 +225,22 @@ internal class MiningReadinessActionTest(
                 ),
             )
         }
+    }
+}
+
+internal class FailedPythonReadinessPresentationTest {
+    @Test
+    fun failedPythonBootstrapHasRestartGuidanceInsteadOfRetry() {
+        val failed =
+            SetupUiState(
+                python =
+                    PythonRuntimeReadiness.Failed(
+                        PythonBootstrapStage.START,
+                        "UnsatisfiedLinkError @ Python.start:1",
+                    ),
+            )
+
+        assertNull(miningReadinessActionForDisplay(failed))
+        assertEquals(R.string.mining_failure_restart_required, miningReadinessMessage(failed))
     }
 }

@@ -69,6 +69,34 @@ class OnboardingWizardTest {
     }
 
     @Test
+    fun sameSessionRerunKeepsCompletionPersistenceFailureVisible() {
+        assertTrue(
+            wizardVisible(
+                wizardSeen = false,
+                rerunRequested = false,
+                sessionDismissed = true,
+                completion = WizardCompletionStatus.SAVING,
+            ),
+        )
+        assertTrue(
+            wizardVisible(
+                wizardSeen = false,
+                rerunRequested = false,
+                sessionDismissed = true,
+                completion = WizardCompletionStatus.FAILED,
+            ),
+        )
+        assertFalse(
+            wizardVisible(
+                wizardSeen = false,
+                rerunRequested = false,
+                sessionDismissed = true,
+                completion = WizardCompletionStatus.DISMISSED_FOR_SESSION,
+            ),
+        )
+    }
+
+    @Test
     fun wizardStepNavigationIsBounded() {
         assertEquals(WizardStep.ANKIDROID, nextWizardStep(WizardStep.WELCOME))
         assertEquals(WizardStep.ANKIDROID_DECK, nextWizardStep(WizardStep.ANKIDROID))

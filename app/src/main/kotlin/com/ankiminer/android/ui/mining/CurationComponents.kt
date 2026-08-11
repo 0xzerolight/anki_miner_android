@@ -249,7 +249,7 @@ private fun CurationControls(
         val compactSearch = LocalDensity.current.fontScale < 1.3f
         OutlinedTextField(
             value = query,
-            onValueChange = onQueryChanged,
+            onValueChange = { onQueryChanged(it.boundedSaveableQuery()) },
             modifier =
                 Modifier
                     .fillMaxWidth()

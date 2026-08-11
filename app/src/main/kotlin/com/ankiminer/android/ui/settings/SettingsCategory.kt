@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.ui.mining.boundedSaveableQuery
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 
 internal enum class SettingsCategory(
@@ -185,7 +186,7 @@ internal fun SettingsCategoryLayout(
                 Column {
                     OutlinedTextField(
                         value = query,
-                        onValueChange = onQueryChange,
+                        onValueChange = { onQueryChange(it.boundedSaveableQuery()) },
                         modifier =
                             Modifier
                                 .fillMaxWidth()
