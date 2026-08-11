@@ -386,7 +386,7 @@ def parse_catalog_json(raw: str) -> ResourceCatalog:
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         raise _error("Resource catalog is not valid JSON") from exc
     root = _exact(document, {"schemaVersion", "resources"}, context="resource catalog")
-    if root["schemaVersion"] != CATALOG_SCHEMA_VERSION:
+    if type(root["schemaVersion"]) is not int or root["schemaVersion"] != CATALOG_SCHEMA_VERSION:
         raise _error("Unsupported resource catalog schema")
     values = root["resources"]
     if not isinstance(values, list) or not values or len(values) > 32:
