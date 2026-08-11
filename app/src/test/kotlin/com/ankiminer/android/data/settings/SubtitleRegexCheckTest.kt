@@ -11,8 +11,8 @@ class SubtitleRegexCheckTest {
     fun ordinaryPatternsAndPresetsPass() {
         assertNull(SubtitleRegexCheck.rejection("""\([^)]*\)|（[^）]*）""", ""))
         assertNull(SubtitleRegexCheck.rejection("""^[^「『:：]+[:：]\s*""", ""))
-        // A bounded repeat inside a group is fine; only unbounded-inside-unbounded is rejected.
-        assertNull(SubtitleRegexCheck.rejection("(a{2,4})+", ""))
+        assertNull(SubtitleRegexCheck.rejection("(a{2})+", ""))
+        assertNull(SubtitleRegexCheck.rejection("^(cat|dog)+$", ""))
     }
 
     @Test
@@ -29,12 +29,50 @@ class SubtitleRegexCheckTest {
                 "b".repeat(SubtitleRegexCheck.MAX_REPLACEMENT_CHARS + 1),
             ),
         )
+        val astral = "𠮷"
+        assertNull(
+            SubtitleRegexCheck.rejection(
+                astral.repeat(SubtitleRegexCheck.MAX_PATTERN_CHARS),
+                astral.repeat(SubtitleRegexCheck.MAX_REPLACEMENT_CHARS),
+            ),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG,
+            SubtitleRegexCheck.rejection(
+                astral.repeat(SubtitleRegexCheck.MAX_PATTERN_CHARS + 1),
+                "",
+            ),
+        )
+        assertEquals(
+            InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG,
+            SubtitleRegexCheck.rejection(
+                "a",
+                astral.repeat(SubtitleRegexCheck.MAX_REPLACEMENT_CHARS + 1),
+            ),
+        )
     }
 
     @Test
     fun nestedUnboundedRepeatsAreRejected() {
         // The engine compiles without a wall-clock timeout, so these would hang the parser.
         listOf("(a+)+", "(a*)*$", "(ab+)*", "(a{2,})+").forEach { pattern ->
+            assertEquals(
+                pattern,
+                InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT,
+                SubtitleRegexCheck.rejection(pattern, ""),
+            )
+        }
+    }
+
+    @Test
+    fun repeatedVariableWidthGroupsAndOverlappingAlternationsAreRejected() {
+        listOf(
+            "(a{2,4})+",
+            "(a{2,4})*$",
+            "^(a|aa)+$",
+            "^(ab|abab)*$",
+            "^(?:xy|xyxy){1,}$",
+        ).forEach { pattern ->
             assertEquals(
                 pattern,
                 InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT,

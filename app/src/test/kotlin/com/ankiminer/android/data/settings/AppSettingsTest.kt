@@ -291,14 +291,20 @@ class AppSettingsTest {
         assertEquals(null, AppSettingsDraftParser.optionalInt(""))
         assertFalse(AppSettingsDraftParser.isOptionalDouble("."))
         assertFalse(AppSettingsDraftParser.isOptionalDouble("-"))
-        assertFalse(AppSettingsDraftParser.isOptionalDouble("1,5"))
+        assertTrue(AppSettingsDraftParser.isOptionalDouble("1,5", decimalSeparator = ','))
+        assertEquals(
+            1.5,
+            AppSettingsDraftParser.optionalDouble("1,5", decimalSeparator = ',')!!,
+            0.0,
+        )
+        // Persisted/draft values are rendered with Kotlin's invariant dot and remain editable on a
+        // comma-decimal locale after a reload.
+        assertTrue(AppSettingsDraftParser.isOptionalDouble("1.5", decimalSeparator = ','))
         assertFalse(AppSettingsDraftParser.isOptionalInt("1.5"))
         assertThrows(InvalidAppSettingException::class.java) {
             AppSettingsDraftParser.optionalDouble(".")
         }
-        assertThrows(InvalidAppSettingException::class.java) {
-            AppSettingsDraftParser.optionalDouble("1,5")
-        }
+        assertFalse(AppSettingsDraftParser.isOptionalDouble("1,5", decimalSeparator = '.'))
     }
 
     @Test

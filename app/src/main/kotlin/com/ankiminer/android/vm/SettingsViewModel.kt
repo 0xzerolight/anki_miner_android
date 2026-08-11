@@ -22,7 +22,9 @@ import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupCodec
 import com.ankiminer.android.data.settings.SettingsBackupException
 import com.ankiminer.android.data.settings.SettingsBackupFailure
+import com.ankiminer.android.data.settings.SettingsBackupWriter
 import com.ankiminer.android.data.settings.SettingsDocumentReader
+import com.ankiminer.android.data.settings.SettingsDocumentWriter
 import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.diagnostics.log.AppLog
@@ -118,7 +120,7 @@ private fun validateOptionalDouble(
 ): LocalizedStringResource? {
     if (value.isEmpty()) return null
     val parsed =
-        value.toDoubleOrNull()
+        AppSettingsDraftParser.doubleOrNull(value)
             ?: return LocalizedStringResource(R.string.b3_validation_numeric_incomplete)
     if (!parsed.isFinite()) {
         return LocalizedStringResource(rangeMessage ?: R.string.b3_validation_finite)
@@ -911,7 +913,9 @@ internal class SettingsViewModel(
     private val repository: AppSettingsRepository,
     private val resources: ResourceManager,
     private val documentReader: SettingsDocumentReader? = null,
-    private val documentWriter: ResourceDocumentWriter? = null,
+    documentWriter: ResourceDocumentWriter? = null,
+    private val backupWriter: SettingsBackupWriter? =
+        documentWriter?.let(::SettingsDocumentWriter),
     private val appVersion: String = "",
 ) : ViewModel() {
     private val settings: StateFlow<AppSettings?> =
@@ -1161,7 +1165,7 @@ internal class SettingsViewModel(
     }
 
     fun exportSettings(uri: String) {
-        val writer = documentWriter ?: return
+        val writer = backupWriter ?: return
         mutableBackupState.value = SettingsBackupState.Working
         viewModelScope.launch {
             try {
@@ -1174,11 +1178,15 @@ internal class SettingsViewModel(
                             repository.settings.first()
                         }
                     } ?: throw IOException("Current settings could not be persisted")
-                val document = SettingsBackupCodec.encode(current, appVersion)
+                val document =
+                    SettingsBackupCodec.encode(
+                        settings = current,
+                        appVersion = appVersion,
+                        resources = resources.state.value,
+                    )
                 val bytes = document.toByteArray(Charsets.UTF_8)
                 withContext(Dispatchers.IO) {
-                    writer.open(uri)?.use { stream -> stream.write(bytes) }
-                        ?: throw IOException("DocumentsProvider returned no stream for $uri")
+                    writer.write(uri, bytes)
                 }
                 mutableBackupState.value = SettingsBackupState.Exported
             } catch (failure: CancellationException) {
@@ -1226,7 +1234,9 @@ internal class SettingsViewModel(
             val accepted =
                 save(
                     transform = { current ->
-                        with(SettingsBackupCodec) { parsed.applyTo(current) }
+                        with(SettingsBackupCodec) {
+                            parsed.applyTo(current, resources.state.value)
+                        }
                             .also { report = it }
                             .settings
                     },

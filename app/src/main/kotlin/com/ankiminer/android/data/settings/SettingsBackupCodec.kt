@@ -7,6 +7,10 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.InstalledFrequencySource
+import com.ankiminer.android.data.resources.InstalledPitchSource
+import com.ankiminer.android.data.resources.ResourceManagerState
 import com.fasterxml.jackson.core.JsonFactory
 import com.fasterxml.jackson.core.JsonFactoryBuilder
 import com.fasterxml.jackson.core.JsonParseException
@@ -16,6 +20,7 @@ import com.fasterxml.jackson.core.StreamReadConstraints
 import com.fasterxml.jackson.core.exc.StreamConstraintsException
 import com.fasterxml.jackson.core.json.JsonReadFeature
 import java.io.StringWriter
+import java.security.MessageDigest
 
 internal enum class SettingsBackupFailure {
     NOT_A_BACKUP,
@@ -28,6 +33,14 @@ internal class SettingsBackupException(val reason: SettingsBackupFailure) : Exce
 internal data class ParsedSettingsBackup(
     val values: Map<String, Any>,
     val ignoredKeys: List<String>,
+    val formatVersion: Int,
+    val resourceChains: Map<String, List<PortableResourceSelection>>,
+)
+
+internal data class PortableResourceSelection(
+    val resourceId: String,
+    val enabled: Boolean,
+    val matchKey: String?,
 )
 
 internal data class AppliedSettingsBackup(
@@ -39,7 +52,8 @@ internal data class AppliedSettingsBackup(
 
 internal object SettingsBackupCodec {
     const val MAX_DOCUMENT_BYTES = 512 * 1024
-    private const val BACKUP_FORMAT_VERSION = 2
+    private const val BACKUP_FORMAT_VERSION = 3
+    private const val LEGACY_BACKUP_FORMAT_VERSION = 2
 
     /**
      * Store-local metadata never copied between devices. `setup_wizard_seen` is first-run state;
@@ -119,6 +133,14 @@ internal object SettingsBackupCodec {
             "enabled_wordsets_v2",
         )
 
+    private val resourceChainKeyNames =
+        linkedSetOf(
+            "dictionary_sources_v1",
+            "frequency_sources_v1",
+            "pitch_sources_v1",
+            "audio_packs_v1",
+        )
+
     val portableKeyNames: Set<String> =
         booleanKeyNames + intKeyNames + doubleKeyNames + stringKeyNames
 
@@ -157,14 +179,20 @@ internal object SettingsBackupCodec {
         val isolated: DecodeAttempt,
     )
 
-    fun encode(settings: AppSettings, appVersion: String): String {
+    fun encode(
+        settings: AppSettings,
+        appVersion: String,
+        resources: ResourceManagerState? = null,
+    ): String {
         val preferences =
             DataStoreAppSettingsRepository.encodePreferences(settings, emptyPreferences())
+        val formatVersion =
+            if (resources == null) LEGACY_BACKUP_FORMAT_VERSION else BACKUP_FORMAT_VERSION
         val output = StringWriter()
         factory.createGenerator(output).use { generator ->
             generator.useDefaultPrettyPrinter()
             generator.writeStartObject()
-            generator.writeNumberField("ankiMinerAndroidSettings", BACKUP_FORMAT_VERSION)
+            generator.writeNumberField("ankiMinerAndroidSettings", formatVersion)
             generator.writeStringField("appVersion", appVersion)
             generator.writeNumberField(
                 "schemaVersion",
@@ -183,6 +211,25 @@ internal object SettingsBackupCodec {
                 }
             }
             generator.writeEndObject()
+            resources?.let { inventory ->
+                generator.writeObjectFieldStart("resourceChains")
+                portableResourceChains(settings, inventory).forEach { (name, selections) ->
+                    generator.writeArrayFieldStart(name)
+                    selections.forEach { selection ->
+                        generator.writeStartObject()
+                        generator.writeStringField("resourceId", selection.resourceId)
+                        generator.writeBooleanField("enabled", selection.enabled)
+                        if (selection.matchKey == null) {
+                            generator.writeNullField("matchKey")
+                        } else {
+                            generator.writeStringField("matchKey", selection.matchKey)
+                        }
+                        generator.writeEndObject()
+                    }
+                    generator.writeEndArray()
+                }
+                generator.writeEndObject()
+            }
             generator.writeEndObject()
         }
         return output.toString()
@@ -207,18 +254,38 @@ internal object SettingsBackupCodec {
         }
     }
 
-    fun ParsedSettingsBackup.applyTo(current: AppSettings): AppliedSettingsBackup {
+    fun ParsedSettingsBackup.applyTo(
+        current: AppSettings,
+        resources: ResourceManagerState? = null,
+    ): AppliedSettingsBackup {
         val base =
             DataStoreAppSettingsRepository.encodePreferences(current, emptyPreferences())
+        val effectiveValues = values.toMutableMap()
+        if (formatVersion >= BACKUP_FORMAT_VERSION) {
+            if (resources == null) {
+                resourceChainKeyNames.forEach { name -> effectiveValues[name] = RejectedValue }
+            } else {
+                val installed = portableResourceInventory(resources)
+                resourceChainKeyNames.forEach { name ->
+                    val resolved =
+                        resolvePortableResourceChain(
+                            persisted = resourceChains.getValue(name),
+                            installed = installed.getValue(name),
+                        )
+                    effectiveValues[name] =
+                        ResourceSelectionPreferenceCodec.encode(resolved) ?: ClearedValue
+                }
+            }
+        }
         val rejectedNames =
-            values.keys
-                .filterTo(linkedSetOf()) { name -> values.getValue(name) === RejectedValue }
+            effectiveValues.keys
+                .filterTo(linkedSetOf()) { name -> effectiveValues.getValue(name) === RejectedValue }
         val activeNames =
-            values.keys
-                .filterTo(mutableListOf()) { name -> values.getValue(name) !== RejectedValue }
+            effectiveValues.keys
+                .filterTo(mutableListOf()) { name -> effectiveValues.getValue(name) !== RejectedValue }
 
         while (true) {
-            val attempt = decodeCandidate(base, values, activeNames)
+            val attempt = decodeCandidate(base, effectiveValues, activeNames)
             val directInvalidNames = activeNames.filter { it in attempt.invalidKeyNames }
             if (directInvalidNames.isNotEmpty()) {
                 rejectedNames += directInvalidNames
@@ -229,15 +296,15 @@ internal object SettingsBackupCodec {
                 val settings =
                     attempt.settings
                         ?: throw checkNotNull(attempt.failure)
-                val rejectedKeys = values.keys.filter { it in rejectedNames }
+                val rejectedKeys = effectiveValues.keys.filter { it in rejectedNames }
                 return AppliedSettingsBackup(
                     settings = settings,
-                    appliedCount = values.size - rejectedKeys.size,
+                    appliedCount = effectiveValues.size - rejectedKeys.size,
                     ignoredKeys = ignoredKeys,
                     rejectedKeys = rejectedKeys,
                 )
             }
-            val rejectedName = selectConflictKey(base, values, activeNames, attempt)
+            val rejectedName = selectConflictKey(base, effectiveValues, activeNames, attempt)
             rejectedNames += rejectedName
             activeNames -= rejectedName
         }
@@ -250,8 +317,11 @@ internal object SettingsBackupCodec {
         var backupVersion: Int? = null
         var settingsIsObject = false
         var settingsSeen = false
+        var resourceChainsIsObject = false
+        var resourceChainsSeen = false
         val values = linkedMapOf<String, Any>()
         val ignoredKeys = mutableListOf<String>()
+        val resourceChains = linkedMapOf<String, List<PortableResourceSelection>>()
         while (parser.nextToken() != JsonToken.END_OBJECT) {
             val name = parser.currentName()
             parser.nextToken()
@@ -274,6 +344,15 @@ internal object SettingsBackupCodec {
                         parser.skipChildren()
                     }
                 }
+                "resourceChains" -> {
+                    resourceChainsSeen = true
+                    resourceChainsIsObject = parser.currentToken() == JsonToken.START_OBJECT
+                    if (resourceChainsIsObject) {
+                        readResourceChains(parser, resourceChains)
+                    } else {
+                        parser.skipChildren()
+                    }
+                }
                 else -> parser.skipChildren()
             }
         }
@@ -284,12 +363,110 @@ internal object SettingsBackupCodec {
         if (version == null || !settingsSeen || !settingsIsObject) {
             throw SettingsBackupException(SettingsBackupFailure.NOT_A_BACKUP)
         }
+        if (
+            version >= BACKUP_FORMAT_VERSION &&
+                (
+                    !resourceChainsSeen ||
+                        !resourceChainsIsObject ||
+                        resourceChains.keys != resourceChainKeyNames ||
+                        resourceChainKeyNames.any { it !in values }
+                )
+        ) {
+            throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+        }
         if (version < 2) {
             values.keys
                 .filter { name -> values.getValue(name) === ClearedValue }
                 .forEach { name -> values[name] = RejectedValue }
         }
-        return ParsedSettingsBackup(values = values, ignoredKeys = ignoredKeys)
+        return ParsedSettingsBackup(
+            values = values,
+            ignoredKeys = ignoredKeys,
+            formatVersion = version,
+            resourceChains = resourceChains,
+        )
+    }
+
+    private fun readResourceChains(
+        parser: JsonParser,
+        chains: MutableMap<String, List<PortableResourceSelection>>,
+    ) {
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            val name = parser.currentName()
+            parser.nextToken()
+            if (
+                name !in resourceChainKeyNames ||
+                    parser.currentToken() != JsonToken.START_ARRAY ||
+                    chains.containsKey(name)
+            ) {
+                throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+            }
+            chains[name] = readResourceChain(parser)
+        }
+    }
+
+    private fun readResourceChain(parser: JsonParser): List<PortableResourceSelection> {
+        val selections = mutableListOf<PortableResourceSelection>()
+        val ids = mutableSetOf<String>()
+        while (parser.nextToken() != JsonToken.END_ARRAY) {
+            if (
+                parser.currentToken() != JsonToken.START_OBJECT ||
+                    selections.size >= MAX_CHAIN_ENTRIES
+            ) {
+                throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+            }
+            var resourceId: String? = null
+            var enabled: Boolean? = null
+            var matchKeySeen = false
+            var matchKey: String? = null
+            val fields = mutableSetOf<String>()
+            while (parser.nextToken() != JsonToken.END_OBJECT) {
+                val name = parser.currentName()
+                parser.nextToken()
+                if (!fields.add(name)) throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+                when (name) {
+                    "resourceId" ->
+                        if (parser.currentToken() == JsonToken.VALUE_STRING) {
+                            resourceId = parser.text
+                        } else {
+                            throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+                        }
+                    "enabled" ->
+                        if (
+                            parser.currentToken() in
+                            setOf(JsonToken.VALUE_TRUE, JsonToken.VALUE_FALSE)
+                        ) {
+                            enabled = parser.booleanValue
+                        } else {
+                            throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+                        }
+                    "matchKey" -> {
+                        matchKeySeen = true
+                        matchKey =
+                            when (parser.currentToken()) {
+                                JsonToken.VALUE_NULL -> null
+                                JsonToken.VALUE_STRING -> parser.text
+                                else -> throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+                            }
+                    }
+                    else -> throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+                }
+            }
+            val id = resourceId
+            val active = enabled
+            if (
+                id == null ||
+                    !RESOURCE_ID.matches(id) ||
+                    !ids.add(id) ||
+                    active == null ||
+                    !matchKeySeen ||
+                    (matchKey != null && !MATCH_KEY.matches(checkNotNull(matchKey)))
+            ) {
+                throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+            }
+            selections += PortableResourceSelection(id, active, matchKey)
+        }
+        return selections
     }
 
     private fun readSettings(
@@ -326,6 +503,194 @@ internal object SettingsBackupCodec {
                 RejectedValue
             }
         }
+
+    private data class ResourceInventoryEntry(
+        val resourceId: String,
+        val matchKey: String,
+    )
+
+    private fun portableResourceChains(
+        settings: AppSettings,
+        resources: ResourceManagerState,
+    ): Map<String, List<PortableResourceSelection>> {
+        val inventory = portableResourceInventory(resources)
+        return linkedMapOf(
+            "dictionary_sources_v1" to
+                portableSelections(
+                    settings.dictionarySources,
+                    inventory.getValue("dictionary_sources_v1"),
+                ),
+            "frequency_sources_v1" to
+                portableSelections(
+                    settings.frequencySources,
+                    inventory.getValue("frequency_sources_v1"),
+                ),
+            "pitch_sources_v1" to
+                portableSelections(
+                    settings.pitchSources,
+                    inventory.getValue("pitch_sources_v1"),
+                ),
+            "audio_packs_v1" to
+                portableSelections(
+                    settings.audioPacks,
+                    inventory.getValue("audio_packs_v1"),
+                ),
+        )
+    }
+
+    private fun portableSelections(
+        persisted: List<ResourceChainSelection>,
+        installed: List<ResourceInventoryEntry>,
+    ): List<PortableResourceSelection> {
+        val matchKeys = installed.associate { it.resourceId to it.matchKey }
+        return persisted.map { selection ->
+            PortableResourceSelection(
+                resourceId = selection.resourceId,
+                enabled = selection.enabled,
+                matchKey = matchKeys[selection.resourceId],
+            )
+        }
+    }
+
+    private fun portableResourceInventory(
+        resources: ResourceManagerState,
+    ): Map<String, List<ResourceInventoryEntry>> =
+        linkedMapOf(
+            "dictionary_sources_v1" to
+                resources.dictionaries
+                    .filter { it.isUsable }
+                    .map { dictionary ->
+                        ResourceInventoryEntry(
+                            resourceId = dictionary.slotId,
+                            matchKey = dictionaryMatchKey(dictionary),
+                        )
+                    },
+            "frequency_sources_v1" to
+                resources.frequencySources
+                    .filter { it.schemaOk && it.entryCount > 0 }
+                    .map { frequency ->
+                        ResourceInventoryEntry(
+                            resourceId = frequency.sourceId,
+                            matchKey = frequencyMatchKey(frequency),
+                        )
+                    },
+            "pitch_sources_v1" to
+                resources.pitchSources
+                    .filter { it.schemaOk && it.entryCount > 0 }
+                    .map { pitch ->
+                        ResourceInventoryEntry(
+                            resourceId = pitch.sourceId,
+                            matchKey = pitchMatchKey(pitch),
+                        )
+                    },
+            "audio_packs_v1" to
+                resources.audioPacks
+                    .filter { it.contentAvailable && it.entryCount > 0 }
+                    .map { pack ->
+                        ResourceInventoryEntry(
+                            resourceId = pack.packId,
+                            matchKey = semanticMatchKey("audio-pack", pack.packId),
+                        )
+                    },
+        )
+
+    private fun dictionaryMatchKey(dictionary: InstalledDictionary): String =
+        dictionary.catalogResourceId?.let { resourceId ->
+            semanticMatchKey("dictionary-catalog", resourceId)
+        } ?: semanticMatchKey(
+            "dictionary-custom",
+            dictionary.sourceName,
+            dictionary.sourceRevision,
+            dictionary.format,
+            dictionary.entryCount.toString(),
+            dictionary.embeddedAttribution.entries
+                .sortedBy { (key, _) -> key }
+                .joinToString(separator = "\u0000") { (key, value) -> "$key\u0000$value" },
+        )
+
+    /** Filename-derived ids and display names may change; content-shape fields remain portable. */
+    private fun frequencyMatchKey(source: InstalledFrequencySource): String =
+        semanticMatchKey(
+            "frequency",
+            source.format,
+            source.entryCount.toString(),
+            source.isCategorical.toString(),
+        )
+
+    /** Filename-derived ids and display names may change; revision and content shape do not. */
+    private fun pitchMatchKey(source: InstalledPitchSource): String =
+        semanticMatchKey(
+            "pitch",
+            source.sourceRevision,
+            source.format,
+            source.entryCount.toString(),
+        )
+
+    private fun semanticMatchKey(
+        kind: String,
+        vararg parts: String,
+    ): String {
+        val canonical =
+            buildString {
+                parts.forEach { part ->
+                    val bytes = part.toByteArray(Charsets.UTF_8)
+                    append(bytes.size)
+                    append(':')
+                    append(part)
+                }
+            }
+        val digest =
+            MessageDigest.getInstance("SHA-256")
+                .digest(canonical.toByteArray(Charsets.UTF_8))
+                .joinToString(separator = "") { byte ->
+                    val unsigned = byte.toInt() and 0xff
+                    buildString(2) {
+                        append(HEX_DIGITS[unsigned ushr 4])
+                        append(HEX_DIGITS[unsigned and 0x0f])
+                    }
+                }
+        return "$kind:$digest"
+    }
+
+    /**
+     * Resolve only unique semantic matches. Ambiguous candidates remain in inventory order and
+     * disabled; a raw slot hint with no semantic match may identify an unrelated install, so it is
+     * retained only disabled. Newly installed resources append enabled.
+     */
+    private fun resolvePortableResourceChain(
+        persisted: List<PortableResourceSelection>,
+        installed: List<ResourceInventoryEntry>,
+    ): List<ResourceChainSelection> {
+        val unused = installed.toMutableList()
+        val resolved = mutableListOf<ResourceChainSelection>()
+        persisted.forEach { selection ->
+            val matches =
+                selection.matchKey?.let { matchKey ->
+                    unused.filter { it.matchKey == matchKey }
+                }.orEmpty()
+            when (matches.size) {
+                1 -> {
+                    val match = matches.single()
+                    resolved += ResourceChainSelection(match.resourceId, selection.enabled)
+                    unused.remove(match)
+                }
+                0 -> {
+                    unused.firstOrNull { it.resourceId == selection.resourceId }?.let { hint ->
+                        resolved += ResourceChainSelection(hint.resourceId, enabled = false)
+                        unused.remove(hint)
+                    }
+                }
+                else -> {
+                    matches.forEach { match ->
+                        resolved += ResourceChainSelection(match.resourceId, enabled = false)
+                        unused.remove(match)
+                    }
+                }
+            }
+        }
+        resolved += unused.map { entry -> ResourceChainSelection(entry.resourceId, enabled = true) }
+        return resolved
+    }
 
     private fun decodeCandidate(
         base: Preferences,
@@ -394,4 +759,9 @@ internal object SettingsBackupCodec {
     ) {
         if (value === ClearedValue) remove(key) else this[key] = value as T
     }
+
+    private val RESOURCE_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+    private val MATCH_KEY = Regex("[a-z-]+:[0-9a-f]{64}")
+    private const val MAX_CHAIN_ENTRIES = 128
+    private val HEX_DIGITS = "0123456789abcdef".toCharArray()
 }
