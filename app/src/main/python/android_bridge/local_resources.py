@@ -1433,10 +1433,7 @@ def _parse_known_words_copy(source: Path, source_format: str, operation: object,
 
     parsed = replace(
         parsed,
-        words=frozenset(
-            standardize_kanji_variants(normalize_for_tokenization(word))
-            for word in parsed.words
-        ),
+        words=frozenset(standardize_kanji_variants(normalize_for_tokenization(word)) for word in parsed.words),
     )
     if len(parsed.words) > _MAX_KNOWN_WORDS or any(
         not word

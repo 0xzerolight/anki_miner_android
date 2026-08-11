@@ -3561,9 +3561,7 @@ def test_known_words_destructive_mutation_rechecks_cancellation_after_database_i
 
     with pytest.raises(BridgeProtocolError) as cancelled:
         if action == "remove":
-            local_resources.remove_known_words(
-                {"operationId": operation_id, "words": ["猫"]}
-            )
+            local_resources.remove_known_words({"operationId": operation_id, "words": ["猫"]})
         else:
             local_resources.reset_known_words(
                 {
