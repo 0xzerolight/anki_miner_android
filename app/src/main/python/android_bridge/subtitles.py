@@ -131,6 +131,7 @@ def _preflight_cue_budgets(path: Path) -> str:
                 _scan_cue_budgets(path, encoding)
                 return encoding
             except (LookupError, UnicodeDecodeError):
+                # instrumentation: intentionally silent — rejected detector encoding preserves the original UTF-8 failure
                 pass
         raise utf8_failure from None
 

@@ -303,6 +303,13 @@ internal class JournalBackedNoteMutationService(
                 // by an ordinary failed row.
                 throw failure
             } catch (failure: RuntimeException) {
+                AppLog.w(
+                    LogComponent.JOURNAL,
+                    "note.materialize",
+                    failure,
+                    "outcome" to "reconcile",
+                    "note_ordinal" to index,
+                )
                 // Everything else that reaches here rolled back: materialization runs entirely
                 // inside one write transaction that commits only on the non-throwing path. A disk
                 // -full or locked database on one note is a row failure, not a run failure —
@@ -470,6 +477,14 @@ internal class JournalBackedNoteMutationService(
                     "providerEntry=true;noteId=${receipt.noteId};receipt=canonical",
                 )
             } catch (failure: RuntimeException) {
+                AppLog.w(
+                    LogComponent.JOURNAL,
+                    "note.receipt.commit",
+                    failure,
+                    "outcome" to "reconcile",
+                    "entry_id" to noteChildId,
+                    "note_ordinal" to index,
+                )
                 val parent =
                     runCatching { journal.parent(durableRequest.key) }
                         .onFailure { lookupFailure ->
@@ -570,6 +585,14 @@ internal class JournalBackedNoteMutationService(
             // This transaction is the sole attachment-verification and CREATED-row boundary.
             journal.completeVerified(durableRequest.key, index, noteId, "noteId=$noteId;postcheck=exact")
         } catch (failure: RuntimeException) {
+            AppLog.w(
+                LogComponent.JOURNAL,
+                "note.complete",
+                failure,
+                "outcome" to "reconcile",
+                "note_id" to noteId,
+                "note_ordinal" to index,
+            )
             val parent =
                 runCatching { journal.parent(durableRequest.key) }
                     .onFailure { lookupFailure ->

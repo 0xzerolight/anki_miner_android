@@ -27,7 +27,7 @@ ALLOWLIST_PATH = Path("tools/instrumentation/bare_catch_allowlist.tsv")
 CONTRACT_PATH = Path("app/src/test/resources/contracts/mining_protocol_v1.json")
 FAULTS_PATH = Path("app/src/main/python/android_bridge/faults.py")
 SCHEMA_ROOT = Path("app/src/main/python/android_bridge/schemas")
-PINNED_BARE_CATCH_COUNT = 176
+PINNED_BARE_CATCH_COUNT = 173
 EXPECTED_FAULT_PATTERN = r"^f[0-9a-f]{8}$"
 EXPECTED_FAULT_CODECS = {
     "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceBridgeCodec.kt",
