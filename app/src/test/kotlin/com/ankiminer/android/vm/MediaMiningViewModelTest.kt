@@ -1270,6 +1270,44 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun timingPreviewDoesNotOpenWhileAReplacementTranscriptIsResolving() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ControlledSafBroker()
+            val openedSubtitles = mutableListOf<SafDocument>()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    timingPreviewOpener =
+                        TimingPreviewOpener { subtitle ->
+                            openedSubtitles += subtitle
+                            Result.success(TimingPreviewSession(emptyList()) {})
+                        },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                )
+            viewModel.onVideoPicked("content://test/video.mkv")
+            viewModel.onSubtitlePicked("content://test/old.srt")
+            runCurrent()
+            broker.succeed("content://test/video.mkv", "video.mkv")
+            broker.succeed("content://test/old.srt", "old.srt")
+            runCurrent()
+            assertEquals("old.srt", viewModel.uiState.value.subtitle.document?.displayName)
+
+            viewModel.onSubtitlePicked("content://test/replacement.srt")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.subtitle.isResolving)
+
+            viewModel.openTimingPreview()
+            runCurrent()
+
+            assertTrue(openedSubtitles.isEmpty())
+            assertNull(viewModel.timingPreviewState.value)
+
+            broker.succeed("content://test/replacement.srt", "replacement.srt")
+            advanceUntilIdle()
+        }
+
+    @Test
     fun applyingTimingPreviewWritesDraftClearsOverlayAndClosesSession() =
         runTest(mainDispatcherRule.dispatcher) {
             var closeCount = 0

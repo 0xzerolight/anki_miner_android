@@ -41,7 +41,10 @@ import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
 import com.ankiminer.android.mining.NotificationPermissionReadiness
 import com.ankiminer.android.localization.testStringResourceResolver
+import com.ankiminer.android.media.SafAccessException
+import com.ankiminer.android.media.SafAccessFailureKind
 import java.io.IOException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,8 +52,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -163,6 +168,118 @@ class SetupViewModelTest {
             )
             assertEquals(listOf("frequency"), resources.frequencySourceNames)
             assertEquals(listOf(FrequencySourceFormat.TSV), resources.frequencyFormats)
+        }
+
+    @Test
+    fun `resource picker retention failures publish actionable failures for every picker`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val pickers =
+                listOf<Pair<ResourceFailureOrigin, (SetupViewModel, String) -> Unit>>(
+                    ResourceFailureOrigin.CUSTOM_DICTIONARY to
+                        { model, uri -> model.onCustomDictionaryPicked(uri) },
+                    ResourceFailureOrigin.FREQUENCY to
+                        { model, uri -> model.onFrequencyPicked(uri) },
+                    ResourceFailureOrigin.PITCH to
+                        { model, uri -> model.onPitchPicked(uri) },
+                    ResourceFailureOrigin.KNOWN_WORDS to
+                        { model, uri -> model.onKnownWordsPicked(uri) },
+                )
+            val failures =
+                listOf(
+                    Triple(
+                        SafAccessFailureKind.PERMISSION_REVOKED,
+                        "saf_permission_not_granted",
+                        R.string.resource_failure_saf_permission,
+                    ),
+                    Triple(
+                        SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                        "saf_provider_unavailable",
+                        R.string.resource_failure_saf_provider,
+                    ),
+                    Triple(
+                        SafAccessFailureKind.INVALID_URI,
+                        "saf_uri_invalid",
+                        R.string.resource_failure_saf_uri,
+                    ),
+                )
+
+            pickers.forEachIndexed { pickerIndex, (origin, pick) ->
+                failures.forEachIndexed { failureIndex, (kind, code, messageResource) ->
+                    val resources =
+                        FakeResourceManager().apply {
+                            retainFailure = SafAccessException(kind, "injected")
+                        }
+                    val model =
+                        viewModel(
+                            FakeSettingsRepository(AppSettings()),
+                            FakeAnkiSetupManager(emptyList()),
+                            resources,
+                        )
+                    advanceUntilIdle()
+
+                    pick(model, "content://failure-$pickerIndex-$failureIndex")
+                    advanceUntilIdle()
+
+                    val failure = requireNotNull(model.uiState.value.failure)
+                    assertEquals(code, failure.code)
+                    assertEquals("resource:$messageResource", failure.message)
+                    assertEquals(origin, failure.origin)
+                    assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+                    assertEquals(
+                        if (origin == ResourceFailureOrigin.KNOWN_WORDS) {
+                            KnownWordsFailureOperation.PREVIEW
+                        } else {
+                            null
+                        },
+                        failure.knownWordsOperation,
+                    )
+                }
+            }
+        }
+
+    @Test
+    fun `a picker retention in flight owns the shared pending slot`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val frequencyRetentionStarted = CompletableDeferred<Unit>()
+            val allowFrequencyRetention = CompletableDeferred<Unit>()
+            val resources =
+                FakeResourceManager().apply {
+                    retainGate = { uri ->
+                        if (uri == "content://frequency.csv") {
+                            frequencyRetentionStarted.complete(Unit)
+                            allowFrequencyRetention.await()
+                        }
+                    }
+                    setImportDocument("content://frequency.csv", "Frequency.csv")
+                    setImportDocument("content://pitch.csv", "Pitch.csv")
+                }
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginFrequencyPicker())
+            model.onFrequencyPicked("content://frequency.csv")
+            runCurrent()
+            assertTrue(frequencyRetentionStarted.isCompleted)
+
+            assertFalse(model.beginPitchPicker())
+            model.onPitchPicked("content://pitch.csv")
+            runCurrent()
+
+            assertEquals(listOf("content://frequency.csv"), resources.retainedResourceImports)
+            allowFrequencyRetention.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://frequency.csv", "frequency", false)),
+                resources.frequencyImports,
+            )
+            assertTrue(resources.pitchImports.isEmpty())
+            assertTrue(resources.releasedResourceImports.isEmpty())
         }
 
     @Test
@@ -1168,6 +1285,55 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `multi-pack choice survives recreation without discarding or restaging the archive`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val choices =
+                listOf(
+                    AudioPackCandidate("jpod", "user_files/jpod_files", "ajt"),
+                    AudioPackCandidate("nhk16", "user_files/nhk16_files", "nhk16"),
+                )
+            val firstResources = FakeResourceManager().apply { audioPacksInArchive = choices }
+            val first =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    firstResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+
+            assertTrue(first.beginAudioPackPicker())
+            first.onAudioPackPicked("content://collection.tar.xz")
+            advanceUntilIdle()
+            assertEquals(choices, first.uiState.value.audioPackChoices)
+
+            val restoredResources = FakeResourceManager().apply { audioPacksInArchive = emptyList() }
+            val restored =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    restoredResources,
+                    savedState,
+                )
+            advanceUntilIdle()
+
+            assertEquals(choices, restored.uiState.value.audioPackChoices)
+            assertTrue(restoredResources.audioPreflights.isEmpty())
+            assertEquals(0, restoredResources.audioPreflightDiscardCount)
+
+            restored.chooseAudioPack("nhk16")
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://collection.tar.xz", "nhk16", false)),
+                restoredResources.audioImports,
+            )
+            assertEquals(listOf("nhk16"), restoredResources.audioImportFormats)
+            assertTrue(restoredResources.audioPreflights.isEmpty())
+        }
+
+    @Test
     fun `dismissing the pack choice imports nothing and drops the retained archive`() =
         runTest {
             val resources =
@@ -1559,9 +1725,14 @@ class SetupViewModelTest {
         val audioPreflights = mutableListOf<String>()
         val audioImports = mutableListOf<Triple<String, String, Boolean>>()
         val audioImportPaths = mutableListOf<String>()
+        val audioImportFormats = mutableListOf<String>()
         var audioPacksInArchive = listOf(AudioPackCandidate("jpod", "jpod_files", "ajt"))
+        var audioPreflightDiscardCount = 0
+            private set
         val retainedResourceImports = mutableListOf<String>()
         val releasedResourceImports = mutableListOf<String>()
+        var retainFailure: SafAccessException? = null
+        var retainGate: suspend (String) -> Unit = {}
         val deletedResources = mutableListOf<Pair<InstalledResourceKind, String>>()
         private val importDocuments = mutableMapOf<String, ImportDocument>()
         private val mutableState =
@@ -1621,6 +1792,8 @@ class SetupViewModelTest {
 
         override suspend fun retainResourceImport(uri: String): RetainedResourceImport {
             retainedResourceImports += uri
+            retainGate(uri)
+            retainFailure?.let { throw it }
             val document =
                 importDocuments[uri]
                     ?: ImportDocument(
@@ -1683,9 +1856,12 @@ class SetupViewModelTest {
         override suspend fun importAudioPack(uri: String, pack: AudioPackCandidate, replace: Boolean) {
             audioImports += Triple(uri, pack.packId, replace)
             audioImportPaths += pack.packPath
+            audioImportFormats += pack.format
         }
 
-        override suspend fun discardAudioPackPreflight() = Unit
+        override suspend fun discardAudioPackPreflight() {
+            audioPreflightDiscardCount += 1
+        }
 
         override suspend fun importKnownWords(uri: String, format: KnownWordsSourceFormat) {
             importCalls += uri to format
