@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 _MAX_REQUEST_UTF8_BYTES = 32 * 1024
 _MAX_RESULT_UTF8_BYTES = 8 * 1024
 _MAX_SENTENCE_UTF8_BYTES = 16 * 1024
+_MAX_SENTENCE_UTF16_UNITS = 4_000
 _MAX_PATH_UTF8_BYTES = 4_096
 _MAX_AUDIO_BYTES = 16 * 1024 * 1024
 _CACHE_DIRECTORY = "sentence-audio-v1"
@@ -87,6 +88,7 @@ class AndroidSentenceAudioFetcher:
                 not isinstance(sentence, str)
                 or not sentence
                 or "\x00" in sentence
+                or len(sentence.encode("utf-16-le")) // 2 > _MAX_SENTENCE_UTF16_UNITS
                 or _utf8_size(sentence, context="sentence") > _MAX_SENTENCE_UTF8_BYTES
             ):
                 return None

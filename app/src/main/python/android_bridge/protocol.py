@@ -24,6 +24,9 @@ _MAX_JSON_NUMBER_TOKEN_CHARS = ANKI_LIMITS_V1["wire"]["numericTokenMaxChars"]
 JSON_INTEGER_MIN = -(1 << 63)
 JSON_INTEGER_MAX = (1 << 63) - 1
 
+_DICTIONARY_TERM_MAX_UTF8_BYTES = 256
+_SENTENCE_AUDIO_MAX_UTF16_UNITS = 4_000
+
 # ``json.loads`` accepts escaped lone UTF-16 surrogates and returns them in a
 # Python ``str``. They cannot be encoded as strict UTF-8, so validate every
 # decoded key and value before any operation-specific parser sees the payload.
@@ -189,6 +192,81 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
     raise BridgeProtocolError("unsupported_value", f"Unsupported bridge value: {type(value).__name__}")
 
 
+def _utf8_size(value: str) -> int:
+    return len(value.encode("utf-8"))
+
+
+def _utf16_units(value: str) -> int:
+    return len(value.encode("utf-16-le")) // 2
+
+
+def validate_message_semantics(message_type: str, payload: Mapping[str, Any]) -> None:
+    """Enforce bridge invariants Draft 2020-12 cannot express."""
+
+    if message_type == "progress.stage":
+        index = normalize_integral_json_number(payload.get("index"))
+        total = normalize_integral_json_number(payload.get("total"))
+        if index is None or total is None or not 1 <= index <= total <= 32:
+            raise BridgeProtocolError(
+                "invalid_progress_stage",
+                "progress.stage must satisfy 1 <= index <= total <= 32",
+            )
+        return
+
+    if message_type == "dictionary.define":
+        term = payload.get("term")
+        fallback = payload.get("fallbackTerm")
+        if not isinstance(term, str) or not term.strip() or _utf8_size(term) > _DICTIONARY_TERM_MAX_UTF8_BYTES:
+            raise BridgeProtocolError(
+                "invalid_definition_request",
+                "term must be non-blank and at most 256 UTF-8 bytes",
+            )
+        if fallback is not None and (
+            not isinstance(fallback, str) or _utf8_size(fallback) > _DICTIONARY_TERM_MAX_UTF8_BYTES
+        ):
+            raise BridgeProtocolError(
+                "invalid_definition_request",
+                "fallbackTerm must be null or at most 256 UTF-8 bytes",
+            )
+        return
+
+    if message_type == "tts.sentence.request":
+        sentence = payload.get("sentence")
+        if (
+            not isinstance(sentence, str)
+            or not sentence
+            or "\x00" in sentence
+            or _utf16_units(sentence) > _SENTENCE_AUDIO_MAX_UTF16_UNITS
+        ):
+            raise BridgeProtocolError(
+                "invalid_tts_request",
+                "sentence must contain at most 4000 UTF-16 code units",
+            )
+        return
+
+    if message_type == "subtitle.cues.result":
+        cues = payload.get("cues")
+        if not isinstance(cues, list):
+            raise BridgeProtocolError("invalid_subtitle_cues_result", "cues must be an array")
+        for cue in cues:
+            if not isinstance(cue, Mapping):
+                raise BridgeProtocolError("invalid_subtitle_cues_result", "subtitle cue must be an object")
+            start = cue.get("start")
+            end = cue.get("end")
+            if (
+                type(start) not in (int, float)
+                or type(end) not in (int, float)
+                or not math.isfinite(start)
+                or not math.isfinite(end)
+                or start < 0
+                or end < start
+            ):
+                raise BridgeProtocolError(
+                    "invalid_subtitle_cues_result",
+                    "subtitle cue times must satisfy end >= start >= 0",
+                )
+
+
 def encode_message(message_type: str, payload: Mapping[str, Any]) -> str:
     """Encode a canonical v1 bridge envelope."""
 
@@ -197,10 +275,12 @@ def encode_message(message_type: str, payload: Mapping[str, Any]) -> str:
     if not isinstance(payload, Mapping):
         raise BridgeProtocolError("invalid_payload", "Bridge payload must be a JSON object")
 
+    converted_payload = to_json_value(payload)
+    validate_message_semantics(message_type, converted_payload)
     envelope = {
         "schemaVersion": BRIDGE_SCHEMA_VERSION,
         "type": message_type,
-        "payload": to_json_value(payload),
+        "payload": converted_payload,
     }
     try:
         return json.dumps(envelope, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
@@ -385,6 +465,7 @@ def decode_envelope(raw: str, *, expected_type: str | None = None) -> DecodedMes
     payload = envelope["payload"]
     if not isinstance(payload, dict):
         raise BridgeProtocolError("invalid_payload", "Bridge payload must be a JSON object")
+    validate_message_semantics(message_type, payload)
     return DecodedMessage(message_type=message_type, payload=payload)
 
 

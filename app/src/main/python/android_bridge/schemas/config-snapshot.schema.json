@@ -150,7 +150,12 @@
         "subtitle_offset": {"type": "number"},
         "allowed_pos": {"type": "array", "items": {"type": "string"}},
         "excluded_subtypes": {"type": "array", "items": {"type": "string"}},
-        "excluded_wordsets": {"type": "array", "items": {"type": "string"}},
+        "excluded_wordsets": {
+          "type": "array",
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {"enum": ["surnames", "given-names", "place-names", "org-product"]}
+        },
         "dictionary_chain": {
           "type": "array",
           "uniqueItems": true,

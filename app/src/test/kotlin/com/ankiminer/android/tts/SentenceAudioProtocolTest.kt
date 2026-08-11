@@ -89,6 +89,17 @@ class SentenceAudioProtocolTest {
         }
     }
 
+    @Test
+    fun strictDecoderCountsSupplementaryCharactersAsTwoUtf16Units() {
+        val atLimit = REQUEST.replace("猫だ。", "\uD83D\uDE00".repeat(2_000))
+        val overLimit = REQUEST.replace("猫だ。", "\uD83D\uDE00".repeat(2_001))
+
+        assertEquals(4_000, SentenceAudioBridgeCodec.decodeRequest(atLimit, RUN_ID).sentence.length)
+        assertThrows(SentenceAudioProtocolException::class.java) {
+            SentenceAudioBridgeCodec.decodeRequest(overLimit, RUN_ID)
+        }
+    }
+
     private companion object {
         const val RUN_ID = "run_00000000000000000000000000000000"
         const val REQUEST_ID = "tts_00000000000000000000000000000000"

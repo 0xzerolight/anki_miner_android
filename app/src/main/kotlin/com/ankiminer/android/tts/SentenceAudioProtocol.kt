@@ -130,6 +130,7 @@ internal object SentenceAudioBridgeCodec {
     const val MAX_REQUEST_UTF8_BYTES = 32 * 1024
     const val MAX_RESULT_UTF8_BYTES = 8 * 1024
     const val MAX_SENTENCE_UTF8_BYTES = 16 * 1024
+    const val MAX_SENTENCE_UTF16_UNITS = 4_000
     private const val MAX_PATH_UTF8_BYTES = 4 * 1024
     private const val MAX_AUDIO_BYTES = 16L * 1024L * 1024L
     private const val MAX_JSON_DEPTH = 8
@@ -270,6 +271,9 @@ internal object SentenceAudioBridgeCodec {
         if (!requestIdPattern.matches(checkedRequestId)) fail("requestId is invalid")
         if (checkedSentence.isEmpty() || checkedSentence.indexOf('\u0000') >= 0) {
             fail("sentence is empty or contains NUL")
+        }
+        if (checkedSentence.length > MAX_SENTENCE_UTF16_UNITS) {
+            fail("sentence exceeds its UTF-16 limit")
         }
         if (strictUtf8(checkedSentence, MAX_SENTENCE_UTF8_BYTES).isEmpty()) {
             fail("sentence is empty")

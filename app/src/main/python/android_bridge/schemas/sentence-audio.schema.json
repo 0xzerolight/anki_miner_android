@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/sentence-audio.json",
   "title": "Anki Miner Android offline sentence-audio callback",
-  "$comment": "Complete synchronous EngineCallbacks envelopes. Runtime codecs additionally enforce strict Unicode scalars and 32 KiB request, 16 KiB sentence, 8 KiB result, 4 KiB path, and 16 MiB audio-file limits.",
+  "$comment": "Complete synchronous EngineCallbacks envelopes. JSON Schema maxLength counts Unicode code points; the shared runtime semantic validator and Kotlin codec additionally cap sentence at 4000 UTF-16 code units. Runtime codecs also enforce strict Unicode scalars and 32 KiB request, 16 KiB sentence, 8 KiB result, 4 KiB path, and 16 MiB audio-file limits.",
   "oneOf": [
     {"$ref": "#/$defs/requestMessage"},
     {"$ref": "#/$defs/resultMessage"}
@@ -17,7 +17,12 @@
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
         "requestId": {"$ref": "#/$defs/requestId"},
-        "sentence": {"type": "string", "minLength": 1, "maxLength": 4000}
+        "sentence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "$comment": "Code-point bound; runtime semantic validation applies the exact 4000 UTF-16-unit Android TextToSpeech bound."
+        }
       }
     },
     "readyPayload": {
