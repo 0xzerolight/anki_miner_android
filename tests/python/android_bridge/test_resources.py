@@ -178,6 +178,23 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
         parse_catalog_json(json.dumps(payload))
 
 
+@pytest.mark.parametrize(
+    "schema_version",
+    [True, 1.0, 2],
+    ids=["boolean", "floating-point", "unsupported"],
+)
+def test_catalog_parser_rejects_non_integer_or_unsupported_schema_versions(
+    schema_version: object,
+) -> None:
+    payload = load_resource_catalog().payload()
+    payload["schemaVersion"] = schema_version
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        parse_catalog_json(json.dumps(payload))
+
+    assert failure.value.code == "invalid_resource_catalog"
+
+
 def test_unidic_install_verifies_tree_then_publishes_completion_manifest_last(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -385,9 +402,16 @@ def test_unidic_copy_rejects_hash_mismatch_and_removes_partial(tmp_path: Path) -
     assert not destination.exists()
 
 
-def _yomitan_zip(path: Path, *, term: str, meaning: str, revision: str) -> Path:
+def _yomitan_zip(
+    path: Path,
+    *,
+    term: str,
+    meaning: str,
+    revision: str,
+    title: str = "Fixture Dictionary",
+) -> Path:
     index = {
-        "title": "Fixture Dictionary",
+        "title": title,
         "revision": revision,
         "format": 3,
         "author": "Fixture Author",
@@ -420,6 +444,80 @@ def test_dictionary_preflight_derives_slot_from_archive_title_and_revision(
     )
 
     assert preflight.payload == {"slotId": "fixture-dictionary-2026-08"}
+
+
+@pytest.mark.parametrize(
+    ("title", "revision"),
+    [
+        ("Fixture" + "!" * 4096, "1"),
+        ("Fixture", "!" * 4097),
+    ],
+    ids=["title", "revision"],
+)
+def test_dictionary_preflight_rejects_metadata_beyond_bridge_text_limit(
+    tmp_path: Path,
+    title: str,
+    revision: str,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / "long-metadata.zip",
+        term="猫",
+        meaning="cat",
+        revision=revision,
+        title=title,
+    )
+
+    with pytest.raises(BridgeProtocolError, match="exceeds its size limit") as failure:
+        resources.preflight_dictionary(
+            {
+                "operationId": "long-metadata-preflight",
+                "sourcePath": str(source),
+            }
+        )
+
+    assert failure.value.code == "dictionary_import_failed"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+@pytest.mark.parametrize(
+    ("metadata_field", "title", "revision"),
+    [
+        ("title", "Fixture" + "!" * 4096, "1"),
+        ("revision", "Fixture", "!" * 4097),
+    ],
+    ids=["title", "revision"],
+)
+def test_dictionary_import_rejects_oversized_metadata_before_publication(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    metadata_field: str,
+    title: str,
+    revision: str,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / f"long-import-{len(title)}-{len(revision)}.zip",
+        term="猫",
+        meaning="cat",
+        revision=revision,
+        title=title,
+    )
+
+    with pytest.raises(BridgeProtocolError, match="exceeds its size limit") as failure:
+        resources.import_dictionary(
+            {
+                "operationId": f"long-import-{len(title)}-{len(revision)}",
+                "sourcePath": str(source),
+                "slotId": f"long-metadata-{metadata_field}",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        )
+
+    assert failure.value.code == "dictionary_import_failed"
+    assert not (initialized_bridge_home / "dicts" / f"long-metadata-{metadata_field}").exists()
 
 
 # > the retired 16 MiB per-file cap, so a term/meta bank of this size exercises
@@ -961,6 +1059,41 @@ def test_streamed_zip_preflights_default_member_cap_before_zipfile_allocation(
     assert rejected.value.code == "resource_archive_too_large"
 
 
+def test_streamed_zip_preflights_central_directory_size_before_zipfile_allocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversized = tmp_path / "oversized-central-directory.zip"
+    info = zipfile.ZipInfo("index.json")
+    info.comment = b"x" * 1024
+    with zipfile.ZipFile(oversized, "w") as archive:
+        archive.writestr(info, b"{}")
+
+    monkeypatch.setattr(
+        resources,
+        "_MAX_CUSTOM_ZIP_CENTRAL_DIRECTORY_BYTES",
+        512,
+        raising=False,
+    )
+
+    class ZipFileMustNotBeConstructed:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("ZipFile allocated before central-directory size preflight")
+
+    monkeypatch.setattr(zipfile, "ZipFile", ZipFileMustNotBeConstructed)
+    with pytest.raises(BridgeProtocolError, match="central directory") as rejected:
+        resources._validate_zip_streamed(
+            oversized,
+            resources._Operation("oversized-central-directory"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+
+    assert rejected.value.code == "resource_archive_too_large"
+
+
 def test_streamed_zip_rejects_empty_archive_even_without_member_cap(tmp_path: Path) -> None:
     empty = _zip_with_members(tmp_path / "empty.zip", [])
     with pytest.raises(BridgeProtocolError, match="member count") as rejected:
@@ -1099,6 +1232,41 @@ def test_streamed_zip_unsupported_compression_is_distinct_from_corrupt(
             require_root_index=False,
         )
     assert missing_bz2.value.code == "resource_archive_unsupported_compression"
+
+
+@pytest.mark.parametrize(
+    "compression_error",
+    [
+        NotImplementedError("compression type 9 (deflate64)"),
+        RuntimeError("Compression requires the (missing) bz2 module"),
+    ],
+    ids=["deflate64", "missing-module"],
+)
+def test_dictionary_preflight_preserves_unsupported_compression_taxonomy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    compression_error: Exception,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / "preflight-method.zip",
+        term="猫",
+        meaning="cat",
+        revision="1",
+    )
+
+    def raise_unsupported(*_args: object, **_kwargs: object) -> None:
+        raise compression_error
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", raise_unsupported)
+    with pytest.raises(BridgeProtocolError) as failure:
+        resources.preflight_dictionary(
+            {
+                "operationId": f"preflight-{type(compression_error).__name__.lower()}",
+                "sourcePath": str(source),
+            }
+        )
+
+    assert failure.value.code == "resource_archive_unsupported_compression"
 
 
 def test_streamed_zip_reports_genuine_corruption_with_exception_class(tmp_path: Path) -> None:
@@ -2717,6 +2885,72 @@ def test_custom_dictionary_import_accepts_oversized_term_bank(
     )
     assert imported.payload["slotId"] == "bigdict"
     assert imported.payload["entryCount"] >= 1
+
+
+@pytest.mark.parametrize("bank_prefix", ["term_bank", "term_meta_bank", "tag_bank"])
+def test_yomitan_bank_rewrite_covers_empty_suffix_names(
+    tmp_path: Path,
+    bank_prefix: str,
+) -> None:
+    rows = [["fixture", "mode", {"value": 1}]]
+    source = _zip_with_members(
+        tmp_path / f"{bank_prefix}.zip",
+        [
+            ("index.json", b"{}"),
+            (f"{bank_prefix}_.json", json.dumps(rows).encode("utf-8")),
+        ],
+    )
+    rewritten = tmp_path / f"{bank_prefix}-rewritten.zip"
+
+    resources._rewrite_yomitan_banks(
+        source,
+        rewritten,
+        resources._Operation(f"rewrite-{bank_prefix}"),
+    )
+
+    with zipfile.ZipFile(rewritten) as archive:
+        names = archive.namelist()
+        generated = [name for name in names if name.startswith(f"{bank_prefix}_")]
+        assert f"{bank_prefix}_.json" not in names
+        assert generated == [f"{bank_prefix}_000001.json"]
+        assert json.loads(archive.read(generated[0])) == rows
+
+
+def test_yomitan_bank_rewrite_rejects_one_item_larger_than_chunk_before_decode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversized_glossary = "x" * resources._YOMITAN_BANK_CHUNK_BYTES
+    rows = [["fixture", "", "", "", 0, [oversized_glossary], 1, ""]]
+    source = _zip_with_members(
+        tmp_path / "oversized-item.zip",
+        [
+            ("index.json", b"{}"),
+            ("term_bank_1.json", json.dumps(rows).encode("utf-8")),
+        ],
+    )
+    rewritten = tmp_path / "oversized-item-rewritten.zip"
+    real_decoder = resources.json.JSONDecoder
+
+    class BoundedDecoder:
+        def __init__(self) -> None:
+            self.delegate = real_decoder()
+
+        def raw_decode(self, value: str) -> tuple[object, int]:
+            assert len(value.encode("utf-8")) <= resources._YOMITAN_BANK_CHUNK_BYTES
+            return self.delegate.raw_decode(value)
+
+    monkeypatch.setattr(resources.json, "JSONDecoder", BoundedDecoder)
+
+    with pytest.raises(BridgeProtocolError, match="oversized item") as failure:
+        resources._rewrite_yomitan_banks(
+            source,
+            rewritten,
+            resources._Operation("oversized-item"),
+        )
+
+    assert failure.value.code == "resource_archive_too_large"
+    assert not rewritten.exists()
 
 
 @pytest.mark.skipif(
