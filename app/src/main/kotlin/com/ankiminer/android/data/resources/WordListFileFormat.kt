@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.anki.generated.UnicodeContractV151
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.charset.CharacterCodingException
@@ -38,7 +39,10 @@ internal object WordListFileFormat {
      */
     fun normalizeForInstall(file: File): Int {
         val text = decode(file)
-        val normalized = text.removePrefix(UTF8_BOM)
+        val normalized =
+            requireNotNull(UnicodeContractV151.normalizeNfc(text.removePrefix(UTF8_BOM))) {
+                "Word-list text contains an invalid Unicode scalar"
+            }
         if (normalized != text) {
             FileOutputStream(file, false).use { output ->
                 output.write(normalized.toByteArray(StandardCharsets.UTF_8))
