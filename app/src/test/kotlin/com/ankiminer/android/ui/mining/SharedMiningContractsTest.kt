@@ -136,6 +136,30 @@ class SharedMiningContractsTest {
     }
 
     @Test
+    fun bulkSelectionScopeCountsOnlyEligibleCandidates() {
+        val scope =
+            curationBulkSelectionScope(
+                visibleCandidateIds = listOf("known", "visible"),
+                pageCandidateIds = listOf("known", "visible", "hidden"),
+                knownCandidateIds = setOf("known"),
+            )
+
+        assertEquals(listOf("visible"), scope.visibleCandidateIds)
+        assertEquals(1, scope.visibleCount)
+        assertEquals(2, scope.pageCandidateCount)
+    }
+
+    @Test
+    fun oversizedSaveableQueryIsTruncatedAtTheInputBoundary() {
+        val query = "猫".repeat(MAX_SAVEABLE_QUERY_LENGTH + 17)
+
+        val bounded = query.boundedSaveableQuery()
+
+        assertEquals(MAX_SAVEABLE_QUERY_LENGTH, bounded.length)
+        assertEquals(query.take(MAX_SAVEABLE_QUERY_LENGTH), bounded)
+    }
+
+    @Test
     fun selectionsNeverIncludeAMarkedCandidate() {
         val request = curationRequest()
         val firstId = request.candidates.first().candidateId

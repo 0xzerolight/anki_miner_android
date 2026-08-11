@@ -11,6 +11,9 @@ import java.util.Locale
 internal const val MAX_RESULT_SUMMARY_ITEMS = 100
 internal const val MAX_RESULT_ERROR_LINES = 50
 internal const val RESULT_ISSUE_PREVIEW_COUNT = 3
+internal const val MAX_SAVEABLE_QUERY_LENGTH = 1024
+
+internal fun String.boundedSaveableQuery(): String = take(MAX_SAVEABLE_QUERY_LENGTH)
 
 internal data class BoundedResultItems<T>(
     val items: List<T>,
@@ -247,6 +250,27 @@ internal enum class CurationFilter {
 internal enum class CurationSort {
     FREQUENCY,
     OCCURRENCES,
+}
+
+internal data class CurationBulkSelectionScope(
+    val visibleCandidateIds: List<String>,
+    val pageCandidateCount: Int?,
+) {
+    val visibleCount: Int
+        get() = visibleCandidateIds.size
+}
+
+internal fun curationBulkSelectionScope(
+    visibleCandidateIds: List<String>,
+    pageCandidateIds: List<String>,
+    knownCandidateIds: Set<String>,
+): CurationBulkSelectionScope {
+    val selectableVisible = visibleCandidateIds.filterNot(knownCandidateIds::contains)
+    val selectablePageCount = pageCandidateIds.count { it !in knownCandidateIds }
+    return CurationBulkSelectionScope(
+        visibleCandidateIds = selectableVisible,
+        pageCandidateCount = selectablePageCount.takeIf { selectableVisible.size < it },
+    )
 }
 
 /**
