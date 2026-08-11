@@ -126,6 +126,36 @@ def test_epub_member_count_and_per_member_limits_are_independent(
     assert "member" in str(member_size.value)
 
 
+def test_epub_physical_member_cap_precedes_zipfile_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    epub = _zip(
+        tmp_path / "forged-count.epub",
+        {f"chapter-{index}.xhtml": b"x" for index in range(3)},
+    )
+    raw = bytearray(epub.read_bytes())
+    eocd = raw.rfind(b"PK\x05\x06")
+    assert eocd >= 0
+    raw[eocd + 8 : eocd + 12] = b"\x01\x00\x01\x00"
+    epub.write_bytes(raw)
+
+    class ZipFileMustNotBeConstructed:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("ZipFile allocated before the physical member-count preflight")
+
+    monkeypatch.setattr(reading_limits.zipfile, "ZipFile", ZipFileMustNotBeConstructed)
+
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_limits.validate_zip_archive(
+            epub,
+            _limits(max_members=2),
+        )
+
+    assert error.value.code == "reading_source_too_large"
+    assert "members" in str(error.value)
+
+
 def test_high_ratio_member_is_rejected_before_any_decompression(tmp_path: Path) -> None:
     archive = _zip(tmp_path / "ratio.epub", {"chapter.xhtml": b"0" * 100_000})
 
@@ -250,6 +280,49 @@ def test_mokuro_page_cap_precedes_json_graph_materialization(
 
     assert error.value.code == "reading_source_too_large"
     assert "pages" in str(error.value)
+
+
+def test_mokuro_global_graph_cap_precedes_real_detector_materialization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    sidecar = tmp_path / "global-graph.mokuro"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "version": "0.2.0",
+                "title": "Series",
+                "title_uuid": "series-id",
+                "volume": "1",
+                "volume_uuid": "volume-id",
+                "pages": [{"blocks": [{"lines": ["猫。"]}]}],
+                "ignored": [{} for _ in range(20)],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(reading_limits, "MAX_MOKURO_JSON_NODES", 32, raising=False)
+
+    def fail_materialization(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("The real Mokuro detector materialized the rejected JSON graph")
+
+    monkeypatch.setattr(json, "loads", fail_materialization)
+    request = reading_mining._ReadingRequest(
+        source_kind="mokuro",
+        source_path=sidecar,
+        image_archive_path=None,
+        series_name=None,
+        cache_dir=tmp_path,
+        native_library_dir=tmp_path,
+        settings={},
+        android_tts_enabled=False,
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_mining._load_document(request)
+
+    assert error.value.code == "reading_source_too_large"
 
 
 def test_mokuro_preflight_skips_the_same_malformed_nested_records_as_engine(
@@ -383,6 +456,60 @@ def test_reading_unit_limit_stops_loader_before_the_excess_unit_is_retained(
 
     assert error.value.code == "reading_source_too_large"
     assert detector.created == []
+
+
+def test_mokuro_sentence_fanout_stops_before_the_piece_list_materializes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    block_text = "猫。" * 61
+    source = tmp_path / "volume.mokuro"
+    source.write_text(
+        json.dumps({"pages": [{"blocks": [{"lines": [block_text]}]}]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    class FanoutDetector:
+        ref = SimpleNamespace(kind="mokuro", image_root=None)
+
+        def detect(self, _path: Path) -> list[object]:
+            return [self.ref]
+
+        def load(
+            self,
+            _ref: object,
+            *,
+            strip_subtitle_annotations: bool,
+        ) -> object:
+            assert strip_subtitle_annotations is True
+            splitter_path = (
+                Path(__file__).resolve().parents[3]
+                / "app/src/main/python/anki_miner/services/reading/sentence_splitter.py"
+            )
+            spec = importlib.util.spec_from_file_location("bounded_mokuro_sentence_splitter", splitter_path)
+            assert spec is not None and spec.loader is not None
+            splitter = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(splitter)
+            splitter.split_sentences(block_text, split_adjacent_quotes=True)
+            raise AssertionError("Mokuro sentence pieces exceeded the unit budget before rejection")
+
+    monkeypatch.setattr(reading_mining, "_reading_detector", lambda: FanoutDetector())
+    monkeypatch.setattr(reading_limits, "MAX_DOCUMENT_UNITS", 1)
+    request = reading_mining._ReadingRequest(
+        source_kind="mokuro",
+        source_path=source,
+        image_archive_path=None,
+        series_name=None,
+        cache_dir=tmp_path,
+        native_library_dir=tmp_path,
+        settings={},
+        android_tts_enabled=False,
+    )
+
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_mining._load_document(request)
+
+    assert error.value.code == "reading_source_too_large"
 
 
 def test_image_preflight_skips_unsupported_members_like_engine(
