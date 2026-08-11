@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.mining
 
+import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -259,7 +260,7 @@ internal fun curateCandidates(
     filter: CurationFilter,
     sort: CurationSort,
 ): List<CurationCandidate> {
-    val normalizedQuery = query.trim().lowercase(Locale.ROOT)
+    val normalizedQuery = query.trim().normalizedCurationSearchText()
     val filtered =
         candidates.asSequence()
             .filter { candidate ->
@@ -297,7 +298,10 @@ private fun CurationCandidate.searchableCurationText(): String =
         expressionReading,
         partOfSpeech,
     ).joinToString(separator = "\n")
-        .lowercase(Locale.ROOT)
+        .normalizedCurationSearchText()
+
+private fun String.normalizedCurationSearchText(): String =
+    (UnicodeContractV151.normalizeNfc(this) ?: this).lowercase(Locale.ROOT)
 
 internal enum class MiningPendingAction {
     START,

@@ -145,6 +145,7 @@ internal class BridgeMiningRepository(
         var videoCachePath: String? = null
         var subtitleCachePath: String? = null
         val presenterNotices = mutableListOf<String>()
+        val progressErrors = mutableListOf<String>()
 
         fun mediaBinding(): CurationMediaBinding? {
             val video = videoCachePath ?: return null
@@ -289,14 +290,12 @@ internal class BridgeMiningRepository(
                 throw MiningCommandException("The curation selection is invalid")
             }
         var transition: PhaseTransition? = null
-        var resumingLease: MiningForegroundLease? = null
         val (generation, hasSelectedCandidate) =
             synchronized(monitor) {
                 val run = active ?: throw MiningCommandException("No curation request is pending")
                 if (run.curation !== request || run.phase != Phase.CURATING) {
                     throw MiningCommandException("The curation response is stale")
                 }
-                resumingLease = run.foregroundLease
                 run.hasSelectedCandidate = run.hasSelectedCandidate || selection.isNotEmpty()
                 if (request.isFinalPage) {
                     transition = run.transition(Phase.PROMOTING, "curation_final")
@@ -316,8 +315,6 @@ internal class BridgeMiningRepository(
                 run.generation to run.hasSelectedCandidate
             }
         transition.emit()
-        // The user's wait is over; media processing resumes whichever page follows.
-        resumingLease?.resumeCpuWake()
         if (request.isFinalPage) {
             if (hasSelectedCandidate) {
                 executeControl(generation) {
@@ -464,8 +461,6 @@ internal class BridgeMiningRepository(
                 }
                 if (run.cancellation.isCancelled()) return
                 configureTokenizer(run, tokenizer)
-                if (run.cancellation.isCancelled()) return
-                if (!startForegroundOwnership(generation)) return
                 if (run.cancellation.isCancelled()) return
                 val videoPath: String
                 val subtitlePath: String
@@ -677,12 +672,15 @@ internal class BridgeMiningRepository(
 
             val detachedInput: VideoMiningInput?
             val runFault: ProtocolFault?
-            val presenterNotices: List<String>
+            val terminalNotices: List<String>
             synchronized(monitor) {
                 val run = activeFor(generation) ?: return
                 detachedInput = run.input.takeIf { run.sourcesDetached }
                 runFault = run.stickyFault ?: run.cancellationDispatchFault
-                presenterNotices = run.presenterNotices.toList()
+                terminalNotices =
+                    (run.presenterNotices + run.progressErrors)
+                        .distinct()
+                        .take(MAX_RESULT_ERRORS)
                 // A cancellation dispatch can still be in flight here. Remember which run
                 // reported terminal so a late no_active_job reply is recognised as the
                 // acknowledgement for THIS run instead of being retried.
@@ -705,11 +703,11 @@ internal class BridgeMiningRepository(
                         terminal = terminalForState,
                         fault = runFault ?: detachedCleanupFault,
                         cancelled = cancelled,
-                        presenterNotices = presenterNotices,
+                        terminalNotices = terminalNotices,
                     )
                 mutableState.value = finalState
             }
-            logTerminal(finalState, presenterNotices.size)
+            logTerminal(finalState, terminalNotices.size)
         } finally {
             // The lease spans provider cleanup, detached SAF cleanup, and terminal publication.
             // Resource mutation cannot race any portion of the immutable job lifecycle.
@@ -719,7 +717,7 @@ internal class BridgeMiningRepository(
 
     /**
      * The one record of how a run ended. Only the mapped outcome, the non-localized diagnostic code
-     * and counts cross into it: the terminal's `message` and the presenter notices are engine-authored
+     * and counts cross into it: the terminal's `message` and retained notices are engine-authored
      * and can name mined terms.
      */
     private fun logTerminal(
@@ -773,9 +771,9 @@ internal class BridgeMiningRepository(
         terminal: BridgeMessage.Terminal?,
         fault: ProtocolFault?,
         cancelled: Boolean,
-        presenterNotices: List<String>,
+        terminalNotices: List<String>,
     ): MiningRunState {
-        val result = terminal?.result.withPresenterNotices(presenterNotices)
+        val result = terminal?.result.withTerminalNotices(terminalNotices)
         // A Kotlin fault outranks the Python terminal's message, but not its fault id: this pairing
         // is a Kotlin protocol failure and a Python traceback describing the same run, which is
         // exactly the case a maintainer needs the log key for.
@@ -794,7 +792,7 @@ internal class BridgeMiningRepository(
                         MiningFailure(
                             message =
                                 terminal.error?.message
-                                    ?: presenterNotices.firstOrNull()
+                                    ?: terminalNotices.firstOrNull()
                                     ?: strings.resolve(R.string.mining_failure_generic),
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,
                             faultId = terminal.error?.faultId,
@@ -814,8 +812,9 @@ internal class BridgeMiningRepository(
             }
         val foregroundRunId =
             synchronized(monitor) {
-                activeFor(generation)?.cancellationToken?.foregroundRunId(lane.runKind)
-                    ?: return false
+                val run = activeFor(generation) ?: return false
+                if (run.phase != Phase.PROMOTING || run.cancelRequested) return false
+                run.cancellationToken.foregroundRunId(lane.runKind)
             }
         val future =
             try {
@@ -937,6 +936,10 @@ internal class BridgeMiningRepository(
         request: CurationRequest,
         rawResponse: String,
     ) {
+        if (!startForegroundOwnership(generation)) {
+            sendCancellation(generation)
+            return
+        }
         var transition: PhaseTransition? = null
         val shouldSubmit =
             synchronized(monitor) {
@@ -1137,6 +1140,7 @@ internal class BridgeMiningRepository(
             synchronized(monitor) {
                 val run = activeFor(identity.generation) ?: return
                 if (
+                    run.phase == Phase.FINALIZING ||
                     run.foregroundClosingExpected ||
                     (run.foregroundLease != null && run.foregroundLease?.identity != identity)
                 ) {
@@ -1362,57 +1366,39 @@ internal class BridgeMiningRepository(
         val runId = synchronized(monitor) { activeFor(generation)?.runId }
         val message = BridgeJsonCodec.decode(raw, expectedRunId = runId) as? BridgeMessage.CurationNeeded
             ?: throw IllegalStateException("Python sent an invalid curation request")
-        var parkingLease: MiningForegroundLease? = null
-        val admittedPhase =
-            synchronized(monitor) {
-                val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
-                if (run.cancelRequested) return
-                when (run.phase) {
-                    Phase.REGISTERED -> {
-                        val firstPageIndex = message.request.page?.pageIndex
-                        if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
-                            throw IllegalStateException("Curation request is duplicated or out of order")
-                        }
-                    }
-                    Phase.ADVANCING -> {
-                        val previous = run.curation
-                            ?: throw IllegalStateException("Curation page has no predecessor")
-                        val previousPage = previous.page
-                            ?: throw IllegalStateException("A single curation request cannot advance")
-                        val nextPage = message.request.page
-                            ?: throw IllegalStateException("A paged curation request cannot become single")
-                        if (
-                            previous.isFinalPage ||
-                            message.request.runId != previous.runId ||
-                            message.request.requestId != previous.requestId ||
-                            nextPage.pageIndex != previousPage.pageIndex + 1 ||
-                            nextPage.pageCount != previousPage.pageCount ||
-                            nextPage.totalCandidates != previousPage.totalCandidates ||
-                            nextPage.candidateStart !=
-                                previousPage.candidateStart + previous.candidates.size.toLong()
-                        ) {
-                            throw IllegalStateException("Curation page is duplicated or out of order")
-                        }
-                    }
-                    else -> throw IllegalStateException("Curation request is duplicated or out of order")
-                }
-                parkingLease = run.foregroundLease
-                run.phase
-            }
-        // The engine is parked on a threading.Event until the user answers. Nothing is processed
-        // meanwhile, so the six-hour media-processing wake lease has no work behind it.
-        //
-        // The lease call is a Binder round trip and cannot be held under `monitor`, so the park has
-        // to be ordered against confirmCuration's resume some other way: nothing can be confirmed
-        // until CURATING is published, and that happens below. The park is therefore complete
-        // before a confirm can even be admitted, and its resume can only follow.
-        parkingLease?.parkCpuWake()
         var transition: PhaseTransition? = null
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
-            // Cancellation is the only thing that can move this run while the lease call is out;
-            // its own teardown closes the lease, so the park needs no undo here.
-            if (run.cancelRequested || run.phase != admittedPhase) return
+            if (run.cancelRequested) return
+            when (run.phase) {
+                Phase.REGISTERED -> {
+                    val firstPageIndex = message.request.page?.pageIndex
+                    if (run.curation != null || (firstPageIndex != null && firstPageIndex != 0L)) {
+                        throw IllegalStateException("Curation request is duplicated or out of order")
+                    }
+                }
+                Phase.ADVANCING -> {
+                    val previous = run.curation
+                        ?: throw IllegalStateException("Curation page has no predecessor")
+                    val previousPage = previous.page
+                        ?: throw IllegalStateException("A single curation request cannot advance")
+                    val nextPage = message.request.page
+                        ?: throw IllegalStateException("A paged curation request cannot become single")
+                    if (
+                        previous.isFinalPage ||
+                        message.request.runId != previous.runId ||
+                        message.request.requestId != previous.requestId ||
+                        nextPage.pageIndex != previousPage.pageIndex + 1 ||
+                        nextPage.pageCount != previousPage.pageCount ||
+                        nextPage.totalCandidates != previousPage.totalCandidates ||
+                        nextPage.candidateStart !=
+                            previousPage.candidateStart + previous.candidates.size.toLong()
+                    ) {
+                        throw IllegalStateException("Curation page is duplicated or out of order")
+                    }
+                }
+                else -> throw IllegalStateException("Curation request is duplicated or out of order")
+            }
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
             mutableState.value =
@@ -1491,6 +1477,19 @@ internal class BridgeMiningRepository(
     private fun onProgressComplete(generation: Long) {
         val progress = synchronized(monitor) { activeFor(generation)?.progress } ?: return
         updateProgress(generation, progress.copy(current = progress.total))
+    }
+
+    private fun handleProgressError(
+        generation: Long,
+        message: BridgeMessage.ProgressError,
+    ) {
+        synchronized(monitor) {
+            val run = activeFor(generation) ?: throw IllegalStateException("Progress error is stale")
+            val detail = "${message.description}: ${message.message}"
+            if (run.progressErrors.size < MAX_RESULT_ERRORS && detail !in run.progressErrors) {
+                run.progressErrors += detail
+            }
+        }
     }
 
     private fun handlePresenter(
@@ -1623,7 +1622,7 @@ internal class BridgeMiningRepository(
         override fun onError(message: String) =
             callbackFailure(generation, "onError") {
                 when (val decoded = decodeCallback(generation, message)) {
-                    is BridgeMessage.ProgressError -> Unit
+                    is BridgeMessage.ProgressError -> handleProgressError(generation, decoded)
                     is BridgeMessage.Terminal -> {
                         if (decoded.outcome != MiningOutcome.FAILED) {
                             throw IllegalStateException("Non-failed terminal arrived on onError")
@@ -1845,7 +1844,7 @@ internal class BridgeMiningRepository(
             result = result,
         )
 
-    private fun ProcessingResult?.withPresenterNotices(notices: List<String>): ProcessingResult? =
+    private fun ProcessingResult?.withTerminalNotices(notices: List<String>): ProcessingResult? =
         this?.copy(errors = (notices + errors).distinct().take(MAX_RESULT_ERRORS))
 
     private fun labelsFor(displayName: String): Pair<String, String> {

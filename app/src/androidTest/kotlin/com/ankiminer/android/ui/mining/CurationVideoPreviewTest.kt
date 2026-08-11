@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -103,6 +105,29 @@ class CurationVideoPreviewTest {
 
         scrollTo(CurationPlayerTestTags.FAILURE_NOTICE)
         composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertIsDisplayed()
+        composeRule
+            .onNode(
+                hasTestTag(CurationPlayerTestTags.FAILURE_NOTICE) and
+                    hasAnyAncestor(hasTestTag(CurationPlayerTestTags.VIDEO_FRAME)),
+            ).assertDoesNotExist()
+    }
+
+    @Test
+    fun audioOnlyPlaybackFailureRendersNoticeAndRetry() {
+        val fake = setPreview(audioOnly = true)
+
+        composeRule.runOnUiThread {
+            fake.emitFailure(PreviewFailure.AudioTrackUnsupported("wmav2"))
+        }
+
+        scrollTo(CurationPlayerTestTags.FAILURE_NOTICE)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertIsDisplayed()
+        scrollTo(CurationPlayerTestTags.RETRY)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.RETRY).performClick()
+
+        composeRule.waitForIdle()
+        assertEquals(1, fake.retryCount)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.FAILURE_NOTICE).assertDoesNotExist()
     }
 
     @Test
