@@ -7,13 +7,19 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -23,10 +29,23 @@ import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SupportingText
-import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.vm.SetupUiState
+
+internal data class WordListRemovalConfirmation(
+    val pending: WordListKind? = null,
+) {
+    fun request(kind: WordListKind): WordListRemovalConfirmation = copy(pending = kind)
+
+    fun cancel(): WordListRemovalConfirmation = copy(pending = null)
+
+    fun confirm(onRemove: (WordListKind) -> Unit): WordListRemovalConfirmation {
+        pending?.let(onRemove)
+        return copy(pending = null)
+    }
+}
 
 /**
  * One installed slot and its Remove button.
@@ -225,6 +244,53 @@ internal fun WordListImportCard(
     onWhitelistEnabledChange: (Boolean?) -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
+    var pendingRemoval by rememberSaveable { mutableStateOf<WordListKind?>(null) }
+    val removalConfirmation = WordListRemovalConfirmation(pendingRemoval)
+    pendingRemoval?.let { kind ->
+        val installedLabel =
+            stringResource(
+                when (kind) {
+                    WordListKind.BLACKLIST -> R.string.word_list_blacklist
+                    WordListKind.WHITELIST -> R.string.word_list_whitelist
+                },
+            )
+        AlertDialog(
+            onDismissRequest = {
+                if (!state.busy) {
+                    pendingRemoval = removalConfirmation.cancel().pending
+                }
+            },
+            title = {
+                Text(stringResource(R.string.resource_delete_confirm_title, installedLabel))
+            },
+            text = {
+                Text(stringResource(R.string.resource_delete_confirm_message, installedLabel))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingRemoval = removalConfirmation.confirm(onRemove).pending
+                    },
+                    enabled = !state.busy,
+                    colors =
+                        ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error,
+                            contentColor = MaterialTheme.colorScheme.onError,
+                        ),
+                ) { Text(stringResource(R.string.word_list_remove)) }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingRemoval = removalConfirmation.cancel().pending
+                    },
+                    enabled = !state.busy,
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(
             Modifier.padding(AnkiMinerTokens.Space.content),
@@ -242,7 +308,9 @@ internal fun WordListImportCard(
                 toggleLabel = stringResource(R.string.settings_use_blacklist),
                 enabled = blacklistEnabled,
                 onImport = onImport,
-                onRemove = onRemove,
+                onRemove = {
+                    pendingRemoval = removalConfirmation.request(it).pending
+                },
                 onEnabledChange = onBlacklistEnabledChange,
             )
             HorizontalDivider()
@@ -253,7 +321,9 @@ internal fun WordListImportCard(
                 toggleLabel = stringResource(R.string.settings_use_whitelist),
                 enabled = whitelistEnabled,
                 onImport = onImport,
-                onRemove = onRemove,
+                onRemove = {
+                    pendingRemoval = removalConfirmation.request(it).pending
+                },
                 onEnabledChange = onWhitelistEnabledChange,
             )
             SupportingText(stringResource(R.string.word_list_whitelist_scope))

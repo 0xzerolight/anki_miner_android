@@ -341,11 +341,13 @@ internal data class SettingsDraft(
                     ?: base.screenshotOffsetSeconds?.toString().orEmpty(),
             animatedScreenshotDuration =
                 animatedScreenshotDuration.takeIf {
-                    SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION !in validation
+                    SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION !in validation &&
+                        AppSettingsDraftParser.isOptionalDouble(animatedScreenshotDuration)
                 } ?: base.animatedScreenshotDurationSeconds?.toString().orEmpty(),
             animatedScreenshotQuality =
                 animatedScreenshotQuality.takeIf {
-                    SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY !in validation
+                    SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY !in validation &&
+                        AppSettingsDraftParser.isOptionalInt(animatedScreenshotQuality)
                 } ?: base.animatedScreenshotQuality?.toString().orEmpty(),
             subtitleOffset =
                 subtitleOffset.takeIf { SettingsFieldKey.SUBTITLE_OFFSET !in validation }
@@ -1000,9 +1002,10 @@ internal class SettingsViewModel(
         }
     }
 
-    private suspend fun persistLocked(state: SettingsDraftState) {
+    private suspend fun persistLocked(state: SettingsDraftState): Boolean {
         // Scoped reset completion explicitly flushes any revision skipped by this guard.
-        if (saving.value || !successfulWrites.shouldWrite(state)) return
+        if (saving.value) return false
+        if (!successfulWrites.shouldWrite(state)) return true
         val currentState = draftStore.state.value
         if (
             !currentState.dirty ||
@@ -1014,10 +1017,10 @@ internal class SettingsViewModel(
                 currentState.pitchSourcesDirty != state.pitchSourcesDirty ||
                 currentState.audioPacksDirty != state.audioPacksDirty
         ) {
-            return
+            return false
         }
         error.value = null
-        val persisted = settings.value ?: return
+        val persisted = settings.value ?: return false
         if (applyDraft(state, persisted) == persisted) {
             successfulWrites.markSuccessful(state)
             mutableSaveState.value =
@@ -1026,11 +1029,11 @@ internal class SettingsViewModel(
                 } else {
                     SettingsSaveState.Pending(state.editRevision)
                 }
-            return
+            return true
         }
         saving.value = true
         mutableSaveState.value = SettingsSaveState.Saving(state.editRevision)
-        try {
+        return try {
             // Transactional transform reads the freshest persisted value. Deck is applied only
             // when explicitly edited, so wizard and note-type writes cannot be copied back.
             repository.update { current -> applyDraft(state, current) }
@@ -1042,14 +1045,17 @@ internal class SettingsViewModel(
                     // Unrelated valid edits were saved, but malformed numeric text remains local.
                     SettingsSaveState.Pending(state.editRevision)
                 }
+            true
         } catch (failure: CancellationException) {
             throw failure
         } catch (failure: InvalidAppSettingException) {
             error.value = settingsValidationError(failure)
             mutableSaveState.value = SettingsSaveState.Failed(state.editRevision)
+            false
         } catch (_: Exception) {
             error.value = LocalizedStringResource(R.string.b3_settings_save_failed)
             mutableSaveState.value = SettingsSaveState.Failed(state.editRevision)
+            false
         } finally {
             saving.value = false
         }
@@ -1159,7 +1165,15 @@ internal class SettingsViewModel(
         mutableBackupState.value = SettingsBackupState.Working
         viewModelScope.launch {
             try {
-                val current = repository.settings.first()
+                val current =
+                    persistenceMutex.withLock {
+                        val latest = draftStore.state.value
+                        if (!latest.loaded || (latest.dirty && !persistLocked(latest))) {
+                            null
+                        } else {
+                            repository.settings.first()
+                        }
+                    } ?: throw IOException("Current settings could not be persisted")
                 val document = SettingsBackupCodec.encode(current, appVersion)
                 val bytes = document.toByteArray(Charsets.UTF_8)
                 withContext(Dispatchers.IO) {

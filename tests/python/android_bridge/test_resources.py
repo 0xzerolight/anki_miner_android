@@ -521,6 +521,67 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     importlib.util.find_spec("requests") is None,
     reason="the lean host lane intentionally excludes runtime engine dependencies",
 )
+def test_dictionary_lookup_returns_empty_html_for_absent_term(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(tmp_path / "lookup-miss.zip", term="猫", meaning="cat", revision="1")
+    resources.import_dictionary(
+        {
+            "operationId": "dict-lookup-miss-import",
+            "sourcePath": str(source),
+            "slotId": "lookup-miss",
+            "overwrite": False,
+            "catalogResourceId": None,
+        }
+    )
+
+    lookup = decode_envelope(
+        resources.lookup_dictionary({"slotId": "lookup-miss", "term": "犬"}),
+        expected_type="resource.dictionary.lookup.result",
+    )
+
+    assert lookup.payload == {"slotId": "lookup-miss", "term": "犬", "html": ""}
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_dictionary_lookup_normalizes_nfd_key_but_echoes_original_term(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / "lookup-nfd.zip",
+        term="がくせい",
+        meaning="student",
+        revision="1",
+    )
+    resources.import_dictionary(
+        {
+            "operationId": "dict-lookup-nfd-import",
+            "sourcePath": str(source),
+            "slotId": "lookup-nfd",
+            "overwrite": False,
+            "catalogResourceId": None,
+        }
+    )
+    term = "か\u3099くせい"
+
+    lookup = decode_envelope(
+        resources.lookup_dictionary({"slotId": "lookup-nfd", "term": term}),
+        expected_type="resource.dictionary.lookup.result",
+    )
+
+    assert lookup.payload["term"] == term
+    assert "student" in lookup.payload["html"]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
 def test_revisionless_yomitan_import_returns_and_lists_empty_revision(
     tmp_path: Path,
     initialized_bridge_home: Path,
@@ -1871,6 +1932,44 @@ def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+def test_audio_pack_fsyncs_media_before_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "audio-durable.zip")
+    synced: set[tuple[int, int]] = set()
+    real_fsync = local_resources.os.fsync
+    real_publish = local_resources._publish_indexed_dir
+
+    def record_fsync(descriptor: int) -> None:
+        value = local_resources.os.fstat(descriptor)
+        synced.add((value.st_dev, value.st_ino))
+        real_fsync(descriptor)
+
+    def publish_after_media_sync(candidate: Path, **kwargs: object) -> None:
+        media = (candidate / "content" / "media" / "cat.mp3").stat()
+        assert (media.st_dev, media.st_ino) in synced
+        real_publish(candidate, **kwargs)
+
+    monkeypatch.setattr(local_resources.os, "fsync", record_fsync)
+    monkeypatch.setattr(local_resources, "_publish_indexed_dir", publish_after_media_sync)
+
+    local_resources.import_audio_pack(
+        {
+            "operationId": "audio-durable",
+            "sourcePath": str(source),
+            "packId": "fixture-pack",
+            "packPath": "fixture-pack",
+            "overwrite": False,
+        }
+    )
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 def test_replacing_audio_pack_does_not_reuse_previous_run_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2098,6 +2197,50 @@ def test_known_words_import_is_transactional_and_wordsets_are_bundled(
         "place-names",
         "org-product",
     ]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_uses_mining_normalization_before_preview_and_insert(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known-halfwidth.txt"
+    source.write_text("ﾊﾟｿｺﾝ\nパソコン\n", encoding="utf-8")
+
+    preview = decode_envelope(
+        local_resources.preview_known_words(
+            {
+                "operationId": "known-halfwidth-preview",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.previewed",
+    )
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-halfwidth-import",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+
+    from anki_miner.services.known_word_db import KnownWordDB
+    from anki_miner.utils.ja_normalize import normalize_for_tokenization
+
+    mining_identity = normalize_for_tokenization("ﾊﾟｿｺﾝ")
+    assert preview.payload["importedCount"] == 1
+    assert preview.payload["sampleWords"] == [mining_identity]
+    assert imported.payload["importedCount"] == 1
+    assert imported.payload["newRowCount"] == 1
+    assert KnownWordDB(home / "known_words.db").get_words_by_source("user") == {mining_identity}
 
 
 @pytest.mark.skipif(
@@ -2380,6 +2523,39 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     )
     assert reset.payload == {"scope": "user", "removedCount": 2}
     assert database.get_known_words() == set()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
+def test_known_words_search_normalizes_nfd_needle_but_echoes_original_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    database = KnownWordDB(home / "known_words.db")
+    database.initialize()
+    database.add_words({"がくせい"}, source="user")
+    query = "か\u3099くせい"
+
+    searched = decode_envelope(
+        local_resources.list_known_words(
+            {
+                "operationId": "known-list-nfd",
+                "query": query,
+                "offset": 0,
+                "limit": 50,
+            }
+        ),
+        expected_type="resource.knownwords.listed",
+    )
+
+    assert searched.payload["query"] == query
+    assert searched.payload["words"] == ["がくせい"]
+    assert searched.payload["totalCount"] == 1
 
 
 @pytest.mark.skipif(
@@ -2790,6 +2966,51 @@ def test_known_words_import_cancelled_before_commit_writes_nothing(
     database = KnownWordDB(home / "known_words.db")
     monkeypatch.setattr(KnownWordDB, "initialize", real_initialize)
     assert database.get_known_words() == set()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
+@pytest.mark.parametrize("action", ["remove", "reset-user", "reset-cache"])
+def test_known_words_destructive_mutation_rechecks_cancellation_after_database_init(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    database = KnownWordDB(home / "known_words.db")
+    database.initialize()
+    database.add_words({"猫"}, source="user")
+    database.add_words({"犬"}, source="anki")
+    operation_id = f"known-cancel-{action}"
+    real_initialize = KnownWordDB.initialize
+
+    def cancel_during_initialize(self: KnownWordDB) -> None:
+        real_initialize(self)
+        resources._OPERATIONS.cancel(operation_id)
+
+    monkeypatch.setattr(KnownWordDB, "initialize", cancel_during_initialize)
+
+    with pytest.raises(BridgeProtocolError) as cancelled:
+        if action == "remove":
+            local_resources.remove_known_words(
+                {"operationId": operation_id, "words": ["猫"]}
+            )
+        else:
+            local_resources.reset_known_words(
+                {
+                    "operationId": operation_id,
+                    "scope": action.removeprefix("reset-"),
+                }
+            )
+
+    assert cancelled.value.code == "resource_operation_cancelled"
+    monkeypatch.setattr(KnownWordDB, "initialize", real_initialize)
+    assert database.get_words_by_source("user") == {"猫"}
+    assert database.get_words_by_source("anki") == {"犬"}
 
 
 def _installed_frequency(tmp_path: Path, home: Path, source_id: str) -> Path:

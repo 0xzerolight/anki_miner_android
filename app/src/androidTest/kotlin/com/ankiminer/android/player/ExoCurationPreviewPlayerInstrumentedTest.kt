@@ -62,7 +62,7 @@ class ExoCurationPreviewPlayerInstrumentedTest {
     }
 
     @Test
-    fun av1StagedCopySurfacesVideoTrackUnsupportedWhileAudioPlays() {
+    fun av1StagedCopySurfacesVideoTrackUnsupportedAndRetryKeepsItVisible() {
         createAv1Fixture()
 
         SafJobFileOwner(context).use { owner ->
@@ -73,7 +73,7 @@ class ExoCurationPreviewPlayerInstrumentedTest {
     }
 
     @Test
-    fun av1ContentUriSurfacesVideoTrackUnsupportedWhileAudioPlays() {
+    fun av1ContentUriSurfacesVideoTrackUnsupportedAndRetryKeepsItVisible() {
         createAv1Fixture()
 
         assertAv1ModeTwoSignature(AV1_URI)
@@ -174,12 +174,19 @@ class ExoCurationPreviewPlayerInstrumentedTest {
     private fun assertAv1ModeTwoSignature(uri: Uri) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val ready = CountDownLatch(1)
+        val retriedReady = CountDownLatch(1)
         val playing = CountDownLatch(1)
         val playbackError = AtomicReference<PlaybackException?>()
         val listener =
             object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY) ready.countDown()
+                    if (playbackState == Player.STATE_READY) {
+                        if (ready.count > 0) {
+                            ready.countDown()
+                        } else {
+                            retriedReady.countDown()
+                        }
+                    }
                 }
 
                 override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -219,6 +226,16 @@ class ExoCurationPreviewPlayerInstrumentedTest {
                 "Expected VideoTrackUnsupported, got $failure",
                 failure is PreviewFailure.VideoTrackUnsupported,
             )
+
+            instrumentation.runOnMainSync {
+                player.retry()
+                assertEquals(failure, player.failure.value)
+            }
+            assertTrue(
+                "Retry did not re-prepare unsupported-track playback for $uri",
+                retriedReady.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+            assertEquals(failure, player.failure.value)
 
             instrumentation.runOnMainSync { player.seekAndPlay(0.0) }
             assertTrue(

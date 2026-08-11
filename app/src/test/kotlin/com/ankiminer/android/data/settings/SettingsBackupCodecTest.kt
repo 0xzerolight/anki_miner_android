@@ -99,6 +99,21 @@ class SettingsBackupCodecTest {
     }
 
     @Test
+    fun `current backup clears every nullable and collection field on a populated destination`() {
+        val cleared = AppSettings(enabledWordsets = emptyList())
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(SettingsBackupCodec.encode(cleared, "0.5.0")).applyTo(populated)
+            }
+
+        assertEquals(cleared.copy(setupWizardSeen = true), applied.settings)
+        assertEquals(SettingsBackupCodec.portableKeyNames.size, applied.appliedCount)
+        assertEquals(emptyList<String>(), applied.rejectedKeys)
+        assertEquals(emptyList<String>(), applied.ignoredKeys)
+    }
+
+    @Test
     fun `an unknown key is ignored, not fatal`() {
         val json =
             """{"ankiMinerAndroidSettings":1,"appVersion":"9.9.9","schemaVersion":99,""" +

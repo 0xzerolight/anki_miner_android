@@ -91,6 +91,7 @@ fun CurationVideoPreview(
 
     val playing by player.isPlaying.collectAsState()
     val positionSeconds by player.positionSeconds.collectAsState()
+    val failure by player.failure.collectAsState()
     LaunchedEffect(playing) {
         if (playing) {
             while (true) {
@@ -122,18 +123,15 @@ fun CurationVideoPreview(
                             .testTag(CurationPlayerTestTags.SURFACE),
                 ) {
                     if (!audioOnly) {
-                        val failure by player.failure.collectAsState()
                         ContentFrame(
                             player = player.media3Player,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
                                     .testTag(CurationPlayerTestTags.VIDEO_FRAME),
-                            // media3 covers the surface exactly when no video renders; the
-                            // failure message belongs on that cover, not in a separate slot.
                             shutter = {
                                 PreviewFailureShutter(
-                                    failure = failure,
+                                    failure = null,
                                     onRetry = player::retry,
                                 )
                             },
@@ -148,6 +146,12 @@ fun CurationVideoPreview(
                             )?.text.orEmpty(),
                         modifier = Modifier.align(Alignment.BottomCenter),
                     )
+                    if (failure != null) {
+                        PreviewFailureShutter(
+                            failure = failure,
+                            onRetry = player::retry,
+                        )
+                    }
                 }
                 notice?.invoke()
                 PreviewControls(

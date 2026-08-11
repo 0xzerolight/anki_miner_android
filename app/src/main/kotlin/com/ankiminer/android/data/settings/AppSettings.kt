@@ -290,7 +290,14 @@ internal object AppSettingsDraftParser {
 object AppSettingsValidator {
     fun validate(settings: AppSettings): AppSettings =
         settings.also {
-            it.deckName?.let { value -> canonicalName("Deck name", value) }
+            it.deckName?.let { value ->
+                canonicalName(
+                    "Deck name",
+                    value,
+                    AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS,
+                    AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
+                )
+            }
             if (
                 it.excludedDecks.size > AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT ||
                     it.excludedDecks.distinct().size != it.excludedDecks.size ||
@@ -307,11 +314,25 @@ object AppSettingsValidator {
                     "Excluded Anki decks are invalid",
                 )
             }
-            it.excludedDecks.forEach { deck -> canonicalName("Excluded deck name", deck) }
-            it.noteType?.let { value -> canonicalName("Note type", value) }
+            it.excludedDecks.forEach { deck ->
+                canonicalName(
+                    "Excluded deck name",
+                    deck,
+                    AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS,
+                    AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
+                )
+            }
+            it.noteType?.let { value ->
+                canonicalName(
+                    "Note type",
+                    value,
+                    AnkiLimitsV1.Names.Model.MAX_CODE_POINTS,
+                    AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES,
+                )
+            }
             fieldMap(it.fieldMap)
             cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
-            validScalarText("Tags", it.tags)
+            tags(it.tags)
             it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
             it.subtitleRegexReplacement?.let { value ->
                 validScalarText("Subtitle regex replacement", value)
@@ -380,7 +401,12 @@ object AppSettingsValidator {
             }
         }
 
-    fun canonicalName(label: String, value: String): String {
+    fun canonicalName(
+        label: String,
+        value: String,
+        maxCodePoints: Int = Int.MAX_VALUE,
+        maxUtf8Bytes: Int = Int.MAX_VALUE,
+    ): String {
         validScalarText(label, value)
         if (
             value.isEmpty() ||
@@ -393,6 +419,12 @@ object AppSettingsValidator {
                 label,
             )
         }
+        if (
+            checkNotNull(UnicodeContractV151.scalarCount(value)) > maxCodePoints ||
+                value.toByteArray(Charsets.UTF_8).size > maxUtf8Bytes
+        ) {
+            invalid(InvalidAppSettingCode.UNKNOWN, "Saved setting is invalid")
+        }
         return value
     }
 
@@ -404,6 +436,50 @@ object AppSettingsValidator {
                 label,
             )
         }
+    }
+
+    private fun tags(value: String) {
+        validScalarText("Tags", value)
+        val tags = splitPythonWhitespace(value)
+        if (
+            tags.size > AnkiLimitsV1.CreateNotes.MAX_TAG_COUNT_PER_NOTE ||
+                tags.any { tag ->
+                    checkNotNull(UnicodeContractV151.scalarCount(tag)) >
+                        AnkiLimitsV1.CreateNotes.TAG_MAX_CODE_POINTS ||
+                        tag.toByteArray(Charsets.UTF_8).size >
+                        AnkiLimitsV1.CreateNotes.TAG_MAX_UTF8_BYTES
+                } ||
+                tags.sumOf { tag -> tag.toByteArray(Charsets.UTF_8).size.toLong() } >
+                AnkiLimitsV1.CreateNotes.TAGS_PER_NOTE_MAX_UTF8_BYTES.toLong()
+        ) {
+            invalid(
+                InvalidAppSettingCode.UNKNOWN,
+                "Saved setting is invalid",
+            )
+        }
+    }
+
+    /** Python `str.split()` whitespace after category-C input has already been rejected. */
+    private fun splitPythonWhitespace(value: String): List<String> {
+        val result = mutableListOf<String>()
+        var start = -1
+        var index = 0
+        while (index < value.length) {
+            val codePoint = Character.codePointAt(value, index)
+            val whitespace =
+                Character.isWhitespace(codePoint) || Character.isSpaceChar(codePoint)
+            if (whitespace) {
+                if (start >= 0) {
+                    result += value.substring(start, index)
+                    start = -1
+                }
+            } else if (start < 0) {
+                start = index
+            }
+            index += Character.charCount(codePoint)
+        }
+        if (start >= 0) result += value.substring(start)
+        return result
     }
 
     private fun containsCategoryC(value: String): Boolean {
@@ -454,7 +530,14 @@ object AppSettingsValidator {
                     "Field map contains an unknown key",
                 )
             }
-            if (value.isNotEmpty()) canonicalName("Field name", value)
+            if (value.isNotEmpty()) {
+                canonicalName(
+                    "Field name",
+                    value,
+                    AnkiLimitsV1.Names.Field.MAX_CODE_POINTS,
+                    AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES,
+                )
+            }
         }
         AnkiFieldMapPolicy.firstConflict(values)?.let { conflict ->
             invalid(
@@ -477,7 +560,12 @@ object AppSettingsValidator {
         fieldMap: Map<String, String>,
     ) {
         val destination = marker?.takeIf { it.isNotEmpty() } ?: return
-        canonicalName("Card type marker field", destination)
+        canonicalName(
+            "Card type marker field",
+            destination,
+            AnkiLimitsV1.Names.Field.MAX_CODE_POINTS,
+            AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES,
+        )
         fieldMap.entries
             .firstOrNull { (_, mapped) -> mapped == destination }
             ?.let { (key, _) ->

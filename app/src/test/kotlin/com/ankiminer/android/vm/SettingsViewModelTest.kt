@@ -23,6 +23,7 @@ import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupException
 import com.ankiminer.android.data.settings.SettingsBackupFailure
+import com.ankiminer.android.data.settings.SettingsBackupCodec
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.engine.BridgeJsonValue
@@ -601,6 +602,41 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun malformedDisabledAnimatedFieldsRetainPersistedValuesAndAutosaveContinues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(
+                        animatedScreenshotsEnabled = false,
+                        animatedScreenshotDurationSeconds = 2.5,
+                        animatedScreenshotQuality = 60,
+                    ),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(
+                viewModel.draftState.value.draft.copy(
+                    animatedScreenshots = false,
+                    animatedScreenshotDuration = ".",
+                    animatedScreenshotQuality = "unfinished",
+                    jisho = true,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertTrue(repository.current.jishoEnabled)
+            assertEquals(2.5, repository.current.animatedScreenshotDurationSeconds!!, 0.0)
+            assertEquals(60, repository.current.animatedScreenshotQuality)
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(readingTts = true))
+            advanceUntilIdle()
+
+            assertTrue(repository.current.readingTtsEnabled)
+            assertEquals(2, repository.writeCount)
+        }
+
+    @Test
     fun scalarEditPreservesConcurrentlyWrittenNoteType() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings())
@@ -820,6 +856,111 @@ class SettingsViewModelTest {
 
             assertTrue(io.written.contains("Mining"))
             assertEquals(SettingsBackupState.Exported, viewModel.backupState.value)
+        }
+
+    @Test
+    fun `export flushes the latest debounced draft before encoding`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings(tags = "old"))
+            val io = RecordingDocumentIo()
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentWriter = io,
+                )
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(tags = "latest"))
+            runCurrent()
+            assertEquals(0, repository.writeCount)
+
+            viewModel.exportSettings("content://out.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            val exported =
+                with(SettingsBackupCodec) {
+                    parse(io.written.toString()).applyTo(AppSettings()).settings
+                }
+            assertEquals("latest", repository.current.tags)
+            assertEquals("latest", exported.tags)
+            assertEquals(SettingsBackupState.Exported, viewModel.backupState.value)
+        }
+
+    @Test
+    fun `export waits for an in-flight autosave before encoding`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val writeStarted = CompletableDeferred<Unit>()
+            val allowWrite = CompletableDeferred<Unit>()
+            val repository =
+                FakeAppSettingsRepository(AppSettings(jishoEnabled = false)) { attempt ->
+                    if (attempt == 1) {
+                        writeStarted.complete(Unit)
+                        allowWrite.await()
+                    }
+                }
+            val io = RecordingDocumentIo()
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentWriter = io,
+                )
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+            assertTrue(writeStarted.isCompleted)
+
+            viewModel.exportSettings("content://out.json")
+            runCurrent()
+
+            assertEquals(SettingsBackupState.Working, viewModel.backupState.value)
+            assertTrue(io.written.isEmpty())
+
+            allowWrite.complete(Unit)
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            val exported =
+                with(SettingsBackupCodec) {
+                    parse(io.written.toString()).applyTo(AppSettings()).settings
+                }
+            assertTrue(repository.current.jishoEnabled)
+            assertTrue(exported.jishoEnabled)
+            assertEquals(SettingsBackupState.Exported, viewModel.backupState.value)
+        }
+
+    @Test
+    fun `export failure does not write a stale backup after autosave failure`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    initial = AppSettings(jishoEnabled = false),
+                    failuresRemaining = 2,
+                )
+            val io = RecordingDocumentIo()
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentWriter = io,
+                )
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(jisho = true))
+            runCurrent()
+            assertEquals(1, repository.attemptedWriteCount)
+
+            viewModel.exportSettings("content://out.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertEquals(2, repository.attemptedWriteCount)
+            assertFalse(repository.current.jishoEnabled)
+            assertTrue(io.written.isEmpty())
+            assertTrue(viewModel.backupState.value is SettingsBackupState.Failed)
         }
 
     @Test

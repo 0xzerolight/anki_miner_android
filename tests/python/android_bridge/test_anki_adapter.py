@@ -4747,18 +4747,24 @@ def test_declared_dictionary_media_failure_is_nonfatal_and_omits_reference(
 
 def test_missing_dictionary_media_is_nonfatal_and_omits_reference(
     initialized_bridge_home: Path,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    definition = '<img class="anki-miner-dict-media" src="dict__missing-at-create.png">'
+    source = "dict__family_portrait.jpg"
+    definition = f'<img class="anki-miner-dict-media" src="{source}">'
     kotlin = FakeKotlinAnki()
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
+    with caplog.at_level(logging.WARNING, logger=anki_adapter_module.logger.name):
+        assert len(adapter.create_cards_batch([_card("猫", definition=definition)])) == 1
 
     assert kotlin.requests_for("ankiStoreMedia") == []
     assert adapter.last_media_store_failures == 1
     note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
     assert note["fields"]["MainDefinition"] == '<img class="anki-miner-dict-media">'
     assert note["mediaBindings"] == []
+    missing_messages = [message for message in caplog.messages if "media file missing on disk" in message]
+    assert missing_messages == ["Dict media file missing on disk"]
+    assert source not in caplog.text
 
 
 def test_unreadable_dictionary_media_is_nonfatal_and_omits_reference(

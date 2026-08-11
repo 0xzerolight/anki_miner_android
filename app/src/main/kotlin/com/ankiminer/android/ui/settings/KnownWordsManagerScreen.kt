@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -30,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
@@ -56,9 +58,49 @@ internal data class KnownWordsManagerCallbacks(
     val onImport: () -> Unit = {},
     val onExport: () -> Unit = {},
     val onReset: (KnownWordsResetScope) -> Unit = {},
+    val onCancel: () -> Unit = {},
     val onRetry: () -> Unit = {},
     val onDismissFailure: () -> Unit = {},
 )
+
+internal enum class KnownWordsListContent {
+    NONE,
+    LOADING,
+    EMPTY,
+    WORDS,
+}
+
+internal data class KnownWordsListPresentation(
+    val content: KnownWordsListContent,
+    val showProgress: Boolean,
+    val showLoadMore: Boolean,
+)
+
+internal fun knownWordsListPresentation(
+    page: KnownWordsPage?,
+    operationActive: Boolean,
+    failureVisible: Boolean,
+): KnownWordsListPresentation {
+    val content =
+        when {
+            page == null && operationActive -> KnownWordsListContent.LOADING
+            page == null && failureVisible -> KnownWordsListContent.NONE
+            page == null -> KnownWordsListContent.LOADING
+            page.words.isEmpty() && operationActive -> KnownWordsListContent.LOADING
+            page.words.isEmpty() -> KnownWordsListContent.EMPTY
+            else -> KnownWordsListContent.WORDS
+        }
+    return KnownWordsListPresentation(
+        content = content,
+        showProgress =
+            content == KnownWordsListContent.LOADING ||
+                (content == KnownWordsListContent.WORDS && operationActive),
+        showLoadMore =
+            content == KnownWordsListContent.WORDS &&
+                !operationActive &&
+                page?.hasMore == true,
+    )
+}
 
 @Composable
 internal fun KnownWordsManagerRoute(
@@ -92,6 +134,7 @@ internal fun KnownWordsManagerRoute(
                 },
                 onExport = { exportPicker.launch("known_words.txt") },
                 onReset = setupViewModel::resetKnownWords,
+                onCancel = setupViewModel::cancelOperation,
                 onRetry = setupViewModel::retryResourceFailure,
                 onDismissFailure = setupViewModel::dismissFailure,
             ),
@@ -212,41 +255,68 @@ internal fun KnownWordsManagerScreen(
             verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
         ) {
             val page = state.knownWordsPage
-            if (page == null || page.words.isEmpty()) {
-                item(key = "empty", contentType = "footer") {
-                    Text(stringResource(R.string.b3_known_words_empty))
-                }
-            } else {
-                items(
-                    items = page.words,
-                    key = { word -> word },
-                    contentType = { "word" },
-                ) { word ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(word, Modifier.weight(1f))
-                        OutlinedButton(
-                            onClick = { callbacks.onRemove(word) },
-                            enabled = !state.busy,
-                            modifier = Modifier.testTag(KnownWordsManagerTestTags.remove(word)),
-                            colors = exitActionButtonColors(isError = true),
-                            border = actionBorder(enabled = !state.busy),
-                        ) {
-                            Text(stringResource(R.string.known_words_remove))
+            val operation = state.operation
+            val presentation =
+                knownWordsListPresentation(
+                    page = page,
+                    operationActive = operation != null,
+                    failureVisible =
+                        state.failure?.origin == ResourceFailureOrigin.KNOWN_WORDS,
+                )
+            when (presentation.content) {
+                KnownWordsListContent.NONE -> Unit
+                KnownWordsListContent.LOADING -> {
+                    item(key = "loading", contentType = "footer") {
+                        if (operation == null) {
+                            CircularProgressIndicator()
+                        } else {
+                            ResourceOperationCard(operation, callbacks.onCancel)
                         }
                     }
                 }
-                if (page.hasMore) {
-                    item(key = "load-more", contentType = "footer") {
-                        OutlinedButton(
-                            onClick = callbacks.onLoadMore,
-                            enabled = !state.busy,
-                            colors = outlinedActionButtonColors(),
-                            border = actionBorder(enabled = !state.busy),
+
+                KnownWordsListContent.EMPTY -> {
+                    item(key = "empty", contentType = "footer") {
+                        Text(stringResource(R.string.b3_known_words_empty))
+                    }
+                }
+
+                KnownWordsListContent.WORDS -> {
+                    items(
+                        items = requireNotNull(page).words,
+                        key = { word -> word },
+                        contentType = { "word" },
+                    ) { word ->
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text(stringResource(R.string.known_words_load_more))
+                            Text(word, Modifier.weight(1f))
+                            OutlinedButton(
+                                onClick = { callbacks.onRemove(word) },
+                                enabled = !state.busy,
+                                modifier = Modifier.testTag(KnownWordsManagerTestTags.remove(word)),
+                                colors = exitActionButtonColors(isError = true),
+                                border = actionBorder(enabled = !state.busy),
+                            ) {
+                                Text(stringResource(R.string.known_words_remove))
+                            }
+                        }
+                    }
+                    if (presentation.showProgress) {
+                        item(key = "load-more-progress", contentType = "footer") {
+                            CircularProgressIndicator()
+                        }
+                    } else if (presentation.showLoadMore) {
+                        item(key = "load-more", contentType = "footer") {
+                            OutlinedButton(
+                                onClick = callbacks.onLoadMore,
+                                enabled = !state.busy,
+                                colors = outlinedActionButtonColors(),
+                                border = actionBorder(enabled = !state.busy),
+                            ) {
+                                Text(stringResource(R.string.known_words_load_more))
+                            }
                         }
                     }
                 }

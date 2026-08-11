@@ -83,10 +83,12 @@ class _FinishedProcess:
         self,
         *,
         returncode: int = 1,
+        stdout: str = "",
         stderr: str = "",
         communicate_error: Exception | None = None,
     ) -> None:
         self.returncode = returncode
+        self.stdout = stdout
         self.stderr = stderr
         self.communicate_error = communicate_error
         self.killed = False
@@ -104,7 +106,7 @@ class _FinishedProcess:
         del timeout
         if self.communicate_error is not None:
             raise self.communicate_error
-        return "", self.stderr
+        return self.stdout, self.stderr
 
 
 class _Registry:
@@ -251,6 +253,44 @@ class MediaProcessCancellationTests(unittest.TestCase):
         self.assertEqual([False], result)
         self.assertTrue(process.killed.is_set())
         self.assertEqual({}, service._animated_encoder_ok)
+
+    def test_transient_encoder_probe_failures_do_not_poison_cache(self) -> None:
+        media = self._media_extractor()
+        encoder = "libmp3lame"
+        failures = (
+            ("spawn", OSError("spawn failed")),
+            ("timeout", _BlockingProcess(timeout_once=True)),
+            (
+                "communicate",
+                _FinishedProcess(communicate_error=OSError("communicate failed")),
+            ),
+            (
+                "nonzero",
+                _FinishedProcess(returncode=1, stdout=f" V..... {encoder}"),
+            ),
+        )
+
+        for name, failure in failures:
+            with self.subTest(name=name):
+                service = object.__new__(media.MediaExtractorService)
+                service.config = object()
+                service._encoder_probe_lock = threading.Lock()
+                service._animated_encoder_ok = {}
+                success = _FinishedProcess(
+                    returncode=0,
+                    stdout=f" A..... {encoder}",
+                )
+                popen = mock.Mock(side_effect=[failure, success])
+
+                with mock.patch.object(media.subprocess, "Popen", popen):
+                    results = [
+                        service._check_encoder_available(encoder),
+                        service._check_encoder_available(encoder),
+                    ]
+
+                self.assertEqual([False, True], results)
+                self.assertEqual(2, popen.call_count)
+                self.assertEqual({encoder: True}, service._animated_encoder_ok)
 
     def test_audio_stream_cache_is_single_flight_and_threads_registry(self) -> None:
         media = self._media_extractor()

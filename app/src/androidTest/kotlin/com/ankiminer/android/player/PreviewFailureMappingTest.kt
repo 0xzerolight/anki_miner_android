@@ -53,12 +53,23 @@ class PreviewFailureMappingTest {
     }
 
     @Test
-    fun unsupportedAudioTrackMapsToAudioTrackUnsupportedWithCodecLabel() {
+    fun supportedDubDoesNotMaskUnsupportedPreferredJapaneseTrack() {
+        val supportedEnglish =
+            Format.Builder()
+                .setSampleMimeType(MimeTypes.AUDIO_AAC)
+                .setLanguage("eng")
+                .build()
+        val unsupportedJapanese =
+            Format.Builder()
+                .setSampleMimeType(MimeTypes.AUDIO_DTS)
+                .setCodecs("dts")
+                .setLanguage("jpn")
+                .build()
         val tracks =
             Tracks(
                 listOf(
-                    group(videoFormat(), C.FORMAT_HANDLED, selected = true),
-                    group(audioFormat(), C.FORMAT_UNSUPPORTED_SUBTYPE, selected = false),
+                    group(supportedEnglish, C.FORMAT_HANDLED, selected = true),
+                    group(unsupportedJapanese, C.FORMAT_UNSUPPORTED_SUBTYPE, selected = false),
                 ),
             )
 

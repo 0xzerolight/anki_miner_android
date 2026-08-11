@@ -162,6 +162,23 @@ internal suspend fun runStartupRecoverySequence(
     refreshAdmission()
 }
 
+/** Contains expected update-state storage failures at the process-owned coroutine boundary. */
+internal suspend fun runUpdateOperation(
+    event: String,
+    operation: suspend () -> Unit,
+) {
+    try {
+        operation()
+    } catch (failure: IOException) {
+        AppLog.w(
+            LogComponent.SETTINGS,
+            event,
+            failure,
+            "outcome" to "fail",
+        )
+    }
+}
+
 class AnkiMinerApplication : Application() {
     internal val stringResourceResolver by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AndroidStringResourceResolver(this)
@@ -521,7 +538,9 @@ class AnkiMinerApplication : Application() {
         }
         applicationScope.launch(Dispatchers.IO) {
             try {
-                updateCheckCoordinator.checkIfDue()
+                runUpdateOperation("update.check") {
+                    updateCheckCoordinator.checkIfDue()
+                }
             } catch (failure: RuntimeException) {
                 AppLog.w(LogComponent.SETTINGS, "update.check", failure, "outcome" to "fail")
             }
@@ -656,15 +675,27 @@ class AnkiMinerApplication : Application() {
     }
 
     internal fun setUpdateCheckEnabled(enabled: Boolean) {
-        applicationScope.launch { updateCheckCoordinator.setEnabled(enabled) }
+        applicationScope.launch {
+            runUpdateOperation("update.enabled.write") {
+                updateCheckCoordinator.setEnabled(enabled)
+            }
+        }
     }
 
     internal fun checkForUpdates() {
-        applicationScope.launch { updateCheckCoordinator.checkNow() }
+        applicationScope.launch {
+            runUpdateOperation("update.check") {
+                updateCheckCoordinator.checkNow()
+            }
+        }
     }
 
     internal fun skipAvailableUpdate() {
-        applicationScope.launch { updateCheckCoordinator.skipAvailable() }
+        applicationScope.launch {
+            runUpdateOperation("update.skip.write") {
+                updateCheckCoordinator.skipAvailable()
+            }
+        }
     }
 
     /** Refresh process-owned state which may change while an external Android UI is visible. */

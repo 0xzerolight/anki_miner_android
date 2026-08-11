@@ -274,6 +274,22 @@ class SharedMiningContractsTest {
     }
 
     @Test
+    fun candidateSearchMatchesCanonicallyEquivalentJapaneseText() {
+        val candidate = candidate("decomposed-query", "ば", frequency = 1, occurrences = 1)
+
+        val matches =
+            curateCandidates(
+                candidates = listOf(candidate),
+                selectedCandidateIds = emptySet(),
+                query = "は\u3099",
+                filter = CurationFilter.ALL,
+                sort = CurationSort.FREQUENCY,
+            )
+
+        assertEquals(listOf(candidate), matches)
+    }
+
+    @Test
     fun pendingReducerClearsTerminalWorkWithoutClearingIndependentReset() {
         val pending =
             MiningPendingState(reset = true)

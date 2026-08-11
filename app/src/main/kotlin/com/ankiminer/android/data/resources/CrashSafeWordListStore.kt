@@ -64,10 +64,20 @@ internal class CrashSafeWordListStore(
     }
 
     fun remove(kind: WordListKind): Boolean {
-        val targetRemoved = !target(kind).exists() || target(kind).delete()
-        val candidateRemoved = !candidate(kind).exists() || candidate(kind).delete()
-        val backupRemoved = !backup(kind).exists() || backup(kind).delete()
-        return targetRemoved && candidateRemoved && backupRemoved
+        val target = target(kind)
+        val candidate = candidate(kind)
+        val backup = backup(kind)
+        val targetExists = target.exists()
+        val candidateExists = candidate.exists()
+        val backupExists = backup.exists()
+        val changed = targetExists || candidateExists || backupExists
+        val targetRemoved = !targetExists || target.delete()
+        val candidateRemoved = !candidateExists || candidate.delete()
+        val backupRemoved = !backupExists || backup.delete()
+        if (!targetRemoved || !candidateRemoved || !backupRemoved || !changed) {
+            return targetRemoved && candidateRemoved && backupRemoved
+        }
+        return runCatching { syncDirectory(root) }.isSuccess
     }
 
     private fun recover(kind: WordListKind) {

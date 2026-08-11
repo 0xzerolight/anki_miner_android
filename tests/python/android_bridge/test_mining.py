@@ -1107,6 +1107,45 @@ def test_expression_audio_chain_is_source_first_cancellable_and_best_effort() ->
     assert calls == ["close:broken", "close:miss", "close:hit"]
 
 
+@pytest.mark.parametrize(
+    ("method_name", "args"),
+    [
+        ("fetch", ("猫", "ねこ")),
+        ("fetch_candidates", ([("猫", "ねこ")],)),
+    ],
+)
+def test_expression_audio_chain_reraises_memory_error(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    calls: list[str] = []
+
+    class ExhaustedFetcher:
+        def fetch(self, *_: object) -> None:
+            calls.append("exhausted")
+            raise MemoryError("interpreter exhausted")
+
+        def fetch_candidates(self, *_: object) -> None:
+            calls.append("exhausted")
+            raise MemoryError("interpreter exhausted")
+
+    class ForbiddenFallback:
+        def fetch(self, *_: object) -> None:
+            calls.append("fallback")
+            return None
+
+        def fetch_candidates(self, *_: object) -> None:
+            calls.append("fallback")
+            return None
+
+    chain = mining._ExpressionAudioSourceChain([ExhaustedFetcher(), ForbiddenFallback()])
+
+    with pytest.raises(MemoryError, match="interpreter exhausted"):
+        getattr(chain, method_name)(*args)
+
+    assert calls == ["exhausted"]
+
+
 def test_expression_audio_chain_pins_pack_copy_until_run_close(tmp_path: Path) -> None:
     pytest.importorskip("requests", reason="runtime dependency lane")
     from android_bridge.expression_audio_fetcher import _RunAudioCache
@@ -1437,12 +1476,45 @@ def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
         chain.close()
 
 
-def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> None:
-    calls: list[str] = []
+def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, object]] = []
+
+    class Response:
+        status_code = 200
+        headers: dict[str, str] = {}
+
+        def iter_content(self, *, chunk_size: int) -> object:
+            assert chunk_size == 8192
+            yield json.dumps(
+                {
+                    "data": [
+                        {
+                            "senses": [
+                                {"english_definitions": ["cat & companion"]},
+                            ]
+                        }
+                    ]
+                }
+            ).encode()
+
+        def close(self) -> None:
+            calls.append(("response-close", None))
+
+    class Session:
+        def get(self, url: str, **kwargs: object) -> Response:
+            calls.append((url, kwargs))
+            return Response()
+
+        def close(self) -> None:
+            calls.append(("session-close", None))
 
     class OnlineProvider:
         name = "online"
         is_online = True
+        _api_url = "https://jisho.org/api/v1/search/words"
+        _delay = 0.0
 
         def is_available(self) -> bool:
             return True
@@ -1451,12 +1523,12 @@ def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> No
             return True
 
         def lookup(self, word: str) -> str | None:
-            calls.append(word)
-            return f"definition:{word}"
+            raise AssertionError("Android wrapper must own Jisho transport")
 
         def close(self) -> None:
-            calls.append("closed")
+            calls.append(("provider-close", None))
 
+    monkeypatch.setattr(mining, "_new_jisho_session", Session, raising=False)
     cancelled = threading.Event()
     wrapped = mining._android_dictionary_provider_chain(
         [OnlineProvider()],
@@ -1464,15 +1536,273 @@ def test_online_dictionary_provider_is_memoized_and_cancel_gated_per_run() -> No
     )[0]
 
     # Definition and glossary passes reuse the one consented network lookup.
-    assert wrapped.lookup("猫") == "definition:猫"
-    assert wrapped.lookup("猫") == "definition:猫"
-    assert calls == ["猫"]
+    expected = (
+        '<div class="yomitan-glossary"><ol data-count="1">'
+        '<li data-dictionary="online"><i>(online)</i>'
+        '<ul class="gloss-list" data-count="1"><li class="gloss-item">'
+        '<div class="gloss-content">cat &amp; companion</div></li></ul></li></ol></div>'
+    )
+    assert wrapped.lookup("猫") == expected
+    assert wrapped.lookup("猫") == expected
+    request_calls = [call for call in calls if call[0].startswith("https://")]
+    assert len(request_calls) == 1
 
     cancelled.set()
     assert wrapped.lookup("犬") is None
-    assert calls == ["猫"]
+    assert len([call for call in calls if call[0].startswith("https://")]) == 1
     wrapped.close()
-    assert calls == ["猫", "closed"]
+    assert calls[-2:] == [("session-close", None), ("provider-close", None)]
+
+
+def test_online_dictionary_cancellation_closes_trickling_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cancelled = threading.Event()
+    body_started = threading.Event()
+    response_closed = threading.Event()
+    delegated_release = threading.Event()
+
+    class TricklingResponse:
+        status_code = 200
+        headers: dict[str, str] = {}
+
+        def iter_content(self, *, chunk_size: int) -> object:
+            assert chunk_size == 8192
+            body_started.set()
+            while not response_closed.wait(0.01):
+                yield b" "
+
+        def close(self) -> None:
+            response_closed.set()
+
+    class Session:
+        def get(self, _url: str, **_kwargs: object) -> TricklingResponse:
+            return TricklingResponse()
+
+        def close(self) -> None:
+            return None
+
+    class OnlineProvider:
+        name = "Jisho API"
+        is_online = True
+        _api_url = "https://jisho.org/api/v1/search/words"
+        _delay = 0.0
+
+        def is_available(self) -> bool:
+            return True
+
+        def load(self) -> bool:
+            return True
+
+        def lookup(self, _word: str) -> str | None:
+            delegated_release.wait(5)
+            return "delegated"
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(mining, "_new_jisho_session", Session, raising=False)
+    wrapped = mining._AndroidOnlineDictionaryProvider(OnlineProvider(), cancelled.is_set)
+    results: list[str | None] = []
+    thread = threading.Thread(target=lambda: results.append(wrapped.lookup("猫")), daemon=True)
+    thread.start()
+    try:
+        assert body_started.wait(1), "Android wrapper did not start its owned streamed request"
+        cancelled.set()
+        thread.join(1)
+        assert not thread.is_alive(), "in-flight lookup ignored cancellation"
+        assert response_closed.is_set(), "cancellation did not close active response"
+        assert results == [None]
+    finally:
+        delegated_release.set()
+        thread.join(1)
+        wrapped.close()
+
+
+def test_online_dictionary_cancellation_returns_while_response_headers_are_pending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cancelled = threading.Event()
+    request_started = threading.Event()
+    session_closed = threading.Event()
+
+    class Session:
+        def get(self, _url: str, **_kwargs: object) -> object:
+            request_started.set()
+            session_closed.wait(5)
+            raise OSError("session closed")
+
+        def close(self) -> None:
+            session_closed.set()
+
+    provider = SimpleNamespace(
+        name="Jisho API",
+        is_online=True,
+        _api_url="https://jisho.org/api/v1/search/words",
+        _delay=0.0,
+        is_available=lambda: True,
+        load=lambda: True,
+        lookup=lambda _word: "delegated",
+        close=lambda: None,
+    )
+    monkeypatch.setattr(mining, "_new_jisho_session", Session)
+    wrapped = mining._AndroidOnlineDictionaryProvider(provider, cancelled.is_set)
+    results: list[str | None] = []
+    thread = threading.Thread(target=lambda: results.append(wrapped.lookup("猫")), daemon=True)
+    thread.start()
+    try:
+        assert request_started.wait(1), "Jisho request did not enter the response-header phase"
+        cancelled.set()
+        thread.join(0.2)
+        assert not thread.is_alive(), "header-phase request ignored cancellation"
+        assert session_closed.is_set(), "cancellation did not close the request session"
+        assert results == [None]
+    finally:
+        session_closed.set()
+        thread.join(1)
+        wrapped.close()
+
+
+def test_online_dictionary_does_not_stack_requests_after_header_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request_count = 0
+    release_requests = threading.Event()
+
+    class Session:
+        def get(self, _url: str, **_kwargs: object) -> object:
+            nonlocal request_count
+            request_count += 1
+            release_requests.wait(5)
+            raise OSError("late transport failure")
+
+        def close(self) -> None:
+            # Requests closes adapters/pools but does not guarantee interruption
+            # of a request already reading response headers.
+            return None
+
+    provider = SimpleNamespace(
+        name="Jisho API",
+        is_online=True,
+        _api_url="https://jisho.org/api/v1/search/words",
+        _delay=0.0,
+        is_available=lambda: True,
+        load=lambda: True,
+        lookup=lambda _word: "delegated",
+        close=lambda: None,
+    )
+    monkeypatch.setattr(mining, "_new_jisho_session", Session)
+    monkeypatch.setattr(mining, "_JISHO_TOTAL_DEADLINE_SECONDS", 0.05)
+    monkeypatch.setattr(mining, "_JISHO_WATCH_POLL_SECONDS", 0.005)
+    wrapped = mining._AndroidOnlineDictionaryProvider(provider, lambda: False)
+    try:
+        assert wrapped.lookup("猫") is None
+        assert wrapped.lookup("犬") is None
+        assert request_count == 1
+    finally:
+        release_requests.set()
+        wrapped.close()
+
+
+def test_online_dictionary_total_deadline_stops_trickling_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    response_closed = threading.Event()
+
+    class TricklingResponse:
+        status_code = 200
+        headers: dict[str, str] = {}
+
+        def iter_content(self, *, chunk_size: int) -> object:
+            assert chunk_size == 8192
+            while not response_closed.wait(0.005):
+                yield b" "
+
+        def close(self) -> None:
+            response_closed.set()
+
+    class Session:
+        def get(self, _url: str, **_kwargs: object) -> TricklingResponse:
+            return TricklingResponse()
+
+        def close(self) -> None:
+            return None
+
+    provider = SimpleNamespace(
+        name="Jisho API",
+        is_online=True,
+        _api_url="https://jisho.org/api/v1/search/words",
+        _delay=0.0,
+        is_available=lambda: True,
+        load=lambda: True,
+        lookup=lambda _word: "delegated",
+        close=lambda: None,
+    )
+    monkeypatch.setattr(mining, "_new_jisho_session", Session, raising=False)
+    monkeypatch.setattr(mining, "_JISHO_TOTAL_DEADLINE_SECONDS", 0.05, raising=False)
+    monkeypatch.setattr(mining, "_JISHO_WATCH_POLL_SECONDS", 0.005, raising=False)
+    wrapped = mining._AndroidOnlineDictionaryProvider(provider, lambda: False)
+    try:
+        assert wrapped.lookup("猫") is None
+        assert response_closed.wait(0.2), "total deadline did not close trickling response"
+    finally:
+        wrapped.close()
+
+
+def test_online_dictionary_rejects_http_redirect_without_following(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, dict[str, object]]] = []
+    response_closed = False
+
+    class RedirectResponse:
+        status_code = 302
+        headers = {"Location": "http://jisho.org/api/v1/search/words?keyword=猫"}
+
+        def iter_content(self, **_kwargs: object) -> object:
+            raise AssertionError("redirect bodies must not be consumed")
+
+        def close(self) -> None:
+            nonlocal response_closed
+            response_closed = True
+
+    class Session:
+        def get(self, url: str, **kwargs: object) -> RedirectResponse:
+            calls.append((url, kwargs))
+            return RedirectResponse()
+
+        def close(self) -> None:
+            return None
+
+    provider = SimpleNamespace(
+        name="Jisho API",
+        is_online=True,
+        _api_url="https://jisho.org/api/v1/search/words",
+        _delay=0.0,
+        is_available=lambda: True,
+        load=lambda: True,
+        lookup=lambda _word: "cleartext injected definition",
+        close=lambda: None,
+    )
+    monkeypatch.setattr(mining, "_new_jisho_session", Session, raising=False)
+    wrapped = mining._AndroidOnlineDictionaryProvider(provider, lambda: False)
+    try:
+        assert wrapped.lookup("猫") is None
+    finally:
+        wrapped.close()
+
+    assert response_closed
+    assert calls == [
+        (
+            "https://jisho.org/api/v1/search/words",
+            {
+                "params": {"keyword": "猫"},
+                "timeout": (1.0, 1.0),
+                "stream": True,
+                "allow_redirects": False,
+            },
+        )
+    ]
 
 
 def test_offline_dictionary_error_is_reworded_for_android() -> None:

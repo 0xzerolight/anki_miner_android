@@ -284,7 +284,7 @@ internal class AndroidResourceManager(
 
     override suspend fun recoverAndRefresh() {
         mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
-        val interrupted = operationJournal.read()
+        val interrupted = runOnExecutor(resourceExecutor) { operationJournal.read() }
         val clearInterruptedAudioInput = interrupted?.origin == ResourceFailureOrigin.AUDIO
         val retainKnownWordsInput =
             interrupted?.origin == ResourceFailureOrigin.KNOWN_WORDS &&
@@ -327,7 +327,7 @@ internal class AndroidResourceManager(
             )
         }
         if (recovered) {
-            operationJournal.clear()
+            runOnExecutor(resourceExecutor) { operationJournal.clear() }
             interrupted
                 ?.takeUnless(::interruptedOperationAlreadyCommitted)
                 ?.let { operation ->
@@ -470,7 +470,7 @@ internal class AndroidResourceManager(
                         ),
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
-                refreshFromPython()
+                refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
                 if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
@@ -646,7 +646,7 @@ internal class AndroidResourceManager(
                         ),
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
-                refreshFromPython()
+                refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
                 if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
@@ -717,7 +717,7 @@ internal class AndroidResourceManager(
                         decode = ResourceBridgeCodec::decodeImportedPitch,
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
-                refreshFromPython()
+                refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
                 if (clearSelectionAfterImport) clearResourceImportSelection(retainedUri)
@@ -798,9 +798,14 @@ internal class AndroidResourceManager(
         pack: AudioPackCandidate,
         replace: Boolean,
     ) {
-        // The retained archive is reused only when the preflight that produced it
-        // actually offered this pack; anything else restages from the picked URI.
-        val pending = pendingAudioPackImport?.takeIf { pack in it.packs }
+        // Format is display metadata and is not preserved by the picker state. Stable pack
+        // identity is its id plus archive path; anything else restages from the picked URI.
+        val pending =
+            pendingAudioPackImport?.takeIf { retained ->
+                retained.packs.any { candidate ->
+                    candidate.packId == pack.packId && candidate.packPath == pack.packPath
+                }
+            }
         val completed = runOperation(
             strings.resolve(R.string.resource_operation_import_audio_pack),
             if (pending == null) {
@@ -848,7 +853,7 @@ internal class AndroidResourceManager(
                         ),
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
-                refreshFromPython()
+                refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
                 clearPendingAudioPackImport()
@@ -910,7 +915,7 @@ internal class AndroidResourceManager(
                         ),
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
-                refreshFromPython()
+                refreshAfterCommittedMutation()
             } finally {
                 staged?.file?.delete()
                 runBlocking { safBroker.releaseReadAccess(retained.uri) }
@@ -1104,36 +1109,39 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun confirmKnownWordsImport() {
-        val pending = pendingKnownWordsImport ?: return
-        val succeeded =
-            runOperation(
-                strings.resolve(R.string.resource_operation_import_known_words),
-                ResourceOperationPhase.IMPORTING,
-                ResourceFailureOrigin.KNOWN_WORDS,
-                knownWordsOperation = KnownWordsFailureOperation.IMPORT,
-                persistForRecovery = true,
-            ) { operation ->
-                operation.cancellation.check()
-                operation.pythonStarted.set(true)
-                val imported =
-                    ResourceBridgeCodec.decodeImportedKnownWords(
-                        bridge.dispatch(
-                            ResourceBridgeCodec.encodeKnownWordsImportRequest(
-                                operation.id,
-                                pending.staged.file.canonicalPath,
-                                pending.format,
-                            ),
-                            null,
+        if (pendingKnownWordsImport == null) return
+        val admittedPending = AtomicReference<PendingKnownWordsImport?>()
+        runOperation(
+            strings.resolve(R.string.resource_operation_import_known_words),
+            ResourceOperationPhase.IMPORTING,
+            ResourceFailureOrigin.KNOWN_WORDS,
+            knownWordsOperation = KnownWordsFailureOperation.IMPORT,
+            persistForRecovery = true,
+            onAdmitted = { admittedPending.set(pendingKnownWordsImport) },
+        ) { operation ->
+            val pending = admittedPending.get() ?: return@runOperation
+            operation.cancellation.check()
+            operation.pythonStarted.set(true)
+            val imported =
+                ResourceBridgeCodec.decodeImportedKnownWords(
+                    bridge.dispatch(
+                        ResourceBridgeCodec.encodeKnownWordsImportRequest(
+                            operation.id,
+                            pending.staged.file.canonicalPath,
+                            pending.format,
                         ),
-                    )
-                mutableState.update {
-                    it.copy(lastLocalImport = imported)
-                }
-                refreshFromPython()
+                        null,
+                    ),
+                )
+            mutableState.update {
+                it.copy(lastLocalImport = imported)
             }
-        if (succeeded) {
-            clearPendingKnownWordsImport()
-            mutableState.update { it.copy(knownWordsImportPreview = null) }
+            try {
+                refreshAfterCommittedMutation()
+            } finally {
+                clearPendingKnownWordsImport()
+                mutableState.update { it.copy(knownWordsImportPreview = null) }
+            }
         }
     }
 
@@ -1159,8 +1167,22 @@ internal class AndroidResourceManager(
     }
 
     override fun dismissKnownWordsImportPreview() {
-        clearPendingKnownWordsImport()
-        mutableState.update { it.copy(knownWordsImportPreview = null) }
+        if (!operationMutex.tryLock()) return
+        val started = AtomicBoolean(false)
+        try {
+            resourceExecutor.execute {
+                started.set(true)
+                try {
+                    clearPendingKnownWordsImport()
+                    mutableState.update { it.copy(knownWordsImportPreview = null) }
+                } finally {
+                    operationMutex.unlock()
+                }
+            }
+        } catch (failure: Throwable) {
+            if (!started.get()) operationMutex.unlock()
+            throw failure
+        }
     }
 
     override suspend fun searchKnownWords(query: String, loadMore: Boolean) {
@@ -1388,22 +1410,21 @@ internal class AndroidResourceManager(
         retryMutation: PendingKnownWordsMutation,
         mutate: (ActiveOperation) -> Unit,
     ) {
-        pendingKnownWordsMutation = retryMutation
-        val succeeded =
-            runOperation(
-                label,
-                phase,
-                ResourceFailureOrigin.KNOWN_WORDS,
-                ResourceFailureRetry(ResourceFailureAction.RETRY),
-            ) { operation ->
-                operation.cancellation.check()
-                operation.pythonStarted.set(true)
-                mutate(operation)
-                refreshFromPython()
-                mutableState.update { it.copy(knownWordsPage = null) }
+        runOperation(
+            label,
+            phase,
+            ResourceFailureOrigin.KNOWN_WORDS,
+            ResourceFailureRetry(ResourceFailureAction.RETRY),
+            onAdmitted = { pendingKnownWordsMutation = retryMutation },
+        ) { operation ->
+            operation.cancellation.check()
+            operation.pythonStarted.set(true)
+            mutate(operation)
+            if (pendingKnownWordsMutation == retryMutation) {
+                pendingKnownWordsMutation = null
             }
-        if (succeeded && pendingKnownWordsMutation == retryMutation) {
-            pendingKnownWordsMutation = null
+            mutableState.update { it.copy(knownWordsPage = null) }
+            refreshAfterCommittedMutation()
         }
     }
 
@@ -1546,6 +1567,7 @@ internal class AndroidResourceManager(
         requiresStartupReady: Boolean = true,
         waitForMutex: Boolean = false,
         clearMatchingFailureOnSuccess: Boolean = true,
+        onAdmitted: (ActiveOperation) -> Unit = {},
         block: (ActiveOperation) -> Unit,
     ): Boolean {
         if (
@@ -1592,17 +1614,20 @@ internal class AndroidResourceManager(
             if (holdsForegroundLease) foregroundLease.start(initialProgress)
             var completed = false
             try {
-                if (persistForRecovery) {
-                    operationJournal.write(
-                        PersistedResourceOperation(
-                            origin = failureOrigin,
-                            retry = failureRetry,
-                            knownWordsOperation = knownWordsOperation,
-                        ),
-                    )
+                onAdmitted(operation)
+                runOnExecutor(resourceExecutor) {
+                    if (persistForRecovery) {
+                        operationJournal.write(
+                            PersistedResourceOperation(
+                                origin = failureOrigin,
+                                retry = failureRetry,
+                                knownWordsOperation = knownWordsOperation,
+                            ),
+                        )
+                    }
+                    block(operation)
+                    verifyTerminalCancellation(operation)
                 }
-                runOnExecutor(resourceExecutor) { block(operation) }
-                verifyTerminalCancellation(operation)
                 completed = true
                 // instrumentation: silent — reconciliation already recorded retry state
             } catch (_: ResourceInventoryReconciliationException) {
@@ -1715,18 +1740,22 @@ internal class AndroidResourceManager(
                     }
                 }
                 try {
-                    clearStaging()
+                    withContext(NonCancellable) {
+                        runOnExecutor(resourceExecutor) {
+                            try {
+                                clearStaging()
+                            } finally {
+                                if (persistForRecovery) operationJournal.clear()
+                            }
+                        }
+                    }
                 } finally {
                     try {
-                        if (persistForRecovery) operationJournal.clear()
+                        if (holdsForegroundLease) foregroundLease.stop()
                     } finally {
-                        try {
-                            if (holdsForegroundLease) foregroundLease.stop()
-                        } finally {
-                            synchronized(activeMonitor) { if (active === operation) active = null }
-                            mutableState.update { it.copy(activeOperation = null) }
-                            workLease.close()
-                        }
+                        synchronized(activeMonitor) { if (active === operation) active = null }
+                        mutableState.update { it.copy(activeOperation = null) }
+                        workLease.close()
                     }
                 }
             }
