@@ -18,6 +18,16 @@ class ProviderMutationContractTest {
     }
 
     @Test
+    fun `media receipt accepts protocol safe direct fallback basename`() {
+        val raw = "file:///dict__a%22%3Bb.svg"
+
+        assertEquals(
+            MediaInsertReceipt("dict__a\";b.svg", raw),
+            MediaInsertReceiptValidator.validate(raw),
+        )
+    }
+
+    @Test
     fun `media receipt rejects noncanonical unsafe and non-item URI shapes`() {
         listOf<String?>(
             null,
@@ -29,8 +39,6 @@ class ProviderMutationContractTest {
             "file:////a.mp3",
             "file:///tmp/a.mp3",
             "file:///a%2Fb.mp3",
-            "file:///a%3Ab.mp3",
-            "file:///%20a.mp3",
             "file:///..",
             "file:///%61.mp3",
             "file:///%e6%97%a5.mp3",

@@ -31,6 +31,7 @@ import com.ankiminer.android.anki.protocol.CreatedNote
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateNote
 import com.ankiminer.android.anki.protocol.FailedNote
+import com.ankiminer.android.anki.protocol.MediaBinding
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.protocol.UncertainNote
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
@@ -142,6 +143,71 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(1, harness.provider.insertCalls)
             assertEquals(1, harness.provider.routeCalls)
             assertTrue(harness.journal.readyResponse?.results?.single() is AlignedResult.NoteCreated)
+        }
+
+    @Test
+    fun `routing preflight preserves typed access failure after note commit`() {
+        listOf(
+            com.ankiminer.android.anki.protocol.AnkiErrorCode.PERMISSION_REQUIRED to
+                "AnkiDroid permission is required",
+            com.ankiminer.android.anki.protocol.AnkiErrorCode.API_DISABLED to
+                "The AnkiDroid API became disabled",
+        ).forEach { (code, message) ->
+            withHarness { harness ->
+                var preflightCalls = 0
+                harness.reads.cards =
+                    listOf(CardIdentity(CARD_ID, NOTE_ID, 0, DEFAULT_DECK_ID))
+                harness.provider.preflightBlock = {
+                    preflightCalls += 1
+                    if (preflightCalls == 2) {
+                        throw AnkiReadFailure(
+                            code = code,
+                            retryable = true,
+                            stableMessage = message,
+                        )
+                    }
+                }
+
+                val outcome = harness.service.create(harness.owner, harness.request())
+
+                assertTrue(outcome.result.results.single() is CommittedFailedNote)
+                assertEquals(code, outcome.result.error?.code)
+                assertEquals(message, outcome.result.error?.message)
+                assertEquals(false, outcome.result.error?.retryable)
+                assertEquals(1, harness.provider.insertCalls)
+                assertEquals(0, harness.provider.routeCalls)
+                assertEquals(ChildState.PROVEN_NOT_COMMITTED, harness.journal.routingChildState)
+            }
+        }
+    }
+
+    @Test
+    fun `entity escaped direct dictionary filename links durable acknowledgement to note`() =
+        withHarness { harness ->
+            val filename = "dict__a\";b.svg"
+            val definition =
+                "<img class=\"anki-miner-dict-media\" src=\"dict__a&quot;;b.svg\">"
+            harness.registry.commitDurableMutationResponse(
+                harness.owner,
+                MEDIA_REQUEST_ID,
+                listOf(MediaAcknowledgement(ASSET_ID, filename, durableClaimId = 77L)),
+            )
+            harness.reads.noteJoinedFields = "猫\u001f$definition"
+            val original = harness.request()
+            val note =
+                original.notes.single().copy(
+                    fields = mapOf("Expression" to "猫", "Meaning" to definition),
+                    mediaBindings = listOf(MediaBinding(ASSET_ID, filename)),
+                )
+
+            val outcome =
+                harness.service.create(
+                    harness.owner,
+                    original.copy(notes = listOf(note)),
+                )
+
+            assertEquals(listOf(CreatedNote(CLIENT_NOTE_ID, NOTE_ID)), outcome.result.results)
+            assertNull(outcome.result.error)
         }
     }
 
@@ -485,6 +551,7 @@ class JournalBackedNoteMutationServiceTest {
         var cards: List<CardIdentity> = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, TARGET.deck.id))
         var duplicateReads = 0
         var failNextCardRead = false
+        var noteJoinedFields = "猫\u001fcat"
 
         override fun readTargetBeforeEntry(
             owner: AnkiRunStateRegistry.RunOwner,
@@ -503,7 +570,7 @@ class JournalBackedNoteMutationServiceTest {
         override fun readTargetAfterEntry(expected: TargetSnapshot): TargetSnapshot = expected
 
         override fun readNoteAfterEntry(noteId: Long): NoteSnapshot =
-            NoteSnapshot(noteId, TARGET.model.id, "猫\u001fcat", " mined ")
+            NoteSnapshot(noteId, TARGET.model.id, noteJoinedFields, " mined ")
 
         override fun readCardsAfterEntry(noteId: Long, templateCount: Int): List<CardIdentity> = cards
 
@@ -758,7 +825,9 @@ class JournalBackedNoteMutationServiceTest {
         const val RUN_ID = "run_00000000000000000000000000000001"
         const val TARGET_REQUEST_ID = "anki_00000000000000000000000000000001"
         const val REQUEST_ID = "anki_00000000000000000000000000000002"
+        const val MEDIA_REQUEST_ID = "anki_00000000000000000000000000000003"
         const val BASELINE_TOKEN = "baseline_00000000000000000000000000000001"
+        const val ASSET_ID = "asset_00000000000000000000000000000001"
         const val CLIENT_NOTE_ID = "note_00000000000000000000000000000001"
         const val NOTE_ID = 500L
         const val CARD_ID = 501L

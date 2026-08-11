@@ -98,7 +98,7 @@ class AnkiProviderReadinessTest {
     @Test
     fun `unexpected access and collection faults are logged before readiness degrades`() {
         val accessFailure = IllegalStateException("access fault")
-        val absent =
+        val checkFailed =
             AnkiProviderReadinessProbe(
                 workerThreadGuard = worker,
                 accessStatus = { throw accessFailure },
@@ -112,7 +112,7 @@ class AnkiProviderReadinessTest {
                 operational = { throw collectionFailure },
             )
 
-        assertEquals(AnkiProviderReadiness.NotInstalled, absent.provider)
+        assertEquals(AnkiProviderReadiness.NotChecked, checkFailed.provider)
         assertEquals(AnkiProviderReadiness.Uninitialized, uninitialized.provider)
         assertEquals(2, recorded.records.size)
         assertTrue(

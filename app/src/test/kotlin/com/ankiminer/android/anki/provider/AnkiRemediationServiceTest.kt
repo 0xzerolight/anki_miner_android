@@ -120,6 +120,28 @@ class AnkiRemediationServiceTest {
     }
 
     @Test
+    fun `committed acknowledgement stays resolved when post-action inventory refresh fails`() {
+        val journal =
+            FakeRemediationJournal(
+                mutableListOf(record(10, RemediationKind.MEDIA_STORED_UNATTACHED)),
+            )
+        journal.beforeRead = {
+            if (journal.readCount > 1) error("post-action inventory read failed")
+        }
+
+        val result =
+            service(journal).perform(
+                AnkiRemediationCommand.AcknowledgeUnattachedMedia(10),
+            )
+
+        assertTrue(result is AnkiRemediationCommandResult.Resolved)
+        assertTrue(result.inventory.pending.isEmpty())
+        assertEquals(listOf(10L), journal.acknowledgedIds)
+        assertEquals(RemediationState.RESOLVED, journal.resolved.single().state)
+        assertEquals(1, journal.readCount)
+    }
+
+    @Test
     fun `staging retry delegates to existing recovery and never calls generic resolution`() {
         val journal =
             FakeRemediationJournal(

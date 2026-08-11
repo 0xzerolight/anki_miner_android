@@ -281,26 +281,37 @@ internal class AnkiRemediationService(
             ensureCommandAllowed(pending, command)
             ensureActive(cancellation)
 
-            when (command) {
-                is AnkiRemediationCommand.RetryStagingCleanup -> retryStagingCleanup()
-                is AnkiRemediationCommand.AcknowledgeUnattachedMedia ->
-                    acknowledgeUnattachedMedia(command.remediationId)
-                is AnkiRemediationCommand.AcknowledgeUncertainMedia ->
-                    acknowledgeUncertainMedia(command.remediationId)
-                is AnkiRemediationCommand.ResolveAfterExternalReview ->
-                    resolveAfterExternalReview(pending, command.outcome)
+            val requiresInventoryRefresh =
+                when (command) {
+                    is AnkiRemediationCommand.RetryStagingCleanup -> {
+                        retryStagingCleanup()
+                        true
+                    }
+                    is AnkiRemediationCommand.AcknowledgeUnattachedMedia -> {
+                        acknowledgeUnattachedMedia(command.remediationId)
+                        false
+                    }
+                    is AnkiRemediationCommand.AcknowledgeUncertainMedia -> {
+                        acknowledgeUncertainMedia(command.remediationId)
+                        false
+                    }
+                    is AnkiRemediationCommand.ResolveAfterExternalReview -> {
+                        resolveAfterExternalReview(pending, command.outcome)
+                        false
+                    }
+                }
+
+            if (!requiresInventoryRefresh) {
+                return@exclusive AnkiRemediationCommandResult.Resolved(
+                    AnkiRemediationInventory(
+                        before.pending.filterNot { it.id == command.remediationId },
+                    ),
+                )
             }
 
             val after = readInventory()
             if (after.pending.any { it.id == command.remediationId }) {
-                if (command is AnkiRemediationCommand.RetryStagingCleanup) {
-                    AnkiRemediationCommandResult.StillPending(after)
-                } else {
-                    throw failure(
-                        AnkiRemediationFailure.CORRUPT_INVENTORY,
-                        "A completed Anki remediation action remained pending",
-                    )
-                }
+                AnkiRemediationCommandResult.StillPending(after)
             } else {
                 AnkiRemediationCommandResult.Resolved(after)
             }

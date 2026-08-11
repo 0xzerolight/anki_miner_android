@@ -134,6 +134,15 @@ class SetupUiStateTest {
             ).ankiDroidAction,
         )
         assertNull(SetupUiState(anki = AnkiProviderReadiness.NotChecked).ankiDroidAction)
+        assertEquals(
+            MiningReadinessAction.CHECK_AGAIN,
+            SetupUiState(
+                python = PythonRuntimeReadiness.Ready("/private/runtime"),
+                resourceStartup = ResourceStartupReadiness.READY,
+                anki = AnkiProviderReadiness.NotChecked,
+                uniDicInstalled = true,
+            ).miningReadinessAction,
+        )
         assertNull(
             SetupUiState(anki = AnkiProviderReadiness.Ready(apiSpecVersion = 2, versionCode = 7L))
                 .ankiDroidAction,

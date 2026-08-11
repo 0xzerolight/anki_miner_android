@@ -1215,7 +1215,13 @@ private fun preflightCanonicalResponse(
 
 private fun RuntimeException.afterCapabilityConsumption(): RuntimeException =
     if (this is AnkiReadFailure && retryable) {
-        AnkiReadFailure(code, retryable = false, stableMessage)
+        AnkiReadFailure(
+            code = code,
+            retryable = false,
+            stableMessage = stableMessage,
+            providerErrorReason = providerErrorReason,
+            cause = cause,
+        )
     } else {
         this
     }

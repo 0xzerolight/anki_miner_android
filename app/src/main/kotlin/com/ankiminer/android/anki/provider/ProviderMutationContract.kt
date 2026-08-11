@@ -130,7 +130,7 @@ internal object MediaInsertReceiptValidator {
         if (raw == null || !raw.startsWith(FILE_ITEM_PREFIX)) return null
         val rawSegment = raw.substring(FILE_ITEM_PREFIX.length)
         val actualFilename = decodeCanonicalAndroidPathSegment(rawSegment) ?: return null
-        if (!isSafeCanonicalMediaName(actualFilename)) return null
+        if (!isSafeMediaBasename(actualFilename)) return null
         val parsed = parseExactFileUri(raw) ?: return null
         if (parsed.rawPath != "/$rawSegment") return null
         return MediaInsertReceipt(actualFilename, raw)
@@ -266,15 +266,11 @@ private fun requireRawProviderText(
     require(stats.utf8Bytes <= maxUtf8Bytes) { "$label exceeds the provider contract" }
 }
 
-private fun isSafeCanonicalMediaName(value: String): Boolean =
+private fun isSafeMediaBasename(value: String): Boolean =
     try {
-        requireSafeCanonicalMediaName(
-            value,
-            "provider media filename",
-            minimumScalarCount = 1,
-        )
+        AnkiValidators.validateMediaBasename(value)
         true
-    } catch (_: IllegalArgumentException) {
+    } catch (_: AnkiProtocolException) {
         false
     }
 
