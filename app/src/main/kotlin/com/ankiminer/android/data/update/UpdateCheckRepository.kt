@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -50,8 +49,15 @@ internal class DataStoreUpdateCheckRepository internal constructor(
 
     override val state: Flow<UpdateCheckPreferences> =
         store.data
-            .catch { failure -> if (failure is IOException) emit(emptyPreferences()) else throw failure }
             .map(::decode)
+            .catch { failure ->
+                if (failure is IOException) {
+                    // An unreadable opt-out is unknown state, so network access must fail closed.
+                    emit(UpdateCheckPreferences(enabled = false))
+                } else {
+                    throw failure
+                }
+            }
 
     override suspend fun setEnabled(enabled: Boolean) {
         store.updateData { preferences ->
