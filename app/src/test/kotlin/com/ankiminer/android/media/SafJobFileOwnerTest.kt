@@ -327,6 +327,42 @@ class SafJobFileOwnerTest {
     }
 
     @Test
+    fun ownerCloseReturnsWhenProviderReadIgnoresStreamAndDescriptorClose() {
+        val directory = Files.createTempDirectory("saf-owner-uncooperative-read").toFile()
+        val executor = Executors.newSingleThreadExecutor()
+        val source = UncooperativeInputStream()
+        try {
+            val descriptor = StalledDescriptor(source)
+            val cache = File(directory, "partial.media")
+            val owner =
+                SafJobFileOwner(
+                    DescriptorOpener { _, _ -> descriptor },
+                    CacheFileFactory { cache.apply { createNewFile() } },
+                )
+            val opening =
+                executor.submit<PythonMediaInput> {
+                    owner.openVideoUri("content://test/uncooperative")
+                }
+            assertTrue(source.readStarted.await(1, TimeUnit.SECONDS))
+
+            owner.close()
+
+            val failure =
+                assertThrows(ExecutionException::class.java) {
+                    opening.get(1, TimeUnit.SECONDS)
+                }
+            assertTrue(failure.cause is FileCopyCancelledException)
+            assertEquals(1, source.closeCalls.get())
+            assertEquals(1, descriptor.closeCalls.get())
+            assertFalse(cache.exists())
+        } finally {
+            source.release.countDown()
+            executor.shutdownNow()
+            directory.deleteRecursively()
+        }
+    }
+
+    @Test
     fun startupJanitorRemovesOnlyDirectOrphanEntries() {
         val directory = Files.createTempDirectory("saf-janitor-test").toFile()
         try {
@@ -443,6 +479,31 @@ class SafJobFileOwnerTest {
 
         override fun close() {
             if (closeCalls.incrementAndGet() == 1) closed.countDown()
+        }
+    }
+
+    private class UncooperativeInputStream : InputStream() {
+        val readStarted = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val closeCalls = AtomicInteger()
+
+        override fun read(): Int {
+            val one = ByteArray(1)
+            return if (read(one, 0, 1) < 0) -1 else one[0].toInt() and 0xff
+        }
+
+        override fun read(
+            buffer: ByteArray,
+            offset: Int,
+            length: Int,
+        ): Int {
+            readStarted.countDown()
+            check(release.await(5, TimeUnit.SECONDS)) { "test provider read was not released" }
+            return -1
+        }
+
+        override fun close() {
+            closeCalls.incrementAndGet()
         }
     }
 }

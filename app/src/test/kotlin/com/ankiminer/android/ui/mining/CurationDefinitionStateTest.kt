@@ -50,6 +50,19 @@ class CurationDefinitionStateTest {
     }
 
     @Test
+    fun `an unavailable result is not cached and refocus retries`() {
+        val query = DefinitionQuery("猫", null)
+        val first = fresh.request(query)
+        val unavailable =
+            first.state.completed(first.generation, query, CurationDefinition.Unavailable).state
+
+        assertNull(unavailable.cache[query.term])
+        val retried = unavailable.request(query)
+        assertEquals(query, retried.dispatch)
+        assertEquals(CurationDefinition.Loading, retried.state.visible)
+    }
+
+    @Test
     fun `completing drains the newest queued request`() {
         val first = fresh.request(DefinitionQuery("猫", null))
         val queued = first.state.request(DefinitionQuery("犬", null))

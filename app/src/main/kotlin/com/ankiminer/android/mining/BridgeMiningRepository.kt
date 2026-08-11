@@ -1432,22 +1432,31 @@ internal class BridgeMiningRepository(
         generation: Long,
         message: BridgeMessage.ProgressStart,
     ) {
-        updateProgress(generation, MiningProgress(0, message.total, message.description))
+        val stage = synchronized(monitor) { activeFor(generation)?.progress?.stage }
+        updateProgress(
+            generation,
+            MiningProgress(0, message.total, message.description, stage = stage),
+        )
     }
 
     private fun onProgressUpdate(
         generation: Long,
         message: BridgeMessage.ProgressUpdate,
     ) {
-        val total =
+        val (total, stage) =
             synchronized(monitor) {
-                activeFor(generation)?.progress?.total
-                    ?: throw IllegalStateException("Progress update arrived before progress start")
+                val progress =
+                    activeFor(generation)?.progress
+                        ?: throw IllegalStateException("Progress update arrived before progress start")
+                progress.total to progress.stage
             }
         if (total != 0L && message.current > total) {
             throw IllegalStateException("Progress exceeded its declared total")
         }
-        updateProgress(generation, MiningProgress(message.current, total, message.description))
+        updateProgress(
+            generation,
+            MiningProgress(message.current, total, message.description, stage = stage),
+        )
     }
 
     private fun onProgressStage(
@@ -1462,15 +1471,12 @@ internal class BridgeMiningRepository(
             "total" to message.total,
             "name" to message.name,
         )
-        // The stage becomes the outer band of the bar and its label; the per-stage
-        // item counts restart inside it. Keep the current counts so the bar does
-        // not jump backwards between an on_stage and the on_start that follows.
+        // A stage boundary starts a fresh inner count at the completed edge of the prior band.
+        // The following start/update callbacks retain this stage.
         val stage = MiningStage(message.index, message.total, message.name)
-        val current = synchronized(monitor) { activeFor(generation)?.progress }
         updateProgress(
             generation,
-            current?.copy(description = message.name, stage = stage)
-                ?: MiningProgress(0, 0, message.name, stage = stage),
+            MiningProgress(0, 0, message.name, stage = stage),
         )
     }
 

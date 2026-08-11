@@ -104,27 +104,32 @@ internal fun CurationDefinitionState.completed(
     if (inFlight != query) {
         return CurationDefinitionTransition(this, dispatch = null, generation = this.generation)
     }
-    // Cache even a superseded result: it was a correct answer for its term, and scrolling back to
-    // that row must not re-query.
-    val cached = store(query.term, outcome)
-    val current = if (generation == this.generation) outcome else cached.visible
-    val queued = cached.pendingQuery
+    // Missing and Loaded are authoritative answers. Unavailable means the lookup itself failed,
+    // so keeping it would prevent the existing focus path from retrying after recovery.
+    val resolved =
+        if (outcome == CurationDefinition.Unavailable) {
+            this
+        } else {
+            store(query.term, outcome)
+        }
+    val current = if (generation == this.generation) outcome else resolved.visible
+    val queued = resolved.pendingQuery
     if (queued == null) {
         return CurationDefinitionTransition(
-            state = cached.copy(inFlight = null, visible = current),
+            state = resolved.copy(inFlight = null, visible = current),
             dispatch = null,
             generation = this.generation,
         )
     }
-    cached.cache[queued.term]?.let { hit ->
+    resolved.cache[queued.term]?.let { hit ->
         return CurationDefinitionTransition(
-            state = cached.copy(inFlight = null, pendingQuery = null, visible = hit).touch(queued.term),
+            state = resolved.copy(inFlight = null, pendingQuery = null, visible = hit).touch(queued.term),
             dispatch = null,
             generation = this.generation,
         )
     }
     return CurationDefinitionTransition(
-        state = cached.copy(inFlight = queued, pendingQuery = null, visible = CurationDefinition.Loading),
+        state = resolved.copy(inFlight = queued, pendingQuery = null, visible = CurationDefinition.Loading),
         dispatch = queued,
         generation = this.generation,
     )

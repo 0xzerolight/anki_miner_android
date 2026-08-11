@@ -18,6 +18,7 @@ import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -147,9 +148,11 @@ class CancellableProviderIoTest {
     }
 
     @Test
-    fun deadlineCancelsTheWorkerJobAndStillDiscardsItsLateResult() {
+    fun timedOutWorkerPreventsASecondProviderWorkerFromStarting() {
         val scheduler = ManualProviderIoDeadlineScheduler()
+        val retryScheduler = ManualProviderIoDeadlineScheduler()
         val started = CountDownLatch(1)
+        val retryStarted = CountDownLatch(1)
         val release = CountDownLatch(1)
         val executor = Executors.newSingleThreadExecutor()
         try {
@@ -170,10 +173,27 @@ class CancellableProviderIoTest {
             // have cancelled it rather than leaving it running and unreferenced on the scope.
             assertTrue("worker job outlived the deadline uncancelled", worker.isCancelled)
 
+            val retry =
+                execute(retryScheduler, executor) {
+                    retryStarted.countDown()
+                    "retry"
+                }
+            assertFalse(
+                "retry consumed another provider thread while the first was still blocked",
+                retryStarted.await(100, TimeUnit.MILLISECONDS),
+            )
+            val retryFailure =
+                assertThrows(ExecutionException::class.java) {
+                    retry.get(1, TimeUnit.SECONDS)
+                }
+            assertTrue(retryFailure.cause is ProviderIoTimeoutException)
+            assertEquals(0, retryScheduler.armCount.get())
+
             release.countDown()
             runBlocking { worker.join() }
             assertTrue("late operation result resumed the caller twice", uncaught.isEmpty())
         } finally {
+            release.countDown()
             executor.shutdownNow()
             scope.cancel()
         }

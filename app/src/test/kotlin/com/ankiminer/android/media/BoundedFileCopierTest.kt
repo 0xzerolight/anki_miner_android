@@ -60,6 +60,31 @@ class BoundedFileCopierTest {
     }
 
     @Test
+    fun providerReadActivityIsReportedForEverySuccessfulRead() {
+        val content = "abc".toByteArray()
+        val destination = temporary.newFile("read-activity.stage")
+        val reads = AtomicInteger()
+        val source =
+            object : ByteArrayInputStream(content) {
+                override fun read(
+                    buffer: ByteArray,
+                    offset: Int,
+                    length: Int,
+                ): Int = super.read(buffer, offset, minOf(length, 1))
+            }
+
+        BoundedFileCopier { Long.MAX_VALUE }.copy(
+            openSource = { source },
+            destination = destination,
+            knownSizeBytes = content.size.toLong(),
+            policy = policy(maxBytes = 10L),
+            readListener = FileCopyReadListener { reads.incrementAndGet() },
+        )
+
+        assertEquals(content.size, reads.get())
+    }
+
+    @Test
     fun knownOversizeFailsBeforeStorageProbeOrSourceOpenAndRemovesDestination() {
         val destination = temporary.newFile("oversize.stage")
         val sourceOpens = AtomicInteger()
