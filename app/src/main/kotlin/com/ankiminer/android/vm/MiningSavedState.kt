@@ -192,8 +192,19 @@ internal sealed interface SafSelectionOwnershipResult<out T> {
     /** The caller now owns exactly one live and durable reference for [document]. */
     data class Published<T>(
         val document: SafDocument,
+        val previousDurableDocument: SafDocument?,
         val value: T,
-    ) : SafSelectionOwnershipResult<T>
+    ) : SafSelectionOwnershipResult<T> {
+        /** Keeps a live same-URI owner releasable but ignores a same-URI durable-only record. */
+        fun supersededDocuments(liveDocument: SafDocument?): List<SafDocument> {
+            val documents = linkedMapOf<String, SafDocument>()
+            liveDocument?.let { documents[it.uri] = it }
+            previousDurableDocument
+                ?.takeIf { it.uri != document.uri && it.uri !in documents }
+                ?.let { documents[it.uri] = it }
+            return documents.values.toList()
+        }
+    }
 
     /** Metadata is available for error classification, but the acquired grant was released. */
     data class Rejected(
@@ -284,7 +295,19 @@ internal class SafSelectionOwnershipTransaction(
                     store.publish(document)
                     val value = publish(document)
                     acquired = null
-                    SafSelectionOwnershipResult.Published(document, value)
+                    SafSelectionOwnershipResult.Published(
+                        document = document,
+                        previousDurableDocument =
+                            previous?.let {
+                                SafDocument(
+                                    uri = it.uri,
+                                    displayName = it.displayName,
+                                    mimeType = null,
+                                    sizeBytes = null,
+                                )
+                            },
+                        value = value,
+                    )
                 } catch (failure: Throwable) {
                     if (durableMutationStarted) {
                         withContext(NonCancellable) {
