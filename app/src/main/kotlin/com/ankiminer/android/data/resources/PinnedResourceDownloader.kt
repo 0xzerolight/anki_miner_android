@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -18,6 +19,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
 import java.util.Locale
 import java.util.concurrent.ThreadLocalRandom
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.max
 import kotlin.math.min
 
@@ -34,9 +36,13 @@ internal class ResourceCancellationSignal : ProviderIoCancellation {
         listener: () -> Unit,
     ): ProviderIoCancellationRegistration = delegate.invokeOnCancellation(listener)
 
-    fun check() {
+    fun check(cause: Throwable? = null) {
         if (isCancelled()) {
-            throw ResourceDownloadException("resource_operation_cancelled", "Resource operation was cancelled")
+            throw ResourceDownloadException(
+                "resource_operation_cancelled",
+                "Resource operation was cancelled",
+                cause,
+            )
         }
     }
 }
@@ -50,13 +56,31 @@ internal data class StagedArchive(
 internal fun interface DownloadConnectionFactory {
     fun open(url: String, offset: Long): HttpURLConnection
 
+    fun open(
+        url: String,
+        offset: Long,
+        cancellation: ResourceCancellationSignal,
+    ): HttpURLConnection = open(url, offset)
+
     fun withRequestProperty(
         name: String,
         value: String,
-    ): DownloadConnectionFactory =
-        DownloadConnectionFactory { url, offset ->
-            open(url, offset).apply { setRequestProperty(name, value) }
+    ): DownloadConnectionFactory {
+        val delegate = this
+        return object : DownloadConnectionFactory {
+            override fun open(url: String, offset: Long): HttpURLConnection =
+                delegate.open(url, offset).apply { setRequestProperty(name, value) }
+
+            override fun open(
+                url: String,
+                offset: Long,
+                cancellation: ResourceCancellationSignal,
+            ): HttpURLConnection =
+                delegate.open(url, offset, cancellation).apply {
+                    setRequestProperty(name, value)
+                }
         }
+    }
 }
 
 internal class HttpsDownloadConnectionFactory(
@@ -77,11 +101,28 @@ internal class HttpsDownloadConnectionFactory(
         )
 
     override fun open(url: String, offset: Long): HttpURLConnection {
+        return openInternal(url, offset, cancellation = null)
+    }
+
+    override fun open(
+        url: String,
+        offset: Long,
+        cancellation: ResourceCancellationSignal,
+    ): HttpURLConnection = openInternal(url, offset, cancellation)
+
+    private fun openInternal(
+        url: String,
+        offset: Long,
+        cancellation: ResourceCancellationSignal?,
+    ): HttpURLConnection {
         var current = requireHttps(url)
         repeat(MAX_REDIRECTS + 1) { redirectCount ->
             val connection = connectionOpener(current.toURL())
             var handedOff = false
+            val cancellationRegistration =
+                cancellation?.invokeOnCancellation(connection::disconnect)
             try {
+                cancellation?.check()
                 connection.instanceFollowRedirects = false
                 connection.connectTimeout = CONNECT_TIMEOUT_MS
                 connection.readTimeout = READ_TIMEOUT_MS
@@ -93,6 +134,7 @@ internal class HttpsDownloadConnectionFactory(
                     connection.setRequestProperty(name, value)
                 }
                 val status = connection.responseCode
+                cancellation?.check()
                 if (status !in REDIRECT_CODES) {
                     handedOff = true
                     return connection
@@ -108,7 +150,11 @@ internal class HttpsDownloadConnectionFactory(
                             "Resource download returned an invalid redirect",
                         )
                 current = resolveRedirect(current, location)
+            } catch (failure: IOException) {
+                cancellation?.check(failure)
+                throw failure
             } finally {
+                cancellationRegistration?.close()
                 if (!handedOff) connection.disconnect()
             }
         }
@@ -383,8 +429,24 @@ internal class PinnedResourceDownloader(
             onProgress(offset, archive.sizeBytes, ResourceOperationPhase.VERIFYING)
             return digest.digest().joinToString("") { "%02x".format(it) }
         }
-        val connection = connections.open(archive.url, offset)
+        val connection =
+            try {
+                connections.open(archive.url, offset, cancellation)
+            } catch (failure: IOException) {
+                cancellation.check(failure)
+                throw failure
+            }
+        val activeInput = AtomicReference<InputStream?>()
+        val cancellationRegistration =
+            cancellation.invokeOnCancellation {
+                try {
+                    connection.disconnect()
+                } finally {
+                    activeInput.get()?.close()
+                }
+            }
         try {
+            cancellation.check()
             val status = connection.responseCode
             val append = status == HttpURLConnection.HTTP_PARTIAL && offset > 0
             if (status == HttpURLConnection.HTTP_OK && offset > 0) {
@@ -418,23 +480,33 @@ internal class PinnedResourceDownloader(
             var primaryFailure: Throwable? = null
             try {
                 if (!append) localIo { output.channel.truncate(0) }
-                BufferedInputStream(connection.inputStream, BUFFER_BYTES).use { input ->
-                    val buffer = ByteArray(BUFFER_BYTES)
-                    var total = offset
-                    onProgress(total, archive.sizeBytes, ResourceOperationPhase.DOWNLOADING)
-                    while (true) {
+                val rawInput = connection.inputStream
+                activeInput.set(rawInput)
+                BufferedInputStream(rawInput, BUFFER_BYTES).use { input ->
+                    try {
                         cancellation.check()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        total += count
-                        if (total > archive.sizeBytes) {
-                            throw ResourceDownloadException("resource_archive_mismatch", "Resource response exceeds its catalog size")
-                        }
-                        localIo { writeChunk(output, buffer, count) }
-                        digest.update(buffer, 0, count)
+                        val buffer = ByteArray(BUFFER_BYTES)
+                        var total = offset
                         onProgress(total, archive.sizeBytes, ResourceOperationPhase.DOWNLOADING)
+                        while (true) {
+                            cancellation.check()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > archive.sizeBytes) {
+                                throw ResourceDownloadException(
+                                    "resource_archive_mismatch",
+                                    "Resource response exceeds its catalog size",
+                                )
+                            }
+                            localIo { writeChunk(output, buffer, count) }
+                            digest.update(buffer, 0, count)
+                            onProgress(total, archive.sizeBytes, ResourceOperationPhase.DOWNLOADING)
+                        }
+                        localIo { syncOutput(output) }
+                    } finally {
+                        activeInput.compareAndSet(rawInput, null)
                     }
-                    localIo { syncOutput(output) }
                 }
             } catch (failure: Throwable) {
                 primaryFailure = failure
@@ -456,7 +528,11 @@ internal class PinnedResourceDownloader(
             }
             onProgress(archive.sizeBytes, archive.sizeBytes, ResourceOperationPhase.VERIFYING)
             return digest.digest().joinToString("") { "%02x".format(it) }
+        } catch (failure: IOException) {
+            cancellation.check(failure)
+            throw failure
         } finally {
+            cancellationRegistration.close()
             connection.disconnect()
         }
     }
