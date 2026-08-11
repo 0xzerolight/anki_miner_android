@@ -67,6 +67,25 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `an ffmpeg configuration banner hides its absolute home build path`() {
+        val redacted =
+            redactor().redact(
+                "configuration: --prefix=/home/light/Projects/anki_miner_android/" +
+                    ".android-toolchain/build/ffmpeg/arm64-v8a --enable-cross-compile",
+            )
+
+        assertFalse(redacted, redacted.contains("/home/light"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "configuration: --prefix=<path-[0-9a-f]{6}> <text-[0-9a-f]{6}>",
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `a path segment inside a longer path does not start a second match`() {
         // "media/data/x" must not be split at /data: absolute paths start at a boundary.
         val redacted = redactor().redact("$filesDir/media/data/clip.mkv")
@@ -484,6 +503,57 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `a production episode stem is redacted from its selected display name`() {
+        val displayName = "Therapy Session 04.mkv"
+        val redacted =
+            redactor(
+                safUserText = listOf(displayName),
+                safEpisodeDisplayNames = listOf(displayName),
+            ).redact(
+                "Could not record mining session for Therapy Session 04 in stats.db",
+            )
+
+        assertFalse(redacted, redacted.contains("Therapy Session 04"))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "Could not record mining session for <saf-[0-9a-f]{6}> in stats\\.db",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `a short production episode stem is redacted only as a whole label`() {
+        val displayName = "01.mkv"
+        val redacted =
+            redactor(
+                safUserText = listOf(displayName),
+                safEpisodeDisplayNames = listOf(displayName),
+            ).redact("episode=01 unrelated=101")
+
+        assertTrue(
+            redacted,
+            redacted.matches(Regex("episode=<saf-[0-9a-f]{6}> unrelated=101")),
+        )
+    }
+
+    @Test
+    fun `a production episode stem mirrors canonical label normalization`() {
+        val displayName = " The\u0301rapy Session 04\u200B .mkv"
+        val canonicalLabel = "Th\u00E9rapy Session 04"
+        val redacted =
+            redactor(
+                safUserText = listOf(displayName),
+                safEpisodeDisplayNames = listOf(displayName),
+            ).redact("episode=$canonicalLabel")
+
+        assertFalse(redacted, redacted.contains(canonicalLabel))
+        assertTrue(redacted, redacted.matches(Regex("episode=<saf-[0-9a-f]{6}>")))
+    }
+
+    @Test
     fun `a japanese saf display name is claimed by rule 5 before rule 7 sees it`() {
         val redacted =
             redactor(safUserText = listOf("殺す動画.mkv"))
@@ -611,6 +681,38 @@ class LogRedactorTest {
         val redacted = redactor().redact("q=%F0%A0%AE%9F end")
 
         assertTrue(redacted, redacted.matches(Regex("q=<jp-enc-[0-9a-f]{6}> end")))
+    }
+
+    @Test
+    fun `cjk extensions c through i are redacted`() {
+        val redactor = redactor()
+
+        CJK_EXTENSION_C_TO_I_STARTS.forEach { codePoint ->
+            val ideograph = String(Character.toChars(codePoint))
+            val redacted = redactor.redact("word=$ideograph")
+
+            assertFalse("U+${codePoint.toString(16)}: $redacted", redacted.contains(ideograph))
+            assertTrue(
+                "U+${codePoint.toString(16)}: $redacted",
+                redacted.matches(Regex("word=<jp-[0-9a-f]{6}:1>")),
+            )
+        }
+    }
+
+    @Test
+    fun `percent encoded cjk extensions c through i are redacted`() {
+        val redactor = redactor()
+
+        CJK_EXTENSION_C_TO_I_STARTS.forEach { codePoint ->
+            val encoded = percentEncode(String(Character.toChars(codePoint)))
+            val redacted = redactor.redact("word=$encoded")
+
+            assertFalse("U+${codePoint.toString(16)}: $redacted", redacted.contains(encoded))
+            assertTrue(
+                "U+${codePoint.toString(16)}: $redacted",
+                redacted.matches(Regex("word=<jp-enc-[0-9a-f]{6}>")),
+            )
+        }
     }
 
     @Test
@@ -981,24 +1083,48 @@ class LogRedactorTest {
     private fun fingerprintIn(line: String): String =
         Regex("<path-([0-9a-f]{6})>").find(line)!!.groupValues[1]
 
+    private fun percentEncode(text: String): String =
+        text.toByteArray(StandardCharsets.UTF_8).joinToString("") { byte ->
+            "%%%02X".format(byte.toInt() and 0xFF)
+        }
+
     private fun LogRedactor.redactRecord(body: String): String =
         redact(RECORD_PREFIX + body).removePrefix(RECORD_PREFIX)
 
     private fun redactor(
         settings: AppSettings = AppSettings(),
         safUserText: List<String> = emptyList(),
+        safEpisodeDisplayNames: List<String> = emptyList(),
         buildUser: String? = null,
         salt: ByteArray = FIXED_SALT,
         roots: Map<String, File> = defaultRoots(),
-    ) = LogRedactor(rules(settings, safUserText, buildUser, salt, roots))
+    ) = LogRedactor(
+        rules(
+            settings,
+            safUserText,
+            safEpisodeDisplayNames,
+            buildUser,
+            salt,
+            roots,
+        ),
+    )
 
     private fun rules(
         settings: AppSettings = AppSettings(),
         safUserText: List<String> = emptyList(),
+        safEpisodeDisplayNames: List<String> = emptyList(),
         buildUser: String? = null,
         salt: ByteArray = FIXED_SALT,
         roots: Map<String, File> = defaultRoots(),
-    ) = RedactionRulesFactory.forExport(roots, settings, safUserText, buildUser, salt)
+    ) =
+        RedactionRulesFactory.forExport(
+            roots,
+            settings,
+            safUserText,
+            buildUser,
+            salt,
+            safEpisodeDisplayNames,
+        )
 
     private fun defaultRoots(): Map<String, File> =
         linkedMapOf(
@@ -1049,6 +1175,8 @@ class LogRedactorTest {
     private companion object {
         /** U+20B9F, written as its surrogate pair so the encoding under test is explicit. */
         const val ASTRAL_KANJI = "\uD842\uDF9F"
+        val CJK_EXTENSION_C_TO_I_STARTS =
+            listOf(0x2A700, 0x2B740, 0x2B820, 0x2CEB0, 0x30000, 0x31350, 0x2EBF0)
         const val RECORD_PREFIX = "2026-07-30T12:00:00.000Z I run=abc c=diag op=test "
 
         /** LogGrammarTest's first-line rule, applied to what comes back out of the redactor. */
