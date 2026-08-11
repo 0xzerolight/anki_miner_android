@@ -284,7 +284,7 @@ def _load_document(
         with reading_unit_budget(
             reading_limits.MAX_DOCUMENT_UNITS,
             cancellation_check=cancellation_check,
-            precount_sentences=request.source_kind in {"txt", "text", "epub"},
+            precount_sentences=request.source_kind in {"txt", "text", "epub", "mokuro"},
         ):
             document = detector.load(ref, strip_subtitle_annotations=strip_subtitle_annotations)
     except ReadingUnitLimitExceeded as error:

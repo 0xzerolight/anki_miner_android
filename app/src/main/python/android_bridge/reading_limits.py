@@ -49,9 +49,15 @@ MAX_IMAGE_PIXELS = 16_000_000
 MAX_MOKURO_PAGES = 4_096
 MAX_MOKURO_BLOCKS = 50_000
 MAX_MOKURO_LINES = 250_000
+# Includes containers, object keys, scalar values and array slots. At this
+# ceiling even compact arrays of empty objects stay bounded before json.loads
+# creates their substantially larger Python graph.
+MAX_MOKURO_JSON_NODES = 2_000_000
 
 _EOCD_SIGNATURE = b"PK\x05\x06"
 _EOCD = struct.Struct("<4s4H2LH")
+_CENTRAL_DIRECTORY_SIGNATURE = b"PK\x01\x02"
+_CENTRAL_DIRECTORY_HEADER_BYTES = 46
 _MAX_ZIP_COMMENT_BYTES = 65_535
 _ZIP64_U16 = 0xFFFF
 _ZIP64_U32 = 0xFFFFFFFF
@@ -138,6 +144,10 @@ class _JsonSyntaxError(ValueError):
     pass
 
 
+class _JsonNodeLimitExceeded(ValueError):
+    pass
+
+
 class _MokuroJsonScanner:
     """Validate/count Mokuro collections without materializing the JSON graph."""
 
@@ -149,6 +159,7 @@ class _MokuroJsonScanner:
         self.raw = raw
         self.cancellation_check = cancellation_check
         self.index = 0
+        self.nodes = 0
 
     def scan(self) -> _MokuroFanout | None:
         self._whitespace()
@@ -157,6 +168,7 @@ class _MokuroJsonScanner:
             self._finish()
             return None
 
+        self._count_node()
         self.index += 1
         pages_seen = False
         pages: _MokuroFanout | None = None
@@ -188,6 +200,7 @@ class _MokuroJsonScanner:
 
     def _pages(self) -> _MokuroFanout:
         self._expect("[")
+        self._count_node()
         result = _MokuroFanout()
         self._whitespace()
         if self._take("]"):
@@ -195,6 +208,7 @@ class _MokuroJsonScanner:
         while True:
             if result.pages % _CANCEL_CHECK_INTERVAL == 0:
                 _check_cancelled(self.cancellation_check)
+            self._count_node()
             page = self._page() if self._peek() == "{" else self._skipped_value()
             result = result.with_page(page)
             self._whitespace()
@@ -205,6 +219,7 @@ class _MokuroJsonScanner:
 
     def _page(self) -> _MokuroFanout:
         self._expect("{")
+        self._count_node()
         blocks_seen = False
         blocks: _MokuroFanout | None = _MokuroFanout()
         self._whitespace()
@@ -232,6 +247,7 @@ class _MokuroJsonScanner:
 
     def _blocks(self) -> _MokuroFanout:
         self._expect("[")
+        self._count_node()
         result = _MokuroFanout()
         self._whitespace()
         if self._take("]"):
@@ -239,6 +255,7 @@ class _MokuroJsonScanner:
         while True:
             if result.blocks % _CANCEL_CHECK_INTERVAL == 0:
                 _check_cancelled(self.cancellation_check)
+            self._count_node()
             block = self._block() if self._peek() == "{" else self._skipped_value()
             result = result.with_block(block)
             self._whitespace()
@@ -249,6 +266,7 @@ class _MokuroJsonScanner:
 
     def _block(self) -> _MokuroFanout:
         self._expect("{")
+        self._count_node()
         lines_seen = False
         lines: _MokuroFanout | None = _MokuroFanout()
         self._whitespace()
@@ -276,6 +294,7 @@ class _MokuroJsonScanner:
 
     def _lines(self) -> _MokuroFanout:
         self._expect("[")
+        self._count_node()
         result = _MokuroFanout()
         self._whitespace()
         if self._take("]"):
@@ -283,7 +302,9 @@ class _MokuroJsonScanner:
         while True:
             if result.lines % _CANCEL_CHECK_INTERVAL == 0:
                 _check_cancelled(self.cancellation_check)
+            self._count_node()
             if self._peek() == '"':
+                self._count_node()
                 _, text_bytes, valid_unicode = self._string(capture_key=False)
                 result = result.with_line(
                     text_bytes=text_bytes,
@@ -305,6 +326,7 @@ class _MokuroJsonScanner:
     def _key(self) -> str | None:
         if self._peek() != '"':
             raise _JsonSyntaxError("JSON object key must be a string")
+        self._count_node()
         key, _, _ = self._string(capture_key=True)
         return key
 
@@ -391,6 +413,7 @@ class _MokuroJsonScanner:
         if first not in "[{":
             self._scalar()
             return
+        self._count_node()
         self.index += 1
         stack: list[tuple[str, str]] = [("array", "value_or_end") if first == "[" else ("object", "key_or_end")]
         while stack:
@@ -404,9 +427,11 @@ class _MokuroJsonScanner:
                         stack.pop()
                         continue
                     stack[-1] = (kind, "comma_or_end")
+                    self._count_node()
                     self._skip_scalar_or_push(stack)
                 elif state == "value":
                     stack[-1] = (kind, "comma_or_end")
+                    self._count_node()
                     self._skip_scalar_or_push(stack)
                 else:
                     if self._take("]"):
@@ -436,15 +461,18 @@ class _MokuroJsonScanner:
         self._whitespace()
         first = self._peek()
         if first == "[":
+            self._count_node()
             self.index += 1
             stack.append(("array", "value_or_end"))
         elif first == "{":
+            self._count_node()
             self.index += 1
             stack.append(("object", "key_or_end"))
         else:
             self._scalar()
 
     def _scalar(self) -> None:
+        self._count_node()
         first = self._peek()
         if first == '"':
             self._string(capture_key=False)
@@ -482,6 +510,13 @@ class _MokuroJsonScanner:
                 self.index += 1
         if self.index == start:
             raise _JsonSyntaxError("Invalid JSON number")
+
+    def _count_node(self) -> None:
+        self.nodes += 1
+        if self.nodes % _CANCEL_CHECK_INTERVAL == 0:
+            _check_cancelled(self.cancellation_check)
+        if self.nodes > MAX_MOKURO_JSON_NODES:
+            raise _JsonNodeLimitExceeded
 
     def _finish(self) -> None:
         self._whitespace()
@@ -626,9 +661,61 @@ def _read_eocd(path: Path, limits: ZipArchiveLimits) -> tuple[int, int, int]:
             f"The selected {limits.label} central directory is too large "
             f"({central_size:,} > {limits.max_central_directory_bytes:,} bytes)"
         )
-    if central_offset + central_size > size:
+    eocd_offset = size - tail_size + offset
+    if central_size > eocd_offset or central_offset > eocd_offset:
         raise _invalid_archive(limits.label)
-    return total_entries, central_size, central_offset
+    central_start = eocd_offset - central_size
+    # central_offset is relative to the ZIP payload for self-extracting files;
+    # it may be below the physical start by exactly the prepended byte count.
+    if central_start < central_offset:
+        raise _invalid_archive(limits.label)
+    return total_entries, central_size, central_start
+
+
+def _count_central_directory_entries(
+    path: Path,
+    limits: ZipArchiveLimits,
+    *,
+    declared_entries: int,
+    central_size: int,
+    central_start: int,
+    cancellation_check: Callable[[], bool] | None,
+) -> int:
+    """Count physical central-directory records before ZipFile allocates them."""
+
+    central_end = central_start + central_size
+    position = central_start
+    counted_entries = 0
+    try:
+        with path.open("rb") as stream:
+            while position < central_end:
+                if counted_entries % _CANCEL_CHECK_INTERVAL == 0:
+                    _check_cancelled(cancellation_check)
+                counted_entries += 1
+                if counted_entries > limits.max_members:
+                    raise _too_large(
+                        f"The selected {limits.label} contains too many archive members "
+                        f"({counted_entries:,} > {limits.max_members:,})"
+                    )
+                stream.seek(position)
+                header = stream.read(_CENTRAL_DIRECTORY_HEADER_BYTES)
+                if len(header) != _CENTRAL_DIRECTORY_HEADER_BYTES or not header.startswith(
+                    _CENTRAL_DIRECTORY_SIGNATURE
+                ):
+                    raise _invalid_archive(limits.label)
+                filename_size, extra_size, comment_size = struct.unpack_from("<3H", header, 28)
+                position += _CENTRAL_DIRECTORY_HEADER_BYTES + filename_size + extra_size + comment_size
+                if position > central_end:
+                    raise _invalid_archive(limits.label)
+    except BridgeProtocolError:
+        raise
+    except (OSError, struct.error) as error:
+        raise _invalid_archive(limits.label) from error
+
+    if position != central_end or counted_entries != declared_entries:
+        raise _invalid_archive(limits.label)
+    _check_cancelled(cancellation_check)
+    return counted_entries
 
 
 def _safe_member_name(name: str, limits: ZipArchiveLimits) -> None:
@@ -667,7 +754,15 @@ def validate_zip_archive(
     """Preflight one ZIP using declared sizes and bounded central metadata."""
 
     _check_cancelled(cancellation_check)
-    declared_entries, _, _ = _read_eocd(path, limits)
+    declared_entries, central_size, central_start = _read_eocd(path, limits)
+    _count_central_directory_entries(
+        path,
+        limits,
+        declared_entries=declared_entries,
+        central_size=central_size,
+        central_start=central_start,
+        cancellation_check=cancellation_check,
+    )
     _check_cancelled(cancellation_check)
     try:
         with zipfile.ZipFile(path) as archive:
@@ -741,6 +836,8 @@ def _validate_mokuro_json(
     try:
         raw = path.read_text(encoding="utf-8")
         fanout = _MokuroJsonScanner(raw, cancellation_check).scan()
+    except _JsonNodeLimitExceeded as error:
+        raise _too_large("The selected .mokuro sidecar JSON graph exceeds the mobile safety limit") from error
     except (OSError, UnicodeError, _JsonSyntaxError, RecursionError) as error:
         raise _invalid_source("The selected .mokuro sidecar is invalid") from error
     _check_cancelled(cancellation_check)
