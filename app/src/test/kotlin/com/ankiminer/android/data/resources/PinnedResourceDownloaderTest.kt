@@ -7,8 +7,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
 import java.util.ArrayDeque
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -77,6 +81,75 @@ class PinnedResourceDownloaderTest {
         }
 
         assertEquals(1, connection.disconnectCalls.get())
+    }
+
+    @Test
+    fun cancellationDisconnectsAConnectionBlockedInResponseHeaders() {
+        val connection = BlockingResponseConnection()
+        val factory = HttpsDownloadConnectionFactory { connection }
+        val cancellation = ResourceCancellationSignal()
+        val failure = AtomicReference<Throwable?>()
+        val worker =
+            Thread {
+                failure.set(
+                    runCatching {
+                        factory.open(
+                            "https://example.invalid/resource",
+                            0,
+                            cancellation,
+                        )
+                    }.exceptionOrNull(),
+                )
+            }
+
+        worker.start()
+        assertTrue(connection.responseStarted.await(5, TimeUnit.SECONDS))
+        cancellation.cancel()
+        worker.join(2_000)
+
+        assertFalse("response acquisition ignored cancellation", worker.isAlive)
+        val cancelled = failure.get() as ResourceDownloadException
+        assertEquals("resource_operation_cancelled", cancelled.stableCode)
+        assertTrue(connection.disconnectCalls.get() >= 1)
+    }
+
+    @Test
+    fun cancellationClosesAConnectionBlockedInBodyRead() {
+        val content = byteArrayOf(1)
+        val input = BlockingInput()
+        val connection =
+            FakeConnection(
+                code = HttpURLConnection.HTTP_OK,
+                input = input,
+                contentLength = content.size.toLong(),
+            )
+        val cancellation = ResourceCancellationSignal()
+        val failure = AtomicReference<Throwable?>()
+        val downloader =
+            PinnedResourceDownloader(
+                stagingRoot = temporary.newFolder("blocked-body"),
+                connections = DownloadConnectionFactory { _, _ -> connection },
+                availableBytes = { Long.MAX_VALUE / 2 },
+            )
+        val worker =
+            Thread {
+                failure.set(
+                    runCatching {
+                        downloader.download(archive(content), cancellation) { _, _, _ -> }
+                    }.exceptionOrNull(),
+                )
+            }
+
+        worker.start()
+        assertTrue(input.readStarted.await(5, TimeUnit.SECONDS))
+        cancellation.cancel()
+        worker.join(2_000)
+
+        assertFalse("body read ignored cancellation", worker.isAlive)
+        val cancelled = failure.get() as ResourceDownloadException
+        assertEquals("resource_operation_cancelled", cancelled.stableCode)
+        assertEquals(0L, input.closed.count)
+        assertTrue(connection.disconnectCalls.get() >= 1)
     }
 
     @Test
@@ -600,6 +673,57 @@ class PinnedResourceDownloaderTest {
             content.copyInto(target, targetOffset, offset, offset + count)
             offset += count
             return count
+        }
+    }
+
+    private class BlockingResponseConnection :
+        HttpURLConnection(URL("https://example.invalid/pinned.zip")) {
+        val responseStarted = CountDownLatch(1)
+        val disconnectCalls = AtomicInteger()
+        private val disconnected = CountDownLatch(1)
+
+        override fun connect() = Unit
+
+        override fun disconnect() {
+            disconnectCalls.incrementAndGet()
+            disconnected.countDown()
+        }
+
+        override fun usingProxy(): Boolean = false
+
+        override fun getResponseCode(): Int {
+            responseStarted.countDown()
+            if (!disconnected.await(5, TimeUnit.SECONDS)) {
+                throw IOException("response remained blocked")
+            }
+            throw IOException("connection disconnected")
+        }
+    }
+
+    private class BlockingInput : InputStream() {
+        val readStarted = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+
+        override fun read(): Int {
+            val single = ByteArray(1)
+            val count = read(single, 0, 1)
+            return if (count < 0) -1 else single[0].toInt() and 0xff
+        }
+
+        override fun read(
+            target: ByteArray,
+            targetOffset: Int,
+            length: Int,
+        ): Int {
+            readStarted.countDown()
+            if (!closed.await(5, TimeUnit.SECONDS)) {
+                throw IOException("body remained blocked")
+            }
+            throw IOException("stream closed")
+        }
+
+        override fun close() {
+            closed.countDown()
         }
     }
 

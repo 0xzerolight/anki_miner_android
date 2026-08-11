@@ -11,7 +11,31 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.ankiminer.android.AnkiMinerApplication
 import com.ankiminer.android.R
+
+internal fun handleResourceImportStopCommand(
+    startId: Int,
+    stopSelfResult: (Int) -> Boolean,
+    parkCpuWakeLease: () -> Unit,
+    removeForeground: () -> Unit,
+) {
+    if (!stopSelfResult(startId)) return
+    parkCpuWakeLease()
+    removeForeground()
+}
+
+internal fun handleResourceImportSystemTimeout(
+    cancelActiveOperation: () -> Unit,
+    closeCpuWakeLease: () -> Unit,
+    removeForeground: () -> Unit,
+    stopService: () -> Unit,
+) {
+    cancelActiveOperation()
+    closeCpuWakeLease()
+    removeForeground()
+    stopService()
+}
 
 /**
  * Keeps a multi-gigabyte resource import running while the user is elsewhere.
@@ -61,9 +85,12 @@ class ResourceImportForegroundService : Service() {
             }
 
             ACTION_STOP -> {
-                cpuWakeLease.close()
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelfResult(startId)
+                handleResourceImportStopCommand(
+                    startId = startId,
+                    stopSelfResult = ::stopSelfResult,
+                    parkCpuWakeLease = cpuWakeLease::park,
+                    removeForeground = { stopForeground(STOP_FOREGROUND_REMOVE) },
+                )
             }
 
             // A restart the platform delivered with no intent of ours. There is no
@@ -78,12 +105,34 @@ class ResourceImportForegroundService : Service() {
         return START_NOT_STICKY
     }
 
+    override fun onTimeout(startId: Int) {
+        handleSystemTimeout()
+    }
+
+    override fun onTimeout(
+        startId: Int,
+        fgsType: Int,
+    ) {
+        handleSystemTimeout()
+    }
+
     override fun onDestroy() {
         cpuWakeLease.close()
         super.onDestroy()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun handleSystemTimeout() {
+        handleResourceImportSystemTimeout(
+            cancelActiveOperation = {
+                (application as AnkiMinerApplication).resourceManager.cancelActive()
+            },
+            closeCpuWakeLease = cpuWakeLease::close,
+            removeForeground = { stopForeground(STOP_FOREGROUND_REMOVE) },
+            stopService = ::stopSelf,
+        )
+    }
 
     @SuppressLint("InlinedApi")
     private fun startForegroundTyped(notification: Notification) {
