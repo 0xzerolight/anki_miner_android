@@ -6,14 +6,18 @@ import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 internal const val CHECK_INTERVAL_MILLIS = 24L * 60L * 60L * 1000L
@@ -41,6 +45,8 @@ internal class UpdateCheckCoordinator(
         )
     private val checking = MutableStateFlow(false)
     private val lastCheckFailed = MutableStateFlow(false)
+    private val inFlightMutex = Mutex()
+    private var inFlightCheck: Deferred<Unit>? = null
     private val mutableUiState =
         MutableStateFlow(
             toUiState(
@@ -64,7 +70,8 @@ internal class UpdateCheckCoordinator(
     suspend fun checkIfDue() {
         val stored = repository.state.first()
         val timestamp = now()
-        if (!stored.enabled || !isDue(stored.lastCheckedAtMillis, timestamp)) return
+        if (!stored.enabled || !isDue(stored.lastAutomaticAttemptAtMillis, timestamp)) return
+        repository.recordAutomaticAttempt(timestamp)
         runCheck(timestamp)
     }
 
@@ -87,9 +94,24 @@ internal class UpdateCheckCoordinator(
     }
 
     private suspend fun runCheck(atMillis: Long) {
+        val active =
+            inFlightMutex.withLock {
+                inFlightCheck?.takeUnless { it.isCompleted }
+                    ?: scope.async { performCheck(atMillis) }.also { inFlightCheck = it }
+            }
+        try {
+            active.await()
+        } finally {
+            inFlightMutex.withLock {
+                if (inFlightCheck === active && active.isCompleted) inFlightCheck = null
+            }
+        }
+    }
+
+    private suspend fun performCheck(atMillis: Long) {
         setChecking(true)
         try {
-            val found =
+            val result =
                 try {
                     withContext(dispatcher) { client.latest(currentVersion) }
                 } catch (cancellation: CancellationException) {
@@ -101,7 +123,14 @@ internal class UpdateCheckCoordinator(
                     recordFailure(failure)
                     return
                 }
-            repository.recordCheck(atMillis, found)
+            when (result) {
+                is UpdateCheckResult.Available -> repository.recordCheck(atMillis, result.update)
+                UpdateCheckResult.UpToDate -> repository.recordCheck(atMillis, null)
+                UpdateCheckResult.Failure -> {
+                    recordFailure()
+                    return
+                }
+            }
             lastCheckFailed.value = false
             refreshPreferences()
         } finally {
@@ -109,15 +138,24 @@ internal class UpdateCheckCoordinator(
         }
     }
 
-    private fun recordFailure(failure: Throwable) {
+    private fun recordFailure(failure: Throwable? = null) {
         lastCheckFailed.value = true
         publishUiState()
-        AppLog.w(
-            LogComponent.SETTINGS,
-            "update.check",
-            failure,
-            "outcome" to "fail",
-        )
+        if (failure == null) {
+            AppLog.i(
+                LogComponent.SETTINGS,
+                "update.check",
+                "outcome" to "fail",
+                "code" to "invalid_response",
+            )
+        } else {
+            AppLog.w(
+                LogComponent.SETTINGS,
+                "update.check",
+                failure,
+                "outcome" to "fail",
+            )
+        }
     }
 
     private suspend fun refreshPreferences() {
@@ -162,9 +200,9 @@ internal class UpdateCheckCoordinator(
     }
 
     private fun isDue(
-        lastCheckedAtMillis: Long,
+        lastAttemptAtMillis: Long,
         atMillis: Long,
     ): Boolean =
-        lastCheckedAtMillis > atMillis ||
-            atMillis - lastCheckedAtMillis >= CHECK_INTERVAL_MILLIS
+        lastAttemptAtMillis > atMillis ||
+            atMillis - lastAttemptAtMillis >= CHECK_INTERVAL_MILLIS
 }

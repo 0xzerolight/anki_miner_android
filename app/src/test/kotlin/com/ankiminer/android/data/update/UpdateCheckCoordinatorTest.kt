@@ -1,8 +1,15 @@
 package com.ankiminer.android.data.update
 
 import java.io.IOException
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
@@ -29,7 +36,7 @@ class UpdateCheckCoordinatorTest {
                     repository,
                     UpdateCheckClient {
                         clientCalls += 1
-                        UPDATE
+                        UpdateCheckResult.Available(UPDATE)
                     },
                     NOW,
                 )
@@ -52,7 +59,7 @@ class UpdateCheckCoordinatorTest {
                     repository,
                     UpdateCheckClient {
                         clientCalls += 1
-                        UPDATE
+                        UpdateCheckResult.Available(UPDATE)
                     },
                     NOW,
                 )
@@ -77,7 +84,7 @@ class UpdateCheckCoordinatorTest {
                     repository,
                     UpdateCheckClient {
                         clientCalls += 1
-                        null
+                        UpdateCheckResult.UpToDate
                     },
                     NOW,
                 )
@@ -97,7 +104,7 @@ class UpdateCheckCoordinatorTest {
                     repository,
                     UpdateCheckClient {
                         clientCalls += 1
-                        UPDATE
+                        UpdateCheckResult.Available(UPDATE)
                     },
                     NOW,
                 )
@@ -116,7 +123,7 @@ class UpdateCheckCoordinatorTest {
                     FakeUpdateCheckRepository(UpdateCheckPreferences(lastCheckedAtMillis = NOW)),
                     UpdateCheckClient {
                         enabledCalls += 1
-                        null
+                        UpdateCheckResult.UpToDate
                     },
                     NOW,
                 )
@@ -126,7 +133,7 @@ class UpdateCheckCoordinatorTest {
                     FakeUpdateCheckRepository(UpdateCheckPreferences(enabled = false)),
                     UpdateCheckClient {
                         disabledCalls += 1
-                        null
+                        UpdateCheckResult.UpToDate
                     },
                     NOW,
                 )
@@ -149,7 +156,8 @@ class UpdateCheckCoordinatorTest {
                         skippedVersion = UPDATE.version,
                     ),
                 )
-            val coordinator = coordinator(repository, UpdateCheckClient { null }, NOW)
+            val coordinator =
+                coordinator(repository, UpdateCheckClient { UpdateCheckResult.UpToDate }, NOW)
 
             assertNull(coordinator.uiState.value.available)
         }
@@ -164,31 +172,125 @@ class UpdateCheckCoordinatorTest {
                         availableUrl = "https://github.com/0xzerolight/anki_miner_android/releases/tag/v0.3.0",
                     ),
                 )
-            val coordinator = coordinator(repository, UpdateCheckClient { null }, NOW)
+            val coordinator =
+                coordinator(repository, UpdateCheckClient { UpdateCheckResult.UpToDate }, NOW)
 
             assertNull(coordinator.uiState.value.available)
         }
 
     @Test
-    fun `a failed check is reported and does not consume the window`() =
+    fun `a failed observation preserves the cached update`() =
+        runTest {
+            val previousCheck = NOW - TimeUnit.HOURS.toMillis(1)
+            val repository =
+                FakeUpdateCheckRepository(
+                    UpdateCheckPreferences(
+                        lastCheckedAtMillis = previousCheck,
+                        availableVersion = UPDATE.version,
+                        availableUrl = UPDATE.releasePageUrl,
+                    ),
+                )
+            val coordinator =
+                coordinator(
+                    repository,
+                    UpdateCheckClient { UpdateCheckResult.Failure },
+                    NOW,
+                )
+
+            coordinator.checkNow()
+
+            assertTrue(coordinator.uiState.value.lastCheckFailed)
+            assertEquals(UPDATE, coordinator.uiState.value.available)
+            assertEquals(previousCheck, repository.value.lastCheckedAtMillis)
+            assertEquals(0, repository.recordCalls)
+        }
+
+    @Test
+    fun `a failed automatic check consumes the automatic window across process starts`() =
         runTest {
             val previousCheck = NOW - TimeUnit.HOURS.toMillis(25)
             val repository =
                 FakeUpdateCheckRepository(
-                    UpdateCheckPreferences(lastCheckedAtMillis = previousCheck),
+                    UpdateCheckPreferences(
+                        lastCheckedAtMillis = previousCheck,
+                        availableVersion = UPDATE.version,
+                        availableUrl = UPDATE.releasePageUrl,
+                    ),
                 )
-            val coordinator =
+            val first =
                 coordinator(
                     repository,
                     UpdateCheckClient { throw IOException("offline") },
                     NOW,
                 )
 
-            coordinator.checkIfDue()
+            first.checkIfDue()
 
-            assertTrue(coordinator.uiState.value.lastCheckFailed)
+            assertTrue(first.uiState.value.lastCheckFailed)
+            assertEquals(UPDATE, first.uiState.value.available)
             assertEquals(previousCheck, repository.value.lastCheckedAtMillis)
+            assertEquals(NOW, repository.value.lastAutomaticAttemptAtMillis)
+            assertEquals(1, repository.recordAttemptCalls)
             assertEquals(0, repository.recordCalls)
+
+            var secondProcessCalls = 0
+            val second =
+                coordinator(
+                    repository,
+                    UpdateCheckClient {
+                        secondProcessCalls += 1
+                        UpdateCheckResult.UpToDate
+                    },
+                    NOW + TimeUnit.HOURS.toMillis(1),
+                )
+
+            second.checkIfDue()
+
+            assertEquals(0, secondProcessCalls)
+            assertEquals(1, repository.recordAttemptCalls)
+        }
+
+    @Test
+    fun `an overlapping manual check joins the automatic check`() =
+        runTest {
+            val repository =
+                FakeUpdateCheckRepository(
+                    UpdateCheckPreferences(lastCheckedAtMillis = NOW - CHECK_INTERVAL_MILLIS),
+                )
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            val clientCalls = AtomicInteger()
+            val coordinator =
+                coordinator(
+                    repository,
+                    UpdateCheckClient {
+                        clientCalls.incrementAndGet()
+                        entered.countDown()
+                        check(release.await(5, TimeUnit.SECONDS))
+                        UpdateCheckResult.Available(UPDATE)
+                    },
+                    NOW,
+                    dispatcher = Dispatchers.Default,
+                )
+            val automatic =
+                async(start = CoroutineStart.UNDISPATCHED) { coordinator.checkIfDue() }
+
+            var manual: Deferred<Unit>? = null
+            try {
+                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                assertTrue(coordinator.uiState.value.checking)
+                manual = async(start = CoroutineStart.UNDISPATCHED) { coordinator.checkNow() }
+                assertTrue(coordinator.uiState.value.checking)
+            } finally {
+                release.countDown()
+            }
+
+            automatic.await()
+            requireNotNull(manual).await()
+
+            assertEquals(1, clientCalls.get())
+            assertEquals(1, repository.recordCalls)
+            assertFalse(coordinator.uiState.value.checking)
         }
 
     @Test
@@ -201,7 +303,7 @@ class UpdateCheckCoordinatorTest {
                     repository,
                     UpdateCheckClient {
                         if (fail) throw IOException("offline")
-                        null
+                        UpdateCheckResult.UpToDate
                     },
                     NOW,
                 )
@@ -220,13 +322,14 @@ class UpdateCheckCoordinatorTest {
         repository: UpdateCheckRepository,
         client: UpdateCheckClient,
         now: Long,
+        dispatcher: CoroutineDispatcher = UnconfinedTestDispatcher(testScheduler),
     ) =
         UpdateCheckCoordinator(
             repository = repository,
             client = client,
             currentVersion = "0.4.1",
             now = { now },
-            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            dispatcher = dispatcher,
         )
 
     private class FakeUpdateCheckRepository(
@@ -237,6 +340,8 @@ class UpdateCheckCoordinatorTest {
         val value: UpdateCheckPreferences
             get() = mutableState.value
         var recordCalls = 0
+            private set
+        var recordAttemptCalls = 0
             private set
 
         override suspend fun setEnabled(enabled: Boolean) {
@@ -254,6 +359,11 @@ class UpdateCheckCoordinatorTest {
                     availableVersion = found?.version,
                     availableUrl = found?.releasePageUrl,
                 )
+        }
+
+        override suspend fun recordAutomaticAttempt(atMillis: Long) {
+            recordAttemptCalls += 1
+            mutableState.value = mutableState.value.copy(lastAutomaticAttemptAtMillis = atMillis)
         }
 
         override suspend fun skip(version: String) {

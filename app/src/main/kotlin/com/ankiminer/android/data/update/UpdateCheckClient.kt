@@ -10,6 +10,7 @@ import com.fasterxml.jackson.core.JsonToken
 import com.fasterxml.jackson.core.StreamReadConstraints
 import com.fasterxml.jackson.core.StreamReadFeature
 import com.fasterxml.jackson.core.json.JsonReadFeature
+import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URISyntaxException
@@ -20,9 +21,17 @@ internal data class AvailableUpdate(
     val releasePageUrl: String,
 )
 
+internal sealed interface UpdateCheckResult {
+    data class Available(val update: AvailableUpdate) : UpdateCheckResult
+
+    data object UpToDate : UpdateCheckResult
+
+    data object Failure : UpdateCheckResult
+}
+
 internal fun interface UpdateCheckClient {
-    /** The newest published release strictly newer than [currentVersion], or null. */
-    fun latest(currentVersion: String): AvailableUpdate?
+    /** Result of observing the newest published release relative to [currentVersion]. */
+    fun latest(currentVersion: String): UpdateCheckResult
 }
 
 internal class GitHubUpdateCheckClient(
@@ -31,20 +40,38 @@ internal class GitHubUpdateCheckClient(
     private val connections =
         connections.withRequestProperty("Accept", "application/vnd.github+json")
 
-    override fun latest(currentVersion: String): AvailableUpdate? {
+    override fun latest(currentVersion: String): UpdateCheckResult {
         val connection = connections.open(LATEST_RELEASE_URL, 0L)
         try {
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) return null
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                return UpdateCheckResult.Failure
+            }
             val body =
                 connection.inputStream.use { input ->
                     input.readAtMost(MAX_BODY_BYTES + 1)
                 }
-            if (body.size > MAX_BODY_BYTES) return null
-            val release = parseRelease(body) ?: return null
+            if (body.size > MAX_BODY_BYTES) return UpdateCheckResult.Failure
+            val release =
+                try {
+                    parseRelease(body)
+                } catch (failure: IOException) {
+                    AppLog.ignored(
+                        LogComponent.SETTINGS,
+                        "update.response-json",
+                        "malformed update response rejected",
+                        failure,
+                    )
+                    return UpdateCheckResult.Failure
+                } ?: return UpdateCheckResult.Failure
             val version = release.tagName.removePrefix("v")
-            if (!validReleasePage(release.htmlUrl)) return null
-            if (!VersionCompare.isNewer(version, currentVersion)) return null
-            return AvailableUpdate(version, release.htmlUrl)
+            if (!validVersion(version) || !validVersion(currentVersion)) {
+                return UpdateCheckResult.Failure
+            }
+            if (!validReleasePage(release.htmlUrl)) return UpdateCheckResult.Failure
+            if (!VersionCompare.isNewer(version, currentVersion)) {
+                return UpdateCheckResult.UpToDate
+            }
+            return UpdateCheckResult.Available(AvailableUpdate(version, release.htmlUrl))
         } finally {
             connection.disconnect()
         }
@@ -96,6 +123,8 @@ internal class GitHubUpdateCheckClient(
             uri.host?.lowercase(Locale.ROOT) in ALLOWED_RELEASE_HOSTS
     }
 
+    private fun validVersion(value: String): Boolean = RELEASE_VERSION.matches(value)
+
     private data class GitHubRelease(
         val tagName: String,
         val htmlUrl: String,
@@ -106,6 +135,7 @@ internal class GitHubUpdateCheckClient(
             "https://api.github.com/repos/0xzerolight/anki_miner_android/releases/latest"
         const val MAX_BODY_BYTES = 256 * 1024
         val ALLOWED_RELEASE_HOSTS = setOf("github.com", "www.github.com")
+        val RELEASE_VERSION = Regex("""[0-9]{1,9}(?:\.[0-9]{1,9}){0,7}""")
         val JSON_FACTORY: JsonFactory =
             JsonFactoryBuilder()
                 .streamReadConstraints(
