@@ -195,7 +195,7 @@ class AppSettingsTest {
                         "word" to "é".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2),
                     ),
                 cardTypeMarkerField =
-                    "é".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2),
+                    "ø".repeat(AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES / 2),
             ),
         )
 

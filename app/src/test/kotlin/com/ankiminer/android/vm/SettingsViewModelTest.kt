@@ -920,6 +920,7 @@ class SettingsViewModelTest {
             assertTrue(io.written.isEmpty())
 
             allowWrite.complete(Unit)
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
             advanceUntilIdle()
 
             val exported =
