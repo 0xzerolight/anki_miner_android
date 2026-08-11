@@ -1,18 +1,42 @@
 package com.ankiminer.android.subtitles
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogContext
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.SubtitleCue
+import com.ankiminer.android.engine.emitDispatchEntry
 import java.util.concurrent.Executor
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 private const val RUN_ID = "run_00000000000000000000000000000000"
+private const val STALE_RUN_ID = "run_11111111111111111111111111111111"
 private const val SUBTITLE_PATH = "/cache/subtitle.srt"
 
 class SubtitleCueLookupTest {
     private val direct = Executor { it.run() }
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.DEBUG)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun detachRecordingSink() {
+        LogContext.setRunId(null)
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+    }
 
     private fun result(
         runId: String? = RUN_ID,
@@ -54,5 +78,37 @@ class SubtitleCueLookupTest {
         runTest {
             val bridge = PyBridge { _, _ -> result(runId = RUN_ID) }
             assertTrue(BridgeSubtitleCueLookupService(bridge, direct).cues(null, SUBTITLE_PATH).isFailure)
+        }
+
+    @Test
+    fun `bridge boundary logs carry the lookup run id`() =
+        runTest {
+            val bridge =
+                PyBridge { raw, _ ->
+                    emitDispatchEntry("subtitle.cues", raw)
+                    result()
+                }
+
+            BridgeSubtitleCueLookupService(bridge, direct).cues(RUN_ID, SUBTITLE_PATH).getOrThrow()
+
+            val record = recorded.records.single { it.contains("op=dispatch") }
+            assertTrue(record, record.contains(" D run=$RUN_ID c=bridge op=dispatch "))
+        }
+
+    @Test
+    fun `a lookup without a run id clears stale executor context`() =
+        runTest {
+            val bridge =
+                PyBridge { raw, _ ->
+                    emitDispatchEntry("subtitle.cues", raw)
+                    result(runId = null)
+                }
+            LogContext.setRunId(STALE_RUN_ID)
+
+            BridgeSubtitleCueLookupService(bridge, direct).cues(null, SUBTITLE_PATH).getOrThrow()
+
+            val record = recorded.records.single { it.contains("op=dispatch") }
+            assertTrue(record, record.contains(" D run=- c=bridge op=dispatch "))
+            assertEquals(STALE_RUN_ID, LogContext.runId())
         }
 }
