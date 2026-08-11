@@ -114,7 +114,11 @@ def source_entries() -> dict[str, dict[str, str]]:
         entry = {key: value.get(key) for key in ("filename", "sha256", "url")}
         if not all(isinstance(item, str) and item for item in entry.values()):
             raise WheelError(f"incomplete source lock entry: {name}")
-        if len(entry["sha256"]) != 64 or not entry["url"].startswith("https://"):
+        if (
+            Path(entry["filename"]).name != entry["filename"]
+            or len(entry["sha256"]) != 64
+            or not entry["url"].startswith("https://")
+        ):
             raise WheelError(f"unsafe source lock entry: {name}")
         entries[name] = entry  # type: ignore[assignment]
     return entries

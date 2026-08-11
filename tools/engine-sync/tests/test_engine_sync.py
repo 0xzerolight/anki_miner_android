@@ -9,9 +9,12 @@ import tomllib
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from engine_sync.core import (
+    EngineSnapshot,
     EngineSyncError,
+    SnapshotFile,
     build_snapshot,
     check_destination,
     discover_source_repo,
@@ -24,7 +27,7 @@ PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
 PINNED_KNOWN_WORDS_IMPORT_BLOB = "9353f416baec93f6c7e5dd1ed2231110bbe9f20b"
 REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "8eea3756190b27f78298402d8797b3d8d6872a3a9c6a30016e0165b70b98c88d"
 REVIEWED_MEDIA_EXTRACTOR_SHA256 = (
-    "8ab59f5fa87f761756e0278c14323b1a779ffa75ac8a1783d9cd18be05de77f4"
+    "88155d34fc5f88b0292d054e83c31c6fdb9f3061a5958918620d301a35de9844"
 )
 REVIEWED_AUDIO_TRACK_DETECTOR_SHA256 = (
     "429663d08bc19ac9591a78e4d480eeaa209939563e02822c8fe8b6ea37fb0f88"
@@ -213,6 +216,26 @@ target = "anki_miner.services.youtube_fetcher"
             lock_path=fixture["lock"],
             composition_path=fixture["composition"],
             overlays_path=fixture["overlays"],
+        )
+
+    @staticmethod
+    def _minimal_sync_snapshot() -> EngineSnapshot:
+        path = "anki_miner/root.py"
+        return EngineSnapshot(
+            revision="0" * 40,
+            composition_sha256="1" * 64,
+            files={
+                path: SnapshotFile(
+                    path=path,
+                    content=b"VALUE = 1\n",
+                    origin="overlay",
+                    source_path=path,
+                )
+            },
+            modules=("anki_miner.root",),
+            eager_external_imports=(),
+            deferred_external_imports=(),
+            type_checking_exceptions=(),
         )
 
     def _drop_type_checking_exception(self, fixture: dict[str, Path]) -> None:

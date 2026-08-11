@@ -79,6 +79,7 @@ import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.mining.SourcesCard
 import com.ankiminer.android.ui.mining.StickyCurationActions
 import com.ankiminer.android.ui.mining.curateCandidates
+import com.ankiminer.android.ui.mining.curationBulkSelectionScope
 import com.ankiminer.android.ui.mining.curationGroupGap
 import com.ankiminer.android.ui.mining.curationRowContainerColor
 import com.ankiminer.android.ui.mining.miningResultItems
@@ -256,11 +257,20 @@ fun ReadingMiningScreen(
             )
             // Scoped to the projection, not the whole protocol page: a filtered bulk action must
             // not silently reach rows the search is hiding.
-            val selectableVisibleCandidateIds =
-                remember(visibleCandidateIds, targetCuration?.knownCandidateIds) {
-                    val known = targetCuration?.knownCandidateIds.orEmpty()
-                    visibleCandidateIds.filterNot(known::contains)
+            val bulkSelectionScope =
+                remember(
+                    visibleCandidateIds,
+                    targetCuration?.candidates,
+                    targetCuration?.knownCandidateIds,
+                ) {
+                    curationBulkSelectionScope(
+                        visibleCandidateIds = visibleCandidateIds,
+                        pageCandidateIds =
+                            targetCuration?.candidates.orEmpty().map { it.candidateId },
+                        knownCandidateIds = targetCuration?.knownCandidateIds.orEmpty(),
+                    )
                 }
+            val selectableVisibleCandidateIds = bulkSelectionScope.visibleCandidateIds
             val allVisibleSelected =
                 selectableVisibleCandidateIds.isNotEmpty() &&
                     selectedCandidateIds.containsAll(selectableVisibleCandidateIds)
@@ -306,20 +316,19 @@ fun ReadingMiningScreen(
                         filter = filter,
                         sort = sort,
                         enabled = !targetState.curationPending && !targetState.cancelPending,
-                        visibleCount = visibleCandidates.size,
+                        visibleCount = bulkSelectionScope.visibleCount,
                         allVisibleSelected = allVisibleSelected,
                         selectVisibleEnabled =
                             selectableVisibleCandidateIds.isNotEmpty() &&
                                 !targetState.curationPending &&
                                 !targetState.cancelPending,
-                        pageCandidateCount =
-                            targetCuration.candidates.size.takeIf { visibleCandidateIds.size < it },
+                        pageCandidateCount = bulkSelectionScope.pageCandidateCount,
                         selectAllTestTag = ReadingMiningTestTags.SELECT_ALL,
                         onQueryChanged = { query = it },
                         onFilterChanged = { filterName = it.name },
                         onSortChanged = { sortName = it.name },
                         onSetSelectionForVisible = { select ->
-                            onSetSelectionForVisible(visibleCandidateIds, select)
+                            onSetSelectionForVisible(selectableVisibleCandidateIds, select)
                         },
                         onSelectWholePage = { onSetSelectionForPage(true) },
                         modifier =

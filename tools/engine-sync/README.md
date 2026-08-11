@@ -84,6 +84,12 @@ PYTHONPATH=tools/engine-sync python tools/engine-sync/run_head_goldens_v2.py \
   --output /tmp/head-goldens-v2.json
 ```
 
+After writing the requested output, the command compares `section_status` and
+every `cases` section with committed `golden/engine-v2.json`. Changed cases are
+reported by section and case ID; sections without per-case IDs are reported as
+a whole. Provenance-only changes are ignored, and an exact semantic match is
+reported explicitly as `desktop HEAD semantic drift: none`.
+
 No hosted nightly HEAD-parity workflow exists yet, so this remains an advisory
 local tool rather than a current CI or release gate. It never replaces the
 attested overlay or pinned fixture used by release gates.

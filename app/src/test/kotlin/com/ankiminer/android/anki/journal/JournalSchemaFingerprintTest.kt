@@ -63,9 +63,10 @@ class JournalSchemaFingerprintTest {
 
     @Test
     fun migrationPlanRebuildsOnlyAuthenticVersionOneRemediations() {
-        assertEquals(4, JournalSchema.VERSION)
+        assertEquals(5, JournalSchema.VERSION)
         assertTrue(JournalSchema.requiresRemediationRebuild(1))
         assertTrue(!JournalSchema.requiresRemediationRebuild(2))
         assertTrue(!JournalSchema.requiresRemediationRebuild(3))
+        assertTrue(!JournalSchema.requiresRemediationRebuild(4))
     }
 }

@@ -1402,6 +1402,7 @@ object BridgeJsonCodec {
             is BridgeMessage.JobRegistrationAccepted -> message.runId to null
             is BridgeMessage.ProgressStart -> message.runId to null
             is BridgeMessage.ProgressUpdate -> message.runId to null
+            is BridgeMessage.ProgressStage -> message.runId to null
             is BridgeMessage.ProgressComplete -> message.runId to null
             is BridgeMessage.ProgressError -> message.runId to null
             is BridgeMessage.Presenter -> message.event.runId to null

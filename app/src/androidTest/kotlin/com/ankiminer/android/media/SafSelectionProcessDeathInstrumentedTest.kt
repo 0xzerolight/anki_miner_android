@@ -87,7 +87,11 @@ class SafSelectionProcessDeathInstrumentedTest {
         instrumentation.waitForIdleSync()
         // Restoration publishes only after a durable write on the IO dispatcher, which
         // waitForIdleSync does not cover — it waits on the main looper alone.
-        awaitRestored { video.uiState.value.subtitle.document?.displayName != null }
+        awaitRestored {
+            video.uiState.value.video.document?.displayName != null &&
+                video.uiState.value.subtitle.document?.displayName != null &&
+                reading.uiState.value.source.document?.displayName != null
+        }
 
         instrumentation.runOnMainSync {
             assertEquals("episode.mkv", video.uiState.value.video.document?.displayName)

@@ -47,12 +47,15 @@ _COMPATIBILITY_MARKER_NAME = "install.complete"
 _MAX_MANIFEST_BYTES = 16 * 1024
 _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES = 1024 * 1024 * 1024
 _MAX_YOMITAN_INDEX_BYTES = 8 * 1024 * 1024
+_MAX_DICTIONARY_METADATA_BYTES = 4096
 # Anti-DoS backstop for archives whose catalog entry declares no member limit,
 # NOT a product limit: it exists only so a hostile central directory cannot make
 # zipfile materialise an unbounded ZipInfo list. Real Yomitan dictionaries are
 # orders of magnitude below this, including media-bearing ones, so no archive a
 # user can import today is refused by it. A catalog-declared limit still wins.
 _MAX_CUSTOM_ZIP_MEMBERS = 65_536
+# Bound ZipFile's eager central-directory allocation independently of entry count.
+_MAX_CUSTOM_ZIP_CENTRAL_DIRECTORY_BYTES = 32 * 1024 * 1024
 _MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
 _MAX_DICTIONARY_SLOTS = 128
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
@@ -61,7 +64,7 @@ _DICTIONARY_SCHEMA_VERSION = 4
 _OPERATION_ID_RE = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
-_YOMITAN_BANK_RE = re.compile(r"^(term_bank|term_meta_bank|tag_bank)_[^/]+\.json$")
+_YOMITAN_BANK_RE = re.compile(r"^(term_bank|term_meta_bank|tag_bank)_[^/]*\.json$")
 _PROMOTION_LOCK = threading.Lock()
 _YOMITAN_BANK_CHUNK_BYTES = 4 * 1024 * 1024
 _STORAGE_EXHAUSTION_ERRNOS = frozenset(
@@ -969,6 +972,11 @@ def _preflight_zip_member_count(path: Path, member_limit: int) -> int:
                 central_offset = zip64_central_offset
                 central_end = zip64_location
 
+            if central_size > _MAX_CUSTOM_ZIP_CENTRAL_DIRECTORY_BYTES:
+                raise _fail(
+                    "resource_archive_too_large",
+                    "Dictionary central directory exceeds its size limit",
+                )
             if central_size > central_end or central_offset > central_end:
                 raise _fail("invalid_resource_archive", "Dictionary central directory offset is invalid")
             central_start = central_end - central_size
@@ -1006,6 +1014,16 @@ def _preflight_zip_member_count(path: Path, member_limit: int) -> int:
             "Dictionary archive member count is outside its limit",
         )
     return total_entries
+
+
+def _unsupported_zip_compression(info: zipfile.ZipInfo) -> BridgeProtocolError:
+    method = zipfile.compressor_names.get(info.compress_type, "unknown")
+    return _fail(
+        "resource_archive_unsupported_compression",
+        "Dictionary archive uses an unsupported compression method "
+        f"(zip method {info.compress_type}: {method}); re-create the "
+        ".zip with standard Deflate compression and no encryption",
+    )
 
 
 def _validate_zip_streamed(
@@ -1075,13 +1093,7 @@ def _validate_zip_streamed(
                 try:
                     stream = archive.open(info, "r")
                 except (NotImplementedError, RuntimeError) as exc:
-                    method = zipfile.compressor_names.get(info.compress_type, "unknown")
-                    raise _fail(
-                        "resource_archive_unsupported_compression",
-                        "Dictionary archive uses an unsupported compression method "
-                        f"(zip method {info.compress_type}: {method}); re-create the "
-                        ".zip with standard Deflate compression and no encryption",
-                    ) from exc
+                    raise _unsupported_zip_compression(info) from exc
                 with stream:
                     while True:
                         operation.check()
@@ -1117,6 +1129,8 @@ def _validate_zip_streamed(
 def _iter_json_array_stream(
     stream: BinaryIO,
     operation: _Operation,
+    *,
+    item_byte_limit: int,
 ) -> Iterator[Any]:
     """Yield one top-level JSON-array item without retaining the whole bank."""
 
@@ -1126,12 +1140,12 @@ def _iter_json_array_stream(
     position = 0
     eof = False
 
-    def fill() -> None:
+    def fill(maximum_bytes: int = _COPY_CHUNK_BYTES) -> None:
         nonlocal buffer, eof
         if eof:
             return
         operation.check()
-        chunk = stream.read(_COPY_CHUNK_BYTES)
+        chunk = stream.read(maximum_bytes)
         try:
             if chunk:
                 buffer += utf8_decoder.decode(chunk)
@@ -1170,15 +1184,37 @@ def _iter_json_array_stream(
                 except json.JSONDecodeError as exc:
                     if eof:
                         raise _fail("invalid_resource_archive", "Yomitan bank contains invalid JSON") from exc
-                    fill()
+                    buffered_bytes = len(buffer.encode("utf-8"))
+                    if buffered_bytes >= item_byte_limit + 1:
+                        raise _fail(
+                            "resource_archive_too_large",
+                            "Yomitan bank contains an oversized item",
+                        ) from exc
+                    fill(min(_COPY_CHUNK_BYTES, item_byte_limit + 1 - buffered_bytes))
                     continue
 
+                item_bytes = len(buffer[:item_end].encode("utf-8"))
+                if item_bytes > item_byte_limit:
+                    raise _fail(
+                        "resource_archive_too_large",
+                        "Yomitan bank contains an oversized item",
+                    )
                 probe = item_end
                 while probe < len(buffer) and buffer[probe].isspace():
                     probe += 1
-                if probe == len(buffer) and not eof:
-                    fill()
+                if probe == len(buffer) and not eof and isinstance(item, (int, float)) and not isinstance(item, bool):
+                    buffered_bytes = len(buffer.encode("utf-8"))
+                    if buffered_bytes >= item_byte_limit + 1:
+                        raise _fail(
+                            "resource_archive_too_large",
+                            "Yomitan bank contains an oversized item",
+                        )
+                    fill(min(_COPY_CHUNK_BYTES, item_byte_limit + 1 - buffered_bytes))
                     continue
+                while probe == len(buffer) and not eof:
+                    fill(1)
+                    while probe < len(buffer) and buffer[probe].isspace():
+                        probe += 1
                 if probe >= len(buffer) or buffer[probe] not in {",", "]"}:
                     raise _fail("invalid_resource_archive", "Yomitan bank contains invalid JSON")
                 delimiter = buffer[probe]
@@ -1293,8 +1329,17 @@ def _rewrite_yomitan_banks(
 
                 for info in sorted(bank_infos, key=lambda item: item.filename):
                     with source.open(info, "r") as bank_stream:
-                        for item in _iter_json_array_stream(bank_stream, operation):
+                        for item in _iter_json_array_stream(
+                            bank_stream,
+                            operation,
+                            item_byte_limit=_YOMITAN_BANK_CHUNK_BYTES - 2,
+                        ):
                             item_bytes = "".join(encoded.iterencode(item)).encode("utf-8")
+                            if len(item_bytes) + 2 > _YOMITAN_BANK_CHUNK_BYTES:
+                                raise _fail(
+                                    "resource_archive_too_large",
+                                    "Yomitan bank contains an oversized item",
+                                )
                             added_size = len(item_bytes) + (1 if chunk_entries else 0)
                             if chunk_entries and chunk_size + added_size > _YOMITAN_BANK_CHUNK_BYTES:
                                 flush_bank()
@@ -1577,6 +1622,22 @@ def _publish_dictionary(
             _safe_remove_dictionary_entry(backup)
 
 
+def _validate_dictionary_metadata(title: str, revision: str) -> None:
+    for name, value in (("title", title), ("revision", revision)):
+        try:
+            size = len(value.encode("utf-8"))
+        except UnicodeEncodeError as exc:
+            raise _fail(
+                "dictionary_import_failed",
+                f"Dictionary {name} is not valid Unicode",
+            ) from exc
+        if size > _MAX_DICTIONARY_METADATA_BYTES:
+            raise _fail(
+                "dictionary_import_failed",
+                f"Dictionary {name} exceeds its size limit",
+            )
+
+
 def _derive_dictionary_slot(source: Path) -> str:
     """Apply the desktop importer's title+revision slot rule without loading the engine."""
 
@@ -1589,7 +1650,11 @@ def _derive_dictionary_slot(source: Path) -> str:
                 raise _fail("dictionary_import_failed", "Dictionary ZIP has no root index.json") from exc
             if info.file_size > _MAX_YOMITAN_INDEX_BYTES:
                 raise _fail("dictionary_import_failed", "Dictionary index.json exceeds its size limit")
-            with archive.open(info, "r") as stream:
+            try:
+                stream = archive.open(info, "r")
+            except (NotImplementedError, RuntimeError) as exc:
+                raise _unsupported_zip_compression(info) from exc
+            with stream:
                 raw = stream.read(_MAX_YOMITAN_INDEX_BYTES + 1)
             if len(raw) > _MAX_YOMITAN_INDEX_BYTES:
                 raise _fail("dictionary_import_failed", "Dictionary index.json exceeds its size limit")
@@ -1605,6 +1670,7 @@ def _derive_dictionary_slot(source: Path) -> str:
     revision = str(index.get("revision", "")).strip()
     if not title:
         raise _fail("dictionary_import_failed", "Dictionary index.json has no title")
+    _validate_dictionary_metadata(title, revision)
 
     def slug(text: str) -> str:
         parts: list[str] = []
@@ -1637,7 +1703,10 @@ def preflight_dictionary(payload: Mapping[str, object]) -> str:
         try:
             slot_id = _slot_id(_derive_dictionary_slot(source))
         except BridgeProtocolError as exc:
-            if exc.code == "dictionary_import_failed":
+            if exc.code in {
+                "dictionary_import_failed",
+                "resource_archive_unsupported_compression",
+            }:
                 raise
             raise _fail(
                 "dictionary_import_failed",
@@ -1765,6 +1834,7 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                     ) from exc
                 raise
             operation.check()
+            _validate_dictionary_metadata(result.source_name, result.source_revision)
             if catalog_resource and (
                 result.source_name != catalog_resource.dictionary.title
                 or result.source_revision != catalog_resource.dictionary.revision

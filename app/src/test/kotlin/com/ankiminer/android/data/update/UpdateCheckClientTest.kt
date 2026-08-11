@@ -20,10 +20,12 @@ class UpdateCheckClientTest {
             )
 
         assertEquals(
-            AvailableUpdate(
-                version = "0.5.0",
-                releasePageUrl =
-                    "https://github.com/0xzerolight/anki_miner_android/releases/tag/v0.5.0",
+            UpdateCheckResult.Available(
+                AvailableUpdate(
+                    version = "0.5.0",
+                    releasePageUrl =
+                        "https://github.com/0xzerolight/anki_miner_android/releases/tag/v0.5.0",
+                ),
             ),
             result,
         )
@@ -37,7 +39,7 @@ class UpdateCheckClientTest {
                     """{"tag_name":"v0.4.1","html_url":"https://github.com/0xzerolight/anki_miner_android/releases/tag/v0.4.1"}""",
             )
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.UpToDate, result)
     }
 
     @Test
@@ -48,7 +50,7 @@ class UpdateCheckClientTest {
                     """{"tag_name":"v0.4.0","html_url":"https://github.com/0xzerolight/anki_miner_android/releases/tag/v0.4.0"}""",
             )
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.UpToDate, result)
     }
 
     @Test
@@ -59,7 +61,7 @@ class UpdateCheckClientTest {
                     """{"tag_name":"v0.5.0","html_url":"https://evil.example/releases"}""",
             )
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.Failure, result)
     }
 
     @Test
@@ -70,35 +72,53 @@ class UpdateCheckClientTest {
                     """{"tag_name":"v0.5.0","html_url":"http://github.com/x"}""",
             )
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.Failure, result)
     }
 
     @Test
-    fun `a non-200 response yields nothing`() {
+    fun `a non-200 response is a failed observation`() {
         val result = latest(body = "forbidden", status = 403)
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.Failure, result)
     }
 
     @Test
     fun `an oversized body is abandoned rather than buffered`() {
         val result = latest(body = "x".repeat(300 * 1024))
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.Failure, result)
     }
 
     @Test
-    fun `a body that is not an object yields nothing`() {
+    fun `a body that is not an object is a failed observation`() {
         val result = latest(body = "[]")
 
-        assertNull(result)
+        assertEquals(UpdateCheckResult.Failure, result)
+    }
+
+    @Test
+    fun `an invalid release version is a failed observation`() {
+        val result =
+            latest(
+                body =
+                    """{"tag_name":"nightly","html_url":"https://github.com/0xzerolight/anki_miner_android/releases/tag/nightly"}""",
+            )
+
+        assertEquals(UpdateCheckResult.Failure, result)
+    }
+
+    @Test
+    fun `malformed JSON is a failed observation`() {
+        val result = latest(body = "{")
+
+        assertEquals(UpdateCheckResult.Failure, result)
     }
 
     private fun latest(
         body: String,
         status: Int = HttpURLConnection.HTTP_OK,
         currentVersion: String = "0.4.1",
-    ): AvailableUpdate? {
+    ): UpdateCheckResult {
         val connection = FakeConnection(status, ByteArrayInputStream(body.toByteArray()))
         var openedUrl: String? = null
         val client =

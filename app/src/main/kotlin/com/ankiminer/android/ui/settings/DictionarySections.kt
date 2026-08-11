@@ -69,16 +69,11 @@ internal fun CatalogDictionaryCards(
         state.catalogDictionaries.filter {
             showInstalled || !it.installed || it.resource.resourceId == failureTargetId
         }
-    if (visible.isEmpty()) {
-        SecondaryActionButton(
-            onClick = { showInstalled = true },
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.dictionary_catalog_reinstall))
-        }
-        return
-    }
+    val installedAreHidden =
+        !showInstalled &&
+            state.catalogDictionaries.any {
+                it.installed && it.resource.resourceId != failureTargetId
+            }
     visible.forEach { status ->
         ResourceCard(
             title =
@@ -109,6 +104,15 @@ internal fun CatalogDictionaryCards(
             ),
             inlineFailure = { inlineFailure(status.resource.resourceId) },
         )
+    }
+    if (visible.isEmpty() || installedAreHidden) {
+        SecondaryActionButton(
+            onClick = { showInstalled = true },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.dictionary_catalog_reinstall))
+        }
     }
 }
 

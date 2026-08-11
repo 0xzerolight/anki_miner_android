@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # Shared host-resource rules for every local Android build and emulator lane.
-# Callers use these checks at the boundary immediately before starting Gradle
-# or an emulator; neither process is allowed to overlap the other.
+# One workload lock covers the checked-to-running transition and stays held for
+# the full Gradle or emulator child lifetime.
 
 ANKI_MINER_GRADLE_ARGS=(
     --no-daemon
@@ -48,6 +48,28 @@ anki_miner_require_no_emulator() {
     fi
 }
 
+anki_miner_acquire_workload_lock() {
+    local lock_directory lock_path
+
+    if [[ -n "${ANKI_MINER_WORKLOAD_LOCK_FD:-}" ]]; then
+        return 0
+    fi
+    if ! command -v flock >/dev/null 2>&1; then
+        echo "Refusing to start a Gradle or emulator workload because flock is unavailable." >&2
+        return 1
+    fi
+    lock_directory="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/.locks"
+    lock_path="$lock_directory/android-workload.lock"
+    mkdir -p "$lock_directory"
+    exec {ANKI_MINER_WORKLOAD_LOCK_FD}>"$lock_path"
+    if ! flock --exclusive --nonblock "$ANKI_MINER_WORKLOAD_LOCK_FD"; then
+        exec {ANKI_MINER_WORKLOAD_LOCK_FD}>&-
+        unset ANKI_MINER_WORKLOAD_LOCK_FD
+        echo "Refusing to start another Gradle or emulator workload while one owns the lock." >&2
+        return 1
+    fi
+}
+
 anki_miner_acquire_emulator_lock() {
     local lock_directory lock_path
 
@@ -70,34 +92,10 @@ anki_miner_acquire_emulator_lock() {
     fi
 }
 
-anki_miner_require_emulator_capacity() {
-    local meminfo_path available_kib swap_total_kib swap_free_kib
-    local minimum_available_kib minimum_swap_free_kib
-    meminfo_path="${ANKI_MINER_MEMINFO_PATH:-/proc/meminfo}"
-    minimum_available_kib=$((6 * 1024 * 1024))
-    minimum_swap_free_kib=$((1 * 1024 * 1024))
-    available_kib="$(awk '/^MemAvailable:/ { print $2; exit }' "$meminfo_path")"
-    swap_total_kib="$(awk '/^SwapTotal:/ { print $2; exit }' "$meminfo_path")"
-    swap_free_kib="$(awk '/^SwapFree:/ { print $2; exit }' "$meminfo_path")"
-
-    if [[ ! "$available_kib" =~ ^[0-9]+$ ]] \
-        || ((available_kib < minimum_available_kib)); then
-        echo "Refusing to start an emulator with less than 6 GiB of available host memory." >&2
-        return 1
-    fi
-    if [[ ! "$swap_total_kib" =~ ^[0-9]+$ || ! "$swap_free_kib" =~ ^[0-9]+$ ]]; then
-        echo "Refusing to start an emulator because host swap state is unreadable." >&2
-        return 1
-    fi
-    if ((swap_total_kib > 0 && swap_free_kib < minimum_swap_free_kib)); then
-        echo "Refusing to start an emulator with less than 1 GiB of free swap." >&2
-        return 1
-    fi
-}
-
 anki_miner_run_gradle() {
     local gradlew="$1"
     shift
+    anki_miner_acquire_workload_lock || return 1
     anki_miner_require_no_gradle || return 1
     anki_miner_require_no_emulator || return 1
     "$gradlew" "${ANKI_MINER_GRADLE_ARGS[@]}" "$@"

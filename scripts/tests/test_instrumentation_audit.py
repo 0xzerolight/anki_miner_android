@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -50,7 +51,6 @@ class InstrumentationAuditTest(unittest.TestCase):
                 }
             ),
         )
-        subprocess.run(["git", "init", "-q", str(root)], check=True)
         return root
 
     @staticmethod
@@ -81,13 +81,34 @@ class InstrumentationAuditTest(unittest.TestCase):
             path.write_text(content, encoding="utf-8")
 
     def _run_audit(self, root: Path) -> subprocess.CompletedProcess[str]:
-        if root != REPO_ROOT:
-            subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+        fake_git_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(fake_git_directory.cleanup)
+        fake_bin = Path(fake_git_directory.name)
+        tracked_files = fake_bin / "tracked-files"
+        tracked_files.write_bytes(
+            b"\0".join(
+                str(path.relative_to(root)).encode("utf-8") for path in sorted(root.rglob("*")) if path.is_file()
+            )
+            + b"\0"
+        )
+        fake_git = fake_bin / "git"
+        fake_git.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            '[[ "$*" == *"ls-files -z" ]]\n'
+            'cat "$FAKE_GIT_TRACKED_FILES"\n',
+            encoding="utf-8",
+        )
+        fake_git.chmod(0o755)
+        environment = os.environ.copy()
+        environment["FAKE_GIT_TRACKED_FILES"] = str(tracked_files)
+        environment["PATH"] = f"{fake_bin}{os.pathsep}{environment['PATH']}"
         return subprocess.run(
             [sys.executable, str(AUDIT), "--repo-root", str(root)],
             cwd=REPO_ROOT,
             check=False,
             capture_output=True,
+            env=environment,
             text=True,
         )
 
@@ -162,6 +183,52 @@ class InstrumentationAuditTest(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn(f"{relative}:1: direct printStackTrace method reference", result.stderr)
 
+    def test_all_production_kotlin_source_sets_enforce_applog_boundary(self) -> None:
+        cases = {
+            "app/src/main/kotlin/example/Console.kt": 'fun leak() = println("secret")\n',
+            "app/src/main/ankidroidApi/kotlin/example/Console.kt": 'fun leak() = android.util.Log.d("tag", "secret")\n',
+            "app/src/release/kotlin/example/Console.kt": 'fun leak() = System.err.println("secret")\n',
+        }
+        for relative, source in cases.items():
+            with self.subTest(relative=relative):
+                root = self._new_repo()
+                self._write(root, relative, source)
+
+                result = self._run_audit(root)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(f"{relative}:1: direct Log/console usage outside AppLog", result.stderr)
+
+    def test_kotlin_print_calls_violate_applog_boundary(self) -> None:
+        for expression in ('print ("secret")', 'kotlin.io.print ("secret")'):
+            with self.subTest(expression=expression):
+                root = self._new_repo()
+                relative = "app/src/main/kotlin/example/Console.kt"
+                self._write(root, relative, f"fun leak() = {expression}\n")
+
+                result = self._run_audit(root)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(f"{relative}:1: direct Log/console usage outside AppLog", result.stderr)
+
+    def test_designated_logcat_sink_is_the_only_boundary_exemption(self) -> None:
+        root = self._new_repo()
+        self._write(
+            root,
+            "app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogcatSink.kt",
+            'import android.util.Log\nfun emit() = Log.println(1, "tag", "message")\n',
+        )
+
+        result = self._run_audit(root)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_official_host_gates_invoke_the_instrumentation_audit(self) -> None:
+        for relative in ("scripts/health.sh", ".github/workflows/pull-request.yml"):
+            with self.subTest(relative=relative):
+                source = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("tools/instrumentation/audit_instrumentation.py", source)
+
     def test_non_rethrowing_bound_catch_logs_before_other_work(self) -> None:
         root = self._new_repo()
         relative = "app/src/main/kotlin/example/Bound.kt"
@@ -200,6 +267,26 @@ class InstrumentationAuditTest(unittest.TestCase):
         )
         logged_or_rethrown = self._run_audit(root)
         self.assertEqual(0, logged_or_rethrown.returncode, logged_or_rethrown.stderr)
+
+    def test_conditional_rethrow_does_not_hide_a_swallowing_branch(self) -> None:
+        root = self._new_repo()
+        relative = "app/src/main/kotlin/example/Bound.kt"
+        self._write(
+            root,
+            relative,
+            """fun recover(retry: Boolean) {
+    try { work() } catch (failure: Exception) {
+        if (retry) throw failure
+        recoverWithoutLogging()
+    }
+}
+""",
+        )
+
+        result = self._run_audit(root)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn(f"{relative}:2: non-rethrowing bound catch must log among its first statements", result.stderr)
 
     def test_run_catching_get_or_null_requires_on_failure(self) -> None:
         root = self._new_repo()
@@ -269,6 +356,28 @@ except Exception as error:
         )
         traced = self._run_audit(root)
         self.assertEqual(0, traced.returncode, traced.stderr)
+
+    def test_python_except_log_rejects_disabling_exc_info_values(self) -> None:
+        for value in ("False", "None"):
+            with self.subTest(value=value):
+                root = self._new_repo()
+                relative = "app/src/main/python/android_bridge/except_log.py"
+                self._write(
+                    root,
+                    relative,
+                    "try:\n"
+                    "    work()\n"
+                    "except Exception as error:\n"
+                    f'    logger.error("failed", exc_info={value})\n',
+                )
+
+                result = self._run_audit(root)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(
+                    f"{relative}:4: logger.error inside except requires traceback-preserving exc_info=",
+                    result.stderr,
+                )
 
     def test_type_name_cannot_be_a_log_calls_only_argument(self) -> None:
         root = self._new_repo()

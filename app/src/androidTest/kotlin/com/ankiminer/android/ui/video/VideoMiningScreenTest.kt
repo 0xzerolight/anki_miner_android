@@ -29,6 +29,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
@@ -53,6 +54,7 @@ import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
+import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -774,6 +776,76 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate(candidates.first().candidateId))
             .assertDoesNotExist()
+    }
+
+    @Test
+    fun oversizedCurationSearchIsBoundedBeforeEnteringSaveableState() {
+        val request = request()
+        val oversized = "x".repeat(MAX_SAVEABLE_QUERY_LENGTH + 100)
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(CURATION_SEARCH_TEST_TAG)
+            .performTextReplacement(oversized)
+
+        val savedQuery =
+            composeRule
+                .onNodeWithTag(CURATION_SEARCH_TEST_TAG)
+                .fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText]
+                .text
+        assertEquals(MAX_SAVEABLE_QUERY_LENGTH, savedQuery.length)
+    }
+
+    @Test
+    fun bulkMenuCountsAndSelectsOnlyEligibleCandidates() {
+        val known =
+            candidate("candidate-known", "match-known", listOf(sentence("s-known", "Known")))
+        val visible =
+            candidate(
+                "candidate-visible",
+                "match-visible",
+                listOf(sentence("s-visible", "Visible")),
+            )
+        val hidden =
+            candidate("candidate-hidden", "other", listOf(sentence("s-hidden", "Hidden")))
+        val request = CurationRequest("run", "request-bulk-count", listOf(known, visible, hidden))
+        var bulkChange: Pair<List<String>, Boolean>? = null
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request = request,
+                            knownCandidateIds = setOf(known.candidateId),
+                            selectedCandidateIds = emptySet(),
+                            focusedCandidateId = null,
+                        ),
+                ),
+            onSetSelectionForVisible = { ids, selected -> bulkChange = ids to selected },
+        )
+
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("match")
+        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).performClick()
+
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        composeRule
+            .onNodeWithText(context.getString(R.string.select_visible, 1))
+            .assertIsDisplayed()
+        composeRule
+            .onNodeWithText(context.getString(R.string.curation_select_whole_page, 2))
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
+        composeRule.runOnIdle {
+            assertEquals(listOf(visible.candidateId) to true, bulkChange)
+        }
     }
 
     @Test

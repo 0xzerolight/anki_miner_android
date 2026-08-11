@@ -239,6 +239,51 @@ class TesterDiagnosticsTest {
     }
 
     @Test
+    fun `mining correlation fields come from one failed lane`() {
+        val report =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Failed(
+                                runId = "run_video",
+                                failure =
+                                    MiningFailure(
+                                        "Video failed",
+                                        false,
+                                        null,
+                                        "video_failed",
+                                    ),
+                                result = null,
+                            ),
+                    ),
+                audio =
+                    VideoMiningUiState(
+                        runState =
+                            MiningRunState.Failed(
+                                runId = "run_audio",
+                                failure =
+                                    MiningFailure(
+                                        "Audio failed",
+                                        false,
+                                        "f12345678",
+                                        "audio_failed",
+                                    ),
+                                result = null,
+                            ),
+                    ),
+                reading = ReadingMiningUiState(),
+            ).report
+
+        assertTrue(report, report.contains("mining.fault_id=none\n"))
+        assertTrue(report, report.contains("mining.run_id=run_video\n"))
+        assertTrue(report, report.contains("mining.failure_code=video_failed\n"))
+        assertFalse(report, report.contains("mining.fault_id=f12345678\n"))
+    }
+
+    @Test
     fun `an over-long failure code is cut to a prefix rather than dropped`() {
         // The engine's terminal code pattern is length-unbounded, so this is reachable from Python.
         val longCode = "e".repeat(70)

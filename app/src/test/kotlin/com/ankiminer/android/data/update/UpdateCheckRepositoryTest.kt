@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -43,6 +45,41 @@ class UpdateCheckRepositoryTest {
             assertFalse(repository.state.first().enabled)
         }
 
+    @Test
+    fun `an automatic attempt persists without replacing the last successful result`() =
+        runTest {
+            val repository =
+                DataStoreUpdateCheckRepository(createDataStore(backgroundScope, "attempt"))
+            val update =
+                AvailableUpdate(
+                    version = "0.5.0",
+                    releasePageUrl = "https://github.com/example/release",
+                )
+            repository.recordCheck(PREVIOUS_CHECK, update)
+
+            repository.recordAutomaticAttempt(NOW)
+
+            val stored = repository.state.first()
+            assertEquals(NOW, stored.lastAutomaticAttemptAtMillis)
+            assertEquals(PREVIOUS_CHECK, stored.lastCheckedAtMillis)
+            assertEquals(update.version, stored.availableVersion)
+            assertEquals(update.releasePageUrl, stored.availableUrl)
+        }
+
+    @Test
+    fun `an existing successful check initializes the automatic attempt window`() =
+        runTest {
+            val dataStore = createDataStore(backgroundScope, "migrated")
+            dataStore.updateData { preferences ->
+                preferences.toMutablePreferences().apply {
+                    this[UPDATE_LAST_CHECKED_AT] = PREVIOUS_CHECK
+                }.toPreferences()
+            }
+            val repository = DataStoreUpdateCheckRepository(dataStore)
+
+            assertEquals(PREVIOUS_CHECK, repository.state.first().lastAutomaticAttemptAtMillis)
+        }
+
     private fun createDataStore(
         scope: CoroutineScope,
         name: String,
@@ -66,6 +103,9 @@ class UpdateCheckRepositoryTest {
     }
 
     private companion object {
+        const val NOW = 1_800_000_000_000L
+        const val PREVIOUS_CHECK = NOW - 1_000L
         val UPDATE_CHECK_ENABLED = booleanPreferencesKey("update_check_enabled")
+        val UPDATE_LAST_CHECKED_AT = longPreferencesKey("update_last_checked_at")
     }
 }

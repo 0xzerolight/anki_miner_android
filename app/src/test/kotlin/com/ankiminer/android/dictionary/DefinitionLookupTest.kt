@@ -1,12 +1,19 @@
 package com.ankiminer.android.dictionary
 
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogLevel
+import com.ankiminer.android.diagnostics.log.NoOpSink
+import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.engine.PyBridge
+import com.ankiminer.android.engine.emitDispatchEntry
 import java.util.concurrent.Executor
 import kotlinx.coroutines.test.runTest
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 
 private const val RUN_ID = "run_00000000000000000000000000000000"
@@ -14,6 +21,20 @@ private const val OTHER_RUN_ID = "run_11111111111111111111111111111111"
 
 class DefinitionLookupTest {
     private val direct = Executor { it.run() }
+    private val recorded = RecordingLogSink()
+
+    @Before
+    fun installRecordingSink() {
+        AppLog.setMinLevel(LogLevel.DEBUG)
+        AppLog.install(NoOpSink)
+        AppLog.install(recorded)
+    }
+
+    @After
+    fun detachRecordingSink() {
+        AppLog.setMinLevel(LogLevel.INFO)
+        AppLog.install(NoOpSink)
+    }
 
     private fun result(
         runId: String = RUN_ID,
@@ -96,5 +117,20 @@ class DefinitionLookupTest {
             BridgeDefinitionLookupService(PyBridge { _, _ -> result() }, executor)
                 .define(RUN_ID, "猫", null)
             assertTrue(ran)
+        }
+
+    @Test
+    fun `bridge boundary logs carry the lookup run id`() =
+        runTest {
+            val bridge =
+                PyBridge { raw, _ ->
+                    emitDispatchEntry("dictionary.define", raw)
+                    result()
+                }
+
+            BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null).getOrThrow()
+
+            val record = recorded.records.single { it.contains("op=dispatch") }
+            assertTrue(record, record.contains(" D run=$RUN_ID c=bridge op=dispatch "))
         }
 }

@@ -549,6 +549,12 @@ internal class JournalBackedMediaMutationService(
                 cleanupPreservingOutcome(granted)
             } catch (failure: RunReleasingException) {
                 if (authorized) throw failure
+                AppLog.ignored(
+                    LogComponent.MEDIA,
+                    "media.authorize",
+                    "release_before_provider_entry",
+                    failure,
+                )
                 val error = releasingBeforeEntry().withoutRetryAfterStoredPrefix(durableRequest.key)
                 return stopBeforeProviderEntry(
                     owner,
@@ -565,6 +571,12 @@ internal class JournalBackedMediaMutationService(
                 )
             } catch (failure: RunCancelledException) {
                 if (authorized) throw failure
+                AppLog.ignored(
+                    LogComponent.MEDIA,
+                    "media.authorize",
+                    "cancellation_before_provider_entry",
+                    failure,
+                )
                 val error = cancelledBeforeEntry().withoutRetryAfterStoredPrefix(durableRequest.key)
                 return stopBeforeProviderEntry(
                     owner,
@@ -581,6 +593,12 @@ internal class JournalBackedMediaMutationService(
                 )
             } catch (failure: RunStateConflictException) {
                 if (authorized) throw failure
+                AppLog.ignored(
+                    LogComponent.MEDIA,
+                    "media.authorize",
+                    "state_conflict_before_provider_entry",
+                    failure,
+                )
                 val error = quarantinedBeforeEntry().withoutRetryAfterStoredPrefix(durableRequest.key)
                 return stopBeforeProviderEntry(
                     owner,

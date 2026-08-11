@@ -2,6 +2,7 @@ package com.ankiminer.android.data.settings
 
 import android.content.ContentResolver
 import android.net.Uri
+import com.ankiminer.android.data.resources.ResourceDocumentWriter
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.ProviderIoCancelledException
@@ -9,17 +10,20 @@ import com.ankiminer.android.media.ProviderIoDeadlineScheduler
 import com.ankiminer.android.media.RealProviderIoDeadlineScheduler
 import java.io.IOException
 import java.io.InputStream
+import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.CodingErrorAction
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.runBlocking
 
 internal fun interface SettingsDocumentReader {
     /**
      * Reads [uri], a `content://` string. Kept as a String rather than a parsed [Uri] so callers can
      * be exercised by JVM unit tests, where `Uri.parse` is a throwing stub.
      */
-    fun read(uri: String): String
+    suspend fun read(uri: String): String
 }
 
 internal fun interface SettingsDocumentInputOpener {
@@ -27,6 +31,13 @@ internal fun interface SettingsDocumentInputOpener {
         uri: String,
         cancellation: ProviderIoCancellation,
     ): InputStream
+}
+
+internal fun interface SettingsDocumentOutputOpener {
+    fun open(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): OutputStream
 }
 
 private class AndroidSettingsDocumentInputOpener(
@@ -53,6 +64,19 @@ private class AndroidSettingsDocumentInputOpener(
         }
 }
 
+private class AndroidSettingsDocumentOutputOpener(
+    private val writer: ResourceDocumentWriter,
+) : SettingsDocumentOutputOpener {
+    override fun open(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): OutputStream =
+        CancellableProviderIo.open(cancellation) { signal ->
+            writer.open(uri, signal)
+                ?: throw IOException("DocumentsProvider returned no stream for $uri")
+        }
+}
+
 internal class AndroidSettingsDocumentReader internal constructor(
     private val inputOpener: SettingsDocumentInputOpener,
     private val providerIoScope: CoroutineScope =
@@ -65,34 +89,82 @@ internal class AndroidSettingsDocumentReader internal constructor(
         inputOpener = AndroidSettingsDocumentInputOpener(resolver),
     )
 
-    override fun read(uri: String): String =
-        runBlocking {
-            CancellableProviderIo.execute(
-                scope = providerIoScope,
-                timeoutMillis = providerIoTimeoutMillis,
-                scheduler = providerIoScheduler,
-            ) { deadline ->
-                CancellableProviderIo.useResource(
-                    cancellation = deadline,
-                    open = { inputOpener.open(uri, deadline) },
-                ) { stream ->
+    override suspend fun read(uri: String): String =
+        CancellableProviderIo.execute(
+            scope = providerIoScope,
+            timeoutMillis = providerIoTimeoutMillis,
+            scheduler = providerIoScheduler,
+        ) { deadline ->
+            CancellableProviderIo.useResource(
+                cancellation = deadline,
+                open = { inputOpener.open(uri, deadline) },
+            ) { stream ->
+                deadline.rearm()
+                val bytes =
+                    stream.readAtMost(
+                        SettingsBackupCodec.MAX_DOCUMENT_BYTES + 1,
+                        cancellation = deadline,
+                        onProgress = deadline::rearm,
+                    )
+                if (bytes.size > SettingsBackupCodec.MAX_DOCUMENT_BYTES) {
+                    throw SettingsBackupException(SettingsBackupFailure.TOO_LARGE)
+                }
+                bytes.decodeStrictUtf8()
+            }
+        }
+
+    private companion object {
+        const val PROVIDER_IO_TIMEOUT_MILLIS = 30_000L
+    }
+}
+
+internal fun interface SettingsBackupWriter {
+    suspend fun write(
+        uri: String,
+        bytes: ByteArray,
+    )
+}
+
+internal class SettingsDocumentWriter internal constructor(
+    private val outputOpener: SettingsDocumentOutputOpener,
+    private val providerIoScope: CoroutineScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val providerIoTimeoutMillis: Long = PROVIDER_IO_TIMEOUT_MILLIS,
+    private val providerIoScheduler: ProviderIoDeadlineScheduler =
+        RealProviderIoDeadlineScheduler,
+) : SettingsBackupWriter {
+    constructor(writer: ResourceDocumentWriter) : this(
+        outputOpener = AndroidSettingsDocumentOutputOpener(writer),
+    )
+
+    override suspend fun write(
+        uri: String,
+        bytes: ByteArray,
+    ): Unit =
+        CancellableProviderIo.execute(
+            scope = providerIoScope,
+            timeoutMillis = providerIoTimeoutMillis,
+            scheduler = providerIoScheduler,
+        ) { deadline ->
+            CancellableProviderIo.useResource(
+                cancellation = deadline,
+                open = { outputOpener.open(uri, deadline) },
+            ) { stream ->
+                var offset = 0
+                while (offset < bytes.size) {
+                    deadline.throwIfCancelled()
+                    val count = minOf(WRITE_CHUNK_BYTES, bytes.size - offset)
+                    stream.write(bytes, offset, count)
+                    deadline.throwIfCancelled()
                     deadline.rearm()
-                    val bytes =
-                        stream.readAtMost(
-                            SettingsBackupCodec.MAX_DOCUMENT_BYTES + 1,
-                            cancellation = deadline,
-                            onProgress = deadline::rearm,
-                        )
-                    if (bytes.size > SettingsBackupCodec.MAX_DOCUMENT_BYTES) {
-                        throw SettingsBackupException(SettingsBackupFailure.TOO_LARGE)
-                    }
-                    bytes.toString(Charsets.UTF_8)
+                    offset += count
                 }
             }
         }
 
     private companion object {
         const val PROVIDER_IO_TIMEOUT_MILLIS = 30_000L
+        const val WRITE_CHUNK_BYTES = 64 * 1024
     }
 }
 
@@ -140,3 +212,17 @@ internal fun InputStream.readAtMost(
 private fun ProviderIoCancellation.throwIfCancelled() {
     if (isCancelled()) throw ProviderIoCancelledException()
 }
+
+private fun ByteArray.decodeStrictUtf8(): String =
+    try {
+        Charsets.UTF_8
+            .newDecoder()
+            .onMalformedInput(CodingErrorAction.REPORT)
+            .onUnmappableCharacter(CodingErrorAction.REPORT)
+            .decode(ByteBuffer.wrap(this))
+            .toString()
+    } catch (failure: CharacterCodingException) {
+        throw SettingsBackupException(SettingsBackupFailure.MALFORMED).also {
+            it.initCause(failure)
+        }
+    }

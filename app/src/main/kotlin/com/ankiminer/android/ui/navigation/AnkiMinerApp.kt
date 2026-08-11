@@ -58,9 +58,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
+import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
+import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.MiningRunKind
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.isTerminal
@@ -484,6 +486,14 @@ internal fun AnkiMinerApp(
         }
     }
 
+    fun navigateToSettings(origin: AnkiSetupFailureOrigin?) {
+        if (origin != null) {
+            requestedSettingsCategory = settingsCategoryFor(origin)
+            requestedSettingsItemIndex = settingsCardIndexFor(origin)
+        }
+        navigateTo(AnkiMinerDestination.SETTINGS)
+    }
+
     LaunchedEffect(notificationRunId) {
         if (notificationRunId == null) return@LaunchedEffect
         val videoRun = videoViewModel.uiState.value.runState
@@ -670,9 +680,7 @@ internal fun AnkiMinerApp(
                         onInstallAnkiDroid = onInstallAnkiDroid,
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = {
-                            navigateTo(AnkiMinerDestination.SETTINGS)
-                        },
+                        onOpenSettings = ::navigateToSettings,
                     )
                 }
             }
@@ -701,9 +709,7 @@ internal fun AnkiMinerApp(
                         onInstallAnkiDroid = onInstallAnkiDroid,
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = {
-                            navigateTo(AnkiMinerDestination.SETTINGS)
-                        },
+                        onOpenSettings = ::navigateToSettings,
                     )
                 }
             }
@@ -732,9 +738,7 @@ internal fun AnkiMinerApp(
                         onInstallAnkiDroid = onInstallAnkiDroid,
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = {
-                            navigateTo(AnkiMinerDestination.SETTINGS)
-                        },
+                        onOpenSettings = ::navigateToSettings,
                     )
                 }
             }
@@ -806,7 +810,7 @@ internal fun MiningReadinessNotice(
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onCheckAgain: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
 ) {
     Column(
         Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
@@ -816,12 +820,13 @@ internal fun MiningReadinessNotice(
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
                 Text(message)
-                when (state.miningReadinessAction) {
+                when (val action = miningReadinessActionForDisplay(state)) {
+                    null -> Unit
                     MiningReadinessAction.WAIT ->
                         SupportingText(stringResource(R.string.readiness_wait_action))
                     else ->
                         MiningReadinessActions(
-                            action = state.miningReadinessAction,
+                            action = action,
                             onRequestPermissions = onRequestPermissions,
                             onInstallUniDic = onInstallUniDic,
                             onInstallAnkiDroid = onInstallAnkiDroid,
@@ -836,14 +841,14 @@ internal fun MiningReadinessNotice(
 }
 
 @Composable
-private fun MiningReadinessActions(
+internal fun MiningReadinessActions(
     action: MiningReadinessAction,
     onRequestPermissions: () -> Unit,
     onInstallUniDic: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     onCheckAgain: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
 ) {
     val actionSpec =
         when (action) {
@@ -874,13 +879,13 @@ private fun MiningReadinessActions(
             MiningReadinessAction.CHOOSE_NOTE_TYPE ->
                 ReadinessActionSpec(
                     R.string.readiness_choose_note_type,
-                    onOpenSettings,
+                    { onOpenSettings(AnkiSetupFailureOrigin.TARGET) },
                     opensSettings = true,
                 )
             MiningReadinessAction.RESOLVE_RECOVERY ->
                 ReadinessActionSpec(
                     R.string.readiness_resolve_recovery,
-                    onOpenSettings,
+                    { onOpenSettings(AnkiSetupFailureOrigin.RECOVERY) },
                     opensSettings = true,
                 )
             MiningReadinessAction.CHECK_AGAIN ->
@@ -900,7 +905,7 @@ private fun MiningReadinessActions(
     }
     if (!actionSpec.opensSettings) {
         OutlinedButton(
-            onClick = onOpenSettings,
+            onClick = { onOpenSettings(null) },
             modifier = Modifier.fillMaxWidth(),
             colors = outlinedActionButtonColors(),
             border = actionBorder(enabled = true),
@@ -916,9 +921,13 @@ private data class ReadinessActionSpec(
     val opensSettings: Boolean,
 )
 
+internal fun miningReadinessActionForDisplay(state: SetupUiState): MiningReadinessAction? =
+    state.miningReadinessAction.takeUnless { state.python is PythonRuntimeReadiness.Failed }
+
 @StringRes
-private fun miningReadinessMessage(state: SetupUiState): Int =
+internal fun miningReadinessMessage(state: SetupUiState): Int =
     when {
+        state.python is PythonRuntimeReadiness.Failed -> R.string.mining_failure_restart_required
         state.busy -> R.string.readiness_resource_operation
         !state.pythonReady -> R.string.readiness_python_pending
         state.resourceStartup != com.ankiminer.android.data.resources.ResourceStartupReadiness.READY ->

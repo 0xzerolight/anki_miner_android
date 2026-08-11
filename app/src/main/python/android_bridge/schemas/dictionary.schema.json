@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/dictionary.json",
   "title": "Anki Miner Android on-demand dictionary lookup payload",
-  "$comment": "Offline providers only; the preview never performs network I/O. fallbackTerm is a miss-only lemma retry and never overrides a hit on term. Total entry HTML is bounded at 524288 UTF-8 bytes at runtime.",
+  "$comment": "Offline providers only; the preview never performs network I/O. fallbackTerm is a miss-only lemma retry and never overrides a hit on term. Request terms are bounded to 256 UTF-8 bytes by the shared runtime semantic validator because JSON Schema maxLength counts code points. Total entry HTML is bounded at 524288 UTF-8 bytes at runtime.",
   "oneOf": [
     {"$ref": "#/$defs/request"},
     {"$ref": "#/$defs/result"}
@@ -15,7 +15,7 @@
       "required": ["runId", "term", "fallbackTerm"],
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
-        "term": {"type": "string", "minLength": 1},
+        "term": {"type": "string", "minLength": 1, "pattern": "\\S"},
         "fallbackTerm": {"type": ["string", "null"]}
       }
     },

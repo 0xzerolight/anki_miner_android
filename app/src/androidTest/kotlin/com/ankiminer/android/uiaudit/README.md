@@ -48,6 +48,9 @@ adb shell am instrument -w -r \
 
 ### Full settings scroll
 
+This flow composes production category content with populated audit state. It visits every settings
+category, verifies representative production card keys, then scrolls each category down and up.
+
 ```bash
 adb shell am instrument -w -r \
   -e uiAudit true \

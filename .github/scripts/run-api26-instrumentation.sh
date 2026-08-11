@@ -41,14 +41,14 @@ readonly unexecuted_tests=(
     "$s5_definition_lookup_test"
     "${ui_audit_tests[@]}"
 )
+readonly expected_executed_test_count=281
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
 # The lane runs everything the runner discovers except the allowlist above. The result contract is
-# checked by shape, not by a pinned total: exactly one OK summary over at least one test, no
-# failure or crash markers, no skipped or assumption-violated test, and one terminal code. A
-# discovery regression that silences tests still fails closed, because a silenced assumption-gated
-# test reports as skipped and an empty run has no OK summary. Every excluded test above is
-# reported as UNEXECUTED, never as a pass.
+# pinned at 281 executed tests: 299 source @Test methods minus the 18 explicit UNEXECUTED identities
+# above. The host script test re-derives that count from source, so additions, removals, and renamed
+# annotations require an intentional count update. The terminal contract also rejects failures,
+# crashes, skips, assumption violations, and duplicate or missing terminal codes.
 
 [[ -f "$app_apk" ]] || {
     echo "instrumentation: app APK was not built: $app_apk" >&2
@@ -81,7 +81,8 @@ if ((instrumentation_status != 0)); then
     exit "$instrumentation_status"
 fi
 instrumentation_output="$(<"$result_file")"
-if ! android_instrumentation_output_passed_any "$instrumentation_output"; then
+if ! android_instrumentation_output_passed \
+    "$instrumentation_output" "$expected_executed_test_count"; then
     echo "instrumentation: incomplete execution contract" >&2
     exit 1
 fi

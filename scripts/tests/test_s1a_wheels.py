@@ -1210,5 +1210,35 @@ export CFLAGS="-D__BIONIC_NO_PAGE_SIZE_MACRO"
             self.assertFalse((root / "published").exists())
 
 
+class S1aSourceLockValidationTests(unittest.TestCase):
+    def test_source_lock_rejects_non_basename_filenames(self) -> None:
+        for filename in ("../../outside", "/tmp/outside"):
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as directory:
+                source_lock = Path(directory) / "sources.lock"
+                source_lock.write_text(
+                    json.dumps(
+                        {
+                            "schema": 1,
+                            "sources": {
+                                "crafted": {
+                                    "filename": filename,
+                                    "sha256": "a" * 64,
+                                    "url": "https://example.invalid/source.tar.gz",
+                                },
+                            },
+                        },
+                    ),
+                    encoding="utf-8",
+                )
+                with (
+                    mock.patch.object(s1a_wheels, "SOURCE_LOCK", source_lock),
+                    self.assertRaisesRegex(
+                        s1a_wheels.WheelError,
+                        "unsafe source lock entry: crafted",
+                    ),
+                ):
+                    s1a_wheels.source_entries()
+
+
 if __name__ == "__main__":
     unittest.main()

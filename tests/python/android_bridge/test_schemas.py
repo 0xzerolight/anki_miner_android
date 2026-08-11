@@ -15,7 +15,6 @@ from android_bridge.anki_limits import (
 )
 from android_bridge.callbacks import CallbackAdapters
 from android_bridge.config_map import (
-    _LOCALAUDIO_URL,
     AndroidPaths,
     exposed_config_fields,
     map_config_json,
@@ -209,6 +208,25 @@ def test_dictionary_schema_accepts_valid_and_rejects_invalid_requests_and_result
     with pytest.raises(ValidationError):
         validator.validate(invalid_result)
 
+    blank_request = {"runId": run_id, "term": "  ", "fallbackTerm": None}
+    with pytest.raises(ValidationError):
+        validator.validate(blank_request)
+
+
+@pytest.mark.parametrize("field", ["term", "fallbackTerm"])
+def test_dictionary_contract_rejects_terms_over_256_utf8_bytes(
+    schemas: dict[str, dict[str, Any]],
+    field: str,
+) -> None:
+    run_id = "run_" + "a" * 32
+    oversized = "猫" * 86
+    payload = {"runId": run_id, "term": "猫", "fallbackTerm": None}
+    payload[field] = oversized
+
+    Draft202012Validator(schemas["dictionary"]).validate(payload)
+    with pytest.raises(BridgeProtocolError, match="256 UTF-8 bytes"):
+        encode_message("dictionary.define", payload)
+
 
 def test_subtitle_cues_schema_accepts_valid_and_rejects_invalid_requests_and_results(
     schemas: dict[str, dict[str, Any]],
@@ -236,13 +254,28 @@ def test_subtitle_cues_schema_accepts_valid_and_rejects_invalid_requests_and_res
         validator.validate(invalid_result)
 
 
+def test_subtitle_cues_contract_rejects_reversed_intervals(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "subtitlePath": "/tmp/episode.srt",
+        "cues": [{"start": 2.0, "end": 1.0, "text": "x"}],
+    }
+
+    Draft202012Validator(schemas["subtitle_cues"]).validate(payload)
+    with pytest.raises(BridgeProtocolError, match="end >= start >= 0"):
+        encode_message("subtitle.cues.result", payload)
+
+
 def test_kotlin_facing_config_mining_and_event_integers_have_explicit_bounds(
     schemas: dict[str, dict[str, Any]],
 ) -> None:
     def integer_nodes(value: object) -> list[dict[str, Any]]:
         found: list[dict[str, Any]] = []
         if isinstance(value, dict):
-            if value.get("type") == "integer":
+            node_type = value.get("type")
+            if node_type == "integer" or (isinstance(node_type, list) and "integer" in node_type):
                 found.append(value)
             for child in value.values():
                 found.extend(integer_nodes(child))
@@ -251,7 +284,7 @@ def test_kotlin_facing_config_mining_and_event_integers_have_explicit_bounds(
                 found.extend(integer_nodes(child))
         return found
 
-    for schema_name in ("config", "mining", "engine_events", "tokenizer"):
+    for schema_name in ("config", "curation", "mining", "engine_events", "tokenizer"):
         nodes = integer_nodes(schemas[schema_name])
         assert nodes, schema_name
         for node in nodes:
@@ -429,6 +462,25 @@ def test_engine_event_valid_and_rejected_corpora_freeze_callback_messages(
     }
     for case in corpus["invalid"]:
         assert list(validator.iter_errors(case["message"])), case["name"]
+
+
+def test_progress_stage_contract_rejects_index_above_total(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "index": 2,
+        "total": 1,
+        "name": "Extracting media",
+    }
+    message = {"schemaVersion": 1, "type": "progress.stage", "payload": payload}
+
+    Draft202012Validator(
+        schemas["engine_events"],
+        registry=_cross_schema_registry(schemas),
+    ).validate(message)
+    with pytest.raises(BridgeProtocolError, match="1 <= index <= total <= 32"):
+        encode_message("progress.stage", payload)
 
 
 def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
@@ -1286,11 +1338,8 @@ def test_representative_full_config_message_validates_and_maps(
 
     assert validated == payload
     assert mapped.engine_config.audio_format == "opus"
-    # localaudio (localhost) is injected as the default PRIMARY custom_json source
-    # ahead of the imported pack, which becomes the ordered fallback.
-    assert mapped.engine_config.expression_audio_chain[0].kind == "custom_json"
-    assert mapped.engine_config.expression_audio_chain[0].url == _LOCALAUDIO_URL
-    assert mapped.engine_config.expression_audio_chain[1].pack_id == "local-audio"
+    assert len(mapped.engine_config.expression_audio_chain) == 1
+    assert mapped.engine_config.expression_audio_chain[0].pack_id == "local-audio"
     assert mapped.android_tts_enabled is True
 
 
@@ -1332,6 +1381,25 @@ def test_config_schema_rejects_out_of_range_animated_screenshot_settings(
         Draft202012Validator(schemas["config"]).validate(payload)
 
 
+def test_config_schema_matches_excluded_wordset_runtime_domain(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    excluded_wordsets = schemas["config"]["$defs"]["settings"]["properties"]["excluded_wordsets"]
+    assert excluded_wordsets["maxItems"] == 4
+    assert excluded_wordsets["uniqueItems"] is True
+    assert set(excluded_wordsets["items"]["enum"]) == {
+        "surnames",
+        "given-names",
+        "place-names",
+        "org-product",
+    }
+
+    validator = Draft202012Validator(schemas["config"])
+    for value in (["surnames", "surnames"], ["unknown"]):
+        with pytest.raises(ValidationError):
+            validator.validate({"settings": {"excluded_wordsets": value}})
+
+
 @dataclass
 class _FakeWord:
     surface: str = "猫"
@@ -1352,6 +1420,77 @@ class _FakeWord:
     @property
     def mined_form(self) -> str:
         return self.surface
+
+
+def _curation_request_payload(
+    *,
+    frequency_rank: int | None = 100,
+    occurrence_count: int = 1,
+) -> dict[str, Any]:
+    return {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "candidates": [
+            {
+                "candidateId": "candidate_" + "c" * 32,
+                "minedForm": "猫",
+                "surface": "猫",
+                "lemma": "猫",
+                "reading": "ねこ",
+                "expressionReading": "ねこ",
+                "partOfSpeech": "名詞",
+                "frequencyRank": frequency_rank,
+                "occurrenceCount": occurrence_count,
+                "defaultSentenceId": "sentence_" + "d" * 32,
+                "sentences": [
+                    {
+                        "sentenceId": "sentence_" + "d" * 32,
+                        "sentence": "猫だ。",
+                        "sentenceFurigana": "",
+                        "sentenceReading": "ねこだ。",
+                        "startTime": 1.0,
+                        "endTime": 2.0,
+                        "duration": 1.0,
+                    }
+                ],
+            }
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        _curation_request_payload(occurrence_count=-1),
+        _curation_request_payload(frequency_rank=9223372036854775808),
+    ],
+    ids=["negative-occurrence-count", "frequency-rank-overflow"],
+)
+def test_curation_schema_rejects_candidate_integers_kotlin_cannot_carry(
+    schemas: dict[str, dict[str, Any]],
+    payload: dict[str, Any],
+) -> None:
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize("paged", [False, True], ids=["response", "page-response"])
+def test_curation_schema_rejects_duplicate_known_candidate_ids(
+    schemas: dict[str, dict[str, Any]],
+    paged: bool,
+) -> None:
+    candidate_id = "candidate_" + "c" * 32
+    payload: dict[str, Any] = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "selection": [],
+        "knownCandidateIds": [candidate_id, candidate_id],
+    }
+    if paged:
+        payload["pageIndex"] = 0
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
 
 
 def test_generated_curation_request_and_omitted_sentence_id_validate(

@@ -46,23 +46,15 @@ ASSUMPTION_GATED_TESTS = (
     *UI_AUDIT_TESTS,
 )
 TEST_ANNOTATION = re.compile(r"^\s*@Test\b", re.MULTILINE)
-# Arbitrary: the lane reports whatever the runner counted, so the script must echo this back
-# rather than compare it against anything.
-RUNNER_REPORTED_COUNT = 7
+SOURCE_DECLARED_TEST_COUNT = sum(
+    len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8"))) for source in ANDROID_TEST_ROOT.rglob("*.kt")
+)
+EXPECTED_EXECUTED_COUNT = SOURCE_DECLARED_TEST_COUNT - len(UNEXECUTED_TESTS)
+PINNED_EXECUTED_COUNT = 281
 
 
 class Api26InstrumentationScriptTest(unittest.TestCase):
-    def test_excludes_all_assumption_gated_tests_and_requires_executed_results(self) -> None:
-        assumption_gated_test_count = sum(
-            len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8")))
-            for source in ANDROID_TEST_ROOT.rglob("*.kt")
-            if "assumeTrue" in source.read_text(encoding="utf-8")
-        )
-        self.assertEqual(
-            len(ASSUMPTION_GATED_TESTS),
-            assumption_gated_test_count,
-            "update the explicit unexecuted allowlist whenever an instrumentation class gains assumeTrue",
-        )
+    def _run_script(self, reported_count: int) -> tuple[subprocess.CompletedProcess[str], str]:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             script = root / ".github" / "scripts" / SCRIPT.name
@@ -88,7 +80,7 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
                 "set -euo pipefail\n"
                 'printf \'%s\\n\' "$*" >> "$ADB_LOG"\n'
                 'if [[ "$*" == "shell am instrument"* ]]; then\n'
-                f"    printf 'OK ({RUNNER_REPORTED_COUNT} tests)\\n"
+                f"    printf 'OK ({reported_count} tests)\\n"
                 "INSTRUMENTATION_CODE: -1\\n'\n"
                 "fi\n",
                 encoding="utf-8",
@@ -106,19 +98,42 @@ class Api26InstrumentationScriptTest(unittest.TestCase):
                 env=env,
             )
 
-            self.assertEqual(0, result.returncode, result.stderr)
-            self.assertIn(
-                f"instrumentation: API 26 executed: PASS ({RUNNER_REPORTED_COUNT} tests)",
-                result.stdout,
-            )
             instrumentation_command = adb_log.read_text(encoding="utf-8").splitlines()[-1]
-            self.assertEqual(
-                "shell am instrument -w -r -e notClass " + ",".join(UNEXECUTED_TESTS) + " com.ankiminer.android.test/"
-                "androidx.test.runner.AndroidJUnitRunner",
-                instrumentation_command,
-            )
-            for test_name in SELECTOR_GATED_TESTS:
-                self.assertIn(f"instrumentation: UNEXECUTED: {test_name}", result.stdout)
+            return result, instrumentation_command
+
+    def test_excludes_all_assumption_gated_tests_and_requires_pinned_results(self) -> None:
+        assumption_gated_test_count = sum(
+            len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8")))
+            for source in ANDROID_TEST_ROOT.rglob("*.kt")
+            if "assumeTrue" in source.read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            len(ASSUMPTION_GATED_TESTS),
+            assumption_gated_test_count,
+            "update the explicit unexecuted allowlist whenever an instrumentation class gains assumeTrue",
+        )
+        self.assertEqual(PINNED_EXECUTED_COUNT, EXPECTED_EXECUTED_COUNT)
+
+        result, instrumentation_command = self._run_script(PINNED_EXECUTED_COUNT)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn(
+            f"instrumentation: API 26 executed: PASS ({PINNED_EXECUTED_COUNT} tests)",
+            result.stdout,
+        )
+        self.assertEqual(
+            "shell am instrument -w -r -e notClass " + ",".join(UNEXECUTED_TESTS) + " com.ankiminer.android.test/"
+            "androidx.test.runner.AndroidJUnitRunner",
+            instrumentation_command,
+        )
+        for test_name in SELECTOR_GATED_TESTS:
+            self.assertIn(f"instrumentation: UNEXECUTED: {test_name}", result.stdout)
+
+    def test_rejects_loss_of_one_discovered_test(self) -> None:
+        result, _ = self._run_script(PINNED_EXECUTED_COUNT - 1)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("instrumentation: incomplete execution contract", result.stderr)
 
 
 if __name__ == "__main__":

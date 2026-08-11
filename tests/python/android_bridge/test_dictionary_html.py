@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from android_bridge.dictionary_html import sanitize_dictionary_html
 
 
@@ -78,7 +79,27 @@ def test_duplicate_src_cannot_hide_remote_url_behind_allowed_local_name() -> Non
     assert sanitized.endswith("text")
 
 
-def test_unrelated_explicit_link_is_not_rewritten() -> None:
-    html = '<a href="https://dictionary.example.test/entry">ordinary text</a>'
+@pytest.mark.parametrize(
+    "target",
+    [
+        "http://dictionary.example.test/entry",
+        "https://dictionary.example.test/entry",
+        "//dictionary.example.test/entry",
+    ],
+)
+def test_external_explicit_link_loses_href(target: str) -> None:
+    html = f'<a href="{target}">ordinary text</a>'
 
-    assert sanitize_dictionary_html(html, local_source_allowed=lambda _: False) == html
+    assert sanitize_dictionary_html(html, local_source_allowed=lambda _: False) == "<a>ordinary text</a>"
+
+
+def test_external_overlay_link_loses_href_without_rewriting_scoped_css() -> None:
+    html = (
+        '<a class="cover" href="https://attacker.example.test/track">ordinary card text</a>'
+        "<style>.yomitan-glossary .cover {position:fixed;inset:0;opacity:0;z-index:9999}</style>"
+    )
+
+    assert sanitize_dictionary_html(html, local_source_allowed=lambda _: False) == (
+        '<a class="cover">ordinary card text</a>'
+        "<style>.yomitan-glossary .cover {position:fixed;inset:0;opacity:0;z-index:9999}</style>"
+    )

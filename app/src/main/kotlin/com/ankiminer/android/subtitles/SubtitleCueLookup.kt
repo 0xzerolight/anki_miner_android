@@ -1,5 +1,6 @@
 package com.ankiminer.android.subtitles
 
+import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.PyBridge
@@ -25,34 +26,36 @@ class BridgeSubtitleCueLookupService(
     ): Result<List<SubtitleCue>> =
         suspendCancellableCoroutine { continuation ->
             executor.execute {
-                if (!continuation.isActive) return@execute
-                val outcome =
-                    runCatching {
-                        val raw =
-                            bridge.dispatch(
-                                BridgeJsonCodec.encodeSubtitleCuesRequest(
-                                    runId,
-                                    subtitlePath,
-                                ),
-                                null,
-                            )
-                        val message =
-                            BridgeJsonCodec.decode(
-                                raw,
-                                expectedRunId = runId,
-                            )
-                        check(message is BridgeMessage.SubtitleCuesResult) {
-                            "Unexpected reply to subtitle.cues"
+                LogContext.withRunId(runId) {
+                    if (!continuation.isActive) return@withRunId
+                    val outcome =
+                        runCatching {
+                            val raw =
+                                bridge.dispatch(
+                                    BridgeJsonCodec.encodeSubtitleCuesRequest(
+                                        runId,
+                                        subtitlePath,
+                                    ),
+                                    null,
+                                )
+                            val message =
+                                BridgeJsonCodec.decode(
+                                    raw,
+                                    expectedRunId = runId,
+                                )
+                            check(message is BridgeMessage.SubtitleCuesResult) {
+                                "Unexpected reply to subtitle.cues"
+                            }
+                            check(message.runId == runId) {
+                                "subtitle.cues echoed another run"
+                            }
+                            check(message.subtitlePath == subtitlePath) {
+                                "subtitle.cues echoed another subtitlePath"
+                            }
+                            message.cues
                         }
-                        check(message.runId == runId) {
-                            "subtitle.cues echoed another run"
-                        }
-                        check(message.subtitlePath == subtitlePath) {
-                            "subtitle.cues echoed another subtitlePath"
-                        }
-                        message.cues
-                    }
-                if (continuation.isActive) continuation.resume(outcome)
+                    if (continuation.isActive) continuation.resume(outcome)
+                }
             }
         }
 }

@@ -4,6 +4,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 
 /**
  * Deadline scheduler that never fires on its own: the test decides when a window elapses, so
@@ -43,5 +47,29 @@ internal class ManualProviderIoDeadlineScheduler : ProviderIoDeadlineScheduler {
                 checkNotNull(armed)
             }
         action()
+    }
+}
+
+/** Prevent a deliberately wedged provider fake from leaking into the next JVM test. */
+internal fun awaitProviderIoWorkerRelease(timeoutMillis: Long = 1_000L) {
+    val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+    val scope = CoroutineScope(SupervisorJob())
+    try {
+        while (System.nanoTime() < deadline) {
+            try {
+                runBlocking {
+                    CancellableProviderIo.execute(
+                        scope = scope,
+                        timeoutMillis = timeoutMillis,
+                    ) { Unit }
+                }
+                return
+            } catch (_: ProviderIoTimeoutException) {
+                Thread.yield()
+            }
+        }
+        throw AssertionError("Timed out waiting for cancelled provider worker to return")
+    } finally {
+        scope.cancel()
     }
 }

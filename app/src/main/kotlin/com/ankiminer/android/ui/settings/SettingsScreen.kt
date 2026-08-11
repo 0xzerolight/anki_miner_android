@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedCard
@@ -38,6 +39,7 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.SettingsBackupState
@@ -441,7 +443,11 @@ private fun SettingsScreen(
     val cardIndexRecorder = remember { SettingsCardIndexRecorder() }
     val breadcrumbs = SettingsCategory.entries.associateWith { stringResource(it.label) }
     val resolvedEntries =
-        SETTINGS_SEARCH_INDEX.map { entry ->
+        availableSettingsSearchEntries(
+            entries = SETTINGS_SEARCH_INDEX,
+            setup = setup,
+            dynamicColorSupported = dynamicColorSupported(),
+        ).map { entry ->
             val title = stringResource(entry.title)
             val detail = entry.detail?.let { stringResource(it) }.orEmpty()
             val breadcrumb = breadcrumbs.getValue(entry.category)
@@ -461,33 +467,6 @@ private fun SettingsScreen(
         }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val searchResults = searchSettings(resolvedEntries, searchQuery)
-    var pendingJump by remember { mutableStateOf<ResolvedSettingsEntry?>(null) }
-    var resetConfirmation by remember {
-        mutableStateOf(SettingsResetConfirmationState())
-    }
-
-    LaunchedEffect(pendingJump) {
-        val entry = pendingJump ?: return@LaunchedEffect
-        // A previously visited category may still have a now-stale index. Clear it first so the
-        // flow below can only resume from the destination's new layout pass.
-        cardIndexRecorder.begin(entry.category)
-        selectedCategory = entry.category
-        searchQuery = ""
-        // The lazy content lambda runs during layout, which can be after this effect starts, so
-        // wait for the index rather than reading it once and giving up.
-        val index =
-            withTimeoutOrNull(2_000) {
-                snapshotFlow { cardIndexRecorder.indexOf(entry.category, entry.cardKey) }
-                    .filterNotNull()
-                    .first()
-            }
-        listStates.getValue(entry.category)
-            .scrollToItem(index ?: SettingsCardIndexRecorder.FIRST_CARD_INDEX)
-        cardIndexRecorder.highlightedKey = entry.cardKey
-        delay(HIGHLIGHT_MILLIS)
-        cardIndexRecorder.highlightedKey = null
-        pendingJump = null
-    }
 
     LaunchedEffect(requestedCategory, requestedCategoryItemIndex) {
         val jump =
@@ -519,30 +498,6 @@ private fun SettingsScreen(
         onCategoryRequestConsumed()
     }
 
-    resetConfirmation.pendingAction?.let { action ->
-        AlertDialog(
-            onDismissRequest = { resetConfirmation = resetConfirmation.cancel() },
-            title = { Text(stringResource(settingsResetLabel(action))) },
-            text = { Text(stringResource(settingsResetDescription(action))) },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        resetConfirmation =
-                            resetConfirmation.confirmDispatching(
-                                onRestoreMiningDefaults = onRestoreMiningDefaults,
-                            )
-                    },
-                ) {
-                    Text(stringResource(settingsResetLabel(action)))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { resetConfirmation = resetConfirmation.cancel() }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
     // Hosted outside the LazyColumn so it survives the target card scrolling away, and so no
     // deep-link card index shifts.
     ResourceReplaceDialog(
@@ -564,140 +519,232 @@ private fun SettingsScreen(
         onDismiss = setupViewModel::dismissAudioPackChoice,
     )
 
-    val callbacks =
-        SettingsScreenCallbacks(
-            onDraftChange = onDraftChange,
-            onRequestReset = { resetConfirmation = resetConfirmation.request(it) },
-            resetEnabled = !saving,
-            onRequestPermissions = onRequestPermissions,
-            onOpenAppSettings = onOpenAppSettings,
-            onInstallAnkiDroid = onInstallAnkiDroid,
-            onOpenAnkiDroid = onOpenAnkiDroid,
-            onOpenSpeechSettings = onOpenSpeechSettings,
-            onShareDiagnosticsBundle = onShareDiagnosticsBundle,
-            onRetryDiagnosticsExport = onRetryDiagnosticsExport,
-            onDismissDiagnosticsExport = onDismissDiagnosticsExport,
-            backupState = backupState,
-            onExportSettings = onExportSettings,
-            onImportSettings = onImportSettings,
-            onDismissBackupState = onDismissBackupState,
-            onReturnToActiveRun = onReturnToActiveRun,
-            onAttributions = onAttributions,
-            onRunSetupWizard = onRunSetupWizard,
-            onImportCustom = onImportCustom,
-            onReplaceCustom = onReplaceCustom,
-            onImportFrequency = onImportFrequency,
-            onImportPitch = onImportPitch,
-            onImportAudioPack = onImportAudioPack,
-            onImportKnownWords = onImportKnownWords,
-            onImportWordList = onImportWordList,
-            onExportKnownWords = onExportKnownWords,
-            onManageKnownWords = onManageKnownWords,
-            verboseLogging = verboseLogging,
-            onVerboseLoggingChange = onVerboseLoggingChange,
-            updateCheck = updateCheck,
-            onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
-            onCheckForUpdates = onCheckForUpdates,
-            onSkipUpdate = onSkipUpdate,
-        )
-    SettingsCategoryLayout(
-        selectedCategory = selectedCategory,
-        onSelectedCategory = { category ->
-            selectedCategory = category
-        },
-        query = searchQuery,
-        onQueryChange = { searchQuery = it },
-        results = searchResults,
-        onResultChosen = { pendingJump = it },
-        recorder = cardIndexRecorder,
-        listStates = listStates,
-        modifier = modifier,
-        header = {
-            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                SystemStatusCard(
-                    state = setup,
-                    onRefresh = setupViewModel::refresh,
-                    onRequestPermissions = onRequestPermissions,
-                    onOpenAppSettings = onOpenAppSettings,
-                    onInstallAnkiDroid = onInstallAnkiDroid,
-                    onOpenAnkiDroid = onOpenAnkiDroid,
-                    compact = true,
-                    onInstallUniDic = setupViewModel::installUniDic,
-                    onChooseNoteType = {
-                        selectedCategory = SettingsCategory.ANKI
-                    },
-                    onResolveRecovery = {
-                        selectedCategory = SettingsCategory.ANKI
-                    },
-                    // SETUP is the default failure origin and what resource-startup recovery
-                    // records, so it has no owning card. The slot renders above the compact
-                    // cutoff, and ResourceOriginFailure draws nothing when the origin does not
-                    // match, so passing it unconditionally is free.
-                    inlineFailure = {
-                        ResourceOriginFailure(
-                            setup,
-                            setOf(ResourceFailureOrigin.SETUP),
-                            setupViewModel,
-                            callbacks,
-                        )
-                    },
-                )
-                updateCheck.available?.let { available ->
-                    OutlinedCard(Modifier.fillMaxWidth()) {
-                        Column(
-                            Modifier.padding(AnkiMinerTokens.Space.group),
-                            verticalArrangement =
-                                Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-                        ) {
-                            UpdateAvailableActions(available, onSkipUpdate)
-                        }
-                    }
-                }
-                // Both conditions gate controls in every category, so they live where every
-                // category can see them rather than on a tab the user may never open.
-                // The conflict notice yields to the operation card: the RESOURCE work lease is
-                // taken before activeOperation is set and released after it clears, so ungated
-                // it would sit above the live progress card for the whole of every import.
-                if (setup.operation == null) {
-                    setup.runtimeWorkKind?.let { kind ->
-                        if (kind == RuntimeWorkCoordinator.Kind.MINING) {
-                            RuntimeConflictNotice(
-                                text = stringResource(settingsRuntimeWorkMessage(kind)),
-                                onReturnToActiveRun = onReturnToActiveRun,
-                            )
-                        } else {
-                            OutlinedCard(Modifier.fillMaxWidth()) {
-                                Text(
-                                    stringResource(settingsRuntimeWorkMessage(kind)),
-                                    Modifier.padding(AnkiMinerTokens.Space.group),
+    SettingsResetConfirmationHost(onRestoreMiningDefaults) { onRequestReset ->
+        val callbacks =
+            SettingsScreenCallbacks(
+                onDraftChange = onDraftChange,
+                onRequestReset = onRequestReset,
+                resetEnabled = !saving,
+                onRequestPermissions = onRequestPermissions,
+                onOpenAppSettings = onOpenAppSettings,
+                onInstallAnkiDroid = onInstallAnkiDroid,
+                onOpenAnkiDroid = onOpenAnkiDroid,
+                onOpenSpeechSettings = onOpenSpeechSettings,
+                onShareDiagnosticsBundle = onShareDiagnosticsBundle,
+                onRetryDiagnosticsExport = onRetryDiagnosticsExport,
+                onDismissDiagnosticsExport = onDismissDiagnosticsExport,
+                backupState = backupState,
+                onExportSettings = onExportSettings,
+                onImportSettings = onImportSettings,
+                onDismissBackupState = onDismissBackupState,
+                onReturnToActiveRun = onReturnToActiveRun,
+                onAttributions = onAttributions,
+                onRunSetupWizard = onRunSetupWizard,
+                onImportCustom = onImportCustom,
+                onReplaceCustom = onReplaceCustom,
+                onImportFrequency = onImportFrequency,
+                onImportPitch = onImportPitch,
+                onImportAudioPack = onImportAudioPack,
+                onImportKnownWords = onImportKnownWords,
+                onImportWordList = onImportWordList,
+                onExportKnownWords = onExportKnownWords,
+                onManageKnownWords = onManageKnownWords,
+                verboseLogging = verboseLogging,
+                onVerboseLoggingChange = onVerboseLoggingChange,
+                updateCheck = updateCheck,
+                onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
+                onCheckForUpdates = onCheckForUpdates,
+                onSkipUpdate = onSkipUpdate,
+            )
+        SettingsSearchJumpHandler(
+            entries = resolvedEntries,
+            recorder = cardIndexRecorder,
+            listStates = listStates,
+            onSelectedCategory = { selectedCategory = it },
+            onClearQuery = { searchQuery = "" },
+        ) { onResultChosen ->
+            SettingsCategoryLayout(
+                selectedCategory = selectedCategory,
+                onSelectedCategory = { category ->
+                    selectedCategory = category
+                },
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                results = searchResults,
+                onResultChosen = onResultChosen,
+                recorder = cardIndexRecorder,
+                listStates = listStates,
+                modifier = modifier,
+                header = {
+                    Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+                        SystemStatusCard(
+                            state = setup,
+                            onRefresh = setupViewModel::refresh,
+                            onRequestPermissions = onRequestPermissions,
+                            onOpenAppSettings = onOpenAppSettings,
+                            onInstallAnkiDroid = onInstallAnkiDroid,
+                            onOpenAnkiDroid = onOpenAnkiDroid,
+                            compact = true,
+                            onInstallUniDic = setupViewModel::installUniDic,
+                            onChooseNoteType = {
+                                selectedCategory = SettingsCategory.ANKI
+                            },
+                            onResolveRecovery = {
+                                selectedCategory = SettingsCategory.ANKI
+                            },
+                            // SETUP is the default failure origin and what resource-startup recovery
+                            // records, so it has no owning card. The slot renders above the compact
+                            // cutoff, and ResourceOriginFailure draws nothing when the origin does not
+                            // match, so passing it unconditionally is free.
+                            inlineFailure = {
+                                ResourceOriginFailure(
+                                    setup,
+                                    setOf(ResourceFailureOrigin.SETUP),
+                                    setupViewModel,
+                                    callbacks,
                                 )
+                            },
+                        )
+                        updateCheck.available?.let { available ->
+                            OutlinedCard(Modifier.fillMaxWidth()) {
+                                Column(
+                                    Modifier.padding(AnkiMinerTokens.Space.group),
+                                    verticalArrangement =
+                                        Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                                ) {
+                                    UpdateAvailableActions(available, onSkipUpdate)
+                                }
                             }
                         }
+                        // Both conditions gate controls in every category, so they live where every
+                        // category can see them rather than on a tab the user may never open.
+                        // The conflict notice yields to the operation card: the RESOURCE work lease is
+                        // taken before activeOperation is set and released after it clears, so ungated
+                        // it would sit above the live progress card for the whole of every import.
+                        if (setup.operation == null) {
+                            setup.runtimeWorkKind?.let { kind ->
+                                if (kind == RuntimeWorkCoordinator.Kind.MINING) {
+                                    RuntimeConflictNotice(
+                                        text = stringResource(settingsRuntimeWorkMessage(kind)),
+                                        onReturnToActiveRun = onReturnToActiveRun,
+                                    )
+                                } else {
+                                    OutlinedCard(Modifier.fillMaxWidth()) {
+                                        Text(
+                                            stringResource(settingsRuntimeWorkMessage(kind)),
+                                            Modifier.padding(AnkiMinerTokens.Space.group),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        setup.operation?.let { operation ->
+                            ResourceOperationCard(operation, setupViewModel::cancelOperation)
+                        }
+                        SettingsSaveStatus(
+                            state = saveState,
+                            error = saveError?.localized(),
+                            onRetry = onRetrySave,
+                        )
                     }
-                }
-                setup.operation?.let { operation ->
-                    ResourceOperationCard(operation, setupViewModel::cancelOperation)
-                }
-                SettingsSaveStatus(
-                    state = saveState,
-                    error = saveError?.localized(),
-                    onRetry = onRetrySave,
+                },
+            ) { category ->
+                settingsCategoryContent(
+                    category = category,
+                    draft = draft,
+                    resources = resources,
+                    setup = setup,
+                    setupViewModel = setupViewModel,
+                    diagnostics = diagnostics,
+                    diagnosticsExport = diagnosticsExport,
+                    recorder = cardIndexRecorder,
+                    callbacks = callbacks,
                 )
             }
-        },
-    ) { category ->
-        settingsCategoryContent(
-            category = category,
-            draft = draft,
-            resources = resources,
-            setup = setup,
-            setupViewModel = setupViewModel,
-            diagnostics = diagnostics,
-            diagnosticsExport = diagnosticsExport,
-            recorder = cardIndexRecorder,
-            callbacks = callbacks,
+        }
+    }
+}
+
+@Composable
+internal fun SettingsSearchJumpHandler(
+    entries: List<ResolvedSettingsEntry>,
+    recorder: SettingsCardIndexRecorder,
+    listStates: Map<SettingsCategory, LazyListState>,
+    onSelectedCategory: (SettingsCategory) -> Unit,
+    onClearQuery: () -> Unit,
+    onJumpIndexResolved: (Int?) -> Unit = {},
+    content: @Composable ((ResolvedSettingsEntry) -> Unit) -> Unit,
+) {
+    var pendingJumpId by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingEntry = pendingJumpId?.let { id -> entries.firstOrNull { it.id == id } }
+    LaunchedEffect(pendingJumpId, pendingEntry) {
+        val requestedId = pendingJumpId ?: return@LaunchedEffect
+        val entry = pendingEntry
+        if (entry == null) {
+            pendingJumpId = null
+            return@LaunchedEffect
+        }
+        // A previously visited category may still have a now-stale index. Clear it first so the
+        // flow below can only resume from the destination's new layout pass.
+        recorder.begin(entry.category)
+        onSelectedCategory(entry.category)
+        onClearQuery()
+        // The lazy content lambda runs during layout, which can be after this effect starts, so
+        // wait for the index rather than reading it once and giving up.
+        val index =
+            withTimeoutOrNull(2_000) {
+                snapshotFlow { recorder.indexOf(entry.category, entry.cardKey) }
+                    .filterNotNull()
+                    .first()
+            }
+        onJumpIndexResolved(index)
+        if (index != null) {
+            listStates.getValue(entry.category).scrollToItem(index)
+            recorder.highlightedKey = entry.cardKey
+            delay(HIGHLIGHT_MILLIS)
+            recorder.highlightedKey = null
+        }
+        if (pendingJumpId == requestedId) pendingJumpId = null
+    }
+
+    content { entry -> pendingJumpId = entry.id }
+}
+
+@Composable
+internal fun SettingsResetConfirmationHost(
+    onRestoreMiningDefaults: () -> Boolean,
+    content: @Composable ((SettingsResetAction) -> Unit) -> Unit,
+) {
+    var pendingActionName by rememberSaveable { mutableStateOf<String?>(null) }
+    val pendingAction =
+        pendingActionName?.let { saved ->
+            SettingsResetAction.entries.firstOrNull { it.name == saved }
+        }
+    pendingAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pendingActionName = null },
+            title = { Text(stringResource(settingsResetLabel(action))) },
+            text = { Text(stringResource(settingsResetDescription(action))) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val next =
+                            SettingsResetConfirmationState(action)
+                                .confirmDispatching(onRestoreMiningDefaults)
+                        pendingActionName = next.pendingAction?.name
+                    },
+                ) {
+                    Text(stringResource(settingsResetLabel(action)))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingActionName = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
         )
     }
+    content { action -> pendingActionName = action.name }
 }
 
 @Composable

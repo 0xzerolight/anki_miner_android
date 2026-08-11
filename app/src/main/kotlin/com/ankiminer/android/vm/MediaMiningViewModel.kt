@@ -80,6 +80,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 private const val DEFINITION_DEBOUNCE_MS = 150L
+private const val MAX_SUBTITLE_OFFSET_DRAFT_CODE_POINTS = 64
 internal val AUDIO_EXTENSIONS = setOf("m4b", "mp3", "m4a", "aac", "ogg", "opus", "flac", "wav")
 
 class MediaMiningViewModel internal constructor(
@@ -139,10 +140,22 @@ class MediaMiningViewModel internal constructor(
         val unavailable: Boolean = false,
     )
 
+    private val restoredSubtitleOffsetDraft =
+        savedStateHandle
+            .get<String>(subtitleOffsetDraftKey)
+            .orEmpty()
+            .takeCodePoints(MAX_SUBTITLE_OFFSET_DRAFT_CODE_POINTS)
+            .also { draft ->
+                if (draft.isEmpty()) {
+                    savedStateHandle.remove<String>(subtitleOffsetDraftKey)
+                } else {
+                    savedStateHandle[subtitleOffsetDraftKey] = draft
+                }
+            }
     private val localState =
         MutableStateFlow(
             LocalState(
-                subtitleOffsetDraft = savedStateHandle[subtitleOffsetDraftKey] ?: "",
+                subtitleOffsetDraft = restoredSubtitleOffsetDraft,
             ),
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
@@ -1031,7 +1044,7 @@ class MediaMiningViewModel internal constructor(
                         )
                     when (result) {
                         is SafSelectionOwnershipResult.Published ->
-                            result.value?.let(::releaseDocument)
+                            result.supersededDocuments(result.value).forEach(::releaseDocument)
                         is SafSelectionOwnershipResult.Rejected ->
                             localState.update { local ->
                                 local.withSelectionRejection(kind, rejectionError)
@@ -1228,12 +1241,13 @@ class MediaMiningViewModel internal constructor(
     }
 
     private fun updateSubtitleOffsetDraft(value: String) {
-        if (value.isEmpty()) {
+        val bounded = value.takeCodePoints(MAX_SUBTITLE_OFFSET_DRAFT_CODE_POINTS)
+        if (bounded.isEmpty()) {
             savedStateHandle.remove<String>(subtitleOffsetDraftKey)
         } else {
-            savedStateHandle[subtitleOffsetDraftKey] = value
+            savedStateHandle[subtitleOffsetDraftKey] = bounded
         }
-        localState.update { it.copy(subtitleOffsetDraft = value) }
+        localState.update { it.copy(subtitleOffsetDraft = bounded) }
     }
 
     private val LocalState.subtitleOffsetDraftInvalid: Boolean
@@ -1438,4 +1452,14 @@ class MediaMiningViewModel internal constructor(
         val NO_CUE_LOOKUP =
             SubtitleCueLookupService { _, _ -> Result.success(emptyList()) }
     }
+}
+
+private fun String.takeCodePoints(maximum: Int): String {
+    require(maximum >= 0)
+    var end = 0
+    repeat(maximum) {
+        if (end == length) return this
+        end += Character.charCount(Character.codePointAt(this, end))
+    }
+    return if (end == length) this else substring(0, end)
 }

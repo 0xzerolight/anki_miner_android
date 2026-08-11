@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import shutil
+import sqlite3
 import stat
 import tarfile
 import zipfile
@@ -176,6 +177,23 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
     payload["resources"][1]["slotId"] = "ambiguous--slot"
     with pytest.raises(BridgeProtocolError, match="slot id is invalid"):
         parse_catalog_json(json.dumps(payload))
+
+
+@pytest.mark.parametrize(
+    "schema_version",
+    [True, 1.0, 2],
+    ids=["boolean", "floating-point", "unsupported"],
+)
+def test_catalog_parser_rejects_non_integer_or_unsupported_schema_versions(
+    schema_version: object,
+) -> None:
+    payload = load_resource_catalog().payload()
+    payload["schemaVersion"] = schema_version
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        parse_catalog_json(json.dumps(payload))
+
+    assert failure.value.code == "invalid_resource_catalog"
 
 
 def test_unidic_install_verifies_tree_then_publishes_completion_manifest_last(
@@ -385,9 +403,16 @@ def test_unidic_copy_rejects_hash_mismatch_and_removes_partial(tmp_path: Path) -
     assert not destination.exists()
 
 
-def _yomitan_zip(path: Path, *, term: str, meaning: str, revision: str) -> Path:
+def _yomitan_zip(
+    path: Path,
+    *,
+    term: str,
+    meaning: str,
+    revision: str,
+    title: str = "Fixture Dictionary",
+) -> Path:
     index = {
-        "title": "Fixture Dictionary",
+        "title": title,
         "revision": revision,
         "format": 3,
         "author": "Fixture Author",
@@ -422,6 +447,80 @@ def test_dictionary_preflight_derives_slot_from_archive_title_and_revision(
     assert preflight.payload == {"slotId": "fixture-dictionary-2026-08"}
 
 
+@pytest.mark.parametrize(
+    ("title", "revision"),
+    [
+        ("Fixture" + "!" * 4096, "1"),
+        ("Fixture", "!" * 4097),
+    ],
+    ids=["title", "revision"],
+)
+def test_dictionary_preflight_rejects_metadata_beyond_bridge_text_limit(
+    tmp_path: Path,
+    title: str,
+    revision: str,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / "long-metadata.zip",
+        term="猫",
+        meaning="cat",
+        revision=revision,
+        title=title,
+    )
+
+    with pytest.raises(BridgeProtocolError, match="exceeds its size limit") as failure:
+        resources.preflight_dictionary(
+            {
+                "operationId": "long-metadata-preflight",
+                "sourcePath": str(source),
+            }
+        )
+
+    assert failure.value.code == "dictionary_import_failed"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+@pytest.mark.parametrize(
+    ("metadata_field", "title", "revision"),
+    [
+        ("title", "Fixture" + "!" * 4096, "1"),
+        ("revision", "Fixture", "!" * 4097),
+    ],
+    ids=["title", "revision"],
+)
+def test_dictionary_import_rejects_oversized_metadata_before_publication(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    metadata_field: str,
+    title: str,
+    revision: str,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / f"long-import-{len(title)}-{len(revision)}.zip",
+        term="猫",
+        meaning="cat",
+        revision=revision,
+        title=title,
+    )
+
+    with pytest.raises(BridgeProtocolError, match="exceeds its size limit") as failure:
+        resources.import_dictionary(
+            {
+                "operationId": f"long-import-{len(title)}-{len(revision)}",
+                "sourcePath": str(source),
+                "slotId": f"long-metadata-{metadata_field}",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        )
+
+    assert failure.value.code == "dictionary_import_failed"
+    assert not (initialized_bridge_home / "dicts" / f"long-metadata-{metadata_field}").exists()
+
+
 # > the retired 16 MiB per-file cap, so a term/meta bank of this size exercises
 # the relaxed limits while providing enough entries for bounded bank splitting.
 _OVERSIZED_MEMBER_BYTES = 17 * 1024 * 1024
@@ -429,7 +528,14 @@ _BANK_FIXTURE_ENTRY_BYTES = 64 * 1024
 _STREAMED_BANK_BYTES = 4 * 1024 * 1024
 
 
-def _yomitan_meta_bank_zip(path: Path, *, entry: list, frequency_mode: str | None = None) -> Path:
+def _yomitan_meta_bank_zip(
+    path: Path,
+    *,
+    entry: list,
+    frequency_mode: str | None = None,
+    title: str = "Meta Fixture",
+    revision: str = "1",
+) -> Path:
     """Build a Yomitan meta-bank zip (pitch/frequency) whose sole
     term_meta_bank_*.json exceeds the retired 16 MiB per-file cap.
 
@@ -437,7 +543,7 @@ def _yomitan_meta_bank_zip(path: Path, *, entry: list, frequency_mode: str | Non
     non-target padding entries push the bank past 16 MiB without making any
     single decoded entry large.
     """
-    index: dict[str, object] = {"title": "Meta Fixture", "revision": "1", "format": 3}
+    index: dict[str, object] = {"title": title, "revision": revision, "format": 3}
     if frequency_mode is not None:
         index["frequencyMode"] = frequency_mode
     padding_count = _OVERSIZED_MEMBER_BYTES // _BANK_FIXTURE_ENTRY_BYTES + 1
@@ -961,6 +1067,41 @@ def test_streamed_zip_preflights_default_member_cap_before_zipfile_allocation(
     assert rejected.value.code == "resource_archive_too_large"
 
 
+def test_streamed_zip_preflights_central_directory_size_before_zipfile_allocation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversized = tmp_path / "oversized-central-directory.zip"
+    info = zipfile.ZipInfo("index.json")
+    info.comment = b"x" * 1024
+    with zipfile.ZipFile(oversized, "w") as archive:
+        archive.writestr(info, b"{}")
+
+    monkeypatch.setattr(
+        resources,
+        "_MAX_CUSTOM_ZIP_CENTRAL_DIRECTORY_BYTES",
+        512,
+        raising=False,
+    )
+
+    class ZipFileMustNotBeConstructed:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("ZipFile allocated before central-directory size preflight")
+
+    monkeypatch.setattr(zipfile, "ZipFile", ZipFileMustNotBeConstructed)
+    with pytest.raises(BridgeProtocolError, match="central directory") as rejected:
+        resources._validate_zip_streamed(
+            oversized,
+            resources._Operation("oversized-central-directory"),
+            member_limit=None,
+            total_limit=_ENGINE_TOTAL_LIMIT,
+            file_limit=None,
+            require_root_index=False,
+        )
+
+    assert rejected.value.code == "resource_archive_too_large"
+
+
 def test_streamed_zip_rejects_empty_archive_even_without_member_cap(tmp_path: Path) -> None:
     empty = _zip_with_members(tmp_path / "empty.zip", [])
     with pytest.raises(BridgeProtocolError, match="member count") as rejected:
@@ -1099,6 +1240,41 @@ def test_streamed_zip_unsupported_compression_is_distinct_from_corrupt(
             require_root_index=False,
         )
     assert missing_bz2.value.code == "resource_archive_unsupported_compression"
+
+
+@pytest.mark.parametrize(
+    "compression_error",
+    [
+        NotImplementedError("compression type 9 (deflate64)"),
+        RuntimeError("Compression requires the (missing) bz2 module"),
+    ],
+    ids=["deflate64", "missing-module"],
+)
+def test_dictionary_preflight_preserves_unsupported_compression_taxonomy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    compression_error: Exception,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / "preflight-method.zip",
+        term="猫",
+        meaning="cat",
+        revision="1",
+    )
+
+    def raise_unsupported(*_args: object, **_kwargs: object) -> None:
+        raise compression_error
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", raise_unsupported)
+    with pytest.raises(BridgeProtocolError) as failure:
+        resources.preflight_dictionary(
+            {
+                "operationId": f"preflight-{type(compression_error).__name__.lower()}",
+                "sourcePath": str(source),
+            }
+        )
+
+    assert failure.value.code == "resource_archive_unsupported_compression"
 
 
 def test_streamed_zip_reports_genuine_corruption_with_exception_class(tmp_path: Path) -> None:
@@ -1282,6 +1458,42 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
     with pytest.raises(BridgeProtocolError) as collision:
         local_resources.import_frequency({**request, "operationId": "frequency-two"})
     assert collision.value.code == "resource_already_installed"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+@pytest.mark.parametrize("oversized_field", ["title", "revision"])
+def test_frequency_import_rejects_oversized_metadata_before_publication(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    oversized_field: str,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    oversized = "x" * 4097
+    source = _yomitan_meta_bank_zip(
+        tmp_path / f"oversized-{oversized_field}.zip",
+        entry=["猫", "freq", 10],
+        frequency_mode="rank",
+        title=oversized if oversized_field == "title" else "Frequency Fixture",
+        revision=oversized if oversized_field == "revision" else "1",
+    )
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.import_frequency(
+            {
+                "operationId": f"frequency-oversized-{oversized_field}",
+                "sourcePath": str(source),
+                "sourceId": "oversized-frequency",
+                "sourceName": "Picked frequency",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            }
+        )
+
+    assert failure.value.code == "frequency_import_failed"
+    assert not (home / "freqs" / "oversized-frequency").exists()
 
 
 @pytest.mark.skipif(
@@ -1555,21 +1767,37 @@ def test_audio_member_guard_names_an_oversized_member() -> None:
     assert failure.value.code == "resource_archive_member_oversized"
 
 
-def test_audio_extractor_names_a_member_count_rejection(
+@pytest.mark.parametrize("mode", ["extract", "project"])
+def test_audio_zip_preflights_member_count_before_zipfile_allocation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    mode: str,
 ) -> None:
     monkeypatch.setattr(local_resources, "_AUDIO_MEMBER_LIMIT", 2)
     members = {f"pack/{index}.mp3": b"a" for index in range(3)}
     source = _zip_of(tmp_path / "many.zip", members)
-    destination = tmp_path / "extracted"
+
+    class ZipFileMustNotBeConstructed:
+        def __init__(self, *_args: object, **_kwargs: object) -> None:
+            raise AssertionError("ZipFile allocated before EOCD count preflight")
+
+    monkeypatch.setattr(local_resources.zipfile, "ZipFile", ZipFileMustNotBeConstructed)
+    destination = tmp_path / mode
     with pytest.raises(BridgeProtocolError, match="member count") as failure:
-        local_resources._extract_audio_zip(
-            source,
-            destination,
-            resources._Operation("audio-many"),
-            (),
-        )
+        if mode == "extract":
+            local_resources._extract_audio_zip(
+                source,
+                destination,
+                resources._Operation("audio-many-extract"),
+                (),
+            )
+        else:
+            local_resources._project_audio_zip(
+                source,
+                destination,
+                resources._Operation("audio-many-project"),
+                {".mp3"},
+            )
     assert failure.value.code == "resource_archive_member_count"
 
 
@@ -1584,6 +1812,74 @@ def test_audio_extractor_names_a_total_size_rejection(tmp_path: Path) -> None:
             (),
         )
     assert failure.value.code == "resource_archive_expands_too_large"
+
+
+@pytest.mark.parametrize("mode", ["extract", "project"])
+def test_audio_tar_rejects_crossing_member_before_materialization(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    monkeypatch.setattr(local_resources, "_AUDIO_TOTAL_LIMIT", 3)
+    source = _tar_xz_of(
+        tmp_path / "crossing.tar.xz",
+        {
+            "pack/first.mp3": b"aa",
+            "pack/crossing.mp3": b"bb",
+        },
+    )
+    destination = tmp_path / mode
+
+    with pytest.raises(BridgeProtocolError, match="expands beyond") as failure:
+        if mode == "extract":
+            local_resources._extract_audio_tar(
+                source,
+                destination,
+                resources._Operation("audio-tar-total-extract"),
+                (),
+            )
+        else:
+            local_resources._project_audio_tar(
+                source,
+                destination,
+                resources._Operation("audio-tar-total-project"),
+                {".mp3"},
+            )
+
+    assert failure.value.code == "resource_archive_expands_too_large"
+    assert (destination / "pack" / "first.mp3").exists()
+    assert not (destination / "pack" / "crossing.mp3").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_audio_pack_root_detection_rejects_indexless_candidates_while_streaming(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.services.audio_packs import formats
+
+    projected = tmp_path / "projected"
+    for index in range(4):
+        (projected / f"pack-{index}").mkdir(parents=True)
+    detected: list[Path] = []
+
+    def detect(child: Path) -> str:
+        detected.append(child)
+        if len(detected) > 3:
+            raise AssertionError("candidate roots were materialized past the rejection point")
+        return "jpod_legacy"
+
+    monkeypatch.setattr(local_resources, "_AUDIO_PACK_CANDIDATE_LIMIT", 2, raising=False)
+    monkeypatch.setattr(formats, "detect_pack_format", detect)
+
+    with pytest.raises(BridgeProtocolError, match="too many packs") as failure:
+        local_resources._detect_audio_pack_roots(projected)
+
+    assert failure.value.code == "resource_archive_member_count"
+    assert len(detected) == 3
 
 
 @pytest.mark.skipif(
@@ -1858,6 +2154,122 @@ def test_audio_extractor_reports_storage_exhaustion(
     assert failure.value.code == "insufficient_storage"
 
 
+@pytest.mark.parametrize(
+    ("failure_site", "storage_errno"),
+    [
+        ("open", errno.ENOSPC),
+        ("open", getattr(errno, "EDQUOT", 122)),
+        ("fsync", errno.ENOSPC),
+        ("fsync", getattr(errno, "EDQUOT", 122)),
+    ],
+)
+def test_imported_file_fsync_reports_storage_exhaustion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    failure_site: str,
+    storage_errno: int,
+) -> None:
+    imported = tmp_path / "index.sqlite"
+    imported.write_bytes(b"sqlite")
+
+    def storage_full(*_args: object, **_kwargs: object) -> None:
+        raise OSError(storage_errno, "storage exhausted")
+
+    monkeypatch.setattr(local_resources.os, failure_site, storage_full)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources._fsync_file(imported)
+
+    assert failure.value.code == "insufficient_storage"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_sqlite_full_reports_insufficient_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.services.audio_packs import importer
+
+    _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "audio-sqlite-full.zip")
+
+    def sqlite_full(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(importer, "import_audio_pack", sqlite_full)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-sqlite-full",
+                "sourcePath": str(source),
+                "packId": "fixture-pack",
+                "packPath": "fixture-pack",
+                "overwrite": False,
+            }
+        )
+
+    assert failure.value.code == "insufficient_storage"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_metadata_commit_reports_sqlite_full_as_insufficient_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.services.audio_packs import storage
+
+    _local_home(tmp_path, monkeypatch)
+    source = _ajt_audio_zip(tmp_path / "audio-metadata-full.zip")
+
+    def sqlite_full(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(storage, "write_meta", sqlite_full)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-metadata-full",
+                "sourcePath": str(source),
+                "packId": "fixture-pack",
+                "packPath": "fixture-pack",
+                "overwrite": False,
+            }
+        )
+
+    assert failure.value.code == "insufficient_storage"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_audio_index_open_reports_sqlite_full_as_insufficient_storage(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def sqlite_full(*_args: object, **_kwargs: object) -> None:
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(local_resources.sqlite3, "connect", sqlite_full)
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources._validate_audio_index(
+            tmp_path / "index.sqlite",
+            tmp_path / "content",
+            resources._Operation("audio-index-full"),
+        )
+
+    assert failure.value.code == "insufficient_storage"
+
+
 def test_audio_extractor_does_not_label_write_io_as_corrupt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1926,6 +2338,62 @@ def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
             "contentAvailable": True,
         }
     ]
+
+
+@pytest.mark.parametrize("corruption", ["missing-index", "empty-index", "wrong-pack-id"])
+def test_audio_inventory_surfaces_corrupt_slot_for_replace_and_delete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    corruption: str,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    slot = home / "audio_packs" / "broken-pack"
+    slot.mkdir(parents=True)
+    if corruption == "empty-index":
+        (slot / "index.sqlite").touch()
+    elif corruption == "wrong-pack-id":
+        (slot / "index.sqlite").write_bytes(b"not read because the sidecar is fresh")
+        (slot / "meta.json").write_text(
+            json.dumps(
+                {
+                    "pack_id": "other-pack",
+                    "source": "Other pack",
+                    "format": "ajt",
+                    "entry_count": "1",
+                    "schema_version": "1",
+                    "pack_dir": str(slot / "content"),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+
+    assert listed.payload["audioPacks"] == [
+        {
+            "packId": "broken-pack",
+            "sourceName": "broken-pack",
+            "format": "unknown",
+            "entryCount": 0,
+            "contentAvailable": False,
+        }
+    ]
+
+    deleted = decode_envelope(
+        local_resources.delete_local_resource(
+            {
+                "operationId": f"delete-{corruption}",
+                "kind": "audio-pack",
+                "slotId": "broken-pack",
+            }
+        ),
+        expected_type="resource.local.deleted",
+    )
+    assert deleted.payload["removed"] is True
+    assert not slot.exists()
 
 
 @pytest.mark.skipif(
@@ -2529,6 +2997,37 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     importlib.util.find_spec("requests") is None,
     reason="known-word management uses the runtime engine database",
 )
+def test_known_words_export_streams_an_ordered_cursor_without_materializing_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    database = KnownWordDB(home / "known_words.db")
+    database.initialize()
+    database.add_words({f"word-{index:04d}" for index in range(1025)}, source="user")
+
+    def forbid_materialization(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("known-word export materialized the full source")
+
+    monkeypatch.setattr(KnownWordDB, "get_words_by_source", forbid_materialization)
+    monkeypatch.setattr(local_resources, "sorted", forbid_materialization, raising=False)
+
+    exported = decode_envelope(
+        local_resources.export_known_words({"operationId": "known-streaming-export"}),
+        expected_type="resource.knownwords.exported",
+    )
+    export_path = Path(exported.payload["exportPath"])
+
+    assert exported.payload["exportedCount"] == 1025
+    assert export_path.read_text(encoding="utf-8").splitlines() == [f"word-{index:04d}" for index in range(1025)]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
 def test_known_words_search_normalizes_nfd_needle_but_echoes_original_query(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -2717,6 +3216,72 @@ def test_custom_dictionary_import_accepts_oversized_term_bank(
     )
     assert imported.payload["slotId"] == "bigdict"
     assert imported.payload["entryCount"] >= 1
+
+
+@pytest.mark.parametrize("bank_prefix", ["term_bank", "term_meta_bank", "tag_bank"])
+def test_yomitan_bank_rewrite_covers_empty_suffix_names(
+    tmp_path: Path,
+    bank_prefix: str,
+) -> None:
+    rows = [["fixture", "mode", {"value": 1}]]
+    source = _zip_with_members(
+        tmp_path / f"{bank_prefix}.zip",
+        [
+            ("index.json", b"{}"),
+            (f"{bank_prefix}_.json", json.dumps(rows).encode("utf-8")),
+        ],
+    )
+    rewritten = tmp_path / f"{bank_prefix}-rewritten.zip"
+
+    resources._rewrite_yomitan_banks(
+        source,
+        rewritten,
+        resources._Operation(f"rewrite-{bank_prefix}"),
+    )
+
+    with zipfile.ZipFile(rewritten) as archive:
+        names = archive.namelist()
+        generated = [name for name in names if name.startswith(f"{bank_prefix}_")]
+        assert f"{bank_prefix}_.json" not in names
+        assert generated == [f"{bank_prefix}_000001.json"]
+        assert json.loads(archive.read(generated[0])) == rows
+
+
+def test_yomitan_bank_rewrite_rejects_one_item_larger_than_chunk_before_decode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    oversized_glossary = "x" * resources._YOMITAN_BANK_CHUNK_BYTES
+    rows = [["fixture", "", "", "", 0, [oversized_glossary], 1, ""]]
+    source = _zip_with_members(
+        tmp_path / "oversized-item.zip",
+        [
+            ("index.json", b"{}"),
+            ("term_bank_1.json", json.dumps(rows).encode("utf-8")),
+        ],
+    )
+    rewritten = tmp_path / "oversized-item-rewritten.zip"
+    real_decoder = resources.json.JSONDecoder
+
+    class BoundedDecoder:
+        def __init__(self) -> None:
+            self.delegate = real_decoder()
+
+        def raw_decode(self, value: str) -> tuple[object, int]:
+            assert len(value.encode("utf-8")) <= resources._YOMITAN_BANK_CHUNK_BYTES
+            return self.delegate.raw_decode(value)
+
+    monkeypatch.setattr(resources.json, "JSONDecoder", BoundedDecoder)
+
+    with pytest.raises(BridgeProtocolError, match="oversized item") as failure:
+        resources._rewrite_yomitan_banks(
+            source,
+            rewritten,
+            resources._Operation("oversized-item"),
+        )
+
+    assert failure.value.code == "resource_archive_too_large"
+    assert not rewritten.exists()
 
 
 @pytest.mark.skipif(
@@ -2996,9 +3561,7 @@ def test_known_words_destructive_mutation_rechecks_cancellation_after_database_i
 
     with pytest.raises(BridgeProtocolError) as cancelled:
         if action == "remove":
-            local_resources.remove_known_words(
-                {"operationId": operation_id, "words": ["猫"]}
-            )
+            local_resources.remove_known_words({"operationId": operation_id, "words": ["猫"]})
         else:
             local_resources.reset_known_words(
                 {

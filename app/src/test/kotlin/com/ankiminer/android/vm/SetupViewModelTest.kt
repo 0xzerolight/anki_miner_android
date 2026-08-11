@@ -351,7 +351,7 @@ class SetupViewModelTest {
         }
 
     @Test
-    fun `pending delete survives process death through saved state`() =
+    fun `pending delete restores from a distinct saved state handle snapshot`() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
             val resources = FakeResourceManager()
@@ -368,12 +368,17 @@ class SetupViewModelTest {
             original.requestResourceDelete(InstalledResourceKind.PITCH, "kanjium")
             advanceUntilIdle()
 
+            val restoredState =
+                SavedStateHandle(
+                    savedState.keys().associateWith { key -> savedState.get<Any?>(key) },
+                )
+
             val restored =
                 viewModel(
                     repository = repository,
                     setup = FakeAnkiSetupManager(emptyList()),
                     resources = resources,
-                    savedStateHandle = savedState,
+                    savedStateHandle = restoredState,
                 )
             advanceUntilIdle()
 

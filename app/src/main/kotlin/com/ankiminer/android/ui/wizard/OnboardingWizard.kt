@@ -82,6 +82,8 @@ internal fun wizardVisible(
     completion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
 ): Boolean =
     rerunRequested ||
+        completion == WizardCompletionStatus.SAVING ||
+        completion == WizardCompletionStatus.FAILED ||
         (
             !sessionDismissed &&
                 wizardSeen == false &&

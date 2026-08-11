@@ -31,13 +31,27 @@ internal object NoOpSink : LogSink {
  */
 internal class PreInstallBufferSink(private val capacity: Int = DEFAULT_CAPACITY) : LogSink {
     private val buffered = ArrayDeque<String>()
+    private var forwardingTo: LogSink? = null
 
     override fun write(rendered: String) {
-        synchronized(buffered) {
-            while (buffered.size >= capacity) buffered.removeFirst()
-            buffered.addLast(rendered)
-        }
+        val destination =
+            synchronized(buffered) {
+                forwardingTo?.let { return@synchronized it }
+                while (buffered.size >= capacity) buffered.removeFirst()
+                buffered.addLast(rendered)
+                null
+            }
+        destination?.write(rendered)
     }
+
+    /** Retires this buffer atomically, forwarding every later write to [sink]. */
+    fun retireTo(sink: LogSink): List<String> =
+        synchronized(buffered) {
+            forwardingTo = sink
+            val captured = buffered.toList()
+            buffered.clear()
+            captured
+        }
 
     fun drain(): List<String> =
         synchronized(buffered) {

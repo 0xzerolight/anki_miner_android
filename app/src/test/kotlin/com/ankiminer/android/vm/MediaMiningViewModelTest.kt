@@ -662,6 +662,44 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun replacingTransientlyUnavailableSavedVideoReleasesItsDurableGrant() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val oldUri = "content://test/temporarily-unavailable.mkv"
+            val newUri = "content://test/replacement.mkv"
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO,
+                SafSelectionRecord(oldUri, "temporarily-unavailable.mkv"),
+            )
+            val broker = ControlledSafBroker()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = broker,
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                )
+            runCurrent()
+            broker.fail(
+                oldUri,
+                SafAccessException(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    "provider updating",
+                ),
+            )
+            runCurrent()
+
+            viewModel.onVideoPicked(newUri)
+            runCurrent()
+            broker.succeed(newUri, "replacement.mkv")
+            runCurrent()
+
+            assertEquals(newUri, inventory.selection(SafSelectionSlot.VIDEO)?.uri)
+            assertEquals("replacement.mkv", viewModel.uiState.value.video.document?.displayName)
+            assertEquals(listOf(oldUri), broker.releasedUris)
+        }
+
+    @Test
     fun failedVideoInventoryCommitReleasesNewlyAcquiredGrant() =
         runTest(mainDispatcherRule.dispatcher) {
             val inventory = FailOnceSelectionInventory()
@@ -1174,6 +1212,52 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertEquals("1.5", restored.uiState.value.subtitleOffsetDraft)
+        }
+
+    @Test
+    fun oversizedSubtitleOffsetPasteIsBoundedInUiAndSavedStateForBothLanes() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val bounded = "1".repeat(63) + "😀"
+            val oversized = bounded + "2".repeat(300_000)
+
+            listOf(MiningLane.VIDEO, MiningLane.AUDIO).forEach { lane ->
+                val savedState = SavedStateHandle()
+                val viewModel =
+                    mediaViewModel(
+                        repository = RecordingRepository(),
+                        safBroker = ImmediateSafBroker(),
+                        savedStateHandle = savedState,
+                        lane = lane,
+                    )
+
+                viewModel.setSubtitleOffsetDraft(oversized)
+                runCurrent()
+
+                assertEquals(bounded, viewModel.uiState.value.subtitleOffsetDraft)
+                assertEquals(
+                    bounded,
+                    savedState.get<String>("${lane.savedStateKeyPrefix}.subtitleOffsetDraft"),
+                )
+            }
+        }
+
+    @Test
+    fun oversizedRestoredSubtitleOffsetDraftIsBoundedAndRepublished() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val bounded = "1".repeat(63) + "😀"
+            val key = "videoMining.subtitleOffsetDraft"
+            val savedState = SavedStateHandle(mapOf(key to bounded + "2".repeat(300_000)))
+
+            val restored =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                )
+            runCurrent()
+
+            assertEquals(bounded, restored.uiState.value.subtitleOffsetDraft)
+            assertEquals(bounded, savedState.get<String>(key))
         }
 
     @Test

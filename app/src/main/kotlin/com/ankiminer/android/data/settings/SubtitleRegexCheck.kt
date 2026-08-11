@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.settings
 
+import com.ankiminer.android.anki.generated.UnicodeContractV151
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
@@ -10,8 +11,8 @@ import java.util.regex.PatternSyntaxException
  * runs with the filter disabled. Two things still have to be caught here:
  *
  * 1. The vendored engine compiles without a wall-clock timeout, so a pathological pattern can hang
- *    the parser on a long subtitle line. The size caps and the nested-unbounded-repeat reject are
- *    ported from desktop `services/subtitle_parser.compile_subtitle_regex_filter`.
+ *    the parser on a long subtitle line. The size caps and unsafe-repeat rejects cover nested
+ *    unbounded repeats, repeated variable-width bounds, and overlapping repeated alternatives.
  * 2. The engine preflights replacement syntax with `compiled.sub(replacement, "")`. The Kotlin
  *    boundary mirrors Python replacement references so the persisted-settings validator can report
  *    the same pair error before mining.
@@ -33,17 +34,22 @@ internal object SubtitleRegexCheck {
         replacement: String,
     ): InvalidAppSettingCode? =
         when {
-            (pattern?.length ?: 0) > MAX_PATTERN_CHARS ->
+            scalarCount(pattern.orEmpty()) > MAX_PATTERN_CHARS ->
                 InvalidAppSettingCode.SUBTITLE_REGEX_TOO_LONG
-            replacement.length > MAX_REPLACEMENT_CHARS ->
+            scalarCount(replacement) > MAX_REPLACEMENT_CHARS ->
                 InvalidAppSettingCode.SUBTITLE_REGEX_REPLACEMENT_TOO_LONG
             pattern == null -> null
-            NESTED_UNBOUNDED_REPEAT.containsMatchIn(pattern) ->
+            NESTED_UNBOUNDED_REPEAT.containsMatchIn(pattern) ||
+                hasRepeatedVariableWidthGroup(pattern) ||
+                hasOverlappingQuantifiedAlternation(pattern) ->
                 InvalidAppSettingCode.SUBTITLE_REGEX_UNBOUNDED_REPEAT
             replacementRejected(pattern, replacement) ->
                 InvalidAppSettingCode.SUBTITLE_REGEX_BACKREFERENCE
             else -> null
         }
+
+    private fun scalarCount(value: String): Int =
+        UnicodeContractV151.scalarCount(value) ?: Int.MAX_VALUE
 
     /** Whether `java.util.regex` accepts [pattern]. A false only warrants a warning. */
     fun compiles(pattern: String): Boolean =
@@ -241,6 +247,86 @@ internal object SubtitleRegexCheck {
     private const val REGEX_ATOM = """(?:\\.|\[(?:\\.|[^\]\\])*\]|[^()\[\]\\])"""
     private val NESTED_UNBOUNDED_REPEAT =
         Regex("""\(""" + REGEX_ATOM + """*(?:[*+]|\{\d+,\})""" + REGEX_ATOM + """*\)(?:[*+]|\{\d+,\})""")
+
+    private val QUANTIFIED_GROUP =
+        Regex(
+            """\((?:\?:)?(""" +
+                REGEX_ATOM +
+                """*)\)(?:[*+]|\{\d+,\})(?!\+)""",
+        )
+
+    private val BOUNDED_REPEAT = Regex("""\{(\d+),(\d+)\}""")
+
+    private fun hasRepeatedVariableWidthGroup(pattern: String): Boolean =
+        QUANTIFIED_GROUP.findAll(pattern).any { match ->
+            hasVariableWidthBoundedRepeat(match.groupValues[1])
+        }
+
+    private fun hasVariableWidthBoundedRepeat(body: String): Boolean {
+        var index = 0
+        while (index < body.length) {
+            when (body[index]) {
+                '\\' -> index += 2
+                '[' -> index = endOfCharacterClass(body, index)
+                '{' -> {
+                    val repeat = BOUNDED_REPEAT.matchAt(body, index)
+                    if (repeat == null) {
+                        index += 1
+                    } else {
+                        val minimum = repeat.groupValues[1].trimStart('0').ifEmpty { "0" }
+                        val maximum = repeat.groupValues[2].trimStart('0').ifEmpty { "0" }
+                        if (minimum != maximum) return true
+                        index = repeat.range.last + 1
+                    }
+                }
+                else -> index += 1
+            }
+        }
+        return false
+    }
+
+    private const val REGEX_ALTERNATION_ATOM =
+        """(?:\\.|\[(?:\\.|[^\]\\])*\]|[^|()\[\]\\])"""
+    private val QUANTIFIED_ALTERNATION =
+        Regex(
+            """\((?:\?:)?(""" +
+                REGEX_ALTERNATION_ATOM +
+                """*(?:\|""" +
+                REGEX_ALTERNATION_ATOM +
+                """*)+)\)(?:[*+]|\{\d+,\})(?!\+)""",
+        )
+    private val TRIVIAL_CHARACTER_CLASS = Regex("""\[([^\\^\]])\]""")
+
+    private fun hasOverlappingQuantifiedAlternation(pattern: String): Boolean =
+        QUANTIFIED_ALTERNATION.findAll(pattern).any { match ->
+            val branches = splitAlternationBranches(match.groupValues[1])
+            branches.indices.any { index ->
+                branches.drop(index + 1).any { other ->
+                    branches[index].startsWith(other) || other.startsWith(branches[index])
+                }
+            }
+        }
+
+    private fun splitAlternationBranches(body: String): List<String> {
+        val branches = mutableListOf<String>()
+        var start = 0
+        var escaped = false
+        var inClass = false
+        body.forEachIndexed { index, character ->
+            when {
+                escaped -> escaped = false
+                character == '\\' -> escaped = true
+                character == '[' -> inClass = true
+                character == ']' -> inClass = false
+                character == '|' && !inClass -> {
+                    branches += body.substring(start, index)
+                    start = index + 1
+                }
+            }
+        }
+        branches += body.substring(start)
+        return branches.map { branch -> TRIVIAL_CHARACTER_CLASS.replace(branch, "\$1") }
+    }
 
     private data class PythonCaptureGroups(
         val count: Int,

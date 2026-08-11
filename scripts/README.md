@@ -135,22 +135,22 @@ app data survives, and launches the app. Stop it with
 
 Gradle and emulators are mutually exclusive. `android-test-resources.sh` is
 sourced by `health.sh`, `emulator.sh` and `run-app.sh`; it refuses to start
-either process while the other runs, pins the shared Gradle arguments, and
-refuses to boot an emulator with less than 6 GiB available memory or less than
-1 GiB free swap.
+either process while the other owns the shared lifetime workload lock and pins
+the shared Gradle arguments. Emulator launches do not use host-memory or swap
+thresholds.
 
 ## Instrumentation
 
 Nothing local executes instrumentation. CI runs it on the `api26` lane through
 `.github/scripts/run-api26-instrumentation.sh`, which sources
 `scripts/instrumentation-result.sh` to validate the complete terminal contract
-emitted by `am instrument -w -r`. The contract is checked by shape rather than by a
-pinned total: one OK summary over at least one test, no failure or crash markers, no
-skipped or assumption-violated test, and a single terminal code. Adding or removing an
-instrumentation test needs no bookkeeping here. The one list that does need editing is
-the script's UNEXECUTED allowlist (external-UniDic, selector-gated contracts, opt-in
-UI audits); `scripts/tests/test_api26_instrumentation_script.py` fails if a class gains
-`assumeTrue` without being added to it.
+emitted by `am instrument -w -r`. The executed count is pinned at 266: 284 source
+`@Test` methods minus 18 explicit UNEXECUTED identities. The contract also rejects
+failure or crash markers, skipped or assumption-violated tests, and duplicate or
+missing terminal codes. Adding, removing, or undiscovering a test requires an
+intentional count update. The UNEXECUTED allowlist covers external-UniDic fixtures,
+selector-gated contracts, and opt-in UI audits;
+`scripts/tests/test_api26_instrumentation_script.py` re-derives both contracts.
 
 Those two need a full UniDic pushed to `/data/local/tmp` first — S1a and S1b
 respectively, from a local UniDic `dicdir`:

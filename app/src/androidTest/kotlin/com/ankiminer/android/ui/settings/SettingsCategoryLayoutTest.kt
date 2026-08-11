@@ -10,7 +10,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.test.performTextReplacement
+import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
@@ -61,5 +64,32 @@ class SettingsCategoryLayoutTest {
         composeRule.onNodeWithText("Anki").performClick()
         composeRule.onNodeWithText("ANKI row 50").assertIsDisplayed()
         composeRule.onNodeWithText("MEDIA row 20").assertDoesNotExist()
+    }
+
+    @Test
+    fun oversizedSearchIsBoundedBeforeEnteringSaveableState() {
+        var query by mutableStateOf("")
+        val oversized = "x".repeat(MAX_SAVEABLE_QUERY_LENGTH + 100)
+
+        composeRule.setContent {
+            AnkiMinerTheme {
+                SettingsCategoryLayout(
+                    selectedCategory = SettingsCategory.ANKI,
+                    onSelectedCategory = {},
+                    query = query,
+                    onQueryChange = { query = it },
+                    recorder = SettingsCardIndexRecorder(),
+                    header = {},
+                ) { }
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.SEARCH)
+            .performTextReplacement(oversized)
+
+        composeRule.runOnIdle {
+            assertEquals(oversized.take(MAX_SAVEABLE_QUERY_LENGTH), query)
+        }
     }
 }

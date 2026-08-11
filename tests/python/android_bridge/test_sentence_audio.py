@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from android_bridge.protocol import decode_envelope, encode_message
+from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 from android_bridge.sentence_audio import AndroidSentenceAudioFetcher
 from jsonschema import Draft202012Validator
 
@@ -161,6 +161,14 @@ def test_invalid_or_oversized_sentences_do_not_cross_callback(tmp_path: Path) ->
     assert callbacks.requests == []
 
 
+def test_sentence_over_4000_utf16_units_does_not_cross_callback(tmp_path: Path) -> None:
+    callbacks = ResultCallbacks(tmp_path)
+    fetcher = AndroidSentenceAudioFetcher(callbacks, RUN_ID, tmp_path)
+
+    assert fetcher.fetch("\U0001f600" * 2_001) is None
+    assert callbacks.requests == []
+
+
 def test_sentence_audio_schema_and_corpus_freeze_complete_envelopes() -> None:
     schema = json.loads(
         (PROJECT_ROOT / "app/src/main/python/android_bridge/schemas/sentence-audio.schema.json").read_text(
@@ -177,3 +185,21 @@ def test_sentence_audio_schema_and_corpus_freeze_complete_envelopes() -> None:
         assert list(validator.iter_errors(message)) == []
     for message in corpus["invalid"]:
         assert list(validator.iter_errors(message))
+
+
+def test_sentence_audio_contract_counts_utf16_units_beyond_schema_code_points() -> None:
+    schema = json.loads(
+        (PROJECT_ROOT / "app/src/main/python/android_bridge/schemas/sentence-audio.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    payload = {
+        "runId": RUN_ID,
+        "requestId": "tts_" + "a" * 32,
+        "sentence": "\U0001f600" * 2_001,
+    }
+    message = {"schemaVersion": 1, "type": "tts.sentence.request", "payload": payload}
+
+    Draft202012Validator(schema).validate(message)
+    with pytest.raises(BridgeProtocolError, match="4000 UTF-16 code units"):
+        encode_message("tts.sentence.request", payload)

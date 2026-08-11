@@ -17,6 +17,10 @@ import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
+import com.ankiminer.android.media.SafSelectionInventory
+import com.ankiminer.android.media.SafSelectionRecord
+import com.ankiminer.android.media.SafSelectionSlot
+import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.snapshotProductionSettings
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -24,6 +28,8 @@ import java.io.IOException
 import java.io.OutputStream
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -292,6 +298,112 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun interruptedResourceImportClearsDurableOwnerBeforeReleasingGrant() =
+        runTest {
+            val events = mutableListOf<String>()
+            val inventory = RecordingResourceImportInventory(events)
+            inventory.putSelection(
+                SafSelectionSlot.RESOURCE_IMPORT,
+                SafSelectionRecord(INPUT_URI, "Pending resource import"),
+            )
+            events.clear()
+            val harness =
+                Harness(
+                    autoRecover = false,
+                    safSelectionInventory = inventory,
+                    onReleaseReadAccess = { events += "release:$it" },
+                )
+            ResourceOperationJournal(harness.root, syncDirectory = {}).write(
+                PersistedResourceOperation(
+                    origin = ResourceFailureOrigin.FREQUENCY,
+                    retry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+                    resourceImportUri = INPUT_URI,
+                    resourceImportOwnership = ResourceImportOwnershipPhase.INVENTORY_RETAINED,
+                ),
+            )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(listOf("clear:RESOURCE_IMPORT", "release:$INPUT_URI"), events)
+            assertNull(inventory.selection(SafSelectionSlot.RESOURCE_IMPORT))
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+        }
+
+    @Test
+    fun failedInterruptedResourceImportClearRetainsJournalAndGrantCleanupIntent() =
+        runTest {
+            val inventory = RecordingResourceImportInventory().also { it.failResourceImportClear = true }
+            inventory.putSelection(
+                SafSelectionSlot.RESOURCE_IMPORT,
+                SafSelectionRecord(INPUT_URI, "Pending resource import"),
+            )
+            val harness =
+                Harness(
+                    autoRecover = false,
+                    safSelectionInventory = inventory,
+                )
+            ResourceOperationJournal(harness.root, syncDirectory = {}).write(
+                PersistedResourceOperation(
+                    origin = ResourceFailureOrigin.PITCH,
+                    retry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+                    resourceImportUri = INPUT_URI,
+                    resourceImportOwnership = ResourceImportOwnershipPhase.INVENTORY_RETAINED,
+                ),
+            )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(ResourceStartupReadiness.FAILED, harness.manager.state.value.startupReadiness)
+            assertTrue(ResourceOperationJournal(harness.root, {}).exists())
+            assertEquals(INPUT_URI, inventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri)
+            assertTrue(harness.broker.released.isEmpty())
+
+            inventory.failResourceImportClear = false
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+            assertNull(inventory.selection(SafSelectionSlot.RESOURCE_IMPORT))
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
+    fun importCleanupFailureRetainsJournalForStartupGrantRecovery() =
+        runTest {
+            val inventory = RecordingResourceImportInventory()
+            inventory.putSelection(
+                SafSelectionSlot.RESOURCE_IMPORT,
+                SafSelectionRecord(INPUT_URI, "Pending resource import"),
+            )
+            inventory.failResourceImportClear = true
+            val harness =
+                Harness(
+                    sourceLabel = "frequency source",
+                    safSelectionInventory = inventory,
+                )
+
+            harness.manager.importFrequencySource(
+                INPUT_URI,
+                sourceId = "fixture-frequency",
+                sourceName = "Fixture Frequency",
+                format = FrequencySourceFormat.CSV,
+                replace = false,
+            )
+
+            assertEquals("resource_operation_failed", harness.manager.state.value.failure?.code)
+            assertTrue(ResourceOperationJournal(harness.root, {}).exists())
+            assertEquals(INPUT_URI, inventory.selection(SafSelectionSlot.RESOURCE_IMPORT)?.uri)
+            assertTrue(harness.broker.released.isEmpty())
+
+            inventory.failResourceImportClear = false
+            harness.manager.recoverAndRefresh()
+
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+            assertNull(inventory.selection(SafSelectionSlot.RESOURCE_IMPORT))
+            assertEquals(listOf(INPUT_URI), harness.broker.released)
+        }
+
+    @Test
     fun catalogCommitRefreshFailureRetriesReconciliationWithoutReplayingImport() =
         runTest {
             val harness =
@@ -321,7 +433,7 @@ class ResourceManagerTest {
         runTest {
             val scenarios: List<Triple<String, String, suspend (Harness) -> Unit>> =
                 listOf(
-                    Triple("resource.dictionary.import", "resource") { harness ->
+                    Triple("resource.dictionary.import", "dictionary archive") { harness ->
                         harness.manager.importCustomDictionary(
                             INPUT_URI,
                             slotId = "fixture-dictionary",
@@ -1087,7 +1199,7 @@ class ResourceManagerTest {
             assertTrue(harness.stager.stagedFiles.isEmpty())
             assertNull(harness.stager.lastMaximumBytes)
             assertTrue(harness.bridge.requestTypes.none { it == "resource.audiopack.preflight" })
-            assertTrue(failure!!.message.contains("audio-pack archive,8.0 GB,2.0 GB"))
+            assertTrue(failure!!.message.contains("Audio,8.0 GB,2.0 GB"))
             assertEquals(listOf(INPUT_URI), harness.broker.released)
         }
 
@@ -1117,7 +1229,7 @@ class ResourceManagerTest {
         runTest {
             val harness =
                 Harness(
-                    sourceLabel = "resource",
+                    sourceLabel = "dictionary archive",
                     committedDictionaryDecodeFailure = true,
                 )
 
@@ -1126,6 +1238,49 @@ class ResourceManagerTest {
             // The install is committed in Python, so inventory must still show it even though
             // Kotlin refused the response.
             assertTrue(harness.manager.state.value.dictionaries.isNotEmpty())
+            assertEquals("invalid_resource_response", harness.manager.state.value.failure?.code)
+        }
+
+    @Test
+    fun overLimitFrequencyRevisionIsRejectedBeforePythonPublication() =
+        runTest {
+            val harness = Harness(sourceLabel = "frequency source")
+            harness.stager.sourceBytes = frequencyArchiveBytes("a".repeat(4097))
+
+            harness.manager.importFrequencySource(
+                INPUT_URI,
+                sourceId = "fixture-frequency",
+                sourceName = "Fixture Frequency",
+                format = FrequencySourceFormat.YOMITAN_ZIP,
+                replace = false,
+            )
+
+            assertEquals("frequency_import_failed", harness.manager.state.value.failure?.code)
+            assertTrue(harness.bridge.requestsOfType("resource.frequency.import").isEmpty())
+            assertTrue(harness.manager.state.value.frequencySources.isEmpty())
+        }
+
+    @Test
+    fun committedFrequencyInventoryRefreshesWhenResponseDecodeFails() =
+        runTest {
+            val harness =
+                Harness(
+                    sourceLabel = "frequency source",
+                    committedFrequencyDecodeFailure = true,
+                )
+
+            harness.manager.importFrequencySource(
+                INPUT_URI,
+                sourceId = "fixture-frequency",
+                sourceName = "Fixture Frequency",
+                format = FrequencySourceFormat.CSV,
+                replace = false,
+            )
+
+            assertEquals(
+                listOf("fixture-frequency"),
+                harness.manager.state.value.frequencySources.map { it.sourceId },
+            )
             assertEquals("invalid_resource_response", harness.manager.state.value.failure?.code)
         }
 
@@ -1146,6 +1301,20 @@ class ResourceManagerTest {
             val request = harness.bridge.requestsOfType("resource.dictionary.preflight").single()
             assertFalse(request.contains("content://"))
             assertFalse(request.contains("fixture-dictionary-2026-08"))
+        }
+
+    @Test
+    fun committedCustomDictionaryStageKeepsDictionarySpecificSourceLabel() =
+        runTest {
+            val harness = Harness(sourceLabel = "dictionary archive")
+
+            harness.manager.importCustomDictionary(
+                INPUT_URI,
+                slotId = "fixture-dictionary",
+                replace = false,
+            )
+
+            assertEquals("dictionary archive", harness.stager.lastSourceLabel)
         }
 
     @Test
@@ -1235,14 +1404,16 @@ class ResourceManagerTest {
     /** Records the foreground-service lifecycle a long import is supposed to drive. */
     private class RecordingForegroundLease : ResourceForegroundLease {
         val events = mutableListOf<String>()
+        var failStart = false
         var startedWhileRunning = false
             private set
         private var running = false
 
         override fun start(progress: ResourceOperationProgress) {
+            events += "start:${progress.phase}"
+            if (failStart) throw IllegalStateException("foreground admission denied")
             running = true
             startedWhileRunning = true
-            events += "start:${progress.phase}"
         }
 
         override fun update(progress: ResourceOperationProgress) {
@@ -1294,6 +1465,27 @@ class ResourceManagerTest {
             assertEquals("start:PREPARING", harness.foregroundLease.events.first())
             assertEquals("stop", harness.foregroundLease.events.last())
             assertFalse(ResourceOperationJournal(harness.root).exists())
+        }
+
+    @Test
+    fun failedForegroundAdmissionPreventsImportAndJournalAdmission() =
+        runTest {
+            val harness =
+                Harness(
+                    autoRecover = false,
+                    sourceLabel = "audio-pack archive",
+                    foregroundStartFailure = true,
+                )
+
+            assertNull(harness.manager.preflightAudioPack(INPUT_URI))
+
+            assertEquals("resource_operation_failed", harness.manager.state.value.failure?.code)
+            assertEquals(listOf("start:PREPARING"), harness.foregroundLease.events)
+            assertTrue(harness.broker.retained.isEmpty())
+            assertTrue(harness.stager.stagedFiles.isEmpty())
+            assertTrue(harness.bridge.requestsOfType("resource.audiopack.preflight").isEmpty())
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+            assertNull(harness.manager.state.value.activeOperation)
         }
 
     @Test
@@ -1413,11 +1605,18 @@ class ResourceManagerTest {
                     rootName = "manager-delete-broken",
                     installedPitchSourceId = "broken",
                     installedPitchSchemaOk = false,
+                    autoRecover = false,
                 )
+            val wordListRoot = File(harness.root, "resource-word-lists").apply { mkdirs() }
+            val candidate = File(wordListRoot, "blacklist.txt.candidate").apply { writeText("ば\n") }
+
+            harness.manager.recoverAndRefresh()
+
             assertEquals(
                 ResourceStartupReadiness.FAILED,
                 harness.manager.state.value.startupReadiness,
             )
+            assertTrue(candidate.isFile)
 
             harness.manager.deleteInstalledResource(InstalledResourceKind.PITCH, "broken")
 
@@ -1426,6 +1625,34 @@ class ResourceManagerTest {
                 harness.manager.state.value.startupReadiness,
             )
             assertEquals(emptyList<String>(), harness.manager.state.value.pitchSources.map { it.sourceId })
+            assertFalse(candidate.exists())
+            assertEquals("ば\n", File(wordListRoot, "blacklist.txt").readText())
+            assertEquals(1, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun catalogRepairRunsFromFailedReadinessButOrdinaryInstallRemainsBlocked() =
+        runTest {
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+            val harness =
+                Harness(
+                    rootName = "manager-catalog-repair",
+                    fakePinnedDownloads = true,
+                    installedCatalogDictionaryValid = false,
+                )
+            assertEquals(ResourceStartupReadiness.FAILED, harness.manager.state.value.startupReadiness)
+
+            harness.manager.installCatalogDictionary(resource.resourceId, replace = false)
+
+            assertTrue(harness.bridge.requestsOfType("resource.dictionary.import").isEmpty())
+
+            harness.manager.installCatalogDictionary(resource.resourceId, replace = true)
+
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertTrue(harness.manager.state.value.catalogDictionaries.first().installed)
+            assertNull(harness.manager.state.value.failure)
         }
 
     @Test
@@ -1507,6 +1734,7 @@ class ResourceManagerTest {
         bridgeFailureCode: String? = null,
         installedPitchSourceId: String? = null,
         installedPitchSchemaOk: Boolean = true,
+        installedCatalogDictionaryValid: Boolean? = null,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
         controlExecutor: Executor = DIRECT_EXECUTOR,
@@ -1522,10 +1750,14 @@ class ResourceManagerTest {
         onKnownWordsRemoveDispatch: () -> Unit = {},
         onFirstExportWrite: () -> Unit = {},
         onRetainReadAccess: () -> Unit = {},
+        onReleaseReadAccess: (String) -> Unit = {},
         committedDictionaryDecodeFailure: Boolean = false,
+        committedFrequencyDecodeFailure: Boolean = false,
         committedPitchDecodeFailure: Boolean = false,
         audioReadMode: AudioArchiveReadMode = AudioArchiveReadMode.RAW,
         audioContainer: AudioArchiveContainer = AudioArchiveContainer.ZIP,
+        safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
+        foregroundStartFailure: Boolean = false,
     ) {
         val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
@@ -1539,6 +1771,7 @@ class ResourceManagerTest {
                 sourceDisplayName,
                 sourceMimeType,
                 onRetainReadAccess,
+                onReleaseReadAccess,
             )
         val stager =
             RecordingArchiveStager(
@@ -1550,7 +1783,7 @@ class ResourceManagerTest {
                 audioContainer,
             )
         val writer = RecordingDocumentWriter(onFirstExportWrite)
-        val foregroundLease = RecordingForegroundLease()
+        val foregroundLease = RecordingForegroundLease().also { it.failStart = foregroundStartFailure }
         val bridge =
             FakeResourceBridge(
                 bridgeRoot,
@@ -1558,6 +1791,7 @@ class ResourceManagerTest {
                 bridgeFailureCode,
                 installedPitchSourceId,
                 installedPitchSchemaOk,
+                installedCatalogDictionaryValid,
                 failRefreshAfterDictionaryImport,
                 failRefreshAfterMutation,
                 failKnownWordsImportOnce,
@@ -1566,6 +1800,7 @@ class ResourceManagerTest {
                 failCancelDelivery,
                 onKnownWordsRemoveDispatch,
                 committedDictionaryDecodeFailure,
+                committedFrequencyDecodeFailure,
                 committedPitchDecodeFailure,
             )
         val manager =
@@ -1586,6 +1821,7 @@ class ResourceManagerTest {
                     ),
                 safStager = stager,
                 documentWriter = writer,
+                safSelectionInventory = safSelectionInventory,
                 foregroundLease = foregroundLease,
                 strings = testStringResourceResolver,
                 stagingAvailableBytes = { stagingAvailableBytes },
@@ -1617,6 +1853,7 @@ class ResourceManagerTest {
         private val displayName: String = "known-words.json",
         private val mimeType: String? = "application/json",
         private val onRetainReadAccess: () -> Unit = {},
+        private val onReleaseReadAccess: (String) -> Unit = {},
     ) : SafBroker {
         val retained = mutableListOf<String>()
         val released = mutableListOf<String>()
@@ -1628,10 +1865,31 @@ class ResourceManagerTest {
         }
 
         override suspend fun releaseReadAccess(uri: String) {
+            onReleaseReadAccess(uri)
             released += uri
         }
 
         override fun releaseReadAccessEventually(uri: String) = Unit
+    }
+
+    private class RecordingResourceImportInventory(
+        private val events: MutableList<String> = mutableListOf(),
+        private val delegate: TransientSafSelectionInventory = TransientSafSelectionInventory(),
+    ) : SafSelectionInventory by delegate {
+        var failResourceImportClear = false
+
+        override fun putSelection(
+            slot: SafSelectionSlot,
+            selection: SafSelectionRecord?,
+        ) {
+            if (slot == SafSelectionSlot.RESOURCE_IMPORT && selection == null) {
+                events += "clear:${slot.name}"
+                if (failResourceImportClear) {
+                    throw IOException("injected resource-import clear failure")
+                }
+            }
+            delegate.putSelection(slot, selection)
+        }
     }
 
     private class RecordingArchiveStager(
@@ -1645,6 +1903,8 @@ class ResourceManagerTest {
         val stagedFiles = mutableListOf<File>()
         var lastMaximumBytes: Long? = null
         var sourceText: String = "fixture"
+        var sourceBytes: ByteArray? = null
+        var lastSourceLabel: String? = null
         var genericStageCalls = 0
             private set
         var audioStageCalls = 0
@@ -1715,6 +1975,7 @@ class ResourceManagerTest {
         ): StagedArchive {
             assertEquals(INPUT_URI, sourceUri)
             assertEquals(expectedSourceLabel, sourceLabel)
+            lastSourceLabel = sourceLabel
             failureCode?.let {
                 throw ResourceDownloadException(
                     it,
@@ -1725,7 +1986,12 @@ class ResourceManagerTest {
             lastMaximumBytes = maximumBytes
             cancellation.check()
             val file = File(stagingRoot, "$operationId-custom$fileSuffix")
-            file.writeText(sourceText, Charsets.UTF_8)
+            val bytes = sourceBytes
+            if (bytes == null) {
+                file.writeText(sourceText, Charsets.UTF_8)
+            } else {
+                file.writeBytes(bytes)
+            }
             stagedFiles += file
             onProgress(file.length(), file.length())
             return StagedArchive(file, "0".repeat(64), file.length())
@@ -1788,6 +2054,7 @@ class ResourceManagerTest {
         private val failureCode: String? = null,
         installedPitchSourceId: String?,
         private val installedPitchSchemaOk: Boolean = true,
+        installedCatalogDictionaryValid: Boolean?,
         private val failRefreshAfterDictionaryImport: Boolean,
         private val failRefreshAfterMutation: String?,
         failKnownWordsImportOnce: Boolean,
@@ -1796,6 +2063,7 @@ class ResourceManagerTest {
         private val failCancelDelivery: Boolean,
         private val onKnownWordsRemoveDispatch: () -> Unit,
         private val committedDictionaryDecodeFailure: Boolean = false,
+        private val committedFrequencyDecodeFailure: Boolean = false,
         private val committedPitchDecodeFailure: Boolean = false,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
@@ -1806,7 +2074,8 @@ class ResourceManagerTest {
         private var installedPitchSourceId: String? = installedPitchSourceId
         private var installedFrequencySourceId: String? = null
         private var installedAudioPackId: String? = null
-        private var catalogDictionaryInstalled = false
+        private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
+        private var catalogDictionaryValid = installedCatalogDictionaryValid ?: true
         private var failNextDictionaryList = false
         private var failNextLocalList = false
         private var knownWordsImportFailures = if (failKnownWordsImportOnce) 1 else 0
@@ -1838,6 +2107,7 @@ class ResourceManagerTest {
                     envelope("resource.cleanup.result", """{"clean":true}""")
                 "resource.dictionary.import" -> {
                     catalogDictionaryInstalled = true
+                    catalogDictionaryValid = true
                     failNextDictionaryList =
                         failRefreshAfterDictionaryImport ||
                             failRefreshAfterMutation == "resource.dictionary.import"
@@ -1860,9 +2130,10 @@ class ResourceManagerTest {
                 "resource.frequency.import" -> {
                     installedFrequencySourceId = stringField(rawRequest, "sourceId")
                     armLocalRefreshFailure("resource.frequency.import")
+                    val revision = if (committedFrequencyDecodeFailure) "a".repeat(4097) else "1"
                     envelope(
                         "resource.frequency.imported",
-                        """{"sourceId":"${stringField(rawRequest, "sourceId")}","sourceName":"${stringField(rawRequest, "sourceName")}","sourceRevision":"1","format":"csv","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"convertedToRanks":false,"isCategorical":false,"archiveSha256":"${"0".repeat(64)}"}""",
+                        """{"sourceId":"${stringField(rawRequest, "sourceId")}","sourceName":"${stringField(rawRequest, "sourceName")}","sourceRevision":"$revision","format":"csv","entryCount":1,"skippedDisplayOnly":0,"skippedMalformed":0,"convertedToRanks":false,"isCategorical":false,"archiveSha256":"${"0".repeat(64)}"}""",
                     )
                 }
                 "resource.pitch.import" -> {
@@ -1983,7 +2254,7 @@ class ResourceManagerTest {
                     val resource = FrozenResourceCatalog.value.dictionaries.first()
                     // The decoder checks an installed catalog dictionary against the frozen
                     // catalog identity, attribution included, so echo the catalog's own list.
-                    """[{"slotId":"${resource.slotId}","occupied":true,"valid":true,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)}}]"""
+                    """[{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)}}]"""
                 } else {
                     "[]"
                 }
@@ -2098,6 +2369,19 @@ class ResourceManagerTest {
             checkNotNull(Regex("\"$field\":([0-9]+)").find(raw)?.groupValues?.get(1)) {
                 "$field missing"
             }.toInt()
+
+        private fun frequencyArchiveBytes(revision: String): ByteArray {
+            val bytes = ByteArrayOutputStream()
+            ZipOutputStream(bytes).use { output ->
+                output.putNextEntry(ZipEntry("index.json"))
+                output.write(
+                    """{"title":"Fixture Frequency","revision":"$revision"}"""
+                        .toByteArray(Charsets.UTF_8),
+                )
+                output.closeEntry()
+            }
+            return bytes.toByteArray()
+        }
     }
 
     private class QueuedExecutor : Executor {

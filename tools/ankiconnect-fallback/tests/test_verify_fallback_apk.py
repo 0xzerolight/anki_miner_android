@@ -8,6 +8,7 @@ import zipfile
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "verify_fallback_apk.py"
+REPO_ROOT = Path(__file__).resolve().parents[3]
 SPEC = importlib.util.spec_from_file_location("verify_fallback_apk", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 MODULE = importlib.util.module_from_spec(SPEC)
@@ -15,6 +16,12 @@ SPEC.loader.exec_module(MODULE)
 
 
 class FallbackManifestTest(unittest.TestCase):
+    def test_official_gates_run_fallback_verifier_tests(self) -> None:
+        for relative in ("scripts/health.sh", ".github/workflows/pull-request.yml"):
+            with self.subTest(relative=relative):
+                source = (REPO_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("tools/ankiconnect-fallback/tests", source)
+
     def test_repository_manifest_is_strict_and_immutable(self) -> None:
         payload = MODULE._load_manifest(MODULE.DEFAULT_MANIFEST)
 

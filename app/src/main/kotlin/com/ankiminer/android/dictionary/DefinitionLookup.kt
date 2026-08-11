@@ -1,5 +1,6 @@
 package com.ankiminer.android.dictionary
 
+import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeMessage
 import com.ankiminer.android.engine.DefinitionEntry
@@ -61,37 +62,39 @@ class BridgeDefinitionLookupService(
     ): Result<DefinitionResult> =
         suspendCancellableCoroutine { continuation ->
             executor.execute {
-                if (!continuation.isActive) return@execute
-                val outcome =
-                    runCatching {
-                        val raw =
-                            bridge.dispatch(
-                                BridgeJsonCodec.encodeDictionaryDefineRequest(
-                                    runId,
-                                    term,
-                                    fallbackTerm,
-                                ),
-                                null,
-                            )
-                        val message =
-                            BridgeJsonCodec.decode(
-                                raw,
-                                expectedRunId = runId,
-                            )
-                        check(message is BridgeMessage.DictionaryDefineResult) {
-                            "Unexpected reply to dictionary.define"
+                LogContext.withRunId(runId) {
+                    if (!continuation.isActive) return@withRunId
+                    val outcome =
+                        runCatching {
+                            val raw =
+                                bridge.dispatch(
+                                    BridgeJsonCodec.encodeDictionaryDefineRequest(
+                                        runId,
+                                        term,
+                                        fallbackTerm,
+                                    ),
+                                    null,
+                                )
+                            val message =
+                                BridgeJsonCodec.decode(
+                                    raw,
+                                    expectedRunId = runId,
+                                )
+                            check(message is BridgeMessage.DictionaryDefineResult) {
+                                "Unexpected reply to dictionary.define"
+                            }
+                            // Refuse mismatched echoes at the seam so stale data cannot be painted
+                            // under another word even if the caller's generation check regresses.
+                            check(message.term == term) {
+                                "dictionary.define echoed another term"
+                            }
+                            check(message.matchedTerm == term || message.matchedTerm == fallbackTerm) {
+                                "dictionary.define matched a term outside the query"
+                            }
+                            DefinitionResult(message.term, message.matchedTerm, message.entries)
                         }
-                        // Refuse mismatched echoes at the seam so stale data cannot be painted
-                        // under another word even if the caller's generation check regresses.
-                        check(message.term == term) {
-                            "dictionary.define echoed another term"
-                        }
-                        check(message.matchedTerm == term || message.matchedTerm == fallbackTerm) {
-                            "dictionary.define matched a term outside the query"
-                        }
-                        DefinitionResult(message.term, message.matchedTerm, message.entries)
-                    }
-                if (continuation.isActive) continuation.resume(outcome)
+                    if (continuation.isActive) continuation.resume(outcome)
+                }
             }
         }
 }

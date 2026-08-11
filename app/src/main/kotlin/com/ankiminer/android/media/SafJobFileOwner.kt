@@ -13,6 +13,9 @@ import java.nio.file.Files
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.runBlocking
 
 /** A path whose backing resource is owned by a [SafJobFileOwner]. */
 @ConsistentCopyVisibility
@@ -66,6 +69,7 @@ class SafJobFileOwner internal constructor(
     private val fileCopier: BoundedFileCopier = BoundedFileCopier(),
     private val cancellation: FileCopyCancellation = FileCopyCancellation.NONE,
     private val progressListener: SafCopyProgressListener = SafCopyProgressListener.NONE,
+    private val providerIoScope: CoroutineScope = PROVIDER_IO_SCOPE,
 ) : Closeable {
     private data class OwnedInput(
         val descriptor: OwnedDescriptor,
@@ -144,23 +148,41 @@ class SafJobFileOwner internal constructor(
             cacheFile = createdCacheFile
             require(createdCacheFile.isAbsolute) { "SAF cache path must be absolute" }
             val role = if (copySuffix == null) SafCopyRole.VIDEO else SafCopyRole.SUBTITLE
-            fileCopier.copy(
-                openSource = descriptor::openInputStream,
-                destination = createdCacheFile,
-                knownSizeBytes = descriptor.knownSizeBytes,
-                policy = if (role == SafCopyRole.VIDEO) VIDEO_COPY_POLICY else SUBTITLE_COPY_POLICY,
-                cancellation = operationCancellation,
-                progressListener =
-                    FileCopyProgressListener { progress ->
-                        progressListener.onProgress(
-                            SafCopyProgress(
-                                role = role,
-                                copiedBytes = progress.copiedBytes,
-                                expectedBytes = progress.expectedBytes,
-                            ),
+            try {
+                runBlocking {
+                    CancellableProviderIo.execute(
+                        scope = providerIoScope,
+                        timeoutMillis = PROVIDER_IO_TIMEOUT_MILLIS,
+                        externalCancellation = operationCancellation,
+                    ) { deadline ->
+                        fileCopier.copy(
+                            openSource = descriptor::openInputStream,
+                            destination = createdCacheFile,
+                            knownSizeBytes = descriptor.knownSizeBytes,
+                            policy =
+                                if (role == SafCopyRole.VIDEO) {
+                                    VIDEO_COPY_POLICY
+                                } else {
+                                    SUBTITLE_COPY_POLICY
+                                },
+                            cancellation = operationCancellation.combine(deadline),
+                            progressListener =
+                                FileCopyProgressListener { progress ->
+                                    progressListener.onProgress(
+                                        SafCopyProgress(
+                                            role = role,
+                                            copiedBytes = progress.copiedBytes,
+                                            expectedBytes = progress.expectedBytes,
+                                        ),
+                                    )
+                                },
+                            readListener = FileCopyReadListener { deadline.rearm() },
                         )
-                    },
-            )
+                    }
+                }
+            } catch (failure: ProviderIoCancelledException) {
+                throw FileCopyCancelledException(failure)
+            }
             check(createdCacheFile.isFile) { "SAF provider copy did not create a file" }
             if (operationCancellation.isCancelled()) throw FileCopyCancelledException()
             val input = PythonMediaInput(path = createdCacheFile.absolutePath)
@@ -265,6 +287,8 @@ class SafJobFileOwner internal constructor(
         const val MAX_VIDEO_COPY_BYTES = 16L * 1024 * 1024 * 1024
         const val MAX_SUBTITLE_COPY_BYTES = 32L * 1024 * 1024
         const val FREE_SPACE_RESERVE_BYTES = 256L * 1024 * 1024
+        const val PROVIDER_IO_TIMEOUT_MILLIS = 30_000L
+        val PROVIDER_IO_SCOPE = CoroutineScope(SupervisorJob())
         val VIDEO_COPY_POLICY =
             BoundedFileCopyPolicy(
                 maxBytes = MAX_VIDEO_COPY_BYTES,

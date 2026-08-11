@@ -137,6 +137,12 @@ class FfmpegToolingTests(unittest.TestCase):
         )
         self.assertNotIn("curl", common)
 
+    def test_libaom_keeps_arm64_runtime_cpu_dispatch_enabled(self) -> None:
+        libaom = (FFMPEG_ROOT / "overrides/libaom-build.sh").read_text(encoding="utf-8")
+
+        self.assertIn("-DCONFIG_RUNTIME_CPU_DETECT=1", libaom)
+        self.assertNotIn("-DCONFIG_RUNTIME_CPU_DETECT=0", libaom)
+
     def test_build_root_guard_rejects_escape_and_symlink_without_deleting(self) -> None:
         guard = FFMPEG_ROOT / "prepare-build-root.py"
         with tempfile.TemporaryDirectory() as directory:

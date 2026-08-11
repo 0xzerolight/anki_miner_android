@@ -9,11 +9,15 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AndroidSafBrokerTest {
+    @After
+    fun awaitCancelledProviderWorker() = awaitProviderIoWorkerRelease()
+
     @Test
     fun stalledMetadataQueryCanBeCancelledWithoutBlockingUnrelatedRelease() {
         val executor = Executors.newFixedThreadPool(2)
@@ -131,8 +135,16 @@ class AndroidSafBrokerTest {
                 assertTrue(access.firstQueryStarted.await(1, TimeUnit.SECONDS))
                 stalled.cancelAndJoin()
 
+                val retainFailure =
+                    withTimeout(1_000L) {
+                        runCatching { broker.retainReadAccess(EXISTING_URI) }.exceptionOrNull()
+                    }
+                assertTrue(retainFailure is SafAccessException)
+                assertEquals(
+                    SafAccessFailureKind.PROVIDER_UNAVAILABLE,
+                    (retainFailure as SafAccessException).kind,
+                )
                 withTimeout(1_000L) {
-                    broker.retainReadAccess(EXISTING_URI)
                     broker.releaseReadAccess(EXISTING_URI)
                 }
                 access.finishFirstQuery.countDown()

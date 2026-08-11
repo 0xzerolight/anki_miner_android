@@ -4,6 +4,7 @@ import android.os.CancellationSignal
 import android.os.OperationCanceledException
 import java.io.Closeable
 import java.io.IOException
+import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.ThreadFactory
 import java.util.concurrent.TimeUnit
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 
@@ -109,8 +111,9 @@ internal fun ProviderIoCancellation.combine(
 internal class ProviderIoCancelledException(cause: Throwable? = null) :
     IOException("Provider I/O was cancelled", cause)
 
-internal class ProviderIoTimeoutException :
-    IOException("Provider I/O exceeded its deadline")
+internal class ProviderIoTimeoutException(
+    message: String = "Provider I/O exceeded its deadline",
+) : IOException(message)
 
 /**
  * Cancellation for one [CancellableProviderIo.execute] operation plus the handle that rearms its
@@ -165,10 +168,9 @@ internal object RealProviderIoDeadlineScheduler : ProviderIoDeadlineScheduler {
  *
  * A provider may ignore both its platform signal and descriptor closure. In that case the worker
  * can remain blocked, but it owns no global SAF bookkeeping lock and cannot publish a late result.
- * Both abort paths also cancel the launched worker job: cancellation cannot interrupt a thread
- * already inside a blocking provider `read`, so the sticky [ProviderIoCancellation] stays the
- * mechanism that ends the work, but the caller's scope must not retain an abandoned coroutine
- * that would keep its dispatcher thread past the abort.
+ * Workers run on one dedicated process-lifetime lane, so a wedged provider can retain at most that
+ * lane. While an aborted worker remains physically blocked, new operations fail before launch and
+ * cannot consume shared [kotlinx.coroutines.Dispatchers.IO] threads or grow a retry queue.
  */
 internal object CancellableProviderIo {
     fun <T : Closeable, R> useResource(
@@ -249,26 +251,45 @@ internal object CancellableProviderIo {
         scope: CoroutineScope,
         timeoutMillis: Long,
         scheduler: ProviderIoDeadlineScheduler = RealProviderIoDeadlineScheduler,
+        externalCancellation: ProviderIoCancellation = ProviderIoCancellation.NONE,
         operation: (ProviderIoDeadline) -> T,
     ): T {
         require(timeoutMillis > 0L) { "Provider I/O deadline must be positive" }
+        rejectWhileAbortedWorkerIsBlocked()
         return suspendCancellableCoroutine { continuation ->
             val cancellation = ProviderIoCancellationController()
             val completed = AtomicBoolean(false)
             val progress = AtomicLong(0L)
             val deadline = AtomicReference<ProviderIoCancellationRegistration?>()
+            val externalRegistration = AtomicReference<ProviderIoCancellationRegistration?>()
             val worker = AtomicReference<Job?>()
+            val workerStarted = AtomicBoolean(false)
+            val workerFinished = AtomicBoolean(false)
 
             fun closeDeadline() {
                 deadline.getAndSet(CLOSED_REGISTRATION)?.close()
             }
 
+            fun closeExternalRegistration() {
+                externalRegistration.getAndSet(CLOSED_REGISTRATION)?.close()
+            }
+
             fun cancelWorker() {
-                worker.getAndSet(CANCELLED_WORKER)?.cancel()
+                val job = worker.getAndSet(CANCELLED_WORKER)
+                if (job != null && job !== CANCELLED_WORKER) {
+                    job.cancel()
+                    retainAbortedWorker(workerFinished)
+                }
             }
 
             fun installWorker(job: Job) {
-                if (!worker.compareAndSet(null, job)) job.cancel()
+                job.invokeOnCompletion {
+                    if (!workerStarted.get()) finishWorker(workerFinished)
+                }
+                if (!worker.compareAndSet(null, job)) {
+                    job.cancel()
+                    retainAbortedWorker(workerFinished)
+                }
             }
 
             fun installDeadline(scheduled: ProviderIoCancellationRegistration) {
@@ -285,6 +306,10 @@ internal object CancellableProviderIo {
                 }
             }
 
+            fun installExternalRegistration(registration: ProviderIoCancellationRegistration) {
+                if (!externalRegistration.compareAndSet(null, registration)) registration.close()
+            }
+
             fun armDeadline() {
                 val armedAt = progress.get()
                 installDeadline(
@@ -294,6 +319,7 @@ internal object CancellableProviderIo {
                             armDeadline()
                         } else if (completed.compareAndSet(false, true)) {
                             closeDeadline()
+                            closeExternalRegistration()
                             cancellation.cancel()
                             cancelWorker()
                             continuation.resumeWith(Result.failure(ProviderIoTimeoutException()))
@@ -307,10 +333,22 @@ internal object CancellableProviderIo {
             continuation.invokeOnCancellation {
                 if (completed.compareAndSet(false, true)) {
                     closeDeadline()
+                    closeExternalRegistration()
                     cancellation.cancel()
                     cancelWorker()
                 }
             }
+            installExternalRegistration(
+                externalCancellation.invokeOnCancellation {
+                    if (completed.compareAndSet(false, true)) {
+                        closeDeadline()
+                        closeExternalRegistration()
+                        cancellation.cancel()
+                        cancelWorker()
+                        continuation.resumeWith(Result.failure(ProviderIoCancelledException()))
+                    }
+                },
+            )
             val handle =
                 object : ProviderIoDeadline {
                     override fun isCancelled(): Boolean = cancellation.isCancelled()
@@ -325,11 +363,17 @@ internal object CancellableProviderIo {
                     }
                 }
             installWorker(
-                scope.launch {
-                    val result = runCatching { operation(handle) }
-                    if (completed.compareAndSet(false, true)) {
-                        closeDeadline()
-                        continuation.resumeWith(result)
+                scope.launch(PROVIDER_WORKER_DISPATCHER) {
+                    workerStarted.set(true)
+                    try {
+                        val result = runCatching { operation(handle) }
+                        if (completed.compareAndSet(false, true)) {
+                            closeDeadline()
+                            closeExternalRegistration()
+                            continuation.resumeWith(result)
+                        }
+                    } finally {
+                        finishWorker(workerFinished)
                     }
                 },
             )
@@ -338,6 +382,28 @@ internal object CancellableProviderIo {
 
     private fun throwIfCancelled(cancellation: ProviderIoCancellation) {
         if (cancellation.isCancelled()) throw ProviderIoCancelledException()
+    }
+
+    private fun rejectWhileAbortedWorkerIsBlocked() {
+        while (true) {
+            val stalled = ABORTED_WORKER.get() ?: return
+            if (!stalled.get()) {
+                throw ProviderIoTimeoutException(
+                    "Previous provider I/O is still blocked after cancellation",
+                )
+            }
+            if (ABORTED_WORKER.compareAndSet(stalled, null)) return
+        }
+    }
+
+    private fun retainAbortedWorker(workerFinished: AtomicBoolean) {
+        if (workerFinished.get()) return
+        ABORTED_WORKER.compareAndSet(null, workerFinished)
+    }
+
+    private fun finishWorker(workerFinished: AtomicBoolean) {
+        workerFinished.set(true)
+        ABORTED_WORKER.compareAndSet(workerFinished, null)
     }
 
     private fun cancelSafely(cancel: () -> Unit) {
@@ -400,6 +466,16 @@ internal object CancellableProviderIo {
         }
 
     private val CLOSED_REGISTRATION = ProviderIoCancellationRegistration { }
+
+    private val PROVIDER_WORKER_DISPATCHER =
+        Executors.newSingleThreadExecutor(
+            ThreadFactory { runnable ->
+                Thread(runnable, "saf-provider-worker").apply { isDaemon = true }
+            },
+        ).asCoroutineDispatcher()
+
+    /** Physical completion, which may outlive the coroutine job after cancellation. */
+    private val ABORTED_WORKER = AtomicReference<AtomicBoolean?>()
 
     /**
      * Sentinel published by `cancelWorker` so a worker installed after the abort is cancelled by

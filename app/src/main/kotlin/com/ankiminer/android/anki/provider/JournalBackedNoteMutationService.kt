@@ -303,6 +303,13 @@ internal class JournalBackedNoteMutationService(
                 // by an ordinary failed row.
                 throw failure
             } catch (failure: RuntimeException) {
+                AppLog.w(
+                    LogComponent.JOURNAL,
+                    "note.materialize",
+                    failure,
+                    "outcome" to "reconcile",
+                    "note_ordinal" to index,
+                )
                 // Everything else that reaches here rolled back: materialization runs entirely
                 // inside one write transaction that commits only on the non-throwing path. A disk
                 // -full or locked database on one note is a row failure, not a run failure —
@@ -470,6 +477,14 @@ internal class JournalBackedNoteMutationService(
                     "providerEntry=true;noteId=${receipt.noteId};receipt=canonical",
                 )
             } catch (failure: RuntimeException) {
+                AppLog.w(
+                    LogComponent.JOURNAL,
+                    "note.receipt.commit",
+                    failure,
+                    "outcome" to "reconcile",
+                    "entry_id" to noteChildId,
+                    "note_ordinal" to index,
+                )
                 val parent =
                     runCatching { journal.parent(durableRequest.key) }
                         .onFailure { lookupFailure ->
@@ -570,6 +585,14 @@ internal class JournalBackedNoteMutationService(
             // This transaction is the sole attachment-verification and CREATED-row boundary.
             journal.completeVerified(durableRequest.key, index, noteId, "noteId=$noteId;postcheck=exact")
         } catch (failure: RuntimeException) {
+            AppLog.w(
+                LogComponent.JOURNAL,
+                "note.complete",
+                failure,
+                "outcome" to "reconcile",
+                "note_id" to noteId,
+                "note_ordinal" to index,
+            )
             val parent =
                 runCatching { journal.parent(durableRequest.key) }
                     .onFailure { lookupFailure ->
@@ -649,21 +672,27 @@ internal class JournalBackedNoteMutationService(
                     return error
                 }
             capability = activeCapability
-            try {
-                provider.preflight(AnkiCancellation.NONE)
-            } catch (_: RuntimeException) {
-                val error = stableWriteFailure("AnkiDroid became unavailable before card routing")
+            val preflightError =
+                try {
+                    provider.preflight(AnkiCancellation.NONE)
+                    null
+                } catch (failure: AnkiReadFailure) {
+                    failure.toStableNoteError("AnkiDroid became unavailable before card routing")
+                } catch (_: RuntimeException) {
+                    stableWriteFailure("AnkiDroid became unavailable before card routing")
+                }
+            if (preflightError != null) {
                 terminateKnown(
                     key,
                     index,
                     noteId,
-                    error,
+                    preflightError,
                     "cardId=${intent.cardId};providerEntry=false",
                     PreparedRoutingFailure.ProvenNotCommitted(childId),
                 )
                 registry.abortProviderEntry(owner, activeCapability, scope)
                 capability = null
-                return error
+                return preflightError
             }
             if (
                 registry.authorizeMandatoryReconciliationEntry(owner, activeCapability, scope) !=
@@ -823,7 +852,7 @@ internal class JournalBackedNoteMutationService(
                 if (acknowledgement.actualFilename != binding.actualFilename) {
                     throw noteMutationConflict("A note media filename differs from its durable acknowledgement")
                 }
-                if (ordered.none { binding.actualFilename in it.value }) {
+                if (ordered.none { providerFieldReferencesFilename(it.value, binding.actualFilename) }) {
                     throw noteMutationConflict("A note media binding is not referenced by any provider field")
                 }
                 DurableMediaBinding(binding.assetId, binding.actualFilename, acknowledgement.durableClaimId)
@@ -994,6 +1023,26 @@ private fun normalizeTags(tags: List<String>): List<String> {
     }
     return normalized
 }
+
+private fun providerFieldReferencesFilename(
+    fieldValue: String,
+    filename: String,
+): Boolean = filename in fieldValue || htmlEscapeProviderAttribute(filename) in fieldValue
+
+/** Matches Python html.escape(value, quote=True), used by the Android adapter for img src. */
+private fun htmlEscapeProviderAttribute(value: String): String =
+    buildString(value.length) {
+        for (character in value) {
+            when (character) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&#x27;")
+                else -> append(character)
+            }
+        }
+    }
 
 private fun JournalError.toProtocolNoteError() =
     AnkiErrorDetail(AnkiErrorCode.valueOf(code.name), message, retryable)
