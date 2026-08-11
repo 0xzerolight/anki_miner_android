@@ -11,11 +11,16 @@ configured and keep writing cards from a memory-starved interpreter. Mirrors
 
 from __future__ import annotations
 
+import json
 import logging
+import threading
+import time
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import ExitStack
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from .callbacks import CallbackAdapters
 from .config_map import (
@@ -60,6 +65,10 @@ _SUBTITLE_SUFFIXES = frozenset({".ass", ".srt", ".ssa", ".vtt"})
 # packs plus the URL-template custom sources (the localaudio localhost server).
 # The cut network kinds (jpod101/googletts) are rejected before any allocation.
 _SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack", "custom", "custom_json"})
+_JISHO_TOTAL_DEADLINE_SECONDS = 10.0
+_JISHO_IO_TIMEOUT_SECONDS = 1.0
+_JISHO_WATCH_POLL_SECONDS = 0.05
+_JISHO_BODY_CHUNK_BYTES = 8192
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +263,8 @@ class _ExpressionAudioSourceChain:
                 return None
             try:
                 path = fetcher.fetch(mined_form, reading, cancelled_check)
+            except MemoryError:
+                raise
             except Exception:
                 logger.exception("Expression-audio source fetch failed")
                 continue
@@ -275,6 +286,8 @@ class _ExpressionAudioSourceChain:
                 return None
             try:
                 path = fetcher.fetch_candidates(candidates, cancelled_check)
+            except MemoryError:
+                raise
             except Exception:
                 logger.exception("Expression-audio source fetch failed")
                 continue
@@ -571,13 +584,29 @@ def _build_expression_audio_source_chain(
     )
 
 
-class _AndroidOnlineDictionaryProvider:
-    """Run-scoped cancel gate and memoizer for an explicitly enabled online provider.
+def _new_jisho_session() -> object:
+    """Create the run-owned HTTP session after bridge bootstrap."""
 
-    Definition and glossary generation may ask the same provider for the same word. Android
-    permits that term to leave the device at most once per run. Cancellation prevents every new
-    request; an already in-flight provider timeout remains bounded by the provider itself.
-    """
+    import requests
+
+    return requests.Session()
+
+
+def _is_https_endpoint(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+        return (
+            parsed.scheme.lower() == "https"
+            and parsed.hostname is not None
+            and parsed.username is None
+            and parsed.password is None
+        )
+    except ValueError:
+        return False
+
+
+class _AndroidOnlineDictionaryProvider:
+    """Run-owned, cancellable, HTTPS-only Jisho transport and memoizer."""
 
     def __init__(
         self,
@@ -587,6 +616,12 @@ class _AndroidOnlineDictionaryProvider:
         self._provider = provider
         self._cancelled_check = cancelled_check
         self._cache: dict[str, str | None] = {}
+        self._api_url = str(getattr(provider, "_api_url", ""))
+        self._delay = max(0.0, float(getattr(provider, "_delay", 0.0)))
+        self._session: object | None = None
+        self._active_response: object | None = None
+        self._active_response_lock = threading.Lock()
+        self._opening_request: threading.Thread | None = None
 
     @property
     def name(self) -> str:
@@ -602,16 +637,228 @@ class _AndroidOnlineDictionaryProvider:
     def load(self) -> bool:
         return bool(self._provider.load())
 
+    def _wait_for_delay(self) -> bool:
+        delay_end = time.monotonic() + self._delay
+        while True:
+            if self._cancelled_check():
+                return False
+            remaining = delay_end - time.monotonic()
+            if remaining <= 0:
+                return True
+            time.sleep(min(_JISHO_WATCH_POLL_SECONDS, remaining))
+
+    def _session_for_lookup(self) -> object:
+        if self._session is None:
+            self._session = _new_jisho_session()
+        return self._session
+
+    def _close_session(self, session: object) -> None:
+        if self._session is session:
+            self._session = None
+        close = getattr(session, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("Jisho session close failed", exc_info=True)
+
+    def _track_response(self, response: object | None) -> None:
+        with self._active_response_lock:
+            self._active_response = response
+
+    def _close_active_response(self) -> bool:
+        with self._active_response_lock:
+            response = self._active_response
+        if response is None:
+            return False
+        close = getattr(response, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("Jisho response close failed", exc_info=True)
+        return True
+
+    def _watch_request(
+        self,
+        deadline: float,
+        finished: threading.Event,
+        aborted: threading.Event,
+    ) -> None:
+        while not finished.wait(_JISHO_WATCH_POLL_SECONDS):
+            if not self._cancelled_check() and time.monotonic() < deadline:
+                continue
+            aborted.set()
+            if self._close_active_response():
+                return
+
+    def _open_response(
+        self,
+        word: str,
+        deadline: float,
+        aborted: threading.Event,
+    ) -> object | None:
+        """Open a streamed response without parking the mining thread in headers."""
+
+        if self._opening_request is not None and self._opening_request.is_alive():
+            return None
+        session = self._session_for_lookup()
+        completed = threading.Event()
+        responses: list[object] = []
+        failures: list[BaseException] = []
+
+        def open_request() -> None:
+            try:
+                timeout = min(
+                    _JISHO_IO_TIMEOUT_SECONDS,
+                    max(0.001, deadline - time.monotonic()),
+                )
+                response = session.get(
+                    self._api_url,
+                    params={"keyword": word},
+                    timeout=(timeout, timeout),
+                    stream=True,
+                    allow_redirects=False,
+                )
+                responses.append(response)
+                if aborted.is_set():
+                    close = getattr(response, "close", None)
+                    if callable(close):
+                        close()
+            except BaseException as error:
+                failures.append(error)
+            finally:
+                completed.set()
+
+        opener = threading.Thread(
+            target=open_request,
+            daemon=True,
+            name="anki-miner-jisho-open",
+        )
+        self._opening_request = opener
+        opener.start()
+        while not completed.wait(_JISHO_WATCH_POLL_SECONDS):
+            if not self._cancelled_check() and time.monotonic() < deadline:
+                continue
+            aborted.set()
+            self._close_session(session)
+            opener.join(_JISHO_WATCH_POLL_SECONDS * 2)
+            return None
+
+        opener.join()
+        if self._cancelled_check() or time.monotonic() >= deadline:
+            aborted.set()
+            self._close_session(session)
+            if responses:
+                close = getattr(responses[0], "close", None)
+                if callable(close):
+                    close()
+            return None
+        if failures:
+            raise failures[0]
+        return responses[0]
+
+    @staticmethod
+    def _render_response(body: bytes, provider_name: str) -> str | None:
+        data = json.loads(body.decode("utf-8"))
+        results = data.get("data", [])
+        if not results:
+            return None
+
+        first = results[0]
+        senses = []
+        for sense in first.get("senses", [])[:5]:
+            definitions = sense.get("english_definitions", [])
+            if definitions:
+                senses.append("; ".join(escape(str(definition)) for definition in definitions))
+        if not senses:
+            return None
+
+        items = "".join(f'<li class="gloss-item"><div class="gloss-content">{sense}</div></li>' for sense in senses)
+        safe_name = escape(provider_name)
+        return (
+            '<div class="yomitan-glossary">'
+            '<ol data-count="1">'
+            f'<li data-dictionary="{safe_name}">'
+            f"<i>({safe_name})</i>"
+            f'<ul class="gloss-list" data-count="{len(senses)}">{items}</ul>'
+            "</li>"
+            "</ol>"
+            "</div>"
+        )
+
+    def _lookup_uncached(self, word: str) -> str | None:
+        if not _is_https_endpoint(self._api_url):
+            logger.warning("Jisho request rejected because endpoint is not HTTPS")
+            return None
+        if not self._wait_for_delay():
+            return None
+
+        deadline = time.monotonic() + _JISHO_TOTAL_DEADLINE_SECONDS
+        aborted = threading.Event()
+        response: object | None = None
+        finished: threading.Event | None = None
+        watcher: threading.Thread | None = None
+        try:
+            response = self._open_response(word, deadline, aborted)
+            if response is None:
+                return None
+            self._track_response(response)
+            if aborted.is_set() or self._cancelled_check() or time.monotonic() >= deadline:
+                return None
+            finished = threading.Event()
+            watcher = threading.Thread(
+                target=self._watch_request,
+                args=(deadline, finished, aborted),
+                daemon=True,
+                name="anki-miner-jisho-watch",
+            )
+            watcher.start()
+            if getattr(response, "status_code", None) != 200:
+                return None
+
+            chunks: list[bytes] = []
+            iterator = response.iter_content(chunk_size=_JISHO_BODY_CHUNK_BYTES)
+            for chunk in iterator:
+                if aborted.is_set() or self._cancelled_check() or time.monotonic() >= deadline:
+                    return None
+                if not isinstance(chunk, bytes):
+                    return None
+                if chunk:
+                    chunks.append(chunk)
+            if aborted.is_set() or self._cancelled_check() or time.monotonic() >= deadline:
+                return None
+            return self._render_response(b"".join(chunks), self.name)
+        except MemoryError:
+            raise
+        except (OSError, ValueError, KeyError, UnicodeDecodeError) as error:
+            logger.debug("Jisho lookup failed", exc_info=error)
+            return None
+        finally:
+            if finished is not None:
+                finished.set()
+            if response is not None:
+                self._close_active_response()
+                self._track_response(None)
+            if watcher is not None:
+                watcher.join(_JISHO_WATCH_POLL_SECONDS * 2)
+
     def lookup(self, word: str) -> str | None:
         if word in self._cache:
             return self._cache[word]
         if self._cancelled_check():
             return None
-        result = self._provider.lookup(word)
+        result = self._lookup_uncached(word)
+        if self._cancelled_check():
+            return None
         self._cache[word] = result
         return result
 
     def close(self) -> None:
+        self._close_active_response()
+        session = self._session
+        if session is not None:
+            self._close_session(session)
         closer = getattr(self._provider, "close", None)
         if callable(closer):
             closer()
