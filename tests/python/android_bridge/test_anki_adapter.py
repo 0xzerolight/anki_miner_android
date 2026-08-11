@@ -479,8 +479,25 @@ class FakeKotlinAnki:
     def _request(self, method: str, raw: str) -> dict[str, Any]:
         envelope = json.loads(raw)
         _ANKI_VALIDATOR.validate(envelope["payload"])
+        if method == "ankiStoreMedia":
+            for asset in envelope["payload"]["assets"]:
+                if asset["purpose"] != "dictionary":
+                    continue
+                expected = "anki_miner_dict_" + hashlib.sha256(asset["requestedFilename"].encode("utf-8")).hexdigest()
+                assert asset["preferredName"] == expected, "dictionary preferred-name contract mismatch"
         self.requests.append((method, envelope))
         return envelope["payload"]
+
+    def _admit_media_results(
+        self,
+        request: dict[str, Any],
+        results: list[dict[str, object]],
+    ) -> None:
+        admitted = {
+            str(result["assetId"]): str(result["actualFilename"]) for result in results if result["status"] == "stored"
+        }
+        if admitted:
+            self._media_acknowledgements_by_run.setdefault(request["runId"], {}).update(admitted)
 
     def _error(self, request: dict[str, Any], operation: str) -> str | None:
         configured = self.errors.get(operation)
@@ -744,14 +761,7 @@ class FakeKotlinAnki:
                         "actualFilename": self.media_renames.get(preferred, f"{preferred}_provider{extension}"),
                     }
                 )
-        acknowledgements = self._media_acknowledgements_by_run.setdefault(request["runId"], {})
-        acknowledgements.update(
-            {
-                str(result["assetId"]): str(result["actualFilename"])
-                for result in results
-                if result["status"] == "stored"
-            }
-        )
+        self._admit_media_results(request, results)
         return encode_message(
             "anki.storemedia.result",
             {
@@ -789,12 +799,6 @@ class FakeKotlinAnki:
         total_content_bytes = 0
         total_media_bindings = 0
         acknowledgements = self._media_acknowledgements_by_run.get(request["runId"], {})
-        requested_asset_ids = {
-            asset["assetId"]
-            for store_request in self.requests_for("ankiStoreMedia")
-            if store_request["payload"]["runId"] == request["runId"]
-            for asset in store_request["payload"]["assets"]
-        }
         for note in request["notes"]:
             assert len(note["fields"]) <= request["limits"]["maxFieldsPerNote"]
             note_content_bytes = 0
@@ -814,9 +818,7 @@ class FakeKotlinAnki:
                 assert binding["assetId"] not in binding_asset_ids
                 binding_asset_ids.add(binding["assetId"])
                 acknowledged_filename = acknowledgements.get(binding["assetId"])
-                assert acknowledged_filename == binding["actualFilename"] or (
-                    acknowledged_filename is None and binding["assetId"] in requested_asset_ids
-                )
+                assert acknowledged_filename == binding["actualFilename"]
                 note_content_bytes += len(binding["assetId"].encode("utf-8"))
                 note_content_bytes += len(binding["actualFilename"].encode("utf-8"))
             total_media_bindings += len(note["mediaBindings"])
@@ -4725,6 +4727,82 @@ def test_declared_media_failure_is_nonfatal_and_omits_reference(initialized_brid
     assert kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["mediaBindings"] == []
 
 
+def test_cross_run_media_refusal_log_names_both_colliding_assets(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from anki_miner.models import MediaData
+
+    old_audio = tmp_path / "old-clip.opus"
+    old_audio.write_bytes(b"old audio")
+    old_kotlin = FakeKotlinAnki()
+    old_adapter = _adapter(_config(initialized_bridge_home), old_kotlin)
+
+    with caplog.at_level(logging.INFO, logger=anki_adapter_module.logger.name):
+        assert (
+            len(
+                old_adapter.create_cards_batch(
+                    [_card("猫", media=MediaData(audio_path=old_audio, audio_filename=old_audio.name))]
+                )
+            )
+            == 1
+        )
+        held = old_kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0]
+        held_actual = old_kotlin._media_acknowledgements_by_run[RUN_ID][held["assetId"]]
+        old_adapter.close()
+        assert RUN_ID not in old_kotlin._media_acknowledgements_by_run
+
+        class CrossRunRefusalKotlin(FakeKotlinAnki):
+            def ankiStoreMedia(self, raw: str) -> str:
+                request = self._request("ankiStoreMedia", raw)
+                incoming = request["assets"][0]
+                return encode_message(
+                    "anki.storemedia.result",
+                    {
+                        "runId": request["runId"],
+                        "requestId": request["requestId"],
+                        "results": [
+                            {
+                                "assetId": incoming["assetId"],
+                                "status": "failed",
+                                "error": {
+                                    "code": "media_store_failed",
+                                    "message": (
+                                        "admission=refused reason=PROVIDER_NAMESPACE_OVERLAP "
+                                        f"held={held['assetId']} incoming={incoming['assetId']} sameRun=false"
+                                    ),
+                                    "retryable": False,
+                                },
+                            }
+                        ],
+                        "error": None,
+                    },
+                )
+
+        current_audio = tmp_path / "current-clip.opus"
+        current_audio.write_bytes(b"current audio")
+        current_kotlin = CrossRunRefusalKotlin()
+        current_adapter = _adapter(_config(initialized_bridge_home), current_kotlin)
+        assert (
+            len(
+                current_adapter.create_cards_batch(
+                    [_card("犬", media=MediaData(audio_path=current_audio, audio_filename=current_audio.name))]
+                )
+            )
+            == 1
+        )
+
+    incoming = current_kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0]
+    mapping = next(message for message in caplog.messages if message.startswith("Stored media asset"))
+    refusal = next(message for message in caplog.messages if message.startswith("Failed to store media asset"))
+    assert mapping == f"Stored media asset old-clip.opus [{held['assetId']}] as {held_actual}"
+    assert f"current-clip.opus [{incoming['assetId']}]" in refusal
+    assert f"held={held['assetId']}" in refusal
+    assert f"incoming={incoming['assetId']}" in refusal
+    assert "sameRun=false" in refusal
+
+
 def test_declared_dictionary_media_failure_is_nonfatal_and_omits_reference(
     initialized_bridge_home: Path,
 ) -> None:
@@ -4812,7 +4890,9 @@ def test_dictionary_media_uses_source_name_and_success_cache(
     ]
     assert len(dictionary_requests) == 1
     asset = dictionary_requests[0]["payload"]["assets"][0]
-    assert asset["preferredName"] == _dictionary_provider_preferred_name("dict__pic.png")
+    assert asset["preferredName"] == (
+        "anki_miner_dict_a6013c9cb2f650b242d11db7cfaf170926befe1403011572df9159860b31af2c"
+    )
     assert asset["requestedFilename"] == "dict__pic.png"
     assert asset["sourcePath"] == str(media_path.resolve())
     actual = kotlin._media_acknowledgements_by_run[RUN_ID][asset["assetId"]]
@@ -4822,7 +4902,72 @@ def test_dictionary_media_uses_source_name_and_success_cache(
     ]
 
 
-def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
+def test_fake_store_attempt_does_not_authorize_a_media_binding(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    class AttemptOnlyMediaKotlin(FakeKotlinAnki):
+        def ankiStoreMedia(self, raw: str) -> str:
+            request = self._request("ankiStoreMedia", raw)
+            asset = request["assets"][0]
+            return encode_message(
+                "anki.storemedia.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "results": [
+                        {
+                            "assetId": asset["assetId"],
+                            "status": "stored",
+                            "actualFilename": f"{asset['preferredName']}_provider.opus",
+                        }
+                    ],
+                    "error": None,
+                },
+            )
+
+    audio = tmp_path / "attempt-only.opus"
+    audio.write_bytes(b"audio")
+    kotlin = AttemptOnlyMediaKotlin()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", media=MediaData(audio_path=audio, audio_filename=audio.name))]
+        )
+
+    assert isinstance(exc_info.value.__cause__, AssertionError)
+    assert RUN_ID not in kotlin._media_acknowledgements_by_run
+    assert len(kotlin.requests_for("ankiStoreMedia")) == 1
+    assert len(kotlin.requests_for("ankiCreateNotes")) == 1
+
+
+def test_fake_kotlin_rejects_dictionary_preferred_name_contract_drift(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    media_path = initialized_bridge_home / "dicts" / "dict" / "media" / "drift.png"
+    media_path.parent.mkdir(parents=True, exist_ok=True)
+    media_path.write_bytes(b"png")
+    monkeypatch.setattr(
+        anki_adapter_module,
+        "_dictionary_provider_preferred_name",
+        lambda _filename, **_kwargs: "regressed_dictionary_prefix",
+    )
+    kotlin = FakeKotlinAnki()
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(
+            [_card("猫", definition='<img class="anki-miner-dict-media" src="dict__drift.png">')]
+        )
+
+    assert isinstance(exc_info.value.__cause__, AssertionError)
+    assert "dictionary preferred-name contract" in str(exc_info.value.__cause__)
+    assert not kotlin.requests_for("ankiCreateNotes")
+
+
+def test_dictionary_media_quote_filename_cannot_gain_a_binding_from_an_unadmitted_receipt(
     initialized_bridge_home: Path,
 ) -> None:
     class DirectNameMediaKotlin(FakeKotlinAnki):
@@ -4852,19 +4997,15 @@ def test_dictionary_media_preserves_quote_filename_for_direct_fallback(
     definition = '<img class="anki-miner-dict-media" src="dict__a&quot;;b.svg">'
     kotlin = DirectNameMediaKotlin()
 
-    assert (
-        len(_adapter(_config(initialized_bridge_home), kotlin).create_cards_batch([_card("猫", definition=definition)]))
-        == 1
-    )
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch([_card("猫", definition=definition)])
 
+    assert isinstance(exc_info.value.__cause__, AssertionError)
     asset = kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0]
     assert asset["preferredName"] == _dictionary_provider_preferred_name(filename)
     assert asset["requestedFilename"] == filename
-    fields = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["fields"]
-    assert fields["MainDefinition"] == definition
-    assert kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["mediaBindings"] == [
-        {"assetId": asset["assetId"], "actualFilename": filename}
-    ]
+    assert RUN_ID not in kotlin._media_acknowledgements_by_run
+    assert len(kotlin.requests_for("ankiCreateNotes")) == 1
 
 
 def test_remote_yomitan_image_never_reaches_anki_or_media_callbacks(
