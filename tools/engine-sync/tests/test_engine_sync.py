@@ -9,9 +9,12 @@ import tomllib
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
 from engine_sync.core import (
+    EngineSnapshot,
     EngineSyncError,
+    SnapshotFile,
     build_snapshot,
     check_destination,
     discover_source_repo,
@@ -215,6 +218,26 @@ target = "anki_miner.services.youtube_fetcher"
             overlays_path=fixture["overlays"],
         )
 
+    @staticmethod
+    def _minimal_sync_snapshot() -> EngineSnapshot:
+        path = "anki_miner/root.py"
+        return EngineSnapshot(
+            revision="0" * 40,
+            composition_sha256="1" * 64,
+            files={
+                path: SnapshotFile(
+                    path=path,
+                    content=b"VALUE = 1\n",
+                    origin="overlay",
+                    source_path=path,
+                )
+            },
+            modules=("anki_miner.root",),
+            eager_external_imports=(),
+            deferred_external_imports=(),
+            type_checking_exceptions=(),
+        )
+
     def _drop_type_checking_exception(self, fixture: dict[str, Path]) -> None:
         composition = fixture["composition"]
         composition.write_text(
@@ -280,6 +303,56 @@ target = "anki_miner.services.youtube_fetcher"
 
         sync_destination(destination, snapshot)
         self.assertEqual(check_destination(destination, snapshot), ())
+
+    def test_sync_repairs_expected_file_replaced_by_a_directory(self) -> None:
+        snapshot = self._minimal_sync_snapshot()
+        destination = self.root / "vendor"
+        collision = destination / "anki_miner/root.py"
+        collision.mkdir(parents=True)
+        (collision / "stale.py").write_text("stale\n", encoding="utf-8")
+
+        sync_destination(destination, snapshot)
+
+        self.assertTrue(collision.is_file())
+        self.assertEqual(b"VALUE = 1\n", collision.read_bytes())
+        self.assertEqual((), check_destination(destination, snapshot))
+
+    def test_sync_repairs_managed_root_replaced_by_a_file(self) -> None:
+        snapshot = self._minimal_sync_snapshot()
+        destination = self.root / "vendor"
+        destination.mkdir()
+        collision = destination / "anki_miner"
+        collision.write_text("stale\n", encoding="utf-8")
+
+        sync_destination(destination, snapshot)
+
+        self.assertTrue(collision.is_dir())
+        self.assertEqual(
+            b"VALUE = 1\n",
+            (collision / "root.py").read_bytes(),
+        )
+        self.assertEqual((), check_destination(destination, snapshot))
+
+    def test_sync_translates_unrecoverable_filesystem_failures(self) -> None:
+        snapshot = self._minimal_sync_snapshot()
+        destination = self.root / "vendor"
+        sync_destination(destination, snapshot)
+        (destination / "anki_miner/root.py").write_text(
+            "modified\n",
+            encoding="utf-8",
+        )
+
+        with (
+            mock.patch(
+                "engine_sync.core.os.replace",
+                side_effect=PermissionError("read-only destination"),
+            ),
+            self.assertRaisesRegex(
+                EngineSyncError,
+                "cannot synchronize engine destination",
+            ),
+        ):
+            sync_destination(destination, snapshot)
 
     def test_sync_removes_a_top_level_root_dropped_from_the_snapshot(self) -> None:
         snapshot = self._snapshot(self._fixture())
