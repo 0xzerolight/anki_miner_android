@@ -1422,6 +1422,29 @@ def test_expression_audio_builder_builds_localaudio_custom_json_source(
         chain.close()
 
 
+def test_expression_audio_builder_authenticates_the_localaudio_loopback_origin(
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    from android_bridge.config_map import _LOCALAUDIO_URL
+
+    config = SimpleNamespace(
+        expression_audio_chain=(SimpleNamespace(kind="custom_json", pack_id=None, url=_LOCALAUDIO_URL, enabled=True),),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=initialized_bridge_home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config)
+    assert chain is not None
+    try:
+        fetcher = chain._fetchers[0]
+        # The production construction site is the only place that declares loopback
+        # trust; without it every localaudio fetch is rejected before the request.
+        fetcher._validate_url(_LOCALAUDIO_URL.format(term="食べる", reading="たべる"), directory_only=False)
+        fetcher._validate_url("http://127.0.0.1:8765/localaudio/audio.mp3", directory_only=False)
+    finally:
+        chain.close()
+
+
 def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,

@@ -1,11 +1,11 @@
 """Bridge-side custom URL / custom-JSON expression-audio fetcher.
 
-Ported from the desktop ``anki_miner.services.custom_audio_fetcher`` without
-importing the desktop service factory (which eagerly pulls the cut
-JPod101/Google-TTS fetchers). Android does not enable AnkiConnect-Android's
-loopback endpoint: its HTTP protocol cannot authenticate the process serving
-port 8765. Loopback remains fail-closed unless a trusted caller has established
-an authenticated peer contract out of band.
+Ported from the desktop ``anki_miner.services.custom_audio_fetcher`` so the
+Android port can query AnkiConnect-Android's on-device local-audio server
+(``http://localhost:8765/localaudio/...``) without importing the desktop
+service factory (which eagerly pulls the cut JPod101/Google-TTS fetchers).
+Loopback is fail-closed by default: the caller declares which loopback origins
+it trusts via ``authenticated_loopback_origins``, and nothing else is accepted.
 
 The local-audio-yomichan integration contract: a URL template containing
 ``{term}`` / ``{reading}`` / ``{language}`` placeholders.
