@@ -49,9 +49,9 @@ series names, deck/note-type/field/tag text, Japanese text, and the build user
 become tokens stable only within that archive. Run IDs remain so maintainers can
 correlate one mining run across files. The bundle deliberately excludes
 Build.SERIAL, SSAID, accounts, IP and MAC addresses, and package inventory;
-AnkiDroid's version is the only peer-package lookup. You choose whether to save
-the ZIP or send it through Android's share sheet; Anki Miner does not upload it
-itself.
+AnkiDroid's version is the only peer-package lookup. The ZIP leaves the app only
+through Android's share sheet, where you pick the destination; Anki Miner does
+not upload it itself.
 
 ## Removing your data
 

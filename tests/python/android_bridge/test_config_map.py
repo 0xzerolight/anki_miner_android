@@ -10,6 +10,7 @@ from pathlib import Path
 import android_bridge.config_map as config_map
 import pytest
 from android_bridge.config_map import (
+    _LOCALAUDIO_URL,
     AndroidPaths,
     exposed_config_fields,
     map_config_json,
@@ -26,18 +27,16 @@ def test_localaudio_remote_origin_allowlist_is_fail_closed() -> None:
     assert frozenset() == config_map._LOCALAUDIO_APPROVED_AUDIO_ORIGINS
 
 
-def test_unauthenticated_localaudio_is_not_injected(tmp_path: Path) -> None:
-    from anki_miner.config import AudioSourceEntry
-
-    mapped = map_config_settings(
-        {
-            "anki_fields": {"expression_audio": "WordAudio"},
-            "expression_audio_chain": [{"kind": "pack", "pack_id": "my-pack"}],
-        },
-        _paths(tmp_path),
-    ).engine_config
-
-    assert mapped.expression_audio_chain == (AudioSourceEntry(kind="pack", pack_id="my-pack"),)
+def test_localaudio_loopback_trust_is_declared_for_the_fetcher() -> None:
+    # mining.py hands these to CustomAudioFetcher, which accepts only the loopback
+    # origins it was explicitly given. Narrowing this constant silently disables
+    # every localaudio fetch, and the fetcher-level test that would catch it needs
+    # ``requests`` and so skips outside the runtime-dependency lane.
+    assert config_map._LOCALAUDIO_AUTHENTICATED_LOOPBACK_ORIGINS == (
+        "http://localhost:8765",
+        "http://127.0.0.1:8765",
+    )
+    assert config_map._LOCALAUDIO_URL.startswith("http://localhost:8765/")
 
 
 @pytest.fixture(autouse=True)
@@ -71,7 +70,7 @@ def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
 def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
-    from anki_miner.config import AnkiMinerConfig
+    from anki_miner.config import AnkiMinerConfig, AudioSourceEntry
 
     paths = _paths(tmp_path)
     mapped = map_config_settings({}, paths)
@@ -79,9 +78,9 @@ def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_andro
     expected = replace(
         base,
         **_path_overrides(paths),
-        # Android drops the desktop network source defaults. Imported local
-        # packs are the only authenticated expression-audio path.
-        expression_audio_chain=(),
+        # Android drops the desktop network source defaults and injects the
+        # on-device localaudio server as the primary source instead.
+        expression_audio_chain=(AudioSourceEntry(kind="custom_json", url=_LOCALAUDIO_URL, enabled=True),),
         reading_tts_enabled=False,
         reading_tts_google_enabled=False,
         reading_tts_papago_enabled=False,
@@ -179,7 +178,10 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
         ChainEntry(kind="jisho", dict_id=None, enabled=False),
     )
     assert config.frequency_chain == (FreqEntry(source_id="bccwj"),)
-    assert config.expression_audio_chain == (AudioSourceEntry(kind="pack", pack_id="my-pack"),)
+    assert config.expression_audio_chain == (
+        AudioSourceEntry(kind="custom_json", url=_LOCALAUDIO_URL, enabled=True),
+        AudioSourceEntry(kind="pack", pack_id="my-pack"),
+    )
     assert config.anki_fields["expression_audio"] == "WordAudio"
     assert config.anki_fields["word"] == "Expression"
 

@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 from .callbacks import CallbackAdapters
 from .config_map import (
     _LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
+    _LOCALAUDIO_AUTHENTICATED_LOOPBACK_ORIGINS,
     AndroidPaths,
     map_config_settings,
 )
@@ -554,6 +555,7 @@ def _build_expression_audio_source_chain(
                 # affects fetched bytes, so desktop OUTPUT parity holds.
                 delay=0.0,
                 approved_audio_origins=_LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
+                authenticated_loopback_origins=_LOCALAUDIO_AUTHENTICATED_LOOPBACK_ORIGINS,
                 ffprobe_path=getattr(config, "ffprobe_location", None),
                 cache_lifetime=cache_lifetime,
             )
