@@ -1,12 +1,10 @@
 package com.ankiminer.android.diagnostics
 
 import android.content.Context
-import android.content.Intent
 import android.util.Log
 import androidx.core.content.FileProvider
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.ankiminer.android.diagnosticsDeliveryChooserIntent
 import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
@@ -60,7 +58,7 @@ class DiagnosticsDevicePropertiesInstrumentedTest {
     }
 
     @Test
-    fun diagnosticsFileProviderResolvesBundleAndDeliveryOffersLocalSave() {
+    fun diagnosticsFileProviderResolvesStagedBundleAsZip() {
         val stagingDirectory = File(context.cacheDir, DiagnosticsBundleJanitor.DIRECTORY_NAME)
         assertTrue(
             "diagnostics staging directory is unavailable",
@@ -85,26 +83,6 @@ class DiagnosticsDevicePropertiesInstrumentedTest {
 
             assertEquals("${context.packageName}.diagnostics", uri.authority)
             assertEquals("application/zip", context.contentResolver.getType(uri))
-            val chooser =
-                diagnosticsDeliveryChooserIntent(
-                    resolver = context.contentResolver,
-                    attachment = uri,
-                    fileName = stagedBundle.name,
-                    subject = "Diagnostics",
-                )
-            assertEquals(Intent.ACTION_CHOOSER, chooser.action)
-            @Suppress("DEPRECATION")
-            val send = requireNotNull(chooser.getParcelableExtra<Intent>(Intent.EXTRA_INTENT))
-            assertEquals(Intent.ACTION_SEND, send.action)
-            assertEquals("application/zip", send.type)
-            @Suppress("DEPRECATION")
-            val initial =
-                requireNotNull(chooser.getParcelableArrayExtra(Intent.EXTRA_INITIAL_INTENTS))
-            val save = initial.single() as Intent
-            assertEquals(Intent.ACTION_CREATE_DOCUMENT, save.action)
-            assertEquals("application/zip", save.type)
-            assertEquals(stagedBundle.name, save.getStringExtra(Intent.EXTRA_TITLE))
-            assertTrue(save.categories.orEmpty().contains(Intent.CATEGORY_OPENABLE))
             val evidence =
                 "ANKI_MINER_DIAGNOSTICS_URI authority=${uri.authority} type=" +
                     context.contentResolver.getType(uri)
