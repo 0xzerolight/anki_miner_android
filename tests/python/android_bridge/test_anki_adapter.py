@@ -921,11 +921,13 @@ def _adapter(
     cancellation_check: Any = None,
     *,
     target_verified: bool = True,
+    source_prefix: str | None = None,
 ) -> AndroidAnkiAdapter:
     adapter = AndroidAnkiAdapter(
         config,
         AndroidAnkiCallbacks(kotlin, RUN_ID),
         cancellation_check=cancellation_check,
+        source_prefix=source_prefix,
     )
     if target_verified:
         required = {value for value in config.anki_fields.values() if value}
@@ -1760,6 +1762,59 @@ def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
         "key": "既存",
         "firstField": "既存",
     }
+
+
+def _source_field(kotlin: FakeKotlinAnki) -> str:
+    return kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]["fields"]["MiscInfo"]
+
+
+def _source_config(home: Path) -> Any:
+    base = _config(home)
+    return replace(base, anki_fields={**base.anki_fields, "source": "MiscInfo"})
+
+
+def test_create_cards_batch_strips_the_source_prefix(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    card = replace(_card("猫"), extra_fields={"source": "Local video — MyShow 03 @ 00:12:34"})
+    adapter = _adapter(_source_config(initialized_bridge_home), kotlin, source_prefix="Local video — ")
+
+    assert len(adapter.create_cards_batch([card])) == 1
+    assert _source_field(kotlin) == "MyShow 03 @ 00:12:34"
+
+
+def test_create_cards_batch_strips_a_prefix_that_leaves_the_label_bare(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    card = replace(_card("猫"), extra_fields={"source": "Local video — @ 00:12:34"})
+    adapter = _adapter(_source_config(initialized_bridge_home), kotlin, source_prefix="Local video — ")
+
+    assert len(adapter.create_cards_batch([card])) == 1
+    assert _source_field(kotlin) == "@ 00:12:34"
+
+
+def test_create_cards_batch_leaves_a_non_matching_source_alone(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    card = replace(_card("猫"), extra_fields={"source": "漫画作品 — 第一巻 @ p.1"})
+    adapter = _adapter(_source_config(initialized_bridge_home), kotlin, source_prefix="Local video — ")
+
+    assert len(adapter.create_cards_batch([card])) == 1
+    assert _source_field(kotlin) == "漫画作品 — 第一巻 @ p.1"
+
+
+def test_create_cards_batch_without_a_source_prefix_is_unchanged(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    card = replace(_card("猫"), extra_fields={"source": "Local video — MyShow 03 @ 00:12:34"})
+    adapter = _adapter(_source_config(initialized_bridge_home), kotlin)
+
+    assert len(adapter.create_cards_batch([card])) == 1
+    assert _source_field(kotlin) == "Local video — MyShow 03 @ 00:12:34"
 
 
 def test_duplicate_fake_requires_pinned_checksum_match_before_normalized_match(
