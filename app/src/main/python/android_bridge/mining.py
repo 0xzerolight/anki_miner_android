@@ -1113,6 +1113,11 @@ def _process_episode(
                 config,
                 adapters.anki,
                 cancellation_check=adapters.cancel_event.is_set,
+                # process_episode composes the card source field as
+                # "<series> — <episode>", but Android's series is a synthetic
+                # lane label ("Local video"): SAF hands over a display name,
+                # never a parent folder. Strip it back off at the seam.
+                source_prefix=f"{request.series_name} — ".lstrip(),
             )
         )
         processor = _build_processor(config, adapters, anki_adapter)

@@ -654,11 +654,15 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
             received_config: object,
             received_callbacks: object,
             cancellation_check: object,
+            source_prefix: object,
         ) -> None:
             assert received_config is config
             assert received_callbacks is anki_callbacks
             assert callable(cancellation_check)
             assert not cancellation_check()
+            # The engine composes "<series> — <episode>" into the card source
+            # field; the seam strips the synthetic lane label back off.
+            assert source_prefix == "Series — "
             events.append("adapter-init")
 
         def __enter__(self) -> FakeAdapter:
