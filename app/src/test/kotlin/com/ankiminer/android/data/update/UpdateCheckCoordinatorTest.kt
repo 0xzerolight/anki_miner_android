@@ -266,7 +266,7 @@ class UpdateCheckCoordinatorTest {
                     UpdateCheckClient {
                         clientCalls.incrementAndGet()
                         entered.countDown()
-                        check(release.await(5, TimeUnit.SECONDS))
+                        check(release.await(HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                         UpdateCheckResult.Available(UPDATE)
                     },
                     NOW,
@@ -277,7 +277,7 @@ class UpdateCheckCoordinatorTest {
 
             var manual: Deferred<Unit>? = null
             try {
-                assertTrue(entered.await(5, TimeUnit.SECONDS))
+                assertTrue(entered.await(HANDSHAKE_TIMEOUT_SECONDS, TimeUnit.SECONDS))
                 assertTrue(coordinator.uiState.value.checking)
                 manual = async(start = CoroutineStart.UNDISPATCHED) { coordinator.checkNow() }
                 assertTrue(coordinator.uiState.value.checking)
@@ -372,6 +372,16 @@ class UpdateCheckCoordinatorTest {
     }
 
     private companion object {
+        /**
+         * Budget for the two latch handshakes in the overlapping-check test.
+         *
+         * They coordinate the test thread with a real [kotlinx.coroutines.Dispatchers.Default]
+         * worker; nothing here is slow. A tight budget turns a scheduling delay on a loaded
+         * machine into a failure, which is what made this test flake in the full suite while
+         * passing in isolation. Sized to trip only on a genuine deadlock.
+         */
+        const val HANDSHAKE_TIMEOUT_SECONDS = 30L
+
         const val NOW = 1_800_000_000_000L
         val UPDATE =
             AvailableUpdate(
