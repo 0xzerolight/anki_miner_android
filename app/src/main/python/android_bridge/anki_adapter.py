@@ -620,6 +620,7 @@ class AndroidAnkiAdapter:
         config: Any,
         callbacks: AndroidAnkiCallbacks,
         cancellation_check: Callable[[], bool] | None = None,
+        source_prefix: str | None = None,
     ) -> None:
         # Function-local by design: importing the builder freezes config paths.
         from anki_miner.services.anki_note_builder import REQUIRED_FIELD_KEYS
@@ -635,6 +636,10 @@ class AndroidAnkiAdapter:
         # The M0 seam can run standalone; the mining composition layer supplies
         # JobHandle.cancel_event.is_set once it owns adapter construction.
         self._cancellation_check = cancellation_check or (lambda: False)
+        # Engine-composed ``"<series> — "`` prefix on the card source field.
+        # Android's series is a synthetic lane label with no counterpart on
+        # disk, so the composition layer hands the exact prefix down here.
+        self._source_prefix = source_prefix or None
         self.last_created_note_ids: list[int] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
@@ -1670,6 +1675,34 @@ class AndroidAnkiAdapter:
                 )
             sanitized_payloads.append(item)
         return sanitized_payloads
+
+    def _strip_source_prefix(self, word_data_list: list[Any]) -> list[Any]:
+        """Drop the engine's ``"<series> — "`` prefix from the card source field.
+
+        ``process_episode``/``process_reading`` compose the source label as
+        ``f"{series} — {episode}"``. Android's series is a synthetic lane label
+        (SAF hands over a display name, never a parent folder), and
+        ``process_reading`` exposes no override at all, so the prefix is removed
+        here instead — before preflight, so note identity and the create-call
+        size budget both see the value that is actually written.
+        """
+
+        from dataclasses import replace
+
+        prefix = self._source_prefix
+        if not prefix:
+            return word_data_list
+        stripped: list[Any] = []
+        for item in word_data_list:
+            extra_fields = item.extra_fields
+            source = extra_fields.get("source") if extra_fields else None
+            if isinstance(source, str) and source.startswith(prefix):
+                item = replace(
+                    item,
+                    extra_fields={**extra_fields, "source": source[len(prefix) :]},
+                )
+            stripped.append(item)
+        return stripped
 
     @staticmethod
     def _rewrite_dictionary_html(value: str, actual_names: Mapping[str, str]) -> str:
@@ -3067,6 +3100,7 @@ class AndroidAnkiAdapter:
         # every auto-loading image except a renderer-marked private dictionary
         # asset before any note identity, media scan, or provider mutation.
         word_data_list = self._sanitize_dictionary_payloads(word_data_list)
+        word_data_list = self._strip_source_prefix(word_data_list)
         preflight_plan = self._preflight_create_call(word_data_list)
 
         all_created_ids: list[int] = []
