@@ -108,12 +108,12 @@ class SettingsSearchJumpTest {
         list.performScrollToNode(hasText(katakanaLabel))
         composeRule.mainClock.autoAdvance = false
         composeRule.onNodeWithText(katakanaLabel).performClick()
-        composeRule.mainClock.advanceTimeBy(100L)
-        composeRule.waitUntil(timeoutMillis = 5_000L) { resolutions == 1 }
 
+        // Restore while the jump is still pending: the handler clears pendingJumpId as soon as a
+        // jump resolves, so a resolved jump has nothing left to survive.
         restorationTester.emulateSavedInstanceStateRestore()
-        composeRule.mainClock.advanceTimeBy(100L)
-        composeRule.waitUntil(timeoutMillis = 5_000L) { resolutions == 2 }
+        composeRule.mainClock.autoAdvance = true
+        composeRule.waitUntil(timeoutMillis = 5_000L) { resolutions >= 1 }
 
         composeRule.mainClock.autoAdvance = true
         composeRule.waitForIdle()
