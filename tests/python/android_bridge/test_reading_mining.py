@@ -698,10 +698,12 @@ def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
             received_config: object,
             received_callbacks: object,
             cancellation_check: object,
+            source_prefix: object,
         ) -> None:
             assert received_config is config
             assert received_callbacks is anki_callbacks
             assert callable(cancellation_check)
+            assert source_prefix is None
             events.append("adapter-init")
 
         def __enter__(self) -> FakeAdapter:
@@ -751,6 +753,59 @@ def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
         "processor-close",
         "adapter-exit",
     ]
+
+
+@pytest.mark.parametrize(
+    ("kind", "series", "expected_prefix"),
+    [
+        ("manga", "漫画作品", "漫画作品 — "),
+        ("subtitle", "Subtitles", "Subtitles — "),
+        # process_reading only prefixes manga and subtitle labels; a book
+        # carries the bare episode title, so there is nothing to strip.
+        ("book", "Books", None),
+        # A blank series still composes an em dash, because the engine strips
+        # the whole composed label rather than the empty leading segment.
+        ("manga", "", "— "),
+    ],
+)
+def test_process_reading_hands_the_seam_the_engine_composed_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+    series: str,
+    expected_prefix: str | None,
+) -> None:
+    captured: list[object] = []
+
+    class RecordingAdapter:
+        def __init__(self, *_: object, source_prefix: object = None, **__: object) -> None:
+            captured.append(source_prefix)
+
+        def __enter__(self) -> RecordingAdapter:
+            return self
+
+        def __exit__(self, *_: object) -> None:
+            pass
+
+    class FakeProcessor:
+        def process_reading(self, *_: object, **__: object) -> str:
+            return "result"
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(anki_adapter_module, "AndroidAnkiAdapter", RecordingAdapter)
+    monkeypatch.setattr(reading_mining, "_build_processor", lambda *_args, **_kwargs: FakeProcessor())
+    adapters = SimpleNamespace(
+        anki=object(),
+        run_id=LIFECYCLE_RUN_ID,
+        cancel_event=threading.Event(),
+        progress=object(),
+        curate=lambda candidates: candidates,
+    )
+    document = SimpleNamespace(kind=kind, series=series, episode="第一巻")
+
+    assert reading_mining._process_reading(document, object(), adapters) == "result"
+    assert captured == [expected_prefix]
 
 
 def _reading_lifecycle_harness(

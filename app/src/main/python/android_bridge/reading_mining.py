@@ -332,6 +332,14 @@ def _process_reading(
     if adapters.cancel_event.is_set():
         raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
 
+    # Mirror process_reading's own condition: manga and subtitle source labels
+    # are composed as "<series> — <episode>", books carry the bare episode
+    # title. The series duplicates what the deck already says, so the seam
+    # strips it. A drift in this condition only makes the strip a no-op.
+    source_prefix = None
+    if getattr(document, "kind", None) in ("manga", "subtitle"):
+        source_prefix = f"{getattr(document, 'series', '')} — ".lstrip()
+
     stack = ExitStack()
     try:
         anki_adapter = stack.enter_context(
@@ -339,6 +347,7 @@ def _process_reading(
                 config,
                 adapters.anki,
                 cancellation_check=adapters.cancel_event.is_set,
+                source_prefix=source_prefix,
             )
         )
         sentence_audio_fetcher = None
