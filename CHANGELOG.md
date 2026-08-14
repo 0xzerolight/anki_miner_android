@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-08-14
+
 ### Added
 
 - Animated screenshots can span the sentence audio instead of a fixed length. Settings > Media has a Match audio length switch, which the desktop app has always offered and Android had pinned off; with it on, the clip covers the line's audio including its padding, and the Max clip length field beside it greys out rather than silently losing the argument. A value left out of range behind that disabled field no longer blocks every settings write.
