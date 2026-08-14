@@ -881,7 +881,7 @@ object BridgeJsonCodec {
         return VideoMiningWireRequest(
             absolutePath(payload.getValue("videoPath"), "videoPath"),
             subtitlePath,
-            canonicalLabel(payload.getValue("episodeName"), "episodeName"),
+            emptyableCanonicalLabel(payload.getValue("episodeName"), "episodeName"),
             canonicalLabel(payload.getValue("seriesName"), "seriesName"),
             nullableCanonicalLabel(payload.getValue("sourceLabel"), "sourceLabel"),
             nullableNonNegative(payload.getValue("audioTrackOverride"), "audioTrackOverride"),
@@ -1604,6 +1604,16 @@ object BridgeJsonCodec {
         value: BridgeJsonValue,
         context: String,
     ): String = text(value, context).also { requireCanonical(it, context) }
+
+    /**
+     * Canonical label that may also be empty. Only the video episode name uses
+     * this: an unusable SAF display name deliberately travels as "", which the
+     * engine honours and the bridge turns into a bare card source field.
+     */
+    private fun emptyableCanonicalLabel(
+        value: BridgeJsonValue,
+        context: String,
+    ): String = text(value, context).also { if (it.isNotEmpty()) requireCanonical(it, context) }
 
     private fun nullableCanonicalLabel(
         value: BridgeJsonValue,

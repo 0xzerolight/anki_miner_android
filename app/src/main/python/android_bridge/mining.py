@@ -345,8 +345,8 @@ def _absolute_path(field_name: str, value: object) -> Path:
     return path
 
 
-def _canonical_label(field_name: str, value: object) -> str:
-    if not isinstance(value, str) or not value:
+def _canonical_label(field_name: str, value: object, *, allow_empty: bool = False) -> str:
+    if not isinstance(value, str) or (not value and not allow_empty):
         raise _invalid_request(f"{field_name} must be a non-empty string")
     if has_leading_or_trailing_python_whitespace(value):
         raise _invalid_request(f"{field_name} must not have leading or trailing whitespace")
@@ -398,7 +398,10 @@ def _parse_request(raw_request: str) -> _VideoRequest:
     return _VideoRequest(
         video_path=_absolute_path("videoPath", payload["videoPath"]),
         subtitle_path=subtitle_path,
-        episode_name=_canonical_label("episodeName", payload["episodeName"]),
+        # Empty is legal here alone: Kotlin sends it when the picked file has no
+        # usable name, and _resolve_identity honours "" so the source field ends
+        # up bare rather than repeating the synthetic lane label.
+        episode_name=_canonical_label("episodeName", payload["episodeName"], allow_empty=True),
         series_name=_canonical_label("seriesName", payload["seriesName"]),
         source_label=_optional_source_label(payload["sourceLabel"]),
         audio_track_override=_optional_audio_track(payload["audioTrackOverride"]),

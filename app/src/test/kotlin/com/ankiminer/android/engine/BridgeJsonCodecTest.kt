@@ -168,6 +168,16 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `video run round trip preserves an empty episode name`() {
+        val request = videoRequest(audioOnly = false).copy(episodeName = "")
+
+        assertEquals(
+            BridgeMessage.VideoRun(request),
+            BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)),
+        )
+    }
+
+    @Test
     fun `video run encode decode round trip preserves both audio only values`() {
         listOf(true, false).forEach { audioOnly ->
             val request = videoRequest(audioOnly)

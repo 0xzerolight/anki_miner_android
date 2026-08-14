@@ -2134,7 +2134,6 @@ def test_runtime_composition_injects_only_android_video_services(
         ("subtitlePath", "/cache/subtitle.txt"),
         ("cacheDir", "relative"),
         ("nativeLibraryDir", "relative"),
-        ("episodeName", ""),
         ("episodeName", " Episode"),
         ("seriesName", "Series "),
         ("seriesName", "\u1e0a\u0323"),
@@ -2187,6 +2186,16 @@ def test_audio_only_request_allows_media_video_path_suffix() -> None:
 
     assert parsed.video_path == Path("/cache/input.media")
     assert parsed.audio_only is True
+
+
+def test_request_accepts_an_empty_episode_name() -> None:
+    # Kotlin sends an empty episode when the picked file has no usable name.
+    # _resolve_identity honours "", so the engine composes "<series> — " and
+    # the seam's strip leaves a bare "@ 00:12:34" instead of a lane label.
+    parsed = mining._parse_request(_request(episodeName=""))
+
+    assert parsed.episode_name == ""
+    assert parsed.series_name == "Series"
 
 
 def test_request_requires_exact_fields_and_preserves_fd_paths_and_identity() -> None:

@@ -1855,8 +1855,10 @@ internal class BridgeMiningRepository(
 
     private fun labelsFor(displayName: String): Pair<String, String> {
         val withoutExtension = displayName.substringBeforeLast('.', displayName)
-        val episodeLabel = canonicalLabel(withoutExtension).ifEmpty { lane.seriesLabel }
-        return episodeLabel to lane.seriesLabel
+        // An unusable display name yields an empty episode on purpose: the bridge
+        // strips "<series> — " off the card source field, so a blank episode
+        // leaves a bare "@ 00:12:34" instead of repeating the lane label twice.
+        return canonicalLabel(withoutExtension) to lane.seriesLabel
     }
 
     private fun canonicalLabel(raw: String): String {

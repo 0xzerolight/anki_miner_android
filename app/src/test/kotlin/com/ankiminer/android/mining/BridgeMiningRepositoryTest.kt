@@ -622,7 +622,7 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
-    fun `video request falls back to local label when filename has no usable stem`() {
+    fun `video request sends an empty episode when filename has no usable stem`() {
         val input =
             INPUT.copy(video = MiningSource("content://test/unnamed-video", ".mkv"))
         val harness = harness()
@@ -632,7 +632,9 @@ class BridgeMiningRepositoryTest {
             awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
         val request = requireNotNull(harness.bridge.videoRequest.get())
 
-        assertEquals("Local video", request.episodeName)
+        // The bridge strips "<series> — " off the card source field, so an empty
+        // episode leaves a bare "@ 00:12:34" rather than a repeated lane label.
+        assertEquals("", request.episodeName)
         assertEquals("Local video", request.seriesName)
         runBlocking { harness.repository.cancel(curating.request.runId) }
         assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
