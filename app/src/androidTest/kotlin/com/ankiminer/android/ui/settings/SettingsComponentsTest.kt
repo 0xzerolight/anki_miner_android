@@ -337,10 +337,12 @@ class SettingsComponentsTest {
     fun busyAnkiFieldMappingOptionsAreDisabled() {
         setBusyAnkiTarget(
             noteTypeStatus = NoteTypeSetupStatus.FieldsMissing(listOf("word")),
-            fieldMap = mapOf("word" to "Expression"),
+            fieldMap = mapOf("word" to "Expression", "sentence" to "Marker"),
         )
 
-        dropdown("Word *", "Expression").performClick()
+        // Not the Word dropdown: by the first-field rule it offers only the note type's first
+        // field, so it has no second option to assert against.
+        dropdown("Sentence", "Marker").performClick()
 
         composeRule.onNodeWithText("Reading").assertIsNotEnabled()
     }

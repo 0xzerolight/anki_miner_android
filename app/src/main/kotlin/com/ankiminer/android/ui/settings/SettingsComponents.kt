@@ -187,10 +187,19 @@ internal fun SettingTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        placeholder = placeholder,
-        // Only when the value is actually wrong. A permanent hint line under every field cost a
-        // row each and said nothing the label did not.
-        supportingText = error?.let { { Text(it) } },
+        // Material 3 draws the placeholder slot only while the field has focus, so an inherited
+        // default parked there is invisible on the screen the user is actually reading. Draw it
+        // below the field instead, where a blank field states its value without being tapped.
+        // The value-based OutlinedTextField overload has no labelPosition to minimise the label
+        // with; that parameter exists only on the TextFieldState overload.
+        supportingText =
+            when {
+                // Only when the value is actually wrong. A permanent hint line under every field
+                // cost a row each and said nothing the label did not.
+                error != null -> { { Text(error) } }
+                placeholder != null && value.isEmpty() -> placeholder
+                else -> null
+            },
         enabled = enabled,
         isError = error != null,
         keyboardOptions = keyboardOptions,
@@ -202,7 +211,7 @@ internal fun SettingTextField(
 }
 
 /**
- * Placeholder naming the engine value an empty field inherits.
+ * The engine value an empty field inherits, drawn under the field by [SettingTextField].
  *
  * A blank field is not a blank setting: [com.ankiminer.android.data.settings.AppSettings] leaves
  * unset processing fields null and the snapshot mapper omits them, so the engine applies its own
