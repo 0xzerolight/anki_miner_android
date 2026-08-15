@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- The third-party notices shown in the app name libwebp and libaom, the two encoders behind animated WebP and AVIF screenshots. Their license texts have been packaged alongside since the encoders were added, but the notice listing them was a hand-copy of the repository's NOTICE.md and was never updated when they landed. A host test now compares the two files and fails the build when they diverge.
+
 ## [0.7.0] - 2026-08-14
 
 ### Added
