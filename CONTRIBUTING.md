@@ -3,6 +3,11 @@
 Contributions of any kind are welcome. Bug reports and feature requests go to
 [Issues](https://github.com/0xzerolight/anki_miner_android/issues).
 
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md). Report
+security vulnerabilities through a
+[private advisory](https://github.com/0xzerolight/anki_miner_android/security/advisories/new)
+rather than a public issue — see [SECURITY.md](SECURITY.md).
+
 ## Build from source
 
 Requires a Linux x86_64 host with the provisioned Android toolchain. See
