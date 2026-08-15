@@ -26,6 +26,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 ## Tabs
 
 - **Video** - mine a video + subtitle pair, with a screenshot and audio clip on every card.
+- **Audio** - mine an audio file + transcript pair. The curator plays each line instead of showing a frame.
 - **Reading** - mine manga (mokuro), novels (`.epub`, Aozora `.txt`), or standalone subtitle files.
 - **Settings** - Anki, dictionaries, audio, frequency, filtering, UI. A skippable onboarding wizard walks the first run (tokenizer, dictionary, AnkiDroid).
 
@@ -39,6 +40,9 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 - Confirmed settings resets are scoped to mining defaults, the Anki target, or resource choices; unrelated settings remain intact.
 - Optional Jisho.org online fallback for definitions (slower, rate-limited).
 - Proper-noun filtering from bundled name wordsets.
+- The interface is translated into 11 languages besides English: German, Spanish, French, Indonesian, Italian, Japanese, Brazilian Portuguese, Russian, Vietnamese, Simplified Chinese, and Traditional Chinese.
+- Light and dark themes are chosen separately from ported palettes including Catppuccin, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, Ayu, and One Dark. On Android 12+ you can take the palette from your wallpaper instead.
+- An optional daily check asks GitHub whether a newer release exists. It never downloads or installs anything, and it can be switched off in Settings.
 
 <details>
 <summary><strong>How It Works</strong></summary>
@@ -92,6 +96,7 @@ Proper-noun filtering uses bundled name wordsets derived from [JMnedict](https:/
 | Setup notice on a mining tab | Open Settings and finish the flagged step (tokenizer, dictionary, or AnkiDroid). |
 | Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
 | Subtitles out of sync | Use the subtitle offset control on the mining screen. |
+| Reporting a bug | Settings -> Tester diagnostics can share a redacted log bundle. Check it before attaching it to an issue. |
 
 ## Contributing
 
@@ -100,6 +105,8 @@ Contributions of any kind are welcome.
 - Build from source and dev setup: [CONTRIBUTING.md](CONTRIBUTING.md).
 - Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md).
 - Bug reports and feature requests -> [Issues](https://github.com/0xzerolight/anki_miner_android/issues).
+- Security vulnerabilities -> [private advisory](https://github.com/0xzerolight/anki_miner_android/security/advisories/new), not a public issue. See [SECURITY.md](SECURITY.md).
+- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Main project: [Anki Miner](https://github.com/0xzerolight/anki_miner).
 

@@ -10,8 +10,9 @@ Compose UI → ViewModels → Kotlin services → JSON bridge → vendored Pytho
 
 ## Layers
 
-- **UI** — Jetpack Compose screens (`Video`, `Reading`, `Settings`) with
-  ViewModels holding screen state.
+- **UI** — Jetpack Compose screens (`Video`, `Audio`, `Reading`, `Settings`) with
+  ViewModels holding screen state. The `Audio` lane runs the same pipeline as
+  `Video` against an audio file and a transcript, without frame capture.
 - **Kotlin services** — mining orchestration, resource management, and a
   foreground service for post-curation media processing.
 - **JSON bridge** — a string-in/string-out boundary that hands work to Python

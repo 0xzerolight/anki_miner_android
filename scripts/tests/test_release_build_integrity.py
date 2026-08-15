@@ -217,6 +217,20 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
             self.assertIn('source_commit="$(git rev-parse HEAD)"', content)
             self.assertIn('-PankiMinerSourceCommit="$source_commit"', content)
 
+    def test_packaged_notice_matches_repository_notice(self) -> None:
+        repository_notice = (REPO_ROOT / "NOTICE.md").read_text(encoding="utf-8")
+        packaged_notice = (REPO_ROOT / "app/src/main/assets/notices/NOTICE.md").read_text(
+            encoding="utf-8",
+        )
+
+        self.assertEqual(
+            repository_notice,
+            packaged_notice,
+            "The in-app third-party notice has drifted from NOTICE.md. Copy NOTICE.md "
+            "to app/src/main/assets/notices/NOTICE.md so the packaged notice lists "
+            "every bundled component.",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
