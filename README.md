@@ -16,6 +16,10 @@ Turn native Japanese content into Anki vocabulary cards, on Android through Anki
 </p>
 
 <p align="center">
+<b>On desktop?</b> Get <a href="https://github.com/0xzerolight/anki_miner">Anki Miner for Windows, macOS and Linux</a> - the full version, with YouTube, Deck Builder, Word Curator and more.
+</p>
+
+<p align="center">
 Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 </p>
 
