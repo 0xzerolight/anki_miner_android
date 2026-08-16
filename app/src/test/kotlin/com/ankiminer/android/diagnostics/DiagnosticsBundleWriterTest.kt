@@ -523,6 +523,13 @@ class DiagnosticsBundleWriterTest {
                 shedding = BundleShedding.None,
             ),
             BundleEntrySpec(
+                name = "system/thread-cpu.txt",
+                capBytes = 16L * 1024,
+                redacted = true,
+                required = false,
+                shedding = BundleShedding.None,
+            ),
+            BundleEntrySpec(
                 name = "redaction.txt",
                 capBytes = 64L * 1024,
                 redacted = false,
