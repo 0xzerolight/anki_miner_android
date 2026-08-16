@@ -75,6 +75,10 @@ _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _YOMITAN_BANK_RE = re.compile(r"^(term_bank|term_meta_bank|tag_bank)_[^/]*\.json$")
 _PROMOTION_LOCK = threading.Lock()
 _YOMITAN_BANK_CHUNK_BYTES = 4 * 1024 * 1024
+# Characters that can extend a JSON number literal. A number is the only token
+# ``raw_decode`` returns truncated rather than raising, so the streaming reader
+# has to recognise a literal cut by a refill boundary itself.
+_JSON_NUMBER_CONTINUATION = frozenset("0123456789.eE+-")
 # Largest single Yomitan bank the desktop importer may read whole. Its bank path
 # is ``read_text`` + ``json.loads``, so an unbounded bank would materialise as
 # one Python object; ``_rewrite_yomitan_banks`` exists to split those. Real
@@ -1247,7 +1251,18 @@ def _iter_json_array_stream(
                 probe = item_end
                 while probe < len(buffer) and buffer[probe].isspace():
                     probe += 1
-                if probe == len(buffer) and not eof and isinstance(item, (int, float)) and not isinstance(item, bool):
+                # A number is the one token the decoder will happily return
+                # truncated: JSON's grammar stops before a trailing ``.`` or
+                # ``e``, so ``raw_decode("1.")`` yields ``(1, 1)`` and the rest
+                # of the literal looks like trailing garbage. Refill whenever
+                # the next character could still extend the number, not only
+                # when it ended flush against the buffer.
+                if (
+                    not eof
+                    and isinstance(item, (int, float))
+                    and not isinstance(item, bool)
+                    and (item_end == len(buffer) or buffer[item_end] in _JSON_NUMBER_CONTINUATION)
+                ):
                     buffered_bytes = len(buffer.encode("utf-8"))
                     if buffered_bytes >= item_byte_limit + 1:
                         raise _fail(

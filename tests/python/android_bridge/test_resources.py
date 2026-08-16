@@ -4118,3 +4118,34 @@ def test_dictionary_delete_rejects_payloads_outside_the_contract(
         resources.delete_dictionary(payload)
 
     assert failure.value.code == "invalid_resource_request"
+
+
+def _drain_json_array(
+    payload: bytes,
+    *,
+    item_byte_limit: int = 4096,
+    label: str = "json-array-stream",
+) -> list[object]:
+    return list(
+        resources._iter_json_array_stream(
+            io.BytesIO(payload),
+            resources._Operation(label),
+            item_byte_limit=item_byte_limit,
+        )
+    )
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 2, 3, 5, 16])
+def test_json_array_stream_reads_numbers_split_across_a_refill(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    # ``raw_decode("1.")`` returns ``(1, 1)``: JSON's number grammar stops
+    # before a trailing "." or "e", so a literal cut by a refill boundary used
+    # to surface as "invalid JSON" and fail the whole bank. Frequency banks
+    # carry non-integer values, so this reached real dictionaries.
+    items: list[object] = [-0.5, 1.5, 2.0e3, -1.25e-3, 0, -1, 12345, 6.0]
+    payload = json.dumps(items).encode("utf-8")
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+
+    assert _drain_json_array(payload) == items
