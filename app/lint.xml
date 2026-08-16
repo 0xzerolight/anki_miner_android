@@ -4,4 +4,13 @@
     <issue id="all">
         <ignore path="src/main/ankidroidApi/kotlin/" />
     </issue>
+    <!--
+        A key absent from values-xx resolves to values/, so a locale that has fallen behind still
+        works in English. That is the same contract the desktop repository holds for its Qt
+        catalogs, where an untranslated entry ships as type="unfinished" and Qt renders the source
+        text, and the one tools/localization/audit_android_localizations.py reports as an advisory.
+        Translation completeness is a backlog; a wrong translation is still a build failure, via
+        ExtraTranslation here and the audit's placeholder-signature check.
+    -->
+    <issue id="MissingTranslation" severity="informational" />
 </lint>

@@ -20,7 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -701,9 +701,11 @@ private fun dictionaryAddActions(
 @Composable
 private fun resourceRowStrings(): ResourceRowStrings {
     // Captured rather than pre-formatted: the count is per row and the panel formats on demand.
-    val context = LocalContext.current
+    // Read through LocalResources, not LocalContext: a configuration change invalidates this
+    // composition, so a locale or font-scale switch reformats the counts.
+    val resources = LocalResources.current
     return ResourceRowStrings(
-        entries = { count -> context.getString(R.string.resource_panel_entries, count) },
+        entries = { count -> resources.getString(R.string.resource_panel_entries, count) },
         notInChain = stringResource(R.string.resource_panel_not_in_chain),
         missingWarning = stringResource(R.string.resource_panel_warning_missing),
         repairWarning = stringResource(R.string.resource_panel_warning_repair),
