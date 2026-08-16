@@ -1,9 +1,13 @@
 package com.ankiminer.android.ui.settings
 
+import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
+import com.ankiminer.android.data.resources.ResourceArchive
+import com.ankiminer.android.data.resources.YomitanCatalogResource
+import com.ankiminer.android.data.resources.YomitanDictionaryIdentity
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -80,6 +84,62 @@ class ResourcePanelRowsTest {
         assertEquals("repair", broken.warning)
         broken.quietAction?.onClick?.invoke()
         assertEquals("jitendex-2024", repaired)
+    }
+
+    @Test
+    fun `a broken catalog dictionary still in the chain offers Repair, not Replace`() {
+        var repaired: String? = null
+        val rows =
+            dictionaryPanelRows(
+                chain = listOf(ResourceChainSelection("jitendex")),
+                installed =
+                    listOf(dictionary("jitendex", catalogResourceId = "jitendex-2024", valid = false)),
+                jishoEnabled = false,
+                strings = dictionaryStrings,
+                onChainChange = {},
+                onJishoChange = {},
+                onRepair = { repaired = it },
+                onReplace = { throw AssertionError("catalog slot must not offer Replace") },
+            )
+
+        val broken = rows.single { it.id == "jitendex" }
+        assertTrue(broken.movable)
+        assertEquals("repair", broken.warning)
+        assertEquals("Repair", broken.quietAction?.label)
+        broken.quietAction?.onClick?.invoke()
+        assertEquals("jitendex-2024", repaired)
+    }
+
+    @Test
+    fun `an empty slot is not a row of its own`() {
+        val rows =
+            dictionaryPanelRows(
+                chain = emptyList(),
+                installed = listOf(dictionary("custom1").copy(occupied = false)),
+                jishoEnabled = false,
+                strings = dictionaryStrings,
+                onChainChange = {},
+                onJishoChange = {},
+                onRepair = {},
+                onReplace = {},
+            )
+
+        assertEquals(listOf(JISHO_ROW_ID), rows.map { it.id })
+    }
+
+    @Test
+    fun `the add menu offers a catalog dictionary only while its slot is empty`() {
+        val candidates =
+            catalogInstallCandidates(
+                listOf(
+                    catalogDictionary("jitendex", installed = false, slotOccupied = false),
+                    catalogDictionary("jmdict", installed = true, slotOccupied = true),
+                    // Occupied but unreadable: Repair on its own row, never a second Install entry.
+                    catalogDictionary("broken", installed = false, slotOccupied = true),
+                ),
+            )
+
+        assertEquals(listOf("jitendex"), candidates.map { it.resource.slotId })
     }
 
     @Test
@@ -289,6 +349,34 @@ class ResourcePanelRowsTest {
         embeddedAttribution = emptyMap(),
         catalogResourceId = catalogResourceId,
         attribution = emptyList(),
+    )
+
+    private fun catalogDictionary(
+        slotId: String,
+        installed: Boolean,
+        slotOccupied: Boolean,
+    ) = CatalogDictionaryStatus(
+        resource =
+            YomitanCatalogResource(
+                resourceId = "$slotId-1",
+                displayName = slotId,
+                slotId = slotId,
+                archive = ResourceArchive("https://example.invalid/$slotId.zip", "sha", 1L, "zip"),
+                dictionary =
+                    YomitanDictionaryIdentity(
+                        title = slotId,
+                        revision = "1",
+                        format = 3L,
+                        memberCount = 1L,
+                        uncompressedBytes = 1L,
+                        archiveMemberLimit = 1L,
+                        uncompressedBytesLimit = 1L,
+                        fileBytesLimit = 1L,
+                    ),
+                attribution = emptyList(),
+            ),
+        installed = installed,
+        slotOccupied = slotOccupied,
     )
 
     private fun pitch(

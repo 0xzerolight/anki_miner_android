@@ -546,6 +546,9 @@ private fun LazyListScope.dictionarySettings(
             addPrimary =
                 ResourcePanelAction(
                     label = stringResource(R.string.resource_panel_add_dictionary),
+                    // Menu-shadowed: this panel's addMenu always holds the Yomitan importer, so
+                    // the button opens the menu and only this label renders. Do not turn the
+                    // click into a second import path.
                     onClick = callbacks.onImportCustom,
                 ),
             addMenu = dictionaryAddActions(resources, setupViewModel, callbacks),
@@ -656,11 +659,13 @@ private fun LazyListScope.dictionarySettings(
 }
 
 /**
- * The Add menu of the dictionary panel: each catalog dictionary while it is missing, then the
+ * The Add menu of the dictionary panel: each catalog dictionary whose slot is empty, then the
  * Yomitan importer.
  *
- * An installed catalog dictionary is deliberately absent — re-installing a healthy one is the
- * wizard's job, and a broken one offers Repair on its own row.
+ * A catalog dictionary that already owns its slot is absent from the menu whatever its state —
+ * `catalogInstallCandidates` drops the installed ones (re-installing a healthy one is the wizard's
+ * job) and the broken ones (their own row offers Repair, and a menu entry beside it would be a
+ * second name for the same call).
  */
 @Composable
 private fun dictionaryAddActions(
@@ -669,8 +674,7 @@ private fun dictionaryAddActions(
     callbacks: SettingsScreenCallbacks,
 ): List<ResourcePanelAction> =
     buildList {
-        resources.catalogDictionaries
-            .filterNot { it.installed }
+        catalogInstallCandidates(resources.catalogDictionaries)
             .forEach { status ->
                 add(
                     ResourcePanelAction(
