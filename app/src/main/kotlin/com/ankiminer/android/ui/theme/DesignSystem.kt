@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -262,16 +261,16 @@ internal fun AdaptiveActionGroup(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                primary(Modifier.fillMaxWidth().heightIn(min = 48.dp))
-                secondary?.invoke(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                primary(Modifier.fillMaxWidth())
+                secondary?.invoke(Modifier.fillMaxWidth())
             }
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                secondary?.invoke(Modifier.weight(1f).heightIn(min = 48.dp))
-                primary(Modifier.weight(1f).heightIn(min = 48.dp))
+                secondary?.invoke(Modifier.weight(1f))
+                primary(Modifier.weight(1f))
             }
         }
     }
@@ -292,16 +291,16 @@ internal fun AdaptivePairedActions(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                first(Modifier.fillMaxWidth().heightIn(min = 48.dp))
-                second(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                first(Modifier.fillMaxWidth())
+                second(Modifier.fillMaxWidth())
             }
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                first(Modifier.weight(1f).heightIn(min = 48.dp))
-                second(Modifier.weight(1f).heightIn(min = 48.dp))
+                first(Modifier.weight(1f))
+                second(Modifier.weight(1f))
             }
         }
     }
@@ -310,6 +309,11 @@ internal fun AdaptivePairedActions(
 /**
  * Actions choose meaning, not a component plus a color table. Before these existed, 42 of 53
  * helper uses were outlined, so choose, import, cancel, and back all looked identical.
+ *
+ * All four wrappers are rectangular ([Shapes.small], 8dp) rather than the M3 pill default, matching
+ * the desktop app's controls. They also drop the explicit 48dp height clamp: the clickable Surface
+ * inside every Button applies `minimumInteractiveComponentSize`, so the touch target still measures
+ * 48dp while the drawn button shrinks to the M3 default 40dp.
  */
 @Composable
 internal fun PrimaryActionButton(
@@ -320,8 +324,9 @@ internal fun PrimaryActionButton(
 ) {
     Button(
         onClick = onClick,
-        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        modifier = modifier,
         enabled = enabled,
+        shape = MaterialTheme.shapes.small,
         colors = forwardButtonColors(),
         content = content,
     )
@@ -337,8 +342,9 @@ internal fun UtilityActionButton(
 ) {
     FilledTonalButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        modifier = modifier,
         enabled = enabled,
+        shape = MaterialTheme.shapes.small,
         colors = tonalActionButtonColors(),
         content = content,
     )
@@ -354,8 +360,9 @@ internal fun SecondaryActionButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        modifier = modifier,
         enabled = enabled,
+        shape = MaterialTheme.shapes.small,
         colors = outlinedActionButtonColors(),
         border = actionBorder(enabled = enabled),
         content = content,
@@ -373,8 +380,9 @@ internal fun ExitActionButton(
 ) {
     TextButton(
         onClick = onClick,
-        modifier = modifier.heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
+        modifier = modifier,
         enabled = enabled,
+        shape = MaterialTheme.shapes.small,
         colors = exitActionButtonColors(isError = isError),
         content = content,
     )
