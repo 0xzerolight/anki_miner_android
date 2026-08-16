@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -37,10 +36,10 @@ import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.exitActionButtonColors
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
@@ -220,10 +219,9 @@ internal fun KnownWordsManagerScreen(
                 enabled = !state.busy,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(
+            PrimaryActionButton(
                 onClick = callbacks.onSearch,
                 enabled = !state.busy,
-                colors = forwardButtonColors(),
             ) { Text(stringResource(R.string.known_words_search_action)) }
             state.failure
                 ?.takeIf { it.origin == ResourceFailureOrigin.KNOWN_WORDS }
@@ -302,6 +300,7 @@ internal fun KnownWordsManagerScreen(
                                 modifier = Modifier.testTag(KnownWordsManagerTestTags.remove(word)),
                                 colors = exitActionButtonColors(isError = true),
                                 border = actionBorder(enabled = !state.busy),
+                                shape = MaterialTheme.shapes.small,
                             ) {
                                 Text(stringResource(R.string.known_words_remove))
                             }
@@ -313,11 +312,9 @@ internal fun KnownWordsManagerScreen(
                         }
                     } else if (presentation.showLoadMore) {
                         item(key = "load-more", contentType = "footer") {
-                            OutlinedButton(
+                            SecondaryActionButton(
                                 onClick = callbacks.onLoadMore,
                                 enabled = !state.busy,
-                                colors = outlinedActionButtonColors(),
-                                border = actionBorder(enabled = !state.busy),
                             ) {
                                 Text(stringResource(R.string.known_words_load_more))
                             }
@@ -333,40 +330,26 @@ internal fun KnownWordsManagerScreen(
         ) {
             AdaptiveActionGroup(
                 primary = { actionModifier ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = callbacks.onExport,
                         enabled = !state.busy,
                         modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(enabled = !state.busy),
                     ) { Text(stringResource(R.string.known_words_export)) }
                 },
                 secondary = { actionModifier ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = { pendingResetName = KnownWordsResetScope.USER.name },
                         enabled = !state.busy && state.knownWords.userCount > 0,
                         modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border =
-                            actionBorder(
-                                enabled = !state.busy && state.knownWords.userCount > 0,
-                            ),
                     ) { Text(stringResource(R.string.known_words_reset_user)) }
                 },
             )
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = { pendingResetName = KnownWordsResetScope.CACHE.name },
                 enabled =
                     !state.busy &&
                         state.knownWords.ankiCount + state.knownWords.minedCount > 0,
                 modifier = Modifier.fillMaxWidth(),
-                colors = outlinedActionButtonColors(),
-                border =
-                    actionBorder(
-                        enabled =
-                            !state.busy &&
-                                state.knownWords.ankiCount + state.knownWords.minedCount > 0,
-                    ),
             ) { Text(stringResource(R.string.known_words_rebuild_cache)) }
         }
     }

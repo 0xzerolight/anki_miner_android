@@ -3,16 +3,13 @@ package com.ankiminer.android.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,16 +19,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
 internal data class WordListRemovalConfirmation(
@@ -44,175 +39,6 @@ internal data class WordListRemovalConfirmation(
     fun confirm(onRemove: (WordListKind) -> Unit): WordListRemovalConfirmation {
         pending?.let(onRemove)
         return copy(pending = null)
-    }
-}
-
-/**
- * One installed slot and its Remove button.
- *
- * The id is in the label because the id -- not the display name -- is what the priority chain and
- * the engine key on, and a duplicate import differs from its twin only by id.
- */
-@Composable
-private fun InstalledResourceRow(
-    detail: String,
-    invalid: Boolean,
-    busy: Boolean,
-    onRemove: () -> Unit,
-) {
-    Text(
-        detail,
-        color =
-            if (invalid) {
-                MaterialTheme.colorScheme.error
-            } else {
-                MaterialTheme.colorScheme.onSurface
-            },
-    )
-    OutlinedButton(
-        onClick = onRemove,
-        enabled = !busy,
-        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-        colors = outlinedActionButtonColors(),
-        border = actionBorder(!busy),
-    ) { Text(stringResource(R.string.resource_remove)) }
-}
-
-@Composable
-internal fun FrequencyImportCard(
-    state: SetupUiState,
-    onImport: () -> Unit,
-    onRemove: (String) -> Unit,
-    inlineFailure: (@Composable () -> Unit)? = null,
-) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(stringResource(R.string.frequency_import_title), style = MaterialTheme.typography.titleMedium)
-            // Every installed source is listed here, not only broken ones: the priority editor
-            // shows the healthy ones but cannot remove them, and an unusable source is dropped
-            // from the chain entirely, so this card is the only place either can be deleted.
-            state.frequencySources.forEachIndexed { index, source ->
-                if (index > 0) HorizontalDivider()
-                val invalid = !(source.schemaOk && source.entryCount > 0)
-                InstalledResourceRow(
-                    detail =
-                        stringResource(
-                            if (invalid) {
-                                R.string.local_resource_inventory_invalid
-                            } else {
-                                R.string.local_resource_installed
-                            },
-                            source.sourceName,
-                            source.sourceId,
-                            source.entryCount,
-                        ),
-                    invalid = invalid,
-                    busy = state.busy,
-                    onRemove = { onRemove(source.sourceId) },
-                )
-            }
-            if (state.frequencySources.isEmpty()) Text(stringResource(R.string.frequency_none_installed))
-            inlineFailure?.invoke()
-            OutlinedButton(
-                onClick = onImport,
-                enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy),
-            ) { Text(stringResource(R.string.frequency_choose_file)) }
-        }
-    }
-}
-
-@Composable
-internal fun PitchImportCard(
-    state: SetupUiState,
-    onImport: () -> Unit,
-    onRemove: (String) -> Unit,
-    inlineFailure: (@Composable () -> Unit)? = null,
-) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(stringResource(R.string.pitch_import_title), style = MaterialTheme.typography.titleMedium)
-            // Every installed source, healthy or not, for the reason the frequency card gives:
-            // the priority editor lists but cannot remove, and a broken source is not listed
-            // there at all.
-            state.pitchSources.forEachIndexed { index, source ->
-                if (index > 0) HorizontalDivider()
-                val invalid = !(source.schemaOk && source.entryCount > 0)
-                InstalledResourceRow(
-                    detail =
-                        stringResource(
-                            if (invalid) {
-                                R.string.local_resource_inventory_invalid
-                            } else {
-                                R.string.local_resource_installed
-                            },
-                            source.sourceName,
-                            source.sourceId,
-                            source.entryCount,
-                        ),
-                    invalid = invalid,
-                    busy = state.busy,
-                    onRemove = { onRemove(source.sourceId) },
-                )
-            }
-            if (state.pitchSources.isEmpty()) Text(stringResource(R.string.pitch_none_installed))
-            inlineFailure?.invoke()
-            OutlinedButton(
-                onClick = onImport,
-                enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy),
-            ) { Text(stringResource(R.string.pitch_choose_file)) }
-        }
-    }
-}
-
-@Composable
-internal fun AudioPackImportCard(
-    state: SetupUiState,
-    onImport: () -> Unit,
-    onRemove: (String) -> Unit,
-    inlineFailure: (@Composable () -> Unit)? = null,
-) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(stringResource(R.string.audio_pack_import_title), style = MaterialTheme.typography.titleMedium)
-            // Same as frequency and pitch: the priority editor lists the healthy packs but
-            // cannot remove them, and a broken pack never reaches it.
-            state.audioPacks.forEachIndexed { index, pack ->
-                if (index > 0) HorizontalDivider()
-                val invalid = !(pack.contentAvailable && pack.entryCount > 0)
-                InstalledResourceRow(
-                    detail =
-                        stringResource(
-                            if (invalid) {
-                                R.string.local_resource_inventory_invalid
-                            } else {
-                                R.string.local_resource_installed
-                            },
-                            pack.sourceName,
-                            pack.packId,
-                            pack.entryCount,
-                        ),
-                    invalid = invalid,
-                    busy = state.busy,
-                    onRemove = { onRemove(pack.packId) },
-                )
-            }
-            if (state.audioPacks.isEmpty()) Text(stringResource(R.string.audio_pack_none_installed))
-            Text(stringResource(R.string.audio_pack_archive_guidance))
-            inlineFailure?.invoke()
-            OutlinedButton(
-                onClick = onImport,
-                enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy),
-            ) { Text(stringResource(R.string.audio_pack_choose_zip)) }
-        }
     }
 }
 
@@ -272,6 +98,7 @@ internal fun WordListImportCard(
                         pendingRemoval = removalConfirmation.confirm(onRemove).pending
                     },
                     enabled = !state.busy,
+                    shape = MaterialTheme.shapes.small,
                     colors =
                         ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.error,
@@ -364,21 +191,17 @@ private fun WordListRow(
     }
     AdaptivePairedActions(
         first = { modifier ->
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = { onImport(kind) },
                 enabled = !state.busy,
                 modifier = modifier,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy),
             ) { Text(stringResource(R.string.word_list_choose_file)) }
         },
         second = { modifier ->
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = { onRemove(kind) },
                 enabled = !state.busy && installed != null,
                 modifier = modifier,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy && installed != null),
             ) { Text(stringResource(R.string.word_list_remove)) }
         },
     )
@@ -413,20 +236,17 @@ internal fun KnownWordsImportCard(
                 }
             },
             confirmButton = {
-                Button(
+                PrimaryActionButton(
                     onClick = onConfirmImport,
                     enabled = !state.busy,
-                    colors = forwardButtonColors(),
                 ) {
                     Text(stringResource(R.string.known_words_import_confirm))
                 }
             },
             dismissButton = {
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = onDismissImport,
                     enabled = !state.busy,
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(!state.busy),
                 ) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -455,22 +275,18 @@ internal fun KnownWordsImportCard(
                         MaterialTheme.colorScheme.error
                     },
             )
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = onImport,
                 enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy),
+                modifier = Modifier.fillMaxWidth(),
             ) {
                 Text(stringResource(R.string.known_words_choose_file))
             }
             inlineFailure?.invoke()
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = onManage,
                 enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(!state.busy),
+                modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.b3_known_words_manage)) }
         }
     }

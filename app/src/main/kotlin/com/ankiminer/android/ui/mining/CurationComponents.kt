@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListState
@@ -25,8 +24,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -45,7 +42,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -70,9 +66,9 @@ import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ChevronGlyph
+import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 import com.ankiminer.android.ui.theme.PhaseTitle
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.selectedRowContainer
 
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
@@ -244,20 +240,17 @@ private fun CurationControls(
     onSelectWholePage: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-        // Placeholder instead of a floating label: the label needs the stock 56dp field to
-        // clear its collapsed position, and the compact 48dp height would clip it.
-        val compactSearch = LocalDensity.current.fontScale < 1.3f
-        OutlinedTextField(
+        // Placeholder instead of a floating label: there is one field here and the screen above it
+        // already says what the list is, so a permanent label costs a row and says nothing new.
+        CompactOutlinedTextField(
             value = query,
             onValueChange = { onQueryChanged(it.boundedSaveableQuery()) },
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .then(if (compactSearch) Modifier.height(48.dp) else Modifier)
                     .testTag(CURATION_SEARCH_TEST_TAG),
             enabled = enabled,
             singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium,
             placeholder = { Text(stringResource(R.string.curation_search)) },
         )
         Row(
@@ -360,15 +353,10 @@ private fun CurationMenuButton(
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
         // Visually 40dp; minimumInteractiveComponentSize keeps the 48dp touch target.
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = { expanded = true },
             enabled = enabled,
-            modifier =
-                Modifier
-                    .heightIn(min = 40.dp)
-                    .testTag(testTag),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled),
+            modifier = Modifier.testTag(testTag),
         ) {
             Text(label, style = MaterialTheme.typography.labelMedium)
         }

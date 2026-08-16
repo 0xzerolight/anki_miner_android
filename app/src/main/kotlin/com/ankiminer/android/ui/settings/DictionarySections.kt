@@ -8,18 +8,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -37,10 +31,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
 /**
@@ -117,92 +109,6 @@ internal fun CatalogDictionaryCards(
 }
 
 @Composable
-internal fun CustomDictionaryImportCard(
-    state: SetupUiState,
-    onImport: () -> Unit,
-    inlineFailure: (@Composable () -> Unit)? = null,
-) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(stringResource(R.string.custom_dictionary_title), style = MaterialTheme.typography.titleMedium)
-            inlineFailure?.invoke()
-            OutlinedButton(
-                onClick = onImport,
-                enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = !state.busy),
-            ) {
-                Text(stringResource(R.string.custom_dictionary_choose))
-            }
-        }
-    }
-}
-
-/**
- * Every occupied dictionary slot, with Replace and Remove buttons for each.
- *
- * The priority editor above lists the healthy slots with the same names and counts, but it cannot
- * remove one, and a broken slot never reaches it. This card also says *which* slot is broken: an
- * unusable dictionary raises a fatal `dictionary_resource_invalid` inventory failure whose message
- * does not name the slot, so row-scoped actions are the only safe way to target it.
- */
-@Composable
-internal fun DictionaryInventoryCard(
-    state: SetupUiState,
-    onReplace: (String) -> Unit,
-    onRemove: (String) -> Unit,
-) {
-    val installed = state.dictionaries.filter { it.occupied }
-    if (installed.isEmpty()) return
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(
-                stringResource(R.string.dictionary_inventory_title),
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            installed.forEachIndexed { index, dictionary ->
-                if (index > 0) HorizontalDivider()
-                val invalid = !dictionary.isUsable
-                Text(
-                    stringResource(
-                        if (invalid) {
-                            R.string.dictionary_inventory_invalid
-                        } else {
-                            R.string.local_resource_installed
-                        },
-                        dictionary.sourceName,
-                        dictionary.slotId,
-                        dictionary.entryCount,
-                    ),
-                    color =
-                        if (invalid) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.onSurface
-                        },
-                )
-                OutlinedButton(
-                    onClick = { onReplace(dictionary.slotId) },
-                    enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(!state.busy),
-                ) { Text(stringResource(R.string.dictionary_replace)) }
-                OutlinedButton(
-                    onClick = { onRemove(dictionary.slotId) },
-                    enabled = !state.busy,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(!state.busy),
-                ) { Text(stringResource(R.string.resource_remove)) }
-            }
-        }
-    }
-}
-
-@Composable
 internal fun DictionaryLookupCard(
     state: SetupUiState,
     onTermChanged: (String) -> Unit,
@@ -238,11 +144,10 @@ internal fun DictionaryLookupCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(
+            PrimaryActionButton(
                 onClick = onLookup,
                 enabled = state.lookupSlotId != null && state.lookupTerm.isNotBlank() && !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = forwardButtonColors(),
+                modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.dictionary_render_html)) }
             inlineFailure?.invoke()
             state.lookup?.let { result ->

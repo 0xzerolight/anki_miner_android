@@ -22,9 +22,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SegmentedButton
@@ -78,16 +76,14 @@ import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
-import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
-import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
+import com.ankiminer.android.ui.theme.CompactOutlinedTextField
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
 import com.ankiminer.android.vm.PendingResourceDelete
@@ -183,13 +179,15 @@ internal fun SettingTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     placeholder: @Composable (() -> Unit)? = null,
 ) {
-    OutlinedTextField(
+    CompactOutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        // Material 3 draws the placeholder slot only while the field has focus, so an inherited
-        // default parked there is invisible on the screen the user is actually reading. Draw it
-        // below the field instead, where a blank field states its value without being tapped.
+        // Fields that inherit an engine default now arrive prefilled with it, so this line is the
+        // fallback for the one case that still shows a blank: the user cleared the field. Material 3
+        // draws the placeholder slot only while the field has focus, which is invisible on the
+        // screen the user is actually reading, so draw it below the field instead — an emptied field
+        // states what it will inherit without being tapped.
         // The value-based OutlinedTextField overload has no labelPosition to minimise the label
         // with; that parameter exists only on the TextFieldState overload.
         supportingText =
@@ -213,10 +211,12 @@ internal fun SettingTextField(
 /**
  * The engine value an empty field inherits, drawn under the field by [SettingTextField].
  *
- * A blank field is not a blank setting: [com.ankiminer.android.data.settings.AppSettings] leaves
- * unset processing fields null and the snapshot mapper omits them, so the engine applies its own
- * default. Showing that value where the text would go says so without costing a row, and it is the
- * same treatment the mining tabs already give their per-run subtitle offset.
+ * An unset field is not blank any more: `SettingsDraft.from` prefills the engine default as real
+ * field text, and a value equal to that default normalizes back to null on save, so storage still
+ * means inherit. This line is what remains for a field the user has cleared —
+ * [com.ankiminer.android.data.settings.AppSettings] leaves unset processing fields null and the
+ * snapshot mapper omits them, so the engine applies its own default, and an emptied box has to say
+ * which value that is.
  *
  * Pass a [com.ankiminer.android.data.settings.EngineDefaults] constant, never a re-typed literal —
  * the mirror is the side CI checks against the engine.
@@ -555,80 +555,6 @@ internal fun <T> NullableChoice(
 }
 
 @Composable
-internal fun ResourceChainEditor(
-    choices: List<ResourceChainSelection>,
-    labels: Map<String, String>,
-    emptyMessage: String,
-    onChange: (List<ResourceChainSelection>) -> Unit,
-) {
-    if (choices.isEmpty()) {
-        Text(emptyMessage)
-        return
-    }
-    choices.forEachIndexed { index, choice ->
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = choice.enabled,
-                        role = Role.Checkbox,
-                        onValueChange = { enabled ->
-                            onChange(
-                                choices.toMutableList().also {
-                                    it[index] = choice.copy(enabled = enabled)
-                                },
-                            )
-                        },
-                    ).padding(vertical = AnkiMinerTokens.Space.line),
-                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            ) {
-                Checkbox(
-                    checked = choice.enabled,
-                    onCheckedChange = null,
-                )
-                Column(Modifier.weight(1f)) {
-                    Text(labels[choice.resourceId] ?: choice.resourceId)
-                    Text(choice.resourceId, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            AdaptivePairedActions(
-                first = { actionModifier ->
-                    val moveEnabled = index > 0
-                    OutlinedButton(
-                        enabled = moveEnabled,
-                        onClick = { onChange(choices.swap(index, index - 1)) },
-                        modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(moveEnabled),
-                    ) { Text(stringResource(R.string.settings_move_up)) }
-                },
-                second = { actionModifier ->
-                    val moveEnabled = index < choices.lastIndex
-                    OutlinedButton(
-                        enabled = moveEnabled,
-                        onClick = { onChange(choices.swap(index, index + 1)) },
-                        modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(moveEnabled),
-                    ) { Text(stringResource(R.string.settings_move_down)) }
-                },
-            )
-        }
-    }
-}
-
-private fun <T> List<T>.swap(
-    first: Int,
-    second: Int,
-): List<T> =
-    toMutableList().also { values ->
-        val held = values[first]
-        values[first] = values[second]
-        values[second] = held
-    }
-
-@Composable
 internal fun ResourceCard(
     title: String,
     description: String,
@@ -660,11 +586,9 @@ internal fun ResourceCard(
                 Text(description)
             }
             inlineFailure?.invoke()
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = action,
                 enabled = !busy,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = !busy),
             ) { Text(actionLabel) }
         }
     }
@@ -707,6 +631,7 @@ internal fun ResourceDeleteDialog(
             Button(
                 onClick = onConfirm,
                 enabled = !busy,
+                shape = MaterialTheme.shapes.small,
                 colors =
                     ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
@@ -766,7 +691,7 @@ internal fun ResourceReplaceDialog(
             )
         },
         confirmButton = {
-            Button(onClick = onConfirm, enabled = !busy, colors = forwardButtonColors()) {
+            PrimaryActionButton(onClick = onConfirm, enabled = !busy) {
                 Text(
                     stringResource(
                         if (pending.repair) {
@@ -809,12 +734,10 @@ internal fun AudioPackChoiceDialog(
             Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                 Text(stringResource(R.string.audio_pack_choice_message, choices.size))
                 choices.forEach { candidate ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = { onChoose(candidate.packId) },
                         enabled = !busy,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(!busy),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
                             stringResource(
@@ -879,10 +802,8 @@ internal fun ResourceOperationCard(
                     },
                 )
             } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = onCancel,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = true),
             ) { Text(stringResource(R.string.cancel)) }
         }
     }

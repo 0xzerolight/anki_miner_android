@@ -22,11 +22,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
@@ -87,9 +85,8 @@ import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PhaseTitle
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.segmentedActionColors
 
 @Composable
@@ -692,15 +689,13 @@ private fun LazyListScope.setupItems(
     }
     item(key = "reading_start", contentType = "actions") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Button(
+            PrimaryActionButton(
                 onClick = onStart,
                 enabled = state.canStart,
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
                         .testTag(ReadingMiningTestTags.START),
-                colors = forwardButtonColors(),
             ) {
                 Text(stringResource(R.string.start_mining))
             }
@@ -977,16 +972,13 @@ private fun LazyListScope.terminalItems(
     if (!failed) {
         item(key = "reading_terminal_actions", contentType = "actions") {
             Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = onReset,
                     enabled = !busy,
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
                             .testTag(ReadingMiningTestTags.RESET),
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(enabled = !busy),
                 ) {
                     Text(stringResource(R.string.reset_mining))
                 }
@@ -1011,16 +1003,13 @@ private fun MiningCancelButton(
     testTag: String,
     onCancel: () -> Unit,
 ) {
-    OutlinedButton(
+    SecondaryActionButton(
         onClick = onCancel,
         enabled = !cancelPending,
         modifier =
             Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
                 .testTag(testTag),
-        colors = outlinedActionButtonColors(),
-        border = actionBorder(enabled = !cancelPending),
     ) {
         if (cancelPending) {
             Row(

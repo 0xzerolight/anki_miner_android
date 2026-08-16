@@ -66,24 +66,44 @@ internal object BuildConfig {
             app_gradle,
         )
 
-    def test_lint_excludes_only_the_generated_api_boundary_globally(self) -> None:
+    def test_lint_config_carries_only_sanctioned_global_issues(self) -> None:
+        """Pin the sanctioned set by id, not a count: any other global override is a gate hole.
+
+        Two entries are sanctioned. The generated-API boundary exclusion keeps every check off the
+        byte-pinned upstream snapshot. MissingTranslation drops to informational for the reason
+        tools/localization/audit_android_localizations.py reports it as an advisory: a key absent
+        from values-xx resolves to values/ at runtime, so translation completeness is a backlog.
+        ExtraTranslation and StringFormatInvalid stay errors.
+        """
         lint = ET.parse(REPO_ROOT / "app/lint.xml").getroot()
-        issues = lint.findall("issue")
+        declared = lint.findall("issue")
+        issues = {element.attrib.get("id"): element for element in declared}
         expected_path = GENERATED_SOURCE_ROOT.relative_to("app").as_posix() + "/"
 
         self.assertEqual("lint", lint.tag)
         self.assertEqual({}, lint.attrib)
-        self.assertEqual(1, len(issues))
-        self.assertEqual({"id": "all"}, issues[0].attrib)
+        self.assertEqual({"all", "MissingTranslation"}, set(issues))
+        # Two elements sharing an id would collapse into one key above.
+        self.assertEqual(len(issues), len(declared))
+
+        boundary = issues["all"]
+        self.assertEqual({"id": "all"}, boundary.attrib)
         self.assertEqual(
             [{"path": expected_path}],
-            [ignore.attrib for ignore in issues[0].findall("ignore")],
+            [ignore.attrib for ignore in boundary.findall("ignore")],
         )
-        self.assertEqual(1, len(issues[0]))
+        self.assertEqual(1, len(boundary))
         self.assertEqual(
             REPO_ROOT / GENERATED_SOURCE_ROOT,
             REPO_ROOT / "app" / expected_path,
         )
+
+        untranslated = issues["MissingTranslation"]
+        self.assertEqual(
+            {"id": "MissingTranslation", "severity": "informational"},
+            untranslated.attrib,
+        )
+        self.assertEqual(0, len(untranslated))
 
 
 if __name__ == "__main__":

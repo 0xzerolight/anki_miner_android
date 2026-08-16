@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -41,6 +40,7 @@ import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.mining.boundedSaveableQuery
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 
 internal enum class SettingsCategory(
     @param:StringRes val label: Int,
@@ -102,16 +102,21 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
     when (origin) {
         // Rendered in the header, which is item 0.
         ResourceFailureOrigin.SETUP -> 0
-        ResourceFailureOrigin.CATALOG_DICTIONARY -> 2
+        // Dictionaries: dictionary-sources(2) owns both dictionary origins, pitch-sources(3),
+        // dictionary-lookup(4).
+        ResourceFailureOrigin.CATALOG_DICTIONARY,
+        ResourceFailureOrigin.CUSTOM_DICTIONARY,
+        -> 2
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         ResourceFailureOrigin.UNIDIC -> 3
-        ResourceFailureOrigin.CUSTOM_DICTIONARY -> 3
-        ResourceFailureOrigin.PITCH -> 4
-        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 6
+        ResourceFailureOrigin.PITCH -> 3
+        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 4
+        // Audio and Frequency are one card each; Filtering: filtering-options(2),
+        // known-words-import(3).
         ResourceFailureOrigin.AUDIO,
         ResourceFailureOrigin.FREQUENCY,
-        ResourceFailureOrigin.KNOWN_WORDS,
-        -> 3
+        -> 2
+        ResourceFailureOrigin.KNOWN_WORDS -> 3
         // Filtering: filtering-options(2), known-words-import(3), word-lists(4).
         ResourceFailureOrigin.WORD_LIST -> 4
     }
@@ -184,7 +189,7 @@ internal fun SettingsCategoryLayout(
                 tonalElevation = 2.dp,
             ) {
                 Column {
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = query,
                         onValueChange = { onQueryChange(it.boundedSaveableQuery()) },
                         modifier =
@@ -196,7 +201,10 @@ internal fun SettingsCategoryLayout(
                                 )
                                 .testTag(SettingsCategoryTestTags.SEARCH),
                         singleLine = true,
-                        label = { Text(stringResource(R.string.settings_search)) },
+                        // Placeholder, not a floating label: the field sits under the header that
+                        // already names the screen, and the label would eat the height the compact
+                        // field buys back.
+                        placeholder = { Text(stringResource(R.string.settings_search)) },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { onQueryChange("") }) {

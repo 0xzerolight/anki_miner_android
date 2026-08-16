@@ -128,6 +128,13 @@ internal fun setupTaskStatus(facts: SetupTaskFacts): SetupTaskStatus {
     return SetupTaskStatus(summary, requiredAttentionCount, rows)
 }
 
+/**
+ * True only when a required setup task is broken; the settings header renders the status card on
+ * this alone, so a ready, optionally-warned, or merely busy state costs it no space.
+ */
+internal fun SetupUiState.setupNeedsAttention(): Boolean =
+    setupTaskStatus(taskFacts()).summary == SetupSummaryKind.ATTENTION
+
 private fun SetupUiState.taskFacts(): SetupTaskFacts =
     SetupTaskFacts(
         ankiReady = ankiReady,
@@ -317,7 +324,7 @@ private fun StatusAction(
     label: Int,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(onClick = onClick) {
+    OutlinedButton(onClick = onClick, shape = MaterialTheme.shapes.small) {
         Text(stringResource(label))
     }
 }

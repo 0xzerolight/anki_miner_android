@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -78,9 +77,10 @@ import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.MetricTile
 import com.ankiminer.android.ui.theme.PhaseTitle
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.disabledActionContentColor
-import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.launch
 
@@ -367,6 +367,7 @@ private fun MiningFailureButton(
                 disabledContentColor = disabledActionContentColor(),
             ),
         border = actionBorder(enabled = action.enabled),
+        shape = MaterialTheme.shapes.small,
     ) {
         Text(action.label)
     }
@@ -417,14 +418,10 @@ internal fun StickyCurationActions(
             AdaptiveActionGroup(
                 stackWidthThreshold = 0.dp,
                 primary = { actionModifier ->
-                    Button(
+                    PrimaryActionButton(
                         onClick = onConfirm,
                         enabled = !curationPending && !cancelPending,
-                        modifier =
-                            actionModifier
-                                .heightIn(min = 48.dp)
-                                .testTag(confirmTestTag),
-                        colors = forwardButtonColors(),
+                        modifier = actionModifier.testTag(confirmTestTag),
                     ) {
                         Text(
                             text =
@@ -440,7 +437,7 @@ internal fun StickyCurationActions(
                     }
                 },
                 secondary = { actionModifier ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = {
                             if (requiresCancelConfirmation) {
                                 showCancelConfirmation = true
@@ -449,12 +446,7 @@ internal fun StickyCurationActions(
                             }
                         },
                         enabled = !cancelPending,
-                        modifier =
-                            actionModifier
-                                .heightIn(min = 48.dp)
-                                .testTag(cancelTestTag),
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(enabled = !cancelPending),
+                        modifier = actionModifier.testTag(cancelTestTag),
                     ) {
                         if (cancelPending) {
                             CircularProgressIndicator(
@@ -609,11 +601,11 @@ private fun SourceRowActions(
             enabled = actionEnabled,
             modifier =
                 actionModifier
-                    .heightIn(min = 48.dp)
                     .testTag(source.pickTestTag)
                     .semantics { contentDescription = pickDescription },
             colors = outlinedActionButtonColors(),
             border = actionBorder(enabled = actionEnabled),
+            shape = MaterialTheme.shapes.small,
             contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
         ) {
             Text(
@@ -630,16 +622,13 @@ private fun SourceRowActions(
         ) {
             pickButton(Modifier.fillMaxWidth())
             if (source.document != null) {
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = source.onClear,
                     enabled = actionEnabled,
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(min = 48.dp)
                             .testTag(source.clearTestTag),
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(enabled = actionEnabled),
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_remove),

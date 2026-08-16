@@ -65,9 +65,8 @@ import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.WizardAnkiTargetCard
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
@@ -639,12 +638,17 @@ private fun WizardCompletionCard(
                         stringResource(R.string.wizard_completion_failed),
                         color = MaterialTheme.colorScheme.error,
                     )
-                    Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = onRetry,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
+                    ) {
                         Text(stringResource(R.string.wizard_completion_retry))
                     }
                     OutlinedButton(
                         onClick = onDismissForSession,
                         modifier = Modifier.fillMaxWidth(),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(stringResource(R.string.wizard_completion_continue_session))
                     }
@@ -674,26 +678,31 @@ private fun AnkiDroidActionButtons(
             OutlinedButton(
                 onClick = onInstallAnkiDroid,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) { Text(stringResource(R.string.install_or_update_ankidroid)) }
         AnkiDroidSetupAction.OPEN ->
             OutlinedButton(
                 onClick = onOpenAnkiDroid,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) { Text(stringResource(R.string.open_ankidroid)) }
         AnkiDroidSetupAction.OPEN_OR_INSTALL -> {
             OutlinedButton(
                 onClick = onOpenAnkiDroid,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) { Text(stringResource(R.string.open_ankidroid)) }
             OutlinedButton(
                 onClick = onInstallAnkiDroid,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) { Text(stringResource(R.string.install_or_update_ankidroid)) }
         }
         AnkiDroidSetupAction.REQUEST_PERMISSION ->
             OutlinedButton(
                 onClick = onRequestPermissions,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) { Text(stringResource(R.string.allow_required_access)) }
         null -> Text(stringResource(R.string.wizard_ankidroid_ready))
     }
@@ -712,20 +721,17 @@ private fun WizardNavigation(
         WizardStep.WELCOME ->
             AdaptiveActionGroup(
                 primary = { actionModifier ->
-                    Button(
+                    PrimaryActionButton(
                         onClick = { onStep(nextWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
-                        colors = forwardButtonColors(),
                     ) { Text(stringResource(R.string.wizard_set_up_now)) }
                 },
                 secondary = { actionModifier ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = onRequestSkip,
                         enabled = !saving,
                         modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(enabled = !saving),
                     ) { Text(stringResource(R.string.wizard_skip_for_now)) }
                 },
                 modifier = modifier,
@@ -733,20 +739,17 @@ private fun WizardNavigation(
         WizardStep.DONE ->
             AdaptiveActionGroup(
                 primary = { actionModifier ->
-                    Button(
+                    PrimaryActionButton(
                         onClick = onFinished,
                         enabled = !saving,
                         modifier = actionModifier,
-                        colors = forwardButtonColors(),
                     ) { Text(stringResource(R.string.wizard_finish)) }
                 },
                 secondary = { actionModifier ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = { onStep(previousWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(enabled = !saving),
                     ) { Text(stringResource(R.string.wizard_back)) }
                 },
                 modifier = modifier,
@@ -754,20 +757,17 @@ private fun WizardNavigation(
         else ->
             AdaptiveActionGroup(
                 primary = { actionModifier ->
-                    Button(
+                    PrimaryActionButton(
                         onClick = { onStep(nextWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
-                        colors = forwardButtonColors(),
                     ) { Text(stringResource(R.string.wizard_next)) }
                 },
                 secondary = { actionModifier ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = { onStep(previousWizardStep(step)) },
                         enabled = !saving,
                         modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(enabled = !saving),
                     ) { Text(stringResource(R.string.wizard_back)) }
                 },
                 modifier = modifier,

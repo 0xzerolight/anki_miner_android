@@ -20,11 +20,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -82,10 +80,9 @@ import com.ankiminer.android.ui.settings.settingsCardIndexFor
 import com.ankiminer.android.ui.settings.settingsCategoryFor
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ScreenTitle
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
-import com.ankiminer.android.ui.theme.tonalActionButtonColors
+import com.ankiminer.android.ui.theme.UtilityActionButton
 import com.ankiminer.android.ui.video.TimingPreviewOverlay
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
@@ -923,19 +920,16 @@ internal fun MiningReadinessActions(
                 )
             MiningReadinessAction.WAIT -> return
         }
-    FilledTonalButton(
+    UtilityActionButton(
         onClick = actionSpec.onClick,
         modifier = Modifier.fillMaxWidth(),
-        colors = tonalActionButtonColors(),
     ) {
         Text(stringResource(actionSpec.label))
     }
     if (!actionSpec.opensSettings) {
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = { onOpenSettings(null) },
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = true),
         ) {
             Text(stringResource(R.string.open_settings))
         }

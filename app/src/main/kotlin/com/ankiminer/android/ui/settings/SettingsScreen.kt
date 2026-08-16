@@ -85,12 +85,11 @@ private fun externalSettingsTargetCardKey(
     when (category to itemIndex) {
         SettingsCategory.ANKI to 3 -> "anki-target"
         SettingsCategory.ANKI to 4 -> "anki-recovery"
-        SettingsCategory.DICTIONARIES to 2 -> "catalog-dictionaries"
-        SettingsCategory.DICTIONARIES to 3 -> "custom-dictionary"
-        SettingsCategory.DICTIONARIES to 4 -> "pitch"
-        SettingsCategory.DICTIONARIES to 6 -> "dictionary-lookup"
-        SettingsCategory.AUDIO to 3 -> "audio-import"
-        SettingsCategory.FREQUENCY to 3 -> "frequency-import"
+        SettingsCategory.DICTIONARIES to 2 -> "dictionary-sources"
+        SettingsCategory.DICTIONARIES to 3 -> "pitch-sources"
+        SettingsCategory.DICTIONARIES to 4 -> "dictionary-lookup"
+        SettingsCategory.AUDIO to 2 -> "audio-sources"
+        SettingsCategory.FREQUENCY to 2 -> "frequency-sources"
         SettingsCategory.FILTERING to 3 -> "known-words-import"
         SettingsCategory.FILTERING to 4 -> "word-lists"
         SettingsCategory.DIAGNOSTICS to 3 -> "unidic"
@@ -577,37 +576,42 @@ private fun SettingsScreen(
                 modifier = modifier,
                 header = {
                     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                        SystemStatusCard(
-                            state = setup,
-                            onRefresh = setupViewModel::refresh,
-                            onRequestPermissions = onRequestPermissions,
-                            onOpenAppSettings = onOpenAppSettings,
-                            onInstallAnkiDroid = onInstallAnkiDroid,
-                            onOpenAnkiDroid = onOpenAnkiDroid,
-                            compact = true,
-                            onInstallUniDic = setupViewModel::installUniDic,
-                            onChooseNoteType = {
-                                selectedCategory = SettingsCategory.ANKI
-                            },
-                            onResolveRecovery = {
-                                selectedCategory = SettingsCategory.ANKI
-                            },
-                            onImportDictionary = {
-                                selectedCategory = SettingsCategory.DICTIONARIES
-                            },
-                            // SETUP is the default failure origin and what resource-startup recovery
-                            // records, so it has no owning card. The slot renders above the compact
-                            // cutoff, and ResourceOriginFailure draws nothing when the origin does not
-                            // match, so passing it unconditionally is free.
-                            inlineFailure = {
-                                ResourceOriginFailure(
-                                    setup,
-                                    setOf(ResourceFailureOrigin.SETUP),
-                                    setupViewModel,
-                                    callbacks,
-                                )
-                            },
+                        // SETUP is the default failure origin and what resource-startup recovery
+                        // records, so it has no owning card. It renders here rather than inside the
+                        // status card because that card is gated off whenever setup is healthy, and
+                        // ResourceOriginFailure draws nothing when the origin does not match, so
+                        // rendering it unconditionally is free.
+                        ResourceOriginFailure(
+                            setup,
+                            setOf(ResourceFailureOrigin.SETUP),
+                            setupViewModel,
+                            callbacks,
                         )
+                        // Only a broken required task earns header space: busy work already has the
+                        // operation card and the runtime notice below, and the optional-warning state
+                        // is the wizard's surface.
+                        if (setup.setupNeedsAttention()) {
+                            SystemStatusCard(
+                                state = setup,
+                                onRefresh = setupViewModel::refresh,
+                                onRequestPermissions = onRequestPermissions,
+                                onOpenAppSettings = onOpenAppSettings,
+                                onInstallAnkiDroid = onInstallAnkiDroid,
+                                onOpenAnkiDroid = onOpenAnkiDroid,
+                                compact = true,
+                                onInstallUniDic = setupViewModel::installUniDic,
+                                onChooseNoteType = {
+                                    selectedCategory = SettingsCategory.ANKI
+                                },
+                                onResolveRecovery = {
+                                    selectedCategory = SettingsCategory.ANKI
+                                },
+                                onImportDictionary = {
+                                    selectedCategory = SettingsCategory.DICTIONARIES
+                                },
+                                inlineFailure = {},
+                            )
+                        }
                         updateCheck.available?.let { available ->
                             OutlinedCard(Modifier.fillMaxWidth()) {
                                 Column(
@@ -644,11 +648,15 @@ private fun SettingsScreen(
                         setup.operation?.let { operation ->
                             ResourceOperationCard(operation, setupViewModel::cancelOperation)
                         }
-                        SettingsSaveStatus(
-                            state = saveState,
-                            error = saveError?.localized(),
-                            onRetry = onRetrySave,
-                        )
+                        // Saving is autosaved and expected to work; only a failure needs a
+                        // persistent surface, because it carries the retry action.
+                        if (saveState is SettingsSaveState.Failed) {
+                            SettingsSaveStatus(
+                                state = saveState,
+                                error = saveError?.localized(),
+                                onRetry = onRetrySave,
+                            )
+                        }
                     }
                 },
             ) { category ->

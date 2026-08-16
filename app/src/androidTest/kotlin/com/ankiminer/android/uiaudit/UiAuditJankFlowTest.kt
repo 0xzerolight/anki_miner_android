@@ -364,9 +364,9 @@ class UiAuditJankFlowTest {
                 SettingsCategory.ANKI to listOf("anki-deck-options", "anki-recovery"),
                 SettingsCategory.MEDIA to listOf("media-options", "subtitle-text"),
                 SettingsCategory.DICTIONARIES to
-                    listOf("catalog-dictionaries", "dictionary-inventory"),
-                SettingsCategory.AUDIO to listOf("audio-chain", "reading-audio"),
-                SettingsCategory.FREQUENCY to listOf("frequency-chain", "frequency-import"),
+                    listOf("dictionary-sources", "pitch-sources"),
+                SettingsCategory.AUDIO to listOf("audio-sources"),
+                SettingsCategory.FREQUENCY to listOf("frequency-sources"),
                 SettingsCategory.FILTERING to listOf("filtering-options", "word-lists"),
                 SettingsCategory.UI to listOf("ui-options"),
                 SettingsCategory.DIAGNOSTICS to

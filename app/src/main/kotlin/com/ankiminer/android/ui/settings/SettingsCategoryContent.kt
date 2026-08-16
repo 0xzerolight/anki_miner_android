@@ -5,7 +5,6 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
@@ -20,13 +19,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
@@ -51,9 +50,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.ThemePalettes
-import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.dynamicColorSupported
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
@@ -459,7 +456,7 @@ internal fun LazyListScope.mediaSettings(
                             label,
                             preset.pattern,
                         )
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = {
                             onDraftChange(
                                 draft.copy(
@@ -476,12 +473,8 @@ internal fun LazyListScope.mediaSettings(
                                 ),
                             )
                         },
-                        border = actionBorder(enabled = true),
-                        colors = outlinedActionButtonColors(),
                         modifier =
-                            Modifier
-                                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
-                                .semantics { contentDescription = description },
+                            Modifier.semantics { contentDescription = description },
                     ) { Text(label) }
                 }
             }
@@ -497,126 +490,137 @@ private fun LazyListScope.dictionarySettings(
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard(SettingsCategory.DICTIONARIES, recorder, "catalog-dictionaries") {
-        CatalogDictionaryCards(
-            setup,
-            setupViewModel::installCatalogDictionary,
-        ) { resourceId ->
-            val failure = setup.failure
-            if (
-                failure?.origin == ResourceFailureOrigin.CATALOG_DICTIONARY &&
-                failure.retry.targetId == resourceId
-            ) {
+    // One panel for every dictionary the engine may consult, in the order it consults them. The
+    // catalog install cards are gone from here: the wizard still renders CatalogDictionaryCards,
+    // and a permanent "install Jitendex" card on this tab was a prompt that never went away. The
+    // install entries live in this panel's Add menu while the dictionary is missing.
+    settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-sources") {
+        val occupiedSlotIds =
+            resources.dictionaries.filter { it.occupied }.mapTo(mutableSetOf()) { it.slotId }
+        ResourceChainPanel(
+            heading = stringResource(R.string.resource_panel_dictionaries_heading),
+            explanation = stringResource(R.string.resource_panel_dictionaries_explanation),
+            rows =
+                dictionaryPanelRows(
+                    chain = draft.dictionarySources,
+                    installed = resources.dictionaries,
+                    jishoEnabled = draft.jisho,
+                    strings = dictionaryRowStrings(),
+                    onChainChange = {
+                        callbacks.onDraftChange(draft.copy(dictionarySources = it))
+                    },
+                    onJishoChange = { callbacks.onDraftChange(draft.copy(jisho = it)) },
+                    onRepair = setupViewModel::installCatalogDictionary,
+                    onReplace = callbacks.onReplaceCustom,
+                ),
+            emptyMessage = stringResource(R.string.settings_no_dictionaries),
+            onMove = { id, delta ->
+                callbacks.onDraftChange(
+                    draft.copy(dictionarySources = draft.dictionarySources.movedResource(id, delta)),
+                )
+            },
+            // A row with a slot behind it is a real delete and keeps its confirmation; a chain
+            // entry whose slot is already gone has nothing to delete, so it is a draft edit.
+            onRemove = { id ->
+                if (id in occupiedSlotIds) {
+                    setupViewModel.requestResourceDelete(InstalledResourceKind.DICTIONARY, id)
+                } else {
+                    callbacks.onDraftChange(
+                        draft.copy(dictionarySources = draft.dictionarySources.withoutResource(id)),
+                    )
+                }
+            },
+            addPrimary =
+                ResourcePanelAction(
+                    label = stringResource(R.string.resource_panel_add_dictionary),
+                    // Menu-shadowed: this panel's addMenu always holds the Yomitan importer, so
+                    // the button opens the menu and only this label renders. Do not turn the
+                    // click into a second import path.
+                    onClick = callbacks.onImportCustom,
+                ),
+            addMenu = dictionaryAddActions(resources, setupViewModel, callbacks),
+            busy = setup.busy,
+            footer = {
                 ResourceOriginFailure(
                     setup,
-                    setOf(ResourceFailureOrigin.CATALOG_DICTIONARY),
+                    setOf(
+                        ResourceFailureOrigin.CATALOG_DICTIONARY,
+                        ResourceFailureOrigin.CUSTOM_DICTIONARY,
+                    ),
                     setupViewModel,
                     callbacks,
                 )
-            }
-        }
-    }
-    settingsCard(SettingsCategory.DICTIONARIES, recorder, "custom-dictionary") {
-        CustomDictionaryImportCard(
-            state = setup,
-            onImport = callbacks.onImportCustom,
-            inlineFailure = {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.CUSTOM_DICTIONARY),
-                    setupViewModel,
-                    callbacks,
-                )
+                // The pinned Jisho row is the only network dictionary; the disclosure it carries
+                // is what the Play data-safety declaration promises the user can read here.
+                SupportingText(stringResource(R.string.settings_jisho_disclosure))
             },
         )
     }
-    settingsCard(SettingsCategory.DICTIONARIES, recorder, "pitch") {
-        PitchImportCard(
-            state = setup,
-            onImport = callbacks.onImportPitch,
-            onRemove = { setupViewModel.requestResourceDelete(InstalledResourceKind.PITCH, it) },
-            inlineFailure = {
+    settingsCard(SettingsCategory.DICTIONARIES, recorder, "pitch-sources") {
+        val installedSourceIds = resources.pitchSources.mapTo(mutableSetOf()) { it.sourceId }
+        ResourceChainPanel(
+            heading = stringResource(R.string.resource_panel_pitch_heading),
+            explanation = stringResource(R.string.resource_panel_pitch_explanation),
+            rows =
+                pitchPanelRows(
+                    chain = draft.pitchSources,
+                    installed = resources.pitchSources,
+                    strings = resourceRowStrings(),
+                    onChainChange = { callbacks.onDraftChange(draft.copy(pitchSources = it)) },
+                ),
+            emptyMessage = stringResource(R.string.settings_pitch_not_installed),
+            onMove = { id, delta ->
+                callbacks.onDraftChange(
+                    draft.copy(pitchSources = draft.pitchSources.movedResource(id, delta)),
+                )
+            },
+            onRemove = { id ->
+                if (id in installedSourceIds) {
+                    setupViewModel.requestResourceDelete(InstalledResourceKind.PITCH, id)
+                } else {
+                    callbacks.onDraftChange(
+                        draft.copy(pitchSources = draft.pitchSources.withoutResource(id)),
+                    )
+                }
+            },
+            addPrimary =
+                ResourcePanelAction(
+                    label = stringResource(R.string.resource_panel_add_pitch),
+                    onClick = callbacks.onImportPitch,
+                ),
+            busy = setup.busy,
+            footer = {
                 ResourceOriginFailure(
                     setup,
                     setOf(ResourceFailureOrigin.PITCH),
                     setupViewModel,
                     callbacks,
                 )
-            },
-        )
-    }
-    settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-chain") {
-        CollapsibleSettingGroup(
-            title = stringResource(R.string.settings_dictionary_chain),
-            selectedCount = draft.dictionarySources.count { it.enabled },
-            totalCount = draft.dictionarySources.size,
-            forceOpen = draft.dictionarySources.isEmpty(),
-            titleStyle = MaterialTheme.typography.titleMedium,
-        ) {
-            ResourceChainEditor(
-                choices = draft.dictionarySources,
-                labels =
-                    resources.dictionaries
-                        .filter { it.isUsable }
-                        .associate { it.slotId to "${it.sourceName} (${it.entryCount})" },
-                emptyMessage = stringResource(R.string.settings_no_dictionaries),
-                onChange = {
-                    callbacks.onDraftChange(draft.copy(dictionarySources = it))
-                },
-            )
-        }
-        HorizontalDivider()
-        BooleanSetting(
-            label = stringResource(R.string.settings_jisho),
-            checked = draft.jisho,
-            onCheckedChange = {
-                callbacks.onDraftChange(draft.copy(jisho = it))
-            },
-        )
-        SupportingText(stringResource(R.string.settings_jisho_disclosure))
-        HorizontalDivider()
-        // Pitch is a first-hit-wins chain now, so the order is editable here and the
-        // per-source names live in the editor rather than one installed-file line.
-        CollapsibleSettingGroup(
-            title = stringResource(R.string.settings_pitch_chain),
-            selectedCount = draft.pitchSources.count { it.enabled },
-            totalCount = draft.pitchSources.size,
-            forceOpen = draft.pitchSources.isEmpty(),
-            titleStyle = MaterialTheme.typography.titleMedium,
-        ) {
-            ResourceChainEditor(
-                choices = draft.pitchSources,
-                labels =
-                    resources.pitchSources.associate {
-                        it.sourceId to "${it.sourceName} (${it.entryCount})"
+                // Belongs to the sources above it, not to a card of its own: it only decides how
+                // the pitch a source supplies is written onto the card.
+                NullableChoice(
+                    label = stringResource(R.string.settings_pitch_format),
+                    value = draft.pitchFormat,
+                    engineDefault = EngineDefaults.PITCH_CATEGORY_FORMAT,
+                    values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
+                    optionLabel = { value ->
+                        stringResource(
+                            when (value) {
+                                PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
+                                PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
+                            },
+                        )
                     },
-                emptyMessage = stringResource(R.string.settings_pitch_not_installed),
-                onChange = {
-                    callbacks.onDraftChange(draft.copy(pitchSources = it))
-                },
-            )
-        }
-        NullableChoice(
-            label = stringResource(R.string.settings_pitch_format),
-            value = draft.pitchFormat,
-            engineDefault = EngineDefaults.PITCH_CATEGORY_FORMAT,
-            values = listOf(PitchCategoryFormat.JAPANESE, PitchCategoryFormat.ROMAJI),
-            optionLabel = { value ->
-                stringResource(
-                    when (value) {
-                        PitchCategoryFormat.JAPANESE -> R.string.settings_pitch_japanese
-                        PitchCategoryFormat.ROMAJI -> R.string.settings_pitch_romaji
+                    onChange = {
+                        callbacks.onDraftChange(draft.copy(pitchFormat = it))
                     },
                 )
-            },
-            onChange = {
-                callbacks.onDraftChange(draft.copy(pitchFormat = it))
             },
         )
     }
     // Conditional cards trail the deep-link targets so settingsCardIndexFor stays a table of
-    // constants. Moving dictionary-inventory back above dictionary-lookup silently shifts the
-    // DICTIONARY_LOOKUP index whenever the inventory is hidden.
+    // constants. Adding a conditional card ahead of dictionary-lookup, or moving one behind it,
+    // silently shifts the DICTIONARY_LOOKUP index whenever that card is hidden.
     if (setup.dictionaries.any { it.isUsable }) {
         settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-lookup") {
             DictionaryLookupCard(
@@ -635,22 +639,83 @@ private fun LazyListScope.dictionarySettings(
             )
         }
     }
-    // Last card in the category, so gating it shifts no deep-link index. Gated here as well as
-    // inside the composable because an empty settingsCard still contributes its own padding.
-    if (setup.dictionaries.any { it.occupied }) {
-        settingsCard(SettingsCategory.DICTIONARIES, recorder, "dictionary-inventory") {
-            DictionaryInventoryCard(
-                state = setup,
-                onReplace = callbacks.onReplaceCustom,
-                onRemove = {
-                    setupViewModel.requestResourceDelete(InstalledResourceKind.DICTIONARY, it)
-                },
-            )
-        }
-    }
+    // No inventory card after it either: every occupied slot — broken ones included — is a row of
+    // the dictionary panel above, with the same Replace and Remove actions.
     // No operation card here: the shared header renders the one ResourceOperationCard for
     // setup.operation, and a second copy on this tab meant two Cancel buttons for one operation.
 }
+
+/**
+ * The Add menu of the dictionary panel: each catalog dictionary whose slot is empty, then the
+ * Yomitan importer.
+ *
+ * A catalog dictionary that already owns its slot is absent from the menu whatever its state —
+ * `catalogInstallCandidates` drops the installed ones (re-installing a healthy one is the wizard's
+ * job) and the broken ones (their own row offers Repair, and a menu entry beside it would be a
+ * second name for the same call).
+ */
+@Composable
+private fun dictionaryAddActions(
+    resources: ResourceManagerState,
+    setupViewModel: SetupViewModel,
+    callbacks: SettingsScreenCallbacks,
+): List<ResourcePanelAction> =
+    buildList {
+        catalogInstallCandidates(resources.catalogDictionaries)
+            .forEach { status ->
+                add(
+                    ResourcePanelAction(
+                        label =
+                            stringResource(
+                                if (status.resource.slotId == JMDICT_SLOT_ID) {
+                                    R.string.jmdict_resource_title
+                                } else {
+                                    R.string.jitendex_resource_title
+                                },
+                            ),
+                    ) { setupViewModel.installCatalogDictionary(status.resource.resourceId) },
+                )
+            }
+        add(
+            ResourcePanelAction(
+                label = stringResource(R.string.resource_panel_import_yomitan_zip),
+                onClick = callbacks.onImportCustom,
+            ),
+        )
+    }
+
+/**
+ * Row text every panel needs. Resolved here because row assembly runs outside composition.
+ *
+ * Internal rather than private so the UI-audit fixtures render the panels with the same strings
+ * the settings screen does; a fixture-local copy would drift silently.
+ */
+@Composable
+internal fun resourceRowStrings(): ResourceRowStrings {
+    // Captured rather than pre-formatted: the count is per row and the panel formats on demand.
+    // Read through LocalResources, not LocalContext: a configuration change invalidates this
+    // composition, so a locale or font-scale switch reformats the counts.
+    val resources = LocalResources.current
+    return ResourceRowStrings(
+        entries = { count -> resources.getString(R.string.settings_resource_entries, count) },
+        notInChain = stringResource(R.string.resource_panel_not_in_chain),
+        missingWarning = stringResource(R.string.resource_panel_warning_missing),
+        repairWarning = stringResource(R.string.resource_panel_warning_repair),
+    )
+}
+
+@Composable
+internal fun dictionaryRowStrings(): DictionaryRowStrings =
+    DictionaryRowStrings(
+        rows = resourceRowStrings(),
+        repairAction = stringResource(R.string.resource_panel_row_repair),
+        replaceAction = stringResource(R.string.resource_panel_row_replace),
+        jishoTitle = stringResource(R.string.settings_jisho),
+        jishoMeta = stringResource(R.string.resource_panel_meta_online),
+        jishoWarning = stringResource(R.string.resource_panel_warning_jisho),
+    )
+
+private const val JMDICT_SLOT_ID = "jmdict"
 
 private fun LazyListScope.audioSettings(
     draft: SettingsDraft,
@@ -660,61 +725,68 @@ private fun LazyListScope.audioSettings(
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard(SettingsCategory.AUDIO, recorder, "audio-chain") {
-        CollapsibleSettingGroup(
-            title = stringResource(R.string.settings_audio_pack_chain),
-            selectedCount = draft.audioPacks.count { it.enabled },
-            totalCount = draft.audioPacks.size,
-            // The empty message is the whole content; collapsing it would hide the reason.
-            forceOpen = draft.audioPacks.isEmpty(),
-            titleStyle = MaterialTheme.typography.titleMedium,
-        ) {
-            ResourceChainEditor(
-                choices = draft.audioPacks,
-                labels =
-                    resources.audioPacks.associate {
-                        it.packId to "${it.sourceName} (${it.entryCount})"
-                    },
-                emptyMessage = stringResource(R.string.settings_no_audio_packs),
-                onChange = {
-                    callbacks.onDraftChange(draft.copy(audioPacks = it))
-                },
-            )
-        }
-    }
-    settingsCard(SettingsCategory.AUDIO, recorder, "audio-import") {
-        AudioPackImportCard(
-            state = setup,
-            onImport = callbacks.onImportAudioPack,
-            onRemove = {
-                setupViewModel.requestResourceDelete(InstalledResourceKind.AUDIO_PACK, it)
+    // The whole category is one card: the pack priority list, its importer, and the reading
+    // text-to-speech switch that decides what happens when no pack has the word.
+    settingsCard(SettingsCategory.AUDIO, recorder, "audio-sources") {
+        val installedPackIds = resources.audioPacks.mapTo(mutableSetOf()) { it.packId }
+        ResourceChainPanel(
+            heading = stringResource(R.string.resource_panel_audio_heading),
+            explanation = stringResource(R.string.resource_panel_audio_explanation),
+            rows =
+                audioPanelRows(
+                    chain = draft.audioPacks,
+                    installed = resources.audioPacks,
+                    strings = resourceRowStrings(),
+                    onChainChange = { callbacks.onDraftChange(draft.copy(audioPacks = it)) },
+                ),
+            emptyMessage = stringResource(R.string.settings_no_audio_packs),
+            onMove = { id, delta ->
+                callbacks.onDraftChange(
+                    draft.copy(audioPacks = draft.audioPacks.movedResource(id, delta)),
+                )
             },
-            inlineFailure = {
+            onRemove = { id ->
+                if (id in installedPackIds) {
+                    setupViewModel.requestResourceDelete(InstalledResourceKind.AUDIO_PACK, id)
+                } else {
+                    callbacks.onDraftChange(
+                        draft.copy(audioPacks = draft.audioPacks.withoutResource(id)),
+                    )
+                }
+            },
+            // One button, no menu: every audio source on Android is an imported local pack. The
+            // online and database kinds the desktop offers are cut, not deferred.
+            addPrimary =
+                ResourcePanelAction(
+                    label = stringResource(R.string.resource_panel_add_audio),
+                    onClick = callbacks.onImportAudioPack,
+                ),
+            busy = setup.busy,
+            footer = {
+                SupportingText(stringResource(R.string.audio_pack_archive_guidance))
                 ResourceOriginFailure(
                     setup,
                     setOf(ResourceFailureOrigin.AUDIO),
                     setupViewModel,
                     callbacks,
                 )
+                SettingsSection(stringResource(R.string.settings_reading_audio)) {
+                    BooleanSetting(
+                        label = stringResource(R.string.settings_reading_tts),
+                        checked = draft.readingTts,
+                        onCheckedChange = {
+                            callbacks.onDraftChange(draft.copy(readingTts = it))
+                        },
+                    )
+                    SecondaryActionButton(
+                        onClick = callbacks.onOpenSpeechSettings,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.settings_open_speech_services))
+                    }
+                }
             },
         )
-    }
-    settingsCard(SettingsCategory.AUDIO, recorder, "reading-audio") {
-        SettingsSection(stringResource(R.string.settings_reading_audio)) {
-            BooleanSetting(
-                label = stringResource(R.string.settings_reading_tts),
-                checked = draft.readingTts,
-                onCheckedChange = {
-                    callbacks.onDraftChange(draft.copy(readingTts = it))
-                },
-            )
-            OutlinedButton(
-                onClick = callbacks.onOpenSpeechSettings,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.settings_open_speech_services))
-            }
-        }
     }
 }
 
@@ -726,35 +798,40 @@ private fun LazyListScope.frequencySettings(
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard(SettingsCategory.FREQUENCY, recorder, "frequency-chain") {
-        CollapsibleSettingGroup(
-            title = stringResource(R.string.settings_frequency_chain),
-            selectedCount = draft.frequencySources.count { it.enabled },
-            totalCount = draft.frequencySources.size,
-            forceOpen = draft.frequencySources.isEmpty(),
-            titleStyle = MaterialTheme.typography.titleMedium,
-        ) {
-            ResourceChainEditor(
-                choices = draft.frequencySources,
-                labels =
-                    resources.frequencySources.associate {
-                        it.sourceId to "${it.sourceName} (${it.entryCount})"
-                    },
-                emptyMessage = stringResource(R.string.settings_no_frequency_sources),
-                onChange = {
-                    callbacks.onDraftChange(draft.copy(frequencySources = it))
-                },
-            )
-        }
-    }
-    settingsCard(SettingsCategory.FREQUENCY, recorder, "frequency-import") {
-        FrequencyImportCard(
-            state = setup,
-            onImport = callbacks.onImportFrequency,
-            onRemove = {
-                setupViewModel.requestResourceDelete(InstalledResourceKind.FREQUENCY, it)
+    settingsCard(SettingsCategory.FREQUENCY, recorder, "frequency-sources") {
+        val installedSourceIds = resources.frequencySources.mapTo(mutableSetOf()) { it.sourceId }
+        ResourceChainPanel(
+            heading = stringResource(R.string.resource_panel_frequency_heading),
+            explanation = stringResource(R.string.resource_panel_frequency_explanation),
+            rows =
+                frequencyPanelRows(
+                    chain = draft.frequencySources,
+                    installed = resources.frequencySources,
+                    strings = resourceRowStrings(),
+                    onChainChange = { callbacks.onDraftChange(draft.copy(frequencySources = it)) },
+                ),
+            emptyMessage = stringResource(R.string.settings_no_frequency_sources),
+            onMove = { id, delta ->
+                callbacks.onDraftChange(
+                    draft.copy(frequencySources = draft.frequencySources.movedResource(id, delta)),
+                )
             },
-            inlineFailure = {
+            onRemove = { id ->
+                if (id in installedSourceIds) {
+                    setupViewModel.requestResourceDelete(InstalledResourceKind.FREQUENCY, id)
+                } else {
+                    callbacks.onDraftChange(
+                        draft.copy(frequencySources = draft.frequencySources.withoutResource(id)),
+                    )
+                }
+            },
+            addPrimary =
+                ResourcePanelAction(
+                    label = stringResource(R.string.resource_panel_add_frequency),
+                    onClick = callbacks.onImportFrequency,
+                ),
+            busy = setup.busy,
+            footer = {
                 ResourceOriginFailure(
                     setup,
                     setOf(ResourceFailureOrigin.FREQUENCY),
@@ -999,7 +1076,7 @@ private fun LazyListScope.uiSettings(
                 SupportingText(stringResource(R.string.settings_theme_dynamic_supporting))
             }
             callbacks.onRunSetupWizard?.let { runWizard ->
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = runWizard,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1126,15 +1203,10 @@ private fun LazyListScope.diagnosticsSettings(
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "reset-actions") {
         SettingsSection(stringResource(R.string.settings_reset_section)) {
             SettingsResetAction.entries.forEach { action ->
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = { callbacks.onRequestReset(action) },
                     enabled = callbacks.resetEnabled && !setup.busy,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = outlinedActionButtonColors(),
-                    border =
-                        actionBorder(
-                            enabled = callbacks.resetEnabled && !setup.busy,
-                        ),
                 ) {
                     Text(stringResource(settingsResetLabel(action)))
                 }
@@ -1166,6 +1238,7 @@ private fun LazyListScope.diagnosticsSettings(
                 enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
                     diagnosticsExport !is DiagnosticsExportState.Ready,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(stringResource(R.string.settings_share_diagnostics_bundle))
             }
@@ -1213,12 +1286,10 @@ internal fun UpdateCheckSection(
             style = MaterialTheme.typography.bodySmall,
         )
         val checkEnabled = updateCheck.enabled && !updateCheck.checking
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = onCheck,
             enabled = checkEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = checkEnabled),
         ) {
             Text(stringResource(R.string.settings_update_check_now))
         }
@@ -1268,21 +1339,17 @@ internal fun SettingsBackupSection(
             style = MaterialTheme.typography.bodySmall,
         )
         val actionsEnabled = backupState !is SettingsBackupState.Working
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = onExportSettings,
             enabled = actionsEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = actionsEnabled),
         ) {
             Text(stringResource(R.string.settings_backup_export))
         }
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = onImportSettings,
             enabled = actionsEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = actionsEnabled),
         ) {
             Text(stringResource(R.string.settings_backup_import))
         }

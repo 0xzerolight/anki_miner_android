@@ -20,16 +20,9 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
             setOf("anki-deck-options", "anki-target", "anki-recovery", "anki-operation"),
         SettingsCategory.MEDIA to setOf("media-options", "subtitle-text"),
         SettingsCategory.DICTIONARIES to
-            setOf(
-                "catalog-dictionaries",
-                "custom-dictionary",
-                "pitch",
-                "dictionary-chain",
-                "dictionary-lookup",
-                "dictionary-inventory",
-            ),
-        SettingsCategory.AUDIO to setOf("audio-chain", "audio-import", "reading-audio"),
-        SettingsCategory.FREQUENCY to setOf("frequency-chain", "frequency-import"),
+            setOf("dictionary-sources", "pitch-sources", "dictionary-lookup"),
+        SettingsCategory.AUDIO to setOf("audio-sources"),
+        SettingsCategory.FREQUENCY to setOf("frequency-sources"),
         SettingsCategory.FILTERING to
             setOf(
                 "filtering-options",
@@ -145,50 +138,57 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         entry("media.subtitle_presets", SettingsCategory.MEDIA, "subtitle-text", R.string.settings_subtitle_presets),
 
         // Dictionaries
+        // Both catalog dictionaries stay searchable even though their install cards are gone: the
+        // panel's Add menu is where they are installed, and searching "Jitendex" has to land on it.
         entry(
             "dictionaries.jitendex",
             SettingsCategory.DICTIONARIES,
-            "catalog-dictionaries",
+            "dictionary-sources",
             R.string.jitendex_resource_title,
             R.string.jitendex_resource_description,
         ),
         entry(
             "dictionaries.jmdict",
             SettingsCategory.DICTIONARIES,
-            "catalog-dictionaries",
+            "dictionary-sources",
             R.string.jmdict_resource_title,
             R.string.jmdict_resource_description,
         ),
         entry(
             "dictionaries.custom",
             SettingsCategory.DICTIONARIES,
-            "custom-dictionary",
-            R.string.custom_dictionary_title,
+            "dictionary-sources",
+            R.string.resource_panel_import_yomitan_zip,
         ),
-        entry("dictionaries.pitch_import", SettingsCategory.DICTIONARIES, "pitch", R.string.pitch_import_title),
+        entry(
+            "dictionaries.pitch_import",
+            SettingsCategory.DICTIONARIES,
+            "pitch-sources",
+            R.string.resource_panel_add_pitch,
+        ),
         entry(
             "dictionaries.chain",
             SettingsCategory.DICTIONARIES,
-            "dictionary-chain",
-            R.string.settings_dictionary_chain,
+            "dictionary-sources",
+            R.string.resource_panel_dictionaries_heading,
         ),
         entry(
             "dictionaries.jisho",
             SettingsCategory.DICTIONARIES,
-            "dictionary-chain",
+            "dictionary-sources",
             R.string.settings_jisho,
             R.string.settings_jisho_disclosure,
         ),
         entry(
             "dictionaries.pitch_chain",
             SettingsCategory.DICTIONARIES,
-            "dictionary-chain",
-            R.string.settings_pitch_chain,
+            "pitch-sources",
+            R.string.resource_panel_pitch_heading,
         ),
         entry(
             "dictionaries.pitch_format",
             SettingsCategory.DICTIONARIES,
-            "dictionary-chain",
+            "pitch-sources",
             R.string.settings_pitch_format,
         ),
         entry(
@@ -199,19 +199,29 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         ),
 
         // Audio
-        entry("audio.pack_chain", SettingsCategory.AUDIO, "audio-chain", R.string.settings_audio_pack_chain),
-        entry("audio.pack_import", SettingsCategory.AUDIO, "audio-import", R.string.audio_pack_import_title),
+        entry("audio.pack_chain", SettingsCategory.AUDIO, "audio-sources", R.string.resource_panel_audio_heading),
+        entry("audio.pack_import", SettingsCategory.AUDIO, "audio-sources", R.string.resource_panel_add_audio),
         entry(
             "audio.reading_tts",
             SettingsCategory.AUDIO,
-            "reading-audio",
+            "audio-sources",
             R.string.settings_reading_tts,
             R.string.settings_reading_audio,
         ),
 
         // Frequency
-        entry("frequency.chain", SettingsCategory.FREQUENCY, "frequency-chain", R.string.settings_frequency_chain),
-        entry("frequency.import", SettingsCategory.FREQUENCY, "frequency-import", R.string.frequency_import_title),
+        entry(
+            "frequency.chain",
+            SettingsCategory.FREQUENCY,
+            "frequency-sources",
+            R.string.resource_panel_frequency_heading,
+        ),
+        entry(
+            "frequency.import",
+            SettingsCategory.FREQUENCY,
+            "frequency-sources",
+            R.string.resource_panel_add_frequency,
+        ),
 
         // Filtering
         entry(

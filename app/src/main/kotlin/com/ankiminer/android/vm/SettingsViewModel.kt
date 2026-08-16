@@ -14,6 +14,7 @@ import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AudioFormat
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.InvalidAppSettingCode
 import com.ankiminer.android.data.settings.InvalidAppSettingException
@@ -153,6 +154,23 @@ private fun validateOptionalInt(
     }
 }
 
+/**
+ * The text an inherit-capable field shows: the stored override, or the engine default the field
+ * would inherit while it stays unset.
+ *
+ * Storage semantics do not change — null still means inherit. The default is drawn as real field
+ * text because an empty box read as "no value" rather than "the engine's value", and
+ * [SettingsDraft.toSettings] normalizes a value equal to the default straight back to null, so a
+ * re-pinned engine default keeps flowing through instead of freezing at whatever the field showed.
+ *
+ * [default] must be an [EngineDefaults] constant, never a re-typed literal: the mirror is the side
+ * CI checks against the engine.
+ */
+private fun inheritedText(
+    value: Any?,
+    default: Any,
+): String = (value ?: default).toString()
+
 internal data class SettingsDraft(
     val deckName: String,
     val excludedDecks: List<String>,
@@ -280,26 +298,43 @@ internal data class SettingsDraft(
     val numericValuesValid: Boolean
         get() = validation.isEmpty()
 
+    /**
+     * Fields that carry an engine default are prefilled with it, so the value the user never
+     * touched must normalize back to null here — otherwise the first save would freeze today's
+     * default as an explicit override and a re-pinned engine value would stop reaching the run.
+     * Value equality, not text equality: a trailing zero and a comma decimal separator both spell
+     * the same number, and the parser has already resolved them by the time the check runs.
+     */
     fun toSettings(base: AppSettings): AppSettings =
         base.copy(
             theme = theme,
             lightThemeKey = lightThemeKey,
             darkThemeKey = darkThemeKey,
             dynamicColorEnabled = dynamicColorEnabled,
-            deckName = deckName.takeIf(String::isNotEmpty),
+            deckName = deckName.takeIf { it.isNotEmpty() && it != EngineDefaults.DECK_NAME },
             excludedDecks = excludedDecks,
             tags = tags,
-            audioPaddingSeconds = AppSettingsDraftParser.optionalDouble(audioPadding),
-            screenshotOffsetSeconds = AppSettingsDraftParser.optionalDouble(screenshotOffset),
+            audioPaddingSeconds =
+                AppSettingsDraftParser.optionalDouble(audioPadding)
+                    ?.takeUnless { it == EngineDefaults.AUDIO_PADDING_SECONDS },
+            screenshotOffsetSeconds =
+                AppSettingsDraftParser.optionalDouble(screenshotOffset)
+                    ?.takeUnless { it == EngineDefaults.SCREENSHOT_OFFSET_SECONDS },
             animatedScreenshotsEnabled = animatedScreenshots,
             animatedScreenshotDurationSeconds =
-                AppSettingsDraftParser.optionalDouble(animatedScreenshotDuration),
+                AppSettingsDraftParser.optionalDouble(animatedScreenshotDuration)
+                    ?.takeUnless { it == EngineDefaults.ANIMATED_SCREENSHOT_DURATION_SECONDS },
             animatedScreenshotQuality =
-                AppSettingsDraftParser.optionalInt(animatedScreenshotQuality),
+                AppSettingsDraftParser.optionalInt(animatedScreenshotQuality)
+                    ?.takeUnless { it == EngineDefaults.ANIMATED_SCREENSHOT_QUALITY },
             animatedScreenshotMatchAudio = animatedScreenshotMatchAudio,
-            subtitleOffsetSeconds = AppSettingsDraftParser.optionalDouble(subtitleOffset),
+            subtitleOffsetSeconds =
+                AppSettingsDraftParser.optionalDouble(subtitleOffset)
+                    ?.takeUnless { it == EngineDefaults.SUBTITLE_OFFSET_SECONDS },
             audioFormat = audioFormat,
-            audioBitrateKbps = AppSettingsDraftParser.optionalInt(bitrate),
+            audioBitrateKbps =
+                AppSettingsDraftParser.optionalInt(bitrate)
+                    ?.takeUnless { it == EngineDefaults.AUDIO_BITRATE_KBPS },
             // Blank text inherits the engine default, which is the empty pattern and the empty
             // replacement — so an explicit empty override would mean exactly the same thing.
             subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
@@ -314,12 +349,22 @@ internal data class SettingsDraft(
             deduplicateSentences = deduplicate,
             useIPlusOneFilter = iPlusOne,
             useSentenceLengthFilter = sentenceLength,
-            maxSentenceDurationSeconds = AppSettingsDraftParser.optionalDouble(maxDuration),
-            maxSentenceCharacters = AppSettingsDraftParser.optionalInt(maxCharacters),
-            readingMinimumOccurrence = AppSettingsDraftParser.optionalInt(readingOccurrence),
-            maxFrequencyRank = AppSettingsDraftParser.optionalInt(maxFrequency),
+            maxSentenceDurationSeconds =
+                AppSettingsDraftParser.optionalDouble(maxDuration)
+                    ?.takeUnless { it == EngineDefaults.MAX_SENTENCE_DURATION_SECONDS },
+            maxSentenceCharacters =
+                AppSettingsDraftParser.optionalInt(maxCharacters)
+                    ?.takeUnless { it == EngineDefaults.MAX_SENTENCE_CHARACTERS },
+            readingMinimumOccurrence =
+                AppSettingsDraftParser.optionalInt(readingOccurrence)
+                    ?.takeUnless { it == EngineDefaults.READING_MINIMUM_OCCURRENCE },
+            maxFrequencyRank =
+                AppSettingsDraftParser.optionalInt(maxFrequency)
+                    ?.takeUnless { it == EngineDefaults.MAX_FREQUENCY_RANK },
             pitchCategoryFormat = pitchFormat,
-            maxParallelWorkers = AppSettingsDraftParser.optionalInt(workers),
+            maxParallelWorkers =
+                AppSettingsDraftParser.optionalInt(workers)
+                    ?.takeUnless { it == EngineDefaults.MAX_PARALLEL_WORKERS },
             dictionarySources = dictionarySources,
             frequencySources = frequencySources,
             pitchSources = pitchSources,
@@ -329,49 +374,80 @@ internal data class SettingsDraft(
             jishoEnabled = jisho,
         )
 
-    /** Apply every valid field while retaining persisted values for invalid numeric text. */
+    /**
+     * Apply every valid field while retaining persisted values for invalid numeric text.
+     *
+     * A field the user has broken falls back to the same text [SettingsDraft.from] would hydrate:
+     * the persisted override, or the engine default when the setting is still inherited. Falling
+     * back to a blank instead would round-trip through [toSettings] to the same null, but the draft
+     * this returns is also what the next comparison sees, and a blank there reads as a user edit.
+     */
     fun toPersistableSettings(base: AppSettings): AppSettings {
         val keepPersistedSubtitleRegexPair = subtitleRegexRejection != null
         return copy(
             audioPadding =
                 audioPadding.takeIf { SettingsFieldKey.AUDIO_PADDING !in validation }
-                    ?: base.audioPaddingSeconds?.toString().orEmpty(),
+                    ?: inheritedText(
+                        base.audioPaddingSeconds,
+                        EngineDefaults.AUDIO_PADDING_SECONDS,
+                    ),
             screenshotOffset =
                 screenshotOffset.takeIf { SettingsFieldKey.SCREENSHOT_OFFSET !in validation }
-                    ?: base.screenshotOffsetSeconds?.toString().orEmpty(),
+                    ?: inheritedText(
+                        base.screenshotOffsetSeconds,
+                        EngineDefaults.SCREENSHOT_OFFSET_SECONDS,
+                    ),
             animatedScreenshotDuration =
                 animatedScreenshotDuration.takeIf {
                     SettingsFieldKey.ANIMATED_SCREENSHOT_DURATION !in validation &&
                         AppSettingsDraftParser.isOptionalDouble(animatedScreenshotDuration)
-                } ?: base.animatedScreenshotDurationSeconds?.toString().orEmpty(),
+                } ?: inheritedText(
+                    base.animatedScreenshotDurationSeconds,
+                    EngineDefaults.ANIMATED_SCREENSHOT_DURATION_SECONDS,
+                ),
             animatedScreenshotQuality =
                 animatedScreenshotQuality.takeIf {
                     SettingsFieldKey.ANIMATED_SCREENSHOT_QUALITY !in validation &&
                         AppSettingsDraftParser.isOptionalInt(animatedScreenshotQuality)
-                } ?: base.animatedScreenshotQuality?.toString().orEmpty(),
+                } ?: inheritedText(
+                    base.animatedScreenshotQuality,
+                    EngineDefaults.ANIMATED_SCREENSHOT_QUALITY,
+                ),
             subtitleOffset =
                 subtitleOffset.takeIf { SettingsFieldKey.SUBTITLE_OFFSET !in validation }
-                    ?: base.subtitleOffsetSeconds?.toString().orEmpty(),
+                    ?: inheritedText(
+                        base.subtitleOffsetSeconds,
+                        EngineDefaults.SUBTITLE_OFFSET_SECONDS,
+                    ),
             bitrate =
                 bitrate.takeIf { SettingsFieldKey.BITRATE !in validation }
-                    ?: base.audioBitrateKbps?.toString().orEmpty(),
+                    ?: inheritedText(base.audioBitrateKbps, EngineDefaults.AUDIO_BITRATE_KBPS),
             maxDuration =
                 maxDuration.takeIf { SettingsFieldKey.MAX_DURATION !in validation }
-                    ?: base.maxSentenceDurationSeconds?.toString().orEmpty(),
+                    ?: inheritedText(
+                        base.maxSentenceDurationSeconds,
+                        EngineDefaults.MAX_SENTENCE_DURATION_SECONDS,
+                    ),
             maxCharacters =
                 maxCharacters.takeIf { SettingsFieldKey.MAX_CHARACTERS !in validation }
-                    ?: base.maxSentenceCharacters?.toString().orEmpty(),
+                    ?: inheritedText(
+                        base.maxSentenceCharacters,
+                        EngineDefaults.MAX_SENTENCE_CHARACTERS,
+                    ),
             readingOccurrence =
                 readingOccurrence.takeIf {
                     SettingsFieldKey.READING_OCCURRENCE !in validation
                 }
-                    ?: base.readingMinimumOccurrence?.toString().orEmpty(),
+                    ?: inheritedText(
+                        base.readingMinimumOccurrence,
+                        EngineDefaults.READING_MINIMUM_OCCURRENCE,
+                    ),
             maxFrequency =
                 maxFrequency.takeIf { SettingsFieldKey.MAX_FREQUENCY !in validation }
-                    ?: base.maxFrequencyRank?.toString().orEmpty(),
+                    ?: inheritedText(base.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK),
             workers =
                 workers.takeIf { SettingsFieldKey.WORKERS !in validation }
-                    ?: base.maxParallelWorkers?.toString().orEmpty(),
+                    ?: inheritedText(base.maxParallelWorkers, EngineDefaults.MAX_PARALLEL_WORKERS),
             subtitleRegex =
                 subtitleRegex.takeUnless { keepPersistedSubtitleRegexPair }
                     ?: base.subtitleRegexFilter.orEmpty(),
@@ -419,24 +495,57 @@ internal data class SettingsDraft(
             resources: ResourceManagerState,
         ): SettingsDraft =
             SettingsDraft(
-                deckName = settings.deckName.orEmpty(),
+                deckName = inheritedText(settings.deckName, EngineDefaults.DECK_NAME),
                 excludedDecks = settings.excludedDecks,
                 tags = settings.tags,
-                audioPadding = settings.audioPaddingSeconds?.toString().orEmpty(),
-                screenshotOffset = settings.screenshotOffsetSeconds?.toString().orEmpty(),
+                audioPadding =
+                    inheritedText(
+                        settings.audioPaddingSeconds,
+                        EngineDefaults.AUDIO_PADDING_SECONDS,
+                    ),
+                screenshotOffset =
+                    inheritedText(
+                        settings.screenshotOffsetSeconds,
+                        EngineDefaults.SCREENSHOT_OFFSET_SECONDS,
+                    ),
                 animatedScreenshots = settings.animatedScreenshotsEnabled,
                 animatedScreenshotDuration =
-                    settings.animatedScreenshotDurationSeconds?.toString().orEmpty(),
+                    inheritedText(
+                        settings.animatedScreenshotDurationSeconds,
+                        EngineDefaults.ANIMATED_SCREENSHOT_DURATION_SECONDS,
+                    ),
                 animatedScreenshotQuality =
-                    settings.animatedScreenshotQuality?.toString().orEmpty(),
+                    inheritedText(
+                        settings.animatedScreenshotQuality,
+                        EngineDefaults.ANIMATED_SCREENSHOT_QUALITY,
+                    ),
                 animatedScreenshotMatchAudio = settings.animatedScreenshotMatchAudio,
-                subtitleOffset = settings.subtitleOffsetSeconds?.toString().orEmpty(),
-                bitrate = settings.audioBitrateKbps?.toString().orEmpty(),
-                maxDuration = settings.maxSentenceDurationSeconds?.toString().orEmpty(),
-                maxCharacters = settings.maxSentenceCharacters?.toString().orEmpty(),
-                readingOccurrence = settings.readingMinimumOccurrence?.toString().orEmpty(),
-                maxFrequency = settings.maxFrequencyRank?.toString().orEmpty(),
-                workers = settings.maxParallelWorkers?.toString().orEmpty(),
+                subtitleOffset =
+                    inheritedText(
+                        settings.subtitleOffsetSeconds,
+                        EngineDefaults.SUBTITLE_OFFSET_SECONDS,
+                    ),
+                bitrate =
+                    inheritedText(settings.audioBitrateKbps, EngineDefaults.AUDIO_BITRATE_KBPS),
+                maxDuration =
+                    inheritedText(
+                        settings.maxSentenceDurationSeconds,
+                        EngineDefaults.MAX_SENTENCE_DURATION_SECONDS,
+                    ),
+                maxCharacters =
+                    inheritedText(
+                        settings.maxSentenceCharacters,
+                        EngineDefaults.MAX_SENTENCE_CHARACTERS,
+                    ),
+                readingOccurrence =
+                    inheritedText(
+                        settings.readingMinimumOccurrence,
+                        EngineDefaults.READING_MINIMUM_OCCURRENCE,
+                    ),
+                maxFrequency =
+                    inheritedText(settings.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK),
+                workers =
+                    inheritedText(settings.maxParallelWorkers, EngineDefaults.MAX_PARALLEL_WORKERS),
                 audioFormat = settings.audioFormat,
                 subtitleRegex = settings.subtitleRegexFilter.orEmpty(),
                 subtitleRegexReplacement = settings.subtitleRegexReplacement.orEmpty(),

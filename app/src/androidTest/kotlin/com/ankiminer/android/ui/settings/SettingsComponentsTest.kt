@@ -3,7 +3,6 @@ package com.ankiminer.android.ui.settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.requiredWidth
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +31,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -51,7 +51,6 @@ import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
-import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.vm.PendingResourceDelete
@@ -196,36 +195,6 @@ class SettingsComponentsTest {
         assertTrue(tops.zipWithNext().all { (first, second) -> second > first })
     }
 
-    @Test
-    fun pairedResourceActionsStackAndKeepTouchTargetsAtCompactWidth() {
-        composeRule.setContent {
-            AnkiMinerTheme {
-                Box(Modifier.width(359.dp)) {
-                    ResourceChainEditor(
-                        choices = listOf(ResourceChainSelection("source")),
-                        labels = mapOf("source" to "Source"),
-                        emptyMessage = "None",
-                        onChange = {},
-                    )
-                }
-            }
-        }
-
-        val moveUp =
-            composeRule
-                .onNodeWithText("Up")
-                .assertHeightIsAtLeast(48.dp)
-                .fetchSemanticsNode()
-                .boundsInRoot
-        val moveDown =
-            composeRule
-                .onNodeWithText("Down")
-                .assertHeightIsAtLeast(48.dp)
-                .fetchSemanticsNode()
-                .boundsInRoot
-        assertTrue(moveDown.top > moveUp.top)
-    }
-
     private fun setChoiceSelector(
         width: Dp,
         fontScale: Float,
@@ -301,8 +270,8 @@ class SettingsComponentsTest {
     }
 
     @Test
-    fun emptyFieldShowsTheInheritedEngineDefaultAndTypingReplacesIt() {
-        var padding by mutableStateOf("")
+    fun prefilledDefaultIsRealFieldTextAndClearingRevealsTheInheritLine() {
+        var padding by mutableStateOf(EngineDefaults.AUDIO_PADDING_SECONDS.toString())
         composeRule.setContent {
             AnkiMinerTheme {
                 NumericField(
@@ -314,14 +283,26 @@ class SettingsComponentsTest {
             }
         }
 
-        // Blank field, but the value the engine will actually use is on screen.
-        composeRule.onNodeWithText("0.3").assertIsDisplayed()
+        // The default is editable field text, not a hint: the field arrives prefilled with it.
+        composeRule
+            .onNode(hasSetTextAction())
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.EditableText,
+                    AnnotatedString("0.3"),
+                ),
+            )
 
         composeRule.onNode(hasSetTextAction()).performTextReplacement("0.8")
 
         // Once the user owns the value the inherited one must not linger beside it.
         composeRule.onNodeWithText("0.8").assertIsDisplayed()
         composeRule.onAllNodesWithText("0.3").assertCountEquals(0)
+
+        composeRule.onNode(hasSetTextAction()).performTextClearance()
+
+        // Cleared back to blank, the inherited value returns as the supporting line under the field.
+        composeRule.onNodeWithText("0.3").assertIsDisplayed()
     }
 
     @Test

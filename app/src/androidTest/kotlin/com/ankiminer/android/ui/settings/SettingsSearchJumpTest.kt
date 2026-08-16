@@ -60,8 +60,9 @@ class SettingsSearchJumpTest {
         list.performScrollToNode(hasText(katakanaLabel))
         composeRule.onNodeWithText(katakanaLabel).assertIsDisplayed()
         list.performScrollToNode(hasTestTag(SettingsCategoryTestTags.SEARCH))
-        // EditableText, not assertTextEquals: a text field's merged Text also carries its label,
-        // so assertTextEquals("") fails against an empty field labelled "Search settings".
+        // EditableText, not assertTextEquals: a text field's merged Text also carries its
+        // placeholder, so assertTextEquals("") fails against an empty field hinting
+        // "Search settings".
         composeRule
             .onNodeWithTag(SettingsCategoryTestTags.SEARCH)
             .assert(
