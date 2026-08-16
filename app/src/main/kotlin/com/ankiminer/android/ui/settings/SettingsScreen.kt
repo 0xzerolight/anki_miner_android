@@ -577,34 +577,39 @@ private fun SettingsScreen(
                 modifier = modifier,
                 header = {
                     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                        SystemStatusCard(
-                            state = setup,
-                            onRefresh = setupViewModel::refresh,
-                            onRequestPermissions = onRequestPermissions,
-                            onOpenAppSettings = onOpenAppSettings,
-                            onInstallAnkiDroid = onInstallAnkiDroid,
-                            onOpenAnkiDroid = onOpenAnkiDroid,
-                            compact = true,
-                            onInstallUniDic = setupViewModel::installUniDic,
-                            onChooseNoteType = {
-                                selectedCategory = SettingsCategory.ANKI
-                            },
-                            onResolveRecovery = {
-                                selectedCategory = SettingsCategory.ANKI
-                            },
-                            // SETUP is the default failure origin and what resource-startup recovery
-                            // records, so it has no owning card. The slot renders above the compact
-                            // cutoff, and ResourceOriginFailure draws nothing when the origin does not
-                            // match, so passing it unconditionally is free.
-                            inlineFailure = {
-                                ResourceOriginFailure(
-                                    setup,
-                                    setOf(ResourceFailureOrigin.SETUP),
-                                    setupViewModel,
-                                    callbacks,
-                                )
-                            },
+                        // SETUP is the default failure origin and what resource-startup recovery
+                        // records, so it has no owning card. It renders here rather than inside the
+                        // status card because that card is gated off whenever setup is healthy, and
+                        // ResourceOriginFailure draws nothing when the origin does not match, so
+                        // rendering it unconditionally is free.
+                        ResourceOriginFailure(
+                            setup,
+                            setOf(ResourceFailureOrigin.SETUP),
+                            setupViewModel,
+                            callbacks,
                         )
+                        // Only a broken required task earns header space: busy work already has the
+                        // operation card and the runtime notice below, and the optional-warning state
+                        // is the wizard's surface.
+                        if (setup.setupNeedsAttention()) {
+                            SystemStatusCard(
+                                state = setup,
+                                onRefresh = setupViewModel::refresh,
+                                onRequestPermissions = onRequestPermissions,
+                                onOpenAppSettings = onOpenAppSettings,
+                                onInstallAnkiDroid = onInstallAnkiDroid,
+                                onOpenAnkiDroid = onOpenAnkiDroid,
+                                compact = true,
+                                onInstallUniDic = setupViewModel::installUniDic,
+                                onChooseNoteType = {
+                                    selectedCategory = SettingsCategory.ANKI
+                                },
+                                onResolveRecovery = {
+                                    selectedCategory = SettingsCategory.ANKI
+                                },
+                                inlineFailure = {},
+                            )
+                        }
                         updateCheck.available?.let { available ->
                             OutlinedCard(Modifier.fillMaxWidth()) {
                                 Column(
@@ -641,11 +646,15 @@ private fun SettingsScreen(
                         setup.operation?.let { operation ->
                             ResourceOperationCard(operation, setupViewModel::cancelOperation)
                         }
-                        SettingsSaveStatus(
-                            state = saveState,
-                            error = saveError?.localized(),
-                            onRetry = onRetrySave,
-                        )
+                        // Saving is autosaved and expected to work; only a failure needs a
+                        // persistent surface, because it carries the retry action.
+                        if (saveState is SettingsSaveState.Failed) {
+                            SettingsSaveStatus(
+                                state = saveState,
+                                error = saveError?.localized(),
+                                onRetry = onRetrySave,
+                            )
+                        }
                     }
                 },
             ) { category ->

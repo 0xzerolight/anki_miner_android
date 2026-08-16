@@ -88,7 +88,6 @@ import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
 import com.ankiminer.android.ui.settings.SettingsScreenCallbacks
 import com.ankiminer.android.ui.settings.SettingsSection
-import com.ankiminer.android.ui.settings.SystemStatusCard
 import com.ankiminer.android.ui.settings.mediaSettings
 import com.ankiminer.android.ui.settings.settingsCategoryContent
 import com.ankiminer.android.ui.settings.settingsCard
@@ -558,7 +557,7 @@ internal fun UiAuditSettingsFixture(
         selectedCategory = category,
         onSelectedCategory = {},
         recorder = recorder,
-        header = { SettingsTopFixture(setup) },
+        header = {},
         modifier = modifier.testTag(UiAuditTags.SETTINGS_SCROLL),
         listStates = mapOf(category to listState),
     ) { selected ->
@@ -681,7 +680,7 @@ internal fun UiAuditFullSettingsFixture(
         selectedCategory = selectedCategory,
         onSelectedCategory = {},
         recorder = recorder,
-        header = { SettingsTopFixture(setup) },
+        header = {},
         modifier = modifier.testTag(UiAuditTags.SETTINGS_SCROLL),
         listStates = listStates,
     ) { category ->
@@ -740,19 +739,6 @@ private fun SetupUiState.auditResourceState(): ResourceManagerState =
         failure = failure,
         lastLookup = lookup,
     )
-
-@Composable
-private fun SettingsTopFixture(setup: SetupUiState) {
-    SystemStatusCard(
-        state = setup,
-        onRefresh = {},
-        onRequestPermissions = {},
-        onOpenAppSettings = {},
-        onInstallAnkiDroid = {},
-        onOpenAnkiDroid = {},
-        compact = true,
-    )
-}
 
 @Composable
 private fun SettingsAnkiFixture(setup: SetupUiState) {
