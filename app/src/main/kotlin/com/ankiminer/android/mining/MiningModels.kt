@@ -84,6 +84,14 @@ data class MiningProgress(
      * stage's own band keeps a single monotonic bar instead of one that resets
      * several times per run. Without a stage the raw item fraction is all there
      * is.
+     *
+     * A stage also runs several counted sub-cycles, each restarting at zero, so
+     * the result never falls below [fractionFloor] and never exceeds its band:
+     * an item count overrunning its total clamps, and [stageComplete] fills the
+     * band a finished zero-total cycle would otherwise leave empty. Indeterminate
+     * stays indeterminate — a zero-total unstaged cycle returns null whatever the
+     * floor, because a number there would render a determinate bar for work of
+     * unknown size.
      */
     val fraction: Float?
         get() {
@@ -93,7 +101,7 @@ data class MiningProgress(
                     total == 0L -> null
                     else -> (current.toFloat() / total.toFloat()).coerceAtMost(1f)
                 }
-            val stage = stage ?: return within
+            val stage = stage ?: return within?.let { maxOf(it, fractionFloor) }
             val band = 1f / stage.total
             val raw = (stage.index - 1) * band + (within ?: 0f) * band
             return maxOf(raw, fractionFloor)

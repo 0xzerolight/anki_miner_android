@@ -107,6 +107,20 @@ class MiningModelsTest {
     }
 
     @Test
+    fun stagelessDeterminateProgressHonorsItsFloor() {
+        val progress = MiningProgress(0, 10, "copy", fractionFloor = 0.6f)
+
+        assertEquals(0.6f, progress.fraction)
+    }
+
+    @Test
+    fun stagelessZeroTotalStaysIndeterminateDespiteAFloor() {
+        // Flooring null into a number would render a determinate bar for work
+        // whose size is unknown.
+        assertNull(MiningProgress(0, 0, "copy", fractionFloor = 0.6f).fraction)
+    }
+
+    @Test
     fun stageRejectsAnIndexOutsideItsTotal() {
         assertThrows(IllegalArgumentException::class.java) { MiningStage(0, 5, "Parsing") }
         assertThrows(IllegalArgumentException::class.java) { MiningStage(6, 5, "Parsing") }
