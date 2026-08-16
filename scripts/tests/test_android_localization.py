@@ -44,14 +44,21 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_repository_catalogs_are_complete_and_format_safe(self) -> None:
+    def test_repository_catalogs_are_format_safe_and_report_translation_backlog(self) -> None:
         result = self._run_audit(REPO_ROOT / "app/src/main/res")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("locale catalog(s) verified", result.stdout)
         self.assertIn("values-ja/strings.xml", result.stdout)
+        self.assertIn("catalog(s) with untranslated keys", result.stdout)
 
-    def test_missing_and_extra_keys_fail_with_exact_catalog_evidence(self) -> None:
+    def test_untranslated_keys_are_advisory_and_never_fail(self) -> None:
+        """Android resolves an absent key from ``values/``, so an incomplete locale still ships.
+
+        This mirrors the desktop repository, where ``scripts/i18n.py`` writes
+        ``type="unfinished"`` entries and only ``i18n_payload_check.py`` -- a regression gate --
+        can fail. Completeness is a backlog, not a merge blocker.
+        """
         with tempfile.TemporaryDirectory() as temporary:
             resource_root = Path(temporary)
             self._write_catalog(
@@ -59,6 +66,21 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
                 "values",
                 '<string name="alpha">Alpha</string><string name="beta">Beta</string>',
             )
+            self._write_catalog(resource_root, "values-fr", '<string name="alpha">Alpha FR</string>')
+
+            result = self._run_audit(resource_root)
+
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn(
+                "advisory: values-fr/strings.xml: 1 untranslated key(s), English is used: beta",
+                result.stdout,
+            )
+            self.assertIn("1 catalog(s) with untranslated keys", result.stdout)
+
+    def test_orphan_keys_fail_with_exact_catalog_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(resource_root, "values", '<string name="alpha">Alpha</string>')
             self._write_catalog(
                 resource_root,
                 "values-fr",
@@ -68,8 +90,22 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             result = self._run_audit(resource_root)
 
             self.assertNotEqual(0, result.returncode)
-            self.assertIn("values-fr/strings.xml: missing keys: beta", result.stderr)
             self.assertIn("values-fr/strings.xml: extra keys: gamma", result.stderr)
+
+    def test_duplicate_keys_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            resource_root = Path(temporary)
+            self._write_catalog(resource_root, "values", '<string name="alpha">Alpha</string>')
+            self._write_catalog(
+                resource_root,
+                "values-fr",
+                '<string name="alpha">Alpha FR</string><string name="alpha">Alpha encore</string>',
+            )
+
+            result = self._run_audit(resource_root)
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("duplicate key: alpha", result.stderr)
 
     def test_printf_placeholder_type_and_count_mismatches_fail(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -77,7 +113,9 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             self._write_catalog(
                 resource_root,
                 "values",
-                '<string name="progress">%1$d of %2$d (%3$s)</string>',
+                # `spare` is untranslated below: an advisory must not stop the audit before it
+                # reaches the placeholder check on the key that IS translated.
+                '<string name="progress">%1$d of %2$d (%3$s)</string><string name="spare">Spare</string>',
             )
             self._write_catalog(
                 resource_root,

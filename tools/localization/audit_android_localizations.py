@@ -1,5 +1,25 @@
 #!/usr/bin/env python3
-"""Audit Android locale catalogs against the default English string resources."""
+"""Audit Android locale catalogs against the default English string resources.
+
+The gate guards translation *regressions*, not translation *completeness* -- the same
+contract the desktop repository's ``scripts/i18n.py`` and ``scripts/i18n_payload_check.py``
+hold for the Qt catalogs, where an untranslated entry ships as ``type="unfinished"`` and Qt
+renders the source text. Android does the same natively: a key absent from ``values-xx`` is
+resolved from ``values/``, so a partly translated catalog is a working catalog and a locale
+that has fallen behind must not stop a merge.
+
+Failures (a broken or lying catalog):
+  * duplicate keys, or a duplicate plural quantity, inside one catalog
+  * a key present in a catalog but absent from ``values/strings.xml`` (an orphan -- it is
+    dead weight, it fails ``lint UnusedResources``, and it usually means a rename was only
+    half applied)
+  * a resource-kind mismatch between source and translation
+  * a printf or xliff placeholder signature mismatch on a translation that IS present --
+    the crash-at-runtime case, and the one thing English fallback cannot save
+
+Advisories (reported on stdout, exit code unaffected):
+  * keys a locale catalog does not translate yet
+"""
 
 from __future__ import annotations
 
@@ -42,6 +62,13 @@ class StringResource:
 class CatalogResource:
     kind: str
     items: dict[str, StringResource]
+
+
+@dataclass(frozen=True)
+class AuditResult:
+    source_count: int
+    catalogs: list[Path]
+    advisories: list[str]
 
 
 def _counter_signature(values: list[str]) -> tuple[tuple[str, int], ...]:
@@ -168,7 +195,7 @@ def locale_catalogs(resource_root: Path) -> list[Path]:
     return sorted(catalogs, key=lambda path: path.parent.name.casefold())
 
 
-def audit(resource_root: Path) -> tuple[int, list[Path]]:
+def audit(resource_root: Path) -> AuditResult:
     source_path = resource_root / "values/strings.xml"
     source = read_catalog(source_path)
     if not source:
@@ -176,6 +203,7 @@ def audit(resource_root: Path) -> tuple[int, list[Path]]:
 
     catalogs = locale_catalogs(resource_root)
     failures: list[str] = []
+    advisories: list[str] = []
     source_keys = set(source)
     for catalog_path in catalogs:
         translation = read_catalog(catalog_path)
@@ -184,7 +212,9 @@ def audit(resource_root: Path) -> tuple[int, list[Path]]:
         missing = sorted(source_keys - translation_keys)
         extra = sorted(translation_keys - source_keys)
         if missing:
-            failures.append(f"{relative}: missing keys: {', '.join(missing)}")
+            # Android resolves an absent key from values/, so this is work outstanding, not a
+            # defect. Reported so the backlog stays visible; never fatal.
+            advisories.append(f"{relative}: {len(missing)} untranslated key(s), English is used: {', '.join(missing)}")
         if extra:
             failures.append(f"{relative}: extra keys: {', '.join(extra)}")
         for key in sorted(source_keys & translation_keys):
@@ -218,7 +248,7 @@ def audit(resource_root: Path) -> tuple[int, list[Path]]:
 
     if failures:
         raise CatalogError("\n".join(failures))
-    return len(source), catalogs
+    return AuditResult(source_count=len(source), catalogs=catalogs, advisories=advisories)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -234,15 +264,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    resource_root = args.resource_root.resolve()
     try:
-        source_count, catalogs = audit(args.resource_root.resolve())
+        result = audit(resource_root)
     except CatalogError as failure:
         print(f"localization audit failed: {failure}", file=sys.stderr)
         return 1
 
-    for catalog in catalogs:
-        print(f"{catalog.relative_to(args.resource_root.resolve())}: {source_count} resources verified")
-    print(f"Localization audit passed: {source_count} source resources; {len(catalogs)} locale catalog(s) verified")
+    for catalog in result.catalogs:
+        print(f"{catalog.relative_to(resource_root)}: {result.source_count} resources verified")
+    for advisory in result.advisories:
+        print(f"advisory: {advisory}")
+    print(
+        f"Localization audit passed: {result.source_count} source resources; "
+        f"{len(result.catalogs)} locale catalog(s) verified; "
+        f"{len(result.advisories)} catalog(s) with untranslated keys"
+    )
     return 0
 
 
