@@ -21,7 +21,7 @@ app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettingsRepository.kt
 app/src/main/kotlin/com/ankiminer/android/data/settings/DiagnosticsSettingsRepository.kt	53,121,128	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/SubtitleRegexCheck.kt	59	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/diagnostics/DiagnosticsBundleCapture.kt	48	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/diagnostics/DiagnosticsBundleStager.kt	293	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/diagnostics/DiagnosticsBundleStager.kt	312	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/diagnostics/DiagnosticsBundleWriter.kt	93,96,106,109	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/diagnostics/DiagnosticsExporter.kt	132	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/diagnostics/LogTail.kt	24	Existing discarded catches are pinned at audit introduction; new sites require review.

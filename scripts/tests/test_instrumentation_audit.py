@@ -116,7 +116,7 @@ class InstrumentationAuditTest(unittest.TestCase):
         result = self._run_audit(REPO_ROOT)
 
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("194 bare catch site(s) verified", result.stdout)
+        self.assertIn("195 bare catch site(s) verified", result.stdout)
 
     def test_bare_catch_needs_an_annotation_or_reasoned_allowlist_entry(self) -> None:
         root = self._new_repo()
@@ -223,6 +223,62 @@ class InstrumentationAuditTest(unittest.TestCase):
 
         self.assertEqual(0, result.returncode, result.stderr)
 
+    def test_applog_vararg_record_without_an_outcome_fails(self) -> None:
+        # renderLogRecord requires exactly one outcome, so a call site that omits it throws
+        # inside AppLog.emit and is replaced by a fallback record holding only class names.
+        # Three CurationPreviewPlayer sites shipped that way and destroyed the media
+        # diagnostics they existed to produce; nothing in the vararg signature says so.
+        cases = {
+            "i": 'AppLog.i(LogComponent.MEDIA, "preview_selected", "language" to "ja")',
+            "w": 'AppLog.w(LogComponent.MEDIA, "preview_failed", error, "code" to 7)',
+            "e": 'AppLog.e(LogComponent.MEDIA, "preview_broken", error, "code" to 7)',
+        }
+        for method, call in cases.items():
+            with self.subTest(method=method):
+                root = self._new_repo()
+                relative = "app/src/main/kotlin/example/Preview.kt"
+                self._write(root, relative, f"fun report() = {call}\n")
+
+                result = self._run_audit(root)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(
+                    f"{relative}:1: AppLog record is missing its outcome field",
+                    result.stderr,
+                )
+
+    def test_applog_record_passes_with_an_outcome_or_a_forwarded_field_list(self) -> None:
+        cases = {
+            "literal": 'AppLog.i(LogComponent.MEDIA, "preview", "outcome" to "ok", "language" to "ja")',
+            # The outcome is added where the list is built, which this scan cannot see into.
+            "spread": "AppLog.e(LogComponent.ANKI, name, failure, *fields.toTypedArray())",
+            # A quoted "outcome" inside an unrelated string must not be read as the field.
+            "multiline": (
+                'AppLog.i(\n    LogComponent.MEDIA,\n    "preview",\n' '    "outcome" to "fail",\n    "code" to 7,\n)'
+            ),
+        }
+        for label, call in cases.items():
+            with self.subTest(case=label):
+                root = self._new_repo()
+                self._write(root, "app/src/main/kotlin/example/Preview.kt", f"fun report() = {call}\n")
+
+                result = self._run_audit(root)
+
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_applog_debug_lambda_form_is_not_scanned_for_an_outcome(self) -> None:
+        # `d` takes a lambda, so its fields live outside the argument list the scan reads.
+        root = self._new_repo()
+        self._write(
+            root,
+            "app/src/main/kotlin/example/Preview.kt",
+            'fun report() = AppLog.d(LogComponent.MEDIA, "preview") { arrayOf("at" to "enter") }\n',
+        )
+
+        result = self._run_audit(root)
+
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_official_host_gates_invoke_the_instrumentation_audit(self) -> None:
         for relative in ("scripts/health.sh", ".github/workflows/pull-request.yml"):
             with self.subTest(relative=relative):
@@ -240,7 +296,7 @@ class InstrumentationAuditTest(unittest.TestCase):
         prepareRecovery()
         rememberRecovery()
         recover()
-        AppLog.e(LogComponent.APP, "recover", failure)
+        AppLog.e(LogComponent.APP, "recover", failure, "outcome" to "fail")
     }
 }
 """,
@@ -256,7 +312,7 @@ class InstrumentationAuditTest(unittest.TestCase):
             relative,
             """fun recover() {
     try { work() } catch (failure: Exception) {
-        AppLog.e(LogComponent.APP, "recover", failure)
+        AppLog.e(LogComponent.APP, "recover", failure, "outcome" to "fail")
         recover()
     }
     try { work() } catch (failure: Exception) {
@@ -301,7 +357,7 @@ class InstrumentationAuditTest(unittest.TestCase):
         self._write(
             root,
             relative,
-            'fun recover() = runCatching { work() }.onFailure { AppLog.e(LogComponent.APP, "work", it) }.getOrNull()\n',
+            'fun recover() = runCatching { work() }.onFailure { AppLog.e(LogComponent.APP, "work", it, "outcome" to "fail") }.getOrNull()\n',
         )
         handled = self._run_audit(root)
         self.assertEqual(0, handled.returncode, handled.stderr)

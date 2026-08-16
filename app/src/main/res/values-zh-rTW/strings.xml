@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">資源設定進行中</string>
     <string name="runtime_work_settings_anki_active">Anki 設定進行中</string>
     <string name="readiness_unidic_required">需要 UniDic</string>
+    <string name="readiness_dictionary_required">需要字典</string>
     <string name="readiness_anki_required">未連線至 AnkiDroid</string>
     <string name="readiness_model_required">需要筆記類型</string>
     <string name="readiness_recovery_required">等待 Anki 復原</string>
     <string name="readiness_resource_operation">正在設定</string>
     <string name="readiness_unknown">無法確認是否就緒。</string>
     <string name="readiness_install_unidic">安裝 UniDic</string>
+    <string name="readiness_install_dictionary">安裝字典</string>
     <string name="readiness_connect_ankidroid">連線至 AnkiDroid</string>
     <string name="readiness_choose_note_type">選擇筆記類型</string>
     <string name="readiness_resolve_recovery">解決復原問題</string>
@@ -806,6 +808,7 @@
     <string name="b3_status_note_type">筆記類型</string>
     <string name="b3_status_recovery">中斷的工作</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">字典</string>
     <string name="b3_status_notifications">通知</string>
     <string name="b3_status_success">已就緒</string>
     <string name="b3_status_optional">選填</string>

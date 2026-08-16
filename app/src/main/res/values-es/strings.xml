@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">La configuración de recursos está activa</string>
     <string name="runtime_work_settings_anki_active">La configuración de Anki está activa</string>
     <string name="readiness_unidic_required">Se requiere UniDic</string>
+    <string name="readiness_dictionary_required">Se requiere un diccionario</string>
     <string name="readiness_anki_required">AnkiDroid no está conectado</string>
     <string name="readiness_model_required">Se requiere tipo de nota</string>
     <string name="readiness_recovery_required">Recuperación de Anki pendiente</string>
     <string name="readiness_resource_operation">Configuración en curso</string>
     <string name="readiness_unknown">No se pudo confirmar el estado.</string>
     <string name="readiness_install_unidic">Instalar UniDic</string>
+    <string name="readiness_install_dictionary">Instalar un diccionario</string>
     <string name="readiness_connect_ankidroid">Conectar AnkiDroid</string>
     <string name="readiness_choose_note_type">Elegir tipo de nota</string>
     <string name="readiness_resolve_recovery">Resolver recuperación</string>
@@ -816,6 +818,7 @@
     <string name="b3_status_note_type">Tipo de nota</string>
     <string name="b3_status_recovery">Trabajo interrumpido</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">Diccionario</string>
     <string name="b3_status_notifications">Notificaciones</string>
     <string name="b3_status_success">Listo</string>
     <string name="b3_status_optional">Opcional</string>

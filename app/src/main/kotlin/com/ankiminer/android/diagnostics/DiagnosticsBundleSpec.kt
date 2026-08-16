@@ -101,6 +101,11 @@ internal object DiagnosticsBundleSpec {
                 redacted = true,
             ),
             BundleEntrySpec(
+                name = "system/thread-cpu.txt",
+                capBytes = 16L * 1024,
+                redacted = true,
+            ),
+            BundleEntrySpec(
                 name = "redaction.txt",
                 capBytes = 64L * 1024,
                 redacted = false,

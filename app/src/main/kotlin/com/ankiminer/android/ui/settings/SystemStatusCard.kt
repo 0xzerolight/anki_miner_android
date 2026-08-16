@@ -31,6 +31,7 @@ internal enum class SetupTaskId {
     NOTE_TYPE,
     RECOVERY,
     UNIDIC,
+    DICTIONARY,
     NOTIFICATIONS,
 }
 
@@ -56,6 +57,7 @@ internal data class SetupTaskFacts(
     val notificationReady: Boolean,
     val busy: Boolean,
     val runtimeReady: Boolean = true,
+    val dictionaryReady: Boolean = true,
 ) {
     companion object {
         fun ready(): SetupTaskFacts =
@@ -67,6 +69,7 @@ internal data class SetupTaskFacts(
                 notificationReady = true,
                 busy = false,
                 runtimeReady = true,
+                dictionaryReady = true,
             )
     }
 }
@@ -90,6 +93,7 @@ internal fun setupTaskStatus(facts: SetupTaskFacts): SetupTaskStatus {
             SetupTaskId.NOTE_TYPE to facts.noteTypeReady,
             SetupTaskId.RECOVERY to facts.recoveryReady,
             SetupTaskId.UNIDIC to facts.uniDicReady,
+            SetupTaskId.DICTIONARY to facts.dictionaryReady,
         )
     val rows =
         if (facts.busy) {
@@ -130,6 +134,7 @@ private fun SetupUiState.taskFacts(): SetupTaskFacts =
         noteTypeReady = targetReady,
         recoveryReady = recoveryReady,
         uniDicReady = uniDicInstalled,
+        dictionaryReady = dictionaryReady,
         notificationReady = notificationReady,
         busy = busy,
         runtimeReady =
@@ -149,6 +154,7 @@ internal fun SystemStatusCard(
     onInstallUniDic: () -> Unit = {},
     onChooseNoteType: () -> Unit = {},
     onResolveRecovery: () -> Unit = onRefresh,
+    onImportDictionary: () -> Unit = onRefresh,
     inlineFailureTaskId: SetupTaskId? = null,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
@@ -174,6 +180,7 @@ internal fun SystemStatusCard(
                         onInstallUniDic = onInstallUniDic,
                         onChooseNoteType = onChooseNoteType,
                         onResolveRecovery = onResolveRecovery,
+                        onImportDictionary = onImportDictionary,
                         showAction = row.id != inlineFailureTaskId,
                     )
                 }
@@ -209,6 +216,7 @@ private fun SetupStatusRow(
     onInstallUniDic: () -> Unit,
     onChooseNoteType: () -> Unit,
     onResolveRecovery: () -> Unit,
+    onImportDictionary: () -> Unit,
     showAction: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
@@ -251,6 +259,7 @@ private fun SetupStatusRow(
                 onInstallUniDic = onInstallUniDic,
                 onChooseNoteType = onChooseNoteType,
                 onResolveRecovery = onResolveRecovery,
+                onImportDictionary = onImportDictionary,
             )
         }
     }
@@ -268,6 +277,7 @@ private fun SetupTaskAction(
     onInstallUniDic: () -> Unit,
     onChooseNoteType: () -> Unit,
     onResolveRecovery: () -> Unit,
+    onImportDictionary: () -> Unit,
 ) {
     when (id) {
         SetupTaskId.RUNTIME ->
@@ -290,6 +300,8 @@ private fun SetupTaskAction(
             StatusAction(R.string.b3_resolve, onResolveRecovery)
         SetupTaskId.UNIDIC ->
             StatusAction(R.string.unidic_install, onInstallUniDic)
+        SetupTaskId.DICTIONARY ->
+            StatusAction(R.string.readiness_install_dictionary, onImportDictionary)
         SetupTaskId.NOTIFICATIONS -> Unit
     }
     if (
@@ -317,6 +329,7 @@ private fun setupTaskLabel(id: SetupTaskId): Int =
         SetupTaskId.NOTE_TYPE -> R.string.b3_status_note_type
         SetupTaskId.RECOVERY -> R.string.b3_status_recovery
         SetupTaskId.UNIDIC -> R.string.b3_status_unidic
+        SetupTaskId.DICTIONARY -> R.string.b3_status_dictionary
         SetupTaskId.NOTIFICATIONS -> R.string.b3_status_notifications
     }
 

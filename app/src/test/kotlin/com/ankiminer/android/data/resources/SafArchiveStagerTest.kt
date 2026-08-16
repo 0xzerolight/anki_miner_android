@@ -609,6 +609,80 @@ class SafArchiveStagerTest {
         }
     }
 
+    @Test
+    fun aShortCopyAgainstTheProviderReportedSizeIsRejected() {
+        // A provider that ends the stream early leaves a short but structurally plausible file,
+        // and the engine can only call that "archive is corrupt". The tester bundle carried ten
+        // such dictionary failures with nothing to separate a truncated read from a bad file.
+        val root = temporary.newFolder("short-copy")
+        val payload = ByteArray(4_096) { it.toByte() }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        try {
+            val stager =
+                testStager(
+                    root,
+                    scope,
+                    object : ResourceInputOpener {
+                        override fun open(
+                            uri: String,
+                            cancellation: ProviderIoCancellation,
+                        ): InputStream = ByteArrayInputStream(payload)
+
+                        override fun reportedSizeBytes(uri: String): Long = payload.size + 1L
+                    },
+                )
+
+            val failure =
+                assertThrows(ResourceDownloadException::class.java) {
+                    stager.stage(INPUT_URI, "short-copy", ResourceCancellationSignal()) { _, _ -> }
+                }
+
+            assertEquals("resource_archive_mismatch", failure.stableCode)
+            // The partial file must not survive to be handed to the engine.
+            assertFalse(root.listFiles().orEmpty().any { it.name.startsWith("short-copy") })
+        } finally {
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun anUnreportedOrAgreeingSizeStagesNormally() {
+        val payload = ByteArray(2_048) { it.toByte() }
+        val cases =
+            mapOf<String, Long?>(
+                // Cloud providers legitimately report nothing: no agreement to check.
+                "unreported" to null,
+                "agreeing" to payload.size.toLong(),
+            )
+        for ((label, reported) in cases) {
+            val root = temporary.newFolder("stage-$label")
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            try {
+                val stager =
+                    testStager(
+                        root,
+                        scope,
+                        object : ResourceInputOpener {
+                            override fun open(
+                                uri: String,
+                                cancellation: ProviderIoCancellation,
+                            ): InputStream = ByteArrayInputStream(payload)
+
+                            override fun reportedSizeBytes(uri: String): Long? = reported
+                        },
+                    )
+
+                val staged =
+                    stager.stage(INPUT_URI, "stage-$label", ResourceCancellationSignal()) { _, _ -> }
+
+                assertEquals(label, payload.size.toLong(), staged.sizeBytes)
+                assertArrayEquals(payload, staged.file.readBytes())
+            } finally {
+                scope.cancel()
+            }
+        }
+    }
+
     private fun testStager(
         root: java.io.File,
         scope: CoroutineScope,

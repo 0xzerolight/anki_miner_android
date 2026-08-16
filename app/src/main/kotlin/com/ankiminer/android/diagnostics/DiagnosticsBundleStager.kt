@@ -4,6 +4,8 @@ import android.app.ActivityManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
+import android.system.Os
+import android.system.OsConstants
 import androidx.core.content.FileProvider
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.diagnostics.log.FileLogSink
@@ -75,6 +77,7 @@ internal class DiagnosticsBundleStager(
                             kotlin = kotlin,
                             logcat = logcat,
                             exitReasons = exitReasons(),
+                            threadCpu = threadCpu(),
                             redaction = { redactionReport(redactor) },
                         )
                     val writer =
@@ -131,6 +134,7 @@ internal class DiagnosticsBundleStager(
         kotlin: List<File>,
         logcat: LogcatCaptureResult,
         exitReasons: String,
+        threadCpu: String,
         redaction: () -> String,
     ): List<BundleSource> {
         val kotlinByName = kotlin.associateBy(File::getName)
@@ -143,6 +147,7 @@ internal class DiagnosticsBundleStager(
                 "logcat/logcat.txt" -> spec.logcatSource(logcat)
                 "diagnostics.txt" -> spec.textSource(diagnostics)
                 "system/exit-reasons.txt" -> spec.textSource(exitReasons)
+                "system/thread-cpu.txt" -> spec.textSource(threadCpu)
                 "redaction.txt" -> spec.dynamicTextSource(redaction)
                 else -> error("unsupported diagnostics entry ${spec.name}")
             }
@@ -269,6 +274,20 @@ internal class DiagnosticsBundleStager(
             }
         }
     }
+
+    /**
+     * Names the thread behind an EXCESSIVE CPU USAGE kill, which no other entry can.
+     *
+     * Best-effort on purpose: `/proc/self/task` is readable for a process's own threads on
+     * every supported release, but a failure here must cost the entry and not the bundle.
+     */
+    private fun threadCpu(): String =
+        runCatching {
+            ThreadCpuSnapshot.read(
+                taskRoot = File("/proc/self/task"),
+                clockTicksPerSecond = Os.sysconf(OsConstants._SC_CLK_TCK),
+            )
+        }.getOrElse { "Thread CPU times are unavailable: /proc/self/task could not be read.\n" }
 
     private fun ankiDroidVersion(): String =
         try {

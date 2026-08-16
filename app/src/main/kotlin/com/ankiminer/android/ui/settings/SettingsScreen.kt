@@ -592,6 +592,9 @@ private fun SettingsScreen(
                             onResolveRecovery = {
                                 selectedCategory = SettingsCategory.ANKI
                             },
+                            onImportDictionary = {
+                                selectedCategory = SettingsCategory.DICTIONARIES
+                            },
                             // SETUP is the default failure origin and what resource-startup recovery
                             // records, so it has no owning card. The slot renders above the compact
                             // cutoff, and ResourceOriginFailure draws nothing when the origin does not

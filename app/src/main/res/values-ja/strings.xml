@@ -313,12 +313,14 @@
     <string name="runtime_work_settings_resource_active">リソースセットアップ実行中</string>
     <string name="runtime_work_settings_anki_active">Ankiセットアップ実行中</string>
     <string name="readiness_unidic_required">UniDicが必要</string>
+    <string name="readiness_dictionary_required">辞書が必要</string>
     <string name="readiness_anki_required">AnkiDroid未接続</string>
     <string name="readiness_model_required">ノートタイプが必要</string>
     <string name="readiness_recovery_required">Ankiリカバリ待ち</string>
     <string name="readiness_resource_operation">セットアップ中</string>
     <string name="readiness_unknown">準備状態を確認できませんでした。</string>
     <string name="readiness_install_unidic">UniDicをインストール</string>
+    <string name="readiness_install_dictionary">辞書をインストール</string>
     <string name="readiness_connect_ankidroid">AnkiDroidに接続</string>
     <string name="readiness_choose_note_type">ノートタイプを選択</string>
     <string name="readiness_resolve_recovery">復旧項目を解決</string>
@@ -815,6 +817,7 @@
     <string name="b3_status_note_type">ノートタイプ</string>
     <string name="b3_status_recovery">中断した処理</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">辞書</string>
     <string name="b3_status_notifications">通知</string>
     <string name="b3_status_success">準備完了</string>
     <string name="b3_status_optional">任意</string>

@@ -1270,9 +1270,18 @@ def _exception_terminal(
         fault_id = record_fault(log, "Mining failed", error)
         # Only deliberate engine-domain messages cross the public boundary.
         # Raw RuntimeError/OSError text can contain filesystem/provider detail.
+        from anki_miner.exceptions import SetupError
         from anki_miner.exceptions.base import AnkiMinerException
 
-        if isinstance(error, AnkiMinerException):
+        # A missing prerequisite is not a transient fault: the identical run will fail
+        # the same way until setup changes, so it gets its own code and is deliberately
+        # absent from the repositories' retryable set. Checked before the general
+        # AnkiMinerException branch, which would otherwise swallow it into engine_error
+        # and offer the user a Retry that can never succeed.
+        if isinstance(error, SetupError):
+            code = "setup_incomplete"
+            message = _android_engine_message(str(error)) or "Setup is incomplete"
+        elif isinstance(error, AnkiMinerException):
             code = "engine_error"
             message = _android_engine_message(str(error)) or "Mining failed"
         else:

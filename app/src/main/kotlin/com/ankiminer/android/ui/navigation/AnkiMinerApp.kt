@@ -59,6 +59,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
@@ -494,6 +495,20 @@ internal fun AnkiMinerApp(
         navigateTo(AnkiMinerDestination.SETTINGS)
     }
 
+    /**
+     * Deep-links the readiness notice to the catalog-dictionary card, which is the only one that
+     * can resolve "no dictionary installed" without the user already having an archive on disk.
+     * Goes through the [ResourceFailureOrigin] tables rather than literal indices so it moves with
+     * the card order the way every other deep link does.
+     */
+    fun navigateToDictionaries() {
+        requestedSettingsCategory =
+            settingsCategoryFor(ResourceFailureOrigin.CATALOG_DICTIONARY)
+        requestedSettingsItemIndex =
+            settingsCardIndexFor(ResourceFailureOrigin.CATALOG_DICTIONARY)
+        navigateTo(AnkiMinerDestination.SETTINGS)
+    }
+
     LaunchedEffect(notificationRunId) {
         if (notificationRunId == null) return@LaunchedEffect
         val videoRun = videoViewModel.uiState.value.runState
@@ -681,6 +696,7 @@ internal fun AnkiMinerApp(
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onCheckAgain = setupViewModel::refresh,
                         onOpenSettings = ::navigateToSettings,
+                        onImportDictionary = ::navigateToDictionaries,
                     )
                 }
             }
@@ -710,6 +726,7 @@ internal fun AnkiMinerApp(
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onCheckAgain = setupViewModel::refresh,
                         onOpenSettings = ::navigateToSettings,
+                        onImportDictionary = ::navigateToDictionaries,
                     )
                 }
             }
@@ -739,6 +756,7 @@ internal fun AnkiMinerApp(
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onCheckAgain = setupViewModel::refresh,
                         onOpenSettings = ::navigateToSettings,
+                        onImportDictionary = ::navigateToDictionaries,
                     )
                 }
             }
@@ -811,6 +829,7 @@ internal fun MiningReadinessNotice(
     onOpenAnkiDroid: () -> Unit,
     onCheckAgain: () -> Unit,
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
+    onImportDictionary: () -> Unit,
 ) {
     Column(
         Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
@@ -833,6 +852,7 @@ internal fun MiningReadinessNotice(
                             onOpenAnkiDroid = onOpenAnkiDroid,
                             onCheckAgain = onCheckAgain,
                             onOpenSettings = onOpenSettings,
+                            onImportDictionary = onImportDictionary,
                         )
                 }
             }
@@ -849,6 +869,7 @@ internal fun MiningReadinessActions(
     onOpenAnkiDroid: () -> Unit,
     onCheckAgain: () -> Unit,
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
+    onImportDictionary: () -> Unit,
 ) {
     val actionSpec =
         when (action) {
@@ -857,6 +878,12 @@ internal fun MiningReadinessActions(
                     R.string.readiness_install_unidic,
                     onInstallUniDic,
                     opensSettings = false,
+                )
+            MiningReadinessAction.INSTALL_DICTIONARY ->
+                ReadinessActionSpec(
+                    R.string.readiness_install_dictionary,
+                    onImportDictionary,
+                    opensSettings = true,
                 )
             MiningReadinessAction.INSTALL_ANKIDROID ->
                 ReadinessActionSpec(
@@ -933,6 +960,7 @@ internal fun miningReadinessMessage(state: SetupUiState): Int =
         state.resourceStartup != com.ankiminer.android.data.resources.ResourceStartupReadiness.READY ->
             R.string.readiness_resources_pending
         !state.uniDicInstalled -> R.string.readiness_unidic_required
+        !state.dictionaryReady -> R.string.readiness_dictionary_required
         !state.ankiReady -> R.string.readiness_anki_required
         !state.targetReady -> R.string.readiness_model_required
         !state.recoveryReady -> R.string.readiness_recovery_required

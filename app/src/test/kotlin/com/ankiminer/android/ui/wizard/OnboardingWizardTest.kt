@@ -129,7 +129,8 @@ class OnboardingWizardTest {
             wizardStepRequirement(WizardStep.ANKIDROID_NOTE_TYPE),
         )
         assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.TOKENIZER))
-        assertEquals(WizardStepRequirement.OPTIONAL, wizardStepRequirement(WizardStep.DICTIONARY))
+        // Mining cannot start without one: the engine raises SetupError before any work.
+        assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.DICTIONARY))
         assertEquals(null, wizardStepRequirement(WizardStep.WELCOME))
         assertEquals(null, wizardStepRequirement(WizardStep.DONE))
     }
