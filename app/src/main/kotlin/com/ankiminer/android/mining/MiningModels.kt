@@ -64,11 +64,16 @@ data class MiningProgress(
     val description: String,
     val unit: MiningProgressUnit = MiningProgressUnit.ITEMS,
     val stage: MiningStage? = null,
+    /** Highest whole-run fraction already published; the bar never renders below it. */
+    val fractionFloor: Float = 0f,
+    /** The stage's progress cycle completed, so a zero-total band still fills. */
+    val stageComplete: Boolean = false,
 ) {
     init {
         require(total >= 0)
         require(current >= 0)
-        require(total == 0L || current <= total)
+        // current > total no longer throws: an engine counting slip is display noise,
+        // not a protocol fault. The fraction clamps instead.
     }
 
     /**
@@ -82,10 +87,16 @@ data class MiningProgress(
      */
     val fraction: Float?
         get() {
-            val within = if (total == 0L) null else current.toFloat() / total.toFloat()
+            val within =
+                when {
+                    stageComplete -> 1f
+                    total == 0L -> null
+                    else -> (current.toFloat() / total.toFloat()).coerceAtMost(1f)
+                }
             val stage = stage ?: return within
             val band = 1f / stage.total
-            return (stage.index - 1) * band + (within ?: 0f) * band
+            val raw = (stage.index - 1) * band + (within ?: 0f) * band
+            return maxOf(raw, fractionFloor)
         }
 }
 

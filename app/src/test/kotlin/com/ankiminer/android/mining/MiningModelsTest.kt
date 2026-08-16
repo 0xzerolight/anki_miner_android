@@ -78,6 +78,35 @@ class MiningModelsTest {
     }
 
     @Test
+    fun fractionNeverRendersBelowItsFloor() {
+        // Stage 3/5 fresh sub-cycle restarting at 0 must plateau at the floor, not jump back.
+        val progress =
+            MiningProgress(0, 10, "audio", stage = MiningStage(3, 5, "Media"), fractionFloor = 0.6f)
+
+        assertEquals(0.6f, progress.fraction)
+    }
+
+    @Test
+    fun zeroTotalStageWithStageCompleteFillsItsBand() {
+        val progress =
+            MiningProgress(0, 0, "parse", stage = MiningStage(3, 5, "Media"), stageComplete = true)
+
+        assertEquals(0.6f, progress.fraction!!, 1e-6f)
+    }
+
+    @Test
+    fun withinStageOverflowClampsToTheBandEndInsteadOfThrowing() {
+        val progress = MiningProgress(12, 10, "media", stage = MiningStage(3, 5, "Media"))
+
+        assertEquals(0.6f, progress.fraction!!, 1e-6f) // (3-1)*0.2 + 1.0*0.2
+    }
+
+    @Test
+    fun stagelessOverflowClampsToOne() {
+        assertEquals(1f, MiningProgress(12, 10, "copy").fraction)
+    }
+
+    @Test
     fun stageRejectsAnIndexOutsideItsTotal() {
         assertThrows(IllegalArgumentException::class.java) { MiningStage(0, 5, "Parsing") }
         assertThrows(IllegalArgumentException::class.java) { MiningStage(6, 5, "Parsing") }
