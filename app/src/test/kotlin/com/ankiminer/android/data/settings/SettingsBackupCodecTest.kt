@@ -28,7 +28,6 @@ class SettingsBackupCodecTest {
             animatedScreenshotsEnabled = true,
             animatedScreenshotDurationSeconds = 2.0,
             animatedScreenshotQuality = 60,
-            stripSubtitleAnnotations = false,
             subtitleRegexFilter = "\\(.*?\\)",
             subtitleRegexReplacement = "",
             useSubtitleRegexFilter = true,

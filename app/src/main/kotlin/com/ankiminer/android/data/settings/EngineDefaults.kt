@@ -36,7 +36,6 @@ internal object EngineDefaults {
     const val ANIMATED_SCREENSHOT_QUALITY: Int = 30
 
     // Subtitle text handling.
-    const val STRIP_SUBTITLE_ANNOTATIONS: Boolean = true
     const val SUBTITLE_REGEX_FILTER: String = ""
     const val SUBTITLE_REGEX_REPLACEMENT: String = ""
     const val USE_SUBTITLE_REGEX_FILTER: Boolean = false

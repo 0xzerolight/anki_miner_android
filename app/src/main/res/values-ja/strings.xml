@@ -655,7 +655,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">字幕テキスト</string>
-    <string name="settings_strip_annotations">注記を除去(効果音・話者名・ふりがな)</string>
     <string name="settings_subtitle_regex">正規表現フィルター</string>
     <string name="settings_subtitle_replacement">置換文字列(空欄で削除)</string>
     <string name="settings_use_subtitle_regex">字幕に正規表現フィルターを適用</string>

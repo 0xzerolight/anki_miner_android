@@ -664,7 +664,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Subtitle text</string>
-    <string name="settings_strip_annotations">Strip annotations (sound effects, speaker tags, furigana)</string>
     <string name="settings_subtitle_regex">Regex filter</string>
     <string name="settings_subtitle_replacement">Replacement (empty deletes the match)</string>
     <string name="settings_use_subtitle_regex">Apply the regex filter to subtitles</string>

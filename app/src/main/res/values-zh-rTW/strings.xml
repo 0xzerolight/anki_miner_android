@@ -648,7 +648,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">字幕文字</string>
-    <string name="settings_strip_annotations">移除註解（音效、說話者標籤、振假名）</string>
     <string name="settings_subtitle_regex">正規表示式篩選器</string>
     <string name="settings_subtitle_replacement">取代文字（留空會刪除比對結果）</string>
     <string name="settings_use_subtitle_regex">對字幕套用正規表示式過濾</string>

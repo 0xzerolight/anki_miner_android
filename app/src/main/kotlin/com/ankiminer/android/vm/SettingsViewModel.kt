@@ -171,7 +171,6 @@ internal data class SettingsDraft(
     val maxFrequency: String,
     val workers: String,
     val audioFormat: AudioFormat?,
-    val stripAnnotations: Boolean?,
     val subtitleRegex: String,
     val subtitleRegexReplacement: String,
     val useSubtitleRegex: Boolean?,
@@ -301,7 +300,6 @@ internal data class SettingsDraft(
             subtitleOffsetSeconds = AppSettingsDraftParser.optionalDouble(subtitleOffset),
             audioFormat = audioFormat,
             audioBitrateKbps = AppSettingsDraftParser.optionalInt(bitrate),
-            stripSubtitleAnnotations = stripAnnotations,
             // Blank text inherits the engine default, which is the empty pattern and the empty
             // replacement — so an explicit empty override would mean exactly the same thing.
             subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
@@ -440,7 +438,6 @@ internal data class SettingsDraft(
                 maxFrequency = settings.maxFrequencyRank?.toString().orEmpty(),
                 workers = settings.maxParallelWorkers?.toString().orEmpty(),
                 audioFormat = settings.audioFormat,
-                stripAnnotations = settings.stripSubtitleAnnotations,
                 subtitleRegex = settings.subtitleRegexFilter.orEmpty(),
                 subtitleRegexReplacement = settings.subtitleRegexReplacement.orEmpty(),
                 useSubtitleRegex = settings.useSubtitleRegexFilter,
@@ -520,8 +517,6 @@ private fun SettingsDraft.rebaseChangesSince(
         maxFrequency = changedValue(baseline.maxFrequency, maxFrequency, persisted.maxFrequency),
         workers = changedValue(baseline.workers, workers, persisted.workers),
         audioFormat = changedValue(baseline.audioFormat, audioFormat, persisted.audioFormat),
-        stripAnnotations =
-            changedValue(baseline.stripAnnotations, stripAnnotations, persisted.stripAnnotations),
         subtitleRegex = changedValue(baseline.subtitleRegex, subtitleRegex, persisted.subtitleRegex),
         subtitleRegexReplacement =
             changedValue(

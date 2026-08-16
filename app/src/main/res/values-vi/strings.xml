@@ -652,7 +652,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Văn bản phụ đề</string>
-    <string name="settings_strip_annotations">Loại bỏ chú thích (hiệu ứng âm thanh, thẻ nhãn người nói, furigana)</string>
     <string name="settings_subtitle_regex">Bộ lọc regex</string>
     <string name="settings_subtitle_replacement">Thay thế (để trống sẽ xóa phần khớp)</string>
     <string name="settings_use_subtitle_regex">Áp dụng bộ lọc regex cho phụ đề</string>

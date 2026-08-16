@@ -1071,7 +1071,7 @@ object BridgeJsonCodec {
                 "exclude_hiragana_only_words",
                 "exclude_katakana_only_words", "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist",
                 "subtitle_regex_filter", "subtitle_regex_replacement", "use_subtitle_regex_filter",
-                "strip_subtitle_annotations", "bold_target_in_sentence",
+                "bold_target_in_sentence",
                 "deduplicate_sentences", "use_i_plus_one_filter", "use_sentence_length_filter",
                 "max_sentence_duration_seconds", "max_sentence_chars", "reading_min_occurrence", "max_parallel_workers",
             )
@@ -1114,7 +1114,7 @@ object BridgeJsonCodec {
                 }
             "reading_tts_enabled", "use_known_words_db",
             "exclude_hiragana_only_words", "exclude_katakana_only_words",
-            "use_blacklist", "use_whitelist", "use_subtitle_regex_filter", "strip_subtitle_annotations",
+            "use_blacklist", "use_whitelist", "use_subtitle_regex_filter",
             "bold_target_in_sentence", "deduplicate_sentences", "use_i_plus_one_filter",
             "use_sentence_length_filter" -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)

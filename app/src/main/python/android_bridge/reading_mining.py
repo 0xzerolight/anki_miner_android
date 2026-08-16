@@ -219,16 +219,12 @@ def _read_staged_text(path: Path) -> str:
 def _load_document(
     request: _ReadingRequest,
     cancellation_check: Callable[[], bool] | None = None,
-    *,
-    strip_subtitle_annotations: bool = True,
 ) -> object:
     """Call the desktop detector and loader after validating the staged pair.
 
-    ``strip_subtitle_annotations`` carries the user's setting to the per-cue
-    cleanup. The engine's own kwarg defaults to False (opt-in for callers that
-    predate it), but the product default is on, so the bridge default matches
-    the config rather than the engine signature — a caller that forgets it gets
-    desktop behaviour, not silently unfiltered cues.
+    ``cancellation_check`` is forwarded to the engine loader, which raises
+    ``OperationCancelled`` as soon as it observes a request to stop; the loader
+    itself owns the per-kind checkpoints.
     """
 
     if not request.source_path.is_file():
@@ -286,7 +282,7 @@ def _load_document(
             cancellation_check=cancellation_check,
             precount_sentences=request.source_kind in {"txt", "text", "epub", "mokuro"},
         ):
-            document = detector.load(ref, strip_subtitle_annotations=strip_subtitle_annotations)
+            document = detector.load(ref, cancel_check=cancellation_check)
     except ReadingUnitLimitExceeded as error:
         raise BridgeProtocolError(
             "reading_source_too_large",
@@ -418,11 +414,7 @@ def run_reading(
             config = _map_config(request, files_dir)
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
-            document = _load_document(
-                request,
-                adapters.cancel_event.is_set,
-                strip_subtitle_annotations=bool(config.strip_subtitle_annotations),
-            )
+            document = _load_document(request, adapters.cancel_event.is_set)
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             result = _process_reading(document, config, adapters)

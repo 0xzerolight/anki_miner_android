@@ -656,7 +656,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Texto da legenda</string>
-    <string name="settings_strip_annotations">Remover anotações (efeitos sonoros, etiquetas de falante, furigana)</string>
     <string name="settings_subtitle_regex">Filtro regex</string>
     <string name="settings_subtitle_replacement">Substituição (vazio exclui a correspondência)</string>
     <string name="settings_use_subtitle_regex">Aplicar o filtro regex às legendas</string>

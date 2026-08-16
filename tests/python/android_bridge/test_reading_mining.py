@@ -111,8 +111,7 @@ def _text_detector(text_source: ModuleType) -> object:
     def detect(_path: Path) -> list[object]:
         pytest.fail("detector.detect must never run for a text source")
 
-    def load(ref: object, *, strip_subtitle_annotations: bool) -> object:
-        assert strip_subtitle_annotations is True
+    def load(ref: object, *, cancel_check: object = None) -> object:
         return text_source.load(ref)
 
     return SimpleNamespace(detect=detect, load=load)
@@ -383,8 +382,8 @@ def test_load_document_calls_desktop_detect_then_load_for_every_detected_file_ki
         calls.append(("detect", path))
         return [ref]
 
-    def load(received: object, *, strip_subtitle_annotations: bool) -> object:
-        calls.append(("load", received, strip_subtitle_annotations))
+    def load(received: object, *, cancel_check: object = None) -> object:
+        calls.append(("load", received, cancel_check))
         return document
 
     detector = SimpleNamespace(detect=detect, load=load)
@@ -400,10 +399,10 @@ def test_load_document_calls_desktop_detect_then_load_for_every_detected_file_ki
     )
 
     assert reading_mining._load_document(request) is document
-    # The per-cue annotation strip is an engine kwarg that defaults to False;
-    # the bridge must forward the product default (on) or the reading path
-    # silently mines speaker tags and SFX captions.
-    assert calls == [("detect", source), ("load", ref, True)]
+    # The loader takes the caller's cancellation check and owns the per-kind
+    # checkpoints; this caller supplies none, so it must arrive as None rather
+    # than as some bridge-invented default.
+    assert calls == [("detect", source), ("load", ref, None)]
     assert document.series == (series_name if kind == "subtitle" else "reading-job-v1-nonce")
 
 
@@ -437,8 +436,7 @@ def test_staged_text_constructs_ref_instead_of_calling_detect(
     def detect(_path: Path) -> list[object]:
         pytest.fail("detector.detect must never run for a text source")
 
-    def load(ref: object, *, strip_subtitle_annotations: bool) -> object:
-        assert strip_subtitle_annotations is True
+    def load(ref: object, *, cancel_check: object = None) -> object:
         captured.append(ref)
         return SimpleNamespace(kind="book", units=[])
 
@@ -973,8 +971,7 @@ def _stub_run(
     *,
     events: list[str] | None = None,
 ) -> tuple[object, object]:
-    # The run forwards config.strip_subtitle_annotations to the loader.
-    config = SimpleNamespace(strip_subtitle_annotations=True)
+    config = SimpleNamespace()
     document = object()
     monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
 
@@ -984,12 +981,7 @@ def _stub_run(
             events.append("map")
         return config
 
-    def load_document(
-        request: object,
-        cancellation_check: object,
-        *,
-        strip_subtitle_annotations: bool = True,
-    ) -> object:
+    def load_document(request: object, cancellation_check: object) -> object:
         assert callable(cancellation_check)
         if events is not None:
             events.append("load")
@@ -1105,9 +1097,7 @@ def test_cancellation_after_document_load_stops_before_processor(
     monkeypatch.setattr(
         reading_mining,
         "_map_config",
-        # The run reads strip_subtitle_annotations off the mapped config to
-        # forward it to the loader, so the double must carry it.
-        lambda *_: SimpleNamespace(strip_subtitle_annotations=True),
+        lambda *_: SimpleNamespace(),
     )
 
     def load_then_cancel(_: object, __: object, **_kwargs: object) -> object:
@@ -1145,9 +1135,7 @@ def test_reading_curation_parks_and_preserves_none_vs_empty_semantics(
     monkeypatch.setattr(
         reading_mining,
         "_map_config",
-        # The run reads strip_subtitle_annotations off the mapped config to
-        # forward it to the loader, so the double must carry it.
-        lambda *_: SimpleNamespace(strip_subtitle_annotations=True),
+        lambda *_: SimpleNamespace(),
     )
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
     emitted = threading.Event()

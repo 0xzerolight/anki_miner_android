@@ -60,7 +60,6 @@ _BOOL_FIELDS = frozenset(
         "use_blacklist",
         "use_whitelist",
         "use_subtitle_regex_filter",
-        "strip_subtitle_annotations",
         "bold_target_in_sentence",
         "deduplicate_sentences",
         "use_i_plus_one_filter",

@@ -207,10 +207,6 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.subtitleOffset, value.subtitleOffsetSeconds)
                 candidate.setOrRemove(Keys.audioFormat, value.audioFormat?.wireValue)
                 candidate.setOrRemove(Keys.audioBitrate, value.audioBitrateKbps)
-                candidate.setOrRemove(
-                    Keys.stripSubtitleAnnotations,
-                    value.stripSubtitleAnnotations,
-                )
                 candidate.setOrRemove(Keys.subtitleRegexFilter, value.subtitleRegexFilter)
                 candidate.setOrRemove(
                     Keys.subtitleRegexReplacement,
@@ -364,8 +360,6 @@ class DataStoreAppSettingsRepository internal constructor(
                         }),
                     audioBitrateKbps =
                         decoder.validated(Keys.audioBitrate) { AppSettings(audioBitrateKbps = it) },
-                    stripSubtitleAnnotations =
-                        decoder.read(Keys.stripSubtitleAnnotations, null, { it }),
                     subtitleRegexFilter = storedSubtitleRegex,
                     subtitleRegexReplacement =
                         decoder.read(Keys.subtitleRegexReplacement, null, { it }) { value ->
@@ -574,8 +568,6 @@ class DataStoreAppSettingsRepository internal constructor(
             val subtitleOffset = register(doublePreferencesKey("subtitle_offset_seconds"))
             val audioFormat = register(stringPreferencesKey("audio_format"))
             val audioBitrate = register(intPreferencesKey("audio_bitrate_kbps"))
-            val stripSubtitleAnnotations =
-                register(booleanPreferencesKey("strip_subtitle_annotations"))
             val subtitleRegexFilter = register(stringPreferencesKey("subtitle_regex_filter"))
             val subtitleRegexReplacement =
                 register(stringPreferencesKey("subtitle_regex_replacement"))

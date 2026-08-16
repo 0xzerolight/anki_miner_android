@@ -658,7 +658,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Текст субтитров</string>
-    <string name="settings_strip_annotations">Удалять аннотации субтитров (звуковые эффекты, метки говорящих, фуригана)</string>
     <string name="settings_subtitle_regex">Фильтр регулярных выражений</string>
     <string name="settings_subtitle_replacement">Замена (пустое поле удаляет совпадение)</string>
     <string name="settings_use_subtitle_regex">Применять regex-фильтр к субтитрам</string>

@@ -652,7 +652,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">字幕文本</string>
-    <string name="settings_strip_annotations">移除注释（音效、说话人标签、假名）</string>
     <string name="settings_subtitle_regex">正则过滤器</string>
     <string name="settings_subtitle_replacement">替换内容（留空则删除匹配项）</string>
     <string name="settings_use_subtitle_regex">对字幕应用正则过滤</string>
