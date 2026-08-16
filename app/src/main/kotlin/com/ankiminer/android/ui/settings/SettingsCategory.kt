@@ -18,7 +18,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -41,6 +40,7 @@ import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.mining.boundedSaveableQuery
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 
 internal enum class SettingsCategory(
     @param:StringRes val label: Int,
@@ -189,7 +189,7 @@ internal fun SettingsCategoryLayout(
                 tonalElevation = 2.dp,
             ) {
                 Column {
-                    OutlinedTextField(
+                    CompactOutlinedTextField(
                         value = query,
                         onValueChange = { onQueryChange(it.boundedSaveableQuery()) },
                         modifier =
@@ -201,7 +201,10 @@ internal fun SettingsCategoryLayout(
                                 )
                                 .testTag(SettingsCategoryTestTags.SEARCH),
                         singleLine = true,
-                        label = { Text(stringResource(R.string.settings_search)) },
+                        // Placeholder, not a floating label: the field sits under the header that
+                        // already names the screen, and the label would eat the height the compact
+                        // field buys back.
+                        placeholder = { Text(stringResource(R.string.settings_search)) },
                         trailingIcon = {
                             if (query.isNotEmpty()) {
                                 IconButton(onClick = { onQueryChange("") }) {
