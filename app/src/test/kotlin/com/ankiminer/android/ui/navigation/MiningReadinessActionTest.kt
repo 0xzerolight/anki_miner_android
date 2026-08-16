@@ -13,6 +13,7 @@ import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
+import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.engine.PythonBootstrapStage
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -47,6 +48,22 @@ internal class MiningReadinessActionTest(
                 recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
                 uniDicInstalled = true,
                 miningTarget = AnkiMiningTargetReadiness.Ready,
+                dictionaries = listOf(usableDictionary()),
+            )
+
+        private fun usableDictionary() =
+            InstalledDictionary(
+                slotId = "dictionary-1",
+                occupied = true,
+                valid = true,
+                sourceName = "Jitendex",
+                sourceRevision = "2026-08-01",
+                format = "yomitan",
+                entryCount = 1_000L,
+                schemaOk = true,
+                embeddedAttribution = emptyMap(),
+                catalogResourceId = "jitendex",
+                attribution = emptyList(),
             )
 
         @JvmStatic
@@ -104,6 +121,18 @@ internal class MiningReadinessActionTest(
                     "missing UniDic installs UniDic",
                     ready.copy(uniDicInstalled = false),
                     MiningReadinessAction.INSTALL_UNIDIC,
+                ),
+                arrayOf(
+                    "missing dictionary installs a dictionary",
+                    ready.copy(dictionaries = emptyList()),
+                    MiningReadinessAction.INSTALL_DICTIONARY,
+                ),
+                arrayOf(
+                    // Occupied but unreadable is the state a schema bump leaves behind, and it
+                    // is just as unusable to the engine as an empty slot.
+                    "unusable dictionary installs a dictionary",
+                    ready.copy(dictionaries = listOf(usableDictionary().copy(schemaOk = false))),
+                    MiningReadinessAction.INSTALL_DICTIONARY,
                 ),
                 arrayOf(
                     "missing AnkiDroid installs",

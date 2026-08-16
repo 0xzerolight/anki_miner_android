@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">Penyiapan sumber daya aktif</string>
     <string name="runtime_work_settings_anki_active">Penyiapan Anki aktif</string>
     <string name="readiness_unidic_required">UniDic diperlukan</string>
+    <string name="readiness_dictionary_required">Kamus diperlukan</string>
     <string name="readiness_anki_required">AnkiDroid tidak terhubung</string>
     <string name="readiness_model_required">Tipe catatan diperlukan</string>
     <string name="readiness_recovery_required">Pemulihan Anki tertunda</string>
     <string name="readiness_resource_operation">Penyiapan sedang berlangsung</string>
     <string name="readiness_unknown">Kesiapan tidak dapat dikonfirmasi.</string>
     <string name="readiness_install_unidic">Instal UniDic</string>
+    <string name="readiness_install_dictionary">Instal kamus</string>
     <string name="readiness_connect_ankidroid">Hubungkan AnkiDroid</string>
     <string name="readiness_choose_note_type">Pilih tipe catatan</string>
     <string name="readiness_resolve_recovery">Selesaikan pemulihan</string>
@@ -810,6 +812,7 @@
     <string name="b3_status_note_type">Tipe catatan</string>
     <string name="b3_status_recovery">Pekerjaan terputus</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">Kamus</string>
     <string name="b3_status_notifications">Notifikasi</string>
     <string name="b3_status_success">Siap</string>
     <string name="b3_status_optional">Opsional</string>

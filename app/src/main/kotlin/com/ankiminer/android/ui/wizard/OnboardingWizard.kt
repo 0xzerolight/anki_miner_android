@@ -111,9 +111,12 @@ internal fun wizardStepRequirement(step: WizardStep): WizardStepRequirement? =
         WizardStep.ANKIDROID,
         WizardStep.ANKIDROID_NOTE_TYPE,
         WizardStep.TOKENIZER,
+        // Mining cannot start without a usable dictionary: the engine raises SetupError before
+        // any work happens. Labelling this optional walked testers to a "ready" wizard whose
+        // first run then failed seconds in.
+        WizardStep.DICTIONARY,
         -> WizardStepRequirement.REQUIRED
         WizardStep.ANKIDROID_DECK,
-        WizardStep.DICTIONARY,
         -> WizardStepRequirement.OPTIONAL
         WizardStep.WELCOME,
         WizardStep.DONE,
@@ -413,6 +416,9 @@ private fun WizardStepBody(
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },
                 onResolveRecovery = callbacks.onResolveRecovery,
+                onImportDictionary = {
+                    callbacks.onStep(WizardStep.DICTIONARY)
+                },
             )
             WizardResourceFailure(
                 state,
@@ -514,6 +520,9 @@ private fun WizardStepBody(
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },
                 onResolveRecovery = callbacks.onResolveRecovery,
+                onImportDictionary = {
+                    callbacks.onStep(WizardStep.DICTIONARY)
+                },
                 inlineFailureTaskId = SetupTaskId.RECOVERY.takeIf { hasRecoveryFailure },
                 inlineFailure =
                     if (hasRecoveryFailure) {

@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">Выполняется настройка ресурсов</string>
     <string name="runtime_work_settings_anki_active">Выполняется настройка Anki</string>
     <string name="readiness_unidic_required">Требуется UniDic</string>
+    <string name="readiness_dictionary_required">Требуется словарь</string>
     <string name="readiness_anki_required">AnkiDroid не подключён</string>
     <string name="readiness_model_required">Требуется тип заметки</string>
     <string name="readiness_recovery_required">Ожидается восстановление Anki</string>
     <string name="readiness_resource_operation">Выполняется настройка</string>
     <string name="readiness_unknown">Не удалось подтвердить готовность.</string>
     <string name="readiness_install_unidic">Установить UniDic</string>
+    <string name="readiness_install_dictionary">Установить словарь</string>
     <string name="readiness_connect_ankidroid">Подключить AnkiDroid</string>
     <string name="readiness_choose_note_type">Выбрать тип заметки</string>
     <string name="readiness_resolve_recovery">Устранить восстановление</string>
@@ -819,6 +821,7 @@
     <string name="b3_status_note_type">Тип заметки</string>
     <string name="b3_status_recovery">Прерванная работа</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">Словарь</string>
     <string name="b3_status_notifications">Уведомления</string>
     <string name="b3_status_success">Готово</string>
     <string name="b3_status_optional">Необязательно</string>

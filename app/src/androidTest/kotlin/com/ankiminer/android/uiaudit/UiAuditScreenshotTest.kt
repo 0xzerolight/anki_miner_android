@@ -216,6 +216,7 @@ class UiAuditScreenshotTest {
                         onOpenAnkiDroid = {},
                         onCheckAgain = {},
                         onOpenSettings = {},
+                        onImportDictionary = {},
                     )
                 },
                 CaptureTarget(
@@ -235,6 +236,7 @@ class UiAuditScreenshotTest {
                         onOpenAnkiDroid = {},
                         onCheckAgain = {},
                         onOpenSettings = {},
+                        onImportDictionary = {},
                     )
                 },
             ),
