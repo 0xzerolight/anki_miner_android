@@ -1122,6 +1122,7 @@ class SettingsViewModelTest {
             entryCount = 1,
             schemaOk = true,
             schemaVersion = 1,
+            rebuildSourcePath = null,
         )
 
     /**

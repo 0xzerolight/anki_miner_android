@@ -318,6 +318,7 @@ class SettingsBackupCodecTest {
             schemaOk = true,
             schemaVersion = 1,
             isCategorical = false,
+            rebuildSourcePath = null,
         )
 
     private fun pitch(
@@ -333,5 +334,6 @@ class SettingsBackupCodecTest {
             entryCount = entries,
             schemaOk = true,
             schemaVersion = 1,
+            rebuildSourcePath = null,
         )
 }

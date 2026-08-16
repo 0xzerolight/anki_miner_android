@@ -271,6 +271,7 @@ class SettingsDraftStoreTest {
             schemaOk = true,
             schemaVersion = 1,
             isCategorical = false,
+            rebuildSourcePath = null,
         )
 
     private fun audioPack(id: String): InstalledAudioPack =
