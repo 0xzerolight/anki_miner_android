@@ -641,8 +641,16 @@ class AndroidAnkiAdapter:
         # disk, so the composition layer hands the exact prefix down here.
         self._source_prefix = source_prefix or None
         self.last_created_note_ids: list[int] = []
+        # Read back by ``_phase5`` to decide what to record as known. The engine
+        # stopped deriving this from the submitted payloads, so an adapter that
+        # leaves it empty silently stops the known-word database recording.
+        self.last_created_mined_forms: list[str] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
+        # Installed and cleared by the engine around create_cards_batch. Kept
+        # separate from the constructor's cancellation check: conflating them
+        # would leave the engine's check installed after its finally clears it.
+        self._engine_cancelled_check: Callable[[], bool] | None = None
         # Note-write provenance (engine D30). EpisodeProcessor reads this off
         # the service after every run and fails closed to UNCERTAIN when it is
         # not a real AnkiWriteState, so an adapter that never set it would
@@ -714,7 +722,8 @@ class AndroidAnkiAdapter:
             self._reserved_media_name_owners.clear()
 
     def _raise_if_cancelled(self, operation: str) -> None:
-        if self._cancellation_check():
+        engine_cancelled = self._engine_cancelled_check
+        if self._cancellation_check() or (engine_cancelled is not None and engine_cancelled()):
             raise AnkiOperationCancelled(
                 operation,
                 f"Anki {operation} preparation was cancelled",
@@ -1046,8 +1055,24 @@ class AndroidAnkiAdapter:
             next_cursor = {"ordinal": ordinal, "token": token}
         return raw_fields, scanned_notes, next_cursor
 
-    def get_existing_vocabulary(self) -> set[str]:
-        """Return cached, desktop-normalized Japanese first fields."""
+    def set_cancelled_check(self, cancelled: Callable[[], bool] | None) -> None:
+        """Install or clear the engine's own cancellation probe.
+
+        ``_phase5`` sets this before ``create_cards_batch`` and clears it in a
+        ``finally``, so Stop lands during a card write instead of waiting out
+        the whole batch.
+        """
+        self._engine_cancelled_check = cancelled
+
+    def get_existing_vocabulary(self, *, allow_degraded: bool = True) -> set[str]:
+        """Return cached, desktop-normalized Japanese first fields.
+
+        ``allow_degraded`` exists because ``create_cards_batch`` passes
+        ``False``; it changes nothing here. Desktop degrades a timeout to an
+        empty set, which on Android would mean "nothing is known" and re-mine
+        the user's whole collection, so this read already raises either way —
+        see the ``AnkiCallbackError`` arm below.
+        """
 
         self._raise_if_cancelled("scanFirstFields")
         if self._existing_vocab_cache is not None:
@@ -3089,11 +3114,13 @@ class AndroidAnkiAdapter:
 
         if not word_data_list:
             self.last_created_note_ids = []
+            self.last_created_mined_forms = []
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
             return []
 
         self.last_created_note_ids = []
+        self.last_created_mined_forms = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
         # Desktop deliberately renders HTTP(S) glossary images. Android strips
@@ -3105,6 +3132,7 @@ class AndroidAnkiAdapter:
 
         all_created_ids: list[int] = []
         created_first_fields: list[str] = []
+        created_mined_forms: list[str] = []
         skipped_duplicates = preflight_plan.skipped_outgoing_duplicates
         total_created = 0
         bold_used = 0
@@ -3305,14 +3333,23 @@ class AndroidAnkiAdapter:
                             )
                         total_created += sum(successful)
                         all_created_ids.extend(note_id for note_id in note_ids if note_id is not None)
-                        created_first_fields.extend(
-                            pending.first_field
+                        confirmed_notes = [
+                            pending
                             for pending, was_successful in zip(
                                 submit_notes,
                                 successful,
                                 strict=True,
                             )
                             if was_successful
+                        ]
+                        created_first_fields.extend(pending.first_field for pending in confirmed_notes)
+                        # The payload's mined_form, not the first field: the
+                        # first field is the rendered Expression, and the engine
+                        # keys the known-word database on the mined form.
+                        created_mined_forms.extend(
+                            mined_form
+                            for pending in confirmed_notes
+                            if (mined_form := getattr(getattr(pending.payload, "word", None), "mined_form", ""))
                         )
                         if partial_error is not None:
                             _raise_callback_error(partial_error)
@@ -3350,6 +3387,7 @@ class AndroidAnkiAdapter:
             raise partial_error from error
         finally:
             self.last_created_note_ids = all_created_ids
+            self.last_created_mined_forms = created_mined_forms
             self.last_skipped_duplicates = skipped_duplicates
             if self._existing_vocab_cache is not None:
                 for first_field in created_first_fields:

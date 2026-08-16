@@ -141,6 +141,9 @@ def test_validation_result_projects_real_engine_dataclass_to_supported_wire_fiel
             ffmpeg_ok=True,
             deck_exists=True,
             note_type_exists=True,
+            # Engine-side only: Android reads nothing but ``issues`` off a
+            # validation result, and a bad field mapping arrives as an issue.
+            field_mapping_ok=True,
             issues=[ValidationIssue("ffprobe", "WARNING", "old")],
             ffprobe_ok=False,
             tool_versions={"ffmpeg": "7.1.1 [bundled]"},
