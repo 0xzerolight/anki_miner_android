@@ -5,7 +5,6 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
@@ -27,7 +26,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
@@ -52,9 +50,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.ThemePalettes
-import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.dynamicColorSupported
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
@@ -465,7 +461,7 @@ internal fun LazyListScope.mediaSettings(
                             label,
                             preset.pattern,
                         )
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = {
                             onDraftChange(
                                 draft.copy(
@@ -482,12 +478,8 @@ internal fun LazyListScope.mediaSettings(
                                 ),
                             )
                         },
-                        border = actionBorder(enabled = true),
-                        colors = outlinedActionButtonColors(),
                         modifier =
-                            Modifier
-                                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
-                                .semantics { contentDescription = description },
+                            Modifier.semantics { contentDescription = description },
                     ) { Text(label) }
                 }
             }
@@ -791,7 +783,7 @@ private fun LazyListScope.audioSettings(
                             callbacks.onDraftChange(draft.copy(readingTts = it))
                         },
                     )
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = callbacks.onOpenSpeechSettings,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
@@ -1089,7 +1081,7 @@ private fun LazyListScope.uiSettings(
                 SupportingText(stringResource(R.string.settings_theme_dynamic_supporting))
             }
             callbacks.onRunSetupWizard?.let { runWizard ->
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = runWizard,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1216,15 +1208,10 @@ private fun LazyListScope.diagnosticsSettings(
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "reset-actions") {
         SettingsSection(stringResource(R.string.settings_reset_section)) {
             SettingsResetAction.entries.forEach { action ->
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = { callbacks.onRequestReset(action) },
                     enabled = callbacks.resetEnabled && !setup.busy,
                     modifier = Modifier.fillMaxWidth(),
-                    colors = outlinedActionButtonColors(),
-                    border =
-                        actionBorder(
-                            enabled = callbacks.resetEnabled && !setup.busy,
-                        ),
                 ) {
                     Text(stringResource(settingsResetLabel(action)))
                 }
@@ -1256,6 +1243,7 @@ private fun LazyListScope.diagnosticsSettings(
                 enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
                     diagnosticsExport !is DiagnosticsExportState.Ready,
                 modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.small,
             ) {
                 Text(stringResource(R.string.settings_share_diagnostics_bundle))
             }
@@ -1303,12 +1291,10 @@ internal fun UpdateCheckSection(
             style = MaterialTheme.typography.bodySmall,
         )
         val checkEnabled = updateCheck.enabled && !updateCheck.checking
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = onCheck,
             enabled = checkEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = checkEnabled),
         ) {
             Text(stringResource(R.string.settings_update_check_now))
         }
@@ -1358,21 +1344,17 @@ internal fun SettingsBackupSection(
             style = MaterialTheme.typography.bodySmall,
         )
         val actionsEnabled = backupState !is SettingsBackupState.Working
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = onExportSettings,
             enabled = actionsEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = actionsEnabled),
         ) {
             Text(stringResource(R.string.settings_backup_export))
         }
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = onImportSettings,
             enabled = actionsEnabled,
             modifier = Modifier.fillMaxWidth(),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = actionsEnabled),
         ) {
             Text(stringResource(R.string.settings_backup_import))
         }

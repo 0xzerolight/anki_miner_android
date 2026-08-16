@@ -22,7 +22,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.RadioButton
@@ -82,10 +81,9 @@ import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
+import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.forwardButtonColors
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
 import com.ankiminer.android.vm.PendingResourceDelete
@@ -588,11 +586,9 @@ internal fun ResourceCard(
                 Text(description)
             }
             inlineFailure?.invoke()
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = action,
                 enabled = !busy,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = !busy),
             ) { Text(actionLabel) }
         }
     }
@@ -635,6 +631,7 @@ internal fun ResourceDeleteDialog(
             Button(
                 onClick = onConfirm,
                 enabled = !busy,
+                shape = MaterialTheme.shapes.small,
                 colors =
                     ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
@@ -694,7 +691,7 @@ internal fun ResourceReplaceDialog(
             )
         },
         confirmButton = {
-            Button(onClick = onConfirm, enabled = !busy, colors = forwardButtonColors()) {
+            PrimaryActionButton(onClick = onConfirm, enabled = !busy) {
                 Text(
                     stringResource(
                         if (pending.repair) {
@@ -737,12 +734,10 @@ internal fun AudioPackChoiceDialog(
             Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                 Text(stringResource(R.string.audio_pack_choice_message, choices.size))
                 choices.forEach { candidate ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = { onChoose(candidate.packId) },
                         enabled = !busy,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(!busy),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
                             stringResource(
@@ -807,10 +802,8 @@ internal fun ResourceOperationCard(
                     },
                 )
             } ?: LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = onCancel,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = true),
             ) { Text(stringResource(R.string.cancel)) }
         }
     }

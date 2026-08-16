@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -35,8 +33,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
-import com.ankiminer.android.ui.theme.forwardButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
 /**
@@ -148,11 +146,10 @@ internal fun DictionaryLookupCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(
+            PrimaryActionButton(
                 onClick = onLookup,
                 enabled = state.lookupSlotId != null && state.lookupTerm.isNotBlank() && !state.busy,
-                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                colors = forwardButtonColors(),
+                modifier = Modifier.fillMaxWidth(),
             ) { Text(stringResource(R.string.dictionary_render_html)) }
             inlineFailure?.invoke()
             state.lookup?.let { result ->
