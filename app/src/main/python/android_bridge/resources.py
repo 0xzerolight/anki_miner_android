@@ -1213,6 +1213,29 @@ def _iter_json_array_stream(
                 return
             fill()
 
+    def compact() -> None:
+        """Drop the consumed prefix, but only once it dominates the buffer.
+
+        Compacting on every item made each yield copy the whole remaining
+        buffer. That is quadratic within a refill window, and since the window
+        is capped at ``_COPY_CHUNK_BYTES`` it comes out as linear with a copy
+        of most of a chunk per item - measured at ~18x the cost of this
+        version, stable across bank sizes. Halving keeps the buffer within 2x
+        the pending region and makes compaction amortised O(1) per item.
+        """
+        nonlocal buffer, position
+        if position and position * 2 >= len(buffer):
+            buffer = buffer[position:]
+            position = 0
+
+    def pending_bytes() -> int:
+        """UTF-8 size of the undecoded region, for the item-size cap.
+
+        Only reached on a refill, i.e. once per chunk rather than once per
+        item, so walking the pending region here stays linear overall.
+        """
+        return len(buffer[position:].encode("utf-8"))
+
     fill()
     skip_whitespace()
     if position >= len(buffer) or buffer[position] != "[":
@@ -1224,16 +1247,16 @@ def _iter_json_array_stream(
         position += 1
     else:
         while True:
-            if position:
-                buffer = buffer[position:]
-                position = 0
+            compact()
             while True:
                 try:
-                    item, item_end = json_decoder.raw_decode(buffer)
+                    # Decode from ``position`` rather than slicing to it: the
+                    # slice was the second half of the quadratic copy.
+                    item, item_end = json_decoder.raw_decode(buffer, position)
                 except json.JSONDecodeError as exc:
                     if eof:
                         raise _fail("invalid_resource_archive", "Yomitan bank contains invalid JSON") from exc
-                    buffered_bytes = len(buffer.encode("utf-8"))
+                    buffered_bytes = pending_bytes()
                     if buffered_bytes >= item_byte_limit + 1:
                         raise _fail(
                             "resource_archive_too_large",
@@ -1242,7 +1265,7 @@ def _iter_json_array_stream(
                     fill(min(_COPY_CHUNK_BYTES, item_byte_limit + 1 - buffered_bytes))
                     continue
 
-                item_bytes = len(buffer[:item_end].encode("utf-8"))
+                item_bytes = len(buffer[position:item_end].encode("utf-8"))
                 if item_bytes > item_byte_limit:
                     raise _fail(
                         "resource_archive_too_large",
@@ -1263,7 +1286,7 @@ def _iter_json_array_stream(
                     and not isinstance(item, bool)
                     and (item_end == len(buffer) or buffer[item_end] in _JSON_NUMBER_CONTINUATION)
                 ):
-                    buffered_bytes = len(buffer.encode("utf-8"))
+                    buffered_bytes = pending_bytes()
                     if buffered_bytes >= item_byte_limit + 1:
                         raise _fail(
                             "resource_archive_too_large",
@@ -1272,7 +1295,12 @@ def _iter_json_array_stream(
                     fill(min(_COPY_CHUNK_BYTES, item_byte_limit + 1 - buffered_bytes))
                     continue
                 while probe == len(buffer) and not eof:
-                    fill(1)
+                    # A whole chunk, not a byte at a time: ``buffer`` is a
+                    # closure cell, so ``buffer += chunk`` cannot use CPython's
+                    # in-place resize and every single-byte fill re-copied it.
+                    # The item is already decoded and size-checked here, so
+                    # reading ahead past it costs nothing.
+                    fill()
                     while probe < len(buffer) and buffer[probe].isspace():
                         probe += 1
                 if probe >= len(buffer) or buffer[probe] not in {",", "]"}:
@@ -1281,8 +1309,6 @@ def _iter_json_array_stream(
                 position = probe + 1
                 break
 
-            buffer = buffer[position:]
-            position = 0
             operation.check()
             yield item
             if delimiter == "]":

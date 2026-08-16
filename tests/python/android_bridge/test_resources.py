@@ -3555,9 +3555,12 @@ def test_yomitan_bank_rewrite_rejects_one_item_larger_than_chunk_before_decode(
         def __init__(self) -> None:
             self.delegate = real_decoder()
 
-        def raw_decode(self, value: str) -> tuple[object, int]:
-            assert len(value.encode("utf-8")) <= resources._YOMITAN_BANK_CHUNK_BYTES
-            return self.delegate.raw_decode(value)
+        def raw_decode(self, value: str, idx: int = 0) -> tuple[object, int]:
+            # The reader decodes from an index instead of slicing the buffer,
+            # so the bound belongs on the undecoded region: everything before
+            # ``idx`` is already-yielded text awaiting compaction.
+            assert len(value[idx:].encode("utf-8")) <= resources._YOMITAN_BANK_CHUNK_BYTES
+            return self.delegate.raw_decode(value, idx)
 
     monkeypatch.setattr(resources.json, "JSONDecoder", BoundedDecoder)
 
@@ -4133,6 +4136,138 @@ def _drain_json_array(
             item_byte_limit=item_byte_limit,
         )
     )
+
+
+def test_json_array_stream_compacts_amortised_not_per_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reader used to drop the consumed prefix on every item, so each yield
+    # copied the whole remaining buffer. With 1 MiB refills and kilobyte entries
+    # that is quadratic in bank size, and it is why a 540 MiB dictionary sat on
+    # "Importing..." indefinitely. Compaction restarts decoding at index 0, so
+    # counting index-0 calls counts compactions.
+    items: list[object] = [[f"entry-{index}", index, {"reading": "ねこ"}] for index in range(2000)]
+    payload = json.dumps(items).encode("utf-8")
+    real_decoder = resources.json.JSONDecoder
+    restarts = 0
+
+    class CountingDecoder:
+        def __init__(self) -> None:
+            self.delegate = real_decoder()
+
+        def raw_decode(self, value: str, idx: int = 0) -> tuple[object, int]:
+            nonlocal restarts
+            if idx == 0:
+                restarts += 1
+            return self.delegate.raw_decode(value, idx)
+
+    monkeypatch.setattr(resources.json, "JSONDecoder", CountingDecoder)
+
+    assert _drain_json_array(payload) == items
+    assert restarts < len(items) // 10
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 2, 7, 64, 1024])
+def test_json_array_stream_yields_same_items_at_every_chunk_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    # Index-based decoding has to survive an item, a delimiter, a multi-byte
+    # character or a run of whitespace landing exactly on a refill boundary.
+    items: list[object] = [
+        "猫",
+        ["term", "たん", 0],
+        {"nested": {"deep": [1, 2, 3]}},
+        12345,
+        -0.5,
+        True,
+        None,
+        "trailing",
+    ]
+    payload = json.dumps(items, ensure_ascii=False, indent=2).encode("utf-8")
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+
+    assert _drain_json_array(payload) == items
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 3, 64])
+def test_json_array_stream_reads_empty_array(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+
+    assert _drain_json_array(b"  [ \n ]  ") == []
+
+
+@pytest.mark.parametrize(
+    ("payload", "code", "match"),
+    [
+        (b"{}", "invalid_resource_archive", "must be a JSON array"),
+        (b"[1,]", "invalid_resource_archive", "trailing comma"),
+        (b"[1] 2", "invalid_resource_archive", "trailing content"),
+        (b"[1 2]", "invalid_resource_archive", "invalid JSON"),
+        (b'["unterminated"', "invalid_resource_archive", "invalid JSON"),
+        (b'[1, "\xff\xfe"]', "invalid_resource_archive", "not valid UTF-8"),
+    ],
+)
+def test_json_array_stream_rejects_malformed_banks(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: bytes,
+    code: str,
+    match: str,
+) -> None:
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", 4)
+
+    with pytest.raises(BridgeProtocolError, match=match) as failure:
+        _drain_json_array(payload)
+
+    assert failure.value.code == code
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 8, 64])
+def test_json_array_stream_rejects_an_oversized_item(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    # The cap is in bytes, so a multi-byte item must be measured as encoded
+    # rather than as characters - the reader no longer re-encodes the whole
+    # buffer to find out.
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+    payload = json.dumps(["猫" * 64], ensure_ascii=False).encode("utf-8")
+
+    with pytest.raises(BridgeProtocolError, match="oversized item") as failure:
+        _drain_json_array(payload, item_byte_limit=32)
+
+    assert failure.value.code == "resource_archive_too_large"
+
+
+def test_json_array_stream_admits_an_item_that_fits_its_byte_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", 8)
+    entry = "猫" * 8  # 24 UTF-8 bytes, 8 characters.
+    payload = json.dumps([entry], ensure_ascii=False).encode("utf-8")
+
+    assert _drain_json_array(payload, item_byte_limit=32) == [entry]
+
+
+def test_json_array_stream_cancels_mid_bank() -> None:
+    payload = json.dumps([[index] for index in range(64)]).encode("utf-8")
+    operation = resources._Operation("cancelled-bank")
+    stream = resources._iter_json_array_stream(
+        io.BytesIO(payload),
+        operation,
+        item_byte_limit=4096,
+    )
+
+    assert next(stream) == [0]
+    operation.cancelled.set()
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        next(stream)
+
+    assert failure.value.code == "resource_operation_cancelled"
 
 
 @pytest.mark.parametrize("chunk_bytes", [1, 2, 3, 5, 16])
