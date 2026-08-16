@@ -14,7 +14,6 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -43,9 +42,8 @@ import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import com.ankiminer.android.vm.DeckChoiceKind
 import com.ankiminer.android.vm.DeckPersistenceStatus
 import com.ankiminer.android.vm.RecoveryPresentationKind
@@ -97,12 +95,10 @@ internal fun AnkiDeckCard(
                         stringResource(R.string.anki_deck_save_failed),
                         color = MaterialTheme.colorScheme.error,
                     )
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = onRetryDeckSelection,
                         modifier = Modifier.fillMaxWidth(),
                         enabled = !state.busy,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(enabled = !state.busy),
                     ) {
                         Text(stringResource(R.string.anki_deck_save_retry))
                     }
@@ -484,21 +480,17 @@ internal fun AnkiRecoveryCard(
                 presentation.kind == RecoveryPresentationKind.CHECKING ||
                     presentation.kind == RecoveryPresentationKind.INVENTORY_UNAVAILABLE
             ) {
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = onRefresh,
                     enabled = !state.busy,
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(enabled = !state.busy),
                 ) {
                     Text(stringResource(R.string.anki_recovery_retry_inventory))
                 }
             }
             if (presentation.canReconcile) {
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = onReconcile,
                     enabled = !state.busy,
-                    colors = outlinedActionButtonColors(),
-                    border = actionBorder(enabled = !state.busy),
                 ) {
                     Text(stringResource(R.string.anki_recovery_reconcile))
                 }
@@ -511,34 +503,28 @@ internal fun AnkiRecoveryCard(
                     Text(item.title, style = MaterialTheme.typography.titleSmall)
                     Text(item.summary)
                     if (AnkiRemediationActionKind.RETRY_STAGING_CLEANUP in item.availableActions) {
-                        OutlinedButton(
+                        SecondaryActionButton(
                             onClick = { onRetryStaging(item.id) },
                             enabled = !state.busy,
-                            colors = outlinedActionButtonColors(),
-                            border = actionBorder(enabled = !state.busy),
                         ) { Text(stringResource(R.string.anki_recovery_retry_cleanup)) }
                     }
                     if (AnkiRemediationActionKind.ACKNOWLEDGE_UNATTACHED_MEDIA in item.availableActions) {
-                        OutlinedButton(
+                        SecondaryActionButton(
                             onClick = {
                                 confirmationKey =
                                     AnkiRecoveryConfirmation.UnattachedMedia(item.id).saveableKey
                             },
                             enabled = !state.busy,
-                            colors = outlinedActionButtonColors(),
-                            border = actionBorder(enabled = !state.busy),
                         ) { Text(stringResource(R.string.anki_recovery_acknowledge_unattached)) }
                     }
                     if (AnkiRemediationActionKind.ACKNOWLEDGE_UNCERTAIN_MEDIA in item.availableActions) {
                         Text(stringResource(R.string.anki_recovery_media_uncertain_help))
-                        OutlinedButton(
+                        SecondaryActionButton(
                             onClick = {
                                 confirmationKey =
                                     AnkiRecoveryConfirmation.UncertainMedia(item.id).saveableKey
                             },
                             enabled = !state.busy,
-                            colors = outlinedActionButtonColors(),
-                            border = actionBorder(enabled = !state.busy),
                         ) { Text(stringResource(R.string.anki_recovery_abandon_uncertain_media)) }
                     }
                     if (AnkiRemediationActionKind.RESOLVE_AFTER_EXTERNAL_REVIEW in item.availableActions) {
@@ -663,22 +649,18 @@ private fun ExternalReviewActions(
         AnkiRemediationType.NOTE_COMMIT_UNCERTAIN,
         -> {
             Text(stringResource(R.string.anki_recovery_review_in_ankidroid))
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = { onResolve(remediationId, AnkiExternalReviewOutcome.COMMIT_CONFIRMED) },
                 enabled = !busy,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = !busy),
             ) { Text(stringResource(R.string.anki_recovery_confirm_exists)) }
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = { onResolve(remediationId, AnkiExternalReviewOutcome.NOT_COMMITTED_CONFIRMED) },
                 enabled = !busy,
-                colors = outlinedActionButtonColors(),
-                border = actionBorder(enabled = !busy),
             ) { Text(stringResource(R.string.anki_recovery_confirm_missing)) }
         }
         AnkiRemediationType.NOTE_COMMITTED_FAILED,
         AnkiRemediationType.CARD_ROUTING_FAILED,
-        -> OutlinedButton(
+        -> SecondaryActionButton(
             onClick = {
                 onResolve(
                     remediationId,
@@ -686,14 +668,10 @@ private fun ExternalReviewActions(
                 )
             },
             enabled = !busy,
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = !busy),
         ) { Text(stringResource(R.string.anki_recovery_confirm_corrected)) }
-        AnkiRemediationType.CAPACITY_EXHAUSTED -> OutlinedButton(
+        AnkiRemediationType.CAPACITY_EXHAUSTED -> SecondaryActionButton(
             onClick = { onResolve(remediationId, AnkiExternalReviewOutcome.CAPACITY_AVAILABLE) },
             enabled = !busy,
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled = !busy),
         ) { Text(stringResource(R.string.anki_recovery_confirm_capacity)) }
         AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
         AnkiRemediationType.MEDIA_STORED_UNATTACHED,

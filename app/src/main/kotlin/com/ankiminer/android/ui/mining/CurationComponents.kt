@@ -25,7 +25,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
@@ -71,8 +70,7 @@ import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ChevronGlyph
 import com.ankiminer.android.ui.theme.PhaseTitle
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.selectedRowContainer
 
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
@@ -360,15 +358,10 @@ private fun CurationMenuButton(
     var expanded by rememberSaveable { mutableStateOf(false) }
     Box {
         // Visually 40dp; minimumInteractiveComponentSize keeps the 48dp touch target.
-        OutlinedButton(
+        SecondaryActionButton(
             onClick = { expanded = true },
             enabled = enabled,
-            modifier =
-                Modifier
-                    .heightIn(min = 40.dp)
-                    .testTag(testTag),
-            colors = outlinedActionButtonColors(),
-            border = actionBorder(enabled),
+            modifier = Modifier.testTag(testTag),
         ) {
             Text(label, style = MaterialTheme.typography.labelMedium)
         }

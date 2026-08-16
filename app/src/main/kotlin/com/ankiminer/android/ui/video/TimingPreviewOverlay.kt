@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -47,7 +46,7 @@ import com.ankiminer.android.ui.mining.CurationVideoPreview
 import com.ankiminer.android.ui.mining.TimingPreviewState
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.forwardButtonColors
+import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -185,9 +184,9 @@ internal fun TimingPreviewOverlay(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 48.dp)
                                 .testTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE),
                         colors = outlinedActionButtonColors(),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(stringResource(R.string.timing_preview_toggle_unshifted))
                     }
@@ -226,6 +225,7 @@ internal fun TimingPreviewOverlay(
                                 .fillMaxWidth()
                                 .testTag(VideoMiningTestTags.timingPreviewCue(index)),
                         colors = outlinedActionButtonColors(),
+                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(cue.text)
                     }
@@ -240,21 +240,19 @@ internal fun TimingPreviewOverlay(
                     modifier =
                         Modifier
                             .weight(1f)
-                            .heightIn(min = 48.dp)
                             .testTag(VideoMiningTestTags.TIMING_PREVIEW_CANCEL),
                     colors = outlinedActionButtonColors(),
+                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text(stringResource(R.string.timing_preview_cancel))
                 }
-                Button(
+                PrimaryActionButton(
                     onClick = onApply,
                     enabled = parsedOffset(offsetDraft) != null,
                     modifier =
                         Modifier
                             .weight(1f)
-                            .heightIn(min = 48.dp)
                             .testTag(VideoMiningTestTags.TIMING_PREVIEW_APPLY),
-                    colors = forwardButtonColors(),
                 ) {
                     Text(stringResource(R.string.timing_preview_apply))
                 }
@@ -322,11 +320,9 @@ private fun NudgeButton(
 ) {
     OutlinedButton(
         onClick = onClick,
-        modifier =
-            modifier
-                .heightIn(min = 48.dp)
-                .testTag(testTag),
+        modifier = modifier.testTag(testTag),
         colors = outlinedActionButtonColors(),
+        shape = MaterialTheme.shapes.small,
     ) {
         Text(label)
     }

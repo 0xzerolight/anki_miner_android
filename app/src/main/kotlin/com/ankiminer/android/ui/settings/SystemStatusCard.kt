@@ -312,7 +312,7 @@ private fun StatusAction(
     label: Int,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(onClick = onClick) {
+    OutlinedButton(onClick = onClick, shape = MaterialTheme.shapes.small) {
         Text(stringResource(label))
     }
 }
