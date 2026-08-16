@@ -102,16 +102,21 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
     when (origin) {
         // Rendered in the header, which is item 0.
         ResourceFailureOrigin.SETUP -> 0
-        ResourceFailureOrigin.CATALOG_DICTIONARY -> 2
+        // Dictionaries: dictionary-sources(2) owns both dictionary origins, pitch-sources(3),
+        // dictionary-lookup(4).
+        ResourceFailureOrigin.CATALOG_DICTIONARY,
+        ResourceFailureOrigin.CUSTOM_DICTIONARY,
+        -> 2
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         ResourceFailureOrigin.UNIDIC -> 3
-        ResourceFailureOrigin.CUSTOM_DICTIONARY -> 3
-        ResourceFailureOrigin.PITCH -> 4
-        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 6
+        ResourceFailureOrigin.PITCH -> 3
+        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 4
+        // Audio and Frequency are one card each; Filtering: filtering-options(2),
+        // known-words-import(3).
         ResourceFailureOrigin.AUDIO,
         ResourceFailureOrigin.FREQUENCY,
-        ResourceFailureOrigin.KNOWN_WORDS,
-        -> 3
+        -> 2
+        ResourceFailureOrigin.KNOWN_WORDS -> 3
         // Filtering: filtering-options(2), known-words-import(3), word-lists(4).
         ResourceFailureOrigin.WORD_LIST -> 4
     }

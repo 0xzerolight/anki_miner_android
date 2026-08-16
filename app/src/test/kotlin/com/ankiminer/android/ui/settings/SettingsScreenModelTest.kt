@@ -66,18 +66,21 @@ class SettingsScreenModelTest {
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.TARGET))
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.RECOVERY))
         // These are constants only because every conditional card is emitted after the last
-        // deep-link target in its category. dictionary-lookup precedes dictionary-inventory for
-        // exactly that reason; swapping them back makes this index depend on inventory visibility.
+        // deep-link target in its category. dictionary-lookup is the only conditional card in
+        // Dictionaries and it is emitted last, so nothing behind it can shift.
         // SETUP has no owning card; it renders in the shared header, which is lazy item 0.
         assertEquals(0, settingsCardIndexFor(ResourceFailureOrigin.SETUP))
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.UNIDIC))
+        // Dictionaries: dictionary-sources(2) owns both dictionary origins, pitch-sources(3),
+        // dictionary-lookup(4).
         assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CATALOG_DICTIONARY))
-        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.CUSTOM_DICTIONARY))
-        assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.PITCH))
-        assertEquals(6, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
-        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.AUDIO))
-        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
+        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CUSTOM_DICTIONARY))
+        assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.PITCH))
+        assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
+        // Audio and Frequency are one panel card each.
+        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.AUDIO))
+        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.KNOWN_WORDS))
         // Filtering: word-lists sits after known-words-import, ahead of the conditional
         // filtering-import-result card.
