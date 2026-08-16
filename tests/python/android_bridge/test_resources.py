@@ -29,9 +29,9 @@ from android_bridge.resource_catalog import (
 from android_bridge.unidic_resource import calculate_unidic_tree_sha256
 
 
-def test_dictionary_schema_version_matches_vendored_engine() -> None:
+def _engine_schema_version(family: str) -> int:
     storage_source = (
-        Path(resources.__file__).resolve().parents[1] / "anki_miner" / "services" / "dictionary" / "storage.py"
+        Path(resources.__file__).resolve().parents[1] / "anki_miner" / "services" / family / "storage.py"
     )
     module = ast.parse(storage_source.read_text(encoding="utf-8"))
     schema_versions = [
@@ -40,8 +40,26 @@ def test_dictionary_schema_version_matches_vendored_engine() -> None:
         if isinstance(node, ast.Assign)
         and any(isinstance(target, ast.Name) and target.id == "SCHEMA_VERSION" for target in node.targets)
     ]
+    assert len(schema_versions) == 1, f"{family}/storage.py must declare exactly one SCHEMA_VERSION"
+    return schema_versions[0]
 
-    assert schema_versions == [resources._DICTIONARY_SCHEMA_VERSION]
+
+@pytest.mark.parametrize(
+    ("family", "bridge_constant"),
+    [
+        ("dictionary", "_DICTIONARY_SCHEMA_VERSION"),
+        ("frequency", "_FREQUENCY_SCHEMA_VERSION"),
+        ("pitch_accent", "_PITCH_SCHEMA_VERSION"),
+        ("audio_packs", "_AUDIO_PACK_SCHEMA_VERSION"),
+    ],
+)
+def test_resource_schema_versions_match_the_vendored_engine(family: str, bridge_constant: str) -> None:
+    """Every registry compares on exact equality, so the bridge must too.
+
+    A stale constant here is silent: the source stays in the chain, the engine
+    refuses to load it, and mining loses the field with nothing said.
+    """
+    assert getattr(resources, bridge_constant) == _engine_schema_version(family)
 
 
 def _catalog_unidic() -> UniDicResource:
@@ -1450,8 +1468,9 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
             "format": "csv",
             "entryCount": 2,
             "schemaOk": True,
-            "schemaVersion": 2,
+            "schemaVersion": 3,
             "isCategorical": False,
+            "rebuildSourcePath": str(home / "freqs" / "fixture-freq" / "source.csv"),
         }
     ]
 
@@ -1541,7 +1560,8 @@ def test_v018_pitch_csv_is_migrated_without_removing_released_files(
             "format": "csv",
             "entryCount": 1,
             "schemaOk": True,
-            "schemaVersion": 1,
+            "schemaVersion": 3,
+            "rebuildSourcePath": str(home / "pitch" / "legacy-pitch" / "source.csv"),
         }
     ]
     migrated = home / "pitch" / "legacy-pitch" / "index.sqlite"
@@ -1604,7 +1624,10 @@ def test_pitch_csv_import_publishes_its_own_slot_and_inventory(
             "format": "csv",
             "entryCount": 1,
             "schemaOk": True,
-            "schemaVersion": 1,
+            "schemaVersion": 3,
+            # The persisted copy keeps the *input* suffix, which is not the
+            # reported format: this fixture is imported from a .tsv.
+            "rebuildSourcePath": str(home / "pitch" / "fixture-pitch" / "source.tsv"),
         }
     ]
 
@@ -1636,6 +1659,7 @@ def test_malformed_pitch_slot_is_exposed_for_same_id_replacement(
             "entryCount": 0,
             "schemaOk": False,
             "schemaVersion": 0,
+            "rebuildSourcePath": None,
         }
     ]
 

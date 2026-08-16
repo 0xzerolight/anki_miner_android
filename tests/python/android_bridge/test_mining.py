@@ -2078,6 +2078,8 @@ def test_runtime_composition_injects_only_android_video_services(
     expected_reading_lookup = object()
     expected_kana_attest_lookup = object()
     expected_term_common_lookup = object()
+    expected_term_rules_lookup = object()
+    expected_name_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:
@@ -2100,6 +2102,7 @@ def test_runtime_composition_injects_only_android_video_services(
             self.offline_term_readings = expected_reading_lookup
             self.has_offline_definitions = expected_kana_attest_lookup
             self.offline_term_commonness = expected_term_common_lookup
+            self.offline_deinflection_terms_exist = expected_term_rules_lookup
 
         def ensure_loaded(self) -> None:
             events.append("definition-load")
@@ -2113,14 +2116,20 @@ def test_runtime_composition_injects_only_android_video_services(
             config: object,
             *,
             term_lookup: object,
+            name_lookup: object,
             reading_lookup: object,
             kana_attest_lookup: object,
             term_common_lookup: object,
+            term_rules_lookup: object,
         ) -> None:
             assert term_lookup is expected_term_lookup
             assert reading_lookup is expected_reading_lookup
             assert kana_attest_lookup is expected_kana_attest_lookup
             assert term_common_lookup is expected_term_common_lookup
+            assert term_rules_lookup is expected_term_rules_lookup
+            # No excluded_wordsets in this config, so there is no wordset
+            # service to source name spans from.
+            assert name_lookup is None
             self.tagger = tagger
             events.append("subtitle-parser")
 

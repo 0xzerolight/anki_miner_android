@@ -60,7 +60,15 @@ _MAX_LOOKUP_HTML_BYTES = 2 * 1024 * 1024
 _MAX_DICTIONARY_SLOTS = 128
 _FREE_SPACE_RESERVE_BYTES = 32 * 1024 * 1024
 _MAX_PENDING_RESOURCE_CANCELLATIONS = 256
-_DICTIONARY_SCHEMA_VERSION = 4
+# Every engine registry compares an on-disk index against its own
+# SCHEMA_VERSION with exact equality, so these are equalities too, never
+# ranges. A contract test binds each one to the vendored constant; a re-pin
+# that moves a schema is otherwise silent, because the source keeps listing
+# itself while the engine quietly refuses to load it.
+_DICTIONARY_SCHEMA_VERSION = 6
+_FREQUENCY_SCHEMA_VERSION = 3
+_PITCH_SCHEMA_VERSION = 3
+_AUDIO_PACK_SCHEMA_VERSION = 2
 _OPERATION_ID_RE = re.compile(r"[a-z0-9](?:[a-z0-9_-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")

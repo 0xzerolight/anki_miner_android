@@ -1705,6 +1705,9 @@ def _invalid_pitch_inventory_entry(source_id: str) -> dict[str, object]:
         "entryCount": 0,
         "schemaOk": False,
         "schemaVersion": 0,
+        # An entry only reaches here when its index could not be read at all,
+        # which is the "missing" case, not the rebuildable "stale" one.
+        "rebuildSourcePath": None,
     }
 
 
@@ -1782,6 +1785,30 @@ def _migrate_legacy_pitch_csv(home: Path) -> None:
                 core._safe_rmtree(operation_root)
 
 
+def _rebuild_source_path(slot: Path) -> str | None:
+    """The persisted source copy as a wire string, or None when unrecoverable."""
+    copy = _persisted_source_copy(slot)
+    return str(copy) if copy is not None else None
+
+
+def _persisted_source_copy(slot: Path) -> Path | None:
+    """The ``source.<ext>`` the importer kept beside ``index.sqlite``.
+
+    Every engine source importer copies its input in next to the index so a
+    later reimport does not need the user to re-pick the original file. That
+    copy is what makes a schema-stale slot *rebuildable* rather than lost, and
+    it is the whole reason a re-pin does not force a manual re-import.
+    """
+    for suffix in (".zip", ".csv", ".tsv", ".txt"):
+        candidate = slot / f"source{suffix}"
+        try:
+            if candidate.is_file() and not candidate.is_symlink():
+                return candidate
+        except OSError:
+            logger.debug("Failed to probe a persisted source copy", exc_info=True)
+    return None
+
+
 def _pitch_inventory(home: Path) -> list[dict[str, object]]:
     _migrate_legacy_pitch_csv(home)
     legacy = home / "pitch_accent.csv"
@@ -1817,10 +1844,12 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
                 "sourceRevision": meta.get("source_revision", ""),
                 "format": meta.get("format", "unknown"),
                 "entryCount": max(count, 0),
-                # Only one pitch index schema exists; a future version fails
-                # closed rather than being read with the wrong row shape.
-                "schemaOk": version == 1,
+                # The pitch registry compares on exact equality, so anything
+                # older or newer fails closed rather than being read with the
+                # wrong row shape.
+                "schemaOk": version == core._PITCH_SCHEMA_VERSION,
                 "schemaVersion": max(version, 0),
+                "rebuildSourcePath": _rebuild_source_path(child),
             }
         )
     if legacy_occupied and not any(item["sourceId"] == _LEGACY_PITCH_SOURCE_ID for item in result):
@@ -1955,11 +1984,12 @@ def _frequency_inventory(home: Path) -> list[dict[str, object]]:
                 "sourceName": meta.get("source_name", child.name),
                 "format": meta.get("format", "unknown"),
                 "entryCount": max(count, 0),
-                # Desktop frequency schema migrations are additive: v1 and v2
-                # remain readable, while future versions fail closed.
-                "schemaOk": 1 <= version <= 2,
+                # Not a range: the frequency registry compares on exact
+                # equality, so an older index is stale, not merely readable.
+                "schemaOk": version == core._FREQUENCY_SCHEMA_VERSION,
                 "schemaVersion": max(version, 0),
                 "isCategorical": meta.get("is_categorical") == "1",
+                "rebuildSourcePath": _rebuild_source_path(child),
             }
         )
     return result
@@ -2003,8 +2033,11 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
         configured_content = Path(meta.get("pack_dir", ""))
         content_available = False
         try:
+            # Folder packs only. The engine also knows an ``android_db`` format
+            # whose audio lives in an external database rather than a content
+            # directory, but Android has no way to register one.
             content_available = (
-                version == 1
+                version == core._AUDIO_PACK_SCHEMA_VERSION
                 and count > 0
                 and expected_content.is_dir()
                 and not expected_content.is_symlink()
