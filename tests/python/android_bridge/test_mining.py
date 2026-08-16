@@ -1893,7 +1893,9 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         log=mining.logger,
     )
     payload = json.loads(terminal)["payload"]
-    assert payload["error"]["code"] == "engine_error"
+    # Not engine_error: a missing prerequisite cannot be retried away, and the Kotlin
+    # repositories decide retryability from this code alone.
+    assert payload["error"]["code"] == "setup_incomplete"
     assert "Tools" not in payload["error"]["message"]
     assert payload["error"]["message"] == (
         "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
@@ -1907,6 +1909,48 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         log=mining.logger,
     )
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
+
+
+def test_setup_errors_are_not_retryable_while_other_engine_failures_are(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.exceptions import SetupError
+    from anki_miner.exceptions.media import SubtitleParseError
+
+    # The Android re-wording imports episode_processor, which needs `requests` and is
+    # therefore unimportable on the host lane. Stubbing it keeps this test about the
+    # classification, which is the part that decides whether the user is offered a Retry.
+    monkeypatch.setattr(mining, "_android_engine_message", lambda message: message)
+
+    # A tester whose run failed on a missing dictionary pressed Retry and got the same
+    # failure back. Setup is the one engine failure retrying cannot clear, so it is the
+    # one that gets its own code; the Kotlin repositories read retryability from this
+    # code alone, and setup_incomplete is absent from their retryable set.
+    _outcome, setup_terminal = mining._exception_terminal(
+        "run_" + "d" * 32,
+        SetupError("No usable offline dictionary is installed."),
+        cancelled=False,
+        log=mining.logger,
+    )
+    assert json.loads(setup_terminal)["payload"]["error"]["code"] == "setup_incomplete"
+
+    # Everything else in the engine domain keeps the retryable bucket.
+    _outcome, engine_terminal = mining._exception_terminal(
+        "run_" + "e" * 32,
+        SubtitleParseError("subtitle track is unreadable"),
+        cancelled=False,
+        log=mining.logger,
+    )
+    assert json.loads(engine_terminal)["payload"]["error"]["code"] == "engine_error"
+
+    # Cancellation still wins over the classification below it.
+    _outcome, cancelled_terminal = mining._exception_terminal(
+        "run_" + "f" * 32,
+        SetupError("No usable offline dictionary is installed."),
+        cancelled=True,
+        log=mining.logger,
+    )
+    assert json.loads(cancelled_terminal)["payload"]["error"]["code"] == "cancelled"
 
 
 def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
@@ -1941,7 +1985,7 @@ def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
     internal_fault = internal_error.pop("faultId")
 
     # Messages stay byte-identical: the id rides beside them, never inside them.
-    assert engine_error == {"code": "engine_error", "message": "Something else went wrong"}
+    assert engine_error == {"code": "setup_incomplete", "message": "Something else went wrong"}
     assert internal_error == {"code": "internal_error", "message": "Internal mining failure"}
     assert json.loads(cancelled_terminal)["payload"]["error"] == {
         "code": "cancelled",
