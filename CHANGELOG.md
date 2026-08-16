@@ -4,8 +4,17 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- Settings fits more on the screen. The status and save chips above the categories appear only when there is something to act on - a required setup task needing attention, or a save that failed and can be retried - and the text fields, buttons and the search field at the top of the screen are all shorter. Buttons are rectangular, matching the rest of the app.
+- Dictionaries, pitch accent, expression audio and frequency lists are each managed as a single priority list, the way the desktop app presents them: every row carries its own enable switch and move up and move down controls, in place of the separate card per resource. The Jitendex install prompt left Settings for the setup wizard, where the first install happens; the dictionary add menu no longer offers a catalog install for a slot that is already filled.
+- Settings fields open with the value the engine would use written in them, rather than standing empty with that value named underneath. Storage is unchanged: a field left at the default is still stored as inherit, so a re-pinned engine default keeps reaching a run instead of freezing at whatever the field showed, and a value already stored that equals the current default is rewritten as inherit the next time those settings are saved.
+- A missing translation is reported by the localization gate instead of failing it, matching the desktop catalogs, where an untranslated entry ships and renders in English. Strings added in this cycle are English-only until they are translated.
+
 ### Fixed
 
+- The mining progress bar only moves forward. Each stage floors the bar at the start of its band, decode progress is clamped inside the band it belongs to, and a stage that completes fills its band, so a run reads 0 -> 100 without dropping back. Reading runs use the same floor.
+- The search field on the word curator no longer clips its placeholder. Its height is a floor now rather than a fixed one, which also removes the branch that skipped the clamp above a font scale of 1.3.
 - The third-party notices shown in the app name libwebp and libaom, the two encoders behind animated WebP and AVIF screenshots. Their license texts have been packaged alongside since the encoders were added, but the notice listing them was a hand-copy of the repository's NOTICE.md and was never updated when they landed. A host test now compares the two files and fails the build when they diverge.
 
 ## [0.7.0] - 2026-08-14
