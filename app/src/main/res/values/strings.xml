@@ -706,6 +706,10 @@
     <string name="settings_resource_entries">%1$d entries</string>
     <string name="settings_move_up">Up</string>
     <string name="settings_move_down">Down</string>
+    <string name="resource_panel_enable">Enable %1$s</string>
+    <string name="resource_panel_move_up">Move %1$s up in priority</string>
+    <string name="resource_panel_move_down">Move %1$s down in priority</string>
+    <string name="resource_panel_remove_selected">Remove selected source</string>
     <string name="settings_reading_audio">Reading sentence audio</string>
     <string name="settings_reading_tts">Offline Android text-to-speech</string>
     <string name="settings_open_speech_services">Manage speech services</string>
