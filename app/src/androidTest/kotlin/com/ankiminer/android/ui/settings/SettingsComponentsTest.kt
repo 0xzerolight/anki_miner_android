@@ -3,7 +3,6 @@ package com.ankiminer.android.ui.settings
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.requiredWidth
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -52,7 +51,6 @@ import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
-import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.vm.PendingResourceDelete
@@ -195,36 +193,6 @@ class SettingsComponentsTest {
                 composeRule.onNodeWithText(label).fetchSemanticsNode().boundsInRoot.top
             }
         assertTrue(tops.zipWithNext().all { (first, second) -> second > first })
-    }
-
-    @Test
-    fun pairedResourceActionsStackAndKeepTouchTargetsAtCompactWidth() {
-        composeRule.setContent {
-            AnkiMinerTheme {
-                Box(Modifier.width(359.dp)) {
-                    ResourceChainEditor(
-                        choices = listOf(ResourceChainSelection("source")),
-                        labels = mapOf("source" to "Source"),
-                        emptyMessage = "None",
-                        onChange = {},
-                    )
-                }
-            }
-        }
-
-        val moveUp =
-            composeRule
-                .onNodeWithText("Up")
-                .assertHeightIsAtLeast(48.dp)
-                .fetchSemanticsNode()
-                .boundsInRoot
-        val moveDown =
-            composeRule
-                .onNodeWithText("Down")
-                .assertHeightIsAtLeast(48.dp)
-                .fetchSemanticsNode()
-                .boundsInRoot
-        assertTrue(moveDown.top > moveUp.top)
     }
 
     private fun setChoiceSelector(

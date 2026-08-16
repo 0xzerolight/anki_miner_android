@@ -71,26 +71,27 @@ import com.ankiminer.android.ui.reading.ReadingSourceKindUi
 import com.ankiminer.android.ui.settings.AnkiRecoveryCard
 import com.ankiminer.android.ui.settings.AnkiTargetCard
 import com.ankiminer.android.ui.settings.BooleanSetting
-import com.ankiminer.android.ui.settings.CatalogDictionaryCards
-import com.ankiminer.android.ui.settings.CustomDictionaryImportCard
-import com.ankiminer.android.ui.settings.DictionaryInventoryCard
 import com.ankiminer.android.ui.settings.DictionaryLookupCard
 import com.ankiminer.android.ui.settings.InlineFailureContainer
 import com.ankiminer.android.ui.settings.KnownWordsImportCard
 import com.ankiminer.android.ui.settings.NullableToggle
 import com.ankiminer.android.ui.settings.NumericField
-import com.ankiminer.android.ui.settings.PitchImportCard
 import com.ankiminer.android.ui.settings.ResourceCard
-import com.ankiminer.android.ui.settings.ResourceChainEditor
+import com.ankiminer.android.ui.settings.ResourceChainPanel
+import com.ankiminer.android.ui.settings.ResourcePanelAction
 import com.ankiminer.android.ui.settings.SettingTextField
 import com.ankiminer.android.ui.settings.SettingsCardIndexRecorder
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
 import com.ankiminer.android.ui.settings.SettingsScreenCallbacks
 import com.ankiminer.android.ui.settings.SettingsSection
+import com.ankiminer.android.ui.settings.dictionaryPanelRows
+import com.ankiminer.android.ui.settings.dictionaryRowStrings
 import com.ankiminer.android.ui.settings.mediaSettings
-import com.ankiminer.android.ui.settings.settingsCategoryContent
+import com.ankiminer.android.ui.settings.pitchPanelRows
+import com.ankiminer.android.ui.settings.resourceRowStrings
 import com.ankiminer.android.ui.settings.settingsCard
+import com.ankiminer.android.ui.settings.settingsCategoryContent
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.video.CurationPlayerUiState
 import com.ankiminer.android.ui.video.CurationUiState
@@ -791,51 +792,76 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
     }
 }
 
+/**
+ * What the Dictionaries tab actually renders: the two priority panels and the lookup card.
+ *
+ * The catalog install cards are deliberately absent — they moved to the wizard, and on this tab
+ * a missing dictionary is an entry in the dictionary panel's Add menu. The catalog failure the
+ * ERROR_SNACKBAR state carries lands in the dictionary panel's footer, where the real screen
+ * routes `CATALOG_DICTIONARY` failures.
+ */
 @Composable
 private fun SettingsResourcesFixture(setup: SetupUiState) {
     Column(
         modifier = Modifier.testTag("ui_audit_settings_resources"),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        CatalogDictionaryCards(setup, onInstall = {}) { resourceId ->
-            val failure = setup.failure
-            if (
-                failure?.origin == ResourceFailureOrigin.CATALOG_DICTIONARY &&
-                failure.retry.targetId == resourceId
-            ) {
-                InlineFailureContainer(
-                    message = failure.message,
-                    actionLabel = stringResource(R.string.b3_retry),
-                    onAction = {},
-                    onDismiss = {},
-                )
-            }
-        }
-        CustomDictionaryImportCard(
-            state = setup,
-            onImport = {},
-        )
-        PitchImportCard(
-            state = setup,
-            onImport = {},
+        ResourceChainPanel(
+            heading = stringResource(R.string.resource_panel_dictionaries_heading),
+            explanation = stringResource(R.string.resource_panel_dictionaries_explanation),
+            rows =
+                dictionaryPanelRows(
+                    chain =
+                        setup.dictionaries.map { dictionary ->
+                            ResourceChainSelection(dictionary.slotId)
+                        },
+                    installed = setup.dictionaries,
+                    jishoEnabled = false,
+                    strings = dictionaryRowStrings(),
+                    onChainChange = {},
+                    onJishoChange = {},
+                    onRepair = {},
+                    onReplace = {},
+                ),
+            emptyMessage = stringResource(R.string.settings_no_dictionaries),
+            onMove = { _, _ -> },
             onRemove = {},
+            addPrimary =
+                ResourcePanelAction(stringResource(R.string.resource_panel_add_dictionary)) {},
+            addMenu =
+                listOf(
+                    ResourcePanelAction(stringResource(R.string.resource_panel_import_yomitan_zip)) {},
+                ),
+            busy = setup.busy,
+            footer = {
+                val failure = setup.failure
+                if (failure?.origin == ResourceFailureOrigin.CATALOG_DICTIONARY) {
+                    InlineFailureContainer(
+                        message = failure.message,
+                        actionLabel = stringResource(R.string.b3_retry),
+                        onAction = {},
+                        onDismiss = {},
+                    )
+                }
+                SupportingText(stringResource(R.string.settings_jisho_disclosure))
+            },
         )
-        SettingsSection(stringResource(R.string.settings_dictionary_chain)) {
-            ResourceChainEditor(
-                choices =
-                    setup.dictionaries.map { dictionary ->
-                        ResourceChainSelection(dictionary.slotId)
-                    },
-                labels =
-                    setup.dictionaries.associate { dictionary ->
-                        dictionary.slotId to
-                            "${dictionary.sourceName} (${dictionary.entryCount})"
-                    },
-                emptyMessage = stringResource(R.string.settings_no_dictionaries),
-                onChange = {},
-            )
-        }
-        DictionaryInventoryCard(state = setup, onReplace = {}, onRemove = {})
+        ResourceChainPanel(
+            heading = stringResource(R.string.resource_panel_pitch_heading),
+            explanation = stringResource(R.string.resource_panel_pitch_explanation),
+            rows =
+                pitchPanelRows(
+                    chain = emptyList(),
+                    installed = setup.pitchSources,
+                    strings = resourceRowStrings(),
+                    onChainChange = {},
+                ),
+            emptyMessage = stringResource(R.string.settings_pitch_not_installed),
+            onMove = { _, _ -> },
+            onRemove = {},
+            addPrimary = ResourcePanelAction(stringResource(R.string.resource_panel_add_pitch)) {},
+            busy = setup.busy,
+        )
         DictionaryLookupCard(
             state = setup.copy(lookup = null),
             onTermChanged = {},

@@ -697,9 +697,14 @@ private fun dictionaryAddActions(
         )
     }
 
-/** Row text every panel needs. Resolved here because row assembly runs outside composition. */
+/**
+ * Row text every panel needs. Resolved here because row assembly runs outside composition.
+ *
+ * Internal rather than private so the UI-audit fixtures render the panels with the same strings
+ * the settings screen does; a fixture-local copy would drift silently.
+ */
 @Composable
-private fun resourceRowStrings(): ResourceRowStrings {
+internal fun resourceRowStrings(): ResourceRowStrings {
     // Captured rather than pre-formatted: the count is per row and the panel formats on demand.
     // Read through LocalResources, not LocalContext: a configuration change invalidates this
     // composition, so a locale or font-scale switch reformats the counts.
@@ -713,7 +718,7 @@ private fun resourceRowStrings(): ResourceRowStrings {
 }
 
 @Composable
-private fun dictionaryRowStrings(): DictionaryRowStrings =
+internal fun dictionaryRowStrings(): DictionaryRowStrings =
     DictionaryRowStrings(
         rows = resourceRowStrings(),
         repairAction = stringResource(R.string.resource_panel_row_repair),

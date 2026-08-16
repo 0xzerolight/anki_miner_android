@@ -11,15 +11,11 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
-import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.ankiminer.android.data.resources.CatalogDictionaryStatus
-import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.ResourceArchive
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.YomitanCatalogResource
@@ -34,24 +30,6 @@ import org.junit.Test
 class DictionarySectionsTest {
     @get:Rule
     val composeRule = createComposeRule()
-
-    @Test
-    fun customDictionaryCardChoosesAZipWithoutRequestingASlot() {
-        var imports = 0
-        composeRule.setContent {
-            AnkiMinerTheme {
-                CustomDictionaryImportCard(
-                    state = SetupUiState(resourceStartup = ResourceStartupReadiness.READY),
-                    onImport = { imports += 1 },
-                )
-            }
-        }
-
-        composeRule.onAllNodes(hasSetTextAction()).assertCountEquals(0)
-        composeRule.onNodeWithText("Choose Yomitan ZIP").performClick()
-
-        assertEquals(1, imports)
-    }
 
     @Test
     fun dictionaryLookupTitleIsHeading() {
@@ -155,39 +133,6 @@ class DictionarySectionsTest {
     }
 
     @Test
-    fun dictionaryInventoryCardOffersReplaceAndRemoveForEveryInstalledSlot() {
-        val replaced = mutableListOf<String>()
-        val removed = mutableListOf<String>()
-        composeRule.setContent {
-            AnkiMinerTheme {
-                DictionaryInventoryCard(
-                    state =
-                        SetupUiState(
-                            // Default startup readiness is PENDING, which makes the state busy and
-                            // renders every Remove disabled; a click on one would be a silent no-op.
-                            resourceStartup = ResourceStartupReadiness.READY,
-                            dictionaries =
-                                listOf(
-                                    installedDictionary("jmdict", valid = true),
-                                    installedDictionary("jitendex", valid = false),
-                                ),
-                        ),
-                    onReplace = replaced::add,
-                    onRemove = removed::add,
-                )
-            }
-        }
-
-        composeRule.onAllNodesWithText("Replace safely").assertCountEquals(2)
-        composeRule.onAllNodesWithText("Remove").assertCountEquals(2)
-        composeRule.onAllNodesWithText("Replace safely")[1].performClick()
-        composeRule.onAllNodesWithText("Remove")[0].performClick()
-
-        assertEquals(listOf("jitendex"), replaced)
-        assertEquals(listOf("jmdict"), removed)
-    }
-
-    @Test
     fun installedCatalogDictionaryCanBeRevealedBesideMissingPeer() {
         composeRule.setContent {
             AnkiMinerTheme {
@@ -241,21 +186,6 @@ class DictionarySectionsTest {
         installed = installed,
         slotOccupied = installed,
     )
-
-    private fun installedDictionary(slotId: String, valid: Boolean) =
-        InstalledDictionary(
-            slotId = slotId,
-            occupied = true,
-            valid = valid,
-            sourceName = slotId.replaceFirstChar(Char::uppercase),
-            sourceRevision = "1",
-            format = "yomitan",
-            entryCount = 10,
-            schemaOk = valid,
-            embeddedAttribution = emptyMap(),
-            catalogResourceId = null,
-            attribution = emptyList(),
-        )
 
     private class CountingWebView(context: Context) : WebView(context) {
         var loadCount = 0

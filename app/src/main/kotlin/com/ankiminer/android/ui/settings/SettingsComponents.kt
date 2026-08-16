@@ -77,10 +77,8 @@ import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
-import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
-import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
@@ -557,80 +555,6 @@ internal fun <T> NullableChoice(
         )
     }
 }
-
-@Composable
-internal fun ResourceChainEditor(
-    choices: List<ResourceChainSelection>,
-    labels: Map<String, String>,
-    emptyMessage: String,
-    onChange: (List<ResourceChainSelection>) -> Unit,
-) {
-    if (choices.isEmpty()) {
-        Text(emptyMessage)
-        return
-    }
-    choices.forEachIndexed { index, choice ->
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line)) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .toggleable(
-                        value = choice.enabled,
-                        role = Role.Checkbox,
-                        onValueChange = { enabled ->
-                            onChange(
-                                choices.toMutableList().also {
-                                    it[index] = choice.copy(enabled = enabled)
-                                },
-                            )
-                        },
-                    ).padding(vertical = AnkiMinerTokens.Space.line),
-                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            ) {
-                Checkbox(
-                    checked = choice.enabled,
-                    onCheckedChange = null,
-                )
-                Column(Modifier.weight(1f)) {
-                    Text(labels[choice.resourceId] ?: choice.resourceId)
-                    Text(choice.resourceId, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-            AdaptivePairedActions(
-                first = { actionModifier ->
-                    val moveEnabled = index > 0
-                    OutlinedButton(
-                        enabled = moveEnabled,
-                        onClick = { onChange(choices.swap(index, index - 1)) },
-                        modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(moveEnabled),
-                    ) { Text(stringResource(R.string.settings_move_up)) }
-                },
-                second = { actionModifier ->
-                    val moveEnabled = index < choices.lastIndex
-                    OutlinedButton(
-                        enabled = moveEnabled,
-                        onClick = { onChange(choices.swap(index, index + 1)) },
-                        modifier = actionModifier,
-                        colors = outlinedActionButtonColors(),
-                        border = actionBorder(moveEnabled),
-                    ) { Text(stringResource(R.string.settings_move_down)) }
-                },
-            )
-        }
-    }
-}
-
-private fun <T> List<T>.swap(
-    first: Int,
-    second: Int,
-): List<T> =
-    toMutableList().also { values ->
-        val held = values[first]
-        values[first] = values[second]
-        values[second] = held
-    }
 
 @Composable
 internal fun ResourceCard(
