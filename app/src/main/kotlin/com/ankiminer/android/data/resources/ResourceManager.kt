@@ -1920,15 +1920,6 @@ internal class AndroidResourceManager(
             failure
         }
 
-    private fun normalizedProviderAuthority(uri: String): String =
-        uri.substringAfter("://", missingDelimiterValue = "")
-            .substringBefore('/')
-            .substringBefore('?')
-            .substringBefore('#')
-            .lowercase(Locale.ROOT)
-            .takeIf(PROVIDER_AUTHORITY::matches)
-            ?: "unknown"
-
     private fun normalizedMimeType(mimeType: String?): String =
         mimeType
             ?.substringBefore(';')
@@ -2623,7 +2614,6 @@ internal class AndroidResourceManager(
         const val PITCH_TEXT_LIMIT = 64L * 1024 * 1024
         const val AUDIO_SOURCE_LABEL = "audio-pack archive"
         val AUDIO_PACK_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
-        val PROVIDER_AUTHORITY = Regex("[a-z0-9][a-z0-9._-]{0,127}")
         val MIME_TYPE = Regex("[a-z0-9][a-z0-9!#$&^_.+-]{0,63}/[a-z0-9][a-z0-9!#$&^_.+-]{0,127}")
 
         // The retained preflight is one archive of any supported container, so its

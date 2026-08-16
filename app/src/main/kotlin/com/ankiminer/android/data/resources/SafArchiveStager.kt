@@ -5,6 +5,9 @@ import android.content.ContentResolver
 import android.net.Uri
 import android.os.CancellationSignal
 import android.os.ParcelFileDescriptor
+import android.provider.OpenableColumns
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.media.CancellableProviderIo
 import com.ankiminer.android.media.ProviderIoCancellation
 import com.ankiminer.android.media.ProviderIoCancelledException
@@ -115,6 +118,14 @@ internal fun interface ResourceInputOpener {
         uri: String,
         cancellation: ProviderIoCancellation,
     ): InputStream? = null
+
+    /**
+     * What the provider claims the document weighs, or null when it declines to say.
+     *
+     * Cloud providers legitimately report nothing, so null is "no agreement to check" rather
+     * than a fault. Used only to catch a copy that ended early.
+     */
+    fun reportedSizeBytes(uri: String): Long? = null
 }
 
 private class AndroidResourceInputOpener(
@@ -197,6 +208,29 @@ private class AndroidResourceInputOpener(
             throw failure
         }
     }
+
+    /**
+     * A best-effort read of `OpenableColumns.SIZE`. Any provider failure answers null, because a
+     * size this is only used to cross-check must never be the thing that fails an import.
+     */
+    override fun reportedSizeBytes(uri: String): Long? =
+        runCatching {
+            resolver
+                .query(Uri.parse(uri), arrayOf(OpenableColumns.SIZE), null, null, null)
+                ?.use { cursor ->
+                    if (!cursor.moveToFirst()) return@use null
+                    val column = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (column < 0 || cursor.isNull(column)) return@use null
+                    cursor.getLong(column).takeIf { it >= 0 }
+                }
+        }.onFailure { failure ->
+            AppLog.ignored(
+                LogComponent.RESOURCES,
+                "archive.stage.reported_size",
+                "provider refused the size column",
+                failure,
+            )
+        }.getOrNull()
 }
 
 /** Keeps the provider's stable reference alive until all bytes from its descriptor are consumed. */
@@ -282,32 +316,53 @@ internal class SafArchiveStager(
         }
         val destination = File(stagingRoot, "$operationId-custom$fileSuffix")
         destination.delete()
+        val reportedBytes = inputOpener.reportedSizeBytes(sourceUri)
         try {
             val available = availableBytes(stagingRoot)
             if (available < FREE_SPACE_RESERVE_BYTES) {
                 throw ResourceStorageException(FREE_SPACE_RESERVE_BYTES, available)
             }
             cancellation.check()
-            return runBlocking {
-                CancellableProviderIo.execute(
-                    scope = providerIoScope,
-                    timeoutMillis = providerIoTimeoutMillis,
-                    scheduler = providerIoScheduler,
-                ) { deadline ->
-                    copyProviderInput(
-                        source = sourceUri,
-                        destination = destination,
-                        cancellation = cancellation.combine(deadline),
-                        maximumBytes = maximumBytes,
-                        available = available,
-                        sourceLabel = sourceLabel,
-                        onProviderProgress = deadline::rearm,
-                        onProgress = onProgress,
-                    )
+            val staged =
+                runBlocking {
+                    CancellableProviderIo.execute(
+                        scope = providerIoScope,
+                        timeoutMillis = providerIoTimeoutMillis,
+                        scheduler = providerIoScheduler,
+                    ) { deadline ->
+                        copyProviderInput(
+                            source = sourceUri,
+                            destination = destination,
+                            cancellation = cancellation.combine(deadline),
+                            maximumBytes = maximumBytes,
+                            available = available,
+                            sourceLabel = sourceLabel,
+                            onProviderProgress = deadline::rearm,
+                            onProgress = onProgress,
+                        )
+                    }
                 }
+            // A provider that ended the stream early leaves a short but structurally plausible
+            // file, and the engine can only report it as a corrupt archive. Catching the
+            // truncation here is what tells those two causes apart in the field.
+            if (reportedBytes != null && reportedBytes != staged.sizeBytes) {
+                throw ResourceDownloadException(
+                    "resource_archive_mismatch",
+                    "The selected $sourceLabel did not copy completely",
+                )
             }
+            logArchiveStage(sourceUri, operationId, sourceLabel, "ok", reportedBytes, staged.sizeBytes)
+            return staged
         } catch (failure: Exception) {
             destination.delete()
+            logArchiveStage(
+                sourceUri,
+                operationId,
+                sourceLabel,
+                if (failure is ProviderIoCancelledException) "skip" else "fail",
+                reportedBytes,
+                stagedBytes = null,
+            )
             if (failure is ProviderIoCancelledException) {
                 cancellation.check()
                 throw sourceUnavailable(sourceLabel, failure)
@@ -317,6 +372,39 @@ internal class SafArchiveStager(
             }
             throw failure
         }
+    }
+
+    /**
+     * The generic-path twin of `ResourceManager.logAudioArchiveStage`.
+     *
+     * Without it a dictionary import that fails leaves only the engine's
+     * "archive is corrupt" message, which reads the same whether the file was bad or the copy
+     * ended early. Reported-versus-staged bytes is the field that separates them.
+     */
+    private fun logArchiveStage(
+        sourceUri: String,
+        operationId: String,
+        sourceLabel: String,
+        outcome: String,
+        reportedBytes: Long?,
+        stagedBytes: Long?,
+    ) {
+        AppLog.i(
+            LogComponent.RESOURCES,
+            "resource.archive.stage",
+            "outcome" to outcome,
+            "operation" to operationId,
+            "kind" to sourceLabel.replace(' ', '_'),
+            "authority" to normalizedProviderAuthority(sourceUri),
+            "reported_bytes" to (reportedBytes ?: "unknown"),
+            "staged_bytes" to (stagedBytes ?: "unknown"),
+            "size_agreement" to
+                when {
+                    reportedBytes == null || stagedBytes == null -> "unknown"
+                    reportedBytes == stagedBytes -> "match"
+                    else -> "mismatch"
+                },
+        )
     }
 
     override fun stageAudioArchive(
