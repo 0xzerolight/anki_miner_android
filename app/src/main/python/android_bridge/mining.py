@@ -952,12 +952,42 @@ def _build_processor(
                     service="dictionary_chain",
                 )
 
+        # Built before the parser, not with the other optional services at the
+        # end: upstream moved it here when the parser gained ``name_lookup``,
+        # whose only source is this service's ``excluded_terms`` probe.
+        wordset_service = None
+        if config.excluded_wordsets:
+            try:
+                wordset_service = WordsetService(enabled_ids=config.excluded_wordsets)
+                wordset_service.load()
+                if not wordset_service.is_available():
+                    wordset_service = None
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
+            except Exception as error:
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load name wordsets",
+                    error,
+                    service="name_wordsets",
+                )
+                wordset_service = None
+
         subtitle_parser = SubtitleParserService(
             config,
             term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
+            # Merges multi-token name spans before the proper-noun and name-list
+            # filters run; unidic splits 夏油 into single kanji, so without it
+            # both filters only ever see fragments.
+            name_lookup=(wordset_service.excluded_terms if wordset_service is not None else None),
             reading_lookup=(definition_service.offline_term_readings if has_indexed_dictionary else None),
             kana_attest_lookup=(definition_service.has_offline_definitions if has_indexed_dictionary else None),
             term_common_lookup=(definition_service.offline_term_commonness if has_indexed_dictionary else None),
+            # Without this the deinflection resolver fails closed to orth_base
+            # and じる/ずる front rewriting silently stops.
+            term_rules_lookup=(
+                definition_service.offline_deinflection_terms_exist if has_indexed_dictionary else None
+            ),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
@@ -967,11 +997,33 @@ def _build_processor(
         )
 
         pitch_accent_service = None
+        # Constructed outside the try and kept past it: the staleness gate reads
+        # per-slot schema_ok metas off the registry, and the built chain has
+        # already dropped every stale slot, so a chain-only handoff makes the
+        # gate never fire.
+        pitch_registry = None
         if config.pitch_active:
             try:
                 pitch_registry = PitchSourceRegistry(config.pitch_root)
                 pitch_registry.load()
-                pitch_providers = [p for p in pitch_registry.build_sources(config) if p.load()]
+                loaded_pitch = [p for p in pitch_registry.build_sources(config) if p.load()]
+                # Ordered by the user's chain, not by registry build order:
+                # the service is first-hit-wins, so the order decides which
+                # source answers a word carried by more than one.
+                pitch_by_id: dict[str, list[object]] = {}
+                for provider in loaded_pitch:
+                    pitch_by_id.setdefault(provider.source_id, []).append(provider)
+                pitch_providers = []
+                for entry in config.pitch_chain:
+                    if not entry.enabled:
+                        continue
+                    available = pitch_by_id.get(entry.source_id, [])
+                    if available:
+                        pitch_providers.append(available.pop(0))
+                    else:
+                        adapters.presenter.show_warning(
+                            f"Pitch accent source '{entry.source_id}' unavailable; skipped"
+                        )
                 if pitch_providers:
                     pitch_accent_service = MultiPitchAccentService(pitch_providers)
                 else:
@@ -989,7 +1041,10 @@ def _build_processor(
                     service="pitch_accent",
                 )
                 pitch_accent_service = None
+                pitch_registry = None
 
+        # Kept past its try for the same staleness-gate reason as pitch_registry.
+        frequency_registry = None
         if config.frequency_active:
             frequency_providers: list[object] = []
             candidates: list[object] = []
@@ -1014,6 +1069,7 @@ def _build_processor(
                     service="frequency",
                 )
                 frequency_service = None
+                frequency_registry = None
 
         try:
             known_word_db = KnownWordDB(config.known_words_db_path)
@@ -1049,24 +1105,6 @@ def _build_processor(
                 )
                 word_list_service = None
 
-        wordset_service = None
-        if config.excluded_wordsets:
-            try:
-                wordset_service = WordsetService(enabled_ids=config.excluded_wordsets)
-                wordset_service.load()
-                if not wordset_service.is_available():
-                    wordset_service = None
-            except MemoryError:
-                raise  # never an optional-source miss; see the module note
-            except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter,
-                    "Couldn't load name wordsets",
-                    error,
-                    service="name_wordsets",
-                )
-                wordset_service = None
-
         stats_service = StatsService(config.stats_db_path)
         if not stats_service.load():
             stats_service = None
@@ -1088,6 +1126,8 @@ def _build_processor(
             youtube_fetcher=None,
             expression_audio_fetcher=expression_audio_fetcher,
             dictionary_registry=dictionary_registry,
+            frequency_registry=frequency_registry,
+            pitch_registry=pitch_registry,
             sentence_audio_fetcher=sentence_audio_fetcher,
         )
     except BaseException:
@@ -1134,7 +1174,6 @@ def _process_episode(
                 request.subtitle_path,
                 progress_callback=adapters.progress,
                 curation_callback=adapters.curate,
-                cross_episode_counts=None,
                 episode_name_override=request.episode_name,
                 series_name_override=request.series_name,
                 audio_track_override=request.audio_track_override,
