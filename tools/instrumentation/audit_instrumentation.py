@@ -49,6 +49,11 @@ DIRECT_LOG_CONSOLE_PATTERNS = (
     re.compile(r"\bprintStackTrace\s*\("),
     re.compile(r"::\s*printStackTrace\b"),
 )
+# The AppLog entry points that take `vararg fields`, which is where a missing outcome is
+# invisible until runtime. `d` is excluded: its fields arrive from a lambda body this scan
+# cannot read. `state`, `ignored` and `boundary` supply the field themselves.
+APPLOG_VARARG_PATTERN = re.compile(r"\bAppLog\s*\.\s*(?:i|w|e)\s*\(")
+SPREAD_ARGUMENT_PATTERN = re.compile(r"\*\s*[A-Za-z_]")
 
 
 class InstrumentationError(ValueError):
@@ -264,6 +269,40 @@ def _audit_applog_boundary(path: Path, repo_root: Path) -> list[str]:
             if line not in reported_lines:
                 failures.append(f"{relative}:{line}: direct Log/console usage outside AppLog")
                 reported_lines.add(line)
+    failures.extend(_audit_applog_outcome(source, masked, relative))
+    return failures
+
+
+def _audit_applog_outcome(source: str, masked: str, relative: str) -> list[str]:
+    """Require the `outcome` field every AppLog record must carry.
+
+    `renderLogRecord` enforces this at runtime with `require(outcomes.size == 1)`, so a call
+    site that omits it throws inside `AppLog.emit` and is replaced by the render-failure
+    fallback: the record survives as class names and its whole payload is lost. Nothing about
+    the vararg signature says so at compile time, which is how three CurationPreviewPlayer
+    sites shipped broken and destroyed exactly the media diagnostics they existed to produce.
+
+    Only the vararg entry points are checked. `d` takes a lambda this scan cannot read, and
+    `state`, `ignored` and `boundary` build the field themselves.
+    """
+
+    failures: list[str] = []
+    for call in APPLOG_VARARG_PATTERN.finditer(masked):
+        line = _line_number(source, call.start())
+        opening = call.end() - 1
+        try:
+            closing = _matching_delimiter(masked, opening, "(", ")")
+        except InstrumentationError as failure:
+            failures.append(f"{relative}:{line}: {failure}")
+            continue
+        arguments = source[opening : closing + 1]
+        if '"outcome"' in arguments:
+            continue
+        # A spread forwards a list built elsewhere, which is where the outcome is added; the
+        # literal scan cannot see into it, so it is deliberately not a failure.
+        if SPREAD_ARGUMENT_PATTERN.search(masked[opening : closing + 1]):
+            continue
+        failures.append(f"{relative}:{line}: AppLog record is missing its outcome field")
     return failures
 
 
