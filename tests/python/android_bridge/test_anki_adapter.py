@@ -5903,7 +5903,10 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     processor.anki_service = adapter
     processor.presenter = presenter
     processor._external_cancel = None
-    processor.check_dictionary_staleness = lambda: None
+    # Renamed upstream when the gate grew past dictionaries to frequency and
+    # pitch; stubbing the old name lets the real one run against a processor
+    # that owns no config.
+    processor.check_resource_staleness = lambda: None
     # _run_pipeline gained a third pre-flight gate at this pin; it asks the
     # definition service for a usable offline provider, which this partial
     # processor has no reason to own.
@@ -5972,7 +5975,10 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     processor.anki_service = adapter
     processor.presenter = presenter
     processor._external_cancel = None
-    processor.check_dictionary_staleness = lambda: None
+    # Renamed upstream when the gate grew past dictionaries to frequency and
+    # pitch; stubbing the old name lets the real one run against a processor
+    # that owns no config.
+    processor.check_resource_staleness = lambda: None
     # _run_pipeline gained a third pre-flight gate at this pin; it asks the
     # definition service for a usable offline provider, which this partial
     # processor has no reason to own.

@@ -30,9 +30,7 @@ from android_bridge.unidic_resource import calculate_unidic_tree_sha256
 
 
 def _engine_schema_version(family: str) -> int:
-    storage_source = (
-        Path(resources.__file__).resolve().parents[1] / "anki_miner" / "services" / family / "storage.py"
-    )
+    storage_source = Path(resources.__file__).resolve().parents[1] / "anki_miner" / "services" / family / "storage.py"
     module = ast.parse(storage_source.read_text(encoding="utf-8"))
     schema_versions = [
         ast.literal_eval(node.value)

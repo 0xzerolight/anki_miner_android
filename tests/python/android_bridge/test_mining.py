@@ -2079,7 +2079,6 @@ def test_runtime_composition_injects_only_android_video_services(
     expected_kana_attest_lookup = object()
     expected_term_common_lookup = object()
     expected_term_rules_lookup = object()
-    expected_name_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:

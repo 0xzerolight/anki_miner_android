@@ -985,9 +985,7 @@ def _build_processor(
             term_common_lookup=(definition_service.offline_term_commonness if has_indexed_dictionary else None),
             # Without this the deinflection resolver fails closed to orth_base
             # and じる/ずる front rewriting silently stops.
-            term_rules_lookup=(
-                definition_service.offline_deinflection_terms_exist if has_indexed_dictionary else None
-            ),
+            term_rules_lookup=(definition_service.offline_deinflection_terms_exist if has_indexed_dictionary else None),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
@@ -1021,9 +1019,7 @@ def _build_processor(
                     if available:
                         pitch_providers.append(available.pop(0))
                     else:
-                        adapters.presenter.show_warning(
-                            f"Pitch accent source '{entry.source_id}' unavailable; skipped"
-                        )
+                        adapters.presenter.show_warning(f"Pitch accent source '{entry.source_id}' unavailable; skipped")
                 if pitch_providers:
                     pitch_accent_service = MultiPitchAccentService(pitch_providers)
                 else:
