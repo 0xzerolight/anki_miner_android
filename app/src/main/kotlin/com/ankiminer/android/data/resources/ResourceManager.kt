@@ -2334,6 +2334,22 @@ internal class AndroidResourceManager(
         faultId: String? = null,
         deleteTarget: ResourceDeleteTarget? = null,
     ) {
+        // Every recorded failure funnels through here, and several distinct
+        // codes share one user-facing string: resource_operation_interrupted
+        // (journal replay after the process was killed) is indistinguishable
+        // on screen from resource_operation_failed (a live exception). Only
+        // the latter is logged by its call site, so without this line a bug
+        // report cannot say which one fired. INFO, not DEBUG - it has to reach
+        // a release diagnostics bundle.
+        AppLog.i(
+            LogComponent.RESOURCES,
+            "failure.record",
+            "code" to code,
+            "origin" to origin.name,
+            "fault" to faultId,
+            "retryable" to (code in RETRYABLE_FAILURES),
+            "outcome" to "fail",
+        )
         mutableState.update {
             it.copy(
                 failure =
