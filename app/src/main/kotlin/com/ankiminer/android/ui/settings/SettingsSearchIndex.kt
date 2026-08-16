@@ -207,7 +207,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             SettingsCategory.AUDIO,
             "audio-sources",
             R.string.settings_reading_tts,
-            R.string.resource_panel_sentence_audio_heading,
+            R.string.settings_reading_audio,
         ),
 
         // Frequency

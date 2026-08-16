@@ -518,18 +518,11 @@
     <string name="resource_delete_confirm_message">将从此设备删除 %1$s。不会从 Anki 中移除任何内容，也不会保留备份。</string>
     <string name="dictionary_repair_confirm">修复槽位</string>
     <string name="custom_dictionary_title">导入其他 Yomitan ZIP</string>
-    <string name="custom_dictionary_choose">选择 Yomitan ZIP</string>
     <string name="frequency_import_title">导入词频来源</string>
-    <string name="frequency_none_installed">未安装词频来源。</string>
     <string name="frequency_source_id">稳定词频 ID</string>
-    <string name="frequency_choose_file">选择词频文件</string>
     <string name="pitch_import_title">导入音调</string>
-    <string name="pitch_none_installed">未安装音调来源。</string>
-    <string name="pitch_choose_file">选择音调文件</string>
     <string name="audio_pack_import_title">导入表达音频</string>
-    <string name="audio_pack_none_installed">未安装本地音频包。</string>
     <string name="audio_pack_archive_guidance">请选择下载的 .tar.xz、.tar.gz、.tar 或 .zip 归档文件，不要选择 .torrent 文件。</string>
-    <string name="audio_pack_choose_zip">选择音频包归档文件</string>
     <string name="audio_pack_choice_title">选择哪个包？</string>
     <string name="audio_pack_choice_message">此归档文件包含 %1$d 个包。导入一个包只会解压该包；其余包会保留在文件中，你可以返回后再添加。</string>
     <string name="audio_pack_choice_item">%1$s（%2$s）</string>
@@ -564,8 +557,6 @@
     <string name="bundled_wordsets_title">内置专有名词单词集</string>
     <string name="bundled_wordset_item">%1$s · %2$d 个条目</string>
     <string name="bundled_wordsets_unavailable">无法清点内置单词集。</string>
-    <string name="local_resource_inventory_invalid">%1$s [%2$s] · 清单无效（%3$d 个条目）；请在挖词前替换它</string>
-    <string name="local_resource_installed">%1$s [%2$s] · %3$d 个条目</string>
     <string name="pitch_inventory_invalid">%1$s · 清单无效（%2$d 个条目）；请在挖词前替换它</string>
     <string name="local_import_complete">本地导入完成</string>
     <string name="frequency_import_result">%1$s：%2$d 个条目；已跳过 %3$d 行格式错误的数据</string>
@@ -592,8 +583,6 @@
     <string name="status_database_permission">需要数据库权限</string>
     <string name="status_ready_api">就绪（API %1$d）</string>
     <string name="dictionary_test_title">离线词典测试</string>
-    <string name="dictionary_inventory_title">已安装的词典槽位</string>
-    <string name="dictionary_inventory_invalid">%1$s [%2$s] · 无效或不完整（%3$d 个条目）；请在挖词前替换此确切槽位</string>
     <string name="dictionary_term">日语词条</string>
     <string name="dictionary_render_html">渲染完全一致的词典 HTML</string>
     <string name="dictionary_lookup_label">%1$s：%2$s</string>
@@ -692,8 +681,6 @@
     <string name="settings_pitch_romaji">罗马字</string>
     <string name="settings_wordsets">专有名词单词集</string>
     <string name="settings_resource_entries">%1$d 个条目</string>
-    <string name="settings_move_up">上移</string>
-    <string name="settings_move_down">下移</string>
     <string name="settings_reading_audio">阅读句子音频</string>
     <string name="settings_reading_tts">离线 Android 文字转语音</string>
     <string name="settings_open_speech_services">管理语音服务</string>

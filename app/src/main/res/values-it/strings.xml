@@ -522,18 +522,11 @@
     <string name="resource_delete_confirm_message">%1$s viene eliminato da questo dispositivo. Non viene rimosso nulla da Anki e non ne viene conservato alcun backup.</string>
     <string name="dictionary_repair_confirm">Ripara lo slot</string>
     <string name="custom_dictionary_title">Importa un altro ZIP Yomitan</string>
-    <string name="custom_dictionary_choose">Scegli ZIP Yomitan</string>
     <string name="frequency_import_title">Importa una fonte di frequenza</string>
-    <string name="frequency_none_installed">Nessuna fonte di frequenza installata.</string>
     <string name="frequency_source_id">ID stabile della frequenza</string>
-    <string name="frequency_choose_file">Scegli file della frequenza</string>
     <string name="pitch_import_title">Importa accento tonale</string>
-    <string name="pitch_none_installed">Nessuna fonte di accento tonale installata.</string>
-    <string name="pitch_choose_file">Scegli file dell\'accento tonale</string>
     <string name="audio_pack_import_title">Importa audio dell\'espressione</string>
-    <string name="audio_pack_none_installed">Nessun pacchetto audio locale installato.</string>
     <string name="audio_pack_archive_guidance">Seleziona l’archivio scaricato .tar.xz, .tar.gz, .tar o .zip, non il file .torrent.</string>
-    <string name="audio_pack_choose_zip">Scegli archivio del pacchetto audio</string>
     <string name="audio_pack_choice_title">Quale pacchetto?</string>
     <string name="audio_pack_choice_message">Questo archivio contiene %1$d pacchetti. Importarne uno estrae solo quel pacchetto; gli altri restano nel file, così potrai tornare e aggiungerli.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>
@@ -568,8 +561,6 @@
     <string name="bundled_wordsets_title">Elenchi di parole di nomi propri inclusi</string>
     <string name="bundled_wordset_item">%1$s · %2$d voci</string>
     <string name="bundled_wordsets_unavailable">Impossibile inventariare gli elenchi di parole inclusi.</string>
-    <string name="local_resource_inventory_invalid">%1$s [%2$s] · inventario non valido (%3$d voci); sostituiscilo prima del mining</string>
-    <string name="local_resource_installed">%1$s [%2$s] · %3$d voci</string>
     <string name="pitch_inventory_invalid">%1$s · inventario non valido (%2$d voci); sostituiscilo prima del mining</string>
     <string name="local_import_complete">Importazione locale completata</string>
     <string name="frequency_import_result">%1$s: %2$d voci; saltate %3$d righe non valide</string>
@@ -596,8 +587,6 @@
     <string name="status_database_permission">autorizzazione al database necessaria</string>
     <string name="status_ready_api">pronto (API %1$d)</string>
     <string name="dictionary_test_title">Test del dizionario offline</string>
-    <string name="dictionary_inventory_title">Slot del dizionario installati</string>
-    <string name="dictionary_inventory_invalid">%1$s [%2$s] · non valido o incompleto (%3$d voci); sostituisci questo slot esatto prima del mining</string>
     <string name="dictionary_term">Termine giapponese</string>
     <string name="dictionary_render_html">Renderizza HTML esatto del dizionario</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
@@ -696,8 +685,6 @@
     <string name="settings_pitch_romaji">Romaji</string>
     <string name="settings_wordsets">Elenchi di parole di nomi propri</string>
     <string name="settings_resource_entries">%1$d voci</string>
-    <string name="settings_move_up">Su</string>
-    <string name="settings_move_down">Giù</string>
     <string name="settings_reading_audio">Audio della frase letta</string>
     <string name="settings_reading_tts">Sintesi vocale Android offline</string>
     <string name="settings_open_speech_services">Gestisci servizi vocali</string>

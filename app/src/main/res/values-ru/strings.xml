@@ -524,18 +524,11 @@
     <string name="resource_delete_confirm_message">%1$s удаляется с этого устройства. Из Anki ничего не удаляется, резервная копия не сохраняется.</string>
     <string name="dictionary_repair_confirm">Восстановить слот</string>
     <string name="custom_dictionary_title">Импортировать другой ZIP Yomitan</string>
-    <string name="custom_dictionary_choose">Выбрать ZIP Yomitan</string>
     <string name="frequency_import_title">Импортировать источник частотности</string>
-    <string name="frequency_none_installed">Источник частотности не установлен.</string>
     <string name="frequency_source_id">Постоянный ID частотности</string>
-    <string name="frequency_choose_file">Выбрать файл частотности</string>
     <string name="pitch_import_title">Импортировать тональное ударение</string>
-    <string name="pitch_none_installed">Источник тонального ударения не установлен.</string>
-    <string name="pitch_choose_file">Выбрать файл тонального ударения</string>
     <string name="audio_pack_import_title">Импортировать аудио выражений</string>
-    <string name="audio_pack_none_installed">Локальный пакет аудио не установлен.</string>
     <string name="audio_pack_archive_guidance">Выберите скачанный архив .tar.xz, .tar.gz, .tar или .zip, а не файл .torrent.</string>
-    <string name="audio_pack_choose_zip">Выбрать архив пакета аудио</string>
     <string name="audio_pack_choice_title">Какой пакет?</string>
     <string name="audio_pack_choice_message">Пакетов в архиве: %1$d. При импорте одного извлекается только этот пакет; остальные остаются в файле, и их можно добавить позже.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>
@@ -570,8 +563,6 @@
     <string name="bundled_wordsets_title">Встроенные наборы имён собственных</string>
     <string name="bundled_wordset_item">%1$s · записей: %2$d</string>
     <string name="bundled_wordsets_unavailable">Не удалось учесть встроенные наборы слов.</string>
-    <string name="local_resource_inventory_invalid">%1$s [%2$s] · недействительный список (записей: %3$d); замените его перед майнингом</string>
-    <string name="local_resource_installed">%1$s [%2$s] · записей: %3$d</string>
     <string name="pitch_inventory_invalid">%1$s · недействительный список (записей: %2$d); замените его перед майнингом</string>
     <string name="local_import_complete">Локальный импорт завершён</string>
     <string name="frequency_import_result">%1$s: записей %2$d; пропущено некорректных строк: %3$d</string>
@@ -598,8 +589,6 @@
     <string name="status_database_permission">требуется разрешение к базе данных</string>
     <string name="status_ready_api">готово (API %1$d)</string>
     <string name="dictionary_test_title">Проверка офлайн-словаря</string>
-    <string name="dictionary_inventory_title">Установленные слоты словаря</string>
-    <string name="dictionary_inventory_invalid">%1$s [%2$s] · недействителен или неполон (записей: %3$d); замените этот слот перед майнингом</string>
     <string name="dictionary_term">Японский термин</string>
     <string name="dictionary_render_html">Показать точный HTML словаря</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
@@ -698,8 +687,6 @@
     <string name="settings_pitch_romaji">Ромадзи</string>
     <string name="settings_wordsets">Наборы собственных имён</string>
     <string name="settings_resource_entries">Записей: %1$d</string>
-    <string name="settings_move_up">Вверх</string>
-    <string name="settings_move_down">Вниз</string>
     <string name="settings_reading_audio">Аудио предложений для чтения</string>
     <string name="settings_reading_tts">Офлайн-синтез речи Android</string>
     <string name="settings_open_speech_services">Управление речевыми службами</string>

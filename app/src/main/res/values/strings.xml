@@ -529,18 +529,11 @@
     <string name="resource_delete_confirm_message">%1$s is deleted from this device. Nothing is removed from Anki, and no backup is kept.</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="custom_dictionary_title">Import another Yomitan ZIP</string>
-    <string name="custom_dictionary_choose">Choose Yomitan ZIP</string>
     <string name="frequency_import_title">Import a frequency source</string>
-    <string name="frequency_none_installed">No frequency source is installed.</string>
     <string name="frequency_source_id">Stable frequency ID</string>
-    <string name="frequency_choose_file">Choose frequency file</string>
     <string name="pitch_import_title">Import pitch accent</string>
-    <string name="pitch_none_installed">No pitch-accent source is installed.</string>
-    <string name="pitch_choose_file">Choose pitch-accent file</string>
     <string name="audio_pack_import_title">Import expression audio</string>
-    <string name="audio_pack_none_installed">No local audio pack is installed.</string>
     <string name="audio_pack_archive_guidance">Choose the downloaded .tar.xz, .tar.gz, .tar, or .zip archive—not the .torrent file.</string>
-    <string name="audio_pack_choose_zip">Choose audio-pack archive</string>
     <string name="audio_pack_choice_title">Which pack?</string>
     <string name="audio_pack_choice_message">This archive holds %1$d packs. Importing one extracts only that pack; the others stay in the file, so you can come back and add them.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>
@@ -575,8 +568,6 @@
     <string name="bundled_wordsets_title">Bundled proper-name wordsets</string>
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be inventoried.</string>
-    <string name="local_resource_inventory_invalid">%1$s [%2$s] · invalid inventory (%3$d entries); replace it before mining</string>
-    <string name="local_resource_installed">%1$s [%2$s] · %3$d entries</string>
     <string name="pitch_inventory_invalid">%1$s · invalid inventory (%2$d entries); replace it before mining</string>
     <string name="local_import_complete">Local import complete</string>
     <string name="frequency_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
@@ -603,8 +594,6 @@
     <string name="status_database_permission">database permission needed</string>
     <string name="status_ready_api">ready (API %1$d)</string>
     <string name="dictionary_test_title">Offline dictionary test</string>
-    <string name="dictionary_inventory_title">Installed dictionary slots</string>
-    <string name="dictionary_inventory_invalid">%1$s [%2$s] · invalid or incomplete (%3$d entries); replace this exact slot before mining</string>
     <string name="dictionary_term">Japanese term</string>
     <string name="dictionary_render_html">Render exact dictionary HTML</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
@@ -704,8 +693,6 @@
     <string name="settings_pitch_romaji">Romaji</string>
     <string name="settings_wordsets">Proper-name wordsets</string>
     <string name="settings_resource_entries">%1$d entries</string>
-    <string name="settings_move_up">Up</string>
-    <string name="settings_move_down">Down</string>
     <string name="resource_panel_enable">Enable %1$s</string>
     <string name="resource_panel_move_up">Move %1$s up in priority</string>
     <string name="resource_panel_move_down">Move %1$s down in priority</string>
@@ -722,10 +709,7 @@
     <string name="resource_panel_add_pitch">Add pitch source…</string>
     <string name="resource_panel_add_audio">Add audio pack…</string>
     <string name="resource_panel_add_frequency">Add frequency source…</string>
-    <string name="resource_panel_install_jitendex">Install Jitendex (recommended)</string>
-    <string name="resource_panel_install_jmdict">Install JMdict (English)</string>
     <string name="resource_panel_import_yomitan_zip">Import Yomitan ZIP…</string>
-    <string name="resource_panel_entries">%1$d entries</string>
     <string name="resource_panel_meta_online">Online</string>
     <string name="resource_panel_warning_jisho">Rate-limited, slower</string>
     <string name="resource_panel_warning_missing">Missing - re-import</string>
@@ -733,7 +717,6 @@
     <string name="resource_panel_row_repair">Repair</string>
     <string name="resource_panel_row_replace">Replace…</string>
     <string name="resource_panel_not_in_chain">Not in priority list</string>
-    <string name="resource_panel_sentence_audio_heading">Sentence audio (reading sources)</string>
     <string name="settings_reading_audio">Reading sentence audio</string>
     <string name="settings_reading_tts">Offline Android text-to-speech</string>
     <string name="settings_open_speech_services">Manage speech services</string>

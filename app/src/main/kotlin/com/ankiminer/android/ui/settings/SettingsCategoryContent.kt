@@ -681,9 +681,9 @@ private fun dictionaryAddActions(
                         label =
                             stringResource(
                                 if (status.resource.slotId == JMDICT_SLOT_ID) {
-                                    R.string.resource_panel_install_jmdict
+                                    R.string.jmdict_resource_title
                                 } else {
-                                    R.string.resource_panel_install_jitendex
+                                    R.string.jitendex_resource_title
                                 },
                             ),
                     ) { setupViewModel.installCatalogDictionary(status.resource.resourceId) },
@@ -710,7 +710,7 @@ internal fun resourceRowStrings(): ResourceRowStrings {
     // composition, so a locale or font-scale switch reformats the counts.
     val resources = LocalResources.current
     return ResourceRowStrings(
-        entries = { count -> resources.getString(R.string.resource_panel_entries, count) },
+        entries = { count -> resources.getString(R.string.settings_resource_entries, count) },
         notInChain = stringResource(R.string.resource_panel_not_in_chain),
         missingWarning = stringResource(R.string.resource_panel_warning_missing),
         repairWarning = stringResource(R.string.resource_panel_warning_repair),
@@ -783,9 +783,7 @@ private fun LazyListScope.audioSettings(
                     setupViewModel,
                     callbacks,
                 )
-                SettingsSection(
-                    stringResource(R.string.resource_panel_sentence_audio_heading),
-                ) {
+                SettingsSection(stringResource(R.string.settings_reading_audio)) {
                     BooleanSetting(
                         label = stringResource(R.string.settings_reading_tts),
                         checked = draft.readingTts,
