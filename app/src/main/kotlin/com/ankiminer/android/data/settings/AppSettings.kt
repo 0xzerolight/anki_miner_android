@@ -357,10 +357,10 @@ object AppSettingsValidator {
             positive("Reading minimum occurrence", it.readingMinimumOccurrence)
             nonNegative("Maximum frequency rank", it.maxFrequencyRank)
             it.maxParallelWorkers?.let { workers ->
-                if (workers !in 1..32) {
+                if (workers !in 1..20) {
                     invalid(
                         InvalidAppSettingCode.PARALLEL_WORKERS_RANGE,
-                        "Parallel workers must be between 1 and 32",
+                        "Parallel workers must be between 1 and 20",
                     )
                 }
             }

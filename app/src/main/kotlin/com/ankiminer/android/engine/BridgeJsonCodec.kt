@@ -1101,7 +1101,7 @@ object BridgeJsonCodec {
             "pitch_category_format" -> requireOneOf(text(value, key), setOf("jp", "romaji"), key)
             "audio_bitrate", "reading_min_occurrence" -> if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
             "max_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
-            "max_parallel_workers" -> if (integral(value, key) !in 1L..32L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 32")
+            "max_parallel_workers" -> if (integral(value, key) !in 1L..20L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 20")
             "screenshot_animated", "screenshot_animated_match_audio" -> bool(value, key)
             "screenshot_animated_format" -> requireOneOf(text(value, key), setOf("avif", "webp"), key)
             "screenshot_animated_clip_duration" ->

@@ -84,7 +84,9 @@ _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     "max_frequency_rank": (0, None),
     "max_sentence_chars": (0, None),
     "reading_min_occurrence": (1, None),
-    "max_parallel_workers": (1, 32),
+    # The engine raises outside 1..20 in __post_init__, so the wire boundary
+    # rejects what would otherwise blow up config construction mid-run.
+    "max_parallel_workers": (1, 20),
     "screenshot_animated_quality": (0, 100),
 }
 _LITERAL_FIELDS: Mapping[str, frozenset[str]] = {

@@ -679,7 +679,7 @@
     <string name="settings_max_characters">Maximale Satzzeichenanzahl (0 = unbegrenzt)</string>
     <string name="settings_reading_occurrence">Mindestvorkommen der Lesung</string>
     <string name="settings_max_frequency">Maximaler Häufigkeitsrang (0 = unbegrenzt)</string>
-    <string name="settings_workers">Parallele Medien-Worker (1–32)</string>
+    <string name="settings_workers">Parallele Medien-Worker (1–20)</string>
     <string name="settings_dictionary_chain">Wörterbuch-Priorität</string>
     <string name="settings_no_dictionaries">Kein gültiges Offline-Wörterbuch ist installiert. Installieren oder importieren Sie eines in den Einstellungen.</string>
     <string name="settings_frequency_chain">Häufigkeits-Priorität</string>
@@ -708,7 +708,7 @@
     <string name="settings_validation_finite">%1$s muss endlich sein</string>
     <string name="settings_validation_non_negative">%1$s darf nicht negativ sein</string>
     <string name="settings_validation_positive">%1$s muss positiv sein</string>
-    <string name="settings_validation_parallel_workers">Parallele Worker müssen zwischen 1 und 32 liegen</string>
+    <string name="settings_validation_parallel_workers">Parallele Worker müssen zwischen 1 und 20 liegen</string>
     <string name="settings_validation_network_audio">Netzwerk-Audioquellen werden unter Android nicht unterstützt</string>
     <string name="settings_validation_wordsets">Ausgewählte mitgelieferte Wortsets sind ungültig</string>
     <string name="settings_validation_field_map_unknown_key">Feldzuordnung enthält einen unbekannten Schlüssel</string>
@@ -793,7 +793,7 @@
     <string name="b3_validation_finite">Geben Sie eine endliche Zahl ein</string>
     <string name="b3_validation_non_negative">Geben Sie null oder eine positive Zahl ein</string>
     <string name="b3_validation_positive">Geben Sie eine positive ganze Zahl ein</string>
-    <string name="b3_validation_parallel_workers">Geben Sie eine ganze Zahl von 1 bis 32 ein</string>
+    <string name="b3_validation_parallel_workers">Geben Sie eine ganze Zahl von 1 bis 20 ein</string>
     <string name="b3_validation_animated_clip_duration">Geben Sie eine Zahl von 0,5 bis 10 ein</string>
     <string name="b3_validation_animated_quality">Geben Sie eine ganze Zahl von 0 bis 100 ein</string>
     <string name="b3_retry">Erneut versuchen</string>

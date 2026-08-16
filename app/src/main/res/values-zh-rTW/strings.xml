@@ -673,7 +673,7 @@
     <string name="settings_max_characters">最大句子字元數（0 = 無限制）</string>
     <string name="settings_reading_occurrence">讀音最少出現次數</string>
     <string name="settings_max_frequency">最大頻率排名（0 = 無限制）</string>
-    <string name="settings_workers">平行媒體工作執行緒（1–32）</string>
+    <string name="settings_workers">平行媒體工作執行緒（1–20）</string>
     <string name="settings_dictionary_chain">字典優先順序</string>
     <string name="settings_no_dictionaries">未安裝有效的離線字典。請在設定中安裝或匯入字典。</string>
     <string name="settings_frequency_chain">頻率優先順序</string>
@@ -702,7 +702,7 @@
     <string name="settings_validation_finite">%1$s 必須是有限值</string>
     <string name="settings_validation_non_negative">%1$s 不得為負數</string>
     <string name="settings_validation_positive">%1$s 必須為正數</string>
-    <string name="settings_validation_parallel_workers">平行工作執行緒必須介於 1 與 32 之間</string>
+    <string name="settings_validation_parallel_workers">平行工作執行緒必須介於 1 與 20 之間</string>
     <string name="settings_validation_network_audio">Android 不支援網路音訊來源</string>
     <string name="settings_validation_wordsets">所選的內建單字集無效</string>
     <string name="settings_validation_field_map_unknown_key">欄位對應包含未知的鍵</string>
@@ -787,7 +787,7 @@
     <string name="b3_validation_finite">請輸入有限數值</string>
     <string name="b3_validation_non_negative">請輸入零或正數</string>
     <string name="b3_validation_positive">請輸入正整數</string>
-    <string name="b3_validation_parallel_workers">請輸入 1 到 32 的整數</string>
+    <string name="b3_validation_parallel_workers">請輸入 1 到 20 的整數</string>
     <string name="b3_validation_animated_clip_duration">請輸入 0.5 到 10 的數值</string>
     <string name="b3_validation_animated_quality">請輸入 0 到 100 的整數</string>
     <string name="b3_retry">重試</string>

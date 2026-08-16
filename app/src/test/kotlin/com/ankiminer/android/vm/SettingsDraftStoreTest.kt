@@ -21,7 +21,7 @@ class SettingsDraftStoreTest {
                 .copy(
                     audioPadding = ".",
                     subtitleOffset = "-",
-                    workers = "33",
+                    workers = "21",
                 )
 
         assertEquals(
@@ -47,7 +47,7 @@ class SettingsDraftStoreTest {
                 .copy(
                     audioPadding = "0.3",
                     subtitleOffset = "-0.25",
-                    workers = "32",
+                    workers = "20",
                 )
 
         assertTrue(draft.validation.isEmpty())

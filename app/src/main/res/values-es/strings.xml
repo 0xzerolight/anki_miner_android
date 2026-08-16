@@ -681,7 +681,7 @@
     <string name="settings_max_characters">Caracteres máximos de la oración (0 = sin límite)</string>
     <string name="settings_reading_occurrence">Apariciones mínimas en lectura</string>
     <string name="settings_max_frequency">Rango máximo de frecuencia (0 = sin límite)</string>
-    <string name="settings_workers">Procesos paralelos de medios (1–32)</string>
+    <string name="settings_workers">Procesos paralelos de medios (1–20)</string>
     <string name="settings_dictionary_chain">Prioridad de diccionarios</string>
     <string name="settings_no_dictionaries">No hay ningún diccionario sin conexión válido instalado. Instale o importe uno en Ajustes.</string>
     <string name="settings_frequency_chain">Prioridad de frecuencia</string>
@@ -710,7 +710,7 @@
     <string name="settings_validation_finite">%1$s debe ser finito</string>
     <string name="settings_validation_non_negative">%1$s no debe ser negativo</string>
     <string name="settings_validation_positive">%1$s debe ser positivo</string>
-    <string name="settings_validation_parallel_workers">Los procesos paralelos deben estar entre 1 y 32</string>
+    <string name="settings_validation_parallel_workers">Los procesos paralelos deben estar entre 1 y 20</string>
     <string name="settings_validation_network_audio">Las fuentes de audio de red no son compatibles con Android</string>
     <string name="settings_validation_wordsets">Los conjuntos de palabras incluidos seleccionados no son válidos</string>
     <string name="settings_validation_field_map_unknown_key">La asignación de campos contiene una clave desconocida</string>
@@ -795,7 +795,7 @@
     <string name="b3_validation_finite">Introduzca un número finito</string>
     <string name="b3_validation_non_negative">Introduzca cero o un número positivo</string>
     <string name="b3_validation_positive">Introduzca un número entero positivo</string>
-    <string name="b3_validation_parallel_workers">Introduzca un número entero del 1 al 32</string>
+    <string name="b3_validation_parallel_workers">Introduzca un número entero del 1 al 20</string>
     <string name="b3_validation_animated_clip_duration">Introduzca un número entre 0,5 y 10</string>
     <string name="b3_validation_animated_quality">Introduzca un número entero entre 0 y 100</string>
     <string name="b3_retry">Reintentar</string>

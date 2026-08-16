@@ -680,7 +680,7 @@
     <string name="settings_max_characters">例文の最大文字数(0=無制限)</string>
     <string name="settings_reading_occurrence">読書最小出現回数</string>
     <string name="settings_max_frequency">最大頻度順位(0=無制限)</string>
-    <string name="settings_workers">並列メディアワーカー数(1〜32)</string>
+    <string name="settings_workers">並列メディアワーカー数(1〜20)</string>
     <string name="settings_dictionary_chain">辞書優先順位</string>
     <string name="settings_no_dictionaries">有効なオフライン辞書がインストールされていません。設定からインストールまたはインポートしてください。</string>
     <string name="settings_frequency_chain">頻度優先順位</string>
@@ -708,7 +708,7 @@
     <string name="settings_validation_finite">%1$sは有限の値である必要があります</string>
     <string name="settings_validation_non_negative">%1$sは負の値にできません</string>
     <string name="settings_validation_positive">%1$sは正の値である必要があります</string>
-    <string name="settings_validation_parallel_workers">並列ワーカー数は1〜32の範囲で指定してください</string>
+    <string name="settings_validation_parallel_workers">並列ワーカー数は1〜20の範囲で指定してください</string>
     <string name="settings_validation_network_audio">Androidではネットワーク音声ソースに対応していません</string>
     <string name="settings_validation_wordsets">選択したワードセットが無効です</string>
     <string name="settings_validation_field_map_unknown_key">フィールドマップに不明なキーが含まれています</string>
@@ -796,7 +796,7 @@
     <string name="b3_validation_finite">有限の数値を入力してください</string>
     <string name="b3_validation_non_negative">0 以上の数値を入力してください</string>
     <string name="b3_validation_positive">1 以上の整数を入力してください</string>
-    <string name="b3_validation_parallel_workers">1〜32 の整数を入力してください</string>
+    <string name="b3_validation_parallel_workers">1〜20 の整数を入力してください</string>
     <string name="b3_validation_animated_clip_duration">0.5〜10 の数値を入力してください</string>
     <string name="b3_validation_animated_quality">0〜100 の整数を入力してください</string>
     <string name="b3_retry">再試行</string>

@@ -681,7 +681,7 @@
     <string name="settings_max_characters">Nombre maximal de caractères par phrase (0 = illimité)</string>
     <string name="settings_reading_occurrence">Occurrences minimales de lecture</string>
     <string name="settings_max_frequency">Rang de fréquence maximal (0 = illimité)</string>
-    <string name="settings_workers">Agents média parallèles (1–32)</string>
+    <string name="settings_workers">Agents média parallèles (1–20)</string>
     <string name="settings_dictionary_chain">Priorité des dictionnaires</string>
     <string name="settings_no_dictionaries">Aucun dictionnaire hors ligne valide n\'est installé. Installez-en ou importez-en un dans Paramètres.</string>
     <string name="settings_frequency_chain">Priorité de fréquence</string>
@@ -710,7 +710,7 @@
     <string name="settings_validation_finite">%1$s doit être fini</string>
     <string name="settings_validation_non_negative">%1$s ne doit pas être négatif</string>
     <string name="settings_validation_positive">%1$s doit être positif</string>
-    <string name="settings_validation_parallel_workers">Les agents parallèles doivent être compris entre 1 et 32</string>
+    <string name="settings_validation_parallel_workers">Les agents parallèles doivent être compris entre 1 et 20</string>
     <string name="settings_validation_network_audio">Les sources audio réseau ne sont pas prises en charge sur Android</string>
     <string name="settings_validation_wordsets">Les listes de mots incluses sélectionnées ne sont pas valides</string>
     <string name="settings_validation_field_map_unknown_key">Le mappage des champs contient une clé inconnue</string>
@@ -795,7 +795,7 @@
     <string name="b3_validation_finite">Saisissez un nombre fini</string>
     <string name="b3_validation_non_negative">Saisissez zéro ou un nombre positif</string>
     <string name="b3_validation_positive">Saisissez un entier positif</string>
-    <string name="b3_validation_parallel_workers">Saisissez un entier de 1 à 32</string>
+    <string name="b3_validation_parallel_workers">Saisissez un entier de 1 à 20</string>
     <string name="b3_validation_animated_clip_duration">Saisissez un nombre de 0,5 à 10</string>
     <string name="b3_validation_animated_quality">Saisissez un entier de 0 à 100</string>
     <string name="b3_retry">Réessayer</string>

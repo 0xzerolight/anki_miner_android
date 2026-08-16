@@ -677,7 +677,7 @@
     <string name="settings_max_characters">最大句子字符数（0 = 不限）</string>
     <string name="settings_reading_occurrence">阅读内容最低出现次数</string>
     <string name="settings_max_frequency">最高词频排名（0 = 不限）</string>
-    <string name="settings_workers">并行媒体工作线程（1–32）</string>
+    <string name="settings_workers">并行媒体工作线程（1–20）</string>
     <string name="settings_dictionary_chain">词典优先级</string>
     <string name="settings_no_dictionaries">未安装有效的离线词典。请在设置中安装或导入词典。</string>
     <string name="settings_frequency_chain">词频优先级</string>
@@ -706,7 +706,7 @@
     <string name="settings_validation_finite">%1$s 必须为有限数值</string>
     <string name="settings_validation_non_negative">%1$s 不得为负数</string>
     <string name="settings_validation_positive">%1$s 必须为正数</string>
-    <string name="settings_validation_parallel_workers">并行工作线程必须介于 1 到 32 之间</string>
+    <string name="settings_validation_parallel_workers">并行工作线程必须介于 1 到 20 之间</string>
     <string name="settings_validation_network_audio">Android 不支持网络音频来源</string>
     <string name="settings_validation_wordsets">所选的内置单词集无效</string>
     <string name="settings_validation_field_map_unknown_key">字段映射包含未知键</string>
@@ -791,7 +791,7 @@
     <string name="b3_validation_finite">请输入有限数值</string>
     <string name="b3_validation_non_negative">请输入零或正数</string>
     <string name="b3_validation_positive">请输入正整数</string>
-    <string name="b3_validation_parallel_workers">请输入 1 到 32 之间的整数</string>
+    <string name="b3_validation_parallel_workers">请输入 1 到 20 之间的整数</string>
     <string name="b3_validation_animated_clip_duration">请输入 0.5 到 10 之间的数值</string>
     <string name="b3_validation_animated_quality">请输入 0 到 100 之间的整数</string>
     <string name="b3_retry">重试</string>

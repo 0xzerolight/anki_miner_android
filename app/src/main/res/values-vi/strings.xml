@@ -677,7 +677,7 @@
     <string name="settings_max_characters">Số ký tự câu tối đa (0 = không giới hạn)</string>
     <string name="settings_reading_occurrence">Số lần xuất hiện tối thiểu của cách đọc</string>
     <string name="settings_max_frequency">Hạng tần suất tối đa (0 = không giới hạn)</string>
-    <string name="settings_workers">Trình xử lý phương tiện song song (1–32)</string>
+    <string name="settings_workers">Trình xử lý phương tiện song song (1–20)</string>
     <string name="settings_dictionary_chain">Ưu tiên từ điển</string>
     <string name="settings_no_dictionaries">Chưa cài từ điển ngoại tuyến hợp lệ. Hãy cài đặt hoặc nhập một từ điển trong Cài đặt.</string>
     <string name="settings_frequency_chain">Ưu tiên tần suất</string>
@@ -706,7 +706,7 @@
     <string name="settings_validation_finite">%1$s phải hữu hạn</string>
     <string name="settings_validation_non_negative">%1$s không được âm</string>
     <string name="settings_validation_positive">%1$s phải dương</string>
-    <string name="settings_validation_parallel_workers">Trình xử lý song song phải từ 1 đến 32</string>
+    <string name="settings_validation_parallel_workers">Trình xử lý song song phải từ 1 đến 20</string>
     <string name="settings_validation_network_audio">Android không hỗ trợ nguồn âm thanh mạng</string>
     <string name="settings_validation_wordsets">Danh sách từ đi kèm đã chọn không hợp lệ</string>
     <string name="settings_validation_field_map_unknown_key">Ánh xạ trường chứa khóa không xác định</string>
@@ -791,7 +791,7 @@
     <string name="b3_validation_finite">Nhập số hữu hạn</string>
     <string name="b3_validation_non_negative">Nhập số 0 hoặc số dương</string>
     <string name="b3_validation_positive">Nhập số nguyên dương</string>
-    <string name="b3_validation_parallel_workers">Nhập số nguyên từ 1 đến 32</string>
+    <string name="b3_validation_parallel_workers">Nhập số nguyên từ 1 đến 20</string>
     <string name="b3_validation_animated_clip_duration">Nhập số từ 0.5 đến 10</string>
     <string name="b3_validation_animated_quality">Nhập số nguyên từ 0 đến 100</string>
     <string name="b3_retry">Thử lại</string>

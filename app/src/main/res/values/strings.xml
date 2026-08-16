@@ -689,7 +689,7 @@
     <string name="settings_max_characters">Maximum sentence characters (0 = unlimited)</string>
     <string name="settings_reading_occurrence">Reading minimum occurrences</string>
     <string name="settings_max_frequency">Maximum frequency rank (0 = unlimited)</string>
-    <string name="settings_workers">Parallel media workers (1–32)</string>
+    <string name="settings_workers">Parallel media workers (1–20)</string>
     <string name="settings_dictionary_chain">Dictionary priority</string>
     <string name="settings_no_dictionaries">No valid offline dictionary is installed. Install or import one in Settings.</string>
     <string name="settings_frequency_chain">Frequency priority</string>
@@ -718,7 +718,7 @@
     <string name="settings_validation_finite">%1$s must be finite</string>
     <string name="settings_validation_non_negative">%1$s must not be negative</string>
     <string name="settings_validation_positive">%1$s must be positive</string>
-    <string name="settings_validation_parallel_workers">Parallel workers must be between 1 and 32</string>
+    <string name="settings_validation_parallel_workers">Parallel workers must be between 1 and 20</string>
     <string name="settings_validation_network_audio">Network audio sources are not supported on Android</string>
     <string name="settings_validation_wordsets">Selected bundled wordsets are invalid</string>
     <string name="settings_validation_field_map_unknown_key">Field map contains an unknown key</string>
@@ -805,7 +805,7 @@
     <string name="b3_validation_finite">Enter a finite number</string>
     <string name="b3_validation_non_negative">Enter zero or a positive number</string>
     <string name="b3_validation_positive">Enter a positive whole number</string>
-    <string name="b3_validation_parallel_workers">Enter a whole number from 1 to 32</string>
+    <string name="b3_validation_parallel_workers">Enter a whole number from 1 to 20</string>
     <string name="b3_validation_animated_clip_duration">Enter a number from 0.5 to 10</string>
     <string name="b3_validation_animated_quality">Enter a whole number from 0 to 100</string>
     <string name="b3_retry">Retry</string>

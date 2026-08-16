@@ -250,7 +250,7 @@ internal data class SettingsDraft(
                 validateOptionalInt(workers)
                     ?.let { put(SettingsFieldKey.WORKERS, it) }
                 workers.toIntOrNull()
-                    ?.takeIf { it !in 1..32 }
+                    ?.takeIf { it !in 1..20 }
                     ?.let {
                         put(
                             SettingsFieldKey.WORKERS,
