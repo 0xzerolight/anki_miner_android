@@ -318,6 +318,10 @@ internal class AndroidResourceManager(
                     bridge.dispatch(ResourceBridgeCodec.encodeCleanupRequest(), null),
                 )
                 startupRecoveryTailPending = true
+                // Before refreshFromPython, which fails the whole recovery on a
+                // stale pitch source or an unusable dictionary.
+                rebuildStaleResourceIndexes()
+                operation.cancellation.check()
                 refreshFromPython()
                 finishStartupRecovery()
                 startupRecoveryTailPending = false
@@ -1987,6 +1991,75 @@ internal class AndroidResourceManager(
         wordListStore.recover()
         refreshWordLists()
         discardInstalledCatalogDownloads()
+    }
+
+    /**
+     * Rebuild every schema-stale index that still has the copy it was built from.
+     *
+     * An engine upgrade can move a resource index schema, and each registry
+     * compares on exact equality — so a source installed by an older build stops
+     * loading. [refreshFromPython] treats a stale pitch source, and an unusable
+     * dictionary, as a fatal inventory failure, so this must run first or
+     * startup recovery fails outright for anyone who had either installed.
+     *
+     * Every importer keeps the original input beside its index, so the rebuild
+     * needs no file picker and no SAF grant: it re-runs the same import against
+     * that copy, at the path the inventory reports. A slot whose copy is gone
+     * has nothing to rebuild from and is left for the fatal check to report.
+     *
+     * Runs inside the caller's operation. The importers stage and rename, so a
+     * kill mid-rebuild leaves the old stale index rather than a torn one, and
+     * the next launch simply tries again.
+     */
+    private fun rebuildStaleResourceIndexes() {
+        val inventory =
+            ResourceBridgeCodec.decodeLocalResourceList(
+                bridge.dispatch(ResourceBridgeCodec.encodeLocalResourceListRequest(), null),
+            )
+        val staleFrequencies =
+            inventory.frequencies.filter { !it.schemaOk && it.rebuildSourcePath != null }
+        val stalePitch =
+            inventory.pitchSources.filter { !it.schemaOk && it.rebuildSourcePath != null }
+        if (staleFrequencies.isEmpty() && stalePitch.isEmpty()) return
+
+        for (source in staleFrequencies) {
+            val path = source.rebuildSourcePath ?: continue
+            val format =
+                FrequencySourceFormat.entries.firstOrNull { path.endsWith(it.fileSuffix) }
+                    ?: continue
+            ResourceBridgeCodec.decodeImportedFrequency(
+                bridge.dispatch(
+                    ResourceBridgeCodec.encodeFrequencyImportRequest(
+                        "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                        path,
+                        source.sourceId,
+                        source.sourceName,
+                        format,
+                        overwrite = true,
+                    ),
+                    null,
+                ),
+            )
+        }
+        for (source in stalePitch) {
+            val path = source.rebuildSourcePath ?: continue
+            val format =
+                PitchAccentSourceFormat.entries.firstOrNull { path.endsWith(it.fileSuffix) }
+                    ?: continue
+            ResourceBridgeCodec.decodeImportedPitch(
+                bridge.dispatch(
+                    ResourceBridgeCodec.encodePitchImportRequest(
+                        "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                        path,
+                        source.sourceId,
+                        source.sourceName,
+                        format,
+                        overwrite = true,
+                    ),
+                    null,
+                ),
+            )
+        }
     }
 
     /**
