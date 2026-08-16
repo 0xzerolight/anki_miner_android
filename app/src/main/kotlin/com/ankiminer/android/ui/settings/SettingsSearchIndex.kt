@@ -159,19 +159,19 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "dictionaries.custom",
             SettingsCategory.DICTIONARIES,
             "dictionary-sources",
-            R.string.custom_dictionary_title,
+            R.string.resource_panel_import_yomitan_zip,
         ),
         entry(
             "dictionaries.pitch_import",
             SettingsCategory.DICTIONARIES,
             "pitch-sources",
-            R.string.pitch_import_title,
+            R.string.resource_panel_add_pitch,
         ),
         entry(
             "dictionaries.chain",
             SettingsCategory.DICTIONARIES,
             "dictionary-sources",
-            R.string.settings_dictionary_chain,
+            R.string.resource_panel_dictionaries_heading,
         ),
         entry(
             "dictionaries.jisho",
@@ -184,7 +184,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "dictionaries.pitch_chain",
             SettingsCategory.DICTIONARIES,
             "pitch-sources",
-            R.string.settings_pitch_chain,
+            R.string.resource_panel_pitch_heading,
         ),
         entry(
             "dictionaries.pitch_format",
@@ -200,8 +200,8 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         ),
 
         // Audio
-        entry("audio.pack_chain", SettingsCategory.AUDIO, "audio-sources", R.string.settings_audio_pack_chain),
-        entry("audio.pack_import", SettingsCategory.AUDIO, "audio-sources", R.string.audio_pack_import_title),
+        entry("audio.pack_chain", SettingsCategory.AUDIO, "audio-sources", R.string.resource_panel_audio_heading),
+        entry("audio.pack_import", SettingsCategory.AUDIO, "audio-sources", R.string.resource_panel_add_audio),
         entry(
             "audio.reading_tts",
             SettingsCategory.AUDIO,
@@ -211,8 +211,18 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         ),
 
         // Frequency
-        entry("frequency.chain", SettingsCategory.FREQUENCY, "frequency-sources", R.string.settings_frequency_chain),
-        entry("frequency.import", SettingsCategory.FREQUENCY, "frequency-sources", R.string.frequency_import_title),
+        entry(
+            "frequency.chain",
+            SettingsCategory.FREQUENCY,
+            "frequency-sources",
+            R.string.resource_panel_frequency_heading,
+        ),
+        entry(
+            "frequency.import",
+            SettingsCategory.FREQUENCY,
+            "frequency-sources",
+            R.string.resource_panel_add_frequency,
+        ),
 
         // Filtering
         entry(
