@@ -187,9 +187,11 @@ internal fun SettingTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        // Material 3 draws the placeholder slot only while the field has focus, so an inherited
-        // default parked there is invisible on the screen the user is actually reading. Draw it
-        // below the field instead, where a blank field states its value without being tapped.
+        // Fields that inherit an engine default now arrive prefilled with it, so this line is the
+        // fallback for the one case that still shows a blank: the user cleared the field. Material 3
+        // draws the placeholder slot only while the field has focus, which is invisible on the
+        // screen the user is actually reading, so draw it below the field instead — an emptied field
+        // states what it will inherit without being tapped.
         // The value-based OutlinedTextField overload has no labelPosition to minimise the label
         // with; that parameter exists only on the TextFieldState overload.
         supportingText =
@@ -213,10 +215,12 @@ internal fun SettingTextField(
 /**
  * The engine value an empty field inherits, drawn under the field by [SettingTextField].
  *
- * A blank field is not a blank setting: [com.ankiminer.android.data.settings.AppSettings] leaves
- * unset processing fields null and the snapshot mapper omits them, so the engine applies its own
- * default. Showing that value where the text would go says so without costing a row, and it is the
- * same treatment the mining tabs already give their per-run subtitle offset.
+ * An unset field is not blank any more: `SettingsDraft.from` prefills the engine default as real
+ * field text, and a value equal to that default normalizes back to null on save, so storage still
+ * means inherit. This line is what remains for a field the user has cleared —
+ * [com.ankiminer.android.data.settings.AppSettings] leaves unset processing fields null and the
+ * snapshot mapper omits them, so the engine applies its own default, and an emptied box has to say
+ * which value that is.
  *
  * Pass a [com.ankiminer.android.data.settings.EngineDefaults] constant, never a re-typed literal —
  * the mirror is the side CI checks against the engine.

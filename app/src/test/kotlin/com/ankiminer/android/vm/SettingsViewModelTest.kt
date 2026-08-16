@@ -317,9 +317,12 @@ class SettingsViewModelTest {
     @Test
     fun outOfRangeWorkersDoNotBlockConcurrentValidTogglePersistence() =
         runTest(mainDispatcherRule.dispatcher) {
+            // A genuine override, not a value that happens to equal the engine default: a stored
+            // default normalizes back to inherit on the next save, which would make this assertion
+            // measure the prefill instead of "invalid text never clobbers the persisted value".
             val repository =
                 FakeAppSettingsRepository(
-                    AppSettings(maxParallelWorkers = 6, jishoEnabled = false),
+                    AppSettings(maxParallelWorkers = 12, jishoEnabled = false),
                 )
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
@@ -330,7 +333,7 @@ class SettingsViewModelTest {
             runCurrent()
 
             assertEquals(1, repository.writeCount)
-            assertEquals(6, repository.current.maxParallelWorkers)
+            assertEquals(12, repository.current.maxParallelWorkers)
             assertTrue(repository.current.jishoEnabled)
             assertEquals("33", viewModel.draftState.value.draft.workers)
             assertEquals(SettingsSaveState.Pending(2), viewModel.saveState.value)
@@ -856,6 +859,131 @@ class SettingsViewModelTest {
             assertFalse(viewModel.draftState.value.dirty)
             assertEquals("Deck", viewModel.draftState.value.draft.deckName)
             assertEquals(EngineDefaults.TAGS, viewModel.draftState.value.draft.tags)
+        }
+
+    @Test
+    fun draftHydratesEngineDefaultsIntoUnsetFields() {
+        val draft = SettingsDraft.from(AppSettings(), resources("first"))
+
+        assertEquals(EngineDefaults.DECK_NAME, draft.deckName)
+        assertEquals(EngineDefaults.AUDIO_PADDING_SECONDS.toString(), draft.audioPadding)
+        assertEquals(EngineDefaults.SCREENSHOT_OFFSET_SECONDS.toString(), draft.screenshotOffset)
+        assertEquals(
+            EngineDefaults.ANIMATED_SCREENSHOT_DURATION_SECONDS.toString(),
+            draft.animatedScreenshotDuration,
+        )
+        assertEquals(
+            EngineDefaults.ANIMATED_SCREENSHOT_QUALITY.toString(),
+            draft.animatedScreenshotQuality,
+        )
+        assertEquals(EngineDefaults.SUBTITLE_OFFSET_SECONDS.toString(), draft.subtitleOffset)
+        assertEquals(EngineDefaults.AUDIO_BITRATE_KBPS.toString(), draft.bitrate)
+        assertEquals(EngineDefaults.MAX_SENTENCE_DURATION_SECONDS.toString(), draft.maxDuration)
+        assertEquals(EngineDefaults.MAX_SENTENCE_CHARACTERS.toString(), draft.maxCharacters)
+        assertEquals(
+            EngineDefaults.READING_MINIMUM_OCCURRENCE.toString(),
+            draft.readingOccurrence,
+        )
+        assertEquals(EngineDefaults.MAX_FREQUENCY_RANK.toString(), draft.maxFrequency)
+        assertEquals(EngineDefaults.MAX_PARALLEL_WORKERS.toString(), draft.workers)
+        // A prefilled value the validators reject would block every settings write behind a field
+        // the user never touched.
+        assertTrue(draft.validation.isEmpty())
+    }
+
+    @Test
+    fun unEditedPrefilledDraftSavesAsInherit() {
+        val base = AppSettings()
+
+        val saved = SettingsDraft.from(base, resources()).toSettings(base)
+
+        assertNull(saved.deckName)
+        assertNull(saved.audioPaddingSeconds)
+        assertNull(saved.screenshotOffsetSeconds)
+        assertNull(saved.animatedScreenshotDurationSeconds)
+        assertNull(saved.animatedScreenshotQuality)
+        assertNull(saved.subtitleOffsetSeconds)
+        assertNull(saved.audioBitrateKbps)
+        assertNull(saved.maxSentenceDurationSeconds)
+        assertNull(saved.maxSentenceCharacters)
+        assertNull(saved.readingMinimumOccurrence)
+        assertNull(saved.maxFrequencyRank)
+        assertNull(saved.maxParallelWorkers)
+        // Nothing else drifted either: the prefill is display text, not stored state.
+        assertEquals(base, saved)
+    }
+
+    @Test
+    fun typingAValueEqualToTheDefaultNormalizesToInherit() {
+        val base = AppSettings()
+        // A non-canonical spelling of the default, derived from the constant so a re-pin cannot
+        // leave a stale literal behind.
+        val padded = EngineDefaults.AUDIO_PADDING_SECONDS.toString() + "0"
+
+        val saved =
+            SettingsDraft.from(base, resources()).copy(audioPadding = padded).toSettings(base)
+
+        assertNull(saved.audioPaddingSeconds)
+    }
+
+    @Test
+    fun typingANonDefaultValueStoresAnOverride() {
+        val base = AppSettings()
+
+        val saved =
+            SettingsDraft.from(base, resources()).copy(audioPadding = "0.8").toSettings(base)
+
+        assertEquals(0.8, saved.audioPaddingSeconds!!, 0.0)
+    }
+
+    @Test
+    fun clearingAPrefilledFieldStillInherits() {
+        val base = AppSettings()
+
+        val saved = SettingsDraft.from(base, resources()).copy(audioPadding = "").toSettings(base)
+
+        assertNull(saved.audioPaddingSeconds)
+    }
+
+    @Test
+    fun explicitlyStoredDefaultValueNormalizesOnNextSave() {
+        // Accepted behavior change: a value stored explicitly before the prefill existed collapses
+        // back to inherit the next time the draft is saved, so a re-pinned engine default flows
+        // through again.
+        val base = AppSettings(audioPaddingSeconds = EngineDefaults.AUDIO_PADDING_SECONDS)
+        val draft = SettingsDraft.from(base, resources())
+
+        assertEquals(EngineDefaults.AUDIO_PADDING_SECONDS.toString(), draft.audioPadding)
+        assertNull(draft.toSettings(base).audioPaddingSeconds)
+    }
+
+    @Test
+    fun restoreMiningDefaultsProducesAPrefilledDraft() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(audioPaddingSeconds = 1.0, maxParallelWorkers = 12),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            assertEquals("1.0", viewModel.draftState.value.draft.audioPadding)
+            assertEquals("12", viewModel.draftState.value.draft.workers)
+
+            viewModel.restoreMiningDefaults()
+            advanceUntilIdle()
+
+            assertNull(repository.current.audioPaddingSeconds)
+            assertNull(repository.current.maxParallelWorkers)
+            assertEquals(
+                EngineDefaults.AUDIO_PADDING_SECONDS.toString(),
+                viewModel.draftState.value.draft.audioPadding,
+            )
+            assertEquals(
+                EngineDefaults.MAX_PARALLEL_WORKERS.toString(),
+                viewModel.draftState.value.draft.workers,
+            )
+            assertFalse(viewModel.draftState.value.dirty)
         }
 
     @Test
