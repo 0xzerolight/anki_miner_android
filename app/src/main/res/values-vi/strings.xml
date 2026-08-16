@@ -517,11 +517,8 @@
     <string name="resource_delete_confirm_title">Xóa %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s bị xóa khỏi thiết bị này. Không có gì bị xóa khỏi Anki và không giữ bản sao lưu.</string>
     <string name="dictionary_repair_confirm">Sửa chữa khe</string>
-    <string name="custom_dictionary_title">Nhập ZIP Yomitan khác</string>
-    <string name="frequency_import_title">Nhập nguồn tần suất</string>
     <string name="frequency_source_id">ID tần suất ổn định</string>
     <string name="pitch_import_title">Nhập trọng âm cao độ</string>
-    <string name="audio_pack_import_title">Nhập âm thanh biểu thức</string>
     <string name="audio_pack_archive_guidance">Hãy chọn tệp lưu trữ .tar.xz, .tar.gz, .tar hoặc .zip đã tải xuống, không chọn tệp .torrent.</string>
     <string name="audio_pack_choice_title">Gói nào?</string>
     <string name="audio_pack_choice_message">Kho lưu trữ này chứa %1$d gói. Việc nhập một gói chỉ giải nén gói đó; các gói khác vẫn ở trong tệp, nên bạn có thể quay lại và thêm chúng.</string>
@@ -668,14 +665,10 @@
     <string name="settings_reading_occurrence">Số lần xuất hiện tối thiểu của cách đọc</string>
     <string name="settings_max_frequency">Hạng tần suất tối đa (0 = không giới hạn)</string>
     <string name="settings_workers">Trình xử lý phương tiện song song (1–32)</string>
-    <string name="settings_dictionary_chain">Ưu tiên từ điển</string>
     <string name="settings_no_dictionaries">Chưa cài từ điển ngoại tuyến hợp lệ. Hãy cài đặt hoặc nhập một từ điển trong Cài đặt.</string>
-    <string name="settings_frequency_chain">Ưu tiên tần suất</string>
     <string name="settings_no_frequency_sources">Chưa cài nguồn tần suất hợp lệ. Hãy nhập một nguồn trong Cài đặt.</string>
-    <string name="settings_audio_pack_chain">Ưu tiên âm thanh biểu thức</string>
     <string name="settings_no_audio_packs">Chưa cài gói âm thanh cục bộ hợp lệ. Hãy nhập một gói trong Cài đặt.</string>
     <string name="settings_pitch_format">Nhãn phân loại trọng âm cao độ</string>
-    <string name="settings_pitch_chain">Ưu tiên trọng âm cao độ</string>
     <string name="settings_pitch_not_installed">Chưa cài nguồn trọng âm cao độ hợp lệ.</string>
     <string name="settings_pitch_japanese">Tiếng Nhật</string>
     <string name="settings_pitch_romaji">Romaji</string>

@@ -519,11 +519,8 @@
     <string name="resource_delete_confirm_title">%1$sを削除しますか？</string>
     <string name="resource_delete_confirm_message">%1$sをこの端末から削除します。Ankiからは何も削除されず、バックアップは保持されません。</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
-    <string name="custom_dictionary_title">別のYomitan ZIPをインポート</string>
-    <string name="frequency_import_title">頻度ソースをインポート</string>
     <string name="frequency_source_id">固定頻度ID</string>
     <string name="pitch_import_title">アクセントをインポート</string>
-    <string name="audio_pack_import_title">例文音声をインポート</string>
     <string name="audio_pack_archive_guidance">ダウンロードした .tar.xz、.tar.gz、.tar、.zip アーカイブを選択してください。.torrent ファイルは選択しないでください。</string>
     <string name="audio_pack_choice_title">どのパックを取り込みますか</string>
     <string name="audio_pack_choice_message">このアーカイブには%1$d個のパックが含まれています。取り込むのは選んだパックだけで、他はファイル内に残るため後から追加できます。</string>
@@ -671,14 +668,10 @@
     <string name="settings_reading_occurrence">読書最小出現回数</string>
     <string name="settings_max_frequency">最大頻度順位(0=無制限)</string>
     <string name="settings_workers">並列メディアワーカー数(1〜32)</string>
-    <string name="settings_dictionary_chain">辞書優先順位</string>
     <string name="settings_no_dictionaries">有効なオフライン辞書がインストールされていません。設定からインストールまたはインポートしてください。</string>
-    <string name="settings_frequency_chain">頻度優先順位</string>
     <string name="settings_no_frequency_sources">有効な頻度ソースがインストールされていません。設定からインポートしてください。</string>
-    <string name="settings_audio_pack_chain">表現音声優先順位</string>
     <string name="settings_no_audio_packs">有効なローカル音声パックがインストールされていません。設定からインポートしてください。</string>
     <string name="settings_pitch_format">ピッチ表示形式</string>
-    <string name="settings_pitch_chain">ピッチ優先順位</string>
     <string name="settings_pitch_not_installed">有効なピッチアクセントソースがインストールされていません。</string>
     <string name="settings_pitch_japanese">日本語</string>
     <string name="settings_pitch_romaji">ローマ字</string>

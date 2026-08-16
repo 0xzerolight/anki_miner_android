@@ -68,6 +68,7 @@ class CatalogResource:
 class AuditResult:
     source_count: int
     catalogs: list[Path]
+    verified_counts: dict[Path, int]
     advisories: list[str]
 
 
@@ -204,6 +205,7 @@ def audit(resource_root: Path) -> AuditResult:
     catalogs = locale_catalogs(resource_root)
     failures: list[str] = []
     advisories: list[str] = []
+    verified_counts: dict[Path, int] = {}
     source_keys = set(source)
     for catalog_path in catalogs:
         translation = read_catalog(catalog_path)
@@ -211,6 +213,7 @@ def audit(resource_root: Path) -> AuditResult:
         relative = catalog_path.relative_to(resource_root)
         missing = sorted(source_keys - translation_keys)
         extra = sorted(translation_keys - source_keys)
+        verified_counts[catalog_path] = len(source_keys) - len(missing)
         if missing:
             # Android resolves an absent key from values/, so this is work outstanding, not a
             # defect. Reported so the backlog stays visible; never fatal.
@@ -248,7 +251,12 @@ def audit(resource_root: Path) -> AuditResult:
 
     if failures:
         raise CatalogError("\n".join(failures))
-    return AuditResult(source_count=len(source), catalogs=catalogs, advisories=advisories)
+    return AuditResult(
+        source_count=len(source),
+        catalogs=catalogs,
+        verified_counts=verified_counts,
+        advisories=advisories,
+    )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -272,7 +280,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     for catalog in result.catalogs:
-        print(f"{catalog.relative_to(resource_root)}: {result.source_count} resources verified")
+        verified = result.verified_counts[catalog]
+        print(f"{catalog.relative_to(resource_root)}: {verified} resources verified")
     for advisory in result.advisories:
         print(f"advisory: {advisory}")
     print(

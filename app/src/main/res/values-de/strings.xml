@@ -519,11 +519,8 @@
     <string name="resource_delete_confirm_title">%1$s entfernen?</string>
     <string name="resource_delete_confirm_message">%1$s wird von diesem Gerät gelöscht. Aus Anki wird nichts entfernt, und es wird keine Sicherung behalten.</string>
     <string name="dictionary_repair_confirm">Slot reparieren</string>
-    <string name="custom_dictionary_title">Anderes Yomitan-ZIP importieren</string>
-    <string name="frequency_import_title">Häufigkeitsquelle importieren</string>
     <string name="frequency_source_id">Stabile Häufigkeits-ID</string>
     <string name="pitch_import_title">Tonhöhenakzent importieren</string>
-    <string name="audio_pack_import_title">Ausdrucksaudio importieren</string>
     <string name="audio_pack_archive_guidance">Wähle das heruntergeladene Archiv im Format .tar.xz, .tar.gz, .tar oder .zip – nicht die .torrent-Datei.</string>
     <string name="audio_pack_choice_title">Welches Paket?</string>
     <string name="audio_pack_choice_message">Dieses Archiv enthält %1$d Pakete. Der Import eines Pakets entpackt nur dieses; die anderen bleiben in der Datei, sodass Sie später zurückkehren und sie hinzufügen können.</string>
@@ -670,14 +667,10 @@
     <string name="settings_reading_occurrence">Mindestvorkommen der Lesung</string>
     <string name="settings_max_frequency">Maximaler Häufigkeitsrang (0 = unbegrenzt)</string>
     <string name="settings_workers">Parallele Medien-Worker (1–32)</string>
-    <string name="settings_dictionary_chain">Wörterbuch-Priorität</string>
     <string name="settings_no_dictionaries">Kein gültiges Offline-Wörterbuch ist installiert. Installieren oder importieren Sie eines in den Einstellungen.</string>
-    <string name="settings_frequency_chain">Häufigkeits-Priorität</string>
     <string name="settings_no_frequency_sources">Keine gültigen Häufigkeitsquellen sind installiert. Importieren Sie eine in den Einstellungen.</string>
-    <string name="settings_audio_pack_chain">Ausdrucks-Audio-Priorität</string>
     <string name="settings_no_audio_packs">Keine gültigen lokalen Audiopakete sind installiert. Importieren Sie eines in den Einstellungen.</string>
     <string name="settings_pitch_format">Bezeichnungen für Tonhöhenkategorien</string>
-    <string name="settings_pitch_chain">Tonhöhenakzent-Priorität</string>
     <string name="settings_pitch_not_installed">Keine gültige Tonhöhenakzent-Quelle ist installiert.</string>
     <string name="settings_pitch_japanese">Japanisch</string>
     <string name="settings_pitch_romaji">Romaji</string>

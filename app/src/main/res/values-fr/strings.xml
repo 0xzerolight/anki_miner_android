@@ -521,11 +521,8 @@
     <string name="resource_delete_confirm_title">Supprimer %1$s ?</string>
     <string name="resource_delete_confirm_message">%1$s est supprimé de cet appareil. Aucune modification dans Anki, aucune sauvegarde conservée.</string>
     <string name="dictionary_repair_confirm">Réparer l\'emplacement</string>
-    <string name="custom_dictionary_title">Importer un autre ZIP Yomitan</string>
-    <string name="frequency_import_title">Importer une source de fréquence</string>
     <string name="frequency_source_id">ID de fréquence stable</string>
     <string name="pitch_import_title">Importer l\'accent de hauteur</string>
-    <string name="audio_pack_import_title">Importer l\'audio de l\'expression</string>
     <string name="audio_pack_archive_guidance">Sélectionnez l’archive téléchargée .tar.xz, .tar.gz, .tar ou .zip, et non le fichier .torrent.</string>
     <string name="audio_pack_choice_title">Quel pack ?</string>
     <string name="audio_pack_choice_message">Cette archive contient %1$d packs. L\'importation de l\'un d\'eux n\'extrait que ce pack ; les autres restent dans le fichier, vous pourrez donc revenir les ajouter.</string>
@@ -672,14 +669,10 @@
     <string name="settings_reading_occurrence">Occurrences minimales de lecture</string>
     <string name="settings_max_frequency">Rang de fréquence maximal (0 = illimité)</string>
     <string name="settings_workers">Agents média parallèles (1–32)</string>
-    <string name="settings_dictionary_chain">Priorité des dictionnaires</string>
     <string name="settings_no_dictionaries">Aucun dictionnaire hors ligne valide n\'est installé. Installez-en ou importez-en un dans Paramètres.</string>
-    <string name="settings_frequency_chain">Priorité de fréquence</string>
     <string name="settings_no_frequency_sources">Aucune source de fréquence valide n\'est installée. Importez-en une dans Paramètres.</string>
-    <string name="settings_audio_pack_chain">Priorité de l\'audio des expressions</string>
     <string name="settings_no_audio_packs">Aucun pack audio local valide n\'est installé. Importez-en un dans Paramètres.</string>
     <string name="settings_pitch_format">Libellés des catégories d\'accent de hauteur</string>
-    <string name="settings_pitch_chain">Priorité de l\'accent de hauteur</string>
     <string name="settings_pitch_not_installed">Aucune source valide d\'accent de hauteur n\'est installée.</string>
     <string name="settings_pitch_japanese">Japonais</string>
     <string name="settings_pitch_romaji">Romaji</string>

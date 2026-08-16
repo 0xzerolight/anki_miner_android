@@ -13,7 +13,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
-- The mining progress bar only moves forward. Each stage floors the bar at the start of its band, decode progress is clamped inside the band it belongs to, and a stage that completes fills its band, so a run reads 0 -> 100 without dropping back. Reading runs use the same floor.
+- The in-app mining progress panel only moves forward; the notification still shows each cycle's own count. The bar floors at the highest fraction already shown, decode progress is clamped inside the band it belongs to, and a stage that completes fills its band, so a run reads 0 -> 100 without dropping back. Reading runs use the same floor.
 - The search field on the word curator no longer clips its placeholder. Its height is a floor now rather than a fixed one, which also removes the branch that skipped the clamp above a font scale of 1.3.
 - The third-party notices shown in the app name libwebp and libaom, the two encoders behind animated WebP and AVIF screenshots. Their license texts have been packaged alongside since the encoders were added, but the notice listing them was a hand-copy of the repository's NOTICE.md and was never updated when they landed. A host test now compares the two files and fails the build when they diverge.
 

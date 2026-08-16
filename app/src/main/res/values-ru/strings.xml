@@ -523,11 +523,8 @@
     <string name="resource_delete_confirm_title">Удалить %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s удаляется с этого устройства. Из Anki ничего не удаляется, резервная копия не сохраняется.</string>
     <string name="dictionary_repair_confirm">Восстановить слот</string>
-    <string name="custom_dictionary_title">Импортировать другой ZIP Yomitan</string>
-    <string name="frequency_import_title">Импортировать источник частотности</string>
     <string name="frequency_source_id">Постоянный ID частотности</string>
     <string name="pitch_import_title">Импортировать тональное ударение</string>
-    <string name="audio_pack_import_title">Импортировать аудио выражений</string>
     <string name="audio_pack_archive_guidance">Выберите скачанный архив .tar.xz, .tar.gz, .tar или .zip, а не файл .torrent.</string>
     <string name="audio_pack_choice_title">Какой пакет?</string>
     <string name="audio_pack_choice_message">Пакетов в архиве: %1$d. При импорте одного извлекается только этот пакет; остальные остаются в файле, и их можно добавить позже.</string>
@@ -674,14 +671,10 @@
     <string name="settings_reading_occurrence">Минимальное количество вхождений чтения</string>
     <string name="settings_max_frequency">Максимальный ранг частотности (0 = без ограничений)</string>
     <string name="settings_workers">Параллельные обработчики медиа (1–32)</string>
-    <string name="settings_dictionary_chain">Приоритет словарей</string>
     <string name="settings_no_dictionaries">Нет подходящих установленных офлайн-словарей. Установите или импортируйте словарь в настройках.</string>
-    <string name="settings_frequency_chain">Приоритет частотности</string>
     <string name="settings_no_frequency_sources">Нет подходящих установленных источников частотности. Импортируйте источник в настройках.</string>
-    <string name="settings_audio_pack_chain">Приоритет аудио выражений</string>
     <string name="settings_no_audio_packs">Нет подходящих установленных локальных пакетов аудио. Импортируйте пакет в настройках.</string>
     <string name="settings_pitch_format">Метки категорий тонального ударения</string>
-    <string name="settings_pitch_chain">Приоритет тонального ударения</string>
     <string name="settings_pitch_not_installed">Нет подходящего установленного источника тонального ударения.</string>
     <string name="settings_pitch_japanese">Японский</string>
     <string name="settings_pitch_romaji">Ромадзи</string>

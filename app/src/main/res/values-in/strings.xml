@@ -517,11 +517,8 @@
     <string name="resource_delete_confirm_title">Hapus %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s dihapus dari perangkat ini. Tidak ada yang dihapus dari Anki, dan tidak ada cadangan yang disimpan.</string>
     <string name="dictionary_repair_confirm">Perbaiki slot</string>
-    <string name="custom_dictionary_title">Impor ZIP Yomitan lain</string>
-    <string name="frequency_import_title">Impor sumber frekuensi</string>
     <string name="frequency_source_id">ID frekuensi stabil</string>
     <string name="pitch_import_title">Impor aksen nada</string>
-    <string name="audio_pack_import_title">Impor audio ekspresi</string>
     <string name="audio_pack_archive_guidance">Pilih arsip .tar.xz, .tar.gz, .tar, atau .zip yang telah diunduh, bukan file .torrent.</string>
     <string name="audio_pack_choice_title">Paket yang mana?</string>
     <string name="audio_pack_choice_message">Arsip ini berisi %1$d paket. Mengimpor satu paket hanya mengekstrak paket itu; yang lain tetap di berkas, sehingga Anda dapat kembali dan menambahkannya.</string>
@@ -668,14 +665,10 @@
     <string name="settings_reading_occurrence">Kemunculan minimum bacaan</string>
     <string name="settings_max_frequency">Peringkat frekuensi maksimum (0 = tidak terbatas)</string>
     <string name="settings_workers">Pekerja media paralel (1–32)</string>
-    <string name="settings_dictionary_chain">Prioritas kamus</string>
     <string name="settings_no_dictionaries">Tidak ada kamus luring valid yang terpasang. Instal atau impor satu di Pengaturan.</string>
-    <string name="settings_frequency_chain">Prioritas frekuensi</string>
     <string name="settings_no_frequency_sources">Tidak ada sumber frekuensi valid yang terpasang. Impor satu di Pengaturan.</string>
-    <string name="settings_audio_pack_chain">Prioritas audio ekspresi</string>
     <string name="settings_no_audio_packs">Tidak ada paket audio lokal valid yang terpasang. Impor satu di Pengaturan.</string>
     <string name="settings_pitch_format">Label kategori aksen nada</string>
-    <string name="settings_pitch_chain">Prioritas aksen nada</string>
     <string name="settings_pitch_not_installed">Tidak ada sumber aksen nada valid yang terpasang.</string>
     <string name="settings_pitch_japanese">Jepang</string>
     <string name="settings_pitch_romaji">Romaji</string>

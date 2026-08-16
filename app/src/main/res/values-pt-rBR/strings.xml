@@ -521,11 +521,8 @@
     <string name="resource_delete_confirm_title">Remover %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s é excluído deste dispositivo. Nada é removido do Anki e nenhum backup é mantido.</string>
     <string name="dictionary_repair_confirm">Reparar espaço</string>
-    <string name="custom_dictionary_title">Importar outro ZIP do Yomitan</string>
-    <string name="frequency_import_title">Importar uma fonte de frequência</string>
     <string name="frequency_source_id">ID estável da frequência</string>
     <string name="pitch_import_title">Importar acento tonal</string>
-    <string name="audio_pack_import_title">Importar áudio da expressão</string>
     <string name="audio_pack_archive_guidance">Selecione o arquivo compactado baixado .tar.xz, .tar.gz, .tar ou .zip, não o arquivo .torrent.</string>
     <string name="audio_pack_choice_title">Qual pacote?</string>
     <string name="audio_pack_choice_message">Este arquivo contém %1$d pacotes. Importar um extrai apenas esse pacote; os outros permanecem no arquivo, para que você possa voltar e adicioná-los.</string>
@@ -672,14 +669,10 @@
     <string name="settings_reading_occurrence">Ocorrências mínimas de leitura</string>
     <string name="settings_max_frequency">Classificação máxima de frequência (0 = ilimitada)</string>
     <string name="settings_workers">Processos de mídia paralelos (1–32)</string>
-    <string name="settings_dictionary_chain">Prioridade de dicionários</string>
     <string name="settings_no_dictionaries">Nenhum dicionário offline válido está instalado. Instale ou importe um em Configurações.</string>
-    <string name="settings_frequency_chain">Prioridade de frequência</string>
     <string name="settings_no_frequency_sources">Nenhuma fonte de frequência válida está instalada. Importe uma em Configurações.</string>
-    <string name="settings_audio_pack_chain">Prioridade de áudio da expressão</string>
     <string name="settings_no_audio_packs">Nenhum pacote de áudio local válido está instalado. Importe um em Configurações.</string>
     <string name="settings_pitch_format">Rótulos de categoria de acento tonal</string>
-    <string name="settings_pitch_chain">Prioridade de acento tonal</string>
     <string name="settings_pitch_not_installed">Nenhuma fonte válida de acento tonal está instalada.</string>
     <string name="settings_pitch_japanese">Japonês</string>
     <string name="settings_pitch_romaji">Romaji</string>
