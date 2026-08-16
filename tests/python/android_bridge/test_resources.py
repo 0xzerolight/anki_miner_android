@@ -3240,6 +3240,272 @@ def test_custom_dictionary_import_accepts_oversized_term_bank(
     assert imported.payload["entryCount"] >= 1
 
 
+def test_streamed_zip_identity_reports_the_largest_bank(tmp_path: Path) -> None:
+    source = _zip_with_members(
+        tmp_path / "banks.zip",
+        [
+            ("index.json", b"{}"),
+            ("term_bank_1.json", b"[" + b" " * 4096 + b"]"),
+            ("term_meta_bank_1.json", b"[" + b" " * 64 + b"]"),
+            # Not a bank: its size must not reach max_bank_bytes.
+            ("styles.css", b"/*" + b" " * 8192 + b"*/"),
+        ],
+    )
+
+    identity = resources._validate_zip_streamed(
+        source,
+        resources._Operation("bank-sizes"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+
+    assert identity.max_bank_bytes == 4098
+
+
+def test_streamed_zip_identity_reports_no_banks_as_zero(tmp_path: Path) -> None:
+    source = _zip_with_members(tmp_path / "bankless.zip", [("index.json", b"{}")])
+
+    identity = resources._validate_zip_streamed(
+        source,
+        resources._Operation("bankless"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+
+    assert identity.max_bank_bytes == 0
+
+
+def test_import_peak_drops_the_streamed_zip_when_no_rewrite_runs() -> None:
+    identity = resources._ZipIdentity(4, 540_000_000, 2_000_000)
+    archive_bytes = 260_000_000
+
+    rewriting = resources._yomitan_import_peak_bytes(
+        identity,
+        archive_bytes,
+        intermediate_csv=False,
+        streamed_rewrite=True,
+    )
+    skipping = resources._yomitan_import_peak_bytes(
+        identity,
+        archive_bytes,
+        intermediate_csv=False,
+        streamed_rewrite=False,
+    )
+
+    # Only the doubled streamed-ZIP term goes; the extracted tree and the SQLite
+    # index bound are still reserved.
+    assert rewriting - skipping == 2 * (identity.uncompressed_bytes + archive_bytes)
+    assert skipping == identity.uncompressed_bytes * 3
+    # Reserving for a ZIP that is never written is what refused imports that fit.
+    assert skipping < rewriting
+
+
+def test_import_peak_still_reserves_the_streamed_zip_by_default() -> None:
+    identity = resources._ZipIdentity(4, 1_000, 500)
+
+    assert resources._yomitan_import_peak_bytes(
+        identity,
+        100,
+        intermediate_csv=False,
+    ) == resources._yomitan_import_peak_bytes(
+        identity,
+        100,
+        intermediate_csv=False,
+        streamed_rewrite=True,
+    )
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_skips_the_bank_rewrite_for_ordinary_banks(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _yomitan_zip(tmp_path / "ordinary.zip", term="猫", meaning="cat", revision="1")
+
+    def must_not_rewrite(*_args: object, **_kwargs: object) -> Path:
+        raise AssertionError("bank rewrite ran for an archive with no oversized bank")
+
+    monkeypatch.setattr(resources, "_rewrite_yomitan_banks", must_not_rewrite)
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "ordinary-banks",
+                "sourcePath": str(source),
+                "slotId": "ordinary",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    assert imported.payload["slotId"] == "ordinary"
+    assert imported.payload["entryCount"] == 1
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_rewrites_a_bank_past_the_inline_limit(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = {"title": "Rewrite Fixture", "revision": "1", "format": 3}
+    row_count = resources._YOMITAN_BANK_INLINE_LIMIT_BYTES // _BANK_FIXTURE_ENTRY_BYTES + 2
+    rows = [
+        [f"fixture-{position}", "", "", "", 0, ["x" * _BANK_FIXTURE_ENTRY_BYTES], position, ""]
+        for position in range(row_count)
+    ]
+    source = tmp_path / "rewrite-me.zip"
+    with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    original_rewrite = resources._rewrite_yomitan_banks
+    rewritten: list[Path] = []
+
+    def record_rewrite(*args: object, **kwargs: object) -> Path:
+        result = original_rewrite(*args, **kwargs)  # type: ignore[arg-type]
+        rewritten.append(result)
+        return result
+
+    monkeypatch.setattr(resources, "_rewrite_yomitan_banks", record_rewrite)
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "rewrite-me",
+                "sourcePath": str(source),
+                "slotId": "rewritten",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    assert rewritten, "an oversized bank must still be split before the engine import"
+    assert imported.payload["entryCount"] == row_count
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_retains_the_original_without_copying_it(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Kotlin already staged the archive into app-private storage, so a second
+    # bridge-side copy only doubled the peak footprint.
+    source = _yomitan_zip(tmp_path / "no-copy.zip", term="猫", meaning="cat", revision="1")
+    original_bytes = source.read_bytes()
+
+    def must_not_copy(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("import copied an archive it was handed privately")
+
+    monkeypatch.setattr(resources, "_copy_archive", must_not_copy)
+
+    resources.import_dictionary(
+        {
+            "operationId": "no-copy",
+            "sourcePath": str(source),
+            "slotId": "nocopy",
+            "overwrite": False,
+            "catalogResourceId": None,
+        }
+    )
+
+    retained = initialized_bridge_home / "dicts" / "nocopy" / "source.zip"
+    assert retained.read_bytes() == original_bytes
+    assert stat.S_IMODE(retained.stat().st_mode) == 0o400
+    # The source it was handed is left where Kotlin put it, for Kotlin to delete.
+    assert source.read_bytes() == original_bytes
+
+
+def test_hash_archive_rejects_a_catalog_size_mismatch(tmp_path: Path) -> None:
+    source = tmp_path / "sized.zip"
+    source.write_bytes(b"payload")
+
+    with pytest.raises(BridgeProtocolError, match="size does not match the catalog") as failure:
+        resources._hash_archive(
+            source,
+            resources._Operation("size-mismatch"),
+            maximum_bytes=8192,
+            expected_size=len(b"payload") + 1,
+        )
+
+    assert failure.value.code == "resource_archive_mismatch"
+
+
+def test_hash_archive_rejects_a_catalog_digest_mismatch(tmp_path: Path) -> None:
+    source = tmp_path / "digest.zip"
+    source.write_bytes(b"payload")
+
+    with pytest.raises(BridgeProtocolError, match="hash does not match the catalog") as failure:
+        resources._hash_archive(
+            source,
+            resources._Operation("digest-mismatch"),
+            maximum_bytes=8192,
+            expected_size=len(b"payload"),
+            expected_sha256="0" * 64,
+        )
+
+    assert failure.value.code == "resource_archive_mismatch"
+
+
+def test_hash_archive_accepts_a_matching_catalog_pin(tmp_path: Path) -> None:
+    source = tmp_path / "pinned.zip"
+    source.write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+
+    measured = resources._hash_archive(
+        source,
+        resources._Operation("digest-match"),
+        maximum_bytes=8192,
+        expected_size=len(b"payload"),
+        expected_sha256=digest,
+    )
+
+    assert measured.sha256 == digest
+    assert measured.size_bytes == len(b"payload")
+
+
+def test_rewritten_yomitan_banks_are_stored_not_deflated(tmp_path: Path) -> None:
+    rows = [["fixture", "", "", "", 0, ["meaning"], 1, ""]]
+    source = _zip_with_members(
+        tmp_path / "compression.zip",
+        [
+            ("index.json", b"{}"),
+            ("term_bank_1.json", json.dumps(rows).encode("utf-8")),
+        ],
+    )
+    rewritten = tmp_path / "compression-rewritten.zip"
+
+    resources._rewrite_yomitan_banks(
+        source,
+        rewritten,
+        resources._Operation("compression"),
+    )
+
+    with zipfile.ZipFile(rewritten, "r") as archive:
+        methods = {info.filename: info.compress_type for info in archive.infolist()}
+    # Re-compressing a staging archive the importer reads back immediately and
+    # never retains is pure CPU cost.
+    assert set(methods.values()) == {zipfile.ZIP_STORED}
+
+
 @pytest.mark.parametrize("bank_prefix", ["term_bank", "term_meta_bank", "tag_bank"])
 def test_yomitan_bank_rewrite_covers_empty_suffix_names(
     tmp_path: Path,
