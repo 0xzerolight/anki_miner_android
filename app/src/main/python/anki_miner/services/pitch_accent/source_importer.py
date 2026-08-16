@@ -12,11 +12,11 @@ Two input shapes are supported, dispatched by suffix:
 * ``.zip`` — a Yomitan pitch dictionary (``term_meta_bank_*.json`` with
   ``mode == "pitch"`` rows). Row extraction is shared with the legacy importer
   (:func:`~anki_miner.services.pitch_accent.yomitan_pitch_importer.extract_pitch_rows`).
-* ``.csv`` / ``.tsv`` / ``.txt`` — a pitch CSV in the
-  ``reading,kanji,pattern[,nasal,devoice]`` format (Kanjium accents.txt
-  included: delimiter auto-detected, header skipped, legacy 3-col and
-  anomalous tail-rejoin rows handled by the shared
-  :func:`~anki_miner.services.pitch_accent_service._parse_pitch_row`).
+* ``.csv`` / ``.tsv`` / ``.txt`` — a pitch CSV in either
+  ``reading,term,pattern[,nasal,devoice]`` or ``term,reading,pattern`` order
+  (Kanjium accents.txt uses the latter). Delimiter and column order are
+  detected once per file; legacy 3-col and anomalous tail-rejoin rows use the
+  shared :func:`~anki_miner.services.pitch_accent_service._parse_pitch_row`).
 
 First occurrence wins per ``(kanji, reading)`` in both paths, matching the
 legacy single-CSV loader's semantics.
@@ -33,9 +33,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from anki_miner.exceptions import SetupError
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
     prove_owned_slot,
+    resolve_auto_store_id,
     resolve_managed_slot,
     write_ownership_marker,
 )
@@ -84,12 +85,14 @@ def import_pitch_source(
     progress: ProgressFn | None = None,
     cancel_check: Callable[[], bool] | None = None,
     overwrite: bool = False,
+    before_promote: Callable[[], None] | None = None,
 ) -> PitchSourceImportResult:
     """Import ``input_path`` into ``dest_root/<source_id>/index.sqlite``.
 
     Args:
         input_path: A Yomitan pitch ``.zip`` or a ``.csv``/``.tsv``/``.txt``
-            pitch file (``reading,kanji,pattern[,nasal,devoice]``).
+            pitch file (``reading,term,pattern[,nasal,devoice]`` or
+            ``term,reading,pattern``).
         dest_root: Folder under which ``<source_id>/`` is created (typically
             ``~/.anki_miner/pitch/``).
         source_id: Explicit on-disk id. When omitted, derived from the Yomitan
@@ -102,6 +105,8 @@ def import_pitch_source(
         cancel_check: Optional zero-arg predicate; if it returns True the import
             aborts (partial staging files are cleaned up).
         overwrite: If true, replace an existing same-id source atomically.
+        before_promote: Optional last-moment guard run immediately before the
+            staged directory replaces the managed slot.
 
     Raises:
         SetupError: On a missing/unsupported input, or a source that yields zero
@@ -119,6 +124,7 @@ def import_pitch_source(
             progress=progress,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            before_promote=before_promote,
         )
     if suffix in _CSV_SUFFIXES:
         return _import_csv(
@@ -128,9 +134,11 @@ def import_pitch_source(
             source_name=source_name,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            before_promote=before_promote,
         )
     raise SetupError(
-        f"Unsupported pitch source '{input_path.name}'. " "Provide a Yomitan .zip or a reading,kanji,pattern CSV/TSV."
+        f"Unsupported pitch source '{input_path.name}'. "
+        "Provide a Yomitan .zip or a reading,term / term,reading pitch CSV/TSV."
     )
 
 
@@ -169,12 +177,18 @@ def _import_zip(
     progress: ProgressFn | None,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
+    before_promote: Callable[[], None] | None,
 ) -> PitchSourceImportResult:
     with open_yomitan_meta_banks(zip_path, kind="pitch") as banks:
         entries_out, skipped_display_only = extract_pitch_rows(banks, progress=progress, cancel_check=cancel_check)
         title = banks.title
         revision = banks.revision
-        resolved_id = source_id or _derive_source_id(title)
+        resolved_id = source_id or resolve_auto_store_id(
+            dest_root,
+            _derive_source_id(title),
+            "pitch",
+            {"source_name": title, "source_revision": revision},
+        )
 
         if not entries_out:
             raise SetupError(
@@ -204,6 +218,7 @@ def _import_zip(
             skipped_malformed=banks.skipped_malformed,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            before_promote=before_promote,
         )
 
     logger.info(
@@ -226,20 +241,26 @@ def _import_csv(
     source_name: str | None = None,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
+    before_promote: Callable[[], None] | None,
 ) -> PitchSourceImportResult:
     stem = csv_path.stem
-    resolved_id = source_id or _derive_source_id(stem)
     # Honor an explicit display name (reimport passes the existing meta name);
     # otherwise derive from the filename stem — preserving it here keeps
     # reimport from collapsing the label to the generic "source.csv" stem.
     resolved_name = source_name if source_name else stem
+    resolved_id = source_id or resolve_auto_store_id(
+        dest_root,
+        _derive_source_id(stem),
+        "pitch",
+        {"source_name": resolved_name, "source_revision": ""},
+    )
 
     # key = (kanji, reading) -> (pattern, nasal, devoice); first occurrence
     # wins, matching the legacy single-CSV loader and the zip path.
     entries_out: dict[tuple[str, str], storage.PitchStorageRow] = {}
     for parsed in iter_pitch_csv_rows(csv_path):
         if cancel_check is not None and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
         if not (parsed.kanji or parsed.reading):
             continue
         key = (parsed.kanji, parsed.reading)
@@ -256,7 +277,7 @@ def _import_csv(
     if not entries_out:
         raise SetupError(
             f"'{csv_path.name}' yielded no usable pitch entries. "
-            "Expected format: reading,kanji,pattern[,nasal,devoice] (CSV or TSV, 3 or 5 columns)."
+            "Expected reading,term or term,reading pitch columns (CSV/TSV, 3 or 5 columns)."
         )
 
     result = _finalize(
@@ -271,6 +292,7 @@ def _import_csv(
         skipped_display_only=0,
         cancel_check=cancel_check,
         overwrite=overwrite,
+        before_promote=before_promote,
     )
     logger.info(
         "Imported %d pitch entries from CSV '%s' as source '%s'",
@@ -295,6 +317,7 @@ def _finalize(
     skipped_malformed: int = 0,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
+    before_promote: Callable[[], None] | None,
 ) -> PitchSourceImportResult:
     """Build the index under a staging dir, then atomically promote it.
 
@@ -335,10 +358,16 @@ def _finalize(
         shutil.copy2(input_path, staging / source_copy_name)
 
         if cancel_check is not None and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
 
         try:
-            promote_staged_dir(staging, final_path, mover=shutil.move, overwrite=overwrite)
+            promote_staged_dir(
+                staging,
+                final_path,
+                mover=shutil.move,
+                overwrite=overwrite,
+                before_promote=before_promote,
+            )
         except FileExistsError as exc:
             raise SetupError(f"Pitch source '{source_id}' already exists") from exc
     finally:

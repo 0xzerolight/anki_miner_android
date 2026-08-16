@@ -9,12 +9,14 @@ import tempfile
 import zipfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable
 
-from anki_miner.exceptions import SetupError
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
     prove_owned_slot,
+    resolve_auto_store_id,
     resolve_managed_slot,
     write_ownership_marker,
 )
@@ -36,7 +38,12 @@ from anki_miner.services.dictionary.yomitan_renderer import (
     dict_media_safe_basename,
     render_glossary_entry,
 )
-from anki_miner.services.dictionary.zip_safety import raise_if_index_nested, validate_zip_safe
+from anki_miner.services.dictionary.zip_safety import (
+    extract_members,
+    raise_if_index_nested,
+    read_member,
+    validate_zip_safe,
+)
 from anki_miner.utils.slug import slugify
 
 ProgressFn = Callable[[int, int, str], None]
@@ -51,9 +58,31 @@ ProgressFn = Callable[[int, int, str], None]
 MAX_INDEX_JSON_BYTES = 8 * 1024 * 1024
 
 
+class _RenderedGlossaryProbe(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.has_content = False
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.has_content = True
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "img" and any(name == "src" and value and value.strip() for name, value in attrs):
+            self.has_content = True
+
+
+def _has_rendered_glossary_content(content: str) -> bool:
+    if not content:
+        return False
+    probe = _RenderedGlossaryProbe()
+    probe.feed(content)
+    return probe.has_content
+
+
 def _raise_if_cancelled(cancel_check: Callable[[], bool] | None) -> None:
     if cancel_check is not None and cancel_check():
-        raise SetupError("Import cancelled")
+        raise OperationCancelled("Import cancelled")
 
 
 @dataclass(frozen=True)
@@ -79,6 +108,7 @@ def import_yomitan_zip(
     overwrite: bool = False,
     cancel_check: Callable[[], bool] | None = None,
     dict_id: str | None = None,
+    before_promote: Callable[[], None] | None = None,
 ) -> YomitanImportResult:
     """Import a Yomitan zip into dest_root/<dict_id>/index.sqlite.
 
@@ -101,6 +131,8 @@ def import_yomitan_zip(
                  re-import) so a title that embeds a changing release date does
                  not fork a new directory every download. Display name still
                  comes from the zip title; only the folder name is pinned.
+        before_promote: Optional last-moment guard run immediately before the
+                        staged directory replaces the managed slot.
 
     Raises:
         SetupError: On invalid input, format mismatch, or already-exists when
@@ -118,9 +150,7 @@ def import_yomitan_zip(
                 validate_zip_safe(zf, tmp_path)
                 if progress:
                     progress(0, 0, "Extracting archive")
-                for member in zf.infolist():
-                    _raise_if_cancelled(cancel_check)
-                    zf.extract(member, tmp_path)
+                extract_members(zf, tmp_path, cancel_check=cancel_check)
         except zipfile.BadZipFile as e:
             raise SetupError(f"Corrupt zip file: {e}") from e
 
@@ -147,7 +177,12 @@ def import_yomitan_zip(
         # A caller-supplied slot pins the on-disk folder to a stable name; else
         # derive it from title+revision (the historical behavior).
         if dict_id is None:
-            dict_id = _derive_dict_id(title, revision)
+            dict_id = resolve_auto_store_id(
+                dest_root,
+                _derive_dict_id(title, revision),
+                "dictionary",
+                {"source_name": title, "source_revision": revision},
+            )
 
         try:
             final_path = resolve_managed_slot(dest_root, dict_id)
@@ -240,9 +275,12 @@ def import_yomitan_zip(
                     rules = str(entry[3]) if len(entry) > 3 and entry[3] else ""
                     content = render_glossary_entry(
                         glossary,
+                        definition_tags=definition_tags,
                         dict_id=dict_id,
                         media_collector=media_paths,
                     )
+                    if not _has_rendered_glossary_content(content):
+                        continue
                     total_entries += 1
                     yield DictRow(
                         term=term,
@@ -320,7 +358,13 @@ def import_yomitan_zip(
         if os.path.lexists(final_path) and not overwrite:
             raise SetupError(f"Dictionary '{dict_id}' already exists")
         _raise_if_cancelled(cancel_check)
-        promote_staged_dir(staging, final_path, mover=shutil.move, overwrite=overwrite)
+        promote_staged_dir(
+            staging,
+            final_path,
+            mover=shutil.move,
+            overwrite=overwrite,
+            before_promote=before_promote,
+        )
 
         result = YomitanImportResult(
             dict_id=dict_id,
@@ -609,10 +653,9 @@ def _peek_zip_title_revision(zip_path: Path) -> tuple[str, str]:
                 raise SetupError(
                     f"index.json is implausibly large ({info.file_size:,} > {MAX_INDEX_JSON_BYTES:,} bytes)"
                 )
-            with zf.open("index.json") as fp:
-                # Bounded read (+1 to detect overflow past the cap) so a zip that
-                # under-declares its size still cannot balloon memory.
-                raw_bytes = fp.read(MAX_INDEX_JSON_BYTES + 1)
+            # Bounded read (+1 to detect overflow past the cap) so a zip that
+            # under-declares its size still cannot balloon memory.
+            raw_bytes = read_member(zf, "index.json", limit=MAX_INDEX_JSON_BYTES)
             if len(raw_bytes) > MAX_INDEX_JSON_BYTES:
                 raise SetupError(f"index.json exceeds the {MAX_INDEX_JSON_BYTES:,}-byte cap")
             raw = raw_bytes.decode("utf-8")

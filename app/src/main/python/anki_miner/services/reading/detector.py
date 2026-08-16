@@ -17,12 +17,15 @@ document metadata.
 from __future__ import annotations
 
 import json
+import logging
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Literal
 
-from anki_miner.exceptions import SetupError
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.models.reading import ReadingDocument, ReadingSourceRef
+from anki_miner.utils.logging_ext import log_summary
 
 from ._util import (
     MAX_MOKURO_JSON_BYTES,
@@ -31,6 +34,8 @@ from ._util import (
     read_text_capped,
     read_zip_member_text_capped,
 )
+
+logger = logging.getLogger(__name__)
 
 # Required top-level keys in a ``.mokuro`` sidecar. Unknown keys are ignored —
 # community files carry extras like ``chars``/``spine_width``.
@@ -56,7 +61,11 @@ _SUBTITLE_EXTS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt")
 _BOOK_EXTS: tuple[str, ...] = (".epub", ".txt")
 
 
-def detect(path: Path) -> list[ReadingSourceRef]:
+def detect(
+    path: Path,
+    *,
+    diagnostics: list[tuple[Path, str]] | None = None,
+) -> list[ReadingSourceRef]:
     """Classify a dropped path into loadable reading sources.
 
     Cascade (first match wins):
@@ -71,32 +80,91 @@ def detect(path: Path) -> list[ReadingSourceRef]:
     5. ``.srt``/``.ass``/``.ssa``/``.vtt`` → one subtitle document (metadata
        deferred to the loader).
 
-    Raises :class:`SetupError` on unusable input (missing sidecar, invalid
-    ``.mokuro`` JSON/schema, unrecognized path).
+    ``diagnostics`` receives ``(archive_path, reason)`` entries for malformed
+    embedded volumes skipped during a folder scan. Raises :class:`SetupError`
+    on unusable input (missing sidecar, invalid ``.mokuro`` JSON/schema,
+    unrecognized path).
     """
     suffix = path.suffix.lower()
+    is_directory = path.is_dir()
 
-    if suffix == ".mokuro":
-        return [_mokuro_ref(path)]
-    if suffix in _ARCHIVE_EXTS:
-        return _detect_archive(path)
-    if path.is_dir():
-        return _detect_directory(path)
-    if suffix == ".epub":
-        return [_book_ref(path, "epub")]
-    if suffix == ".txt":
-        return [_book_ref(path, "txt")]
-    if suffix in _SUBTITLE_EXTS:
-        return [_subtitle_ref(path)]
+    try:
+        if suffix == ".mokuro":
+            refs = [_mokuro_ref(path)]
+            _log_detected(path, refs, format_="mokuro", reason="marker_file", marker=path.name)
+            return refs
+        if suffix in _ARCHIVE_EXTS:
+            refs = _detect_archive(path)
+            ref = refs[0]
+            if ref.ocr_entry is not None:
+                reason = "embedded_marker"
+                marker = Path(ref.ocr_entry).name
+            else:
+                reason = "sibling_marker"
+                marker = ref.path.name if ref.path is not None else "-"
+            _log_detected(path, refs, format_="mokuro", reason=reason, marker=marker)
+            return refs
+        if is_directory:
+            degraded_archives = diagnostics if diagnostics is not None else []
+            diagnostic_start = len(degraded_archives)
+            refs = _detect_directory(path, degraded_archives=degraded_archives)
+            markers = [Path(ref.ocr_entry).name if ref.ocr_entry else ref.path.name for ref in refs if ref.path]
+            reason = (
+                "directory_children" if all(ref.path and ref.path.parent == path for ref in refs) else "sibling_marker"
+            )
+            _log_detected(
+                path,
+                refs,
+                format_="mokuro",
+                reason=reason,
+                marker=markers,
+                skipped_archives=len(degraded_archives) - diagnostic_start,
+            )
+            return refs
+        if suffix == ".epub":
+            refs = [_book_ref(path, "epub")]
+            _log_detected(path, refs, format_="epub", reason="extension", marker=suffix)
+            return refs
+        if suffix == ".txt":
+            refs = [_book_ref(path, "txt")]
+            _log_detected(path, refs, format_="txt", reason="extension", marker=suffix)
+            return refs
+        if suffix in _SUBTITLE_EXTS:
+            refs = [_subtitle_ref(path)]
+            _log_detected(path, refs, format_="subtitle", reason="extension", marker=suffix)
+            return refs
 
-    raise SetupError(
-        f"'{path.name}' is not a recognized reading source. Supported: .mokuro, "
-        ".cbz/.zip (with a matching .mokuro beside or inside it), .epub, .txt, "
-        "subtitle files (.srt/.ass/.ssa/.vtt), or a folder of .mokuro volumes."
-    )
+        raise SetupError(
+            f"'{path.name}' is not a recognized reading source. Supported: .mokuro, "
+            ".cbz/.zip (with a matching .mokuro beside or inside it), .epub, .txt, "
+            "subtitle files (.srt/.ass/.ssa/.vtt), or a folder of .mokuro volumes."
+        )
+    except SetupError:
+        log_summary(
+            logger,
+            "Reading detect failed",
+            level=logging.WARNING,
+            input=path,
+            found=_detection_failure_found(suffix, is_directory),
+        )
+        raise
+    except OSError as e:
+        log_summary(
+            logger,
+            "Reading detect failed",
+            level=logging.WARNING,
+            input=path,
+            found="unreadable_path",
+            error=type(e).__name__,
+        )
+        raise
 
 
-def load(ref: ReadingSourceRef, *, strip_subtitle_annotations: bool = False) -> ReadingDocument:
+def load(
+    ref: ReadingSourceRef,
+    *,
+    cancel_check: Callable[[], bool] | None = None,
+) -> ReadingDocument:
     """Dispatch a ref to its source loader and return the loaded document.
 
     Imports the per-kind loader lazily inside the branch so importing this
@@ -104,26 +172,30 @@ def load(ref: ReadingSourceRef, *, strip_subtitle_annotations: bool = False) -> 
     ``kind="text"`` refs are pathless (built by the Text sub-tab, never by
     :func:`detect`) and carry their content in ``ref.text``.
     """
+    if cancel_check is not None and cancel_check():
+        raise OperationCancelled("Reading load cancelled")
     if ref.kind == "mokuro":
         from . import mokuro_source
 
-        return mokuro_source.load(ref)
+        return mokuro_source.load(ref) if cancel_check is None else mokuro_source.load(ref, cancel_check=cancel_check)
     if ref.kind == "epub":
         from . import epub_source
 
-        return epub_source.load(ref)
+        return epub_source.load(ref) if cancel_check is None else epub_source.load(ref, cancel_check=cancel_check)
     if ref.kind == "txt":
         from . import aozora_source
 
-        return aozora_source.load(ref)
+        return aozora_source.load(ref) if cancel_check is None else aozora_source.load(ref, cancel_check=cancel_check)
     if ref.kind == "subtitle":
         from . import subtitle_source
 
-        return subtitle_source.load(ref, strip_annotations=strip_subtitle_annotations)
+        return (
+            subtitle_source.load(ref) if cancel_check is None else subtitle_source.load(ref, cancel_check=cancel_check)
+        )
     if ref.kind == "text":
         from . import text_source
 
-        return text_source.load(ref)
+        return text_source.load(ref) if cancel_check is None else text_source.load(ref, cancel_check=cancel_check)
 
     raise SetupError(f"Unknown reading source kind: {ref.kind!r}")
 
@@ -147,6 +219,14 @@ def detect_book_folder(directory: Path) -> list[ReadingSourceRef]:
     try:
         entries = list(directory.iterdir())
     except OSError as e:
+        log_summary(
+            logger,
+            "Reading detect failed",
+            level=logging.WARNING,
+            input=directory,
+            found="unreadable_directory",
+            error=type(e).__name__,
+        )
         raise SetupError(f"Cannot read folder '{directory.name}': {e}") from e
 
     books = sorted(
@@ -158,15 +238,66 @@ def detect_book_folder(directory: Path) -> list[ReadingSourceRef]:
         key=lambda child: natural_sort_key(child.name),
     )
     if not books:
+        found_extensions = sorted({child.suffix.lower() for child in entries if child.is_file() and child.suffix})
+        log_summary(
+            logger,
+            "Reading detect failed",
+            level=logging.WARNING,
+            input=directory,
+            found=found_extensions,
+        )
         raise SetupError(
             f"No .epub or .txt books found in '{directory.name}'. Manga folders are mined in the Manga tab."
         )
-    return [_book_ref(child, "epub" if child.suffix.lower() == ".epub" else "txt") for child in books]
+    refs = [_book_ref(child, "epub" if child.suffix.lower() == ".epub" else "txt") for child in books]
+    _log_detected(
+        directory,
+        refs,
+        format_="books",
+        reason="top_level_extensions",
+        marker=sorted({child.suffix.lower() for child in books}),
+    )
+    return refs
 
 
 # --------------------------------------------------------------------------- #
 # Private helpers.
 # --------------------------------------------------------------------------- #
+
+
+def _log_detected(
+    path: Path,
+    refs: list[ReadingSourceRef],
+    *,
+    format_: str,
+    reason: str,
+    marker: object,
+    skipped_archives: int | None = None,
+) -> None:
+    """Emit the single successful public-detection receipt."""
+    log_summary(
+        logger,
+        "Reading detect",
+        input=path,
+        format=format_,
+        reason=reason,
+        marker=marker,
+        sources=len(refs),
+        skipped_archives=skipped_archives if skipped_archives is not None else 0,
+    )
+
+
+def _detection_failure_found(suffix: str, is_directory: bool) -> str:
+    """Bounded description of the shape that failed classification."""
+    if is_directory:
+        return "directory_without_mokuro"
+    if suffix == ".mokuro":
+        return "invalid_mokuro_marker"
+    if suffix in _ARCHIVE_EXTS:
+        return "archive_without_usable_mokuro"
+    if suffix:
+        return f"extension:{suffix}"
+    return "path_without_extension"
 
 
 def _mokuro_ref(mokuro_path: Path) -> ReadingSourceRef:
@@ -206,11 +337,23 @@ def _subtitle_ref(path: Path) -> ReadingSourceRef:
 def _detect_archive(archive_path: Path) -> list[ReadingSourceRef]:
     """A dropped ``.cbz``/``.zip`` resolves through its ``.mokuro`` OCR data.
 
-    The sibling sidecar always wins (the standard mokuro-CLI layout); a
-    self-contained archive carrying its ``.mokuro`` as a member is the
-    fallback (Issue #103).
+    The sibling sidecar always wins (the standard mokuro-CLI layout). Exact
+    lowercase wins among extension case variants; otherwise lexicographic
+    filename order breaks ties. A self-contained archive carrying its
+    ``.mokuro`` as a member is the fallback (Issue #103).
     """
     sidecar = archive_path.with_suffix(".mokuro")
+    if not sidecar.is_file() and archive_path.parent.is_dir():
+        sidecars = sorted(
+            (
+                entry
+                for entry in archive_path.parent.iterdir()
+                if entry.is_file() and entry.stem == archive_path.stem and entry.suffix.lower() == ".mokuro"
+            ),
+            key=lambda entry: entry.name,
+        )
+        if sidecars:
+            sidecar = sidecars[0]
     if sidecar.is_file():
         return [_mokuro_ref(sidecar)]
     embedded = _embedded_mokuro_ref(archive_path, strict=True)
@@ -222,7 +365,11 @@ def _detect_archive(archive_path: Path) -> list[ReadingSourceRef]:
     )
 
 
-def _detect_directory(directory: Path) -> list[ReadingSourceRef]:
+def _detect_directory(
+    directory: Path,
+    *,
+    degraded_archives: list[tuple[Path, str]] | None = None,
+) -> list[ReadingSourceRef]:
     """A dropped directory is a title dir, a dropped image dir, or not mokuro.
 
     A title dir's volumes are its ``.mokuro`` children plus any self-contained
@@ -251,7 +398,11 @@ def _detect_directory(directory: Path) -> list[ReadingSourceRef]:
             and not is_junk_path(child.name)
         ),
         # Same-stem .cbz/.zip pairs: keep the first per stem, .cbz preferred.
-        key=lambda child: (natural_sort_key(child.name), _ARCHIVE_EXTS.index(child.suffix.lower())),
+        key=lambda child: (
+            natural_sort_key(child.stem),
+            _ARCHIVE_EXTS.index(child.suffix.lower()),
+            natural_sort_key(child.name),
+        ),
     )
     seen_stems: set[str] = set()
     embedded_pairs: list[tuple[Path, ReadingSourceRef]] = []
@@ -259,7 +410,11 @@ def _detect_directory(directory: Path) -> list[ReadingSourceRef]:
         if archive.stem in seen_stems:
             continue
         seen_stems.add(archive.stem)
-        ref = _embedded_mokuro_ref(archive, strict=False)
+        ref = _embedded_mokuro_ref(
+            archive,
+            strict=False,
+            degraded_archives=degraded_archives,
+        )
         if ref is not None:
             embedded_pairs.append((archive, ref))
 
@@ -268,8 +423,20 @@ def _detect_directory(directory: Path) -> list[ReadingSourceRef]:
         volumes.sort(key=lambda pair: natural_sort_key(pair[0].name))
         return [ref for _, ref in volumes]
 
-    # User dropped the image dir itself: look for a sibling "<name>.mokuro".
+    # User dropped the image dir itself: prefer an exact "<name>.mokuro",
+    # then the first filename-sorted exact-stem extension case variant.
     sidecar = directory.parent / (directory.name + ".mokuro")
+    if not sidecar.is_file():
+        sidecars = sorted(
+            (
+                entry
+                for entry in directory.parent.iterdir()
+                if entry.is_file() and entry.stem == directory.name and entry.suffix.lower() == ".mokuro"
+            ),
+            key=lambda entry: entry.name,
+        )
+        if sidecars:
+            sidecar = sidecars[0]
     if sidecar.is_file():
         return [_mokuro_ref(sidecar)]
 
@@ -280,7 +447,12 @@ def _detect_directory(directory: Path) -> list[ReadingSourceRef]:
     )
 
 
-def _embedded_mokuro_ref(archive_path: Path, *, strict: bool) -> ReadingSourceRef | None:
+def _embedded_mokuro_ref(
+    archive_path: Path,
+    *,
+    strict: bool,
+    degraded_archives: list[tuple[Path, str]] | None = None,
+) -> ReadingSourceRef | None:
     """Probe an archive for exactly one embedded ``.mokuro`` member.
 
     Returns a fully-populated ref (``path`` = ``image_root`` = the archive,
@@ -300,6 +472,13 @@ def _embedded_mokuro_ref(archive_path: Path, *, strict: bool) -> ReadingSourceRe
                     name for name in zf.namelist() if name.lower().endswith(".mokuro") and not is_junk_path(name)
                 ]
         except (zipfile.BadZipFile, OSError) as e:
+            if strict:
+                logger.debug(
+                    "Reading archive probe failed: archive=%s error=%s detail=%s",
+                    archive_path,
+                    type(e).__name__,
+                    e,
+                )
             raise SetupError(f"Cannot read archive '{archive_path.name}': {e}") from e
         if not members:
             return None
@@ -310,12 +489,30 @@ def _embedded_mokuro_ref(archive_path: Path, *, strict: bool) -> ReadingSourceRe
             )
         entry = members[0]
         meta = _parse_mokuro_meta(
-            read_zip_member_text_capped(archive_path, entry, MAX_MOKURO_JSON_BYTES, ".mokuro member"),
+            read_zip_member_text_capped(
+                archive_path,
+                entry,
+                MAX_MOKURO_JSON_BYTES,
+                ".mokuro member",
+                log_failures=strict,
+            ),
             f"{archive_path.name}:{entry}",
+            log_failure=strict,
         )
-    except SetupError:
+    except SetupError as exc:
         if strict:
             raise
+        # A title directory may contain hundreds of bad archives. Preserve
+        # first-N identities at DEBUG; the public summary carries total count.
+        if degraded_archives is None or len(degraded_archives) < 5:
+            logger.debug(
+                "Reading archive probe skipped: archive=%s error=%s detail=%s",
+                archive_path,
+                type(exc).__name__,
+                exc,
+            )
+        if degraded_archives is not None:
+            degraded_archives.append((archive_path, str(exc)))
         return None
     return ReadingSourceRef(
         kind="mokuro",
@@ -365,11 +562,22 @@ def _read_mokuro_meta(mokuro_path: Path) -> dict[str, Any]:
         # multi-GB sidecar must fail fast instead of OOMing the load.
         raw = read_text_capped(mokuro_path, MAX_MOKURO_JSON_BYTES, ".mokuro file")
     except OSError as e:
+        logger.debug(
+            "Mokuro metadata read failed: file=%s error=%s detail=%s",
+            mokuro_path,
+            type(e).__name__,
+            e,
+        )
         raise SetupError(f"Cannot read .mokuro file '{mokuro_path.name}': {e}") from e
     return _parse_mokuro_meta(raw, mokuro_path.name)
 
 
-def _parse_mokuro_meta(raw: str, display_name: str) -> dict[str, Any]:
+def _parse_mokuro_meta(
+    raw: str,
+    display_name: str,
+    *,
+    log_failure: bool = True,
+) -> dict[str, Any]:
     """Validate ``.mokuro`` JSON text (sidecar file or archive member).
 
     Carries ALL the schema validation — JSON parse, object top level,
@@ -379,6 +587,14 @@ def _parse_mokuro_meta(raw: str, display_name: str) -> dict[str, Any]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
+        if log_failure:
+            logger.debug(
+                "Mokuro metadata parse failed: file=%s error=%s line=%d column=%d",
+                display_name,
+                type(e).__name__,
+                e.lineno,
+                e.colno,
+            )
         raise SetupError(f"Invalid .mokuro file '{display_name}': {e}") from e
 
     if not isinstance(data, dict):

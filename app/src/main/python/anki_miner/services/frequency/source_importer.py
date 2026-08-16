@@ -14,7 +14,7 @@ Two input shapes are supported, dispatched by suffix:
   a ``(term, reading)`` collision an unmarked row beats a JPDB ㋕ kana-usage row,
   then the smaller (better) rank wins (see :func:`_rank_preference`).
 * ``.csv`` / ``.tsv`` / ``.txt`` — a plain rank list. Delimiter is auto-detected,
-  a header row is skipped, and rows are parsed with the shared
+  a rank/count header declares the numeric direction, and rows are parsed with the shared
   :func:`~anki_miner.services.frequency.csv_parse._extract_word_rank`. A third
   column (``term, reading, rank``) is captured as the reading. First occurrence
   wins per ``(term, reading)`` (matching the legacy CSV loader's semantics).
@@ -31,14 +31,16 @@ import logging
 import os
 import shutil
 import tempfile
+import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from anki_miner.exceptions import SetupError
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
     prove_owned_slot,
+    resolve_auto_store_id,
     resolve_managed_slot,
     write_ownership_marker,
 )
@@ -46,6 +48,8 @@ from anki_miner.services._staging import promote_staged_dir, repair_managed_slot
 from anki_miner.services.frequency import mode_probe, storage
 from anki_miner.services.frequency.csv_parse import (
     _extract_word_rank,
+    _header_frequency_mode,
+    _is_frequency_header,
     _is_word_first_header,
     _normalize_freq_rank_raw,
     _string_to_rank,
@@ -58,7 +62,7 @@ from anki_miner.services.yomitan_meta_bank import (
     ProgressFn,
     open_yomitan_meta_banks,
 )
-from anki_miner.utils.csv_utils import detect_delimiter, is_header_row
+from anki_miner.utils.csv_utils import detect_delimiter
 from anki_miner.utils.robust_fs import robust_rmtree
 from anki_miner.utils.slug import slugify
 
@@ -117,6 +121,7 @@ def import_frequency_source(
     progress: ProgressFn | None = None,
     cancel_check: Callable[[], bool] | None = None,
     overwrite: bool = False,
+    before_promote: Callable[[], None] | None = None,
 ) -> FreqSourceImportResult:
     """Import ``input_path`` into ``dest_root/<source_id>/index.sqlite``.
 
@@ -136,6 +141,8 @@ def import_frequency_source(
         cancel_check: Optional zero-arg predicate; if it returns True the import
             aborts (partial staging files are cleaned up by the temp dir).
         overwrite: If true, replace an existing same-id source atomically.
+        before_promote: Optional last-moment guard run immediately before the
+            staged directory replaces the managed slot.
 
     Raises:
         SetupError: On a missing/unsupported input, or a source that yields zero
@@ -153,6 +160,7 @@ def import_frequency_source(
             progress=progress,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            before_promote=before_promote,
         )
     if suffix in _CSV_SUFFIXES:
         return _import_csv(
@@ -162,6 +170,7 @@ def import_frequency_source(
             source_name=source_name,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            before_promote=before_promote,
         )
     raise SetupError(
         f"Unsupported frequency source '{input_path.name}'. Provide a Yomitan .zip or a .csv/.tsv/.txt rank list."
@@ -203,12 +212,18 @@ def _import_zip(
     progress: ProgressFn | None,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
+    before_promote: Callable[[], None] | None,
 ) -> FreqSourceImportResult:
     with open_yomitan_meta_banks(zip_path, kind="frequency") as banks:
         title = banks.title
         revision = banks.revision
         declared_mode = banks.index.frequency_mode
-        resolved_id = source_id or _derive_source_id(title)
+        resolved_id = source_id or resolve_auto_store_id(
+            dest_root,
+            _derive_source_id(title),
+            "frequency",
+            {"source_name": title, "source_revision": revision},
+        )
 
         # Numeric path: key = (term, reading) -> (best rank, display_value),
         # "best" per _rank_preference (non-㋕ beats ㋕, then min rank).
@@ -230,9 +245,11 @@ def _import_zip(
             for entry in bank:
                 if entry[1] != "freq":
                     continue
-                term = str(entry[0]).strip()
+                term = unicodedata.normalize("NFC", str(entry[0]).strip())
                 data = entry[2]
                 reading = extract_envelope_reading(data)
+                if reading is not None:
+                    reading = unicodedata.normalize("NFC", reading)
 
                 # Numeric rank via the existing gate (byte-identical to today,
                 # incl. unstripped object-form displayValue); the raw label is
@@ -304,6 +321,7 @@ def _import_zip(
             is_categorical=is_categorical,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            before_promote=before_promote,
         )
 
     logger.info(
@@ -326,13 +344,19 @@ def _import_csv(
     source_name: str | None = None,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
+    before_promote: Callable[[], None] | None,
 ) -> FreqSourceImportResult:
     stem = csv_path.stem
-    resolved_id = source_id or _derive_source_id(stem)
     # Honor an explicit display name (reimport passes the existing meta name);
     # otherwise derive from the filename stem. Preserving it here is what keeps
     # reimport from collapsing the label to the generic "source.csv" stem.
     resolved_name = source_name if source_name else stem
+    resolved_id = source_id or resolve_auto_store_id(
+        dest_root,
+        _derive_source_id(stem),
+        "frequency",
+        {"source_name": resolved_name, "source_revision": ""},
+    )
 
     # key = (term, reading) -> rank; first occurrence wins (matches the legacy
     # CSV loader's semantics, which kept the first rank per word). Plain rank
@@ -349,15 +373,17 @@ def _import_csv(
             reader = _csv.reader(f, delimiter=delimiter)
             first_row = True
             word_first = False
+            declared_mode = ""
             for row in reader:
                 if cancel_check is not None and cancel_check():
-                    raise SetupError("Import cancelled")
+                    raise OperationCancelled("Import cancelled")
                 if len(row) < 2:
                     continue
                 if first_row:
                     first_row = False
-                    if is_header_row(row):
+                    if _is_frequency_header(row):
                         word_first = _is_word_first_header(row)
+                        declared_mode = _header_frequency_mode(row)
                         continue
 
                 word, rank = _extract_word_rank(row, word_first=word_first)
@@ -365,6 +391,9 @@ def _import_csv(
                     continue
 
                 reading = _csv_reading(row, word)
+                word = unicodedata.normalize("NFC", word)
+                if reading is not None:
+                    reading = unicodedata.normalize("NFC", reading)
                 key = (word, reading)
                 if key not in ranks:
                     ranks[key] = rank
@@ -379,9 +408,9 @@ def _import_csv(
             "Yomitan .zip dictionaries — import one of those instead."
         )
 
-    # Plain CSVs never declare a direction, so always probe: an occurrence-count
-    # list re-ranks here instead of silently inverting max_frequency_rank.
-    rows, converted = _iter_rank_rows(ranks, "")
+    # An explicit count/rank header is authoritative. Headerless and ambiguous
+    # CSVs still use the statistical probe.
+    rows, converted = _iter_rank_rows(ranks, declared_mode)
 
     result = _finalize(
         input_path=csv_path,
@@ -396,6 +425,7 @@ def _import_csv(
         converted_to_ranks=converted,
         cancel_check=cancel_check,
         overwrite=overwrite,
+        before_promote=before_promote,
     )
     logger.info(
         "Imported %d frequency entries from CSV '%s' as source '%s'",
@@ -494,6 +524,7 @@ def _finalize(
     is_categorical: bool = False,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
+    before_promote: Callable[[], None] | None,
 ) -> FreqSourceImportResult:
     """Build the index under a staging dir, then atomically promote it.
 
@@ -537,10 +568,16 @@ def _finalize(
         shutil.copy2(input_path, staging / source_copy_name)
 
         if cancel_check is not None and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
 
         try:
-            promote_staged_dir(staging, final_path, mover=shutil.move, overwrite=overwrite)
+            promote_staged_dir(
+                staging,
+                final_path,
+                mover=shutil.move,
+                overwrite=overwrite,
+                before_promote=before_promote,
+            )
         except FileExistsError as exc:
             raise SetupError(f"Frequency source '{source_id}' already exists") from exc
     finally:

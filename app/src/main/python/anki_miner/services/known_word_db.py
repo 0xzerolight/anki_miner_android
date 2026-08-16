@@ -7,6 +7,8 @@ import unicodedata
 from contextlib import closing
 from pathlib import Path
 
+from anki_miner.utils.logging_ext import log_summary
+
 logger = logging.getLogger(__name__)
 
 #: Schema revision stored in ``PRAGMA user_version``. Bumped when a migration
@@ -87,28 +89,29 @@ class KnownWordDB:
         ``added_at``. Gated on ``PRAGMA user_version`` so a large collection is
         not rescanned on every launch.
         """
-        if int(conn.execute("PRAGMA user_version").fetchone()[0]) >= _SCHEMA_VERSION:
-            return
-        rows = conn.execute("SELECT lemma, source, added_at FROM known_words").fetchall()
-        merged: dict[str, tuple[str, str]] = {}
-        rewritten = False
-        for lemma, source, added_at in rows:
-            canonical = normalize_lemma(lemma)
-            if canonical != lemma:
-                rewritten = True
-            previous = merged.get(canonical)
-            if previous is None:
-                merged[canonical] = (source, added_at)
-                continue
-            rewritten = True
-            previous_source, previous_added_at = previous
-            merged[canonical] = (
-                "user" if "user" in (previous_source, source) else previous_source,
-                min(previous_added_at, added_at),
-            )
         try:
+            conn.execute("BEGIN IMMEDIATE")
+            if int(conn.execute("PRAGMA user_version").fetchone()[0]) >= _SCHEMA_VERSION:
+                conn.commit()
+                return
+            rows = conn.execute("SELECT lemma, source, added_at FROM known_words").fetchall()
+            merged: dict[str, tuple[str, str]] = {}
+            rewritten = False
+            for lemma, source, added_at in rows:
+                canonical = normalize_lemma(lemma)
+                if canonical != lemma:
+                    rewritten = True
+                previous = merged.get(canonical)
+                if previous is None:
+                    merged[canonical] = (source, added_at)
+                    continue
+                rewritten = True
+                previous_source, previous_added_at = previous
+                merged[canonical] = (
+                    "user" if "user" in (previous_source, source) else previous_source,
+                    min(previous_added_at, added_at),
+                )
             if rewritten:
-                conn.execute("BEGIN IMMEDIATE")
                 conn.execute("DELETE FROM known_words")
                 conn.executemany(
                     "INSERT INTO known_words (lemma, source, added_at) VALUES (?, ?, ?)",
@@ -126,24 +129,43 @@ class KnownWordDB:
         Returns:
             True if the database is ready for use.
         """
-        return self._db_path.exists() and os.access(self._db_path, os.R_OK)
+        exists = self._db_path.exists()
+        readable = exists and os.access(self._db_path, os.R_OK)
+        if exists and not readable:
+            logger.warning(
+                "Known words unavailable: file=%s reason=unreadable",
+                self._db_path.name,
+            )
+        return readable
 
     def get_known_words(self) -> set[str]:
-        """Return all known word lemmas.
+        """Return all known word lemmas, NFC-normalized.
+
+        Normalizing on read as well as on write is what makes the guarantee
+        unconditional. :meth:`_migrate_to_nfc` only runs from
+        :meth:`initialize`, and ``service_factory`` calls that only when
+        ``config.use_known_words_db`` is on — while the user ignore list is read
+        on EVERY run regardless (Issue #42). A pre-fix NFD row in a database
+        that never got initialized would otherwise still miss the NFC probe and
+        re-card a word the user marked known. Idempotent and cheap.
 
         Returns:
             Set of all lemma strings in the database.
         """
         with closing(self._connect()) as conn:
             cursor = conn.execute("SELECT lemma FROM known_words")
-            return {row[0] for row in cursor.fetchall()}
+            words = _normalize_all({row[0] for row in cursor.fetchall()})
+        log_summary(logger, "Known words load done", rows=len(words))
+        return words
 
     def get_words_by_source(self, source: str) -> set[str]:
-        """Return all lemmas stored under a given source label.
+        """Return all lemmas stored under a given source label, NFC-normalized.
 
         Used for the user-curated ignore list (Issue #42): ``source='user'``
         words are applied on every mining run regardless of
-        ``config.use_known_words_db``.
+        ``config.use_known_words_db`` — which is precisely the path the
+        ``initialize()``-gated migration does not cover, hence the read-side
+        fold (see :meth:`get_known_words`).
 
         Args:
             source: Source label to filter on (e.g. 'anki', 'user').
@@ -153,7 +175,14 @@ class KnownWordDB:
         """
         with closing(self._connect()) as conn:
             cursor = conn.execute("SELECT lemma FROM known_words WHERE source = ?", (source,))
-            return {row[0] for row in cursor.fetchall()}
+            words = _normalize_all({row[0] for row in cursor.fetchall()})
+        log_summary(
+            logger,
+            "Known words source load done",
+            source=source,
+            rows=len(words),
+        )
+        return words
 
     def add_words(self, words: set[str], source: str = "anki") -> int:
         """Bulk insert words into the database, ignoring duplicates.
@@ -308,7 +337,28 @@ class KnownWordDB:
                 conn.execute("DELETE FROM known_words")
             conn.commit()
             after = self._count(conn)
-            return before - after
+            removed = before - after
+        if preserve_user:
+            log_summary(
+                logger,
+                "Known words rebuild done",
+                preserve_user=preserve_user,
+                before=before,
+                after=after,
+                removed=removed,
+                user=after,
+            )
+        else:
+            log_summary(
+                logger,
+                "Known words clear done",
+                preserve_user=preserve_user,
+                before=before,
+                after=after,
+                removed=removed,
+                user=0,
+            )
+        return removed
 
     def clear_user(self) -> int:
         """Delete only the user-curated ignore list (Issue #42).

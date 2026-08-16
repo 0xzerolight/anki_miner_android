@@ -14,16 +14,24 @@ from anki_miner.exceptions import SubtitleParseError
 from anki_miner.models import LineLemmas, TokenizedWord
 from anki_miner.models.reading import ReadingUnit
 from anki_miner.models.word import resolve_pronoun_fold_reading, select_mined_form
-from anki_miner.services.compound_matcher import CompoundDictionaryMatcher, TermLookup
+from anki_miner.services.compound_matcher import (
+    CompoundDictionaryMatcher,
+    NameLookup,
+    NameSpanMatcher,
+    TermLookup,
+)
 from anki_miner.services.deinflection import (
     TermCommonLookup,
+    TermRulesLookup,
     _is_pure_hiragana,
     find_highlight_end,
+    find_highlight_end_with_trace,
     resolve_dictionary_form,
 )
 from anki_miner.services.morphology import (
     AttestLookup,
     ReadingLookup,
+    SyntheticToken,
     TokenInclusionRule,
     _edit_distance,
     apply_special_readings,
@@ -35,6 +43,7 @@ from anki_miner.services.morphology import (
     merge_compound_suffixes,
     mining_base,
     replace_overridden_spans,
+    resolve_attested_reading,
     resolve_reading_override,
 )
 from anki_miner.services.tagger import get_shared_tagger
@@ -42,6 +51,7 @@ from anki_miner.utils import (
     clean_subtitle_text,
     generate_furigana,
     generate_reading,
+    hiragana_to_katakana,
     katakana_to_hiragana,
     strip_inline_annotations,
     wrap_target_plain,
@@ -70,10 +80,10 @@ PARSE_RELEVANT_CONFIG_FIELDS = (
     "bold_target_in_sentence",
     "allowed_pos",
     "excluded_subtypes",
+    "excluded_wordsets",
     "use_subtitle_regex_filter",
     "subtitle_regex_filter",
     "subtitle_regex_replacement",
-    "strip_subtitle_annotations",
 )
 
 # Dictionary-attested compound matching (Yomitan longest-match principle):
@@ -97,6 +107,7 @@ _LINE_CACHE_MAX_FILES: int = 256
 # keeps a whole-corpus Deck Builder run from growing without limit (mirrors the
 # compound matcher's existence cache).
 _FRONT_CACHE_CAP: int = 200_000
+
 
 # Term-OR-reading offline existence probe (DefinitionService.has_offline_definitions:
 # lookup_many runs ``WHERE term IN (...) OR reading IN (...)``). Reading-capable on
@@ -155,12 +166,14 @@ _ELLIPSIS_CHARS: frozenset[str] = frozenset({"…", "‥"})
 # hyphenated values (連用形-一般, 連用形-促音便), so bare equality would never fire.
 _ELLIPSIS_CUT_POS1: frozenset[str] = frozenset({"動詞", "形容詞"})
 _ELLIPSIS_CUT_CFORM: frozenset[str] = frozenset({"連用形", "未然形", "語幹", "仮定形"})
-# (b) Short fragment (all-katakana or single-char surface) inside a STUTTER line
-# of ≥2 ellipsis GROUPS, where a group is a maximal ellipsis run: ``……`` (the
-# standard fansub double-marker) collapses to ONE group, so a lone trailing 夢……
-# survives while タ… イガ… stays two groups.
+# (b) Short fragment (≤5-char all-katakana or single-char surface) inside a
+# STUTTER line of ≥2 ellipsis GROUPS, where a group is a maximal ellipsis run:
+# ``……`` (the standard fansub double-marker) collapses to ONE group, so a lone
+# trailing 夢…… survives while タ… イガ… stays two groups. Five chars is the
+# smallest bound retaining the dict-free baseline's trailing プログラム fragment.
 _ELLIPSIS_GROUP_RE = re.compile(r"[…‥]+")
 _ELLIPSIS_STUTTER_MIN_GROUPS: int = 2
+_ELLIPSIS_KATAKANA_FRAGMENT_MAX_CHARS: int = 5
 
 _SUBTITLE_REGEX_MAX_PATTERN_CHARS = 512
 _SUBTITLE_REGEX_MAX_REPLACEMENT_CHARS = 512
@@ -168,6 +181,54 @@ _REGEX_ATOM = r"(?:\\.|\[(?:\\.|[^\]\\])*\]|[^()[\]\\])"
 _NESTED_UNBOUNDED_REPEAT_RE = re.compile(
     r"\(" + _REGEX_ATOM + r"*(?:[*+]|\{\d+,\})" + _REGEX_ATOM + r"*\)(?:[*+]|\{\d+,\})"
 )
+_REGEX_ALTERNATION_ATOM = r"(?:\\.|\[(?:\\.|[^\]\\])*\]|[^|()[\]\\])"
+_QUANTIFIED_ALTERNATION_RE = re.compile(
+    r"\((?:\?:)?(?P<body>"
+    + _REGEX_ALTERNATION_ATOM
+    + r"*(?:\|"
+    + _REGEX_ALTERNATION_ATOM
+    + r"*)+)\)(?:[*+]|\{\d+,\})(?!\+)"
+)
+
+
+# A character class holding one literal, non-meta character is the character
+# (``[a]`` ≡ ``a``). Folding it before the branch comparison keeps the overlap
+# check from being defeated by trivially equivalent spellings. Anything richer
+# (ranges, negation, multi-char classes) is left alone — the detector stays a
+# conservative syntactic screen, not a regex-equivalence prover.
+_TRIVIAL_CHAR_CLASS_RE = re.compile(r"\[([^\\\^\]])\]")
+
+
+def _normalize_alternation_branch(branch: str) -> str:
+    return _TRIVIAL_CHAR_CLASS_RE.sub(r"\1", branch)
+
+
+def _has_overlapping_quantified_alternation(pattern: str) -> bool:
+    """Whether a simple quantified alternation has prefix-overlapping branches."""
+    for match in _QUANTIFIED_ALTERNATION_RE.finditer(pattern):
+        branches: list[str] = []
+        start = 0
+        escaped = False
+        in_class = False
+        body = match.group("body")
+        for index, char in enumerate(body):
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == "[":
+                in_class = True
+            elif char == "]":
+                in_class = False
+            elif char == "|" and not in_class:
+                branches.append(body[start:index])
+                start = index + 1
+        branches.append(body[start:])
+        branches = [_normalize_alternation_branch(branch) for branch in branches]
+        for index, branch in enumerate(branches):
+            if any(branch.startswith(other) or other.startswith(branch) for other in branches[index + 1 :]):
+                return True
+    return False
 
 
 def compile_subtitle_regex_filter(pattern: str, replacement: str) -> re.Pattern[str]:
@@ -183,8 +244,10 @@ def compile_subtitle_regex_filter(pattern: str, replacement: str) -> re.Pattern[
         raise ValueError(str(e)) from e
     if _NESTED_UNBOUNDED_REPEAT_RE.search(pattern):
         raise ValueError("nested unbounded repeats are not allowed")
-    # stdlib re has no wall-clock timeout. Size limits plus the obvious nested-
-    # repeat reject bound validation cost, but cannot prove every pattern safe.
+    if _has_overlapping_quantified_alternation(pattern):
+        raise ValueError("quantified groups with overlapping alternatives are not allowed")
+    # stdlib re has no wall-clock timeout. Size limits plus the nested-repeat and
+    # overlapping-alternation rejects cover common stalls, but cannot prove safety.
     return compiled
 
 
@@ -265,9 +328,11 @@ class SubtitleParserService:
         self,
         config: AnkiMinerConfig,
         term_lookup: TermLookup | None = None,
+        name_lookup: NameLookup | None = None,
         reading_lookup: ReadingLookup | None = None,
         kana_attest_lookup: KanaAttestLookup | None = None,
         term_common_lookup: TermCommonLookup | None = None,
+        term_rules_lookup: TermRulesLookup | None = None,
     ):
         """Initialize the subtitle parser.
 
@@ -280,6 +345,11 @@ class SubtitleParserService:
                 archaic/rare longer-prefix candidate (呼ばる from 呼ばれる) can't
                 displace the unidic orthBase. ``None`` (or a chain with no aware
                 dict) keeps the resolver byte-identical to pre-commonness.
+            term_rules_lookup: Optional rules-aware deinflection attestation
+                probe (``DefinitionService.offline_deinflection_terms_exist``).
+                Each candidate keeps its terminal condition mask so dictionary
+                entry POS rules can reject incompatible headwords. ``None``
+                makes resolver overrides fail closed to ``orth_base``.
             kana_attest_lookup: Optional term-OR-reading offline existence probe
                 (``DefinitionService.has_offline_definitions``). When provided,
                 pure-hiragana content words the script gate would drop (きれい,
@@ -293,6 +363,12 @@ class SubtitleParserService:
                 words (Yomitan longest-match). ``None`` (no offline dictionary
                 or raw-entry-only callers) keeps parsing byte-identical to
                 the pre-compound-matching behavior.
+            name_lookup: Optional batch exact-membership probe over enabled
+                name wordsets (``WordsetService.excluded_terms``). When
+                provided, multi-token names are reconstructed from raw token
+                surfaces so the later exact wordset filter sees the full name.
+                Kept separate from ``term_lookup`` because name candidates
+                must never deinflect an adjective-misclassified tail.
             reading_lookup: Optional batch attested-readings probe
                 (``DefinitionService.offline_term_readings``). When provided,
                 merged-compound kana is corrected to the dictionary's attested
@@ -317,10 +393,12 @@ class SubtitleParserService:
             allowed_pos=frozenset(config.allowed_pos),
             excluded_subtypes=frozenset(config.excluded_subtypes),
         )
-        # Same injected offline existence probe drives the verb-front resolver
-        # (see _resolve_front / deinflection.resolve_dictionary_form). None ⇒ the
-        # resolver safe-degrades and mining stays byte-identical to pre-resolver.
+        # Exact-headword existence serves compound/front remap gates; the sibling
+        # rules-aware probe serves deinflection overrides. Keeping them distinct
+        # prevents an attested but POS-incompatible headword from winning solely
+        # on spelling (see _resolve_front / resolve_dictionary_form).
         self._term_lookup = term_lookup
+        self._term_rules_lookup = term_rules_lookup
         # Per-instance MEMOIZED existence probe shared by the compound-merge gate
         # (morphology.merge_compound_suffixes) AND the compound matcher: caches
         # existence per surface so a repeated corpus (count_lemmas / Deck Builder
@@ -340,12 +418,21 @@ class SubtitleParserService:
         self._common_aware: bool | None = None
         # Dictionary-attested compound matching (see services/compound_matcher.py).
         # Built only when a term lookup is injected (COMPOUND_MATCHING is always
-        # on); the matcher reuses the inclusion rule so spans start only at
-        # mineable tokens, and the SAME memoized probe so a surface's existence is
-        # looked up once across the merge gate and the matcher.
+        # on); spans may start at any structurally contentful token (verb-headed
+        # nouns like 動く歩道) — the inclusion rule gates the COMPLETED synthetic,
+        # not the start token — and the matcher shares the SAME memoized probe so
+        # a surface's existence is looked up once across the merge gate and the
+        # matcher.
         self._compound_matcher: CompoundDictionaryMatcher | None = None
         if self._attest is not None and COMPOUND_MATCHING:
             self._compound_matcher = CompoundDictionaryMatcher(self._attest, self._inclusion_rule)
+        # Name resources define raw-source boundaries independently of the
+        # ordinary dictionary. This pass runs before dictionary matching so an
+        # exact name remains available to the late exact name-wordset filter;
+        # the dictionary matcher then processes only the residual tokens.
+        self._name_matcher: NameSpanMatcher | None = None
+        if name_lookup is not None:
+            self._name_matcher = NameSpanMatcher(name_lookup, self._inclusion_rule)
         # Reading-capable offline existence probe for kana recovery
         # (see _recover_kana_content_word). None ⇒ no recovery, safe degrade.
         self._kana_attest_lookup = kana_attest_lookup
@@ -371,18 +458,21 @@ class SubtitleParserService:
         self._rd_cache: dict[str, str] = {}
         self._reset_caches()
         # Per-FILE tokenization cache (distinct lifetime from the per-parse memo
-        # caches above): resolved path -> (mtime, list of line-state tuples).
+        # caches above): resolved path -> (stat fingerprint, line-state tuples).
         # Filled on the first _iter_parsed_lines pass over a file and reused by
-        # any later pass over the SAME path+mtime (e.g. the Deck Builder's
-        # count_lemmas → parse_subtitle_file double-parse). Survives across
-        # parse_* calls; an mtime change invalidates the entry. _reset_caches()
-        # does NOT touch this — it is not a per-parse cache.
+        # any later pass over the SAME path+mtime_ns+ctime_ns+size (e.g. the
+        # Deck Builder's count_lemmas → parse_subtitle_file double-parse).
+        # Survives across parse_* calls; a fingerprint change invalidates the
+        # entry. _reset_caches() does NOT touch this — it is not a per-parse cache.
         #
         # Size-bounded: capped at _LINE_CACHE_MAX_FILES entries via LRU
         # eviction (pop the oldest key when full). Prevents unbounded growth during
         # large Deck Builder builds while still caching all files touched in Phase 1
         # for Phase 2 reuse when the corpus fits within the cap.
-        self._line_cache: dict[Path, tuple[float, list[tuple[str, list, list, float, float, float]]]] = {}
+        self._line_cache: dict[
+            Path,
+            tuple[tuple[int, int, int], list[tuple[str, list, list, float, float, float]]],
+        ] = {}
         # Verb-front resolver memo (distinct lifetime from the per-parse memos,
         # like _line_cache): the deinflect + offline existence lookup is
         # deterministic per (inflected_surface, orth_base, cType), so it survives
@@ -422,6 +512,29 @@ class SubtitleParserService:
         # selection policy (unique-only vs edit-distance tie-break) — sharing
         # the dict would let one helper serve the other's answer.
         self._unique_reading_cache: dict[str, str | None] = {}
+        self._attested_readings_cache: dict[str, list[str]] = {}
+        self._ambiguous_readings: set[str] = set()
+
+    @property
+    def ambiguous_reading_count(self) -> int:
+        """Number of distinct real-token card fronts needing reading review."""
+        return len(self._ambiguous_readings)
+
+    def _prefetch_attested_readings(self, headwords: Sequence[str]) -> None:
+        """Batch-fill exact-headword readings not already cached this parse."""
+        if self._reading_lookup is None:
+            return
+        missing = [headword for headword in dict.fromkeys(headwords) if headword not in self._attested_readings_cache]
+        if not missing:
+            return
+        found = self._reading_lookup(missing)
+        for headword in missing:
+            self._attested_readings_cache[headword] = found.get(headword) or []
+
+    def _attested_readings(self, headword: str) -> list[str]:
+        """Return cached exact-headword readings, probing once on cache miss."""
+        self._prefetch_attested_readings([headword])
+        return self._attested_readings_cache.get(headword, [])
 
     def _furigana(self, s: str) -> str:
         """Return generate_furigana(s, tagger), memoized within the current parse pass."""
@@ -449,10 +562,8 @@ class SubtitleParserService:
         callers fall back to the re-tokenize reading. Only ever called for
         compound synthetics, so plain tokens add zero lookups.
         """
-        if self._reading_lookup is None:
-            return None
         if headword not in self._hw_reading_cache:
-            attested = self._reading_lookup([headword]).get(headword) or []
+            attested = self._attested_readings(headword)
             result: str | None = None
             if attested:
                 folded = [katakana_to_hiragana(r) for r in attested]
@@ -487,20 +598,17 @@ class SubtitleParserService:
         Returns hiragana. None when no reading_lookup is wired, the dictionary
         attests nothing, or it attests more than one distinct reading.
         """
-        if self._reading_lookup is None:
-            return None
         if headword not in self._unique_reading_cache:
-            attested = self._reading_lookup([headword]).get(headword) or []
-            folded = {katakana_to_hiragana(r) for r in attested}
-            self._unique_reading_cache[headword] = next(iter(folded)) if len(folded) == 1 else None
+            resolution = resolve_attested_reading("", self._attested_readings(headword))
+            self._unique_reading_cache[headword] = resolution.reading
         return self._unique_reading_cache[headword]
 
     def _apply_text_filter(self, text: str) -> str:
-        """Apply the configured regex filter to a subtitle line.
+        """Apply configured whole-cue and regex filters to a subtitle line.
 
-        Runs after ``clean_subtitle_text`` strips tags/HTML so the pattern
-        operates on human-readable text. Whitespace is renormalized because
-        a stripped span can leave double spaces behind.
+        Runs after cleanup and normalization so filters operate on human-readable
+        text. Whitespace is renormalized because regex deletion can leave double
+        spaces behind.
         """
         if self._filter_pattern is None:
             return text
@@ -511,14 +619,14 @@ class SubtitleParserService:
         """Full per-line text pipeline shared by the mining and display paths.
 
         Order: markup strip → JP normalization → per-physical-line annotation
-        strip (gated on ``config.strip_subtitle_annotations``, default ON) →
-        whitespace collapse → ``_apply_text_filter``. Applied identically
+        strip (always on) → whitespace collapse → ``_apply_text_filter``.
+        Applied identically
         by ``_iter_parsed_lines`` (mining) and ``parse_raw_entries`` (display) so
         the shown cue text matches what mining tokenizes. A line that collapses
         to empty is skipped by each caller's existing ``if not text: continue``
         guard.
         """
-        cleaned = clean_subtitle_text(raw_text, strip_annotations=self.config.strip_subtitle_annotations)
+        cleaned = clean_subtitle_text(raw_text)
         return self._apply_text_filter(cleaned)
 
     def _load_subs(self, subtitle_file: Path):
@@ -527,8 +635,9 @@ class SubtitleParserService:
         Shared by every public parse_* method so error wrapping stays
         consistent regardless of entry point. The UTF-8 default is tried first
         (the ``pysubs2.load`` seam patched by tests); on a decode failure the
-        shared cp932-first fallback (see utils/subtitle_encoding.py) runs so
-        Shift-JIS subtitles parse instead of aborting the episode.
+        shared fallback (see utils/subtitle_encoding.py) dispatches on a
+        UTF-16/32 BOM first, then tries cp932, so both UTF-16 and Shift-JIS
+        subtitles parse instead of aborting the episode.
         """
         try:
             try:
@@ -553,30 +662,37 @@ class SubtitleParserService:
         (callers apply ``_should_include_word`` themselves so the index path and
         mining path share identical token selection logic).
 
-        Per-file cache: keyed by resolved path → (mtime, line-state list);
+        Per-file cache: keyed by resolved path → (stat fingerprint, line-state
+        list), where the fingerprint is ``(mtime_ns, ctime_ns, size)``;
         bounded to ``_LINE_CACHE_MAX_FILES`` entries via oldest-first eviction.
-        On a cache HIT for the same path+mtime the subtitle file is neither
+        On a cache HIT for the same path+fingerprint the subtitle file is neither
         reloaded nor re-tokenized — the stored line-state (the very tuples a
         fresh parse would yield, including ``_SyntheticToken``s) is replayed.
-        An mtime mismatch (file edited between passes) invalidates the entry and
-        forces a fresh load + tokenize. The multi-entry cache supports the Deck
-        Builder's Phase-1 (``count_lemmas``) → Phase-2 (``parse_subtitle_file``)
-        cross-file reuse pattern: every file visited in Phase 1 remains cached
-        for Phase 2, eliminating a second full MeCab pass over the corpus.
+        A fingerprint mismatch (file edited or replaced between passes)
+        invalidates the entry and forces a fresh load + tokenize. The multi-entry
+        cache supports the Deck Builder's Phase-1 (``count_lemmas``) → Phase-2
+        (``parse_subtitle_file``) cross-file reuse pattern: every file visited in
+        Phase 1 remains cached for Phase 2, eliminating a second full MeCab pass
+        over the corpus.
         Consumers MUST NOT mutate the yielded ``merged_tokens`` lists/tokens, as
         they are shared across passes; current consumers only read them.
         """
         key = subtitle_file.resolve()
         try:
-            mtime = subtitle_file.stat().st_mtime
+            stat_result = subtitle_file.stat()
+            fingerprint = (
+                stat_result.st_mtime_ns,
+                stat_result.st_ctime_ns,
+                stat_result.st_size,
+            )
         except OSError:
             # Can't stat (e.g. missing file): fall through to _load_subs, which
             # raises the normalized SubtitleParseError. Bypass the cache.
-            mtime = None
+            fingerprint = None
 
-        if mtime is not None:
+        if fingerprint is not None:
             cached = self._line_cache.get(key)
-            if cached is not None and cached[0] == mtime:
+            if cached is not None and cached[0] == fingerprint:
                 self._line_cache.pop(key)
                 self._line_cache[key] = cached
                 yield from cached[1]
@@ -612,16 +728,17 @@ class SubtitleParserService:
             line_states.append(line_state)
             yield line_state
 
-        # mtime is None only when stat() failed, in which case _load_subs above
-        # already raised, so this assignment is reachable only with a real mtime.
+        # fingerprint is None only when stat() failed, in which case _load_subs
+        # above already raised, so this assignment is reachable only with a real
+        # fingerprint.
         #
         # Evict the least-recently-used entry at capacity so growth stays bounded
         # (see _LINE_CACHE_MAX_FILES). dict preserves insertion order in Python
         # 3.7+, so next(iter(...)) yields the oldest key.
-        if mtime is not None:
+        if fingerprint is not None:
             if len(self._line_cache) >= _LINE_CACHE_MAX_FILES:
                 self._line_cache.pop(next(iter(self._line_cache)))
-            self._line_cache[key] = (mtime, line_states)
+            self._line_cache[key] = (fingerprint, line_states)
 
     def _build_line_state(
         self, text: str, start: float, end: float
@@ -630,13 +747,16 @@ class SubtitleParserService:
 
         Returns ``(text, raw_tokens, merged_tokens, start, end, duration)``:
         ``raw_tokens`` is the direct ``self.tagger(text)`` output,
-        ``merged_tokens`` is that run through ``_merge_compound_suffixes`` and
-        the optional compound matcher, and ``duration`` is ``end - start``.
+        ``merged_tokens`` is that run through ``_merge_compound_suffixes``, the
+        optional name matcher, and the optional compound matcher; ``duration``
+        is ``end - start``.
         Shared by the subtitle path (``_iter_parsed_lines``) and the future
         text-unit path so per-line tokenization stays in one place.
         """
         raw_tokens = list(self.tagger(text))
         merged_tokens = self._merge_compound_suffixes(raw_tokens)
+        if self._name_matcher is not None:
+            merged_tokens = self._name_matcher.merge_line(text, merged_tokens)
         if self._compound_matcher is not None:
             merged_tokens = self._compound_matcher.merge_line(text, merged_tokens)
         # Dictionary reading attestation for merged compounds (audit F2): fixes
@@ -654,9 +774,9 @@ class SubtitleParserService:
     def _build_display_tokens(text: str, raw_tokens: list, merged_tokens: list) -> list:
         """Sentence display stream, shared by BOTH mining entrypoints.
 
-        Order matters: attested-overridden compound spans are carried into the
-        raw stream first (``replace_overridden_spans`` — spans whose merged
-        kana the dictionary corrected, audit F2), then the honorific-kinship
+        Order matters: dictionary-attested compound spans are carried into the
+        raw stream first (``replace_overridden_spans`` — both kept and corrected
+        readings use whole-compound display grouping), then the honorific-kinship
         override (``apply_special_readings``) handles adjacent raw pairs the
         merges didn't consume. Both passes keep the concatenated surface text
         byte-identical, so span/offset math downstream is unaffected. Extracted
@@ -673,6 +793,93 @@ class SubtitleParserService:
         parse_subtitle_file and _with_index.
         """
         return find_highlight_end(text, raw_tokens, tok_start, tok_end, word_token)
+
+    def _resolve_word_identity(
+        self,
+        word_token: Any,
+        text: str,
+        tok_start: int,
+        highlight_end: int,
+    ) -> tuple[str, str, str, bool]:
+        """Return ``(lemma, orth_base, mined_form, front_overridden)``."""
+        lemma = self._extract_lemma(word_token)
+        orth_base = self._mining_base(word_token)
+        resolved_front = self._resolve_front(word_token, orth_base, text, tok_start, highlight_end)
+        front_overridden = resolved_front != orth_base
+        pronunciation = getattr(word_token.feature, "pron", "")
+        if not isinstance(pronunciation, str):
+            pronunciation = ""
+        mined = select_mined_form(
+            word_token.feature.pos1,
+            resolved_front,
+            lemma,
+            word_token.surface,
+            pronunciation=pronunciation,
+        )
+        return lemma, resolved_front, mined, front_overridden
+
+    def _apply_single_token_sentence_attestation(
+        self,
+        text: str,
+        display_tokens: list,
+        included_tokens: list,
+        included_spans: list[tuple[int, int, int]],
+        mined_forms: list[str | None],
+    ) -> list:
+        """Apply safe exact-span reading corrections to the sentence stream.
+
+        A dictionary-form reading cannot be pasted onto an inflected surface
+        (``食べ`` must not become ``たべる`` inside ``食べた``), so sentence
+        propagation is limited to real tokens whose card front equals the exact
+        token surface. Expression fields still apply the unique rule to every
+        real-token mined form.
+        """
+        corrections: dict[tuple[int, int], str] = {}
+        for token, (tok_start, tok_end, _), mined in zip(
+            included_tokens,
+            included_spans,
+            mined_forms,
+            strict=True,
+        ):
+            if mined is None or mined != token.surface:
+                continue
+            derived = katakana_to_hiragana(self._extract_reading(token))
+            override = resolve_reading_override(mined, derived)
+            if override is not None:
+                if override != derived:
+                    corrections[(tok_start, tok_end)] = override
+                continue
+            resolution = resolve_attested_reading(derived, self._attested_readings(mined))
+            if resolution.ambiguous:
+                self._ambiguous_readings.add(mined)
+            elif resolution.reading is not None and resolution.reading != derived:
+                corrections[(tok_start, tok_end)] = resolution.reading
+        if not corrections:
+            return display_tokens
+
+        out: list = []
+        cursor = 0
+        for token in display_tokens:
+            idx = text.find(token.surface, cursor)
+            if idx == -1:
+                out.append(token)
+                continue
+            tok_end = idx + len(token.surface)
+            cursor = tok_end
+            corrected = corrections.get((idx, tok_end))
+            if corrected is None:
+                out.append(token)
+                continue
+            out.append(
+                SyntheticToken(
+                    surface=token.surface,
+                    pos1=token.feature.pos1,
+                    pos2=token.feature.pos2,
+                    lemma=self._extract_lemma(token),
+                    kana=hiragana_to_katakana(corrected),
+                )
+            )
+        return out
 
     def _emit_word(
         self,
@@ -699,22 +906,19 @@ class SubtitleParserService:
         ``None`` when the token's mined_form was already emitted.
         """
         # Get lemma (dictionary form) for lookups; surface is the raw token.
-        lemma = self._extract_lemma(word_token)
         surface = word_token.surface
 
         # mined_form is the card-front spelling: orthBase (source orthography)
         # for verbs/adjectives, surface otherwise (see select_mined_form).
-        pos = word_token.feature.pos1
-        orth_base = self._mining_base(word_token)
-        # Verb/adjective fronts: rewrite the archaic じる/ずる orthBase (感ずる) to
-        # the modern JMdict headword (感じる) when the deinflected inflected span
-        # attests it. No-op for every other POS, for mining_base folds, and when
-        # no offline dict is wired. resolved_reading (pitch realignment) is set
-        # after ``mined`` below.
-        resolved_front = self._resolve_front(word_token, orth_base, text, tok_start, highlight_end)
-        front_overridden = resolved_front != orth_base
-        orth_base = resolved_front
-        mined = select_mined_form(pos, orth_base, lemma, surface)
+        lemma, orth_base, mined, front_overridden = self._resolve_word_identity(
+            word_token,
+            text,
+            tok_start,
+            highlight_end,
+        )
+        pronunciation = getattr(word_token.feature, "pron", "")
+        if not isinstance(pronunciation, str):
+            pronunciation = ""
 
         # Dedup on mined_form, NOT lemma: UniDic collapses kanji-variant
         # homographs onto one canonical lemma (賭ける/掛ける → 掛ける), but they
@@ -766,8 +970,8 @@ class SubtitleParserService:
             # here the MeCab token IS the trustworthy contextual source, so we
             # propagate it outward rather than re-derive. ``reading`` here
             # equals extract_reading(word_token)
-            # (the compound branch above, excluded by the guard, is the only
-            # thing that overrides it). Compound synthetics carry wrong
+            # (only the compound branch above — excluded by the guard — and the
+            # curated override just below replace it). Compound synthetics carry wrong
             # concatenated component kana, so they take the else branch and keep
             # the headword-regenerated reading.
             expression_reading = katakana_to_hiragana(reading)
@@ -777,9 +981,10 @@ class SubtitleParserService:
                 # 仏→フツ, マズい→マジイ, 込む→ゴム). Take the curated reading and
                 # regenerate ruby from it — a stale per-token furigana would
                 # contradict the corrected reading field (and the corrected value
-                # flows on to lemma_reading/resolved_reading below).
+                # flows on to the word reading and lemma_reading below).
                 expression_reading = override
                 expression_furigana = _format_furigana(mined, override)
+                reading = hiragana_to_katakana(override)
                 reading_overridden = True
             else:
                 expression_furigana = generate_furigana_from_tokens([word_token])
@@ -834,15 +1039,26 @@ class SubtitleParserService:
             else:
                 expression_furigana = self._furigana(mined)
 
-        # Reading recovery (single point AFTER the whole branch chain, so every
-        # pure-kana outcome above — attested compounds, curated overrides,
-        # context-disambiguated readings like 方 かた/ほう — is structurally
-        # untouched): a non-kana expression_reading means the tokenizer had no
-        # kana for this token and fell back to the surface (OOV). Try the
-        # dictionary's UNIQUE attested reading; ambiguous or unattested words
-        # keep the surface fallback (and downstream reading-keyed consumers
-        # keep their current miss behavior — never a guessed homograph).
-        if not is_kana_only(expression_reading):
+        # Without a curated override, a real token's contextual reading is
+        # trusted when the exact card-front headword attests it. On mismatch,
+        # one dictionary reading is authoritative; several are unresolved and
+        # recorded for review. This deliberately diverges from Yomitan's
+        # interactive headword selection: bulk mining has no user-selected row,
+        # so it must not guess among homographs by score order or edit distance.
+        if not reading_overridden and not isinstance(word_token, SyntheticToken):
+            resolution = resolve_attested_reading(
+                expression_reading,
+                self._attested_readings(mined),
+            )
+            if resolution.ambiguous:
+                self._ambiguous_readings.add(mined)
+            elif resolution.reading is not None and resolution.reading != expression_reading:
+                expression_reading = resolution.reading
+                expression_furigana = _format_furigana(mined, resolution.reading)
+                reading_overridden = True
+        # Synthetic OOV recovery remains unique-only. Merged compounds have
+        # their own contextual attestation path before expression assembly.
+        elif not is_kana_only(expression_reading):
             recovered = self._attested_unique_reading(mined)
             if recovered is not None:
                 expression_reading = recovered
@@ -858,20 +1074,18 @@ class SubtitleParserService:
         # reading override the lemma spelling (マズい→不味い) reads the SAME wrong
         # value in isolation, so reuse the corrected reading rather than recompute.
         lemma_reading = expression_reading if (mined == lemma or reading_overridden) else self._reading(lemma)
-        # Same recovery for the lemma leg (pitch keys on lemma + lemma_reading):
-        # a kanji-variant lemma the tokenizer can't read gets its unique
-        # attested reading, or stays on the surface fallback.
+        # Same recovery for the lemma fallback used by audio and pitch: a
+        # kanji-variant lemma the tokenizer cannot read gets its unique attested
+        # reading, or stays on the surface fallback.
         if lemma != mined and not is_kana_only(lemma_reading):
             recovered_lemma = self._attested_unique_reading(lemma)
             if recovered_lemma is not None:
                 lemma_reading = recovered_lemma
 
-        # Pitch reading realignment: when the resolver diverged the front from
-        # the lemma (感じる card, but archaic lemma 感ずる), pitch must key on the
-        # front's reading (かんじる), not the lemma's own (感ずる→かんずる). Derive
-        # it from the resolved front's kana (== expression_reading on the
-        # overridden verb path). Empty when no override fired ⇒ pitch keeps the
-        # lemma_reading path unchanged.
+        # Pitch fallback realignment: when the resolver diverged the front from
+        # the lemma (感じる card, but archaic lemma 感ずる), a lemma-key retry must
+        # keep the front's reading (かんじる), not switch to 感ずる→かんずる.
+        # Empty when no front override fired.
         resolved_reading = self._reading(mined) if front_overridden else ""
 
         if self.config.bold_target_in_sentence:
@@ -896,6 +1110,7 @@ class SubtitleParserService:
             expression_reading=expression_reading,
             lemma_reading=lemma_reading,
             resolved_reading=resolved_reading,
+            pronunciation=pronunciation,
             sentence_furigana=sentence_furigana,
             sentence_reading=sentence_reading,
             pos=word_token.feature.pos1,
@@ -949,6 +1164,18 @@ class SubtitleParserService:
             # Computed once per token here and reused by the second pass, so
             # parse_subtitle_file and _with_index stay output-identical.
             highlight_end = self._find_highlight_end(text, raw_tokens, tok_start, tok_end, word_token)
+            orth_base = self._mining_base(word_token)
+            resolved_front = self._resolve_front(word_token, orth_base, text, tok_start, highlight_end)
+            if resolved_front != orth_base:
+                resolved_end, _ = find_highlight_end_with_trace(
+                    text,
+                    raw_tokens,
+                    tok_start,
+                    tok_end,
+                    word_token,
+                    additional_target=resolved_front,
+                )
+                highlight_end = max(highlight_end, resolved_end)
             included_spans.append((tok_start, tok_end, highlight_end))
             if collect_index:
                 lemma_first_span.setdefault(lemma_here, (word_token.surface, tok_start, tok_end, highlight_end))
@@ -958,12 +1185,39 @@ class SubtitleParserService:
         if collect_index and not line_lemmas:
             return [], None
 
+        # Probe real-token card fronts as one exact-headword batch per line.
+        # Synthetic compounds were already attested in _build_line_state.
+        mined_forms: list[str | None] = []
+        for word_token, (tok_start, _, highlight_end) in zip(
+            included_tokens,
+            included_spans,
+            strict=True,
+        ):
+            if isinstance(word_token, SyntheticToken):
+                mined_forms.append(None)
+                continue
+            _, _, mined, _ = self._resolve_word_identity(
+                word_token,
+                text,
+                tok_start,
+                highlight_end,
+            )
+            mined_forms.append(mined)
+        self._prefetch_attested_readings([mined for mined in mined_forms if mined is not None])
+
         # Compute sentence-level furigana/reading ONCE for this line, from the
         # shared display stream (attested-compound override + honorific-kinship
         # pass; see _build_display_tokens). Surfaces are unchanged, so
         # span/offset math is unaffected.
         display_tokens = self._build_display_tokens(text, raw_tokens, merged_tokens)
-        sentence_furigana = generate_furigana_from_tokens(display_tokens)
+        display_tokens = self._apply_single_token_sentence_attestation(
+            text,
+            display_tokens,
+            included_tokens,
+            included_spans,
+            mined_forms,
+        )
+        sentence_furigana = generate_furigana_from_tokens(display_tokens, text=text)
         sentence_reading = generate_reading_from_tokens(display_tokens)
 
         line_lemmas_entry: LineLemmas | None = None
@@ -1052,46 +1306,13 @@ class SubtitleParserService:
         all_words: list[TokenizedWord] = []
         seen_mined_forms: set[str] = set()  # Track unique words by card-front mined_form.
 
-        for (
-            text,
-            raw_tokens,
-            merged_tokens,
-            start_time,
-            end_time,
-            duration,
-        ) in self._iter_parsed_lines(subtitle_file):
-            # Sentence-level furigana/reading depend only on ``text`` — compute
-            # once per line and share across every word emitted from this line,
-            # via the shared display stream (attested-compound override +
-            # honorific-kinship pass; see _build_display_tokens). Surfaces are
-            # unchanged so span math is unaffected.
-            display_tokens = self._build_display_tokens(text, raw_tokens, merged_tokens)
-            sentence_furigana = generate_furigana_from_tokens(display_tokens)
-            sentence_reading = generate_reading_from_tokens(display_tokens)
-
-            # Spans come from the shared locator (Issue #20 / T-38 — see
-            # _iter_token_spans for the cursor+find and drop-rule rationale).
-            for word_token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
-                if not self._mine_token(word_token, text, tok_start, tok_end, merged_tokens):
-                    continue
-
-                highlight_end = self._find_highlight_end(text, raw_tokens, tok_start, tok_end, word_token)
-                word = self._emit_word(
-                    word_token,
-                    tok_start,
-                    tok_end,
-                    highlight_end=highlight_end,
-                    text=text,
-                    display_tokens=display_tokens,
-                    start_time=start_time,
-                    end_time=end_time,
-                    duration=duration,
-                    sentence_furigana=sentence_furigana,
-                    sentence_reading=sentence_reading,
-                    seen_mined_forms=seen_mined_forms,
-                )
-                if word is not None:
-                    all_words.append(word)
+        for line_state in self._iter_parsed_lines(subtitle_file):
+            line_words, _ = self._emit_line_words_and_index(
+                line_state,
+                seen_mined_forms,
+                collect_index=False,
+            )
+            all_words.extend(line_words)
 
         return all_words
 
@@ -1214,11 +1435,10 @@ class SubtitleParserService:
             # subtitle-cue kind only (subtitle_cleanup).
             text = standardize_kanji_variants(normalize_for_tokenization(unit.text))
             if subtitle_cleanup:
-                # Reading→Subtitles per-cue cleanup remains gated here for
-                # synthetic ReadingUnit callers and is idempotent when the
-                # config-fed loader already stripped the cue.
-                if self.config.strip_subtitle_annotations:
-                    text = strip_inline_annotations(text)
+                # Reading→Subtitles per-cue cleanup remains here for synthetic
+                # ReadingUnit callers and is idempotent when the loader already
+                # stripped the cue.
+                text = strip_inline_annotations(text)
                 text = self._apply_text_filter(text)
                 if not text:
                     continue
@@ -1291,18 +1511,22 @@ class SubtitleParserService:
         morphology compound-merge gate and the compound matcher. Clear-on-cap
         bounds the memo on whole-corpus Deck Builder runs (mirrors _front_cache /
         the matcher's existence cache). Only bound to ``self._attest`` when a
-        ``term_lookup`` exists; the ``None`` guard is defensive.
+        ``term_lookup`` exists; the ``None`` guard is defensive. The returned
+        subset comes from a per-call verdict snapshot so a cap clear cannot drop
+        a cached hit requested by the current batch.
         """
         if self._term_lookup is None:
             return set()
-        unknown = [s for s in dict.fromkeys(surfaces) if s not in self._exist_memo]
+        deduped = list(dict.fromkeys(surfaces))
+        unknown = [s for s in deduped if s not in self._exist_memo]
+        verdicts = {s: self._exist_memo[s] for s in deduped if s not in unknown}
         if unknown:
             if len(self._exist_memo) + len(unknown) > _FRONT_CACHE_CAP:
                 self._exist_memo.clear()
             hits = self._term_lookup(unknown)
             for s in unknown:
-                self._exist_memo[s] = s in hits
-        return {s for s in surfaces if self._exist_memo.get(s)}
+                verdicts[s] = self._exist_memo[s] = s in hits
+        return {s for s in surfaces if verdicts[s]}
 
     def _memoized_term_common(self, surfaces: list[str]) -> dict[str, bool] | None:
         """Per-instance memoized commonness probe (see _resolve_front).
@@ -1361,13 +1585,12 @@ class SubtitleParserService:
         Returns ``orth_base`` unchanged for every non-verb/adjective token, for
         ``mining_base`` folds (never un-fold a potential/ra-nuki/ク-form — its
         orth_base is the parent lemma, not the token's own orthBase), when no
-        offline ``term_lookup`` is wired (safe degrade), and whenever the
-        resolver can't improve on orth_base. Otherwise the archaic じる/ずる
-        orthBase (感ずる) is rewritten to the deinflection-attested modern
-        headword (感じる). See deinflection.resolve_dictionary_form for the
-        algorithm; the deinflect + offline existence lookup is memoized per
-        ``(inflected_surface, orth_base, cType)`` so identical tokens never repeat
-        the work.
+        offline lookup path is wired (safe degrade), and whenever the resolver
+        can't improve on orth_base. Otherwise the archaic じる/ずる orthBase
+        (感ずる) is rewritten to the rules-compatible modern headword (感じる).
+        See deinflection.resolve_dictionary_form for the algorithm; the
+        deinflect + offline rules lookup is memoized per ``(inflected_surface,
+        orth_base, cType)`` so identical tokens never repeat the work.
 
         Second seam (U3 attest-or-remap): when the deinflection resolver leaves
         orth_base unchanged AND that orth_base matches no dictionary headword,
@@ -1397,7 +1620,10 @@ class SubtitleParserService:
         cached = self._front_cache.get(key)
         if cached is None:
             cached = resolve_dictionary_form(
-                inflected_surface, orth_base, self._term_lookup, self._memoized_term_common
+                inflected_surface,
+                orth_base,
+                self._term_rules_lookup,
+                self._memoized_term_common,
             )
             # The deinflection resolver only rewrites じる/ずる (and leaves every
             # other form == orth_base). Where it made no change, run the
@@ -1439,8 +1665,11 @@ class SubtitleParserService:
           ``lemma`` canonicalizes kanji-variant homographs onto a different-kanji
           headword (帰れる→返る "can go home" vs "revert", 殺る→遣る, 混ぜる→交ぜる).
           Remapping onto such a lemma would ship the wrong homograph — so a kanji
-          change blocks the remap and the source spelling is kept (its correct
-          definition still arrives via the mined-form→lemma miss fallback).
+          change blocks the remap and the source spelling is kept. Its definition
+          resolves via direct mined-form lookup or validated deinflection only:
+          the different-kanji lemma retry was itself the X2-001 homograph leak
+          and is deliberately blocked (see episode_processor's okurigana-only
+          guard on lemma retries).
         * the offline dictionary does NOT attest ``orth_base`` as a term (exact
           headword, no kana folding) — an attested front is a real word and is
           always KEPT; attestation, not a fold table, decides.
@@ -1484,9 +1713,13 @@ class SubtitleParserService:
         own all-katakana orthBase (ヤル) whose lForm/kanaBase readings are equal
         (both ヤル), so ``mining_base`` and ``_attest_or_remap_front`` both keep
         it — the card front ships as ヤル, splitting definition/frequency/dedup/
-        audio from the やる card the learner already has. Reached only after
-        ``resolve_dictionary_form`` and ``_attest_or_remap_front`` both left
-        ``orth_base`` unchanged (a 動詞/形容詞 with a wired ``term_lookup``).
+        audio from the やる card the learner already has. Two call sites: the
+        mining path reaches it only after ``resolve_dictionary_form`` and
+        ``_attest_or_remap_front`` both left ``orth_base`` unchanged (a
+        動詞/形容詞 with a wired ``term_lookup``); ``_is_katakana_run_fragment``
+        (X3-004) probes it BEFORE those seams to prove a katakana verb token
+        folds to a non-katakana common front and must survive the run-fragment
+        guard.
 
         Folds ``orth_base`` → its hiragana reading iff ALL hold:
 
@@ -1557,10 +1790,12 @@ class SubtitleParserService:
           U5 katakana run-fragment guard (``_is_katakana_run_fragment``). The U4
           window reject never touches a morphology-accepted token.
         - ``should_include`` rejects → last-chance ``_recover_kana_content_word``
-          (pure-hiragana content word attested as its own front). On a recovery
-          acceptance, apply the U4 lexicalized-window reject
-          (``_rejected_by_lexicalized_window``). Recovery surfaces are pure
-          hiragana, so the katakana guard can never fire on this branch.
+          (hiragana content word — pure hiragana once prolonged-sound marks are
+          set aside for the script check, e.g. すげー — attested as its own
+          front). On a recovery acceptance, apply the U4 lexicalized-window
+          reject (``_rejected_by_lexicalized_window``). Recovery surfaces are
+          never all-katakana, so the katakana guard can never fire on this
+          branch.
 
         ``_should_include_word`` stays the token-only, span-free gate that unit
         tests and non-span callers use directly; this method reproduces its
@@ -1686,10 +1921,13 @@ class SubtitleParserService:
         a katakana-block char covering ー/ッ, but NOT the author-inserted separators
         ・/゠). Whitespace, ・, ゠ or any non-katakana between katakana does NOT
         continue a run — アイ ウォン stays two tokens, アイス・ベア keeps both halves,
-        スマホ|と|バッグ keeps バッグ. Deliberate precision-over-recall (plan-decided):
-        an attested word abutting an unbroken katakana run (アイス|ベア) is rejected,
-        and legit adjacent loanword bigrams whose full run is no headword lose both
-        halves — no independent-attestation carve-out.
+        スマホ|と|バッグ keeps バッグ. An all-katakana verb is exempt only when the
+        existing guarded front fold proves a non-katakana common headword
+        (ゲーム|ヤラれた → やる); a front that stays katakana gets no exemption.
+        Deliberate precision-over-recall (plan-decided): an attested katakana word
+        abutting an unbroken run (アイス|ベア) is rejected, and legit adjacent
+        loanword bigrams whose full run is no headword lose both halves — no
+        independent-attestation carve-out.
         """
         if self._compound_matcher is None:
             return False
@@ -1700,7 +1938,15 @@ class SubtitleParserService:
             return False
         left = text[tok_start - 1] if tok_start > 0 else ""
         right = text[tok_end] if tok_end < len(text) else ""
-        return _continues_katakana_run(left) or _continues_katakana_run(right)
+        if not (_continues_katakana_run(left) or _continues_katakana_run(right)):
+            return False
+        feature = getattr(word_token, "feature", None)
+        if getattr(feature, "pos1", None) == "動詞":
+            orth_base = self._mining_base(word_token)
+            folded = self._fold_katakana_verb_front(orth_base)
+            if folded != orth_base and not _is_all_katakana(folded):
+                return False
+        return True
 
     def _is_ellipsis_truncation_fragment(self, word_token, text: str, tok_start: int, tok_end: int) -> bool:
         """Whether an accepted token is a word cut off mid-utterance at an ellipsis.
@@ -1716,9 +1962,9 @@ class SubtitleParserService:
             buffered from the ellipsis by a 助詞/接尾辞 (待って…, 続いて…) never
             abuts, so it survives; 意志推量形 (行こう…) is not a cut form, so it
             survives too.
-        (b) a short fragment (all-katakana or single-char surface) in a STUTTER
-            line of ≥2 ellipsis groups (合…/タ… イガ…). ``……`` is one group, so a
-            single trailing 夢…… survives.
+        (b) a short fragment (≤5-char all-katakana or single-char surface) in a
+            STUTTER line of ≥2 ellipsis groups (合…/タ… イガ…). ``……`` is one
+            group, so a single trailing 夢…… survives.
 
         Adjacency is SET membership; the line-edge sentinel "" (a token at a line
         boundary) is not a member, so a boundary token is never falsely adjacent.
@@ -1740,12 +1986,15 @@ class SubtitleParserService:
         surface = getattr(word_token, "surface", None)
         return (
             isinstance(surface, str)
-            and (len(surface) == 1 or _is_all_katakana(surface))
+            and (
+                len(surface) == 1
+                or (len(surface) <= _ELLIPSIS_KATAKANA_FRAGMENT_MAX_CHARS and _is_all_katakana(surface))
+            )
             and len(_ELLIPSIS_GROUP_RE.findall(text)) >= _ELLIPSIS_STUTTER_MIN_GROUPS
         )
 
     def _recover_kana_content_word(self, word_token) -> bool:
-        """Whether an otherwise-rejected pure-hiragana content word is recoverable.
+        """Whether an otherwise-rejected hiragana content word is recoverable.
 
         Gate (ALL must hold; cheap checks first so the SQLite probe is the last
         resort and only distinct tokens ever reach it):
@@ -1757,8 +2006,10 @@ class SubtitleParserService:
            grammaticalized 形状詞 auxiliaries (よう/みたい in ようだ/みたいな) and
            auxiliary-capable verbs (いる/ある/くれる in ている/てくれる)
            content_gate_ok alone would let through.
-        3. The surface is pure hiragana — the only class the script gate dropped;
-           everything else was already decided by ``should_include``.
+        3. Removing ``ー`` leaves non-empty pure hiragana — the script gate also
+           drops colloquial hiragana words containing the prolonged-sound mark.
+           Removal is only for this check; cache/mining/attestation keep the
+           original surface.
         4. ``content_gate_ok`` passes and the mined-form card front is attested
            (memoized per ``(surface, pos1)`` — steps 4+ run once per distinct
            token, never per occurrence).
@@ -1774,7 +2025,7 @@ class SubtitleParserService:
             # grammar, not vocabulary. See constant for the full rationale.
             return False
         surface = word_token.surface
-        if not isinstance(surface, str) or not _is_pure_hiragana(surface):
+        if not isinstance(surface, str) or not _is_pure_hiragana(surface.replace("ー", "")):
             return False
         key = (surface, pos1)
         if key not in self._kana_recover_cache:
@@ -1787,10 +2038,10 @@ class SubtitleParserService:
         """content_gate_ok + term-OR-reading attestation of the mined-form front.
 
         The form probed is the exact card front ``_emit_word`` would mint
-        (``select_mined_form``): the surface for 形状詞 (きれい), the orthBase
-        dictionary form for 動詞/形容詞 (わかった's わかっ token → わかる, since
-        unidic's orthBase is already deinflected). Existence-gated only — the
-        probe never reads ``entries.score`` (uniformly 0 on the bundled dict).
+        (``_resolve_front`` then ``select_mined_form``): the surface for 形状詞
+        (きれい), the resolved orthBase dictionary form for 動詞/形容詞
+        (かんじた's かんじ token → かんじる). Existence-gated only — the probe
+        never reads ``entries.score`` (uniformly 0 on the bundled dict).
         """
         lookup = self._kana_attest_lookup
         if lookup is None:  # unreachable via _recover_kana_content_word; narrows for mypy
@@ -1798,8 +2049,9 @@ class SubtitleParserService:
         if not self._inclusion_rule.content_gate_ok(word_token):
             return False
         orth_base = self._mining_base(word_token)
+        resolved_front = self._resolve_front(word_token, orth_base, surface, 0, len(surface))
         lemma = self._extract_lemma(word_token)
-        form = select_mined_form(pos1, orth_base, lemma, surface)
+        form = select_mined_form(pos1, resolved_front, lemma, surface)
         if not form:
             return False
         return bool(lookup([form]).get(form))

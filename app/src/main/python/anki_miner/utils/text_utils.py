@@ -2,6 +2,7 @@
 
 import html
 import re
+import unicodedata
 from collections.abc import Iterable
 from typing import Any
 
@@ -18,7 +19,7 @@ def strip_subtitle_markup(text: str) -> str:
 
     Removes the three tag families that :func:`clean_subtitle_text` handles:
     ASS/SSA override blocks (``{\\...}``), the ``\\N``/``\\n`` line-break markers
-    (each replaced by a space), and HTML tags (``<...>``). It deliberately does
+    (each replaced by a space), and HTML tags (``<tag ...>``). It deliberately does
     NOT run the MeCab-oriented Japanese normalization (halfwidth→fullwidth kana,
     NFKD folding, kanji-variant mapping) nor collapse whitespace, so the returned
     string is safe to display verbatim to the user (e.g. condensed subtitles).
@@ -29,55 +30,50 @@ def strip_subtitle_markup(text: str) -> str:
     Returns:
         Text with formatting markup removed; whitespace untouched.
     """
-    # Remove ASS/SSA style tags like {\pos(x,y)}, {\fad(100,200)}, etc.
-    text = re.sub(r"\{[^}]*\}", "", text)
+    # Remove backslash-led ASS/SSA override tags like {\pos(x,y)}, {\fad(100,200)}, etc.
+    text = re.sub(r"\{\\[^}]*\}", "", text)
 
     # Remove line break tags
     text = re.sub(r"\\[nN]", " ", text)
 
-    # Remove HTML tags if present
-    text = re.sub(r"<[^>]+>", "", text)
+    # Remove actual HTML tags while preserving literal angle comparisons.
+    text = re.sub(
+        r"""</?[A-Za-z][A-Za-z0-9:-]*(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>""",
+        "",
+        text,
+    )
 
     return text
 
 
-def clean_subtitle_text(text: str, *, strip_annotations: bool = False) -> str:
+def clean_subtitle_text(text: str) -> str:
     """Remove formatting tags, then Japanese-normalize for tokenization.
 
-    Markup stripping runs first, then :func:`normalize_for_tokenization`
-    (halfwidth katakana → fullwidth, NFC combining-mark composition, CJK-compat
-    and radical NFKD folding) and the minimal kanji-variant map (𠮟 → 叱). When
-    annotation stripping is enabled, physical lines stay separate through
-    normalization and are stripped before whitespace is flattened. The returned
-    string *is* the text MeCab tokenizes and the stored card sentence, so token
-    offsets, dedup keys, and script-type filters all see one normalized form.
+    Markup stripping runs first, then one ``html.unescape`` pass, then
+    :func:`normalize_for_tokenization` (halfwidth katakana → fullwidth, NFC combining-mark
+    composition, CJK-compat and radical NFKD folding) and the minimal kanji-variant map
+    (𠮟 → 叱). Physical lines stay separate through normalization and are
+    annotation-stripped (:func:`strip_inline_annotations`) before whitespace is
+    flattened. The returned string *is* the text MeCab tokenizes and the stored
+    card sentence, so token offsets, dedup keys, and script-type filters all see
+    one normalized form.
 
     Args:
         text: Raw subtitle text with possible formatting tags
-        strip_annotations: Strip annotations per physical line after normalization
 
     Returns:
-        Cleaned, normalized text without formatting tags
+        Cleaned, normalized text without formatting tags or annotations
     """
-    if strip_annotations:
-        # Preserve physical lines until the gated post-normalization strip;
-        # strip_subtitle_markup normally flattens ASS/SSA \N and \n to spaces.
-        text = re.sub(r"\\[nN]|\r\n?", "\n", text)
+    # Preserve physical lines until the post-normalization annotation strip;
+    # strip_subtitle_markup normally flattens ASS/SSA \N and \n to spaces.
+    text = re.sub(r"\\[nN]|\r\n?", "\n", text)
     text = strip_subtitle_markup(text)
-
-    # Preserve the pre-annotation behavior exactly when the opt-in is disabled.
-    if not strip_annotations:
-        text = " ".join(text.split())
-
+    text = html.unescape(text)
     # Japanese pre-tokenization normalization (see anki_miner.utils.ja_normalize).
     text = normalize_for_tokenization(text)
     text = standardize_kanji_variants(text)
-
-    if strip_annotations:
-        text = strip_inline_annotations(text)
-        text = " ".join(text.split())
-
-    return text.strip()
+    text = strip_inline_annotations(text)
+    return " ".join(text.split())
 
 
 # Structural subtitle-annotation stripping (Task U1). ``strip_inline_annotations``
@@ -308,6 +304,26 @@ def is_kana_only(text: str) -> bool:
 _is_kana_only = is_kana_only
 
 
+def strip_format_chars(text: str) -> str:
+    """Drop Unicode format characters (general category Cf).
+
+    Cf covers the bidi controls (U+202A-U+202E, U+200E/U+200F), the zero-width
+    joiners (U+200B-U+200D) and the BOM (U+FEFF). All of them are zero-width:
+    two strings that differ only by Cf characters are the same text on screen,
+    so no comparison key should tell them apart.
+
+    Deliberately Cf only, NOT Cc. The control characters that actually turn up
+    in Anki fields are newlines and tabs, which carry a word boundary — callers
+    collapse those to spaces rather than deleting them, and stripping Cc here
+    would silently join ``入れ\\n墨`` into one token.
+
+    ``services/reading/mokuro_source.py`` strips Cc *and* Cf for a different
+    job: OCR page text, where a lone control char is noise with no boundary to
+    preserve.
+    """
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+
+
 def _format_furigana(surface: str, reading: str) -> str:
     """Anki furigana for one morpheme, distributed per kanji group.
 
@@ -328,7 +344,10 @@ def _format_furigana(surface: str, reading: str) -> str:
     segments are collapsed to plain text here, with adjacent plain segments
     merged, so ``バカ力``/``ばかりょく`` renders ``バカ 力[りょく]`` and
     ``エネルギー源``/``えねるぎーげん`` renders ``エネルギー 源[げん]``. The
-    ``distribute_furigana`` port itself stays byte-faithful.
+    ``distribute_furigana`` port itself follows upstream except for its own
+    documented deviations (ambiguous splits and budget exhaustion return the
+    whole-word fallback instead of upstream's first consistent guess — see
+    :mod:`anki_miner.utils.furigana_distribute`).
 
     ``reading`` is expected to already be hiragana (the callers apply
     :func:`katakana_to_hiragana`). Interior kana and rendaku now segment
@@ -358,22 +377,67 @@ def _format_furigana(surface: str, reading: str) -> str:
 
 
 def _leads_with_bracket(rendered: str) -> bool:
-    """True iff a ``_format_furigana`` render starts with a bracketed segment.
+    """True iff a ``_format_furigana`` render starts with a kanji ruby segment.
 
     Only then does a token-separator space serve its purpose (binding the
     leading ``[...]`` to this token's kanji instead of the previous run). A
     plain-leading render (``しっぽ 切[き]り``) must NOT get one — Anki's furigana
     filter only consumes a space directly before a ``X[...]`` group, so a space
     before plain kana renders literally on the card (audit F6: トカゲの しっぽ).
+    Literal ``[`` surfaces likewise have no kanji-bearing base and must not be
+    mistaken for a generated ruby group.
     """
     bracket = rendered.find("[")
     if bracket == -1:
         return False
     space = rendered.find(" ")
-    return space == -1 or bracket < space
+    return any(_is_kanji(char) for char in rendered[:bracket]) and (space == -1 or bracket < space)
 
 
-def generate_furigana_from_tokens(tokens: Iterable[Any]) -> str:
+def _render_furigana_token(token: Any) -> str:
+    """Render one token without its cross-token Anki delimiter."""
+    surface: str = token.surface
+    if not any(_is_kanji(c) for c in surface):
+        return surface
+    try:
+        kana = token.feature.kana
+    except AttributeError:
+        return surface
+    if not kana:
+        return surface
+    hiragana = katakana_to_hiragana(kana)
+    if hiragana == surface:
+        return surface
+    return _format_furigana(surface, hiragana)
+
+
+def _source_aligned_furigana_parts(
+    tokens: Iterable[Any], text: str | None
+) -> tuple[list[tuple[str, int, int, int, str]], str, int]:
+    """Pair rendered tokens with source gaps omitted by MeCab."""
+    parts: list[tuple[str, int, int, int, str]] = []
+    cursor = 0
+    for token in tokens:
+        surface: str = token.surface
+        gap_start = cursor
+        if text is None:
+            idx = cursor
+            gap = ""
+        else:
+            idx = text.find(surface, cursor)
+            if idx == -1:
+                # Defensive: token surfaces normally reproduce ``text`` exactly.
+                # Preserve the old concatenation fallback without moving backwards.
+                idx = cursor
+            gap = text[cursor:idx]
+        tok_end = idx + len(surface)
+        parts.append((gap, gap_start, idx, tok_end, _render_furigana_token(token)))
+        cursor = tok_end
+    trailing = "" if text is None else text[cursor:]
+    return parts, trailing, cursor
+
+
+def generate_furigana_from_tokens(tokens: Iterable[Any], *, text: str | None = None) -> str:
     """Generate furigana-annotated text from an already-parsed token iterable.
 
     Iterates ``tokens`` and adds bracketed readings to kanji-containing tokens
@@ -383,34 +447,25 @@ def generate_furigana_from_tokens(tokens: Iterable[Any]) -> str:
         tokens: Iterable of duck-typed MeCab tokens.  Each token must expose
             ``.surface`` (str) and optionally ``.feature.kana`` (str or None).
             Compatible with real ``fugashi`` tokens and ``_SyntheticToken``.
+        text: Optional source text. MeCab omits whitespace tokens, so sentence
+            callers must supply this to preserve source gaps verbatim.
 
     Returns:
         Furigana-annotated string, e.g. ``"王国[おうこく]です。"``.
     """
-    result = []
-    for token in tokens:
-        surface = token.surface
-        has_kanji = any(_is_kanji(c) for c in surface)
-        if not has_kanji:
-            result.append(surface)
-            continue
-        try:
-            kana = token.feature.kana
-            if not kana:
-                result.append(surface)
-                continue
-        except AttributeError:
-            result.append(surface)
-            continue
-        hiragana = katakana_to_hiragana(kana)
-        if hiragana == surface:
-            result.append(surface)
-        else:
-            formatted = _format_furigana(surface, hiragana)
-            # Separator space only when the render leads with a bracket group —
-            # a space before a plain-leading render shows literally in Anki.
-            prefix = " " if result and _leads_with_bracket(formatted) else ""
-            result.append(f"{prefix}{formatted}")
+    result: list[str] = []
+    out_has_content = False
+    parts, trailing, _ = _source_aligned_furigana_parts(tokens, text)
+    for gap, _, _, _, formatted in parts:
+        result.append(gap)
+        out_has_content = out_has_content or bool(gap)
+        # Source whitespace and Anki's disposable ruby delimiter are separate.
+        # Yomitan likewise emits unmatched text verbatim, then one leading
+        # delimiter per reading group (anki-note-builder.js:createFuriganaPlain).
+        prefix = " " if out_has_content and _leads_with_bracket(formatted) else ""
+        result.append(f"{prefix}{formatted}")
+        out_has_content = out_has_content or bool(formatted)
+    result.append(trailing)
     return "".join(result)
 
 
@@ -427,7 +482,7 @@ def generate_furigana(text: str, tagger) -> str:
     Returns:
         Furigana-annotated string, e.g. "王国[おうこく]です。"
     """
-    return generate_furigana_from_tokens(tagger(text))
+    return generate_furigana_from_tokens(tagger(text), text=text)
 
 
 def generate_reading_from_tokens(tokens: Iterable[Any]) -> str:
@@ -533,27 +588,32 @@ def wrap_target_furigana_from_tokens(text: str, tokens: Iterable[Any], start: in
         offsets are invalid, falls back to :func:`generate_furigana_from_tokens`.
     """
     if start < 0 or end <= start or end > len(text):
-        return generate_furigana_from_tokens(tokens)
+        return generate_furigana_from_tokens(tokens, text=text)
 
     pre: list[str] = []
     body: list[str] = []
     post: list[str] = []
-    cursor = 0
     out_has_content = False  # Matches generate_furigana's "prefix = ' ' if result else ''" rule
 
-    for token in tokens:
-        surface = token.surface
-        # Issue #31: locate the token's actual position in ``text`` rather
-        # than concatenating surface lengths, so whitespace between tokens
-        # doesn't desync the bold window.
-        idx = text.find(surface, cursor)
-        if idx == -1:
-            # Defensive: should not happen for unmodified MeCab surfaces.
-            # Keep cursor where it was so we never roll backwards.
-            idx = cursor
-        tok_start = idx
-        tok_end = tok_start + len(surface)
-        cursor = tok_end
+    parts, trailing, trailing_start = _source_aligned_furigana_parts(tokens, text)
+
+    def append_source_gap(gap: str, gap_start: int) -> None:
+        """Keep each source-gap slice in its raw bold-offset region."""
+        gap_len = len(gap)
+        pre_stop = max(0, min(gap_len, start - gap_start))
+        body_stop = max(pre_stop, min(gap_len, end - gap_start))
+        slices = (
+            (pre, gap[:pre_stop]),
+            (body, gap[pre_stop:body_stop]),
+            (post, gap[body_stop:]),
+        )
+        for bucket, source_slice in slices:
+            if source_slice:
+                bucket.append(html.escape(source_slice))
+
+    for gap, gap_start, tok_start, tok_end, formatted in parts:
+        append_source_gap(gap, gap_start)
+        out_has_content = out_has_content or bool(gap)
 
         # Pick the destination buffer for this token.
         if tok_end <= start:
@@ -570,27 +630,16 @@ def wrap_target_furigana_from_tokens(text: str, tokens: Iterable[Any], start: in
             # treat as containment to keep the output well-formed.
             bucket = body
 
-        # Build the annotated segment using the same rules as generate_furigana,
-        # but with per-token HTML escaping so the surrounding <b> tags are
-        # the only raw HTML in the output. Escaping the whole post-split string
-        # equals the old escape-then-bracket: readings are pure kana (no
-        # &<>") and the surface is escaped either way, so no double/under-escape.
-        has_kanji = any(_is_kanji(c) for c in surface)
-        annotated = html.escape(surface)
-        if has_kanji:
-            try:
-                kana = token.feature.kana
-            except AttributeError:
-                kana = None
-            if kana:
-                hiragana = katakana_to_hiragana(kana)
-                if hiragana != surface:
-                    formatted = _format_furigana(surface, hiragana)
-                    prefix = " " if out_has_content and _leads_with_bracket(formatted) else ""
-                    annotated = f"{prefix}{html.escape(formatted)}"
-        bucket.append(annotated)
-        if annotated:
+        # Syntax delimiter is independent from any source gap. For a leading
+        # bold ruby it must stay inside <b>, adjacent to the base, so Anki's
+        # filter consumes it; the source gap remains outside the tag.
+        prefix = " " if out_has_content and _leads_with_bracket(formatted) else ""
+        bucket.append(prefix)
+        bucket.append(html.escape(formatted))
+        if formatted:
             out_has_content = True
+
+    append_source_gap(trailing, trailing_start)
 
     pre_s = "".join(pre)
     body_s = "".join(body)
@@ -599,13 +648,6 @@ def wrap_target_furigana_from_tokens(text: str, tokens: Iterable[Any], start: in
         # Defensive: no tokens fell in the bold range. Return the
         # unbolded concatenation so we never emit an empty <b></b>.
         return pre_s + post_s
-    # The annotation rule prepends a separator space to kanji tokens
-    # that follow earlier output. If the bold body starts with that
-    # separator, move it outside the <b> tag so the bold envelops only
-    # the morpheme itself, not its preceding whitespace.
-    if body_s.startswith(" "):
-        pre_s += " "
-        body_s = body_s[1:]
     return f"{pre_s}<b>{body_s}</b>{post_s}"
 
 
@@ -638,33 +680,96 @@ def wrap_target_furigana(text: str, tagger, start: int, end: int) -> str:
     return wrap_target_furigana_from_tokens(text, tagger(text), start, end)
 
 
+# Kana marks that carry no script of their own: the prolonged sound mark ー
+# (U+30FC) and its halfwidth twin ｰ (U+FF70), the middle dot ・, the double
+# hyphen ゠, the iteration marks ゝゞヽヾ, and the standalone/combining voiced
+# and semi-voiced marks. Unicode files ー and ・ in the KATAKANA block, but a
+# hiragana word writes them just as happily (すごーい, ずーっと) — classifying
+# them as katakana is what let such words escape BOTH script-type filters, since
+# they were neither all-hiragana nor all-katakana (Issue #57 follow-up).
+_KANA_NEUTRAL_MARKS = frozenset("ー・゠ゝゞヽヾ゛゜゙゚ｰﾞﾟ")
+
+
+def _is_hiragana_letter(char: str) -> bool:
+    """True iff ``char`` is a hiragana letter (not a script-neutral mark).
+
+    U+3041–U+3096 (ぁ–ゖ) plus the ゟ digraph. Deliberately excludes U+309B–
+    U+309E, which live in the hiragana block but are marks — see
+    :data:`_KANA_NEUTRAL_MARKS`.
+    """
+    return "ぁ" <= char <= "ゖ" or char == "ゟ"
+
+
+def _is_katakana_letter(char: str) -> bool:
+    """True iff ``char`` is a katakana letter (not a script-neutral mark).
+
+    Fullwidth U+30A1–U+30FA (ァ–ヺ) plus the ヿ digraph, and halfwidth
+    U+FF66–U+FF9D minus the halfwidth prolonged mark ｰ, so a loanword typed in
+    halfwidth such as ｺｰﾋﾞｰ still counts as katakana (Issue #57 review).
+    """
+    if "ァ" <= char <= "ヺ" or char == "ヿ":
+        return True
+    return "ｦ" <= char <= "ﾝ" and char != "ｰ"
+
+
+def _classify_kana(text: str) -> str | None:
+    """Script of a kana-only ``text``: hiragana / katakana / mixed, else None.
+
+    ``None`` unless every character is a kana letter or a script-neutral mark
+    (so anything holding a kanji, romaji, digit or punctuation is not kana-only
+    and is kept by the script-type filter). Marks alone are not a word: ``ー``
+    on its own classifies as ``None`` because no letter is present.
+
+    Single source of truth for :func:`is_hiragana_only`,
+    :func:`is_katakana_only` and :func:`is_mixed_kana_only` so the two script
+    sides can never drift apart on a mark again.
+    """
+    has_hiragana = False
+    has_katakana = False
+    for char in text:
+        if _is_hiragana_letter(char):
+            has_hiragana = True
+        elif _is_katakana_letter(char):
+            has_katakana = True
+        elif char not in _KANA_NEUTRAL_MARKS:
+            return None
+    if has_hiragana and has_katakana:
+        return "mixed"
+    if has_hiragana:
+        return "hiragana"
+    if has_katakana:
+        return "katakana"
+    return None
+
+
 def is_hiragana_only(text: str) -> bool:
-    """Return True iff ``text`` is non-empty and every character is hiragana.
+    """Return True iff ``text`` is hiragana letters plus script-neutral marks.
 
-    Hiragana block is U+3040–U+309F. Empty strings and any text containing a
-    kanji, katakana, digit, romaji, or punctuation character return False (so
-    such words are kept by the script-type filter).
+    ``すごーい`` and ``ずーっと`` qualify: the prolonged sound mark carries no
+    script. Empty strings, marks with no letter, and any text containing a
+    kanji, katakana letter, digit, romaji or punctuation character return False
+    (so such words are kept by the script-type filter).
     """
-    return bool(text) and all("぀" <= char <= "ゟ" for char in text)
-
-
-def _is_katakana_char(char: str) -> bool:
-    """True iff ``char`` is fullwidth or halfwidth katakana.
-
-    Fullwidth block U+30A0–U+30FF includes the prolonged sound mark ー (U+30FC)
-    and middle dot ・ (U+30FB). Halfwidth block U+FF66–U+FF9F covers the
-    halfwidth katakana letters, the halfwidth prolonged mark ｰ (U+FF70) and the
-    halfwidth voiced/semi-voiced sound marks ﾞ ﾟ (U+FF9E–U+FF9F), so a loanword
-    typed in halfwidth such as ｺｰﾋﾞｰ counts as katakana too (Issue #57 review).
-    """
-    return "゠" <= char <= "ヿ" or "ｦ" <= char <= "ﾟ"
+    return _classify_kana(text) == "hiragana"
 
 
 def is_katakana_only(text: str) -> bool:
-    """Return True iff ``text`` is non-empty and every character is katakana.
+    """Return True iff ``text`` is katakana letters plus script-neutral marks.
 
-    Counts both fullwidth (U+30A0–U+30FF) and halfwidth (U+FF66–U+FF9F)
-    katakana, so コーヒー, ロボット・X and the halfwidth ｺｰﾋﾞｰ all qualify.
-    Empty strings or any non-katakana character return False.
+    Counts both fullwidth (U+30A1–U+30FA) and halfwidth (U+FF66–U+FF9D)
+    letters, so コーヒー, コーヒーｺｰﾋｰ and the halfwidth ｺｰﾋﾞｰ all qualify.
+    Empty strings, marks with no letter (bare ー), and any non-kana character
+    return False.
     """
-    return bool(text) and all(_is_katakana_char(char) for char in text)
+    return _classify_kana(text) == "katakana"
+
+
+def is_mixed_kana_only(text: str) -> bool:
+    """Return True iff ``text`` is kana-only and mixes both scripts.
+
+    The katakana-stem/hiragana-okurigana loanword verbs and adjectives
+    ``morphology.should_include`` admits on purpose — サボる, ググる, ヤバい.
+    They are neither hiragana-only nor katakana-only, so the script-type filter
+    drops them only when BOTH exclusions are on ("kanji-only deck").
+    """
+    return _classify_kana(text) == "mixed"

@@ -62,6 +62,10 @@ class SubtitleStream:
     suitable for ffmpeg `-map 0:s:N`.
     `is_text` is False for image-based codecs (:data:`BITMAP_SUBTITLE_CODECS`),
     whose bitmaps cannot be extracted as text.
+    `is_forced` / `is_default` mirror the ffprobe disposition flags. Forced
+    tracks carry only foreign-dialogue lines, which makes them useless as a
+    retiming reference (see ``services/retime_reference.py``); they default to
+    False so callers constructing a stream by hand stay unaffected.
     """
 
     index: int
@@ -70,6 +74,20 @@ class SubtitleStream:
     language_tag: str | None
     title: str | None
     is_text: bool
+    is_forced: bool = False
+    is_default: bool = False
+
+
+def is_japanese_language_tag(language_tag: str | None) -> bool:
+    """Return whether *language_tag* identifies Japanese.
+
+    Alongside the legacy aliases, accept BCP 47 tags whose primary language
+    subtag is ``ja`` (for example, ``ja-JP``).
+    """
+    if language_tag is None:
+        return False
+    normalized = language_tag.lower()
+    return normalized in JAPANESE_LANGUAGE_CODES or normalized.startswith("ja-")
 
 
 def _run_ffprobe_json(
@@ -122,7 +140,7 @@ def _run_ffprobe_json(
                 **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
             )
     except (subprocess.SubprocessError, OSError, ValueError) as e:
-        logger.warning(f"Error probing {video_path} (select={select_streams}): {e}")
+        logger.warning("Error probing %s (select=%s): %s", video_path, select_streams, e)
         return None
 
     if proc_registry is not None and not proc_registry.register(proc):
@@ -143,11 +161,11 @@ def _run_ffprobe_json(
             except subprocess.TimeoutExpired:
                 _kill_quietly(proc)
                 proc.communicate()
-                logger.warning(f"ffprobe timed out for {video_path}")
+                logger.warning("ffprobe timed out for %s", video_path)
                 return None
             except (subprocess.SubprocessError, OSError, ValueError) as e:
                 _kill_quietly(proc)
-                logger.warning(f"Error probing {video_path} (select={select_streams}): {e}")
+                logger.warning("Error probing %s (select=%s): %s", video_path, select_streams, e)
                 return None
     finally:
         if proc_registry is not None:
@@ -155,15 +173,15 @@ def _run_ffprobe_json(
 
     if proc.returncode != 0:
         if proc_registry is not None and proc_registry.cancelled:
-            logger.debug(f"ffprobe cancelled for {video_path}")
+            logger.debug("ffprobe cancelled for %s", video_path)
             return None
-        logger.warning(f"ffprobe failed for {video_path}: {stderr}")
+        logger.warning("ffprobe failed for %s: %s", video_path, stderr)
         return None
 
     try:
         data: dict = json.loads(stdout)
     except json.JSONDecodeError as e:
-        logger.warning(f"ffprobe returned malformed JSON for {video_path}: {e}")
+        logger.warning("ffprobe returned malformed JSON for %s: %s", video_path, e)
         return None
     return data
 
@@ -279,6 +297,8 @@ def list_subtitle_streams(
         codec_name = stream.get("codec_name") or None
         is_text = codec_name not in BITMAP_SUBTITLE_CODECS
 
+        disposition = stream.get("disposition") or {}
+
         result.append(
             SubtitleStream(
                 index=index,
@@ -287,6 +307,8 @@ def list_subtitle_streams(
                 language_tag=language_tag,
                 title=title,
                 is_text=is_text,
+                is_forced=disposition.get("forced") == 1,
+                is_default=disposition.get("default") == 1,
             )
         )
 
@@ -313,16 +335,19 @@ def find_japanese_audio_stream(
         proc_registry=proc_registry,
     )
 
-    for stream in streams:
-        if stream.language_tag in JAPANESE_LANGUAGE_CODES:
-            logger.info(
-                f"Found Japanese audio: global stream {stream.global_index}, "
-                f"audio track {stream.audio_index} (language: {stream.language_tag})"
-            )
-            return stream
+    japanese_streams = [stream for stream in streams if is_japanese_language_tag(stream.language_tag)]
+    if japanese_streams:
+        stream = next((candidate for candidate in japanese_streams if candidate.is_default), japanese_streams[0])
+        logger.info(
+            "Found Japanese audio: global stream %d, audio track %d (language: %s)",
+            stream.global_index,
+            stream.audio_index,
+            stream.language_tag,
+        )
+        return stream
 
     available_langs = [s.language_tag or "unknown" for s in streams]
-    logger.warning(f"No Japanese audio found in {video_file}. Available languages: {available_langs}")
+    logger.warning("No Japanese audio found in %s. Available languages: %s", video_file, available_langs)
     return None
 
 

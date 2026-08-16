@@ -28,6 +28,7 @@ from anki_miner.utils.android_fd import inherited_fd_command
 from anki_miner.utils.audio_track_detector import JAPANESE_LANGUAGE_CODES
 from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg, resolve_ffprobe
 from anki_miner.utils.i18n import tr_format
+from anki_miner.utils.logging_ext import log_summary
 from anki_miner.utils.subprocess_utils import no_window_kwargs
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,34 @@ logger = logging.getLogger(__name__)
 # orchestrator threads a concrete ``str | None`` down the call chain; direct
 # callers (and existing tests) omit it and get the self-resolving behavior.
 _RESOLVE: Any = object()
+
+#: Shortest clip a user-edited window may produce. Guards against a zero- or
+#: negative-length ffmpeg ``-t`` if a bound ever arrives unclamped.
+MIN_CLIP_SECONDS = 0.2
+
+
+def resolve_audio_window(word: TokenizedWord, padding: float) -> tuple[float, float]:
+    """Return ``(start, duration)`` in seconds for ``word``'s audio clip.
+
+    The single place either bound of the audio window is decided. A word
+    carrying a user-edited ``clip_override`` (set in the curator's audio clip
+    strip) uses those absolute bounds as-is — the user typed the window they
+    want, so no padding is added on top. Every other word gets the historical
+    behaviour: the subtitle window widened by ``padding`` on both sides.
+
+    Args:
+        word: The word being extracted.
+        padding: ``config.audio_padding`` — seconds added either side of the
+            subtitle window when the word carries no override.
+    """
+    if word.clip_override is not None:
+        start, end = word.clip_override
+        start = max(0.0, start)
+        return start, max(end - start, MIN_CLIP_SECONDS)
+    padded_start = word.start_time - padding
+    start = max(0.0, padded_start)
+    duration = word.duration + (padding * 2) - (start - padded_start)
+    return start, duration
 
 
 def _kill_quietly(proc: "subprocess.Popen[str]") -> None:
@@ -165,7 +194,11 @@ class MediaExtractorService:
             MediaData with paths to extracted files
         """
         # Sanitize filename
-        safe_word = safe_filename(word.lemma)
+        # Card-front identity, not UniDic's canonical lemma: the latter can be
+        # a different lexical item (呪言 → 言祝ぎ), making future media files lie
+        # about the expression they belong to. Per-run temp files are ephemeral;
+        # existing Anki media remain referenced by their existing notes.
+        safe_word = safe_filename(word.mined_form)
         timestamp = int(word.start_time * 1000)
         # Unique per extraction so parallel siblings sharing lemma+timestamp
         # (kanji-variant collapse / dedup bypass) never collide on one temp path.
@@ -204,20 +237,32 @@ class MediaExtractorService:
         # multi-GB MKV sources, the container-open cost is unquantified and
         # the precision/quality risk is non-zero.  Deferred; leave as-is.
 
+        # The audio window, resolved once: a user-edited clip_override (curator
+        # audio clip strip) or the padded subtitle window. Threaded into BOTH
+        # the audio encode and the animated screenshot, so a clip that is
+        # configured to match the audio still matches it after an edit.
+        audio_start, audio_duration = resolve_audio_window(word, self.config.audio_padding)
+
         # Extract screenshot (skipped for audiobooks — no video stream to grab).
         # When animated is configured but no encoder is available (effective_fmt
         # is None), the screenshot is skipped without spawning ffmpeg.
         screenshot_success = False
         if include_screenshot and not audio_only and not (self.config.screenshot_animated and effective_fmt is None):
             screenshot_success = self._extract_screenshot(
-                video_file, word.start_time, word.duration, screenshot_path, effective_fmt, proc_registry
+                video_file,
+                word.start_time,
+                word.duration,
+                screenshot_path,
+                effective_fmt,
+                proc_registry,
+                audio_window=(audio_start, audio_duration),
             )
 
         # Extract audio
         audio_success = False
         if include_audio:
             audio_success = self._extract_audio(
-                video_file, word.start_time, word.duration, audio_path, audio_track_override, proc_registry
+                video_file, audio_start, audio_duration, audio_path, audio_track_override, proc_registry
             )
 
         return MediaData(
@@ -254,8 +299,9 @@ class MediaExtractorService:
                 of auto-detecting Japanese. None (default) preserves existing JP auto-detect.
             audio_only: When True (audiobook mining), skip screenshots, extract
                 embedded cover art once for the whole batch and share it across
-                every word, and keep words on audio success instead of
-                screenshot success. Missing cover art never excludes a word.
+                every word, and keep words on audio success when audio is
+                requested. Picture-only batches keep every word even without
+                cover art.
             animated_format: Effective animated screenshot format, resolved once
                 per run. ``_RESOLVE`` (the default) self-resolves here before the
                 pool so every worker shares one value; the orchestrator passes
@@ -264,9 +310,19 @@ class MediaExtractorService:
 
         Returns:
             List of (word, media_data) tuples — only words whose screenshot
-            succeeded (or, in audio_only mode, whose audio succeeded); the
-            other medium's failure does not exclude.
+            succeeded (or, in audio_only mode, whose requested audio succeeded).
+            Picture-only audio_only batches retain every word; the other
+            medium's failure does not exclude.
         """
+        log_summary(
+            logger,
+            "Media extraction",
+            words=len(words),
+            screenshots=include_screenshot,
+            audio=include_audio,
+            audio_only=audio_only,
+            animated=include_screenshot and self.config.screenshot_animated and not audio_only,
+        )
         if progress_callback:
             progress_callback.on_start(
                 len(words),
@@ -276,6 +332,12 @@ class MediaExtractorService:
         media_data_list: list[tuple[TokenizedWord, MediaData]] = []
         max_workers = self.config.max_parallel_workers
         was_cancelled = False
+        attempted = 0
+        succeeded = 0
+        screenshot_failures = 0
+        audio_failures = 0
+        exception_failures = 0
+        n_logged = 0
         # Per-run registry of every media subprocess so cancellation reaches
         # encoder probes, ffprobe, and extraction alike.
         proc_registry = _FfmpegProcRegistry()
@@ -318,6 +380,18 @@ class MediaExtractorService:
             if prepool_watcher is not None:
                 prepool_watcher.join(timeout=self._CANCEL_POLL_INTERVAL * 2)
         if proc_registry.cancelled:
+            was_cancelled = True
+            log_summary(
+                logger,
+                "Media extraction done",
+                attempted=attempted,
+                succeeded=succeeded,
+                screenshot_failures=screenshot_failures,
+                audio_failures=audio_failures,
+                exception_failures=exception_failures,
+                warnings_logged=n_logged,
+                cancelled=was_cancelled,
+            )
             return []
         # Poll only when the caller can actually cancel; otherwise block
         # until the next future completes.
@@ -359,7 +433,6 @@ class MediaExtractorService:
             # short timeout (instead of as_completed) so a cancel request is
             # noticed while encodes are still in flight, not only after one
             # of them happens to finish.
-            completed = 0
             while pending and not was_cancelled:
                 done, _ = wait(pending, timeout=poll, return_when=FIRST_COMPLETED)
                 if not done:
@@ -375,26 +448,44 @@ class MediaExtractorService:
                         was_cancelled = True
                         break
 
-                    completed += 1
+                    attempted += 1
 
                     try:
                         media = future.result()
+                        has_screenshot = media.has_screenshot
+                        has_audio = media.has_audio
+                        failed_media: list[str] = []
+                        if include_screenshot and not audio_only and not has_screenshot:
+                            screenshot_failures += 1
+                            failed_media.append("screenshot")
+                        if include_audio and not has_audio:
+                            audio_failures += 1
+                            failed_media.append("audio")
+                        if failed_media and n_logged < 5:
+                            logger.warning(
+                                "Media extraction failed: lemma=%s medium=%s",
+                                word.lemma,
+                                ",".join(failed_media),
+                            )
+                            n_logged += 1
 
-                        # audio_only keys the keep/drop decision on audio (there
-                        # is no per-word screenshot); default mode keeps the
-                        # original screenshot-based filter.
+                        # audio_only normally keys the keep/drop decision on
+                        # audio (there is no per-word screenshot); picture-only
+                        # batches request no audio and keep every word. Default
+                        # mode keeps the original screenshot-based filter.
                         if audio_only:
-                            keep = media.has_audio if include_audio else include_screenshot and cover_path is not None
+                            keep = has_audio if include_audio else True
                         else:
-                            keep = media.has_screenshot if include_screenshot else include_audio and media.has_audio
+                            keep = has_screenshot if include_screenshot else include_audio and has_audio
                         if keep:
                             if audio_only and include_screenshot and cover_path is not None:
                                 media.screenshot_path = cover_path
                                 media.screenshot_filename = cover_path.name
                             media_data_list.append((word, media))
+                            succeeded += 1
                             if progress_callback:
                                 progress_callback.on_progress(
-                                    completed,
+                                    attempted,
                                     tr_format(
                                         QCoreApplication.translate("MediaExtractorService", "Extracting media: %1"),
                                         word.lemma,
@@ -404,10 +495,10 @@ class MediaExtractorService:
                             # mode only).  The card is still kept — that is the
                             # intended curation policy — but the silent gap in the
                             # Audio field is surfaced to the GUI error band.
-                            # audio_only mode is untouched: its keep decision already
-                            # keys on has_audio, so a word reaching here always has
-                            # audio.
-                            if not audio_only and include_audio and not media.has_audio and progress_callback:
+                            # audio_only with requested audio keys on has_audio,
+                            # so a word reaching here has audio. Picture-only is
+                            # the deliberate exception, with include_audio=False.
+                            if not audio_only and include_audio and not has_audio and progress_callback:
                                 progress_callback.on_error(
                                     word.lemma,
                                     QCoreApplication.translate("MediaExtractorService", "audio extraction failed"),
@@ -421,7 +512,7 @@ class MediaExtractorService:
                                 else QCoreApplication.translate("MediaExtractorService", "No screenshot: %1")
                             )
                             if progress_callback:
-                                progress_callback.on_progress(completed, tr_format(skip_template, word.lemma))
+                                progress_callback.on_progress(attempted, tr_format(skip_template, word.lemma))
                             # OVH-043: word dropped because the primary medium
                             # failed (screenshot in default mode, audio in
                             # audio_only mode).  A frame can always be grabbed at a
@@ -439,6 +530,14 @@ class MediaExtractorService:
                                 )
 
                     except Exception as e:
+                        exception_failures += 1
+                        if n_logged < 5:
+                            logger.warning(
+                                "Media extraction exception: lemma=%s medium=unknown exc=%s",
+                                word.lemma,
+                                type(e).__name__,
+                            )
+                            n_logged += 1
                         if progress_callback:
                             progress_callback.on_error(word.lemma, str(e))
                     if not was_cancelled:
@@ -453,13 +552,29 @@ class MediaExtractorService:
         if progress_callback and not was_cancelled:
             progress_callback.on_complete()
 
+        log_summary(
+            logger,
+            "Media extraction done",
+            attempted=attempted,
+            succeeded=succeeded,
+            screenshot_failures=screenshot_failures,
+            audio_failures=audio_failures,
+            exception_failures=exception_failures,
+            warnings_logged=n_logged,
+            cancelled=was_cancelled,
+        )
+        # Android divergence: the upstream summary reports a cancelled *flag*,
+        # not how many words a cancel left unattempted. Android streams work in
+        # worker-sized batches, so that count is the difference between the word
+        # list and the futures actually consumed — and it is what the run report
+        # shows the user.
         logger.info(
             "media_extraction_batch outcome=%s attempted=%d ok=%d failed=%d cancelled=%d",
-            "skip" if was_cancelled else ("ok" if len(media_data_list) == completed else "fail"),
+            "skip" if was_cancelled else ("ok" if len(media_data_list) == attempted else "fail"),
             len(words),
             len(media_data_list),
-            completed - len(media_data_list),
-            len(words) - completed,
+            attempted - len(media_data_list),
+            len(words) - attempted,
         )
         return media_data_list
 
@@ -659,6 +774,8 @@ class MediaExtractorService:
         output_path: Path,
         animated_fmt: str | None = None,
         proc_registry: _FfmpegProcRegistry | None = None,
+        *,
+        audio_window: tuple[float, float] | None = None,
     ) -> bool:
         """Extract a screenshot, dispatching to the static or animated path.
 
@@ -666,10 +783,21 @@ class MediaExtractorService:
         takes the animated path with that format; ``None`` takes the static
         JPEG path. The caller (``extract_media``) has already resolved which
         applies, so this no longer reads ``config.screenshot_animated``.
+
+        ``audio_window`` is the resolved ``(start, duration)`` of the audio
+        clip; the animated path uses it when configured to match the audio.
+        The static frame never reads it — a trim to fix cut-off dialogue must
+        not silently move which frame the card shows.
         """
         if animated_fmt is not None:
             return self._extract_animated_screenshot(
-                video_file, start_time, duration, output_path, proc_registry, fmt=animated_fmt
+                video_file,
+                start_time,
+                duration,
+                output_path,
+                proc_registry,
+                fmt=animated_fmt,
+                audio_window=audio_window,
             )
         return self._extract_static_screenshot(video_file, start_time, duration, output_path, proc_registry)
 
@@ -752,6 +880,9 @@ class MediaExtractorService:
             # Killed by a batch cancel — expected, not an ffmpeg failure.
             logger.debug("%s cancelled%s", op_name, suffix)
             return False
+        # Android divergence: the raw stderr carries the mined word and the
+        # output path, both of which reach the user's diagnostics bundle. The
+        # warning is scrubbed; the unscrubbed form stays at debug level.
         logger.debug(
             "%s failed%s: argv0=%s word=%s stderr=%s",
             op_name,
@@ -864,7 +995,7 @@ class MediaExtractorService:
                     **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
                 )
             except (subprocess.SubprocessError, OSError) as e:
-                logger.warning(f"ffmpeg encoder probe failed: {e}")
+                logger.warning("ffmpeg encoder probe failed: %s", e)
                 available = False
             else:
                 if proc_registry is not None and not proc_registry.register(proc):
@@ -896,9 +1027,10 @@ class MediaExtractorService:
             self._animated_encoder_ok[encoder] = available
             if not available:
                 logger.error(
-                    f"ffmpeg encoder '{encoder}' not available. "
+                    "ffmpeg encoder '%s' not available. "
                     "Animated screenshots in this format will fail. "
-                    "Install ffmpeg with the required encoder, or switch format in Settings."
+                    "Install ffmpeg with the required encoder, or switch format in Settings.",
+                    encoder,
                 )
             return available
 
@@ -944,6 +1076,7 @@ class MediaExtractorService:
         proc_registry: _FfmpegProcRegistry | None = None,
         *,
         fmt: str | None = None,
+        audio_window: tuple[float, float] | None = None,
     ) -> bool:
         """Extract a short animated clip (AVIF or WebP) instead of a static frame.
 
@@ -952,6 +1085,12 @@ class MediaExtractorService:
         ``config.screenshot_animated_format`` for direct callers. The encoder,
         container, and the caller's output filename all derive from this one
         value, so they cannot disagree.
+
+        ``audio_window`` is the caller's resolved ``(start, duration)`` for the
+        audio clip, which may carry the user's per-word edit. It is used only
+        on the ``screenshot_animated_match_audio`` path — that setting means
+        "span the audio range", so it must follow an edited range too. ``None``
+        (direct callers and tests) recomputes the padded window locally.
         """
         fmt = self.config.screenshot_animated_format if fmt is None else fmt
         try:
@@ -965,14 +1104,19 @@ class MediaExtractorService:
 
         # Clip timing:
         # - When `screenshot_animated_match_audio` is enabled, the clip spans the
-        #   full audio range (subtitle window + audio padding on both sides) so the
-        #   visual matches the audio exactly.
+        #   full audio range (the caller's resolved window — the subtitle window
+        #   plus audio padding, or the user's per-word edit) so the visual
+        #   matches the audio exactly.
         # - Otherwise, clip duration is capped by subtitle duration and configurable.
         # In both cases a 0.5s floor avoids 0-frame clips on very short subtitles.
         if self.config.screenshot_animated_match_audio:
-            pad = float(self.config.audio_padding)
-            clip_start = max(0.0, start_time - pad)
-            clip_duration = max(duration + 2 * pad, 0.5)
+            if audio_window is None:
+                pad = float(self.config.audio_padding)
+                padded_end = start_time + duration + pad
+                clip_start = max(0.0, start_time - pad)
+                audio_window = (clip_start, padded_end - clip_start)
+            clip_start, audio_duration = audio_window
+            clip_duration = max(audio_duration, 0.5)
         else:
             clip_start = start_time
             configured = float(self.config.screenshot_animated_clip_duration)
@@ -1157,18 +1301,23 @@ class MediaExtractorService:
     def _extract_audio(
         self,
         video_file: Path,
-        start_time: float,
-        duration: float,
+        audio_start: float,
+        audio_duration: float,
         output_path: Path,
         audio_track_override: int | None = None,
         proc_registry: _FfmpegProcRegistry | None = None,
     ) -> bool:
         """Extract audio clip from video, preferring Japanese audio.
 
+        The clip window arrives already resolved — padding is applied (or the
+        user's per-word edit honoured) by ``resolve_audio_window`` in the
+        caller, which is the single place either bound is decided. This method
+        encodes the window it is given and does no timing arithmetic.
+
         Args:
             video_file: Path to video file
-            start_time: Start time in seconds
-            duration: Duration in seconds
+            audio_start: Clip start in seconds, padding/edit already applied
+            audio_duration: Clip length in seconds, padding/edit already applied
             output_path: Output path for audio
             audio_track_override: Optional 0-indexed audio track (audio_index) to use instead
                 of auto-detecting Japanese. None (default) preserves existing JP auto-detect.
@@ -1177,10 +1326,6 @@ class MediaExtractorService:
         Returns:
             True if successful, False otherwise
         """
-        # Calculate audio timing with padding
-        audio_start = max(0, start_time - self.config.audio_padding)
-        audio_duration = duration + (self.config.audio_padding * 2)
-
         # Resolve encoder for the configured format and probe ffmpeg for support
         # before launching the encode. Cached probe; failure logs a clear error.
         encoder = "libopus" if self.config.audio_format == "opus" else "libmp3lame"
@@ -1208,7 +1353,7 @@ class MediaExtractorService:
 
         if global_index is not None:
             cmd.extend(["-map", f"0:{global_index}"])
-            logger.debug(f"Using audio stream {global_index}")
+            logger.debug("Using audio stream %d", global_index)
         else:
             cmd.extend(["-map", "0:a:0"])  # First audio stream
             self._warn_no_japanese_audio_once(video_file)

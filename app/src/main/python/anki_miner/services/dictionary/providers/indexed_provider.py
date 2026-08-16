@@ -22,6 +22,9 @@ from anki_miner.services.dictionary.storage import (
     attest_detail as storage_attest_detail,
 )
 from anki_miner.services.dictionary.storage import (
+    exact_term_sequences as storage_exact_term_sequences,
+)
+from anki_miner.services.dictionary.storage import (
     lookup as storage_lookup,
 )
 from anki_miner.services.dictionary.storage import (
@@ -44,6 +47,21 @@ logger = logging.getLogger(__name__)
 # candidate pool (storage._LOOKUP_LIMIT) so duplicate-content rows can't consume
 # a display slot before dedup runs.
 _DISPLAY_LIMIT = 5
+
+
+def _is_jmdict_sense_index_tag(meta: TagMeta) -> bool:
+    # Deliberate Yomitan divergence: Yomitan renders these on their owning
+    # definitions. Anki Miner unions same-sequence tags into one detached chip
+    # row, so the indices lose that ownership and duplicate the numbered sense
+    # list directly below.
+    return (
+        meta.name.isascii()
+        and meta.name.isdecimal()
+        and meta.category == ""
+        and meta.ord == -10
+        and meta.score == 0
+        and meta.notes == f"JMdict Sense #{meta.name}"
+    )
 
 
 class IndexedDictProvider:
@@ -255,6 +273,29 @@ class IndexedDictProvider:
             )
             return {}
 
+    def exact_term_sequences(
+        self,
+        pairs: list[tuple[str, str | None]],
+    ) -> dict[tuple[str, str], set[int]]:
+        """Batch exact ``(term, reading)`` identity probe.
+
+        Returns non-NULL dictionary sequences keyed by normalized exact pairs.
+        Unlike lookup, this never accepts a reading-only match. Unavailable or
+        corrupt indexes degrade to an empty map.
+        """
+        if self._conn is None:
+            return {}
+        try:
+            return storage_exact_term_sequences(self._conn, pairs)
+        except sqlite3.DatabaseError as e:
+            logger.warning(
+                "Dictionary '%s' (%s) raised DatabaseError during exact_term_sequences; treating as all-miss: %s",
+                self.dict_id,
+                self._db_path,
+                e,
+            )
+            return {}
+
     @property
     def commonness_aware(self) -> bool:
         """True iff this dictionary's ``tags`` table defines at least one tag in
@@ -439,7 +480,12 @@ class IndexedDictProvider:
             merged = "".join(group)
             item_count = merged.count('<li class="gloss-item"')
 
-            chip_metas = [tag_meta[t] for t in group_tags if t in tag_meta]
+            # Resolve first, then filter for display. Order is load-bearing: a
+            # suppressed tag must stay RESOLVED so it cannot fall through to
+            # `fallback_tags` below and reappear as a word inside the `<i>(...)`
+            # attribution line.
+            resolved_metas = [tag_meta[t] for t in group_tags if t in tag_meta]
+            chip_metas = [m for m in resolved_metas if not _is_jmdict_sense_index_tag(m)]
             chip_metas.sort(key=lambda m: (m.ord, -m.score, m.name))
             chips = "".join(
                 f'<span class="gloss-tag" data-category="{html.escape(m.category, quote=True)}"'

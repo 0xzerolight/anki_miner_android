@@ -7,11 +7,14 @@ and the module path is a stable test surface; do not rename it.
 
 from __future__ import annotations
 
+import logging
 import re
 import zipfile
 from pathlib import Path
 
 from anki_miner.exceptions import SetupError
+
+logger = logging.getLogger(__name__)
 
 # Cap on a ``.mokuro`` sidecar JSON read. A whole-volume OCR sidecar is a few
 # MB in practice; 64 MiB is far above any real volume while still bounding a
@@ -22,16 +25,33 @@ MAX_MOKURO_JSON_BYTES = 64 * 1024 * 1024
 def read_text_capped(path: Path, cap: int, description: str) -> str:
     """UTF-8 ``read_text`` with a stat-before-read size gate.
 
-    Raises :class:`SetupError` when the on-disk size exceeds ``cap``; ``OSError``
-    from ``stat``/``read_text`` propagates for the caller's existing wrapping.
+    Raises :class:`SetupError` when the on-disk size exceeds ``cap`` or the file
+    is not valid UTF-8; ``OSError`` from ``stat``/``read_text`` propagates for
+    the caller's existing wrapping.
     """
     size = path.stat().st_size
     if size > cap:
         raise SetupError(f"{description} '{path.name}' is {size:,} bytes (cap {cap:,}); refusing to load.")
-    return path.read_text(encoding="utf-8")
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as e:
+        logger.debug(
+            "Reading text decode failed: file=%s error=%s detail=%s",
+            path,
+            type(e).__name__,
+            e,
+        )
+        raise SetupError(f"{description} '{path.name}' is not valid UTF-8.") from e
 
 
-def read_zip_member_text_capped(archive: Path, entry: str, cap: int, description: str) -> str:
+def read_zip_member_text_capped(
+    archive: Path,
+    entry: str,
+    cap: int,
+    description: str,
+    *,
+    log_failures: bool = True,
+) -> str:
     """UTF-8 read of one archive member with a declared-size gate.
 
     Mirrors :func:`read_text_capped` for archive members: the ZipInfo's
@@ -40,12 +60,22 @@ def read_zip_member_text_capped(archive: Path, entry: str, cap: int, description
     header can't overshoot the gate). Every failure mode — missing/corrupt
     archive, missing member, over-cap member, non-UTF-8 bytes — raises
     :class:`SetupError` so callers get one exception type to wrap or skip.
+    ``log_failures=False`` lets a hot-loop caller centralize and cap the same
+    translated diagnostic without changing which exception is raised.
     """
     try:
         with zipfile.ZipFile(archive) as zf:
             try:
                 info = zf.getinfo(entry)
-            except KeyError:
+            except KeyError as exc:
+                if log_failures:
+                    logger.debug(
+                        "Reading archive member missing: archive=%s entry=%s error=%s detail=%s",
+                        archive,
+                        entry,
+                        type(exc).__name__,
+                        exc,
+                    )
                 raise SetupError(f"{description} '{entry}' not found in '{archive.name}'.") from None
             if info.file_size > cap:
                 raise SetupError(
@@ -53,10 +83,26 @@ def read_zip_member_text_capped(archive: Path, entry: str, cap: int, description
                 )
             raw = zf.read(entry)
     except (zipfile.BadZipFile, OSError) as e:
+        if log_failures:
+            logger.debug(
+                "Reading archive text failed: archive=%s entry=%s error=%s detail=%s",
+                archive,
+                entry,
+                type(e).__name__,
+                e,
+            )
         raise SetupError(f"Cannot read '{archive.name}': {e}") from e
     try:
         return raw.decode("utf-8")
     except UnicodeDecodeError as e:
+        if log_failures:
+            logger.debug(
+                "Reading archive text decode failed: archive=%s entry=%s error=%s detail=%s",
+                archive,
+                entry,
+                type(e).__name__,
+                e,
+            )
         raise SetupError(f"{description} '{entry}' in '{archive.name}' is not valid UTF-8.") from e
 
 
@@ -95,13 +141,23 @@ def _is_jp(ch: str) -> bool:
     o = ord(ch)
     return (
         0x3040 <= o <= 0x30FF  # hiragana + katakana
+        or 0xFF66 <= o <= 0xFF9F  # halfwidth katakana letters + marks
         or 0x3400 <= o <= 0x9FFF  # CJK ideographs (+ ext A)
         or 0xF900 <= o <= 0xFAFF  # CJK compatibility ideographs
     )
 
 
+_EUC_JP_HIRAGANA_AS_CP932_RE = re.compile(r"(?:､[ｦ-ﾟ]){2,}")
+
+
 def _jp_ratio(text: str) -> float:
-    return sum(_is_jp(c) for c in text) / len(text) if text else 0.0
+    if not text:
+        return 0.0
+    score = sum(_is_jp(c) for c in text)
+    # EUC-JP hiragana byte pairs decode under CP932 as repeated
+    # halfwidth-comma + katakana pairs; discount that narrow signature.
+    score -= sum(len(match.group()) // 2 for match in _EUC_JP_HIRAGANA_AS_CP932_RE.finditer(text))
+    return score / len(text)
 
 
 def _decode(raw: bytes) -> str:
