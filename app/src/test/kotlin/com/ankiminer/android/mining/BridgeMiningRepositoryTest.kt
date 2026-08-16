@@ -152,7 +152,134 @@ class BridgeMiningRepositoryTest {
         assertEquals(MiningStage(2, 5, "Extracting media"), updated.progress.stage)
         assertEquals(0.3f, updated.progress.fraction)
 
+        // One stage counts several inner cycles: the next cycle restarts the count at zero and the
+        // band carries the reached fraction as its floor.
+        callbacks.onStart(PROGRESS_STAGE_START)
+        val recycled = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0L, recycled.progress.current)
+        assertEquals(0.3f, recycled.progress.fraction)
+
         harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `a second progress cycle inside a stage never moves the bar backward`() {
+        val harness = harness()
+        val callbacks = runToRunning(harness)
+
+        callbacks.onStage(PROGRESS_STAGE_THIRD)
+        callbacks.onStart(PROGRESS_THIRD_CYCLE_START)
+        callbacks.onProgress(PROGRESS_THIRD_CYCLE_DONE)
+        val filled = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0.6f, requireNotNull(filled.progress.fraction), FRACTION_DELTA)
+
+        callbacks.onStart(PROGRESS_THIRD_CYCLE_RESTART)
+        val restarted = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0.6f, requireNotNull(restarted.progress.fraction), FRACTION_DELTA)
+
+        callbacks.onProgress(PROGRESS_THIRD_CYCLE_RESTART_UPDATE)
+        val advanced = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0.6f, requireNotNull(advanced.progress.fraction), FRACTION_DELTA)
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `a progress update exceeding its declared total clamps instead of failing the run`() {
+        val harness = harness()
+        val callbacks = runToRunning(harness)
+
+        callbacks.onStage(PROGRESS_STAGE)
+        callbacks.onStart(PROGRESS_STAGE_START)
+        callbacks.onProgress(PROGRESS_STAGE_OVERRUN)
+        val clamped = harness.repository.state.value as MiningRunState.Running
+        assertEquals(10L, clamped.progress.current)
+        assertEquals(0.4f, requireNotNull(clamped.progress.fraction), FRACTION_DELTA)
+
+        // An engine counting slip is display noise: the run survives it.
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+    }
+
+    @Test
+    fun `progress complete drives an uncounted stage to its band end`() {
+        val harness = harness()
+        val callbacks = runToRunning(harness)
+
+        callbacks.onStage(PROGRESS_STAGE)
+        assertEquals(
+            0.2f,
+            requireNotNull((harness.repository.state.value as MiningRunState.Running).progress.fraction),
+            FRACTION_DELTA,
+        )
+
+        callbacks.onComplete(PROGRESS_COMPLETE)
+        val completed = harness.repository.state.value as MiningRunState.Running
+        assertTrue(completed.progress.stageComplete)
+        assertEquals(0.4f, requireNotNull(completed.progress.fraction), FRACTION_DELTA)
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `staging byte progress does not floor the engine run`() {
+        val harness =
+            harness(
+                copyProgress =
+                    listOf(SafCopyProgress(SafCopyRole.VIDEO, 4L * 1024 * 1024, 4L * 1024 * 1024)),
+            )
+        val callbacks = runToRunning(harness)
+
+        callbacks.onStage(PROGRESS_STAGE_FIRST)
+        val entered = harness.repository.state.value as MiningRunState.Running
+        assertEquals(0f, requireNotNull(entered.progress.fraction), FRACTION_DELTA)
+
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `staging byte progress clamps to the size the picker reported`() {
+        val harness =
+            harness(
+                copyProgress =
+                    listOf(SafCopyProgress(SafCopyRole.VIDEO, 5L * 1024 * 1024, 4L * 1024 * 1024)),
+                blockRegistration = true,
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        assertTrue(harness.bridge.registrationReached.await(2, TimeUnit.SECONDS))
+        val staging = requireNotNull((harness.repository.state.value as MiningRunState.Starting).progress)
+        assertEquals(4L * 1024 * 1024, staging.current)
+        assertEquals(4L * 1024 * 1024, staging.total)
+
+        harness.bridge.allowRegistration.countDown()
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `progress racing finalizing still patches a visible running state`() {
+        val harness = harness(pauseAfterTerminalCallback = true)
+        val callbacks = runToRunning(harness)
+
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(harness.bridge.terminalCallbackDelivered.await(2, TimeUnit.SECONDS))
+
+        // The engine's last stage completes after the terminal callback has already moved the run
+        // to FINALIZING, and the panel is still the one the user is looking at.
+        callbacks.onStage(PROGRESS_STAGE_LAST)
+        callbacks.onComplete(PROGRESS_COMPLETE)
+        val finalizing = harness.repository.state.value as MiningRunState.Running
+        assertEquals(1f, requireNotNull(finalizing.progress.fraction), FRACTION_DELTA)
+
+        harness.bridge.allowDispatchReturn.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
     }
 
@@ -1676,6 +1803,22 @@ class BridgeMiningRepositoryTest {
             .filter { it.contains(op) }
             .map { it.substring(it.indexOf("c=")) }
 
+    /** Drive a run past curation so the engine progress callbacks land on a Running state. */
+    private fun runToRunning(harness: Harness): EngineCallbacks {
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        awaitState(harness.repository) { it is MiningRunState.Running }
+        return requireNotNull(harness.bridge.runCallbacks)
+    }
+
     /** Start a run and cancel it out again, so the lane is proven usable and leaves no record. */
     private fun runVideoToTerminal(harness: Harness) {
         runBlocking { harness.repository.startVideo(INPUT) }
@@ -2176,6 +2319,29 @@ class BridgeMiningRepositoryTest {
             """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":10,"description":"Extracting media"}}"""
         val PROGRESS_STAGE_UPDATE =
             """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":5,"description":"Extracting media: 猫"}}"""
+        val PROGRESS_STAGE_OVERRUN =
+            """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":12,"description":"Extracting media: 猫"}}"""
+        val PROGRESS_STAGE_FIRST =
+            """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":1,"total":5,"name":"Reading subtitles"}}"""
+        val PROGRESS_STAGE_THIRD =
+            """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":3,"total":5,"name":"Building media"}}"""
+        val PROGRESS_STAGE_LAST =
+            """{"schemaVersion":1,"type":"progress.stage","payload":{"runId":"$RUN_ID","index":5,"total":5,"name":"Creating notes"}}"""
+
+        /** Stage 3 counts media extraction, then audio: two cycles, one band. */
+        val PROGRESS_THIRD_CYCLE_START =
+            """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":40,"description":"Extracting media"}}"""
+        val PROGRESS_THIRD_CYCLE_DONE =
+            """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":40,"description":"Extracting media"}}"""
+        val PROGRESS_THIRD_CYCLE_RESTART =
+            """{"schemaVersion":1,"type":"progress.start","payload":{"runId":"$RUN_ID","total":10,"description":"Fetching audio"}}"""
+        val PROGRESS_THIRD_CYCLE_RESTART_UPDATE =
+            """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":2,"description":"Fetching audio"}}"""
+        val PROGRESS_COMPLETE =
+            """{"schemaVersion":1,"type":"progress.complete","payload":{"runId":"$RUN_ID"}}"""
+
+        /** Whole-run fractions are composed from float bands; compare them with a tolerance. */
+        const val FRACTION_DELTA = 1e-6f
         const val MINED_TERM = "猫"
         const val ANKI_VERIFY_REQUEST =
             """{"schemaVersion":1,"type":"anki.verify.request","payload":{}}"""

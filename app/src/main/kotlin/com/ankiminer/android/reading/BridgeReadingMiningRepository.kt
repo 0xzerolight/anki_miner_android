@@ -1362,11 +1362,14 @@ internal class BridgeReadingMiningRepository(
                 ReadingSourceStageRole.MOKURO_SIDECAR -> R.string.reading_progress_preparing_mokuro_sidecar
                 ReadingSourceStageRole.MOKURO_ARCHIVE -> R.string.reading_progress_preparing_mokuro_images
             }
+        val expected = stage.expectedBytes ?: 0L
         updateProgress(
             generation,
             MiningProgress(
-                current = stage.copiedBytes,
-                total = stage.expectedBytes ?: 0L,
+                // SAF metadata can undershoot the real size, so the copied count clamps to the
+                // total it is measured against.
+                current = if (expected > 0L) stage.copiedBytes.coerceAtMost(expected) else stage.copiedBytes,
+                total = expected,
                 description = strings.resolve(description),
                 // Staging counts bytes; without this the UI and the notification both label them
                 // items.
@@ -1380,15 +1383,27 @@ internal class BridgeReadingMiningRepository(
         progress: MiningProgress,
     ) {
         val lease: MiningForegroundLease?
+        val published: MiningProgress
         synchronized(monitor) {
             val run = activeFor(generation) ?: return
-            run.progress = progress
+            val previous = run.progress
+            published =
+                if (progress.stage != null && previous?.stage != null) {
+                    // One stage counts several inner cycles and every cycle restarts at zero. Once
+                    // the whole-run scale is established on both sides the bar never moves back.
+                    progress.copy(fractionFloor = maxOf(previous.fraction ?: 0f, previous.fractionFloor))
+                } else {
+                    // Kotlin SAF staging (stage-null bytes) is its own lifecycle; flooring across
+                    // that boundary would pin the engine bar at 100% before stage 1.
+                    progress
+                }
+            run.progress = published
             when (run.phase) {
                 Phase.PREPARING, Phase.REGISTERED ->
                     mutableState.value =
                         MiningRunState.Starting(
                             runId = run.runId,
-                            progress = progress,
+                            progress = published,
                             cancellationToken = run.cancellationToken,
                             cancellationPending = run.phase == Phase.CANCELLING,
                         )
@@ -1397,21 +1412,23 @@ internal class BridgeReadingMiningRepository(
                         mutableState.value =
                             MiningRunState.Running(
                                 it,
-                                progress,
+                                published,
                             )
                     }
-                Phase.CANCELLING ->
+                // The panel the user is looking at keeps counting through curation, page advances,
+                // cancellation and the terminal handoff. Curating owns no progress slot, so it is
+                // left alone.
+                Phase.CANCELLING, Phase.CURATING, Phase.ADVANCING, Phase.FINALIZING ->
                     mutableState.value =
                         when (val state = mutableState.value) {
-                            is MiningRunState.Starting -> state.copy(progress = progress)
-                            is MiningRunState.Running -> state.copy(progress = progress)
+                            is MiningRunState.Starting -> state.copy(progress = published)
+                            is MiningRunState.Running -> state.copy(progress = published)
                             else -> state
                         }
-                Phase.CURATING, Phase.ADVANCING, Phase.FINALIZING -> Unit
             }
             lease = run.foregroundLease
         }
-        if (lease != null) publishForegroundProgress(generation, lease, progress)
+        if (lease != null) publishForegroundProgress(generation, lease, published)
     }
 
     private fun publishForegroundProgress(
@@ -1608,12 +1625,21 @@ internal class BridgeReadingMiningRepository(
                         ?: throw IllegalStateException("Progress update arrived before progress start")
                 progress.total to progress.stage
             }
-        if (total != 0L && message.current > total) {
-            throw IllegalStateException("Progress exceeded its declared total")
+        // An engine counting slip past its declared total is display noise, not a protocol fault:
+        // clamp it and leave a breadcrumb rather than failing the run over a bar.
+        val current = if (total == 0L) message.current else message.current.coerceAtMost(total)
+        if (current != message.current) {
+            AppLog.i(
+                LogComponent.READING,
+                "progress.clamp",
+                "outcome" to "reconcile",
+                "current" to message.current,
+                "total" to total,
+            )
         }
         updateProgress(
             generation,
-            MiningProgress(message.current, total, message.description, stage = stage),
+            MiningProgress(current, total, message.description, stage = stage),
         )
     }
 
@@ -1640,7 +1666,9 @@ internal class BridgeReadingMiningRepository(
 
     private fun onProgressComplete(generation: Long) {
         val progress = synchronized(monitor) { activeFor(generation)?.progress } ?: return
-        updateProgress(generation, progress.copy(current = progress.total))
+        // A stage that never announced a count still owns a band. stageComplete fills it, so the
+        // last stage reaches 100% before the terminal state replaces the panel.
+        updateProgress(generation, progress.copy(current = progress.total, stageComplete = true))
     }
 
     private fun handleProgressError(
