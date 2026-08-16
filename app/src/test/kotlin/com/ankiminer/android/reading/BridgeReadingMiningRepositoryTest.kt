@@ -287,6 +287,34 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `a setup failure is terminal rather than something to retry`() {
+        // Same contract as the video lane: both share _exception_terminal on the Python side.
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                raisedFailure = true,
+                raisedFailureCode = "setup_incomplete",
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("setup_incomplete", failed.failure.diagnostic)
+        assertFalse(failed.failure.retryable)
+    }
+
+    @Test
     fun `a protocol violation names the callback that raised it`() {
         val harness = harness(expressionAudioFieldMapped = true)
 
@@ -1685,6 +1713,7 @@ class BridgeReadingMiningRepositoryTest {
         terminalErrorCount: Int = 0,
         readingRunFailure: RuntimeException? = null,
         raisedFailure: Boolean = false,
+        raisedFailureCode: String = "engine_error",
         fallbackState: ReleaseState = ReleaseState.ABSENT,
         pendingForegroundStart: Boolean = false,
         pauseAfterTerminalCallback: Boolean = false,
@@ -1714,6 +1743,7 @@ class BridgeReadingMiningRepositoryTest {
                 terminalErrorCount = terminalErrorCount,
                 readingRunFailure = readingRunFailure,
                 raisedFailure = raisedFailure,
+                raisedFailureCode = raisedFailureCode,
                 pauseAfterTerminalCallback = pauseAfterTerminalCallback,
                 cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
                 pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
@@ -2181,6 +2211,7 @@ class BridgeReadingMiningRepositoryTest {
         private val terminalErrorCount: Int = 0,
         private val readingRunFailure: RuntimeException? = null,
         private val raisedFailure: Boolean = false,
+        private val raisedFailureCode: String = "engine_error",
         private val pauseAfterTerminalCallback: Boolean = false,
         private val cancelFailuresBeforeSuccess: Int = 0,
         private val pauseCancellationUntilTerminal: Boolean = false,
@@ -2316,7 +2347,10 @@ class BridgeReadingMiningRepositoryTest {
         }
 
         private fun terminalPayload(): String {
-            if (raisedFailure) return RAISED_FAILURE_TERMINAL
+            if (raisedFailure) {
+                return RAISED_FAILURE_TERMINAL
+                    .replace("\"code\":\"engine_error\"", "\"code\":\"$raisedFailureCode\"")
+            }
             if (terminalErrorCount == 0) return SUCCESS_TERMINAL
             val errors =
                 (0 until terminalErrorCount).joinToString(prefix = "[", postfix = "]") {

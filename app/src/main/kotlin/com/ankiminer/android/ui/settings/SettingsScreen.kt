@@ -606,6 +606,9 @@ private fun SettingsScreen(
                                 onResolveRecovery = {
                                     selectedCategory = SettingsCategory.ANKI
                                 },
+                                onImportDictionary = {
+                                    selectedCategory = SettingsCategory.DICTIONARIES
+                                },
                                 inlineFailure = {},
                             )
                         }

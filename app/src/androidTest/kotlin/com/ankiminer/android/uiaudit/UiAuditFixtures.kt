@@ -460,6 +460,7 @@ internal fun setupAuditState(): SetupUiState {
                     schemaOk = true,
                     schemaVersion = 1,
                     isCategorical = false,
+                    rebuildSourcePath = null,
                 ),
             ),
         pitchSources =
@@ -472,6 +473,7 @@ internal fun setupAuditState(): SetupUiState {
                     entryCount = 163_284,
                     schemaOk = true,
                     schemaVersion = 1,
+                    rebuildSourcePath = null,
                 ),
             ),
         audioPacks =

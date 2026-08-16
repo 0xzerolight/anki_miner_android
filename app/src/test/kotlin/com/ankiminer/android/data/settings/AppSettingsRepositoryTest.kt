@@ -313,7 +313,6 @@ class AppSettingsRepositoryTest {
                 subtitleOffsetSeconds = null,
                 audioFormat = null,
                 audioBitrateKbps = null,
-                stripSubtitleAnnotations = null,
                 subtitleRegexFilter = null,
                 subtitleRegexReplacement = null,
                 useSubtitleRegexFilter = null,
@@ -523,7 +522,6 @@ class AppSettingsRepositoryTest {
             subtitleOffsetSeconds = -0.3,
             audioFormat = AudioFormat.OPUS,
             audioBitrateKbps = 96,
-            stripSubtitleAnnotations = false,
             subtitleRegexFilter = """\[[^\]]*\]""",
             subtitleRegexReplacement = "",
             useSubtitleRegexFilter = true,
@@ -639,10 +637,6 @@ class AppSettingsRepositoryTest {
             corruptInt(
                 "audio_bitrate_kbps",
                 original.copy(audioBitrateKbps = defaults.audioBitrateKbps),
-            ),
-            corruptBoolean(
-                "strip_subtitle_annotations",
-                original.copy(stripSubtitleAnnotations = defaults.stripSubtitleAnnotations),
             ),
             corruptString(
                 "subtitle_regex_filter",

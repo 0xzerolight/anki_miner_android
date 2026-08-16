@@ -1568,6 +1568,7 @@ class SetupViewModelTest {
             schemaOk = true,
             schemaVersion = 1,
             isCategorical = false,
+            rebuildSourcePath = null,
         )
 
     private fun installedDictionary(
@@ -1599,6 +1600,7 @@ class SetupViewModelTest {
         entryCount = 1000,
         schemaOk = true,
         schemaVersion = 1,
+        rebuildSourcePath = null,
     )
 
     private fun viewModel(

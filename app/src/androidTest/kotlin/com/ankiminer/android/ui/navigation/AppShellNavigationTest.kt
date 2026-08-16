@@ -230,6 +230,7 @@ class AppShellNavigationTest {
                     onOpenAnkiDroid = {},
                     onCheckAgain = {},
                     onOpenSettings = { openedOrigin = it },
+                    onImportDictionary = {},
                 )
             }
         }

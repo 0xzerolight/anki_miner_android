@@ -1729,6 +1729,46 @@ def test_nonretryable_vocab_query_failure_is_hard(
         _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
 
 
+def test_adapter_carries_the_anki_service_surface_the_engine_now_calls(
+    initialized_bridge_home: Path,
+) -> None:
+    """``_phase5`` and ``create_cards_batch`` grew calls into the duck type.
+
+    Each of these is an ``AttributeError`` or a ``TypeError`` mid-batch, after
+    notes have already been written, rather than a clean pre-flight failure.
+    """
+    import inspect
+
+    adapter = _adapter(_config(initialized_bridge_home), FakeKotlinAnki())
+
+    assert callable(adapter.set_cancelled_check)
+    assert adapter.last_created_mined_forms == []
+
+    # create_cards_batch calls this on itself with allow_degraded=False.
+    vocabulary = inspect.signature(type(adapter).get_existing_vocabulary).parameters
+    assert "allow_degraded" in vocabulary
+    assert vocabulary["allow_degraded"].kind is inspect.Parameter.KEYWORD_ONLY
+
+
+def test_created_mined_forms_record_only_notes_anki_confirmed(
+    initialized_bridge_home: Path,
+) -> None:
+    """The engine stopped deriving mined words from the submitted payloads.
+
+    It now reads them back off the service, so a duplicate that was skipped
+    must not be recorded as known — and an adapter that never sets this
+    silently stops the known-word database recording anything at all.
+    """
+    kotlin = FakeKotlinAnki()
+    kotlin.duplicate_fields = ["<b>既存</b>"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    adapter.create_cards_batch([_card("既存"), _card("猫")])
+
+    assert adapter.last_created_note_ids == [1000]
+    assert adapter.last_created_mined_forms == ["猫"]
+
+
 def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
     initialized_bridge_home: Path,
 ) -> None:
@@ -5863,7 +5903,10 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     processor.anki_service = adapter
     processor.presenter = presenter
     processor._external_cancel = None
-    processor.check_dictionary_staleness = lambda: None
+    # Renamed upstream when the gate grew past dictionaries to frequency and
+    # pitch; stubbing the old name lets the real one run against a processor
+    # that owns no config.
+    processor.check_resource_staleness = lambda: None
     # _run_pipeline gained a third pre-flight gate at this pin; it asks the
     # definition service for a usable offline provider, which this partial
     # processor has no reason to own.
@@ -5932,7 +5975,10 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     processor.anki_service = adapter
     processor.presenter = presenter
     processor._external_cancel = None
-    processor.check_dictionary_staleness = lambda: None
+    # Renamed upstream when the gate grew past dictionaries to frequency and
+    # pitch; stubbing the old name lets the real one run against a processor
+    # that owns no config.
+    processor.check_resource_staleness = lambda: None
     # _run_pipeline gained a third pre-flight gate at this pin; it asks the
     # definition service for a usable offline provider, which this partial
     # processor has no reason to own.

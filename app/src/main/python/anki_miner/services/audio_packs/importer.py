@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from anki_miner.exceptions import SetupError
+from anki_miner.config import paths as config_paths
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
+    open_readonly,
     prove_owned_slot,
+    resolve_auto_store_id,
     resolve_managed_slot,
     write_ownership_marker,
 )
 from anki_miner.services._staging import promote_staged_dir, repair_managed_slot
+from anki_miner.services.audio_packs.fetcher import purge_pack_cache
 from anki_miner.services.audio_packs.formats import PARSERS, detect_pack_format, parse_ozk5
 from anki_miner.services.audio_packs.storage import (
     SCHEMA_VERSION,
@@ -65,6 +70,108 @@ class AudioPackImportResult:
     skipped_malformed: int = 0
 
 
+def _validate_android_db(db_path: Path) -> tuple[int, int]:
+    """Validate a local-audio-yomichan Android database without modifying it."""
+    try:
+        conn = open_readonly(db_path)
+        try:
+            entry_columns = {row[1] for row in conn.execute("PRAGMA table_info(entries)")}
+            audio_columns = {row[1] for row in conn.execute("PRAGMA table_info(android)")}
+            if not {"expression", "reading", "source", "speaker", "display", "file"} <= entry_columns:
+                raise SetupError("The selected database has no compatible entries table")
+            if not {"file", "source", "data"} <= audio_columns:
+                raise SetupError("The selected database has no compatible android audio table")
+            entry_count = int(conn.execute("SELECT count(*) FROM entries").fetchone()[0])
+            audio_count = int(conn.execute("SELECT count(*) FROM android").fetchone()[0])
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        raise SetupError(f"Cannot read Android audio database '{db_path}': {exc}") from exc
+    if entry_count == 0 or audio_count == 0:
+        raise SetupError("The selected Android audio database contains no usable audio entries")
+    return entry_count, audio_count
+
+
+def import_android_audio_db(
+    db_path: Path,
+    dest_root: Path,
+    *,
+    pack_id: str | None = None,
+    progress: Callable[[str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+    overwrite: bool = False,
+) -> AudioPackImportResult:
+    """Register an external ``android.db`` without copying its multi-gigabyte blobs."""
+    db_path = db_path.resolve()
+    if not db_path.is_file():
+        raise SetupError(f"Android audio database not found: {db_path}")
+    if progress:
+        progress(f"Checking {db_path.name} …")
+    entry_count, audio_count = _validate_android_db(db_path)
+    if cancel_check and cancel_check():
+        raise OperationCancelled("Import cancelled")
+
+    if pack_id is None:
+        pack_id = resolve_auto_store_id(
+            dest_root,
+            derive_pack_id(db_path.stem),
+            "audio",
+            {"source_db": str(db_path)},
+        )
+    if pack_id == "jpod101":
+        raise SetupError("Pack id 'jpod101' is reserved for the online JPod101 source")
+    try:
+        final_path = resolve_managed_slot(dest_root, pack_id)
+    except ValueError as exc:
+        raise SetupError(str(exc)) from exc
+    managed_root = final_path.parent
+    managed_root.mkdir(parents=True, exist_ok=True)
+    if os.path.lexists(final_path):
+        if not overwrite:
+            raise SetupError(f"Audio pack '{pack_id}' already exists")
+        if not prove_owned_slot(managed_root, pack_id, "audio"):
+            raise SetupError(f"Audio pack '{pack_id}' is not managed by Anki Miner")
+
+    staging_parent = Path(tempfile.mkdtemp(prefix=".staging-", dir=managed_root))
+    try:
+        write_ownership_marker(staging_parent, pack_id, "audio")
+        staging = staging_parent / pack_id
+        staging.mkdir(parents=True, exist_ok=True)
+        write_ownership_marker(staging, pack_id, "audio")
+        index_path = staging / "index.sqlite"
+        create_index(index_path)
+        write_meta(
+            index_path,
+            {
+                "pack_id": pack_id,
+                "source": db_path.stem,
+                "format": "android_db",
+                "entry_count": str(entry_count),
+                "audio_count": str(audio_count),
+                "schema_version": str(SCHEMA_VERSION),
+                "pack_dir": str(db_path.parent),
+                "source_db": str(db_path),
+            },
+        )
+        if cancel_check and cancel_check():
+            raise OperationCancelled("Import cancelled")
+        try:
+            promote_staged_dir(staging, final_path, mover=os.replace, overwrite=overwrite)
+        except FileExistsError as exc:
+            raise SetupError(f"Audio pack '{pack_id}' already exists") from exc
+    finally:
+        robust_rmtree(staging_parent, mode="outcome")
+
+    if progress:
+        progress(f"Registered '{pack_id}' ({entry_count:,} entries)")
+    return AudioPackImportResult(
+        pack_id=pack_id,
+        source_name=db_path.stem,
+        format="android_db",
+        entry_count=entry_count,
+    )
+
+
 def import_audio_pack(
     pack_dir: Path,
     dest_root: Path,
@@ -99,7 +206,12 @@ def import_audio_pack(
 
     # --- pack_id derivation ---
     if pack_id is None:
-        pack_id = derive_pack_id(pack_dir.name)
+        pack_id = resolve_auto_store_id(
+            dest_root,
+            derive_pack_id(pack_dir.name),
+            "audio",
+            {"pack_dir": str(pack_dir)},
+        )
     if pack_id == "jpod101":
         # Reserved for the online JPod101 source: its cache files are named
         # jpod101_{word}_{reading}.* and a pack with the same id would collide,
@@ -180,7 +292,7 @@ def import_audio_pack(
         if cancel_check and cancel_check():
             # bulk_insert finished after the last cancel_check inside the
             # generator; honour a check here too (mirrors yomitan behaviour).
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
 
         if total_entries == 0:
             raise SetupError(f"No entries found in audio pack: {pack_dir}")
@@ -201,7 +313,7 @@ def import_audio_pack(
         )
 
         if cancel_check and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
 
         # --- promote staging → final atomically ---
         try:
@@ -234,7 +346,7 @@ def repair_audio_pack(
     cancel_check: Callable[[], bool] | None = None,
 ) -> AudioPackImportResult:
     """Explicitly repair ``pack_id``, retaining an invalid prior slot as quarantine."""
-    return repair_managed_slot(
+    result = repair_managed_slot(
         pack_dir,
         dest_root,
         pack_id,
@@ -248,6 +360,8 @@ def repair_audio_pack(
             overwrite=overwrite,
         ),
     )
+    purge_pack_cache(config_paths.ANKI_MINER_HOME / "audio_cache" / "local_packs", pack_id)
+    return result
 
 
 _CANCEL_BATCH_SIZE = 5000
@@ -267,4 +381,4 @@ def _rows_with_cancel(rows, cancel_check: Callable[[], bool] | None):
     for count, row in enumerate(rows, 1):
         yield row
         if count % _CANCEL_BATCH_SIZE == 0 and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")

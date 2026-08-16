@@ -313,12 +313,14 @@
     <string name="runtime_work_settings_resource_active">リソースセットアップ実行中</string>
     <string name="runtime_work_settings_anki_active">Ankiセットアップ実行中</string>
     <string name="readiness_unidic_required">UniDicが必要</string>
+    <string name="readiness_dictionary_required">辞書が必要</string>
     <string name="readiness_anki_required">AnkiDroid未接続</string>
     <string name="readiness_model_required">ノートタイプが必要</string>
     <string name="readiness_recovery_required">Ankiリカバリ待ち</string>
     <string name="readiness_resource_operation">セットアップ中</string>
     <string name="readiness_unknown">準備状態を確認できませんでした。</string>
     <string name="readiness_install_unidic">UniDicをインストール</string>
+    <string name="readiness_install_dictionary">辞書をインストール</string>
     <string name="readiness_connect_ankidroid">AnkiDroidに接続</string>
     <string name="readiness_choose_note_type">ノートタイプを選択</string>
     <string name="readiness_resolve_recovery">復旧項目を解決</string>
@@ -641,7 +643,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">字幕テキスト</string>
-    <string name="settings_strip_annotations">注記を除去(効果音・話者名・ふりがな)</string>
     <string name="settings_subtitle_regex">正規表現フィルター</string>
     <string name="settings_subtitle_replacement">置換文字列(空欄で削除)</string>
     <string name="settings_use_subtitle_regex">字幕に正規表現フィルターを適用</string>
@@ -667,7 +668,7 @@
     <string name="settings_max_characters">例文の最大文字数(0=無制限)</string>
     <string name="settings_reading_occurrence">読書最小出現回数</string>
     <string name="settings_max_frequency">最大頻度順位(0=無制限)</string>
-    <string name="settings_workers">並列メディアワーカー数(1〜32)</string>
+    <string name="settings_workers">並列メディアワーカー数(1〜20)</string>
     <string name="settings_no_dictionaries">有効なオフライン辞書がインストールされていません。設定からインストールまたはインポートしてください。</string>
     <string name="settings_no_frequency_sources">有効な頻度ソースがインストールされていません。設定からインポートしてください。</string>
     <string name="settings_no_audio_packs">有効なローカル音声パックがインストールされていません。設定からインポートしてください。</string>
@@ -689,7 +690,7 @@
     <string name="settings_validation_finite">%1$sは有限の値である必要があります</string>
     <string name="settings_validation_non_negative">%1$sは負の値にできません</string>
     <string name="settings_validation_positive">%1$sは正の値である必要があります</string>
-    <string name="settings_validation_parallel_workers">並列ワーカー数は1〜32の範囲で指定してください</string>
+    <string name="settings_validation_parallel_workers">並列ワーカー数は1〜20の範囲で指定してください</string>
     <string name="settings_validation_network_audio">Androidではネットワーク音声ソースに対応していません</string>
     <string name="settings_validation_wordsets">選択したワードセットが無効です</string>
     <string name="settings_validation_field_map_unknown_key">フィールドマップに不明なキーが含まれています</string>
@@ -777,7 +778,7 @@
     <string name="b3_validation_finite">有限の数値を入力してください</string>
     <string name="b3_validation_non_negative">0 以上の数値を入力してください</string>
     <string name="b3_validation_positive">1 以上の整数を入力してください</string>
-    <string name="b3_validation_parallel_workers">1〜32 の整数を入力してください</string>
+    <string name="b3_validation_parallel_workers">1〜20 の整数を入力してください</string>
     <string name="b3_validation_animated_clip_duration">0.5〜10 の数値を入力してください</string>
     <string name="b3_validation_animated_quality">0〜100 の整数を入力してください</string>
     <string name="b3_retry">再試行</string>
@@ -796,6 +797,7 @@
     <string name="b3_status_note_type">ノートタイプ</string>
     <string name="b3_status_recovery">中断した処理</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">辞書</string>
     <string name="b3_status_notifications">通知</string>
     <string name="b3_status_success">準備完了</string>
     <string name="b3_status_optional">任意</string>

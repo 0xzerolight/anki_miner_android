@@ -30,6 +30,7 @@ where open file handles block directory deletion).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
@@ -37,6 +38,8 @@ import sqlite3
 import stat
 from pathlib import Path, PureWindowsPath
 from typing import Callable, Literal, TypeVar
+
+from anki_miner.utils.slug import is_windows_device_basename
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +72,7 @@ def validate_store_id(store_id: str) -> None:
         or "\x00" in store_id
         or Path(store_id).is_absolute()
         or bool(PureWindowsPath(store_id).drive)
+        or is_windows_device_basename(store_id)
     ):
         raise ValueError(f"Invalid managed store id: {store_id!r}")
 
@@ -90,6 +94,48 @@ def resolve_managed_slot(root: Path, store_id: str) -> Path:
     except (OSError, RuntimeError) as exc:
         raise ValueError(f"Could not resolve managed store id {store_id!r}") from exc
     return final
+
+
+def resolve_auto_store_id(
+    root: Path,
+    base_id: str,
+    family: StoreFamily,
+    identity: dict[str, str],
+) -> str:
+    """Disambiguate an auto-derived id without breaking true reimports."""
+    base = resolve_managed_slot(root, base_id)
+    if not os.path.lexists(base):
+        return base_id
+    base_meta = _owned_slot_meta(base, base_id, family)
+    if base_meta is None or _identity_matches(base_meta, identity):
+        return base_id
+
+    payload = json.dumps(
+        {"family": family, "identity": identity},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hashlib.sha256(payload).hexdigest()
+    for length in (12, 20, 32, 64):
+        candidate = f"{base_id}-{digest[:length]}"
+        slot = resolve_managed_slot(root, candidate)
+        if not os.path.lexists(slot):
+            return candidate
+        slot_meta = _owned_slot_meta(slot, candidate, family)
+        if slot_meta is None or _identity_matches(slot_meta, identity):
+            return candidate
+    raise ValueError(f"Could not derive an unused managed store id for {base_id!r}")
+
+
+def _owned_slot_meta(directory: Path, slot_id: str, family: StoreFamily) -> dict[str, str] | None:
+    if not _prove_owned_directory(directory, slot_id, family):
+        return None
+    return _validated_ownership_index_meta(directory / "index.sqlite", family)
+
+
+def _identity_matches(meta: dict[str, str], identity: dict[str, str]) -> bool:
+    return all(meta.get(key) == value for key, value in identity.items())
 
 
 def is_generated_store_artifact(name: str) -> bool:
@@ -140,7 +186,7 @@ def _supported_schema_version(family: StoreFamily, version: int) -> bool:
     if family == "frequency":
         from anki_miner.services.frequency.storage import SCHEMA_VERSION
 
-        return 1 <= version <= SCHEMA_VERSION
+        return version == SCHEMA_VERSION
     if family == "pitch":
         from anki_miner.services.pitch_accent.storage import SCHEMA_VERSION
 
@@ -150,12 +196,37 @@ def _supported_schema_version(family: StoreFamily, version: int) -> bool:
     return version == SCHEMA_VERSION
 
 
+# Oldest dictionary index schema this app ever wrote. Ownership proof accepts
+# anything from here up to the current version.
+_OLDEST_OWNED_DICT_SCHEMA = 3
+_OLDEST_OWNED_FREQUENCY_SCHEMA = 1
+_OLDEST_OWNED_PITCH_SCHEMA = 1
+_OLDEST_OWNED_AUDIO_SCHEMA = 1
+
+
 def _supported_ownership_schema_version(family: StoreFamily, version: int) -> bool:
     if family == "dictionary":
         from anki_miner.services.dictionary.storage import SCHEMA_VERSION
 
-        return version in (3, SCHEMA_VERSION)
-    return _supported_schema_version(family, version)
+        # A RANGE, never a version pair. Ownership answers "did we write this
+        # directory", which stays true for every schema we ever wrote; staleness
+        # is a separate question already answered by DictMeta.schema_ok. Pinning
+        # {oldest, current} silently un-owns the immediately-previous version on
+        # every bump — exactly the dictionaries an upgrade needs to repair — so
+        # Reimport All would refuse them as missing-source and the user would
+        # have to re-add every dictionary by hand.
+        return _OLDEST_OWNED_DICT_SCHEMA <= version <= SCHEMA_VERSION
+    if family == "frequency":
+        from anki_miner.services.frequency.storage import SCHEMA_VERSION
+
+        return _OLDEST_OWNED_FREQUENCY_SCHEMA <= version <= SCHEMA_VERSION
+    if family == "pitch":
+        from anki_miner.services.pitch_accent.storage import SCHEMA_VERSION
+
+        return _OLDEST_OWNED_PITCH_SCHEMA <= version <= SCHEMA_VERSION
+    from anki_miner.services.audio_packs.storage import SCHEMA_VERSION
+
+    return _OLDEST_OWNED_AUDIO_SCHEMA <= version <= SCHEMA_VERSION
 
 
 def _is_regular_file_nofollow(path: Path) -> bool:

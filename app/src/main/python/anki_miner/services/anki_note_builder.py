@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.models import CardPayload
+from anki_miner.utils.text_utils import strip_format_chars
 
 # Field keys every config's ``anki_fields`` must contain (AnkiService
 # validates this at construction time).
@@ -48,6 +49,63 @@ def configured_target_field_names(config: AnkiMinerConfig) -> set[str]:
     return field_names
 
 
+def missing_note_type_message(note_type: str, available: list[str]) -> str:
+    """The one sentence every note-type-not-found check raises.
+
+    Shared by ``AnkiService.verify_card_target`` (the mining preflight) and the
+    Card Backfill preflight, so a user who trips it from either path reads the
+    identical wording. Lives here rather than in ``anki_service`` because the
+    backfill caller is deliberately PyQt-free and cannot import that module.
+    """
+    shown = ", ".join(available[:5])
+    more = "..." if len(available) > 5 else ""
+    return f"Note type '{note_type}' not found. Available: {shown}{more}. Check Settings → Anki."
+
+
+def missing_fields_message(note_type: str, missing: set[str], actual: set[str]) -> str:
+    """The one sentence every field-absent-from-note-type check raises."""
+    shown = ", ".join(sorted(actual)[:5])
+    more = "..." if len(actual) > 5 else ""
+    return (
+        f"Field(s) {', '.join(sorted(missing))} not found on note type "
+        f"'{note_type}'. "
+        f"Available: {shown}{more}. "
+        f"Check Settings → Anki field mapping."
+    )
+
+
+def field_target_collision_message(note_type: str, targets: list[str]) -> str | None:
+    """Return the shared error for duplicate nonempty Anki field targets."""
+    duplicate_targets = {target for target in targets if target and targets.count(target) > 1}
+    if not duplicate_targets:
+        return None
+    shown = ", ".join(sorted(duplicate_targets))
+    return (
+        f"Field(s) {shown} mapped more than once. "
+        f"Map each Anki Miner field to a different field on note type '{note_type}'."
+    )
+
+
+def field_mapping_error(
+    note_type: str,
+    ordered_actual: list[str],
+    required: set[str],
+    word_target: str,
+) -> str | None:
+    """Return the shared missing/first-field mapping error, if any."""
+    actual = set(ordered_actual)
+    missing = required - actual
+    if missing:
+        return missing_fields_message(note_type, missing, actual)
+    if not ordered_actual or word_target != ordered_actual[0]:
+        first_field = ordered_actual[0] if ordered_actual else "(none)"
+        return (
+            f"Word field '{word_target}' must map to the first field '{first_field}' "
+            f"on note type '{note_type}'. Check Settings → Anki field mapping."
+        )
+    return None
+
+
 # Optional fields whose value is pre-rendered HTML/SVG inserted verbatim (like
 # glossary), NOT html.escape()d by the OPTIONAL pass — escaping would turn the
 # tags into literal text. They follow the skip-when-empty contract: an absent
@@ -73,10 +131,25 @@ def _strip_for_dedup(value: str) -> str:
 
     Mirrors Anki deliberately: it strips HTML/media but NOT ``[reading]``
     furigana brackets, so ``食べる[たべる]`` stays distinct from ``食べる`` here too.
+
+    Goes deliberately STRICTER than Anki in exactly one place: zero-width format
+    characters (Cf) are removed. Anki's checksum cannot see them, so a card
+    whose Expression is ``\\u202a寮`` — the shape Yomitan/asbplayer mines out of
+    Netflix subtitles, which carry U+202A LEFT-TO-RIGHT EMBEDDING — is invisible
+    to Anki's own duplicate check AND, before this strip, to the known-words
+    filter. Both gates going blind at once is how a second, clean ``寮`` card got
+    created. This filter is the only layer that can catch it, so it must.
+    Stripping can only make the filter match more, and two strings differing
+    only by zero-width characters are the same word on screen.
+
+    Order matters: the strip runs after ``html.unescape`` so an escaped
+    ``&#8234;`` is caught too, and before the whitespace collapse so a field
+    holding nothing but format characters normalizes to the empty string.
     """
     text = _SOUND_REF_RE.sub("", value)
     text = _HTML_TAG_RE.sub("", text)
     text = html.unescape(text)
+    text = strip_format_chars(text)
     text = unicodedata.normalize("NFC", text)
     return " ".join(text.split())
 

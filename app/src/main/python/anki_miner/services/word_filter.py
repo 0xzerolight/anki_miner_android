@@ -9,11 +9,14 @@ from typing import TYPE_CHECKING, Any
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.models import LineLemmas, TokenizedWord
+from anki_miner.models.word import select_mined_form
 from anki_miner.utils import (
     generate_furigana,
     generate_reading,
     is_hiragana_only,
+    is_kana_only,
     is_katakana_only,
+    is_mixed_kana_only,
     wrap_target_furigana,
     wrap_target_plain,
 )
@@ -77,6 +80,15 @@ class WordFilterService:
         lemma form — a known intentional consequence of switching to
         lemma-based mining for verbs; see CHANGELOG.
 
+        Kana-variant fold (``config.known_words_match_kana_variants``, default
+        on): a word whose ``mined_form`` is written entirely in kana ALSO
+        counts as known when its dictionary ``lemma`` is in
+        ``existing_vocabulary`` — a subtitle spelling うなずく (orthBase, kana)
+        must not re-mine an existing 頷く (lemma) card. The fold is one-way and
+        script-gated: a kanji ``mined_form`` never falls back to the lemma,
+        because unidic's canonical lemma collapses kanji-variant homographs
+        (殺る→遣る, Issue #19/#5) that a learner knows separately.
+
         Args:
             all_words: List of all discovered words.
             existing_vocabulary: Set of Expression-field values already in
@@ -85,31 +97,70 @@ class WordFilterService:
         Returns:
             List of unknown words (``mined_form`` not in existing vocabulary).
         """
-        return [word for word in all_words if word.mined_form not in existing_vocabulary]
+        fold_kana = self.config.known_words_match_kana_variants
+
+        def _is_known(word: TokenizedWord) -> bool:
+            if word.mined_form in existing_vocabulary:
+                return True
+            return (
+                fold_kana
+                and word.lemma != word.mined_form
+                and word.lemma in existing_vocabulary
+                and is_kana_only(word.mined_form)
+            )
+
+        return [word for word in all_words if not _is_known(word)]
 
     def filter_by_frequency(
         self,
         words: list[TokenizedWord],
         max_rank: int | None = None,
+        *,
+        min_rank: int | None = None,
+        keep_unranked: bool = False,
     ) -> list[TokenizedWord]:
-        """Filter words by frequency rank (keep only top-N most common words).
+        """Filter words to a frequency rank band (lower rank = more common).
 
-        Words without a frequency rank are excluded: if the user opts into a
-        frequency cutoff, unindexed words are by definition not in the top N.
-        Fixes Issue #34.
+        ``min_rank`` drops the common end of the band, ``max_rank`` the rare end.
+        Either may be 0/None to leave that end open; with both open the list is
+        returned untouched.
+
+        Words without a frequency rank are excluded unless ``keep_unranked`` is
+        True: if the user opts into a band, unindexed words are by definition not
+        in the top N (Issue #34). ``keep_unranked`` exists because that reasoning
+        only runs one way — an unranked word is not shown to be super-common
+        either, so a min-only band usually wants to keep them. The choice is a
+        checkbox next to the band in Settings, not something inferred here.
 
         Args:
             words: List of words to filter.
-            max_rank: Maximum frequency rank to include (e.g., 10000 means
-                      only words ranked 1-10000 are kept). None or 0 means no filtering.
+            max_rank: Rarest rank to keep (e.g. 10000 keeps ranks 1-10000).
+                      None or 0 leaves the rare end open.
+            min_rank: Most common rank to keep (e.g. 500 skips ranks 1-499).
+                      None or 0 leaves the common end open.
+            keep_unranked: Keep words whose ``frequency_rank`` is None.
 
         Returns:
             Filtered list of words.
         """
-        if not max_rank or max_rank <= 0:
+        low = min_rank if min_rank and min_rank > 0 else None
+        high = max_rank if max_rank and max_rank > 0 else None
+        if low is None and high is None:
             return words
 
-        return [word for word in words if word.frequency_rank is not None and word.frequency_rank <= max_rank]
+        kept: list[TokenizedWord] = []
+        for word in words:
+            rank = word.frequency_rank
+            if rank is None:
+                if keep_unranked:
+                    kept.append(word)
+                continue
+            if low is not None and rank < low:
+                continue
+            if high is not None and rank > high:
+                continue
+            kept.append(word)
+        return kept
 
     def filter_by_word_lists(
         self,
@@ -195,6 +246,14 @@ class WordFilterService:
         katakana loanwords like コーヒー are excluded when ``exclude_katakana_only``
         is set. Mixed kana+kanji forms are never matched and are kept.
 
+        Script-neutral kana marks (ー ・ ゝゞヽヾ) do not decide a word's script,
+        so the colloquial long-vowel spellings すごーい / ずーっと count as
+        hiragana-only. Words mixing BOTH kana scripts — the loanword verbs and
+        adjectives ``morphology.should_include`` admits on purpose (サボる, ググる,
+        ヤバい) — belong to neither script, so they are dropped only when both
+        exclusions are on, which is the "kanji-only deck" request. Either flag
+        alone leaves them mined.
+
         Args:
             words: Words to filter.
             exclude_hiragana_only: Drop words whose mined form is all hiragana.
@@ -203,12 +262,15 @@ class WordFilterService:
         Returns:
             Filtered list of words.
         """
+        exclude_mixed_kana = exclude_hiragana_only and exclude_katakana_only
         result = []
         for word in words:
             form = word.mined_form
             if exclude_hiragana_only and is_hiragana_only(form):
                 continue
             if exclude_katakana_only and is_katakana_only(form):
+                continue
+            if exclude_mixed_kana and is_mixed_kana_only(form):
                 continue
             result.append(word)
         return result
@@ -313,8 +375,8 @@ class WordFilterService:
         filters (frequency rank, blacklist, script type, name wordsets) are
         still unknown to the learner, so a line packed with them must not
         qualify. For each candidate word, the earliest such line in
-        ``line_index`` order wins the tie-break; words with no i+1 line are
-        dropped.
+        ``line_index`` order whose card front remains compatible wins the
+        tie-break; words with no compatible i+1 line are dropped.
 
         The returned words have their sentence/timing/sentence_furigana/
         sentence_reading swapped to those of the selected line. ``surface`` and
@@ -356,21 +418,42 @@ class WordFilterService:
         # target must not make that target unmatchable.
         unknown_lemmas = (all_unknown_lemmas | target_lemmas) if all_unknown_lemmas is not None else target_lemmas
 
-        earliest: dict[str, LineLemmas] = {}
+        lines_by_lemma: dict[str, list[LineLemmas]] = {}
         for line in line_index:
             unknown_in_line = line.lemmas & unknown_lemmas
             if len(unknown_in_line) == 1:
                 (only,) = unknown_in_line
                 if only in target_lemmas:
-                    earliest.setdefault(only, line)
+                    lines_by_lemma.setdefault(only, []).append(line)
 
         result: list[TokenizedWord] = []
         for word in mineable_unknowns:
-            match = earliest.get(word.lemma)
+            match = next(
+                (line for line in lines_by_lemma.get(word.lemma, ()) if self._line_preserves_mined_form(word, line)),
+                None,
+            )
             if match is None:
                 continue
             result.append(self._swap_word_to_line(word, match))
         return result
+
+    @staticmethod
+    def _line_preserves_mined_form(word: TokenizedWord, line: LineLemmas) -> bool:
+        """Whether swapping to ``line`` keeps a surface-mined card front."""
+        if word.pos in ("動詞", "形容詞"):
+            return True
+        surface = next(
+            (surface for lemma, surface, *_ in line.lemma_spans if lemma == word.lemma),
+            None,
+        )
+        if surface is None:
+            # Legacy/hand-built indexes without spans keep the original surface
+            # in _swap_word_to_line, so they cannot change the card front.
+            return True
+        # Thread the word's own pronunciation evidence (S4-01): omitting it takes
+        # the no-evidence compatibility path, which folds lexical vowel-tail
+        # nouns (舞い → 舞) and wrongly rejects every line for such words.
+        return select_mined_form(word.pos, word.orth_base, word.lemma, surface, word.pronunciation) == word.mined_form
 
     def _swap_word_to_line(self, word: TokenizedWord, match: LineLemmas) -> TokenizedWord:
         """Rebuild ``word`` as if it had been mined from the ``match`` line.
@@ -411,11 +494,11 @@ class WordFilterService:
             new_furi_bolded = ""
 
         # The swap above replaces ``surface``. For surface-mined POS (nouns and
-        # everything that is not 動詞/形容詞), ``mined_form`` IS the surface, so
-        # the new surface becomes the card's Expression — its
+        # everything that is not 動詞/形容詞), callers only select a surface
+        # that resolves to the same card Expression. Its
         # ``expression_furigana``/``expression_reading`` (computed from the
         # ORIGINAL surface at parse time) would otherwise go stale, leaving the
-        # Expression inconsistent with its own furigana/reading (T-37).
+        # swapped spelling inconsistent with its furigana/reading (T-37).
         # Verbs/adjectives mine as ``orth_base``, which dataclasses.replace
         # below preserves (it is not swapped), so their Expression fields stay
         # valid and are left untouched. Recompute
@@ -457,12 +540,14 @@ class WordFilterService:
         """Populate ``word.sentence_candidates`` for words that repeat across lines.
 
         For each word, collects every ``line_index`` entry whose content lemmas
-        include ``word.lemma`` (subtitle order preserved). When a word appears on
-        two or more lines, builds one fully-swapped :class:`TokenizedWord`
-        variant per line (capped at ``max_candidates``, earliest-first) via
+        include ``word.lemma`` and whose matched surface preserves the card front
+        (subtitle order preserved). When a word appears on two or more compatible
+        lines, builds one fully-swapped :class:`TokenizedWord` variant per line
+        (capped at ``max_candidates``, earliest-first) via
         :meth:`_swap_word_to_line` and assigns the list — including the variant
         for the word's current sentence, so the curator can default-select it.
-        Words on a single line are left untouched (empty candidates ⇒ no picker).
+        Words on a single compatible line are left untouched (empty candidates
+        ⇒ no picker).
 
         Mutates ``words`` in place. Safe to call with an empty ``line_index``.
         """
@@ -474,7 +559,7 @@ class WordFilterService:
                 lines_by_lemma.setdefault(lemma, []).append(line)
 
         for word in words:
-            lines = lines_by_lemma.get(word.lemma, ())
+            lines = [line for line in lines_by_lemma.get(word.lemma, ()) if self._line_preserves_mined_form(word, line)]
             if len(lines) < 2:
                 continue
             word.sentence_candidates = [self._swap_word_to_line(word, line) for line in lines[:max_candidates]]

@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">Configuração de recursos ativa</string>
     <string name="runtime_work_settings_anki_active">Configuração do Anki ativa</string>
     <string name="readiness_unidic_required">UniDic necessário</string>
+    <string name="readiness_dictionary_required">Dicionário necessário</string>
     <string name="readiness_anki_required">AnkiDroid não conectado</string>
     <string name="readiness_model_required">Tipo de nota necessário</string>
     <string name="readiness_recovery_required">Recuperação do Anki pendente</string>
     <string name="readiness_resource_operation">Configuração em andamento</string>
     <string name="readiness_unknown">Não foi possível confirmar a prontidão.</string>
     <string name="readiness_install_unidic">Instalar UniDic</string>
+    <string name="readiness_install_dictionary">Instalar um dicionário</string>
     <string name="readiness_connect_ankidroid">Conectar AnkiDroid</string>
     <string name="readiness_choose_note_type">Escolher tipo de nota</string>
     <string name="readiness_resolve_recovery">Resolver recuperação</string>
@@ -642,7 +644,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Texto da legenda</string>
-    <string name="settings_strip_annotations">Remover anotações (efeitos sonoros, etiquetas de falante, furigana)</string>
     <string name="settings_subtitle_regex">Filtro regex</string>
     <string name="settings_subtitle_replacement">Substituição (vazio exclui a correspondência)</string>
     <string name="settings_use_subtitle_regex">Aplicar o filtro regex às legendas</string>
@@ -668,7 +669,7 @@
     <string name="settings_max_characters">Máximo de caracteres na frase (0 = ilimitado)</string>
     <string name="settings_reading_occurrence">Ocorrências mínimas de leitura</string>
     <string name="settings_max_frequency">Classificação máxima de frequência (0 = ilimitada)</string>
-    <string name="settings_workers">Processos de mídia paralelos (1–32)</string>
+    <string name="settings_workers">Processos de mídia paralelos (1–20)</string>
     <string name="settings_no_dictionaries">Nenhum dicionário offline válido está instalado. Instale ou importe um em Configurações.</string>
     <string name="settings_no_frequency_sources">Nenhuma fonte de frequência válida está instalada. Importe uma em Configurações.</string>
     <string name="settings_no_audio_packs">Nenhum pacote de áudio local válido está instalado. Importe um em Configurações.</string>
@@ -691,7 +692,7 @@
     <string name="settings_validation_finite">%1$s deve ser finito</string>
     <string name="settings_validation_non_negative">%1$s não pode ser negativo</string>
     <string name="settings_validation_positive">%1$s deve ser positivo</string>
-    <string name="settings_validation_parallel_workers">Os processos paralelos devem estar entre 1 e 32</string>
+    <string name="settings_validation_parallel_workers">Os processos paralelos devem estar entre 1 e 20</string>
     <string name="settings_validation_network_audio">Fontes de áudio em rede não são compatíveis com Android</string>
     <string name="settings_validation_wordsets">Os conjuntos de palavras selecionados incluídos são inválidos</string>
     <string name="settings_validation_field_map_unknown_key">O mapeamento de campos contém uma chave desconhecida</string>
@@ -776,7 +777,7 @@
     <string name="b3_validation_finite">Insira um número finito</string>
     <string name="b3_validation_non_negative">Insira zero ou um número positivo</string>
     <string name="b3_validation_positive">Insira um número inteiro positivo</string>
-    <string name="b3_validation_parallel_workers">Insira um número inteiro de 1 a 32</string>
+    <string name="b3_validation_parallel_workers">Insira um número inteiro de 1 a 20</string>
     <string name="b3_validation_animated_clip_duration">Insira um número de 0,5 a 10</string>
     <string name="b3_validation_animated_quality">Insira um número inteiro de 0 a 100</string>
     <string name="b3_retry">Tentar novamente</string>
@@ -797,6 +798,7 @@
     <string name="b3_status_note_type">Tipo de nota</string>
     <string name="b3_status_recovery">Trabalho interrompido</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">Dicionário</string>
     <string name="b3_status_notifications">Notificações</string>
     <string name="b3_status_success">Pronto</string>
     <string name="b3_status_optional">Opcional</string>

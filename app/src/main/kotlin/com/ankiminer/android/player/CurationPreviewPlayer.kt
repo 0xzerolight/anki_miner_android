@@ -99,6 +99,7 @@ class ExoCurationPreviewPlayer(
                         AppLog.i(
                             LogComponent.MEDIA,
                             "curation_preview_track_unsupported",
+                            "outcome" to "fail",
                             "failure" to failure,
                             "mime" to format?.sampleMimeType,
                             "codecs" to format?.codecs,
@@ -115,6 +116,7 @@ class ExoCurationPreviewPlayer(
                         LogComponent.MEDIA,
                         "curation_preview_playback_failed",
                         error,
+                        "outcome" to "fail",
                         "code" to error.errorCodeName,
                         "sdk" to Build.VERSION.SDK_INT,
                     )
@@ -165,6 +167,7 @@ class ExoCurationPreviewPlayer(
         AppLog.i(
             LogComponent.MEDIA,
             "curation_preview_audio_track_selected",
+            "outcome" to "ok",
             "language" to desired.getTrackFormat(0).language,
             "audioGroups" to tracks.groups.count { it.type == C.TRACK_TYPE_AUDIO },
         )

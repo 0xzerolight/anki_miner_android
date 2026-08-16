@@ -1596,6 +1596,34 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aSchemaStalePitchSourceIsRebuiltAtStartupFromItsPersistedCopy() =
+        runTest {
+            // An engine upgrade moves an index schema, and every registry compares on
+            // exact equality, so a source installed by an older build stops loading.
+            // Startup treats that as fatal, which would strand anyone who had pitch
+            // data - but the importer kept the file it was built from, so the rebuild
+            // needs no picker and no SAF grant.
+            val harness =
+                Harness(
+                    rootName = "manager-rebuild-stale-pitch",
+                    installedPitchSourceId = "kanjium",
+                    installedPitchSchemaOk = false,
+                    installedPitchRebuildPath = "/data/user/0/files/pitch/kanjium/source.zip",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertEquals(listOf("kanjium"), harness.manager.state.value.pitchSources.map { it.sourceId })
+            assertTrue(harness.manager.state.value.pitchSources.single().schemaOk)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
     fun deletingTheLastBrokenPitchSourceRestoresStartupReadiness() =
         runTest {
             // A broken slot is fatal at startup and has no other repair: if delete gated on
@@ -1734,6 +1762,7 @@ class ResourceManagerTest {
         bridgeFailureCode: String? = null,
         installedPitchSourceId: String? = null,
         installedPitchSchemaOk: Boolean = true,
+        installedPitchRebuildPath: String? = null,
         installedCatalogDictionaryValid: Boolean? = null,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
@@ -1791,6 +1820,7 @@ class ResourceManagerTest {
                 bridgeFailureCode,
                 installedPitchSourceId,
                 installedPitchSchemaOk,
+                installedPitchRebuildPath,
                 installedCatalogDictionaryValid,
                 failRefreshAfterDictionaryImport,
                 failRefreshAfterMutation,
@@ -2053,7 +2083,8 @@ class ResourceManagerTest {
         initialUserCount: Int,
         private val failureCode: String? = null,
         installedPitchSourceId: String?,
-        private val installedPitchSchemaOk: Boolean = true,
+        installedPitchSchemaOk: Boolean = true,
+        private val installedPitchRebuildPath: String? = null,
         installedCatalogDictionaryValid: Boolean?,
         private val failRefreshAfterDictionaryImport: Boolean,
         private val failRefreshAfterMutation: String?,
@@ -2072,6 +2103,7 @@ class ResourceManagerTest {
 
         /** Mutable so a delete can drop the slot the next inventory reports. */
         private var installedPitchSourceId: String? = installedPitchSourceId
+        private var installedPitchSchemaOk: Boolean = installedPitchSchemaOk
         private var installedFrequencySourceId: String? = null
         private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
@@ -2138,6 +2170,9 @@ class ResourceManagerTest {
                 }
                 "resource.pitch.import" -> {
                     installedPitchSourceId = stringField(rawRequest, "sourceId")
+                    // A real reimport rebuilds the index at the current schema,
+                    // so the slot stops being stale.
+                    installedPitchSchemaOk = true
                     armLocalRefreshFailure("resource.pitch.import")
                     if (committedPitchDecodeFailure) {
                         // Same shape as the dictionary case: the slot is published before Kotlin
@@ -2279,11 +2314,11 @@ class ResourceManagerTest {
             }
             val frequencies =
                 installedFrequencySourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false,"rebuildSourcePath":null}]"""
                 } ?: "[]"
             val pitchSources =
                 installedPitchSourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1,"rebuildSourcePath":${installedPitchRebuildPath?.let { "\"$it\"" } ?: "null"}}]"""
                 } ?: "[]"
             val audioPacks =
                 installedAudioPackId?.let { packId ->

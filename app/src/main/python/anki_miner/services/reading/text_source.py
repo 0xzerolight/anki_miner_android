@@ -10,12 +10,28 @@ titles would be noise in history/stats.
 
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
+
+from anki_miner.exceptions import OperationCancelled
 from anki_miner.models.reading import ReadingDocument, ReadingSourceRef, ReadingUnit
+from anki_miner.utils.logging_ext import log_summary
 
 from .sentence_splitter import split_sentences
 
+logger = logging.getLogger(__name__)
 
-def load(ref: ReadingSourceRef) -> ReadingDocument:
+
+def _raise_if_cancelled(cancel_check: Callable[[], bool] | None) -> None:
+    if cancel_check is not None and cancel_check():
+        raise OperationCancelled("Reading load cancelled")
+
+
+def load(
+    ref: ReadingSourceRef,
+    *,
+    cancel_check: Callable[[], bool] | None = None,
+) -> ReadingDocument:
     """Split pasted text into sentence units and return a book document.
 
     Blank lines delimit paragraphs (the ``¶N`` location label); each non-blank
@@ -23,6 +39,7 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
     Empty or whitespace-only text yields an empty-units document —
     ``process_reading`` surfaces the "no words" outcome.
     """
+    _raise_if_cancelled(cancel_check)
     # Physical lines only (\r\n / \r / \n), like aozora's _splitlines —
     # str.splitlines() would also break on \v/\f/NEL/U+2028 from PDF/web pastes.
     text = (ref.text or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -30,12 +47,16 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
     units: list[ReadingUnit] = []
     index = 0
     para_no = 0
+    skipped = 0
     for raw in text.split("\n"):
+        _raise_if_cancelled(cancel_check)
         stripped = raw.strip()
         if not stripped:
+            skipped += 1
             continue
         para_no += 1
         for sentence in split_sentences(stripped):
+            _raise_if_cancelled(cancel_check)
             units.append(
                 ReadingUnit(
                     text=sentence,
@@ -46,10 +67,20 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
             )
             index += 1
 
-    return ReadingDocument(
+    doc = ReadingDocument(
         title="Text",
         kind="book",
         series="Text",
         episode="Text",
         units=units,
     )
+    log_summary(
+        logger,
+        "Text parse",
+        file=ref.path or ref.title,
+        paragraphs=para_no,
+        units=index,
+        chars=sum(len(unit.text) for unit in units),
+        skipped=skipped,
+    )
+    return doc

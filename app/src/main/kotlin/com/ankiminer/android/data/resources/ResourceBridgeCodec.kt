@@ -909,7 +909,16 @@ object ResourceBridgeCodec {
         val value = objectValue(raw, "installed frequency source")
         exact(
             value,
-            setOf("sourceId", "sourceName", "format", "entryCount", "schemaOk", "schemaVersion", "isCategorical"),
+            setOf(
+                "sourceId",
+                "sourceName",
+                "format",
+                "entryCount",
+                "schemaOk",
+                "schemaVersion",
+                "isCategorical",
+                "rebuildSourcePath",
+            ),
             "installed frequency source",
         )
         return InstalledFrequencySource(
@@ -920,6 +929,7 @@ object ResourceBridgeCodec {
             schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
             schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
             isCategorical = bool(value.getValue("isCategorical"), "isCategorical"),
+            rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
         )
     }
 
@@ -927,7 +937,16 @@ object ResourceBridgeCodec {
         val value = objectValue(raw, "installed pitch source")
         exact(
             value,
-            setOf("sourceId", "sourceName", "sourceRevision", "format", "entryCount", "schemaOk", "schemaVersion"),
+            setOf(
+                "sourceId",
+                "sourceName",
+                "sourceRevision",
+                "format",
+                "entryCount",
+                "schemaOk",
+                "schemaVersion",
+                "rebuildSourcePath",
+            ),
             "installed pitch source",
         )
         return InstalledPitchSource(
@@ -938,6 +957,7 @@ object ResourceBridgeCodec {
             entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
             schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
             schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
+            rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
         )
     }
 

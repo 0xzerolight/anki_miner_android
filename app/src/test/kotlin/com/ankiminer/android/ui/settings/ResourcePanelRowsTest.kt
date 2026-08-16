@@ -390,6 +390,7 @@ class ResourcePanelRowsTest {
         entryCount = entryCount,
         schemaOk = true,
         schemaVersion = 1L,
+        rebuildSourcePath = null,
     )
 
     private fun audioPack(
@@ -414,5 +415,6 @@ class ResourcePanelRowsTest {
         schemaOk = true,
         schemaVersion = 1L,
         isCategorical = false,
+        rebuildSourcePath = null,
     )
 }

@@ -679,7 +679,6 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
             assert kwargs == {
                 "progress_callback": progress,
                 "curation_callback": curate,
-                "cross_episode_counts": None,
                 "episode_name_override": "Episode",
                 "series_name_override": "Series",
                 "audio_track_override": 2,
@@ -1894,7 +1893,9 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         log=mining.logger,
     )
     payload = json.loads(terminal)["payload"]
-    assert payload["error"]["code"] == "engine_error"
+    # Not engine_error: a missing prerequisite cannot be retried away, and the Kotlin
+    # repositories decide retryability from this code alone.
+    assert payload["error"]["code"] == "setup_incomplete"
     assert "Tools" not in payload["error"]["message"]
     assert payload["error"]["message"] == (
         "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
@@ -1908,6 +1909,48 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
         log=mining.logger,
     )
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
+
+
+def test_setup_errors_are_not_retryable_while_other_engine_failures_are(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.exceptions import SetupError
+    from anki_miner.exceptions.media import SubtitleParseError
+
+    # The Android re-wording imports episode_processor, which needs `requests` and is
+    # therefore unimportable on the host lane. Stubbing it keeps this test about the
+    # classification, which is the part that decides whether the user is offered a Retry.
+    monkeypatch.setattr(mining, "_android_engine_message", lambda message: message)
+
+    # A tester whose run failed on a missing dictionary pressed Retry and got the same
+    # failure back. Setup is the one engine failure retrying cannot clear, so it is the
+    # one that gets its own code; the Kotlin repositories read retryability from this
+    # code alone, and setup_incomplete is absent from their retryable set.
+    _outcome, setup_terminal = mining._exception_terminal(
+        "run_" + "d" * 32,
+        SetupError("No usable offline dictionary is installed."),
+        cancelled=False,
+        log=mining.logger,
+    )
+    assert json.loads(setup_terminal)["payload"]["error"]["code"] == "setup_incomplete"
+
+    # Everything else in the engine domain keeps the retryable bucket.
+    _outcome, engine_terminal = mining._exception_terminal(
+        "run_" + "e" * 32,
+        SubtitleParseError("subtitle track is unreadable"),
+        cancelled=False,
+        log=mining.logger,
+    )
+    assert json.loads(engine_terminal)["payload"]["error"]["code"] == "engine_error"
+
+    # Cancellation still wins over the classification below it.
+    _outcome, cancelled_terminal = mining._exception_terminal(
+        "run_" + "f" * 32,
+        SetupError("No usable offline dictionary is installed."),
+        cancelled=True,
+        log=mining.logger,
+    )
+    assert json.loads(cancelled_terminal)["payload"]["error"]["code"] == "cancelled"
 
 
 def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
@@ -1942,7 +1985,7 @@ def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
     internal_fault = internal_error.pop("faultId")
 
     # Messages stay byte-identical: the id rides beside them, never inside them.
-    assert engine_error == {"code": "engine_error", "message": "Something else went wrong"}
+    assert engine_error == {"code": "setup_incomplete", "message": "Something else went wrong"}
     assert internal_error == {"code": "internal_error", "message": "Internal mining failure"}
     assert json.loads(cancelled_terminal)["payload"]["error"] == {
         "code": "cancelled",
@@ -1960,6 +2003,91 @@ def test_raised_failures_carry_a_fault_id_matching_their_logged_traceback(
     assert [engine_fault in record.getMessage() for record in faults] == [True, False]
     assert [internal_fault in record.getMessage() for record in faults] == [False, True]
     assert "secret /storage/emulated/0/episode.mkv" in caplog.text
+
+
+def _vendored_method_params(module_path: str, class_name: str, method: str) -> set[str]:
+    """Parameter names of a vendored engine method, read without importing it.
+
+    ``anki_miner.services`` imports ``requests`` at package scope, which the
+    host lane does not carry — the same reason every bridge import of the
+    engine is function-local. Parsing keeps this contract check in the lane
+    that runs on every push, rather than in the runtime-dependency lane.
+    """
+    source = (PROJECT_ROOT / "app/src/main/python" / module_path).read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef) or node.name != class_name:
+            continue
+        for item in node.body:
+            if isinstance(item, ast.FunctionDef) and item.name == method:
+                args = item.args
+                names = {arg.arg for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs)}
+                return names - {"self"}
+        raise AssertionError(f"{class_name} has no method {method}")
+    raise AssertionError(f"{module_path} has no class {class_name}")
+
+
+def test_engine_composition_seams_still_have_the_parameters_the_bridge_passes() -> None:
+    """The import-closure gate proves imports resolve, not that signatures match.
+
+    Every seam here is one the bridge hand-mirrors from the desktop service
+    factory. A re-pin that adds an optional kwarg changes which words get mined
+    with no exception anywhere, so the names are asserted rather than inferred.
+    """
+    processor_params = _vendored_method_params(
+        "anki_miner/orchestration/episode_processor.py", "EpisodeProcessor", "__init__"
+    )
+    assert {"frequency_registry", "pitch_registry"} <= processor_params
+
+    parser_params = _vendored_method_params(
+        "anki_miner/services/subtitle_parser.py", "SubtitleParserService", "__init__"
+    )
+    assert {"name_lookup", "term_rules_lookup"} <= parser_params
+
+    episode_params = _vendored_method_params(
+        "anki_miner/orchestration/episode_processor.py", "EpisodeProcessor", "process_episode"
+    )
+    assert "cross_episode_counts" not in episode_params
+
+    # Renamed upstream when the gate grew past dictionaries.
+    _vendored_method_params(
+        "anki_miner/orchestration/episode_processor.py", "EpisodeProcessor", "check_resource_staleness"
+    )
+
+
+def _bridge_call_keywords(function: str, callee: str) -> set[str]:
+    """Keyword names the bridge passes at one call site inside *function*."""
+    source = (PROJECT_ROOT / "app/src/main/python/android_bridge/mining.py").read_text(encoding="utf-8")
+    for node in ast.walk(ast.parse(source)):
+        if not isinstance(node, ast.FunctionDef) or node.name != function:
+            continue
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            target = call.func
+            name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", None)
+            if name == callee:
+                return {keyword.arg for keyword in call.keywords if keyword.arg is not None}
+        raise AssertionError(f"{function} never calls {callee}")
+    raise AssertionError(f"mining.py has no function {function}")
+
+
+def test_bridge_passes_every_new_engine_seam() -> None:
+    """The bridge must actually supply what the engine grew, not merely tolerate it.
+
+    Omitting ``term_rules_lookup`` makes the deinflection resolver fail closed
+    to ``orth_base``; omitting ``name_lookup`` stops multi-token name spans
+    merging; omitting either registry narrows the staleness gate back to
+    dictionaries. None of the three raises, and none shows up in a run report.
+    """
+    parser_kwargs = _bridge_call_keywords("_build_processor", "SubtitleParserService")
+    assert {"name_lookup", "term_rules_lookup"} <= parser_kwargs
+
+    processor_kwargs = _bridge_call_keywords("_build_processor", "EpisodeProcessor")
+    assert {"frequency_registry", "pitch_registry"} <= processor_kwargs
+
+    episode_kwargs = _bridge_call_keywords("_process_episode", "process_episode")
+    assert "cross_episode_counts" not in episode_kwargs
 
 
 def test_runtime_composition_injects_only_android_video_services(
@@ -1994,6 +2122,7 @@ def test_runtime_composition_injects_only_android_video_services(
     expected_reading_lookup = object()
     expected_kana_attest_lookup = object()
     expected_term_common_lookup = object()
+    expected_term_rules_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:
@@ -2016,6 +2145,7 @@ def test_runtime_composition_injects_only_android_video_services(
             self.offline_term_readings = expected_reading_lookup
             self.has_offline_definitions = expected_kana_attest_lookup
             self.offline_term_commonness = expected_term_common_lookup
+            self.offline_deinflection_terms_exist = expected_term_rules_lookup
 
         def ensure_loaded(self) -> None:
             events.append("definition-load")
@@ -2029,14 +2159,20 @@ def test_runtime_composition_injects_only_android_video_services(
             config: object,
             *,
             term_lookup: object,
+            name_lookup: object,
             reading_lookup: object,
             kana_attest_lookup: object,
             term_common_lookup: object,
+            term_rules_lookup: object,
         ) -> None:
             assert term_lookup is expected_term_lookup
             assert reading_lookup is expected_reading_lookup
             assert kana_attest_lookup is expected_kana_attest_lookup
             assert term_common_lookup is expected_term_common_lookup
+            assert term_rules_lookup is expected_term_rules_lookup
+            # No excluded_wordsets in this config, so there is no wordset
+            # service to source name spans from.
+            assert name_lookup is None
             self.tagger = tagger
             events.append("subtitle-parser")
 

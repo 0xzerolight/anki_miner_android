@@ -67,7 +67,15 @@ def _path_overrides(paths: AndroidPaths) -> dict[str, Path]:
     }
 
 
-def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_android_overrides(
+def test_strip_subtitle_annotations_is_no_longer_exposed() -> None:
+    """The engine removed the field; annotation stripping is unconditional."""
+    from anki_miner.config import AnkiMinerConfig
+
+    assert "strip_subtitle_annotations" not in exposed_config_fields()
+    assert not hasattr(AnkiMinerConfig(), "strip_subtitle_annotations")
+
+
+def test_empty_snapshot_preserves_all_109_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig, AudioSourceEntry
@@ -87,7 +95,7 @@ def test_empty_snapshot_preserves_all_102_desktop_defaults_except_targeted_andro
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 102
+    assert len(desktop_fields) == 109
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
@@ -184,17 +192,6 @@ def test_typed_fields_and_entries_are_reconstructed(tmp_path: Path) -> None:
     )
     assert config.anki_fields["expression_audio"] == "WordAudio"
     assert config.anki_fields["word"] == "Expression"
-
-
-def test_subtitle_annotation_strip_can_be_turned_off(tmp_path: Path) -> None:
-    inherited = map_config_settings({}, _paths(tmp_path)).engine_config
-    overridden = map_config_settings(
-        {"strip_subtitle_annotations": False},
-        _paths(tmp_path),
-    ).engine_config
-
-    assert inherited.strip_subtitle_annotations is True
-    assert overridden.strip_subtitle_annotations is False
 
 
 @pytest.mark.parametrize("kind", ["jpod101", "googletts", "custom", "custom_json"])

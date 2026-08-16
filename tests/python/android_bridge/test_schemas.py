@@ -160,7 +160,6 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "subtitle_regex_filter": "^♪+$",
         "subtitle_regex_replacement": "",
         "use_subtitle_regex_filter": True,
-        "strip_subtitle_annotations": False,
         "bold_target_in_sentence": True,
         "deduplicate_sentences": True,
         "use_i_plus_one_filter": False,

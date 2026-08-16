@@ -833,11 +833,18 @@ class CustomAudioFetcher:
     ) -> Path | None:
         """Fetch pronunciation audio for a word. Never raises.
 
-        An empty/whitespace ``mined_form`` or ``reading`` skips the fetch: the
-        reading feeds the URL template and disambiguates homographs, matching the
-        empty-reading skip every other fetcher applies.
+        A ``reading`` that is not kana-only skips the fetch, the same guard
+        JPod101 and Google TTS apply. The reading feeds the URL template's
+        ``{reading}`` and is the only thing disambiguating a homograph there —
+        but a token the tokenizer left without one falls back to the kanji
+        surface (``models/word.py``), and a reading-agnostic local-audio-yomichan
+        source answers a kanji ``reading=`` anyway, so 辛い would fetch からい
+        audio for a つらい card and cache it permanently. Empty readings are
+        covered by the same check.
         """
-        if not mined_form.strip() or not reading.strip():
+        from anki_miner.utils.text_utils import is_kana_only
+
+        if not mined_form.strip() or not is_kana_only(reading.strip()):
             return None
         if cancelled_check is not None and cancelled_check():
             return None
@@ -939,6 +946,7 @@ class CustomAudioFetcher:
                 self._cache_dir,
                 stem,
                 failure_counts=self._failure_counts,
+                cancelled_check=cancelled_check,
             )
             policy_failures = self._policy_violations_raised - policy_before
             cancellations = self._cancellations_raised - cancellations_before

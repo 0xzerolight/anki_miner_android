@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">資源設定進行中</string>
     <string name="runtime_work_settings_anki_active">Anki 設定進行中</string>
     <string name="readiness_unidic_required">需要 UniDic</string>
+    <string name="readiness_dictionary_required">需要字典</string>
     <string name="readiness_anki_required">未連線至 AnkiDroid</string>
     <string name="readiness_model_required">需要筆記類型</string>
     <string name="readiness_recovery_required">等待 Anki 復原</string>
     <string name="readiness_resource_operation">正在設定</string>
     <string name="readiness_unknown">無法確認是否就緒。</string>
     <string name="readiness_install_unidic">安裝 UniDic</string>
+    <string name="readiness_install_dictionary">安裝字典</string>
     <string name="readiness_connect_ankidroid">連線至 AnkiDroid</string>
     <string name="readiness_choose_note_type">選擇筆記類型</string>
     <string name="readiness_resolve_recovery">解決復原問題</string>
@@ -634,7 +636,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">字幕文字</string>
-    <string name="settings_strip_annotations">移除註解（音效、說話者標籤、振假名）</string>
     <string name="settings_subtitle_regex">正規表示式篩選器</string>
     <string name="settings_subtitle_replacement">取代文字（留空會刪除比對結果）</string>
     <string name="settings_use_subtitle_regex">對字幕套用正規表示式過濾</string>
@@ -660,7 +661,7 @@
     <string name="settings_max_characters">最大句子字元數（0 = 無限制）</string>
     <string name="settings_reading_occurrence">讀音最少出現次數</string>
     <string name="settings_max_frequency">最大頻率排名（0 = 無限制）</string>
-    <string name="settings_workers">平行媒體工作執行緒（1–32）</string>
+    <string name="settings_workers">平行媒體工作執行緒（1–20）</string>
     <string name="settings_no_dictionaries">未安裝有效的離線字典。請在設定中安裝或匯入字典。</string>
     <string name="settings_no_frequency_sources">未安裝有效的頻率來源。請在設定中匯入來源。</string>
     <string name="settings_no_audio_packs">未安裝有效的本機音訊包。請在設定中匯入音訊包。</string>
@@ -683,7 +684,7 @@
     <string name="settings_validation_finite">%1$s 必須是有限值</string>
     <string name="settings_validation_non_negative">%1$s 不得為負數</string>
     <string name="settings_validation_positive">%1$s 必須為正數</string>
-    <string name="settings_validation_parallel_workers">平行工作執行緒必須介於 1 與 32 之間</string>
+    <string name="settings_validation_parallel_workers">平行工作執行緒必須介於 1 與 20 之間</string>
     <string name="settings_validation_network_audio">Android 不支援網路音訊來源</string>
     <string name="settings_validation_wordsets">所選的內建單字集無效</string>
     <string name="settings_validation_field_map_unknown_key">欄位對應包含未知的鍵</string>
@@ -768,7 +769,7 @@
     <string name="b3_validation_finite">請輸入有限數值</string>
     <string name="b3_validation_non_negative">請輸入零或正數</string>
     <string name="b3_validation_positive">請輸入正整數</string>
-    <string name="b3_validation_parallel_workers">請輸入 1 到 32 的整數</string>
+    <string name="b3_validation_parallel_workers">請輸入 1 到 20 的整數</string>
     <string name="b3_validation_animated_clip_duration">請輸入 0.5 到 10 的數值</string>
     <string name="b3_validation_animated_quality">請輸入 0 到 100 的整數</string>
     <string name="b3_retry">重試</string>
@@ -787,6 +788,7 @@
     <string name="b3_status_note_type">筆記類型</string>
     <string name="b3_status_recovery">中斷的工作</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">字典</string>
     <string name="b3_status_notifications">通知</string>
     <string name="b3_status_success">已就緒</string>
     <string name="b3_status_optional">選填</string>

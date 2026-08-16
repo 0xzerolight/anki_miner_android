@@ -17,6 +17,25 @@ import java.util.Locale
  * archive metadata, a new import takes the next free slot, and a row-scoped replacement pins the
  * occupied id explicitly.
  */
+private val PROVIDER_AUTHORITY_TOKEN = Regex("[a-z0-9][a-z0-9._-]{0,127}")
+
+/**
+ * The provider authority of a `content://` uri, or `unknown`.
+ *
+ * A log field, so it is deliberately the authority alone: the document id that follows names the
+ * user's file. Shared by [ResourceManager] and [SafArchiveStager] rather than duplicated, so the
+ * two staging records they emit stay comparable.
+ */
+internal fun normalizedProviderAuthority(uri: String): String =
+    uri
+        .substringAfter("://", missingDelimiterValue = "")
+        .substringBefore('/')
+        .substringBefore('?')
+        .substringBefore('#')
+        .lowercase(Locale.ROOT)
+        .takeIf(PROVIDER_AUTHORITY_TOKEN::matches)
+        ?: "unknown"
+
 internal object ResourceIdentity {
     /**
      * Cap well under the 64-char contract so the digest fallback and any future suffix still fit.

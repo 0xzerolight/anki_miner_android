@@ -177,6 +177,10 @@ def _load_media_extractor():
             "anki_miner.utils.i18n": _module(
                 "anki_miner.utils.i18n", tr_format=lambda value, *_args: value
             ),
+            "anki_miner.utils.logging_ext": _module(
+                "anki_miner.utils.logging_ext",
+                log_summary=lambda *_args, **_kwargs: None,
+            ),
         }
     )
     return _load(

@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">La configuration des ressources est active</string>
     <string name="runtime_work_settings_anki_active">La configuration d\'Anki est active</string>
     <string name="readiness_unidic_required">UniDic requis</string>
+    <string name="readiness_dictionary_required">Dictionnaire requis</string>
     <string name="readiness_anki_required">AnkiDroid non connecté</string>
     <string name="readiness_model_required">Type de note requis</string>
     <string name="readiness_recovery_required">Récupération Anki en attente</string>
     <string name="readiness_resource_operation">Configuration en cours</string>
     <string name="readiness_unknown">Impossible de confirmer l\'état de préparation.</string>
     <string name="readiness_install_unidic">Installer UniDic</string>
+    <string name="readiness_install_dictionary">Installer un dictionnaire</string>
     <string name="readiness_connect_ankidroid">Connecter AnkiDroid</string>
     <string name="readiness_choose_note_type">Choisir un type de note</string>
     <string name="readiness_resolve_recovery">Résoudre la récupération</string>
@@ -642,7 +644,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Texte des sous-titres</string>
-    <string name="settings_strip_annotations">Retirer les annotations (effets sonores, étiquettes de locuteur, furigana)</string>
     <string name="settings_subtitle_regex">Filtre regex</string>
     <string name="settings_subtitle_replacement">Remplacement (vide supprime la correspondance)</string>
     <string name="settings_use_subtitle_regex">Appliquer le filtre regex aux sous-titres</string>
@@ -668,7 +669,7 @@
     <string name="settings_max_characters">Nombre maximal de caractères par phrase (0 = illimité)</string>
     <string name="settings_reading_occurrence">Occurrences minimales de lecture</string>
     <string name="settings_max_frequency">Rang de fréquence maximal (0 = illimité)</string>
-    <string name="settings_workers">Agents média parallèles (1–32)</string>
+    <string name="settings_workers">Agents média parallèles (1–20)</string>
     <string name="settings_no_dictionaries">Aucun dictionnaire hors ligne valide n\'est installé. Installez-en ou importez-en un dans Paramètres.</string>
     <string name="settings_no_frequency_sources">Aucune source de fréquence valide n\'est installée. Importez-en une dans Paramètres.</string>
     <string name="settings_no_audio_packs">Aucun pack audio local valide n\'est installé. Importez-en un dans Paramètres.</string>
@@ -691,7 +692,7 @@
     <string name="settings_validation_finite">%1$s doit être fini</string>
     <string name="settings_validation_non_negative">%1$s ne doit pas être négatif</string>
     <string name="settings_validation_positive">%1$s doit être positif</string>
-    <string name="settings_validation_parallel_workers">Les agents parallèles doivent être compris entre 1 et 32</string>
+    <string name="settings_validation_parallel_workers">Les agents parallèles doivent être compris entre 1 et 20</string>
     <string name="settings_validation_network_audio">Les sources audio réseau ne sont pas prises en charge sur Android</string>
     <string name="settings_validation_wordsets">Les listes de mots incluses sélectionnées ne sont pas valides</string>
     <string name="settings_validation_field_map_unknown_key">Le mappage des champs contient une clé inconnue</string>
@@ -776,7 +777,7 @@
     <string name="b3_validation_finite">Saisissez un nombre fini</string>
     <string name="b3_validation_non_negative">Saisissez zéro ou un nombre positif</string>
     <string name="b3_validation_positive">Saisissez un entier positif</string>
-    <string name="b3_validation_parallel_workers">Saisissez un entier de 1 à 32</string>
+    <string name="b3_validation_parallel_workers">Saisissez un entier de 1 à 20</string>
     <string name="b3_validation_animated_clip_duration">Saisissez un nombre de 0,5 à 10</string>
     <string name="b3_validation_animated_quality">Saisissez un entier de 0 à 100</string>
     <string name="b3_retry">Réessayer</string>
@@ -797,6 +798,7 @@
     <string name="b3_status_note_type">Type de note</string>
     <string name="b3_status_recovery">Travail interrompu</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">Dictionnaire</string>
     <string name="b3_status_notifications">Notifications</string>
     <string name="b3_status_success">Prêt</string>
     <string name="b3_status_optional">Facultatif</string>

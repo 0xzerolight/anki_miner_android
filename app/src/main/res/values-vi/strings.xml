@@ -312,12 +312,14 @@
     <string name="runtime_work_settings_resource_active">Thiết lập tài nguyên đang hoạt động</string>
     <string name="runtime_work_settings_anki_active">Thiết lập Anki đang hoạt động</string>
     <string name="readiness_unidic_required">Cần UniDic</string>
+    <string name="readiness_dictionary_required">Cần từ điển</string>
     <string name="readiness_anki_required">AnkiDroid chưa kết nối</string>
     <string name="readiness_model_required">Cần loại ghi chú</string>
     <string name="readiness_recovery_required">Đang chờ khôi phục Anki</string>
     <string name="readiness_resource_operation">Đang thiết lập</string>
     <string name="readiness_unknown">Không thể xác nhận trạng thái sẵn sàng.</string>
     <string name="readiness_install_unidic">Cài đặt UniDic</string>
+    <string name="readiness_install_dictionary">Cài đặt từ điển</string>
     <string name="readiness_connect_ankidroid">Kết nối AnkiDroid</string>
     <string name="readiness_choose_note_type">Chọn loại ghi chú</string>
     <string name="readiness_resolve_recovery">Giải quyết khôi phục</string>
@@ -638,7 +640,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Văn bản phụ đề</string>
-    <string name="settings_strip_annotations">Loại bỏ chú thích (hiệu ứng âm thanh, thẻ nhãn người nói, furigana)</string>
     <string name="settings_subtitle_regex">Bộ lọc regex</string>
     <string name="settings_subtitle_replacement">Thay thế (để trống sẽ xóa phần khớp)</string>
     <string name="settings_use_subtitle_regex">Áp dụng bộ lọc regex cho phụ đề</string>
@@ -664,7 +665,7 @@
     <string name="settings_max_characters">Số ký tự câu tối đa (0 = không giới hạn)</string>
     <string name="settings_reading_occurrence">Số lần xuất hiện tối thiểu của cách đọc</string>
     <string name="settings_max_frequency">Hạng tần suất tối đa (0 = không giới hạn)</string>
-    <string name="settings_workers">Trình xử lý phương tiện song song (1–32)</string>
+    <string name="settings_workers">Trình xử lý phương tiện song song (1–20)</string>
     <string name="settings_no_dictionaries">Chưa cài từ điển ngoại tuyến hợp lệ. Hãy cài đặt hoặc nhập một từ điển trong Cài đặt.</string>
     <string name="settings_no_frequency_sources">Chưa cài nguồn tần suất hợp lệ. Hãy nhập một nguồn trong Cài đặt.</string>
     <string name="settings_no_audio_packs">Chưa cài gói âm thanh cục bộ hợp lệ. Hãy nhập một gói trong Cài đặt.</string>
@@ -687,7 +688,7 @@
     <string name="settings_validation_finite">%1$s phải hữu hạn</string>
     <string name="settings_validation_non_negative">%1$s không được âm</string>
     <string name="settings_validation_positive">%1$s phải dương</string>
-    <string name="settings_validation_parallel_workers">Trình xử lý song song phải từ 1 đến 32</string>
+    <string name="settings_validation_parallel_workers">Trình xử lý song song phải từ 1 đến 20</string>
     <string name="settings_validation_network_audio">Android không hỗ trợ nguồn âm thanh mạng</string>
     <string name="settings_validation_wordsets">Danh sách từ đi kèm đã chọn không hợp lệ</string>
     <string name="settings_validation_field_map_unknown_key">Ánh xạ trường chứa khóa không xác định</string>
@@ -772,7 +773,7 @@
     <string name="b3_validation_finite">Nhập số hữu hạn</string>
     <string name="b3_validation_non_negative">Nhập số 0 hoặc số dương</string>
     <string name="b3_validation_positive">Nhập số nguyên dương</string>
-    <string name="b3_validation_parallel_workers">Nhập số nguyên từ 1 đến 32</string>
+    <string name="b3_validation_parallel_workers">Nhập số nguyên từ 1 đến 20</string>
     <string name="b3_validation_animated_clip_duration">Nhập số từ 0.5 đến 10</string>
     <string name="b3_validation_animated_quality">Nhập số nguyên từ 0 đến 100</string>
     <string name="b3_retry">Thử lại</string>
@@ -791,6 +792,7 @@
     <string name="b3_status_note_type">Loại ghi chú</string>
     <string name="b3_status_recovery">Công việc bị gián đoạn</string>
     <string name="b3_status_unidic">UniDic</string>
+    <string name="b3_status_dictionary">Từ điển</string>
     <string name="b3_status_notifications">Thông báo</string>
     <string name="b3_status_success">Sẵn sàng</string>
     <string name="b3_status_optional">Tùy chọn</string>

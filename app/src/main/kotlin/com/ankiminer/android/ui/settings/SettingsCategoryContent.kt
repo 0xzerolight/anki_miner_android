@@ -417,11 +417,6 @@ internal fun LazyListScope.mediaSettings(
     // cannot shift the hardcoded item indices in settingsCardIndexFor.
     settingsCard(SettingsCategory.MEDIA, recorder, "subtitle-text") {
         SettingsSection(stringResource(R.string.settings_subtitle_text)) {
-            NullableToggle(
-                stringResource(R.string.settings_strip_annotations),
-                draft.stripAnnotations,
-                EngineDefaults.STRIP_SUBTITLE_ANNOTATIONS,
-            ) { onDraftChange(draft.copy(stripAnnotations = it)) }
             SettingTextField(
                 value = draft.subtitleRegex,
                 onChange = { onDraftChange(draft.copy(subtitleRegex = it)) },

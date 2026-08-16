@@ -31,6 +31,19 @@ class AudioPackMeta:
     pack_dir: Path
     pack_dir_exists: bool
     db_path: Path
+    source_db: Path | None = None
+
+    @property
+    def source_available(self) -> bool:
+        """Whether the audio this pack serves is actually reachable.
+
+        A folder pack needs its ``pack_dir``; an ``android_db`` pack needs the
+        external database it was registered against. ``pack_dir_exists`` stays
+        literal so it does not have to answer both questions.
+        """
+        if self.format == "android_db":
+            return self.source_db is not None and self.source_db.is_file()
+        return self.pack_dir_exists
 
 
 class AudioPackRegistry:
@@ -99,6 +112,8 @@ class AudioPackRegistry:
 
         pack_dir_str = meta.get("pack_dir", "")
         pack_dir = Path(pack_dir_str) if pack_dir_str else child
+        source_db_str = meta.get("source_db", "")
+        source_db = Path(source_db_str) if source_db_str else None
 
         return AudioPackMeta(
             pack_id=meta.get("pack_id", child.name),
@@ -109,12 +124,25 @@ class AudioPackRegistry:
             pack_dir=pack_dir,
             pack_dir_exists=pack_dir.is_dir(),
             db_path=db,
+            source_db=source_db,
         )
 
     @property
     def packs(self) -> dict[str, AudioPackMeta]:
         """Snapshot of loaded packs keyed by folder name (pack_id)."""
         return dict(self._packs)
+
+    def unlisted(self, config: AnkiMinerConfig) -> list[AudioPackMeta]:
+        """Return schema-valid on-disk packs absent from the audio chain."""
+        chained_ids = {
+            entry.pack_id
+            for entry in config.expression_audio_chain
+            if entry.kind == "pack" and entry.pack_id is not None
+        }
+        return sorted(
+            (meta for meta in self._packs.values() if meta.pack_id not in chained_ids and meta.schema_ok),
+            key=lambda meta: meta.pack_id,
+        )
 
     # ------------------------------------------------------------------
     # Chain assembly
@@ -168,11 +196,11 @@ class AudioPackRegistry:
                     entry.pack_id,
                 )
                 continue
-            if not meta.pack_dir_exists:
+            if not meta.source_available:
                 logger.warning(
-                    "Audio pack '%s' pack_dir missing (%s); skipping — audio files moved?",
+                    "Audio pack '%s' source missing (%s); skipping — moved or deleted?",
                     entry.pack_id,
-                    meta.pack_dir,
+                    meta.source_db if meta.format == "android_db" else meta.pack_dir,
                 )
                 continue
             chain.append(
@@ -181,6 +209,7 @@ class AudioPackRegistry:
                     pack_dir=meta.pack_dir,
                     pack_id=meta.pack_id,
                     cache_dir=cache_dir,
+                    blob_db_path=meta.source_db if meta.format == "android_db" else None,
                 )
             )
         return chain

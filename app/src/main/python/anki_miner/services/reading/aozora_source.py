@@ -13,10 +13,12 @@ so a ``《reading》`` can't confuse the annotation scanner.
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
+from collections.abc import Callable
 
-from anki_miner.exceptions import SetupError
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.models.reading import (
     ReadingDocument,
     ReadingSourceRef,
@@ -27,6 +29,9 @@ from anki_miner.models.reading import (
 # here both for load() and as a re-export for tests that patch/call it.
 from anki_miner.services.reading._util import _decode
 from anki_miner.services.reading.sentence_splitter import split_sentences
+from anki_miner.utils.logging_ext import log_summary
+
+logger = logging.getLogger(__name__)
 
 _MAX_TEXT_FILE_BYTES = 32 * 1024 * 1024
 
@@ -121,13 +126,13 @@ def _resolve_gaiji(line: str) -> str:
 # quotation, so an unconditional strip is safe on the Aozora path.
 _RUBY_RE = re.compile(r"《[^》]*》")
 
-# A ruby span *attached* to base text: the ｜ base-marker or a kanji/kana run
-# directly before 《. A bare, standalone 《…》 (a plain novel using the double-
-# angle bracket as title/quotation punctuation) has whitespace / line-start /
-# punctuation before 《 and is NOT ruby — so it must not, on its own, mark a
-# file as Aozora (Bug Y4: doing so dropped the first block as a "header" and
-# stripped every 《…》 span silently).
-_RUBY_ATTACHED_RE = re.compile(r"[｜々぀-ヿ一-鿿]《")
+# A ruby span *attached* to base text: the ｜ base-marker and its bounded base
+# through 《, or a kanji/kana run directly before 《. A bare, standalone 《…》
+# (a plain novel using the double-angle bracket as title/quotation punctuation)
+# has whitespace / line-start / punctuation before 《 and is NOT ruby — so it
+# must not, on its own, mark a file as Aozora (Bug Y4: doing so dropped the first
+# block as a "header" and stripped every 《…》 span silently).
+_RUBY_ATTACHED_RE = re.compile(r"｜[^｜《》\r\n]+《|[々぀-ヿ一-鿿]《")
 
 
 def _strip_ruby(line: str) -> str:
@@ -233,8 +238,10 @@ def _is_aozora(text: str) -> bool:
 
 def _extract_header(lines: list[str]) -> tuple[str, list[str]]:
     """Return (header title, body lines) for the Aozora path."""
-    title = _strip_ruby(_resolve_gaiji(lines[0])).strip() if lines else ""
     i = 0
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    title = _strip_ruby(_resolve_gaiji(lines[i])).strip() if i < len(lines) else ""
     while i < len(lines) and lines[i].strip():  # pre-blank block = header
         i += 1
     while i < len(lines) and not lines[i].strip():  # skip the blank gap
@@ -245,15 +252,27 @@ def _extract_header(lines: list[str]) -> tuple[str, list[str]]:
 # --- unit emission -------------------------------------------------------
 
 
-def _emit_units(body_lines: list[str], aozora: bool = True) -> list[ReadingUnit]:
+def _raise_if_cancelled(cancel_check: Callable[[], bool] | None) -> None:
+    if cancel_check is not None and cancel_check():
+        raise OperationCancelled("Reading load cancelled")
+
+
+def _emit_units(
+    body_lines: list[str],
+    aozora: bool = True,
+    *,
+    cancel_check: Callable[[], bool] | None = None,
+) -> tuple[list[ReadingUnit], int, int]:
     units: list[ReadingUnit] = []
     index = 0
     para_no = 0
+    skipped = 0
     current_chapter: str | None = None
     heading_block = False
     heading_buf: list[str] = []
 
     for raw in body_lines:
+        _raise_if_cancelled(cancel_check)
         line = raw[1:] if raw.startswith("　") else raw  # strip one indent
         line = _resolve_gaiji(line)
         # Ruby stripping is unconditional (any 《…》), so only on the Aozora path
@@ -268,6 +287,7 @@ def _emit_units(body_lines: list[str], aozora: bool = True) -> list[ReadingUnit]
             heading_buf = []
 
         if not stripped:  # blank or marker-only line: a break, no unit
+            skipped += 1
             if block_end:
                 heading_block = False
             continue
@@ -291,6 +311,7 @@ def _emit_units(body_lines: list[str], aozora: bool = True) -> list[ReadingUnit]
             para_no += 1
             label = current_chapter if current_chapter else f"¶{para_no}"
             for sentence in split_sentences(text):
+                _raise_if_cancelled(cancel_check)
                 units.append(
                     ReadingUnit(
                         text=sentence,
@@ -304,14 +325,19 @@ def _emit_units(body_lines: list[str], aozora: bool = True) -> list[ReadingUnit]
         if block_end:
             heading_block = False
 
-    return units
+    return units, para_no, skipped
 
 
 # --- public API ----------------------------------------------------------
 
 
-def load(ref: ReadingSourceRef) -> ReadingDocument:
+def load(
+    ref: ReadingSourceRef,
+    *,
+    cancel_check: Callable[[], bool] | None = None,
+) -> ReadingDocument:
     """Load an Aozora or plain-text novel into a book ``ReadingDocument``."""
+    _raise_if_cancelled(cancel_check)
     # Per-kind ref contract: file-backed kinds always carry a path.
     assert ref.path is not None
     try:
@@ -322,11 +348,13 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
             )
         with ref.path.open("rb") as f:
             raw = f.read(_MAX_TEXT_FILE_BYTES + 1)
+        _raise_if_cancelled(cancel_check)
         if len(raw) > _MAX_TEXT_FILE_BYTES:
             raise SetupError(
                 f"novel file '{ref.path.name}' exceeds cap {_MAX_TEXT_FILE_BYTES:,} bytes; refusing to load"
             )
     except OSError as e:
+        logger.debug("Aozora read failed: file=%s error=%s detail=%s", ref.path, type(e).__name__, e)
         raise SetupError(f"Cannot read novel file '{ref.path.name}': {e}") from e
     text = _decode(raw)
     lines = _cut_footer(_splitlines(text))
@@ -339,10 +367,25 @@ def load(ref: ReadingSourceRef) -> ReadingDocument:
         title = ref.title
         body_lines = lines
 
-    return ReadingDocument(
+    units, paragraphs, skipped = _emit_units(
+        body_lines,
+        aozora=aozora,
+        cancel_check=cancel_check,
+    )
+    doc = ReadingDocument(
         title=title,
         kind="book",
         series="Books",
         episode=title,
-        units=_emit_units(body_lines, aozora=aozora),
+        units=units,
     )
+    log_summary(
+        logger,
+        "Aozora parse",
+        file=ref.path,
+        paragraphs=paragraphs,
+        units=len(units),
+        chars=sum(len(unit.text) for unit in units),
+        skipped=skipped,
+    )
+    return doc

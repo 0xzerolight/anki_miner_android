@@ -121,6 +121,14 @@ internal data class SetupUiState(
     val targetReady: Boolean
         get() = modelReady && miningTarget == AnkiMiningTargetReadiness.Ready
 
+    /**
+     * A dictionary is a mining prerequisite, not a nicety: the engine's
+     * `require_usable_offline_provider` raises `SetupError` before any work happens, so a run
+     * started without one dies seconds in with nothing to show for it.
+     */
+    val dictionaryReady: Boolean
+        get() = dictionaries.any { it.isUsable }
+
     val busy: Boolean
         get() =
             operation != null ||
@@ -140,6 +148,7 @@ internal data class SetupUiState(
                 targetReady &&
                 recoveryReady &&
                 uniDicInstalled &&
+                dictionaryReady &&
                 operation == null &&
                 ankiOperation == null &&
                 runtimeWorkKind != RuntimeWorkCoordinator.Kind.RESOURCE &&
@@ -183,6 +192,7 @@ internal data class SetupUiState(
                 resourceStartup == ResourceStartupReadiness.FAILED ->
                     MiningReadinessAction.CHECK_AGAIN
                 !uniDicInstalled -> MiningReadinessAction.INSTALL_UNIDIC
+                !dictionaryReady -> MiningReadinessAction.INSTALL_DICTIONARY
                 anki == AnkiProviderReadiness.NotInstalled ->
                     MiningReadinessAction.INSTALL_ANKIDROID
                 anki == AnkiProviderReadiness.Uninitialized ->
@@ -239,6 +249,7 @@ internal enum class AnkiDroidSetupAction {
 /** Corrective action rendered by a mining destination when setup is not ready. */
 internal enum class MiningReadinessAction {
     INSTALL_UNIDIC,
+    INSTALL_DICTIONARY,
     INSTALL_ANKIDROID,
     OPEN_ANKIDROID,
     CONNECT_ANKIDROID,

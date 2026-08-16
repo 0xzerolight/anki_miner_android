@@ -31,7 +31,7 @@ from html import escape
 from pathlib import Path
 from typing import Callable, Iterator
 
-from anki_miner.exceptions import SetupError
+from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
     prove_owned_slot,
     resolve_managed_slot,
@@ -45,6 +45,7 @@ from anki_miner.services.dictionary.storage import (
     create_index,
     write_meta,
 )
+from anki_miner.utils.logging_ext import log_summary
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ JMDICT_DICT_ID = "jmdict-english"
 MAX_SENSES = 5
 
 ProgressFn = Callable[[int, int, str], None]
+_Sense = tuple[list[str], set[str], set[str]]
 
 
 @dataclass(frozen=True)
@@ -74,12 +76,17 @@ def import_jmdict_xml(
 
     Overwrites by default; startup migration uses no-clobber publication.
     """
+    logger.info("JMdict import: source=%s", xml_path.name)
     if not xml_path.exists():
         raise SetupError(f"JMdict XML not found: {xml_path}")
 
     try:
         final = resolve_managed_slot(dest_root, JMDICT_DICT_ID)
     except ValueError as exc:
+        logger.warning(
+            "JMdict import failed: stage=resolve exc=%s",
+            type(exc).__name__,
+        )
         raise SetupError(str(exc)) from exc
     if os.path.lexists(final):
         if not overwrite:
@@ -93,11 +100,17 @@ def import_jmdict_xml(
     try:
         tree = ET.parse(str(xml_path))  # noqa: S314 - see module docstring
     except ET.ParseError as e:
+        logger.warning(
+            "JMdict import failed: stage=parse exc=%s",
+            type(e).__name__,
+        )
         raise SetupError(f"Failed to parse JMdict XML: {e}") from e
 
     root = tree.getroot()
     entries = list(root.findall("entry"))
     total_entries = len(entries)
+    malformed_entries = 0
+    malformed_exemplar: str | int = "-"
 
     with tempfile.TemporaryDirectory(prefix="anki_miner_jmdict_") as tmp:
         staging = Path(tmp) / JMDICT_DICT_ID
@@ -107,9 +120,10 @@ def import_jmdict_xml(
         create_index(db_path)
 
         def rows() -> Iterator[DictRow]:
+            nonlocal malformed_entries, malformed_exemplar
             for i, entry in enumerate(entries, 1):
                 if cancel_check and cancel_check():
-                    raise SetupError("Import cancelled")
+                    raise OperationCancelled("Import cancelled")
 
                 ent_seq = entry.findtext("ent_seq")
                 sequence = int(ent_seq) if ent_seq and ent_seq.isdigit() else None
@@ -131,15 +145,27 @@ def import_jmdict_xml(
                         readings.append(reb)
                         reading_restrs.append([x.text for x in r.findall("re_restr") if x.text])
 
-                senses: list[list[str]] = []
+                senses: list[_Sense] = []
                 for sense in entry.findall("sense"):
                     glosses = [g.text for g in sense.findall("gloss") if g.text]
                     if glosses:
-                        senses.append(glosses)
+                        senses.append(
+                            (
+                                glosses,
+                                {x.text for x in sense.findall("stagk") if x.text},
+                                {x.text for x in sense.findall("stagr") if x.text},
+                            )
+                        )
                 if not senses:
+                    malformed_entries += 1
+                    if malformed_exemplar == "-":
+                        malformed_exemplar = sequence if sequence is not None else "unknown-sequence"
                     continue
 
-                content = _format_senses_html(senses)
+                if not terms and not readings:
+                    malformed_entries += 1
+                    if malformed_exemplar == "-":
+                        malformed_exemplar = sequence if sequence is not None else "unknown-sequence"
 
                 # One kanji-keyed row per APPLICABLE reading, respecting
                 # ``re_restr``: a reading with no restriction applies to every
@@ -155,38 +181,53 @@ def import_jmdict_xml(
                     ]
                     if applicable:
                         for reb in applicable:
-                            yield DictRow(
-                                term=term,
-                                reading=reb,
-                                content=content,
-                                sequence=sequence,
-                            )
+                            content = _format_senses_for_row(senses, term, reb)
+                            if content:
+                                yield DictRow(
+                                    term=term,
+                                    reading=reb,
+                                    content=content,
+                                    sequence=sequence,
+                                )
                     else:
                         # No reading applies to this kanji headword (unusual);
                         # still emit the term so its definition remains lookable.
-                        yield DictRow(
-                            term=term,
-                            reading=None,
-                            content=content,
-                            sequence=sequence,
-                        )
+                        content = _format_senses_for_row(senses, term, None)
+                        if content:
+                            yield DictRow(
+                                term=term,
+                                reading=None,
+                                content=content,
+                                sequence=sequence,
+                            )
 
                 # One row per reading, keyed by the reading (term and reading equal).
                 for reading in readings:
-                    yield DictRow(
-                        term=reading,
-                        reading=reading,
-                        content=content,
-                        sequence=sequence,
-                    )
+                    content = _format_senses_for_row(senses, None, reading)
+                    if content:
+                        yield DictRow(
+                            term=reading,
+                            reading=reading,
+                            content=content,
+                            sequence=sequence,
+                        )
 
                 if progress and i % 1000 == 0:
                     progress(i, total_entries, f"Processed {i}/{total_entries} entries")
 
         row_count = bulk_insert(db_path, rows())
 
+        if malformed_entries:
+            log_summary(
+                logger,
+                "JMdict rows dropped",
+                level=logging.WARNING,
+                count=malformed_entries,
+                exemplar=malformed_exemplar,
+            )
+
         if cancel_check and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
 
         write_meta(
             db_path,
@@ -201,17 +242,25 @@ def import_jmdict_xml(
         )
 
         if cancel_check and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
 
         final.parent.mkdir(parents=True, exist_ok=True)
 
         if cancel_check and cancel_check():
-            raise SetupError("Import cancelled")
+            raise OperationCancelled("Import cancelled")
         promote_staged_dir(staging, final, mover=shutil.move, overwrite=overwrite)
 
         if progress:
             progress(total_entries, total_entries, "Done")
 
+        log_summary(
+            logger,
+            "JMdict import done",
+            source=xml_path,
+            source_entries=total_entries,
+            entries=row_count,
+            malformed=malformed_entries,
+        )
         return JMdictImportResult(dict_id=JMDICT_DICT_ID, entry_count=row_count)
 
 
@@ -241,3 +290,15 @@ def repair_jmdict_xml(
 def _format_senses_html(senses: list[list[str]]) -> str:
     items = "".join(f"<li>{escape('; '.join(glosses))}</li>" for glosses in senses[:MAX_SENSES])
     return f"<ol>{items}</ol>"
+
+
+def _format_senses_for_row(senses: list[_Sense], term: str | None, reading: str | None) -> str:
+    applicable = [
+        glosses
+        for glosses, restricted_terms, restricted_readings in senses
+        if (not restricted_terms or term in restricted_terms)
+        and (not restricted_readings or reading in restricted_readings)
+    ]
+    if not applicable:
+        return ""
+    return _format_senses_html(applicable)

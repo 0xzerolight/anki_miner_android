@@ -17,7 +17,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 import requests
 
@@ -72,9 +72,11 @@ def record_cached_path(cache_dir: Path, path: Path) -> None:
 
 
 def redact_url_for_log(url: str) -> str:
-    """Return a URL safe to persist: scheme, host, port, and path only."""
+    """Keep scheme, host, port, and path; fail closed when userinfo exists."""
     try:
         parts = urlsplit(url)
+        if parts.username is not None or "@" in unquote(parts.netloc):
+            return "<redacted-url>"
         hostname = parts.hostname
         port = parts.port
     except ValueError:
@@ -219,6 +221,7 @@ def download_audio_to_cache(
     *,
     timeout: int = 10,
     failure_counts: dict[str, int] | None = None,
+    cancelled_check: Callable[[], bool] | None = None,
 ) -> Path | None:
     """GET *url*, validate it is audio, and atomically cache it as ``<stem><ext>``.
 
@@ -252,6 +255,8 @@ def download_audio_to_cache(
             chunks: list[bytes] = []
             total = 0
             for chunk in response.iter_content(chunk_size=8192):
+                if cancelled_check is not None and cancelled_check():
+                    return None
                 total += len(chunk)
                 if total > MAX_AUDIO_BYTES:
                     _bump("non_audio")
@@ -266,6 +271,9 @@ def download_audio_to_cache(
             ext = audio_extension_for_media_type(response.headers.get("Content-Type"))
             if ext is None and is_mp3(body):
                 ext = ".mp3"
+            if ext == ".mp3" and not is_mp3(body):
+                _bump("non_audio")
+                return None
             if ext is None:
                 # Not recognizable audio (HTML error page, unknown type) —
                 # transient; retried next run since no marker is written.
@@ -295,7 +303,7 @@ def download_audio_to_cache(
     except (requests.RequestException, OSError) as exc:
         _bump(classify_request_exception(exc))
         logger.debug(
-            "audio download failed for %s: %s: %s",
+            "audio download failed (%s): %s: %s",
             redact_url_for_log(url),
             type(exc).__name__,
             redact_url_for_log(str(exc)),

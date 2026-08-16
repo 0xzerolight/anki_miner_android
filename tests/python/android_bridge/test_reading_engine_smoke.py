@@ -508,11 +508,24 @@ class _DefinitionService:
         pairs: list[tuple[str, str | None]],
         progress_callback: object | None,
         fallback_context: dict[str, tuple[str, str | None]],
+        **_kwargs: object,
     ) -> list[str]:
         assert progress_callback is None
         self.lookup_pairs = list(pairs)
         self.fallback_context = dict(fallback_context)
         return ['<div class="definition">cat</div>']
+
+    def offline_term_identities(
+        self,
+        pairs: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], set[tuple[str, int, str]]]:
+        """Drives the within-run orthographic alias collapse.
+
+        Returning nothing keeps every candidate distinct, which is what this
+        single-word fixture expects; the real service resolves JMdict
+        identities so 肉じゃが and 肉ジャガ collapse to one card.
+        """
+        return {}
 
     def close(self) -> None:
         self.closed = True
@@ -521,11 +534,18 @@ class _DefinitionService:
 class _AnkiService:
     def __init__(self) -> None:
         self.last_created_note_ids: list[int] = []
+        self.last_created_mined_forms: list[str] = []
         self.last_media_store_failures = 0
         self.last_skipped_duplicates = 0
         self.verified = False
         self.card_data: list[object] = []
         self.image_bytes = b""
+        self.cancelled_checks: list[object] = []
+
+    def set_cancelled_check(self, cancelled: object) -> None:
+        # _phase5 installs its probe before the batch and clears it in a
+        # finally, so both calls land here.
+        self.cancelled_checks.append(cancelled)
 
     def verify_card_target(self) -> None:
         self.verified = True
@@ -542,6 +562,9 @@ class _AnkiService:
         assert screenshot_path is not None
         self.image_bytes = screenshot_path.read_bytes()
         self.last_created_note_ids = [4242]
+        # The processor now records known words from what the service confirms,
+        # not from what it submitted.
+        self.last_created_mined_forms = [payload.word.mined_form for payload in self.card_data]
         # The service contract returns the created ids; the processor takes
         # len() of this and stamps them onto the result.
         return [4242]

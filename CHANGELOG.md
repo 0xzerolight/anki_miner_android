@@ -6,6 +6,12 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Changed
 
+- The mining engine is now the one behind desktop 2.11.0, five releases on from the version this app was built against. That version's own release notes describe an audit of thirty-four areas and more than a hundred and thirty findings, and the mining changes below all arrive with it rather than being written here.
+- **Words are matched by the reading the dictionary attests, not the one the tokenizer guessed.** A word whose reading the tokenizer collapsed onto the wrong entry now takes the reading its dictionary row actually carries, and a genuinely ambiguous one is flagged rather than guessed at. Because the reading decides the pitch lookup, the audio filename and the furigana, this changes those too. Whole names are also rebuilt from the line before the proper-noun and name-list filters run, so a two-kanji surname is filtered as a name instead of as two unrelated kanji.
+- **Re-mining a word already on a card no longer makes a second one when the existing card carries an invisible formatting character.** Anki's own duplicate check cannot see those characters, so a card written by another tool with one embedded was invisible both to the known-words filter and to the duplicate probe, and the run reported no duplicates while adding a copy.
+- **Words written in kana are classed as kana.** A long vowel mark is filed in the katakana block, so すごーい and きれー counted as neither hiragana-only nor katakana-only and slipped past both exclusion switches; the same went for katakana stems with hiragana endings such as サボる and ヤバい. Ticking both boxes now means a kanji-only deck.
+- **Two spellings of the same dictionary word produce one card, not two.** 肉じゃが and 肉ジャガ share an entry, and a run that met both used to ship both.
+- Parallel media workers accept 1 to 20 rather than 1 to 32, which is the range the engine now enforces. A saved value above 20 is reported beside the field instead of failing partway through a run.
 - Settings fits more on the screen. The status and save chips above the categories appear only when there is something to act on - a required setup task needing attention, or a save that failed and can be retried - and the text fields, buttons and the search field at the top of the screen are all shorter. Buttons are rectangular, matching the rest of the app.
 - Dictionaries, pitch accent, expression audio and frequency lists are each managed as a single priority list, the way the desktop app presents them: every row carries its own enable switch and move up and move down controls, in place of the separate card per resource. The Jitendex install prompt left Settings for the setup wizard, where the first install happens; the dictionary add menu no longer offers a catalog install for a slot that is already filled.
 - Settings fields open with the value the engine would use written in them, rather than standing empty with that value named underneath. Storage is unchanged: a field left at the default is still stored as inherit, so a re-pinned engine default keeps reaching a run instead of freezing at whatever the field showed, and a value already stored that equals the current default is rewritten as inherit the next time those settings are saved.
@@ -13,9 +19,16 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Fixed
 
+- **Installed dictionaries, frequency lists and pitch sources rebuild themselves the first time the app starts after this update.** All four resource index formats changed, and the engine only reads the current one, so every installed source would otherwise have stopped working - and a pitch source or dictionary in that state stops the app reaching its main screen at all. Each import kept the file it was built from, so the rebuild happens on its own with nothing to pick and nothing to re-download. A source whose original file is no longer there is reported as needing a fresh import.
+- **Word audio is no longer fetched for a word whose reading is unknown.** A word the tokenizer left without a reading falls back to its own kanji, and the local audio server answers that anyway, so 辛い could be given からい audio on a つらい card and keep it from then on.
+- Stopping a reading run while the file is still being read reports it as stopped rather than as a failure.
 - The in-app mining progress panel only moves forward; the notification still shows each cycle's own count. The bar floors at the highest fraction already shown, decode progress is clamped inside the band it belongs to, and a stage that completes fills its band, so a run reads 0 -> 100 without dropping back. Reading runs use the same floor.
 - The search field on the word curator no longer clips its placeholder. Its height is a floor now rather than a fixed one, which also removes the branch that skipped the clamp above a font scale of 1.3.
 - The third-party notices shown in the app name libwebp and libaom, the two encoders behind animated WebP and AVIF screenshots. Their license texts have been packaged alongside since the encoders were added, but the notice listing them was a hand-copy of the repository's NOTICE.md and was never updated when they landed. A host test now compares the two files and fails the build when they diverge.
+
+### Removed
+
+- The Strip annotations switch in Settings > Media is gone. Sound-effect captions, speaker tags and inline furigana are always removed from subtitle text now, so the switch described a choice the engine no longer offers.
 
 ## [0.7.0] - 2026-08-14
 
