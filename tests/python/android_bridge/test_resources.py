@@ -3240,6 +3240,272 @@ def test_custom_dictionary_import_accepts_oversized_term_bank(
     assert imported.payload["entryCount"] >= 1
 
 
+def test_streamed_zip_identity_reports_the_largest_bank(tmp_path: Path) -> None:
+    source = _zip_with_members(
+        tmp_path / "banks.zip",
+        [
+            ("index.json", b"{}"),
+            ("term_bank_1.json", b"[" + b" " * 4096 + b"]"),
+            ("term_meta_bank_1.json", b"[" + b" " * 64 + b"]"),
+            # Not a bank: its size must not reach max_bank_bytes.
+            ("styles.css", b"/*" + b" " * 8192 + b"*/"),
+        ],
+    )
+
+    identity = resources._validate_zip_streamed(
+        source,
+        resources._Operation("bank-sizes"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+
+    assert identity.max_bank_bytes == 4098
+
+
+def test_streamed_zip_identity_reports_no_banks_as_zero(tmp_path: Path) -> None:
+    source = _zip_with_members(tmp_path / "bankless.zip", [("index.json", b"{}")])
+
+    identity = resources._validate_zip_streamed(
+        source,
+        resources._Operation("bankless"),
+        member_limit=None,
+        total_limit=_ENGINE_TOTAL_LIMIT,
+        file_limit=None,
+        require_root_index=False,
+    )
+
+    assert identity.max_bank_bytes == 0
+
+
+def test_import_peak_drops_the_streamed_zip_when_no_rewrite_runs() -> None:
+    identity = resources._ZipIdentity(4, 540_000_000, 2_000_000)
+    archive_bytes = 260_000_000
+
+    rewriting = resources._yomitan_import_peak_bytes(
+        identity,
+        archive_bytes,
+        intermediate_csv=False,
+        streamed_rewrite=True,
+    )
+    skipping = resources._yomitan_import_peak_bytes(
+        identity,
+        archive_bytes,
+        intermediate_csv=False,
+        streamed_rewrite=False,
+    )
+
+    # Only the doubled streamed-ZIP term goes; the extracted tree and the SQLite
+    # index bound are still reserved.
+    assert rewriting - skipping == 2 * (identity.uncompressed_bytes + archive_bytes)
+    assert skipping == identity.uncompressed_bytes * 3
+    # Reserving for a ZIP that is never written is what refused imports that fit.
+    assert skipping < rewriting
+
+
+def test_import_peak_still_reserves_the_streamed_zip_by_default() -> None:
+    identity = resources._ZipIdentity(4, 1_000, 500)
+
+    assert resources._yomitan_import_peak_bytes(
+        identity,
+        100,
+        intermediate_csv=False,
+    ) == resources._yomitan_import_peak_bytes(
+        identity,
+        100,
+        intermediate_csv=False,
+        streamed_rewrite=True,
+    )
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_skips_the_bank_rewrite_for_ordinary_banks(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _yomitan_zip(tmp_path / "ordinary.zip", term="猫", meaning="cat", revision="1")
+
+    def must_not_rewrite(*_args: object, **_kwargs: object) -> Path:
+        raise AssertionError("bank rewrite ran for an archive with no oversized bank")
+
+    monkeypatch.setattr(resources, "_rewrite_yomitan_banks", must_not_rewrite)
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "ordinary-banks",
+                "sourcePath": str(source),
+                "slotId": "ordinary",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    assert imported.payload["slotId"] == "ordinary"
+    assert imported.payload["entryCount"] == 1
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_rewrites_a_bank_past_the_inline_limit(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = {"title": "Rewrite Fixture", "revision": "1", "format": 3}
+    row_count = resources._YOMITAN_BANK_INLINE_LIMIT_BYTES // _BANK_FIXTURE_ENTRY_BYTES + 2
+    rows = [
+        [f"fixture-{position}", "", "", "", 0, ["x" * _BANK_FIXTURE_ENTRY_BYTES], position, ""]
+        for position in range(row_count)
+    ]
+    source = tmp_path / "rewrite-me.zip"
+    with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    original_rewrite = resources._rewrite_yomitan_banks
+    rewritten: list[Path] = []
+
+    def record_rewrite(*args: object, **kwargs: object) -> Path:
+        result = original_rewrite(*args, **kwargs)  # type: ignore[arg-type]
+        rewritten.append(result)
+        return result
+
+    monkeypatch.setattr(resources, "_rewrite_yomitan_banks", record_rewrite)
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "rewrite-me",
+                "sourcePath": str(source),
+                "slotId": "rewritten",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    assert rewritten, "an oversized bank must still be split before the engine import"
+    assert imported.payload["entryCount"] == row_count
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_custom_dictionary_import_retains_the_original_without_copying_it(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Kotlin already staged the archive into app-private storage, so a second
+    # bridge-side copy only doubled the peak footprint.
+    source = _yomitan_zip(tmp_path / "no-copy.zip", term="猫", meaning="cat", revision="1")
+    original_bytes = source.read_bytes()
+
+    def must_not_copy(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("import copied an archive it was handed privately")
+
+    monkeypatch.setattr(resources, "_copy_archive", must_not_copy)
+
+    resources.import_dictionary(
+        {
+            "operationId": "no-copy",
+            "sourcePath": str(source),
+            "slotId": "nocopy",
+            "overwrite": False,
+            "catalogResourceId": None,
+        }
+    )
+
+    retained = initialized_bridge_home / "dicts" / "nocopy" / "source.zip"
+    assert retained.read_bytes() == original_bytes
+    assert stat.S_IMODE(retained.stat().st_mode) == 0o400
+    # The source it was handed is left where Kotlin put it, for Kotlin to delete.
+    assert source.read_bytes() == original_bytes
+
+
+def test_hash_archive_rejects_a_catalog_size_mismatch(tmp_path: Path) -> None:
+    source = tmp_path / "sized.zip"
+    source.write_bytes(b"payload")
+
+    with pytest.raises(BridgeProtocolError, match="size does not match the catalog") as failure:
+        resources._hash_archive(
+            source,
+            resources._Operation("size-mismatch"),
+            maximum_bytes=8192,
+            expected_size=len(b"payload") + 1,
+        )
+
+    assert failure.value.code == "resource_archive_mismatch"
+
+
+def test_hash_archive_rejects_a_catalog_digest_mismatch(tmp_path: Path) -> None:
+    source = tmp_path / "digest.zip"
+    source.write_bytes(b"payload")
+
+    with pytest.raises(BridgeProtocolError, match="hash does not match the catalog") as failure:
+        resources._hash_archive(
+            source,
+            resources._Operation("digest-mismatch"),
+            maximum_bytes=8192,
+            expected_size=len(b"payload"),
+            expected_sha256="0" * 64,
+        )
+
+    assert failure.value.code == "resource_archive_mismatch"
+
+
+def test_hash_archive_accepts_a_matching_catalog_pin(tmp_path: Path) -> None:
+    source = tmp_path / "pinned.zip"
+    source.write_bytes(b"payload")
+    digest = hashlib.sha256(b"payload").hexdigest()
+
+    measured = resources._hash_archive(
+        source,
+        resources._Operation("digest-match"),
+        maximum_bytes=8192,
+        expected_size=len(b"payload"),
+        expected_sha256=digest,
+    )
+
+    assert measured.sha256 == digest
+    assert measured.size_bytes == len(b"payload")
+
+
+def test_rewritten_yomitan_banks_are_stored_not_deflated(tmp_path: Path) -> None:
+    rows = [["fixture", "", "", "", 0, ["meaning"], 1, ""]]
+    source = _zip_with_members(
+        tmp_path / "compression.zip",
+        [
+            ("index.json", b"{}"),
+            ("term_bank_1.json", json.dumps(rows).encode("utf-8")),
+        ],
+    )
+    rewritten = tmp_path / "compression-rewritten.zip"
+
+    resources._rewrite_yomitan_banks(
+        source,
+        rewritten,
+        resources._Operation("compression"),
+    )
+
+    with zipfile.ZipFile(rewritten, "r") as archive:
+        methods = {info.filename: info.compress_type for info in archive.infolist()}
+    # Re-compressing a staging archive the importer reads back immediately and
+    # never retains is pure CPU cost.
+    assert set(methods.values()) == {zipfile.ZIP_STORED}
+
+
 @pytest.mark.parametrize("bank_prefix", ["term_bank", "term_meta_bank", "tag_bank"])
 def test_yomitan_bank_rewrite_covers_empty_suffix_names(
     tmp_path: Path,
@@ -3289,9 +3555,12 @@ def test_yomitan_bank_rewrite_rejects_one_item_larger_than_chunk_before_decode(
         def __init__(self) -> None:
             self.delegate = real_decoder()
 
-        def raw_decode(self, value: str) -> tuple[object, int]:
-            assert len(value.encode("utf-8")) <= resources._YOMITAN_BANK_CHUNK_BYTES
-            return self.delegate.raw_decode(value)
+        def raw_decode(self, value: str, idx: int = 0) -> tuple[object, int]:
+            # The reader decodes from an index instead of slicing the buffer,
+            # so the bound belongs on the undecoded region: everything before
+            # ``idx`` is already-yielded text awaiting compaction.
+            assert len(value[idx:].encode("utf-8")) <= resources._YOMITAN_BANK_CHUNK_BYTES
+            return self.delegate.raw_decode(value, idx)
 
     monkeypatch.setattr(resources.json, "JSONDecoder", BoundedDecoder)
 
@@ -3852,3 +4121,166 @@ def test_dictionary_delete_rejects_payloads_outside_the_contract(
         resources.delete_dictionary(payload)
 
     assert failure.value.code == "invalid_resource_request"
+
+
+def _drain_json_array(
+    payload: bytes,
+    *,
+    item_byte_limit: int = 4096,
+    label: str = "json-array-stream",
+) -> list[object]:
+    return list(
+        resources._iter_json_array_stream(
+            io.BytesIO(payload),
+            resources._Operation(label),
+            item_byte_limit=item_byte_limit,
+        )
+    )
+
+
+def test_json_array_stream_compacts_amortised_not_per_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The reader used to drop the consumed prefix on every item, so each yield
+    # copied the whole remaining buffer. With 1 MiB refills and kilobyte entries
+    # that is quadratic in bank size, and it is why a 540 MiB dictionary sat on
+    # "Importing..." indefinitely. Compaction restarts decoding at index 0, so
+    # counting index-0 calls counts compactions.
+    items: list[object] = [[f"entry-{index}", index, {"reading": "ねこ"}] for index in range(2000)]
+    payload = json.dumps(items).encode("utf-8")
+    real_decoder = resources.json.JSONDecoder
+    restarts = 0
+
+    class CountingDecoder:
+        def __init__(self) -> None:
+            self.delegate = real_decoder()
+
+        def raw_decode(self, value: str, idx: int = 0) -> tuple[object, int]:
+            nonlocal restarts
+            if idx == 0:
+                restarts += 1
+            return self.delegate.raw_decode(value, idx)
+
+    monkeypatch.setattr(resources.json, "JSONDecoder", CountingDecoder)
+
+    assert _drain_json_array(payload) == items
+    assert restarts < len(items) // 10
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 2, 7, 64, 1024])
+def test_json_array_stream_yields_same_items_at_every_chunk_boundary(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    # Index-based decoding has to survive an item, a delimiter, a multi-byte
+    # character or a run of whitespace landing exactly on a refill boundary.
+    items: list[object] = [
+        "猫",
+        ["term", "たん", 0],
+        {"nested": {"deep": [1, 2, 3]}},
+        12345,
+        -0.5,
+        True,
+        None,
+        "trailing",
+    ]
+    payload = json.dumps(items, ensure_ascii=False, indent=2).encode("utf-8")
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+
+    assert _drain_json_array(payload) == items
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 3, 64])
+def test_json_array_stream_reads_empty_array(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+
+    assert _drain_json_array(b"  [ \n ]  ") == []
+
+
+@pytest.mark.parametrize(
+    ("payload", "code", "match"),
+    [
+        (b"{}", "invalid_resource_archive", "must be a JSON array"),
+        (b"[1,]", "invalid_resource_archive", "trailing comma"),
+        (b"[1] 2", "invalid_resource_archive", "trailing content"),
+        (b"[1 2]", "invalid_resource_archive", "invalid JSON"),
+        (b'["unterminated"', "invalid_resource_archive", "invalid JSON"),
+        (b'[1, "\xff\xfe"]', "invalid_resource_archive", "not valid UTF-8"),
+    ],
+)
+def test_json_array_stream_rejects_malformed_banks(
+    monkeypatch: pytest.MonkeyPatch,
+    payload: bytes,
+    code: str,
+    match: str,
+) -> None:
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", 4)
+
+    with pytest.raises(BridgeProtocolError, match=match) as failure:
+        _drain_json_array(payload)
+
+    assert failure.value.code == code
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 8, 64])
+def test_json_array_stream_rejects_an_oversized_item(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    # The cap is in bytes, so a multi-byte item must be measured as encoded
+    # rather than as characters - the reader no longer re-encodes the whole
+    # buffer to find out.
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+    payload = json.dumps(["猫" * 64], ensure_ascii=False).encode("utf-8")
+
+    with pytest.raises(BridgeProtocolError, match="oversized item") as failure:
+        _drain_json_array(payload, item_byte_limit=32)
+
+    assert failure.value.code == "resource_archive_too_large"
+
+
+def test_json_array_stream_admits_an_item_that_fits_its_byte_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", 8)
+    entry = "猫" * 8  # 24 UTF-8 bytes, 8 characters.
+    payload = json.dumps([entry], ensure_ascii=False).encode("utf-8")
+
+    assert _drain_json_array(payload, item_byte_limit=32) == [entry]
+
+
+def test_json_array_stream_cancels_mid_bank() -> None:
+    payload = json.dumps([[index] for index in range(64)]).encode("utf-8")
+    operation = resources._Operation("cancelled-bank")
+    stream = resources._iter_json_array_stream(
+        io.BytesIO(payload),
+        operation,
+        item_byte_limit=4096,
+    )
+
+    assert next(stream) == [0]
+    operation.cancelled.set()
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        next(stream)
+
+    assert failure.value.code == "resource_operation_cancelled"
+
+
+@pytest.mark.parametrize("chunk_bytes", [1, 2, 3, 5, 16])
+def test_json_array_stream_reads_numbers_split_across_a_refill(
+    monkeypatch: pytest.MonkeyPatch,
+    chunk_bytes: int,
+) -> None:
+    # ``raw_decode("1.")`` returns ``(1, 1)``: JSON's number grammar stops
+    # before a trailing "." or "e", so a literal cut by a refill boundary used
+    # to surface as "invalid JSON" and fail the whole bank. Frequency banks
+    # carry non-integer values, so this reached real dictionaries.
+    items: list[object] = [-0.5, 1.5, 2.0e3, -1.25e-3, 0, -1, 12345, 6.0]
+    payload = json.dumps(items).encode("utf-8")
+    monkeypatch.setattr(resources, "_COPY_CHUNK_BYTES", chunk_bytes)
+
+    assert _drain_json_array(payload) == items

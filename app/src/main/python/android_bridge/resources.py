@@ -75,6 +75,17 @@ _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _YOMITAN_BANK_RE = re.compile(r"^(term_bank|term_meta_bank|tag_bank)_[^/]*\.json$")
 _PROMOTION_LOCK = threading.Lock()
 _YOMITAN_BANK_CHUNK_BYTES = 4 * 1024 * 1024
+# Characters that can extend a JSON number literal. A number is the only token
+# ``raw_decode`` returns truncated rather than raising, so the streaming reader
+# has to recognise a literal cut by a refill boundary itself.
+_JSON_NUMBER_CONTINUATION = frozenset("0123456789.eE+-")
+# Largest single Yomitan bank the desktop importer may read whole. Its bank path
+# is ``read_text`` + ``json.loads``, so an unbounded bank would materialise as
+# one Python object; ``_rewrite_yomitan_banks`` exists to split those. Real
+# dictionaries sit far below this — the catalog imposes the same 16 MiB as its
+# per-file ``fileBytesLimit`` — so gating the rewrite on it skips a full expand,
+# re-encode and re-compress of every archive a user actually imports.
+_YOMITAN_BANK_INLINE_LIMIT_BYTES = 16 * 1024 * 1024
 _STORAGE_EXHAUSTION_ERRNOS = frozenset(
     {
         errno.ENOSPC,
@@ -516,6 +527,8 @@ def _hash_archive(
     operation: _Operation,
     *,
     maximum_bytes: int,
+    expected_size: int | None = None,
+    expected_sha256: str | None = None,
 ) -> _ArchiveCopy:
     """Measure *source* in place, with the guarantees :func:`_copy_archive` gives.
 
@@ -524,6 +537,11 @@ def _hash_archive(
     of a multi-gigabyte import for no added safety: ``_open_source`` refuses
     symlinks and non-regular files and re-stats the descriptor afterwards, so a
     source swapped mid-read is still rejected.
+
+    ``expected_size``/``expected_sha256`` pin the archive to its catalog entry,
+    mirroring :func:`_copy_archive`. Verifying in place is equivalent to
+    verifying a copy here: both hash the same bytes through ``_open_source``,
+    whose closing re-stat rejects a source that changed underneath the read.
     """
     digest = hashlib.sha256()
     read = 0
@@ -532,6 +550,11 @@ def _hash_archive(
             raise _fail(
                 "resource_archive_too_large",
                 "Resource archive size is outside its limit",
+            )
+        if expected_size is not None and source_stat.st_size != expected_size:
+            raise _fail(
+                "resource_archive_mismatch",
+                "Resource archive size does not match the catalog",
             )
         while True:
             operation.check()
@@ -550,7 +573,13 @@ def _hash_archive(
             "resource_archive_mismatch",
             "Resource archive length changed while reading",
         )
-    return _ArchiveCopy(source, digest.hexdigest(), read)
+    actual_hash = digest.hexdigest()
+    if expected_sha256 is not None and actual_hash != expected_sha256:
+        raise _fail(
+            "resource_archive_mismatch",
+            "Resource archive hash does not match the catalog",
+        )
+    return _ArchiveCopy(source, actual_hash, read)
 
 
 def _safe_archive_path(name: str, *, allow_directory_suffix: bool) -> tuple[str, ...]:
@@ -857,6 +886,9 @@ def _engine_uncompressed_limit() -> int:
 class _ZipIdentity:
     member_count: int
     uncompressed_bytes: int
+    # Largest declared uncompressed size among Yomitan bank members, or 0 when
+    # the archive carries none. Drives the ``_rewrite_yomitan_banks`` gate.
+    max_bank_bytes: int = 0
 
 
 def _yomitan_import_peak_bytes(
@@ -864,6 +896,7 @@ def _yomitan_import_peak_bytes(
     archive_size_bytes: int,
     *,
     intermediate_csv: bool,
+    streamed_rewrite: bool = True,
 ) -> int:
     """Bound additional same-filesystem bytes needed after source copy.
 
@@ -873,10 +906,15 @@ def _yomitan_import_peak_bytes(
     and pitch also build one intermediate CSV. Existing installed slots already
     consume reported free space, so overwrite backups need no second addition.
     ``_check_free_space`` adds the shared 32 MiB reserve.
+
+    ``streamed_rewrite`` is False when the caller has already established that
+    every bank is small enough to skip ``_rewrite_yomitan_banks``. Reserving for
+    a ZIP that is never written refused imports that fit: a 540 MiB dictionary
+    demanded ~3.2 GiB free where ~1.9 GiB is enough.
     """
 
     expanded = identity.uncompressed_bytes
-    streamed_zip_bound = expanded + archive_size_bytes
+    streamed_zip_bound = (expanded + archive_size_bytes) if streamed_rewrite else 0
     extracted_tree = expanded
     sqlite_index_bound = expanded * 2
     csv_bound = expanded if intermediate_csv else 0
@@ -1055,6 +1093,7 @@ def _validate_zip_streamed(
                 )
             seen: set[tuple[str, ...]] = set()
             total = 0
+            max_bank_bytes = 0
             has_root_index = False
             for info in infos:
                 operation.check()
@@ -1090,6 +1129,8 @@ def _validate_zip_streamed(
                     )
                 if parts == ("index.json",):
                     has_root_index = True
+                if len(parts) == 1 and _YOMITAN_BANK_RE.fullmatch(parts[0]):
+                    max_bank_bytes = max(max_bank_bytes, info.file_size)
                 actual = 0
                 # Building the decompressor is eager in ``ZipExtFile.__init__``,
                 # so an unsupported method (Deflate64, or a bz2/lzma module absent
@@ -1124,7 +1165,7 @@ def _validate_zip_streamed(
                     "invalid_resource_archive",
                     "Dictionary archive has no root index.json",
                 )
-            return _ZipIdentity(len(infos), total)
+            return _ZipIdentity(len(infos), total, max_bank_bytes)
     except BridgeProtocolError:
         raise
     except (zipfile.BadZipFile, RuntimeError, OSError, EOFError) as exc:
@@ -1172,6 +1213,29 @@ def _iter_json_array_stream(
                 return
             fill()
 
+    def compact() -> None:
+        """Drop the consumed prefix, but only once it dominates the buffer.
+
+        Compacting on every item made each yield copy the whole remaining
+        buffer. That is quadratic within a refill window, and since the window
+        is capped at ``_COPY_CHUNK_BYTES`` it comes out as linear with a copy
+        of most of a chunk per item - measured at ~18x the cost of this
+        version, stable across bank sizes. Halving keeps the buffer within 2x
+        the pending region and makes compaction amortised O(1) per item.
+        """
+        nonlocal buffer, position
+        if position and position * 2 >= len(buffer):
+            buffer = buffer[position:]
+            position = 0
+
+    def pending_bytes() -> int:
+        """UTF-8 size of the undecoded region, for the item-size cap.
+
+        Only reached on a refill, i.e. once per chunk rather than once per
+        item, so walking the pending region here stays linear overall.
+        """
+        return len(buffer[position:].encode("utf-8"))
+
     fill()
     skip_whitespace()
     if position >= len(buffer) or buffer[position] != "[":
@@ -1183,16 +1247,16 @@ def _iter_json_array_stream(
         position += 1
     else:
         while True:
-            if position:
-                buffer = buffer[position:]
-                position = 0
+            compact()
             while True:
                 try:
-                    item, item_end = json_decoder.raw_decode(buffer)
+                    # Decode from ``position`` rather than slicing to it: the
+                    # slice was the second half of the quadratic copy.
+                    item, item_end = json_decoder.raw_decode(buffer, position)
                 except json.JSONDecodeError as exc:
                     if eof:
                         raise _fail("invalid_resource_archive", "Yomitan bank contains invalid JSON") from exc
-                    buffered_bytes = len(buffer.encode("utf-8"))
+                    buffered_bytes = pending_bytes()
                     if buffered_bytes >= item_byte_limit + 1:
                         raise _fail(
                             "resource_archive_too_large",
@@ -1201,7 +1265,7 @@ def _iter_json_array_stream(
                     fill(min(_COPY_CHUNK_BYTES, item_byte_limit + 1 - buffered_bytes))
                     continue
 
-                item_bytes = len(buffer[:item_end].encode("utf-8"))
+                item_bytes = len(buffer[position:item_end].encode("utf-8"))
                 if item_bytes > item_byte_limit:
                     raise _fail(
                         "resource_archive_too_large",
@@ -1210,8 +1274,19 @@ def _iter_json_array_stream(
                 probe = item_end
                 while probe < len(buffer) and buffer[probe].isspace():
                     probe += 1
-                if probe == len(buffer) and not eof and isinstance(item, (int, float)) and not isinstance(item, bool):
-                    buffered_bytes = len(buffer.encode("utf-8"))
+                # A number is the one token the decoder will happily return
+                # truncated: JSON's grammar stops before a trailing ``.`` or
+                # ``e``, so ``raw_decode("1.")`` yields ``(1, 1)`` and the rest
+                # of the literal looks like trailing garbage. Refill whenever
+                # the next character could still extend the number, not only
+                # when it ended flush against the buffer.
+                if (
+                    not eof
+                    and isinstance(item, (int, float))
+                    and not isinstance(item, bool)
+                    and (item_end == len(buffer) or buffer[item_end] in _JSON_NUMBER_CONTINUATION)
+                ):
+                    buffered_bytes = pending_bytes()
                     if buffered_bytes >= item_byte_limit + 1:
                         raise _fail(
                             "resource_archive_too_large",
@@ -1220,7 +1295,12 @@ def _iter_json_array_stream(
                     fill(min(_COPY_CHUNK_BYTES, item_byte_limit + 1 - buffered_bytes))
                     continue
                 while probe == len(buffer) and not eof:
-                    fill(1)
+                    # A whole chunk, not a byte at a time: ``buffer`` is a
+                    # closure cell, so ``buffer += chunk`` cannot use CPython's
+                    # in-place resize and every single-byte fill re-copied it.
+                    # The item is already decoded and size-checked here, so
+                    # reading ahead past it costs nothing.
+                    fill()
                     while probe < len(buffer) and buffer[probe].isspace():
                         probe += 1
                 if probe >= len(buffer) or buffer[probe] not in {",", "]"}:
@@ -1229,8 +1309,6 @@ def _iter_json_array_stream(
                 position = probe + 1
                 break
 
-            buffer = buffer[position:]
-            position = 0
             operation.check()
             yield item
             if delimiter == "]":
@@ -1271,7 +1349,12 @@ def _rewrite_yomitan_banks(
             zipfile.ZipFile(
                 destination_path,
                 "x",
-                compression=zipfile.ZIP_DEFLATED,
+                # Stored, not deflated: this archive is a private staging file
+                # the importer reads back immediately and never retains, so
+                # re-compressing hundreds of megabytes of bank JSON buys
+                # nothing. ``_yomitan_import_peak_bytes`` already budgets it at
+                # stored size.
+                compression=zipfile.ZIP_STORED,
                 allowZip64=True,
             ) as destination,
         ):
@@ -1377,6 +1460,19 @@ def _restore_original_yomitan_zip(candidate: Path, archive: _ArchiveCopy) -> Non
     retained = candidate / "source.zip"
     retained.unlink()
     archive.path.replace(retained)
+
+
+def _seal_retained_archive(candidate: Path) -> None:
+    """Make the slot's retained ``source.zip`` read-only.
+
+    The importer copies (or this module renames) it in with whatever mode the
+    staged source carried. Every other archive this module lands is 0o400, and
+    nothing reimports from a writable copy on purpose.
+    """
+
+    retained = candidate / "source.zip"
+    if retained.is_file():
+        retained.chmod(0o400)
 
 
 def _dictionary_sidecar(
@@ -1771,9 +1867,11 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
             maximum_archive = (
                 catalog_resource.archive.size_bytes if catalog_resource else _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES
             )
-            copied = _copy_archive(
+            # Kotlin hands us an app-private staged file (SAF copy for a custom
+            # pick, download for a catalog one), so copying it here only doubled
+            # the peak footprint of a multi-hundred-megabyte import.
+            copied = _hash_archive(
                 source,
-                operation_root / "dictionary.zip",
                 operation,
                 maximum_bytes=maximum_archive,
                 expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
@@ -1799,16 +1897,22 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                     "resource_archive_mismatch",
                     "Pinned dictionary layout differs from the catalog",
                 )
+            # A catalog archive's banks are pinned under the catalog's own
+            # file_bytes_limit, so it has never needed the rewrite. A custom one
+            # needs it only when some bank is too large for the engine importer
+            # to read whole.
+            streamed_rewrite = catalog_resource is None and identity.max_bank_bytes > _YOMITAN_BANK_INLINE_LIMIT_BYTES
             _check_free_space(
                 operation_root,
                 _yomitan_import_peak_bytes(
                     identity,
                     copied.size_bytes,
                     intermediate_csv=False,
+                    streamed_rewrite=streamed_rewrite,
                 ),
             )
             import_source = copied.path
-            if catalog_resource is None:
+            if streamed_rewrite:
                 import_source = _rewrite_yomitan_banks(
                     copied.path,
                     operation_root / "streamed-dictionary.zip",
@@ -1852,8 +1956,11 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
                     "Pinned dictionary metadata differs from the catalog",
                 )
             candidate = import_root / slot_id
-            if catalog_resource is None:
+            # Only a rewritten archive needs replacing: without the rewrite the
+            # importer already retained the original verified bytes itself.
+            if streamed_rewrite:
                 _restore_original_yomitan_zip(candidate, copied)
+            _seal_retained_archive(candidate)
             sidecar = _dictionary_sidecar(
                 slot_id=slot_id,
                 archive=copied,
