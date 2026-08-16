@@ -571,6 +571,36 @@ def test_staged_text_cancellation_during_load_maps_engine_error(
     assert checks >= 4
 
 
+def test_engine_load_cancellation_is_a_cancellation_not_a_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The engine loader raises its own cancellation now.
+
+    ``OperationCancelled`` subclasses ``SetupError``, so it walks straight past
+    the arms that convert the bridge's own cancellations and lands in the
+    generic handler — which reports the run as failed. The user pressed Stop.
+    """
+    from anki_miner.exceptions import OperationCancelled
+
+    def cancelling_load(_ref: object, *, cancel_check: object = None) -> object:
+        raise OperationCancelled("Reading load cancelled")
+
+    monkeypatch.setattr(
+        reading_mining,
+        "_reading_detector",
+        lambda: SimpleNamespace(
+            detect=lambda _path: pytest.fail("detect must not run for a text source"),
+            load=cancelling_load,
+        ),
+    )
+    request = _staged_text_request(tmp_path, "猫。".encode())
+
+    with pytest.raises(AnkiOperationCancelled) as error:
+        reading_mining._load_document(request, cancellation_check=lambda: False)
+    assert error.value.operation == "runReading"
+
+
 def test_staged_text_precounts_sentence_fanout_before_unit_allocation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

@@ -270,6 +270,7 @@ def _load_document(
         from .anki_adapter import AnkiOperationCancelled
 
         raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
+    from anki_miner.exceptions import OperationCancelled
     from anki_miner.models.reading import (
         ReadingUnitLimitExceeded,
         ReadingUnitLoadCancelled,
@@ -288,7 +289,10 @@ def _load_document(
             "reading_source_too_large",
             f"The reading document contains too many units ({error.observed:,} > {error.maximum:,})",
         ) from error
-    except ReadingUnitLoadCancelled as error:
+    except (ReadingUnitLoadCancelled, OperationCancelled) as error:
+        # OperationCancelled comes from the engine loader's own per-kind
+        # checkpoints and subclasses SetupError, so without this arm it walks
+        # past every cancellation handler and the run reports itself failed.
         from .anki_adapter import AnkiOperationCancelled
 
         raise AnkiOperationCancelled(
