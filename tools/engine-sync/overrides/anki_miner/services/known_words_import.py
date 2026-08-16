@@ -430,7 +430,7 @@ def _parse_json_streamed(
                     if pair[1] == 2 and _clean(pair[0]):
                         _add_bounded(
                             words,
-                            pair[0],
+                            _clean(pair[0]),
                             max_words=max_words,
                             max_word_bytes=max_word_bytes,
                         )
@@ -595,7 +595,7 @@ def _parse_json(data: Any) -> KnownWordsImportResult:
             for pair in data
         )
     ):
-        words = {word for word, status in data if status == 2 and _clean(word)}
+        words = {_clean(word) for word, status in data if status == 2 and _clean(word)}
         return _result("migaku_legacy", words, len(data))
     raise KnownWordsImportError("unrecognized")
 

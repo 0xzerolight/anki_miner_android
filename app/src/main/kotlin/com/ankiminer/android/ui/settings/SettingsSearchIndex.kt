@@ -129,7 +129,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         entry("media.subtitle_offset", SettingsCategory.MEDIA, "media-options", R.string.settings_subtitle_offset),
         entry("media.audio_bitrate", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_bitrate),
         entry("media.audio_format", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_format),
-        entry("media.strip_annotations", SettingsCategory.MEDIA, "subtitle-text", R.string.settings_strip_annotations),
         entry("media.subtitle_regex", SettingsCategory.MEDIA, "subtitle-text", R.string.settings_subtitle_regex),
         entry(
             "media.subtitle_replacement",

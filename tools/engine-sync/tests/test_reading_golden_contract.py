@@ -38,7 +38,7 @@ class ReadingGoldenContractTests(unittest.TestCase):
     def test_committed_fixture_is_complete_and_current(self) -> None:
         self.validate(self.fixture)
         self.assertEqual(
-            "8ad04af7e105d547cb8fcea2c94e2e13e7a0299db995c349ddd8cc0f7832676b",
+            "6e46a93e15638b5be816d8c7198ad837da232e2b44f8a4097246149a3b63c1e9",
             hashlib.sha256(self.fixture_path.read_bytes()).hexdigest(),
         )
         documents = self.fixture["case"]["output"]["documents"]
@@ -90,7 +90,7 @@ class ReadingGoldenContractTests(unittest.TestCase):
     def test_exporter_uses_real_loader_and_process_reading(self) -> None:
         source = self.exporter_path.read_text(encoding="utf-8")
         self.assertIn("refs = detector.detect(source)", source)
-        self.assertIn("document = detector.load(refs[0], strip_subtitle_annotations=True)", source)
+        self.assertIn("document = detector.load(refs[0])", source)
         self.assertIn("result = processor.process_reading(document)", source)
         self.assertIn("WordFilterService(config)", source)
         self.assertNotIn("expected_output", source)

@@ -26,6 +26,7 @@ across the importer's staging-dir cleanup (matters on Windows).
 from __future__ import annotations
 
 import sqlite3
+import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -33,7 +34,7 @@ import anki_miner.services._sqlite_index as _sqlite_index
 from anki_miner.services._sqlite_index import read_meta as read_meta
 from anki_miner.services._sqlite_index import write_meta as write_meta
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 3
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS entries (
@@ -52,9 +53,9 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 # One row destined for the ``entries`` table, in the pitch CSV column order:
-# (reading, kanji, pattern, nasal, devoice). ``pattern`` keeps whatever the
-# source held (integer downstep or [HL]+ mora string); nasal/devoice are the
-# comma-joined digit strings from the CSV format ("" when absent).
+# (reading, kanji, pattern, nasal, devoice). ``pattern`` is the normalized
+# integer-downstep / [HL]+ string; nasal/devoice are comma-joined digit strings
+# from the CSV format ("" when absent).
 PitchStorageRow = tuple[str, str, str, str, str]
 
 
@@ -79,8 +80,16 @@ def bulk_insert(db_path: Path, rows: Iterable[PitchStorageRow], batch_size: int 
     conn = sqlite3.connect(db_path)
     try:
         batch: list[PitchStorageRow] = []
-        for row in rows:
-            batch.append(row)
+        for reading, kanji, pattern, nasal, devoice in rows:
+            batch.append(
+                (
+                    unicodedata.normalize("NFC", reading),
+                    unicodedata.normalize("NFC", kanji),
+                    pattern,
+                    nasal,
+                    devoice,
+                )
+            )
             if len(batch) >= batch_size:
                 conn.executemany(
                     "INSERT INTO entries (reading, kanji, pattern, nasal, devoice) VALUES (?, ?, ?, ?, ?)",

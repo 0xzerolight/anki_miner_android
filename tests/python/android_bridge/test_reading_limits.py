@@ -403,13 +403,7 @@ def test_reading_unit_limit_stops_loader_before_the_excess_unit_is_retained(
         def detect(self, _path: Path) -> list[object]:
             return [self.ref]
 
-        def load(
-            self,
-            _ref: object,
-            *,
-            strip_subtitle_annotations: bool,
-        ) -> object:
-            assert strip_subtitle_annotations is True
+        def load(self, _ref: object, *, cancel_check: object = None) -> object:
             from anki_miner.models.reading import ReadingDocument, ReadingUnit
 
             splitter_path = (
@@ -475,13 +469,7 @@ def test_mokuro_sentence_fanout_stops_before_the_piece_list_materializes(
         def detect(self, _path: Path) -> list[object]:
             return [self.ref]
 
-        def load(
-            self,
-            _ref: object,
-            *,
-            strip_subtitle_annotations: bool,
-        ) -> object:
-            assert strip_subtitle_annotations is True
+        def load(self, _ref: object, *, cancel_check: object = None) -> object:
             splitter_path = (
                 Path(__file__).resolve().parents[3]
                 / "app/src/main/python/anki_miner/services/reading/sentence_splitter.py"

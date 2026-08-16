@@ -2,7 +2,7 @@
 
 import logging
 import re
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import requests
 from PyQt6.QtCore import QCoreApplication
@@ -23,8 +23,12 @@ from anki_miner.services.anki_note_builder import (
     _strip_for_dedup,
     build_note,
     configured_target_field_names,
+    field_mapping_error,
+    field_target_collision_message,
+    missing_note_type_message,
 )
 from anki_miner.utils.i18n import tr_format
+from anki_miner.utils.logging_ext import log_summary
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +81,16 @@ _DUPLICATE_ERROR_SUBSTRING = "cannot create note because it is a duplicate"
 _UNSUPPORTED_ACTION_SUBSTRING = "unsupported action"
 
 
+def _escape_deck_name(deck: str) -> str:
+    """Escape a deck name for use inside a quoted Anki search clause.
+
+    Backslashes, quotes, and Anki's glob metacharacters (``*`` = any run,
+    ``_`` = any single char, which Anki treats as wildcards even inside
+    ``deck:"..."``) are escaped so a name like ``Core_2k`` matches literally.
+    """
+    return deck.replace("\\", "\\\\").replace('"', '\\"').replace("*", "\\*").replace("_", "\\_")
+
+
 def is_transient_anki_transport_error(exc: BaseException) -> bool:
     """Whether *exc* is an AnkiConnect failure a later attempt could survive.
 
@@ -121,6 +135,15 @@ class AnkiService:
         # A service that has not submitted anything has written nothing.
         self.anki_write_state: AnkiWriteState = AnkiWriteState.NO_NOTE_WRITE
         self.last_created_note_ids: list[int] = []
+        # Positionally aligned mined forms for the confirmed IDs above. Unlike
+        # ProcessingResult.mined_forms, this is not a known_words.db undo
+        # receipt; Deck Builder consumes it to promote only cards Anki created.
+        self.last_created_mined_forms: list[str] = []
+        # Positionally aligned source lemmas for the same IDs. Deck Builder's
+        # cross-episode dedup keys on corpus lemmas, which need not map
+        # one-to-one to mined forms.
+        self.last_created_lemmas: list[str] = []
+        self._cancelled_check: Callable[[], bool] | None = None
         # Number of notes not created during the last create_cards_batch call.
         # Combines both sources:
         #   - notes the pre-add duplicate probe (_probe_duplicates) classified as
@@ -161,6 +184,7 @@ class AnkiService:
             List of field names, or empty list on error.
         """
         name = model_name or self.config.anki_note_type
+        logger.debug("Anki get note type fields: note_type=%s", name)
         try:
             result = post_action(
                 self.config.ankiconnect_url,
@@ -168,9 +192,20 @@ class AnkiService:
                 params={"modelName": name},
                 timeout=15,
             )
-        except AnkiConnectionError:
+        except AnkiConnectionError as exc:
+            log_summary(
+                logger,
+                "Anki get note type fields done",
+                level=logging.WARNING,
+                note_type=name,
+                fields=0,
+                fallback=True,
+                error_type=type(exc).__name__,
+            )
             return []
-        return list(result or [])
+        fields = list(result or [])
+        logger.debug("Anki get note type fields done: fields=%d", len(fields))
+        return fields
 
     def get_deck_names(self) -> list[str]:
         """Get all deck names from AnkiConnect.
@@ -184,9 +219,19 @@ class AnkiService:
                 "deckNames",
                 timeout=15,
             )
-        except AnkiConnectionError:
+        except AnkiConnectionError as exc:
+            log_summary(
+                logger,
+                "Anki get deck names done",
+                level=logging.WARNING,
+                decks=0,
+                fallback=True,
+                error_type=type(exc).__name__,
+            )
             return []
-        return list(result or [])
+        decks = list(result or [])
+        logger.debug("Anki get deck names done: decks=%d", len(decks))
+        return decks
 
     def get_model_names(self) -> list[str]:
         """Get all note type (model) names from AnkiConnect.
@@ -203,9 +248,19 @@ class AnkiService:
                 "modelNames",
                 timeout=15,
             )
-        except AnkiConnectionError:
+        except AnkiConnectionError as exc:
+            log_summary(
+                logger,
+                "Anki get model names done",
+                level=logging.WARNING,
+                models=0,
+                fallback=True,
+                error_type=type(exc).__name__,
+            )
             return []
-        return list(result or [])
+        models = list(result or [])
+        logger.debug("Anki get model names done: models=%d", len(models))
+        return models
 
     def ensure_deck(self, deck_name: str) -> None:
         """Create the named deck in Anki via AnkiConnect.
@@ -217,12 +272,49 @@ class AnkiService:
         Raises:
             AnkiConnectionError: On connection failure or AnkiConnect error.
         """
+        logger.debug("Anki ensure deck: deck=%s", deck_name)
         post_action(
             self.config.ankiconnect_url,
             "createDeck",
             params={"deck": deck_name},
             timeout=15,
         )
+        logger.debug("Anki ensure deck done: deck=%s", deck_name)
+
+    def note_type_names(self) -> list[str]:
+        """Every note type in the collection (AnkiConnect ``modelNames``)."""
+        names = _expect_list(
+            post_action(self.config.ankiconnect_url, "modelNames", timeout=15) or [],
+            "modelNames",
+            elem_type=str,
+        )
+        logger.debug("Anki note type names done: note_types=%d", len(names))
+        return names
+
+    def note_type_field_names(self, note_type: str) -> set[str]:
+        """Field names defined on ``note_type`` (AnkiConnect ``modelFieldNames``)."""
+        return set(self.ordered_note_type_field_names(note_type))
+
+    def ordered_note_type_field_names(self, note_type: str) -> list[str]:
+        """Field names defined on ``note_type``, preserving Anki's order."""
+        return self._ordered_note_type_field_names(note_type)
+
+    def _ordered_note_type_field_names(self, note_type: str) -> list[str]:
+        """Ordered field names defined on ``note_type``."""
+        logger.debug("Anki note type field names: note_type=%s", note_type)
+        fields = _expect_list(
+            post_action(
+                self.config.ankiconnect_url,
+                "modelFieldNames",
+                params={"modelName": note_type},
+                timeout=15,
+            )
+            or [],
+            "modelFieldNames",
+            elem_type=str,
+        )
+        logger.debug("Anki note type field names done: fields=%d", len(fields))
+        return fields
 
     def verify_card_target(self) -> None:
         """Validate note type, field mapping, and that the target deck exists.
@@ -236,41 +328,44 @@ class AnkiService:
         makes this check pass there (see deck_builder_worker.py).
 
         Raises:
-            SetupError: note type missing, a configured field absent from it,
-                or the configured deck absent from the collection.
+            SetupError: note type missing, field mapping invalid, or the
+                configured deck absent from the collection.
             AnkiConnectionError: AnkiConnect unreachable or errors.
         """
-        models = post_action(self.config.ankiconnect_url, "modelNames", timeout=15) or []
-        if self.config.anki_note_type not in models:
-            available = ", ".join(models[:5])
-            more = "..." if len(models) > 5 else ""
-            raise SetupError(
-                f"Note type '{self.config.anki_note_type}' not found. "
-                f"Available: {available}{more}. "
-                f"Check Settings → Anki."
-            )
-
-        actual = set(
-            post_action(
-                self.config.ankiconnect_url,
-                "modelFieldNames",
-                params={"modelName": self.config.anki_note_type},
-                timeout=15,
-            )
-            or []
+        logger.debug(
+            "Anki verify card target: deck=%s note_type=%s",
+            self.config.anki_deck_name,
+            self.config.anki_note_type,
         )
+        models = self.note_type_names()
+        if self.config.anki_note_type not in models:
+            raise SetupError(missing_note_type_message(self.config.anki_note_type, models))
+
+        targets = [target for target in self.config.anki_fields.values() if target]
+        # The active card-type marker is written too (build_note stamps "x" into
+        # it), so a marker sharing a target field would silently overwrite that
+        # field after preflight passed. Inactive markers are never written and
+        # may collide freely.
+        if self.config.card_type:
+            marker_target = self.config.card_type_marker_fields.get(self.config.card_type, "")
+            if marker_target:
+                targets.append(marker_target)
+        collision_error = field_target_collision_message(self.config.anki_note_type, targets)
+        if collision_error:
+            raise SetupError(collision_error)
+
+        ordered_actual = self.ordered_note_type_field_names(self.config.anki_note_type)
+        actual = set(ordered_actual)
         required = configured_target_field_names(self.config)
-        missing = required - actual
-        if missing:
-            _sorted_actual = sorted(actual)
-            _available = ", ".join(_sorted_actual[:5])
-            _more = "..." if len(actual) > 5 else ""
-            raise SetupError(
-                f"Field(s) {', '.join(sorted(missing))} not found on note type "
-                f"'{self.config.anki_note_type}'. "
-                f"Available: {_available}{_more}. "
-                f"Check Settings → Anki field mapping."
-            )
+        word_target = self.config.anki_fields["word"]
+        mapping_error = field_mapping_error(
+            self.config.anki_note_type,
+            ordered_actual,
+            required,
+            word_target,
+        )
+        if mapping_error:
+            raise SetupError(mapping_error)
 
         decks = post_action(self.config.ankiconnect_url, "deckNames", timeout=15) or []
         if self.config.anki_deck_name not in decks:
@@ -281,6 +376,13 @@ class AnkiService:
                 f"Available: {available}{more}. "
                 f"Pick an existing deck in Settings → Anki, or create it in Anki first."
             )
+        logger.debug(
+            "Anki verify card target done: models=%d fields=%d configured=%d decks=%d",
+            len(models),
+            len(actual),
+            len(required),
+            len(decks),
+        )
 
     def _build_vocab_query(self) -> str:
         """Build the findNotes query for known-words detection.
@@ -295,17 +397,20 @@ class AnkiService:
         """
         query = "deck:*"
         for deck in self.config.excluded_decks:
-            safe = deck.replace("\\", "\\\\").replace('"', '\\"').replace("*", "\\*").replace("_", "\\_")
-            query += f' -deck:"{safe}"'
+            query += f' -deck:"{_escape_deck_name(deck)}"'
+        logger.debug("Anki vocab query: query=%s", query)
         return query
 
     def find_notes(self, query: str) -> list[int]:
         """Return note IDs matching an Anki search ``query`` (AnkiConnect ``findNotes``)."""
-        return _expect_list(
+        logger.debug("Anki find notes: query=%s", query)
+        note_ids = _expect_list(
             post_action(self.config.ankiconnect_url, "findNotes", params={"query": query}, timeout=30) or [],
             "findNotes",
             elem_type=int,
         )
+        logger.debug("Anki find notes done: notes=%d", len(note_ids))
+        return note_ids
 
     def notes_info(self, note_ids: list[int]) -> list[dict]:
         """Return per-note info dicts for ``note_ids`` (``notesInfo``); ``[]`` for empty input.
@@ -313,13 +418,17 @@ class AnkiService:
         Each dict carries ``noteId`` and a ``fields`` map ``{name: {"value": …}}``;
         a deleted note comes back as ``{}``.
         """
+        logger.debug("Anki notes info: notes=%d", len(note_ids))
         if not note_ids:
+            logger.debug("Anki notes info done: notes=%d", 0)
             return []
-        return _expect_list(
+        notes = _expect_list(
             post_action(self.config.ankiconnect_url, "notesInfo", params={"notes": note_ids}, timeout=60) or [],
             "notesInfo",
             elem_type=dict,
         )
+        logger.debug("Anki notes info done: notes=%d", len(notes))
+        return notes
 
     def update_notes_fields(self, updates: list[tuple[int, dict[str, str]]]) -> list[int]:
         """Overwrite fields on many notes in one batch (``updateNoteFields`` via ``post_multi``).
@@ -392,6 +501,7 @@ class AnkiService:
         (and revert) them in Anki's browser. ``addTags`` returns null, so there
         is nothing to parse; chunked to keep request bodies small.
         """
+        logger.debug("Anki add tags: notes=%d tag=%s", len(note_ids), tags)
         for start in range(0, len(note_ids), 500):
             chunk = note_ids[start : start + 500]
             post_action(
@@ -400,8 +510,9 @@ class AnkiService:
                 params={"notes": chunk, "tags": tags},
                 timeout=60,
             )
+        logger.debug("Anki add tags done: notes=%d", len(note_ids))
 
-    def get_existing_vocabulary(self) -> set[str]:
+    def get_existing_vocabulary(self, *, allow_degraded: bool = True) -> set[str]:
         """Get all Japanese vocabulary words already in Anki.
 
         Queries the collection (minus any ``config.excluded_decks``; see
@@ -413,7 +524,8 @@ class AnkiService:
             Set of Expression (first-field) values already in the
             collection, dedup-normalized (HTML/media-stripped, NFC) — i.e.
             ``mined_form`` strings, not lemmas. Returns an
-            empty set as a graceful-degradation fallback if AnkiConnect
+            empty set as a graceful-degradation fallback when
+            ``allow_degraded`` is true and AnkiConnect
             responds but the call fails for a recoverable, non-connection
             transport reason (e.g. a ``Timeout`` or a JSON decode
             ``ValueError``) — a warning is logged and filtering is
@@ -429,67 +541,7 @@ class AnkiService:
             return self._existing_vocab_cache
 
         try:
-            # Find ALL notes in the collection.
-            note_ids = _expect_list(
-                post_action(
-                    self.config.ankiconnect_url,
-                    "findNotes",
-                    params={"query": self._build_vocab_query()},
-                    timeout=30,
-                )
-                or [],
-                "findNotes",
-                elem_type=int,
-            )
-
-            if not note_ids:
-                logger.warning(
-                    "No notes found in Anki collection. "
-                    "If you have cards in Anki, check that AnkiConnect can access them.",
-                )
-                self._existing_vocab_cache = set()
-                return self._existing_vocab_cache
-
-            # Get note info in batches to avoid timeouts on large collections.
-            existing_words: set[str] = set()
-            batch_size = 1000
-
-            for i in range(0, len(note_ids), batch_size):
-                batch = note_ids[i : i + batch_size]
-                notes = _expect_list(
-                    post_action(
-                        self.config.ankiconnect_url,
-                        "notesInfo",
-                        params={"notes": batch},
-                        timeout=30,
-                    )
-                    or [],
-                    "notesInfo",
-                    elem_type=dict,
-                )
-
-                for note in notes:
-                    # A deleted note comes back as `{}`, and a malformed row may
-                    # carry a non-dict `fields`; both are treated as absent.
-                    fields = note.get("fields")
-                    if not isinstance(fields, dict) or not fields:
-                        continue
-                    # First field is always the expression/word in Anki
-                    # convention. Normalize it the same way Anki dedups (strip
-                    # HTML/media, unescape, NFC) so a markup-wrapped Expression
-                    # matches the plain `mined_form` the filter compares against
-                    # — otherwise the word slips the filter and AnkiConnect
-                    # rejects it as a duplicate at addNotes time.
-                    first_field = next(iter(fields))
-                    field_info = fields[first_field]
-                    if not isinstance(field_info, dict):
-                        # Malformed field entry (not a {value, order} object).
-                        continue
-                    word = _strip_for_dedup(field_info.get("value", ""))
-                    if word and _JAPANESE_RE.search(word):
-                        existing_words.add(word)
-
-            self._existing_vocab_cache = existing_words
+            self._existing_vocab_cache = self._collect_first_field_forms(self._build_vocab_query())
             return self._existing_vocab_cache
 
         except AnkiConnectionError as e:
@@ -502,8 +554,96 @@ class AnkiService:
             cause = e.__cause__
             if cause is None or isinstance(cause, requests.exceptions.ConnectionError):
                 raise
+            if not allow_degraded:
+                raise
             logger.warning("Failed to fetch existing vocabulary (filtering disabled): %s", e)
             return set()
+
+    def _collect_first_field_forms(self, query: str) -> set[str]:
+        """Run ``query`` and return the dedup-normalized Japanese first fields.
+
+        The findNotes → notesInfo → first-field scan shared by
+        :meth:`get_existing_vocabulary` and
+        :meth:`get_vocabulary_excluding_deck`. Raises ``AnkiConnectionError``
+        on transport failure; degradation policy belongs to the callers.
+        """
+        note_ids = _expect_list(
+            post_action(
+                self.config.ankiconnect_url,
+                "findNotes",
+                params={"query": query},
+                timeout=30,
+            )
+            or [],
+            "findNotes",
+            elem_type=int,
+        )
+
+        if not note_ids:
+            logger.warning(
+                "No notes found in Anki collection. "
+                "If you have cards in Anki, check that AnkiConnect can access them.",
+            )
+            return set()
+
+        # Get note info in batches to avoid timeouts on large collections.
+        existing_words: set[str] = set()
+        batch_size = 1000
+
+        for i in range(0, len(note_ids), batch_size):
+            batch = note_ids[i : i + batch_size]
+            notes = _expect_list(
+                post_action(
+                    self.config.ankiconnect_url,
+                    "notesInfo",
+                    params={"notes": batch},
+                    timeout=30,
+                )
+                or [],
+                "notesInfo",
+                elem_type=dict,
+            )
+
+            for note in notes:
+                # A deleted note comes back as `{}`, and a malformed row may
+                # carry a non-dict `fields`; both are treated as absent.
+                fields = note.get("fields")
+                if not isinstance(fields, dict) or not fields:
+                    continue
+                # First field is always the expression/word in Anki
+                # convention. Normalize it the same way Anki dedups (strip
+                # HTML/media, unescape, NFC) so a markup-wrapped Expression
+                # matches the plain `mined_form` the filter compares against
+                # — otherwise the word slips the filter and AnkiConnect
+                # rejects it as a duplicate at addNotes time.
+                first_field = next(iter(fields))
+                field_info = fields[first_field]
+                if not isinstance(field_info, dict):
+                    # Malformed field entry (not a {value, order} object).
+                    continue
+                word = _strip_for_dedup(field_info.get("value", ""))
+                if word and _JAPANESE_RE.search(word):
+                    existing_words.add(word)
+
+        return existing_words
+
+    def get_vocabulary_excluding_deck(self, deck: str) -> set[str]:
+        """Existing-vocabulary scan that additionally negates ``deck``.
+
+        Used by the Deck Filter tool: the source deck's own expressions must
+        not count as "known", otherwise every note in the deck being filtered
+        would be dropped against itself. Appending the negation is idempotent
+        when ``deck`` is already in ``config.excluded_decks``.
+
+        Never reads or writes the session vocab cache — the cache holds the
+        answer for :meth:`_build_vocab_query`'s shape, and this query's answer
+        must not leak into callers of :meth:`get_existing_vocabulary`. Raises
+        ``AnkiConnectionError`` on any failure: a degraded empty set would
+        silently classify the whole source deck as unknown-but-known-elsewhere
+        and produce a wrong plan.
+        """
+        query = self._build_vocab_query() + f' -deck:"{_escape_deck_name(deck)}"'
+        return self._collect_first_field_forms(query)
 
     def invalidate_existing_vocabulary_cache(self) -> None:
         """Invalidate the session-scoped vocabulary cache.
@@ -529,6 +669,10 @@ class AnkiService:
         """
         self._media_store.upload_dict_media(word_data_list)
 
+    def set_cancelled_check(self, cancelled: Callable[[], bool] | None) -> None:
+        """Install the live Phase-5 cancellation predicate for one call."""
+        self._cancelled_check = cancelled
+
     def create_cards_batch(
         self,
         word_data_list: list[CardPayload],
@@ -543,16 +687,39 @@ class AnkiService:
         Returns:
             Ordered note IDs successfully created and confirmed by AnkiConnect.
         """
+        log_summary(
+            logger,
+            "Anki create cards",
+            cards=len(word_data_list),
+            deck=self.config.anki_deck_name,
+            note_type=self.config.anki_note_type,
+        )
         if not word_data_list:
             self.last_created_note_ids = []
+            self.last_created_mined_forms = []
+            self.last_created_lemmas = []
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
+            log_summary(
+                logger,
+                "Anki create cards done",
+                cards=0,
+                created=0,
+                not_created=0,
+                media_failed=0,
+                duplicates=0,
+                bold_used=0,
+                bold_fallback=0,
+            )
             return []
 
         self.last_created_note_ids = []
+        self.last_created_mined_forms = []
+        self.last_created_lemmas = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
         skipped_duplicates = 0
+        probed_duplicates = 0
         all_created_ids: list[int] = []
 
         if progress_callback:
@@ -561,16 +728,35 @@ class AnkiService:
                 QCoreApplication.translate("AnkiService", "Creating Anki cards"),
             )
 
-        # First, store all media files and track which succeeded
-        stored_files = self._store_media_files_batch(word_data_list)
+        excluded_deck_admission = bool(self.config.excluded_decks and not self.config.allow_duplicate_cards)
+        if excluded_deck_admission:
+            # The normal Phase-2 admission query deliberately excludes these
+            # decks. Reuse that same answer here, then allow admitted notes past
+            # Anki's collection-wide duplicate rule. Keep a local seen set so
+            # one run still submits a given first field at most once.
+            # This answer authorizes bypassing Anki's collection-wide duplicate
+            # rule. An uncertain answer must fail closed, unlike Phase 2's
+            # best-effort filtering preview.
+            existing = self.get_existing_vocabulary(allow_degraded=False)
+            seen: set[str] = set()
+            candidate_payloads: list[CardPayload] = []
+            for item in word_data_list:
+                note = build_note(item, self.config, set()).note
+                fields = note.get("fields") or {}
+                first_value = next(iter(fields.values()), "")
+                key = _strip_for_dedup(first_value if isinstance(first_value, str) else "")
+                duplicate = bool(key and (key in existing or key in seen))
+                if duplicate:
+                    skipped_duplicates += 1
+                else:
+                    candidate_payloads.append(item)
+                if key:
+                    seen.add(key)
+        else:
+            candidate_payloads = list(word_data_list)
+        probed_duplicates = skipped_duplicates
 
-        # Ship dict-bundled assets referenced by any definition or glossary in
-        # the batch via a single batched multi pass. Done up-front so uploads
-        # finish before notes reference the filenames; AnkiConnect serializes
-        # per-connection, safe.
-        self._upload_dict_media_batch(word_data_list)
-
-        # Then create notes in batches. AnkiConnect accepts arbitrary array
+        # Create surviving notes in batches. AnkiConnect accepts arbitrary array
         # sizes; 100 cuts round-trips ~2x vs 50 with no observed errors on a
         # representative deck. Larger sizes (200+) show diminishing returns
         # because note construction time inside Anki dominates over HTTP.
@@ -580,12 +766,15 @@ class AnkiService:
         # incremental cache merge in the finally. Only created words are merged —
         # see the rationale there (F10).
         created_forms: list[str] = []
+        created_lemmas: list[str] = []
         # Diagnostic counters for the bold path (Issue #20). Surface whether
         # the precomputed bolded strings actually made it to the note body,
         # so users who enable the option but see no bold can tell from the
         # log whether the parse populated the fields.
         bold_used = 0
         bold_fallback = 0
+        media_store_failures = 0
+        cancelled_between_batches = False
 
         # Persist progress even if a later batch raises. Earlier batches'
         # cards already exist in Anki; on a mid-run failure we must still
@@ -593,8 +782,39 @@ class AnkiService:
         # vocab cache before the error propagates — otherwise those cards are
         # orphaned with no record. The `finally` runs on success AND failure.
         try:
-            for i in range(0, len(word_data_list), batch_size):
-                batch = word_data_list[i : i + batch_size]
+            for i in range(0, len(candidate_payloads), batch_size):
+                if self._cancelled_check is not None and self._cancelled_check():
+                    cancelled_between_batches = True
+                    break
+
+                candidate_batch = candidate_payloads[i : i + batch_size]
+                # Probe each chunk only after the prior chunk's addNotes response.
+                # A repeated first field crossing the 100-note boundary then sees
+                # the first note in Anki and is rejected before any of its media is
+                # uploaded. Excluded-deck admission deliberately permits collection
+                # duplicates, but still validates every locally admitted note with
+                # duplicates allowed so bad fields fail before media side effects.
+                probe_notes = [build_note(item, self.config, set()).note for item in candidate_batch]
+                if excluded_deck_admission:
+                    self._validate_notes_addible(probe_notes)
+                    batch = candidate_batch
+                else:
+                    is_duplicate = self._probe_duplicates(probe_notes)
+                    batch = [
+                        item for item, duplicate in zip(candidate_batch, is_duplicate, strict=True) if not duplicate
+                    ]
+                    batch_duplicates = sum(is_duplicate)
+                    skipped_duplicates += batch_duplicates
+                    probed_duplicates += batch_duplicates
+
+                if not batch:
+                    continue
+
+                # Upload only this confirmed-to-be-addable batch. A Stop after
+                # it commits prevents every later batch's media and notes.
+                stored_files = self._store_media_files_batch(batch)
+                media_store_failures += self.last_media_store_failures
+                self._upload_dict_media_batch(batch)
 
                 # Build notes array for this batch (field mapping lives in
                 # anki_note_builder).
@@ -605,22 +825,13 @@ class AnkiService:
                         bold_used += 1
                     if built.used_bold_fallback:
                         bold_fallback += 1
-                    notes.append(built.note)
+                    note = built.note
+                    if excluded_deck_admission:
+                        note["options"] = {"allowDuplicate": True}
+                    notes.append(note)
 
-                # Pre-add duplicate probe (Yomitan partitionAddibleNotes): ask
-                # AnkiConnect which of these notes it would reject as duplicates
-                # BEFORE submitting, so we skip only real duplicates and submit
-                # the rest. `_probe_duplicates` surfaces a genuine (non-duplicate)
-                # rejection — bad field mapping, empty first field — as an error
-                # rather than silently dropping it; that error propagates to the
-                # pipeline boundary (the finally still records earlier batches).
-                is_duplicate = self._probe_duplicates(notes)
-                submit_notes = [note for note, dup in zip(notes, is_duplicate, strict=True) if not dup]
-                submit_payloads = [item for item, dup in zip(batch, is_duplicate, strict=True) if not dup]
-
-                # Every probe-flagged duplicate is counted as skipped.
-                dup_notes = [note for note, dup in zip(notes, is_duplicate, strict=True) if dup]
-                skipped_duplicates += len(dup_notes)
+                submit_notes = notes
+                submit_payloads = batch
 
                 # Submit only the non-duplicates. `post_action` raises
                 # `AnkiConnectionError` for connection failures, transport errors,
@@ -641,6 +852,7 @@ class AnkiService:
                     # confirmed write.
                     state_before_request = self.anki_write_state
                     self.anki_write_state = AnkiWriteState.NOTE_WRITE_UNCERTAIN
+                    logger.debug("Anki write state: %s", self.anki_write_state.value)
                     note_ids = _expect_list(
                         post_action(
                             self.config.ankiconnect_url,
@@ -656,6 +868,7 @@ class AnkiService:
                         self.anki_write_state = AnkiWriteState.NOTE_WRITE_CONFIRMED
                     else:
                         self.anki_write_state = state_before_request
+                    logger.debug("Anki write state: %s", self.anki_write_state.value)
                 else:
                     note_ids = []
 
@@ -673,6 +886,9 @@ class AnkiService:
                 created_forms.extend(
                     item.word.mined_form for item, nid in zip(submit_payloads, note_ids, strict=True) if nid is not None
                 )
+                created_lemmas.extend(
+                    item.word.lemma for item, nid in zip(submit_payloads, note_ids, strict=True) if nid is not None
+                )
 
                 if progress_callback:
                     # Report the CUMULATIVE run total, never per-chunk figures:
@@ -681,7 +897,7 @@ class AnkiService:
                     # the real run total (the reported Issue: misleading
                     # "Cards created: 100/100").
                     progress_callback.on_progress(
-                        min(i + batch_size, len(word_data_list)),
+                        min(i + len(candidate_batch) + skipped_duplicates, len(word_data_list)),
                         tr_format(
                             QCoreApplication.translate("AnkiService", "Cards created: %1/%2"),
                             total_created,
@@ -693,7 +909,10 @@ class AnkiService:
             # earlier ones on a mid-run failure). Runs before the exception
             # re-raises.
             self.last_created_note_ids = all_created_ids
+            self.last_created_mined_forms = created_forms
+            self.last_created_lemmas = created_lemmas
             self.last_skipped_duplicates = skipped_duplicates
+            self.last_media_store_failures = media_store_failures
             # Incremental merge: if the cache is already populated, union the
             # mined_forms of cards actually CREATED this run into it so subsequent
             # episodes (within the same batch run or the same manual-pair session)
@@ -711,7 +930,7 @@ class AnkiService:
                     if key and _JAPANESE_RE.search(key):
                         self._existing_vocab_cache.add(key)
 
-        if progress_callback:
+        if progress_callback and not cancelled_between_batches:
             progress_callback.on_complete()
         if skipped_duplicates > 0:
             logger.info(
@@ -725,7 +944,66 @@ class AnkiService:
                 len(word_data_list),
                 bold_fallback,
             )
+        log_summary(
+            logger,
+            "Anki create cards done",
+            cards=len(word_data_list),
+            created=total_created,
+            not_created=skipped_duplicates,
+            media_failed=self.last_media_store_failures,
+            duplicates=probed_duplicates,
+            bold_used=bold_used,
+            bold_fallback=bold_fallback,
+        )
         return list(all_created_ids)
+
+    def add_notes_raw(self, notes: list[dict]) -> list[int | None]:
+        """POST caller-built note dicts via ``addNotes`` in chunks of 100.
+
+        Unlike :meth:`create_cards_batch`, the caller owns every part of the
+        payload — ``deckName``, ``modelName``, ``fields``, ``tags``,
+        ``options`` (the Deck Filter tool copies scan-time notes verbatim into
+        a new deck). No duplicate probe and no media upload happen here; a
+        same-collection copy's ``<img>``/``[sound:]`` refs already resolve.
+
+        Returns ids positionally aligned with ``notes`` (``None`` = not
+        created). Write provenance mirrors ``create_cards_batch``: the state
+        is ``NOTE_WRITE_UNCERTAIN`` while a chunk is in flight (and stays so
+        if the request escapes), ``NOTE_WRITE_CONFIRMED`` once any id comes
+        back non-null, else restored to what held before the chunk.
+        """
+        log_summary(logger, "Anki add raw notes", notes=len(notes))
+        results: list[int | None] = []
+        batch_size = 100
+        for i in range(0, len(notes), batch_size):
+            chunk = notes[i : i + batch_size]
+            state_before_request = self.anki_write_state
+            self.anki_write_state = AnkiWriteState.NOTE_WRITE_UNCERTAIN
+            logger.debug("Anki write state: %s", self.anki_write_state.value)
+            note_ids = _expect_list(
+                post_action(
+                    self.config.ankiconnect_url,
+                    "addNotes",
+                    params={"notes": chunk},
+                    timeout=60,
+                ),
+                "addNotes",
+                len(chunk),
+                (int, type(None)),
+            )
+            if any(nid is not None for nid in note_ids):
+                self.anki_write_state = AnkiWriteState.NOTE_WRITE_CONFIRMED
+            else:
+                self.anki_write_state = state_before_request
+            logger.debug("Anki write state: %s", self.anki_write_state.value)
+            results.extend(note_ids)
+        log_summary(
+            logger,
+            "Anki add raw notes done",
+            notes=len(notes),
+            created=sum(1 for nid in results if nid is not None),
+        )
+        return results
 
     @staticmethod
     def _strip_note_to_first_field(note: dict) -> dict:
@@ -735,9 +1013,9 @@ class AnkiService:
         (``ext/js/background/backend.js``, upstream e2ed450). Anki dedups on the
         first field only, so shipping the rest — definition/glossary fields can
         carry megabytes of rendered HTML — just to ask "is this a duplicate?"
-        wastes bandwidth and AnkiConnect time. Field insertion order is
-        preserved by dicts, so the first key is the Expression by construction
-        (see ``anki_note_builder.build_note``).
+        wastes bandwidth and AnkiConnect time. ``verify_card_target`` requires
+        the word mapping to target the model's first field and rejects mapping
+        collisions; ``build_note`` emits that mined-form field first.
         """
         stripped = dict(note)
         fields = note.get("fields") or {}
@@ -769,7 +1047,9 @@ class AnkiService:
             AnkiConnectionError: connection/transport failure, a malformed
                 response, or a per-note non-duplicate rejection.
         """
+        logger.debug("Anki duplicate probe: notes=%d", len(notes))
         if not notes:
+            logger.debug("Anki duplicate probe done: duplicates=%d", 0)
             return []
 
         stripped = [self._strip_note_to_first_field(note) for note in notes]
@@ -793,7 +1073,13 @@ class AnkiService:
             )
         except AnkiConnectionError as e:
             if _UNSUPPORTED_ACTION_SUBSTRING in str(e).lower():
-                return self._probe_duplicates_fallback(stripped, no_dup)
+                logger.debug(
+                    "Anki duplicate probe fallback: reason=unsupported_action error_type=%s",
+                    type(e).__name__,
+                )
+                fallback_result = self._probe_duplicates_fallback(stripped, no_dup)
+                logger.debug("Anki duplicate probe done: duplicates=%d", sum(fallback_result))
+                return fallback_result
             raise
 
         is_duplicate: list[bool] = []
@@ -807,8 +1093,61 @@ class AnkiService:
             else:
                 # A genuine, non-duplicate rejection: surface it instead of
                 # mislabeling it a duplicate and silently dropping the card.
+                logger.debug(
+                    "Anki duplicate probe rejected: index=%d can_add=%s error=%s",
+                    i,
+                    item.get("canAdd"),
+                    error,
+                )
                 raise AnkiConnectionError(f"AnkiConnect rejected note {i} (not a duplicate): {error}")
+        logger.debug("Anki duplicate probe done: duplicates=%d", sum(is_duplicate))
         return is_duplicate
+
+    def _validate_notes_addible(self, notes: list[dict]) -> None:
+        """Raise if any first-field-only note is invalid with duplicates allowed."""
+        if not notes:
+            return
+
+        stripped = [self._strip_note_to_first_field(note) for note in notes]
+        dup_allowed = [{**note, "options": {**note.get("options", {}), "allowDuplicate": True}} for note in stripped]
+        try:
+            result = _expect_list(
+                post_action(
+                    self.config.ankiconnect_url,
+                    "canAddNotesWithErrorDetail",
+                    params={"notes": dup_allowed},
+                    timeout=60,
+                ),
+                "canAddNotesWithErrorDetail",
+                len(notes),
+                dict,
+            )
+        except AnkiConnectionError as e:
+            if _UNSUPPORTED_ACTION_SUBSTRING not in str(e).lower():
+                raise
+            addible = _expect_list(
+                post_action(
+                    self.config.ankiconnect_url,
+                    "canAddNotes",
+                    params={"notes": dup_allowed},
+                    timeout=60,
+                ),
+                "canAddNotes",
+                len(notes),
+                bool,
+            )
+            for index, can_add in enumerate(addible):
+                if not can_add:
+                    raise AnkiConnectionError(
+                        f"AnkiConnect rejected note {index} even with duplicates allowed"
+                    ) from None
+            return
+
+        for index, item in enumerate(result):
+            error = item.get("error")
+            if error is not None or item.get("canAdd") is not True:
+                detail = error if isinstance(error, str) and error else "note is not addable"
+                raise AnkiConnectionError(f"AnkiConnect rejected note {index}: {detail}")
 
     def _probe_duplicates_fallback(self, stripped: list[dict], no_dup: list[dict]) -> list[bool]:
         """Classify duplicates via two diffed ``canAddNotes`` calls.
@@ -822,6 +1161,7 @@ class AnkiService:
         on), we force ``allowDuplicate: True`` on the duplicates-allowed arm to
         make the diff meaningful.
         """
+        logger.debug("Anki duplicate fallback probe: notes=%d", len(stripped))
         dup_allowed = [{**note, "options": {**note.get("options", {}), "allowDuplicate": True}} for note in stripped]
         with_dup = _expect_list(
             post_action(
@@ -845,7 +1185,9 @@ class AnkiService:
             len(no_dup),
             bool,
         )
-        return [w != wo for w, wo in zip(with_dup, without_dup, strict=True)]
+        is_duplicate = [w != wo for w, wo in zip(with_dup, without_dup, strict=True)]
+        logger.debug("Anki duplicate fallback probe done: duplicates=%d", sum(is_duplicate))
+        return is_duplicate
 
     def _store_media_files_batch(
         self,
@@ -864,8 +1206,14 @@ class AnkiService:
         Returns:
             Set of filenames that were successfully stored
         """
+        logger.debug("Anki store media files: cards=%d", len(word_data_list))
         stored = self._media_store.store_batch(word_data_list)
         self.last_media_store_failures = self._media_store.last_store_failures
+        logger.debug(
+            "Anki store media files done: files=%d failed=%d",
+            len(stored),
+            self.last_media_store_failures,
+        )
         return stored
 
     def delete_notes(self, note_ids: list[int]) -> int:
@@ -887,7 +1235,9 @@ class AnkiService:
                 refused, transport error, JSON parse failure, or an error
                 payload in the ``deleteNotes`` response.
         """
+        log_summary(logger, "Anki delete notes", notes=len(note_ids))
         if not note_ids:
+            log_summary(logger, "Anki delete notes done", notes=0)
             return 0
 
         post_action(
@@ -897,4 +1247,6 @@ class AnkiService:
             timeout=30,
         )
         self.invalidate_existing_vocabulary_cache()
-        return len(note_ids)
+        deleted = len(note_ids)
+        log_summary(logger, "Anki delete notes done", notes=deleted)
+        return deleted

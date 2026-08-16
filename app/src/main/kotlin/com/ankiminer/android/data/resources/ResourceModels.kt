@@ -278,6 +278,13 @@ data class InstalledFrequencySource(
     val schemaOk: Boolean,
     val schemaVersion: Long,
     val isCategorical: Boolean,
+    /**
+     * The source.<ext> the importer kept beside the index, when one survives.
+     *
+     * Non-null means a schema-stale slot can be rebuilt in place without the
+     * user re-picking the original file; null means the slot is unrecoverable.
+     */
+    val rebuildSourcePath: String?,
 )
 
 data class ImportedPitchSource(
@@ -299,6 +306,8 @@ data class InstalledPitchSource(
     val entryCount: Long,
     val schemaOk: Boolean,
     val schemaVersion: Long,
+    /** See [InstalledFrequencySource.rebuildSourcePath]. */
+    val rebuildSourcePath: String?,
 )
 
 /**

@@ -165,12 +165,24 @@ class _DefinitionService:
         pairs: list[tuple[str, str | None]],
         progress_callback: object | None,
         fallback_context: dict[str, tuple[str, str | None]],
+        **_kwargs: object,
     ) -> list[str]:
         if progress_callback is not None:
             raise ReadingExportError("reading golden received unexpected progress")
         self.lookup_pairs = list(pairs)
         self.fallback_context = dict(fallback_context)
         return ['<div class="definition">cat</div>']
+
+    def offline_term_identities(
+        self,
+        pairs: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], set[tuple[str, int, str]]]:
+        """Drives the within-run orthographic alias collapse.
+
+        Empty keeps every candidate distinct, which is what this fixture
+        freezes; the real service resolves JMdict identities.
+        """
+        return {}
 
     def close(self) -> None:
         self.closed = True
@@ -183,6 +195,11 @@ class _AnkiService:
         self.last_skipped_duplicates = 0
         self.verified = False
         self.card_snapshot: dict[str, Any] | None = None
+        self.last_created_mined_forms: list[str] = []
+
+    def set_cancelled_check(self, cancelled: object) -> None:
+        # _phase5 installs its probe before the batch and clears it after.
+        return None
 
     def verify_card_target(self) -> None:
         self.verified = True
@@ -223,6 +240,10 @@ class _AnkiService:
             },
         }
         self.last_created_note_ids = [4242]
+        # The processor reads the known-words receipt off the service now
+        # rather than deriving it from what it submitted, so the sink must
+        # report the forms it confirmed.
+        self.last_created_mined_forms = [payload.word.mined_form for payload in card_data]
         # The service contract returns the created ids; the processor takes
         # len() of this and stamps them onto the result.
         return [4242]
@@ -320,10 +341,10 @@ def derive(*, engine_root: Path, corpus_path: Path) -> dict[str, Any]:
                 expected_kind = corpus["sources"][name]["kind"]
                 if len(refs) != 1 or refs[0].kind != expected_kind:
                     raise ReadingExportError(f"{name} detector output is invalid")
-                # Mirrors the bridge: the product default strips per-cue
-                # annotations, and the engine kwarg defaults to off, so the
-                # golden must pass it or it freezes behaviour the app never has.
-                document = detector.load(refs[0], strip_subtitle_annotations=True)
+                # Mirrors the bridge, which passes no cancellation here: the
+                # per-cue annotation strip is unconditional in the engine now,
+                # so there is no longer a kwarg to keep the two in step.
+                document = detector.load(refs[0])
                 if name == "subtitle":
                     document.series = corpus["sources"][name]["series_name"]
                 loaded[name] = document

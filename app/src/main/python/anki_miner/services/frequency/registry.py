@@ -37,12 +37,9 @@ class FreqSourceMeta:
     source_name: str
     format: str
     entry_count: int
-    # ``schema_ok`` = loadable/chain-includable (version in the supported range),
-    # decoupled from is-latest: a v1 index reads fine (display_value treated as
-    # absent), so schema_ok is True for it. ``version`` is the raw on-disk schema
-    # version, exposed so an out-of-date notice can key on
-    # ``version < SCHEMA_VERSION`` (a reimport gains display values but is never
-    # required for correctness) — schema_ok no longer distinguishes v1 from v2.
+    # ``schema_ok`` = loadable/chain-includable. Only the current version is
+    # accepted because schema bumps require reimporting canonicalized keys.
+    # ``version`` is the raw on-disk schema version exposed for stale notices.
     schema_ok: bool
     version: int
     db_path: Path
@@ -88,11 +85,7 @@ class FrequencySourceRegistry:
             source_name=source_name if isinstance(source_name, str) else child.name,
             format=format_name if isinstance(format_name, str) else "unknown",
             entry_count=count,
-            # schema_ok policy: additive-only migrations, so every version from
-            # 1..current is readable (older = fewer columns, filled as absent by
-            # readers). A future version > SCHEMA_VERSION (written by a newer app)
-            # is rejected — we don't know its schema.
-            schema_ok=(1 <= version <= SCHEMA_VERSION),
+            schema_ok=(version == SCHEMA_VERSION),
             version=version,
             db_path=db,
             # Explicit == "1" — meta values are strings, so bool("0") would be
@@ -106,11 +99,9 @@ class FrequencySourceRegistry:
     def unlisted(self, config: AnkiMinerConfig) -> list[FreqSourceMeta]:
         """Return on-disk sources not referenced by any chain entry.
 
-        Only sources with schema_ok=True are returned — an unsupported-version
-        source (version outside 1..SCHEMA_VERSION) cannot be loaded and would be
-        dropped by build_sources anyway. A readable-but-older v1 source has
-        schema_ok=True, so it is offered normally. Results are sorted by
-        source_id for deterministic ordering.
+        Only sources with schema_ok=True are returned. A stale or future source
+        cannot be loaded and would be dropped by build_sources anyway. Results
+        are sorted by source_id for deterministic ordering.
 
         A source referenced by a *disabled* chain entry is still considered
         listed (it has a visible, unchecked row the user can re-enable), so it
@@ -124,18 +115,52 @@ class FrequencySourceRegistry:
             key=lambda m: m.source_id,
         )
 
+    def stale_enabled(self, config: AnkiMinerConfig) -> list[FreqSourceMeta]:
+        """Enabled chain slots present on disk but schema-mismatched.
+
+        Mirrors ``DictionaryRegistry.stale_enabled``: the single source of truth
+        for every reimport surface (settings row button, startup prompt, pre-run
+        gate, health check). A slot missing on disk (``meta is None``) is NOT
+        reported — the user may have deleted it deliberately, and there is no
+        persisted ``source.<ext>`` left to rebuild from either way.
+
+        Does NOT call load(); callers control when the scan happens.
+        """
+        stale: list[FreqSourceMeta] = []
+        for entry in config.frequency_chain:
+            if not entry.enabled or not entry.source_id:
+                continue
+            meta = self._sources.get(entry.source_id)
+            if meta is not None and not meta.schema_ok:
+                stale.append(meta)
+        return sorted(stale, key=lambda m: m.source_id)
+
+    def usable_enabled(self, config: AnkiMinerConfig) -> list[FreqSourceMeta]:
+        """Enabled chain slots that can actually answer a lookup.
+
+        Present on disk, schema-current, and holding at least one entry — read
+        off this snapshot without opening a SQLite connection, so a readiness
+        check can call it without file-locking an index Reimport All is about to
+        replace (Windows).
+
+        Does NOT call load(); callers control when the scan happens.
+        """
+        usable: list[FreqSourceMeta] = []
+        for entry in config.frequency_chain:
+            if not entry.enabled or not entry.source_id:
+                continue
+            meta = self._sources.get(entry.source_id)
+            if meta is not None and meta.schema_ok and meta.entry_count > 0:
+                usable.append(meta)
+        return sorted(usable, key=lambda m: m.source_id)
+
     def build_sources(self, config: AnkiMinerConfig) -> list[IndexedFreqProvider]:
         """Build the ordered provider list from config + disk state.
 
         Entries with enabled=False are skipped. Entries whose source_id is
-        missing on disk, or whose on-disk schema version is outside the supported
-        range (``schema_ok=False``), are dropped with a warning. A v1 index is
-        supported and included (its display values simply read as absent).
-        Providers are returned in chain order.
-
-        This drop runs *before* IndexedFreqProvider.load(), so it must accept the
-        same version range the provider does — else a v1 source would be dropped
-        here and never reach the (backward-compatible) provider read.
+        missing on disk, or whose on-disk schema version is not current
+        (``schema_ok=False``), are dropped with a warning. Providers are returned
+        in chain order. This gate must match IndexedFreqProvider.load().
 
         Caller is responsible for invoking provider.load() on each.
         """
@@ -167,3 +192,16 @@ class FrequencySourceRegistry:
                 )
             )
         return sources
+
+
+def stale_enabled_freq_sources(config: AnkiMinerConfig) -> list[FreqSourceMeta]:
+    """Build+scan a fresh registry and return enabled slots needing reimport.
+
+    Convenience wrapper for the startup migration prompt and the pre-run gate,
+    matching ``stale_enabled_dicts``. ``load()`` swallows scan OSErrors, so this
+    never raises for a missing / unreadable freqs folder — it reports no
+    staleness instead.
+    """
+    registry = FrequencySourceRegistry(config.freqs_root)
+    registry.load()
+    return registry.stale_enabled(config)

@@ -184,10 +184,7 @@ def _cleaned_cue_utf8_size(
 ) -> int:
     from anki_miner.services import subtitle_parser
 
-    cleaned = subtitle_parser.clean_subtitle_text(
-        raw_text,
-        strip_annotations=config.strip_subtitle_annotations,
-    )
+    cleaned = subtitle_parser.clean_subtitle_text(raw_text)
     pattern = getattr(parser, "_filter_pattern", None)
     if pattern is None:
         size = len(cleaned.encode("utf-8"))

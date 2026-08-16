@@ -208,8 +208,8 @@ class SettingsViewModelTest {
             val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
             advanceUntilIdle()
 
-            // Passes the numeric gate but fails the validator (workers must be 1..32).
-            viewModel.updateDraft(viewModel.draftState.value.draft.copy(workers = "33"))
+            // Passes the numeric gate but fails the validator (workers must be 1..20).
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(workers = "21"))
             advanceUntilIdle()
 
             assertEquals(0, repository.writeCount)
@@ -218,7 +218,7 @@ class SettingsViewModelTest {
                 viewModel.draftState.value.draft.validation[SettingsFieldKey.WORKERS]?.resourceId,
             )
             assertTrue(viewModel.error.value == null)
-            assertEquals("33", viewModel.draftState.value.draft.workers)
+            assertEquals("21", viewModel.draftState.value.draft.workers)
             assertEquals(SettingsSaveState.Pending(1), viewModel.saveState.value)
         }
 
@@ -1122,6 +1122,7 @@ class SettingsViewModelTest {
             entryCount = 1,
             schemaOk = true,
             schemaVersion = 1,
+            rebuildSourcePath = null,
         )
 
     /**

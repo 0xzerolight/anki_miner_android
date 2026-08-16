@@ -115,11 +115,6 @@ data class AppSettings(
      * the same answer desktop's media panel gives.
      */
     val animatedScreenshotMatchAudio: Boolean = false,
-    /**
-     * Structural subtitle-annotation strip: whole-line sound-effect captions, leading speaker tags,
-     * and inline furigana. Engine default is on, and it runs before the user regex filter.
-     */
-    val stripSubtitleAnnotations: Boolean? = null,
     /** Python `re` pattern removed from subtitle text before mining. See [SubtitleRegexCheck]. */
     val subtitleRegexFilter: String? = null,
     /** Inserted in place of each match. Python backreferences (`\1`), not `$1`. */
@@ -172,7 +167,6 @@ data class AppSettings(
             animatedScreenshotDurationSeconds = null,
             animatedScreenshotQuality = null,
             animatedScreenshotMatchAudio = false,
-            stripSubtitleAnnotations = null,
             subtitleRegexFilter = null,
             subtitleRegexReplacement = null,
             useSubtitleRegexFilter = null,
@@ -363,10 +357,10 @@ object AppSettingsValidator {
             positive("Reading minimum occurrence", it.readingMinimumOccurrence)
             nonNegative("Maximum frequency rank", it.maxFrequencyRank)
             it.maxParallelWorkers?.let { workers ->
-                if (workers !in 1..32) {
+                if (workers !in 1..20) {
                     invalid(
                         InvalidAppSettingCode.PARALLEL_WORKERS_RANGE,
-                        "Parallel workers must be between 1 and 32",
+                        "Parallel workers must be between 1 and 20",
                     )
                 }
             }
@@ -721,7 +715,6 @@ internal object EngineSettingsSnapshotMapper {
         settings.subtitleOffsetSeconds?.let { values["subtitle_offset"] = decimal(it) }
         settings.audioFormat?.let { values["audio_format"] = text(it.wireValue) }
         settings.audioBitrateKbps?.let { values["audio_bitrate"] = integer(it) }
-        settings.stripSubtitleAnnotations?.let { values["strip_subtitle_annotations"] = bool(it) }
         settings.subtitleRegexFilter?.let { values["subtitle_regex_filter"] = text(it) }
         settings.subtitleRegexReplacement?.let { values["subtitle_regex_replacement"] = text(it) }
         settings.useSubtitleRegexFilter?.let { values["use_subtitle_regex_filter"] = bool(it) }

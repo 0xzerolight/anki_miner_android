@@ -376,6 +376,7 @@ class ResourceIdentityTest {
         entryCount = 1000,
         schemaOk = true,
         schemaVersion = 1,
+        rebuildSourcePath = null,
     )
 
     private fun frequencySource(
@@ -389,5 +390,6 @@ class ResourceIdentityTest {
         schemaOk = true,
         schemaVersion = 1,
         isCategorical = false,
+        rebuildSourcePath = null,
     )
 }

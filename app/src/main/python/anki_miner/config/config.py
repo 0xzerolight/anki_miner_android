@@ -161,6 +161,7 @@ class AnkiMinerConfig:
     condenser_bitrate_kbps: int = 96  # kbps; mp3/opus only (flac ignores)
     condenser_filtered_chars: str = "♪♫♬♩〜～"  # Cues consisting only of these are dropped
     condenser_write_subtitles: bool = False  # Also write condensed .srt + .lrc sidecars
+    condenser_tag_outputs: bool = False  # Show the pre-run metadata editor and tag outputs (Issue #113)
 
     # Animated screenshot settings (opt-in; static JPEG remains default)
     screenshot_animated: bool = False
@@ -270,6 +271,12 @@ class AnkiMinerConfig:
     # pitch_accent.csv when present.
     pitch_chain: tuple["PitchSourceEntry", ...] = field(default_factory=tuple)
     pitch_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "pitch")
+    # Set once the legacy pitch_accent.csv has been folded into the chain. An
+    # explicit marker because the CSV is deliberately left on disk for
+    # downgrade: inferring "already migrated" from a non-empty pitch_chain made
+    # removing the migrated source re-import it on the next launch, undoing a
+    # deletion the user was told could not be undone.
+    legacy_pitch_migrated: bool = False
     # Output label format for the pitch_category Anki field.
     # "jp": 平板/頭高/中高/尾高/起伏 (legacy)
     # "romaji": heiban/atamadaka/nakadaka/odaka/kifuku (Yomitan/Lapis compatible)
@@ -279,7 +286,19 @@ class AnkiMinerConfig:
     # Activation is resource-driven (see the frequency_active property): the
     # frequency service loads iff at least one enabled source is in the chain.
     # There is no separate on/off flag — adding a source is the switch.
+    #
+    # The two ranks are the ends of ONE band. Lower rank = more common, so the
+    # minimum drops the common end (words already known from sheer exposure) and
+    # the maximum drops the rare end. 0 leaves that end open; both 0 = no filter.
+    min_frequency_rank: int = 0  # 0 = no minimum; e.g. 500 = skip the top 500
     max_frequency_rank: int = 0  # 0 = no filtering; e.g. 10000 = only top 10k words
+    # What happens to words carrying NO rank (missing from every loaded source).
+    # False (default) is the Issue #34 rule: opting into a band means an unindexed
+    # word cannot be shown to fall inside it, so it is dropped. True keeps them —
+    # what a min-only band usually wants, since an unranked word is not shown to
+    # be super-common either. Surfaced as a checkbox rather than inferred from
+    # which end is set, because the honest answer differs per end.
+    frequency_keep_unranked: bool = False
 
     # Additive multi-source frequency chain. Each enabled FreqEntry references a
     # per-source index under ~/.anki_miner/freqs/<source_id>/. Empty by default;
@@ -290,6 +309,12 @@ class AnkiMinerConfig:
     # Known word database
     known_words_db_path: Path = field(default_factory=lambda: ANKI_MINER_HOME / "known_words.db")
     use_known_words_db: bool = False
+    # When True (default), a word whose mined_form is written entirely in kana
+    # also counts as known when its dictionary lemma is in the known set — so a
+    # subtitle spelling うなずく doesn't re-mine an existing 頷く card. Kana-only
+    # gated on purpose: kanji-variant homographs that unidic's lemma collapses
+    # (殺る→遣る, Issue #19/#5) keep the exact mined_form match.
+    known_words_match_kana_variants: bool = True
     # When True, the known-words subtraction in Phase 2 is skipped so ALL
     # mineable words are mined regardless of Anki collection state. Used by
     # the Deck Builder's "include everything" mode. Default False preserves
@@ -329,18 +354,6 @@ class AnkiMinerConfig:
     subtitle_regex_filter: str = ""
     subtitle_regex_replacement: str = ""
     use_subtitle_regex_filter: bool = False
-
-    # Structural subtitle-annotation stripping (Task U1, default ON). Kills the
-    # largest batch-mining junk class: parenthetical SFX captions
-    # (（スマホのバイブ音）), leading speaker/style tags (（旬: 小声で）…), and inline
-    # furigana (瀕死(ひんし)) that would otherwise tokenize as dialogue. Applied per
-    # physical line before whitespace flattening on the subtitle-file path, and
-    # before the user regex filter on both mining and display paths (curation
-    # player / timing viewer). Default-ON is deliberate: an absent key falls back
-    # to this dataclass default on config load, so the strip reaches existing users on
-    # upgrade with no migration; the Filtering-panel checkbox is the escape hatch.
-    # See utils.text_utils.strip_inline_annotations for the three passes.
-    strip_subtitle_annotations: bool = True
 
     # Card formatting
     # When True, wrap the mined target word in <b>...</b> inside the
@@ -445,6 +458,22 @@ class AnkiMinerConfig:
     # subtitle retiming falls back to alass on PATH.
     alass_location: Path | None = None
 
+    # --- Subtitle retiming (alass alignment knobs) ---
+    # These live in Settings rather than on the Retime screen: the defaults are
+    # right for the overwhelming majority of runs, and they are preferences that
+    # should survive a restart, not per-run choices. `retime_split_penalty` is
+    # alass `--split-penalty` (useful range 1-20; clamped to 0-1000 below).
+    # `retime_correct_framerate` is the INVERSE of `--disable-fps-guessing`:
+    # default off, because FPS guessing stretches an already-correct subtitle
+    # and only helps when the sub came from a different-framerate release.
+    # `retime_single_offset` is `--no-split` (one global shift, never segments):
+    # default ON, diverging from alass's own default, because Japanese media
+    # generally has no ad-break cuts — splitting mostly invents spurious cut
+    # points on a merely-offset subtitle. Uncheck to allow segmented alignment.
+    retime_split_penalty: float = 7.0
+    retime_correct_framerate: bool = False
+    retime_single_offset: bool = True
+
     # ASR (Automatic Speech Recognition) settings. Used by the Local Subtitle
     # Creation feature (offline transcription via faster-whisper). Requires
     # the optional `[asr]` extra: pip install "anki-miner[asr]".
@@ -490,11 +519,14 @@ class AnkiMinerConfig:
     # the source language: no translator is installed for it. Persisted via
     # gui_config.json; applied at startup (restart-to-apply). Discussion #76.
     ui_language: str = "en"
-    # File pickers use Qt's built-in dialog by default: the OS-native dialog
-    # can hang the GUI thread indefinitely on some Windows setups (Explorer
-    # shell/cloud enumeration on a bad network — Issue #100). True restores
-    # native dialogs. Consumed via gui/utils/file_dialogs.set_use_native.
-    use_native_file_dialogs: bool = False
+    # File pickers use the OS-native dialog by default. Issue #100 froze the
+    # GUI thread inside the native Windows picker, and the first fix forced
+    # Qt's own dialog everywhere — but the hang came from the BLOCKING static
+    # call, not from being native (see gui/utils/file_dialogs). The pickers are
+    # non-blocking now, so native is safe and is what users expect. False
+    # switches to Qt's built-in dialog, which also follows the app's QSS theme.
+    # Consumed via gui/utils/file_dialogs.set_use_native.
+    use_native_file_dialogs: bool = True
 
     # Monotonic identity for committed GUI settings. Not user-editable.
     config_version: int = 0
@@ -510,6 +542,13 @@ class AnkiMinerConfig:
         "cleaned up" — it is the supported way to normalise fields during
         __post_init__ on a frozen dataclass.
         """
+        if (
+            not isinstance(self.max_parallel_workers, int)
+            or isinstance(self.max_parallel_workers, bool)
+            or not 1 <= self.max_parallel_workers <= 20
+        ):
+            raise ValueError("max_parallel_workers must be an integer from 1 to 20")
+
         # Convert paths to Path objects (handles both str and Path inputs)
         if isinstance(self.media_temp_folder, str):
             object.__setattr__(self, "media_temp_folder", Path(self.media_temp_folder))
@@ -631,6 +670,15 @@ class AnkiMinerConfig:
         # pass an unsupported backend name through to the transcriber.
         if self.asr_device not in {"auto", "cuda", "cpu", "vulkan"}:
             object.__setattr__(self, "asr_device", "auto")
+
+        # Clamp the split penalty into alass's accepted 0-1000 range. alass
+        # rejects anything outside it, and a hand-edited or stale config must
+        # not turn every retime into an argument error.
+        try:
+            penalty = float(self.retime_split_penalty)
+        except (TypeError, ValueError):
+            penalty = 7.0
+        object.__setattr__(self, "retime_split_penalty", min(1000.0, max(0.0, penalty)))
 
     @property
     def frequency_active(self) -> bool:

@@ -22,15 +22,15 @@ from engine_sync.core import (
 )
 
 
-PINNED_MEDIA_EXTRACTOR_BLOB = "7798b8c1733ff59523424ecb6e95d178dc8b8b93"
-PINNED_AUDIO_TRACK_DETECTOR_BLOB = "f785f5b8706e1073f076149dbfb873472446d414"
-PINNED_KNOWN_WORDS_IMPORT_BLOB = "9353f416baec93f6c7e5dd1ed2231110bbe9f20b"
-REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "8eea3756190b27f78298402d8797b3d8d6872a3a9c6a30016e0165b70b98c88d"
+PINNED_MEDIA_EXTRACTOR_BLOB = "8f79442566cfd380684d73c41b781d16e1342c83"
+PINNED_AUDIO_TRACK_DETECTOR_BLOB = "cb71ffadad2ce7bb8005d47261d7a6a28bc506f4"
+PINNED_KNOWN_WORDS_IMPORT_BLOB = "a6f17e0a969c95ea77f6a20047e74b68265d02b6"
+REVIEWED_KNOWN_WORDS_IMPORT_SHA256 = "5d94aba0a3c6bc82b22e00fe8fe63bcd33507f612dc05f251aea8ddf446cdf9d"
 REVIEWED_MEDIA_EXTRACTOR_SHA256 = (
-    "88155d34fc5f88b0292d054e83c31c6fdb9f3061a5958918620d301a35de9844"
+    "88167ba66b79e649854ebf9263eba8d68cf279d1949713ff418d7a6bd176c602"
 )
 REVIEWED_AUDIO_TRACK_DETECTOR_SHA256 = (
-    "429663d08bc19ac9591a78e4d480eeaa209939563e02822c8fe8b6ea37fb0f88"
+    "ce5b0e1fc5f47d1964a0b93447ee136bfc876d2eb2ac31242a88bdf49a0d4636"
 )
 REMOVED_WAV_TO_FLOAT32 = '''def wav_to_float32(path: Path) -> "tuple[Any, int, float]":
     """Read a mono 16-bit PCM WAV and return (samples, sample_rate, duration_s).
@@ -73,7 +73,8 @@ REMOVED_WAV_TO_FLOAT32 = '''def wav_to_float32(path: Path) -> "tuple[Any, int, f
     # int16 → float32 in [-1.0, 1.0]. astype already yields a writable, owned
     # array (np.frombuffer over immutable bytes is read-only), which
     # faster-whisper/ctranslate2 may require — no separate .copy() needed.
-    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+    samples /= 32768.0
     duration = n_frames / sample_rate
     return samples, sample_rate, duration
 

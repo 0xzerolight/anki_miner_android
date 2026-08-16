@@ -73,7 +73,6 @@ internal object SettingsBackupCodec {
         setOf(
             "screenshot_animated_enabled",
             "screenshot_animated_match_audio",
-            "strip_subtitle_annotations",
             "use_subtitle_regex_filter",
             "use_blacklist",
             "use_whitelist",

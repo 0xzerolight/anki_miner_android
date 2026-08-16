@@ -158,6 +158,19 @@ class TestCustomAudioFetcherDirect:
         assert f.fetch("", "たべる") is None
         f._session.get.assert_not_called()
 
+    def test_non_kana_reading_skips(self, tmp_path: Path) -> None:
+        """A token the tokenizer left without a reading falls back to its surface.
+
+        The reading is the only thing disambiguating a homograph in the URL
+        template, and a reading-agnostic local-audio source answers a kanji
+        ``reading=`` anyway — so 辛い would fetch からい audio for a つらい card
+        and cache it permanently.
+        """
+        f = self._fetcher(tmp_path)
+        assert f.fetch("辛い", "辛い") is None
+        assert f.fetch("語彙", "goi") is None
+        f._session.get.assert_not_called()
+
     def test_success_downloads_and_names_by_prefix(self, tmp_path: Path) -> None:
         f = self._fetcher(tmp_path)
         f._session.get.return_value = _audio_response(_VALID_MP3)
@@ -196,7 +209,9 @@ class TestCustomAudioFetcherDirect:
         ("first_pair", "second_pair"),
         [
             (("語/彙", "ごい"), ("語_彙", "ごい")),
-            (("a_b", "c"), ("a", "b_c")),
+            # The separator can only reach the key through the mined form now:
+            # a reading carrying one is not kana-only, so it never fetches.
+            (("あ_い", "うう"), ("あ", "いうう")),
         ],
     )
     def test_distinct_pairs_cannot_share_a_lossy_cache_key(

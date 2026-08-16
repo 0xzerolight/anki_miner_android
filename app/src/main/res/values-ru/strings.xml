@@ -658,7 +658,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Текст субтитров</string>
-    <string name="settings_strip_annotations">Удалять аннотации субтитров (звуковые эффекты, метки говорящих, фуригана)</string>
     <string name="settings_subtitle_regex">Фильтр регулярных выражений</string>
     <string name="settings_subtitle_replacement">Замена (пустое поле удаляет совпадение)</string>
     <string name="settings_use_subtitle_regex">Применять regex-фильтр к субтитрам</string>
@@ -684,7 +683,7 @@
     <string name="settings_max_characters">Максимум символов в предложении (0 = без ограничений)</string>
     <string name="settings_reading_occurrence">Минимальное количество вхождений чтения</string>
     <string name="settings_max_frequency">Максимальный ранг частотности (0 = без ограничений)</string>
-    <string name="settings_workers">Параллельные обработчики медиа (1–32)</string>
+    <string name="settings_workers">Параллельные обработчики медиа (1–20)</string>
     <string name="settings_dictionary_chain">Приоритет словарей</string>
     <string name="settings_no_dictionaries">Нет подходящих установленных офлайн-словарей. Установите или импортируйте словарь в настройках.</string>
     <string name="settings_frequency_chain">Приоритет частотности</string>
@@ -713,7 +712,7 @@
     <string name="settings_validation_finite">%1$s должно быть конечным</string>
     <string name="settings_validation_non_negative">%1$s не должно быть отрицательным</string>
     <string name="settings_validation_positive">%1$s должно быть положительным</string>
-    <string name="settings_validation_parallel_workers">Число параллельных обработчиков должно быть от 1 до 32</string>
+    <string name="settings_validation_parallel_workers">Число параллельных обработчиков должно быть от 1 до 20</string>
     <string name="settings_validation_network_audio">Сетевые источники аудио не поддерживаются в Android</string>
     <string name="settings_validation_wordsets">Выбранные встроенные наборы слов недопустимы</string>
     <string name="settings_validation_field_map_unknown_key">Карта полей содержит неизвестный ключ</string>
@@ -798,7 +797,7 @@
     <string name="b3_validation_finite">Введите конечное число</string>
     <string name="b3_validation_non_negative">Введите ноль или положительное число</string>
     <string name="b3_validation_positive">Введите положительное целое число</string>
-    <string name="b3_validation_parallel_workers">Введите целое число от 1 до 32</string>
+    <string name="b3_validation_parallel_workers">Введите целое число от 1 до 20</string>
     <string name="b3_validation_animated_clip_duration">Введите число от 0.5 до 10</string>
     <string name="b3_validation_animated_quality">Введите целое число от 0 до 100</string>
     <string name="b3_retry">Повторить</string>

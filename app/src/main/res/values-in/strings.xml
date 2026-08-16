@@ -652,7 +652,6 @@
     <string name="settings_mp3">MP3</string>
     <string name="settings_opus">Opus</string>
     <string name="settings_subtitle_text">Teks subtitel</string>
-    <string name="settings_strip_annotations">Hapus anotasi (efek suara, tag pembicara, furigana)</string>
     <string name="settings_subtitle_regex">Filter regex</string>
     <string name="settings_subtitle_replacement">Penggantian (kosong menghapus kecocokan)</string>
     <string name="settings_use_subtitle_regex">Terapkan filter regex ke subtitle</string>
@@ -678,7 +677,7 @@
     <string name="settings_max_characters">Karakter kalimat maksimum (0 = tidak terbatas)</string>
     <string name="settings_reading_occurrence">Kemunculan minimum bacaan</string>
     <string name="settings_max_frequency">Peringkat frekuensi maksimum (0 = tidak terbatas)</string>
-    <string name="settings_workers">Pekerja media paralel (1–32)</string>
+    <string name="settings_workers">Pekerja media paralel (1–20)</string>
     <string name="settings_dictionary_chain">Prioritas kamus</string>
     <string name="settings_no_dictionaries">Tidak ada kamus luring valid yang terpasang. Instal atau impor satu di Pengaturan.</string>
     <string name="settings_frequency_chain">Prioritas frekuensi</string>
@@ -707,7 +706,7 @@
     <string name="settings_validation_finite">%1$s harus terhingga</string>
     <string name="settings_validation_non_negative">%1$s tidak boleh negatif</string>
     <string name="settings_validation_positive">%1$s harus positif</string>
-    <string name="settings_validation_parallel_workers">Pekerja paralel harus antara 1 dan 32</string>
+    <string name="settings_validation_parallel_workers">Pekerja paralel harus antara 1 dan 20</string>
     <string name="settings_validation_network_audio">Sumber audio jaringan tidak didukung di Android</string>
     <string name="settings_validation_wordsets">Kumpulan kata bawaan yang dipilih tidak valid</string>
     <string name="settings_validation_field_map_unknown_key">Pemetaan bidang berisi kunci yang tidak dikenal</string>
@@ -792,7 +791,7 @@
     <string name="b3_validation_finite">Masukkan angka terhingga</string>
     <string name="b3_validation_non_negative">Masukkan nol atau angka positif</string>
     <string name="b3_validation_positive">Masukkan bilangan bulat positif</string>
-    <string name="b3_validation_parallel_workers">Masukkan bilangan bulat dari 1 hingga 32</string>
+    <string name="b3_validation_parallel_workers">Masukkan bilangan bulat dari 1 hingga 20</string>
     <string name="b3_validation_animated_clip_duration">Masukkan angka dari 0.5 hingga 10</string>
     <string name="b3_validation_animated_quality">Masukkan bilangan bulat dari 0 hingga 100</string>
     <string name="b3_retry">Coba lagi</string>
