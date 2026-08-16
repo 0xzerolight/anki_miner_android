@@ -32,10 +32,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -56,21 +58,21 @@ import com.ankiminer.android.ui.theme.disabledActionContentColor
 import com.ankiminer.android.ui.theme.selectedRowContainer
 
 /** Test handles for the resource panel. Ids are the caller's stable row identity. */
-object ResourcePanelTestTags {
-    const val ADD = "resource_panel_add"
-    const val REMOVE = "resource_panel_remove"
-    const val LIST = "resource_panel_list"
-    const val EMPTY = "resource_panel_empty"
+internal object ResourcePanelTestTags {
+    const val ADD = "resource-panel-add"
+    const val REMOVE = "resource-panel-remove"
+    const val LIST = "resource-panel-list"
+    const val EMPTY = "resource-panel-empty"
 
-    fun row(id: String): String = "resource_panel_row:$id"
+    fun row(id: String): String = "resource-panel-row:$id"
 
-    fun toggle(id: String): String = "resource_panel_toggle:$id"
+    fun toggle(id: String): String = "resource-panel-toggle:$id"
 
-    fun moveUp(id: String): String = "resource_panel_move_up:$id"
+    fun moveUp(id: String): String = "resource-panel-move-up:$id"
 
-    fun moveDown(id: String): String = "resource_panel_move_down:$id"
+    fun moveDown(id: String): String = "resource-panel-move-down:$id"
 
-    fun quietAction(id: String): String = "resource_panel_quiet_action:$id"
+    fun quietAction(id: String): String = "resource-panel-quiet-action:$id"
 }
 
 /**
@@ -241,7 +243,13 @@ private fun ResourcePanelRow(
                 // Fill before selectable so the press ripple draws over it, not under it.
                 .background(
                     if (selected) MaterialTheme.colorScheme.selectedRowContainer() else Color.Transparent,
-                ).selectable(selected = selected, onClick = onSelect)
+                ).selectable(
+                    selected = selected,
+                    // The list is a selectableGroup with exactly one selected row, which is the
+                    // shape TalkBack announces as a radio choice.
+                    role = Role.RadioButton,
+                    onClick = onSelect,
+                )
                 .padding(
                     horizontal = AnkiMinerTokens.Space.related,
                     vertical = AnkiMinerTokens.Space.line,
@@ -288,7 +296,7 @@ private fun ResourcePanelRow(
         if (row.movable) {
             SquareSlot {
                 MoveButton(
-                    glyph = MoveUpGlyph,
+                    rotationDegrees = MoveUpRotation,
                     description = stringResource(R.string.resource_panel_move_up, row.title),
                     testTag = ResourcePanelTestTags.moveUp(row.id),
                     enabled = canMoveUp && !busy,
@@ -297,7 +305,7 @@ private fun ResourcePanelRow(
             }
             SquareSlot {
                 MoveButton(
-                    glyph = MoveDownGlyph,
+                    rotationDegrees = MoveDownRotation,
                     description = stringResource(R.string.resource_panel_move_down, row.title),
                     testTag = ResourcePanelTestTags.moveDown(row.id),
                     enabled = canMoveDown && !busy,
@@ -328,6 +336,8 @@ private fun ResourcePanelToolbar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
+            // Filled rather than the wrapper taxonomy's tonal "utility" import button: desktop D41
+            // gives each panel exactly one filled accent, and Add is it.
             PrimaryActionButton(
                 onClick = {
                     if (addMenu.isEmpty()) addPrimary.onClick() else menuOpen = true
@@ -381,9 +391,14 @@ private fun ResourcePanelToolbar(
     }
 }
 
+/**
+ * Reorder arrow. The shared back-arrow vector rotated a quarter turn: a drawn glyph holds its size
+ * inside the fixed button no matter how far the user has scaled their font, which a text arrow
+ * would not. The button carries the accessible name, so the icon itself is decorative.
+ */
 @Composable
 private fun MoveButton(
-    glyph: String,
+    rotationDegrees: Float,
     description: String,
     testTag: String,
     enabled: Boolean,
@@ -405,7 +420,13 @@ private fun MoveButton(
                 disabledContentColor = disabledActionContentColor(),
             ),
         border = actionBorder(enabled = enabled),
-    ) { Text(glyph) }
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.ic_nav_back),
+            contentDescription = null,
+            modifier = Modifier.rotate(rotationDegrees),
+        )
+    }
 }
 
 /**
@@ -430,6 +451,8 @@ private fun removeBorder(enabled: Boolean): BorderStroke =
     }
 
 private const val MetadataSeparator = " · "
-private const val MoveUpGlyph = "↑"
-private const val MoveDownGlyph = "↓"
+
+/** `ic_nav_back` points left; a clockwise quarter turn points it up, anticlockwise points it down. */
+private const val MoveUpRotation = 90f
+private const val MoveDownRotation = -90f
 private val SquareButtonSize = 40.dp

@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -158,8 +159,77 @@ class ResourceChainPanelTest {
     fun emptyPanelShowsItsEmptyMessage() {
         setPanel(emptyList())
 
-        composeRule.onNodeWithText("No sources are installed.").assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(ResourcePanelTestTags.EMPTY)
+            .assertTextEquals("No sources are installed.")
         composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
+    }
+
+    @Test
+    fun addWithoutAMenuFiresTheAddActionDirectly() {
+        var added = 0
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ResourceChainPanel(
+                    heading = "Dictionary priority",
+                    explanation = "Higher sources win when several define the same word.",
+                    rows = chain,
+                    emptyMessage = "No sources are installed.",
+                    onMove = { _, _ -> },
+                    onRemove = {},
+                    addPrimary = ResourcePanelAction("Add") { added++ },
+                    busy = false,
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(ResourcePanelTestTags.ADD).performClick()
+
+        assertEquals(1, added)
+    }
+
+    @Test
+    fun busyDisablesEveryRowAndToolbarControl() {
+        setPanel(
+            listOf(
+                resourceRow(
+                    id = "alpha",
+                    title = "Alpha dictionary",
+                    onToggle = {},
+                    quietAction = ResourcePanelAction("Repair") {},
+                ),
+                resourceRow("beta", "Beta dictionary", onToggle = {}),
+            ),
+            busy = true,
+        )
+
+        selectRow("alpha")
+
+        composeRule.onNodeWithTag(ResourcePanelTestTags.toggle("alpha")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.quietAction("alpha")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("alpha")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("beta")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.ADD).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
+    }
+
+    @Test
+    fun quietActionRendersAndFires() {
+        var repaired = 0
+        setPanel(
+            listOf(
+                resourceRow(
+                    id = "alpha",
+                    title = "Alpha dictionary",
+                    metadata = emptyList(),
+                    quietAction = ResourcePanelAction("Repair") { repaired++ },
+                ),
+            ),
+        )
+
+        composeRule.onNodeWithTag(ResourcePanelTestTags.quietAction("alpha")).performClick()
+
+        assertEquals(1, repaired)
     }
 
     /**
@@ -181,6 +251,7 @@ class ResourceChainPanelTest {
         warning: String? = null,
         movable: Boolean = true,
         removable: Boolean = true,
+        quietAction: ResourcePanelAction? = null,
     ) = ResourceRowSpec(
         id = id,
         title = title,
@@ -190,6 +261,7 @@ class ResourceChainPanelTest {
         warning = warning,
         movable = movable,
         removable = removable,
+        quietAction = quietAction,
     )
 
     private fun setPanel(
