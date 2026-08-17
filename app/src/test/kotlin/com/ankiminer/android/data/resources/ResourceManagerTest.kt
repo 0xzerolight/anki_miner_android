@@ -1684,6 +1684,84 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aSchemaStaleDictionaryIsRebuiltAtStartupFromItsRetainedArchive() =
+        runTest {
+            // Issue #13: the schema 4->6 move flagged every pre-0.8.0 dictionary
+            // stale, and the startup rebuild only covered frequency and pitch even
+            // though every slot retains its source.zip.
+            val harness =
+                Harness(
+                    rootName = "manager-rebuild-stale-dictionary",
+                    installedCustomDictionaryValid = false,
+                    installedCustomDictionaryRebuildPath =
+                        "/data/user/0/files/dicts/fixture-dictionary/source.zip",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertTrue(harness.manager.state.value.dictionaries.single().schemaOk)
+            assertNull(harness.manager.state.value.failure)
+            val request = harness.bridge.requestsOfType("resource.dictionary.import").single()
+            assertTrue(request.contains("\"slotId\":\"fixture-dictionary\""))
+            assertTrue(request.contains("\"overwrite\":true"))
+        }
+
+    @Test
+    fun aFailedDictionaryRebuildDegradesToTheReplaceRetryInsteadOfWedgingRecovery() =
+        runTest {
+            // A retained archive the current importer refuses must not abort the
+            // whole recovery pass: inventory still publishes and the failure maps
+            // to the replace retry that can actually repair the slot.
+            val harness =
+                Harness(
+                    rootName = "manager-rebuild-stale-dictionary-fails",
+                    installedCustomDictionaryValid = false,
+                    installedCustomDictionaryRebuildPath =
+                        "/data/user/0/files/dicts/fixture-dictionary/source.zip",
+                    failDictionaryImport = true,
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                ResourceStartupReadiness.FAILED,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertTrue(harness.manager.state.value.dictionaries.isNotEmpty())
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("dictionary_resource_invalid", failure.code)
+            assertEquals(ResourceFailureOrigin.CUSTOM_DICTIONARY, failure.origin)
+        }
+
+    @Test
+    fun customDictionaryReplaceRunsFromFailedReadinessButPlainImportRemainsBlocked() =
+        runTest {
+            val harness =
+                Harness(
+                    rootName = "manager-custom-replace-failed",
+                    sourceLabel = "dictionary archive",
+                    installedCustomDictionaryValid = false,
+                )
+            assertEquals(ResourceStartupReadiness.FAILED, harness.manager.state.value.startupReadiness)
+
+            harness.manager.importCustomDictionary(INPUT_URI, "fixture-dictionary", replace = false)
+
+            assertTrue(harness.bridge.requestsOfType("resource.dictionary.import").isEmpty())
+
+            harness.manager.importCustomDictionary(INPUT_URI, "fixture-dictionary", replace = true)
+
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
     fun deleteDoesNotWriteTheRecoveryJournal() =
         runTest {
             // A journalled delete that succeeded before process death would be reported as an
@@ -1764,6 +1842,9 @@ class ResourceManagerTest {
         installedPitchSchemaOk: Boolean = true,
         installedPitchRebuildPath: String? = null,
         installedCatalogDictionaryValid: Boolean? = null,
+        installedCustomDictionaryValid: Boolean? = null,
+        installedCustomDictionaryRebuildPath: String? = null,
+        failDictionaryImport: Boolean = false,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
         controlExecutor: Executor = DIRECT_EXECUTOR,
@@ -1822,6 +1903,9 @@ class ResourceManagerTest {
                 installedPitchSchemaOk,
                 installedPitchRebuildPath,
                 installedCatalogDictionaryValid,
+                installedCustomDictionaryValid,
+                installedCustomDictionaryRebuildPath,
+                failDictionaryImport,
                 failRefreshAfterDictionaryImport,
                 failRefreshAfterMutation,
                 failKnownWordsImportOnce,
@@ -2086,6 +2170,9 @@ class ResourceManagerTest {
         installedPitchSchemaOk: Boolean = true,
         private val installedPitchRebuildPath: String? = null,
         installedCatalogDictionaryValid: Boolean?,
+        installedCustomDictionaryValid: Boolean?,
+        private val installedCustomDictionaryRebuildPath: String? = null,
+        private val failDictionaryImport: Boolean = false,
         private val failRefreshAfterDictionaryImport: Boolean,
         private val failRefreshAfterMutation: String?,
         failKnownWordsImportOnce: Boolean,
@@ -2108,6 +2195,8 @@ class ResourceManagerTest {
         private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
         private var catalogDictionaryValid = installedCatalogDictionaryValid ?: true
+        private var customDictionaryInstalled = installedCustomDictionaryValid != null
+        private var customDictionaryValid = installedCustomDictionaryValid ?: true
         private var failNextDictionaryList = false
         private var failNextLocalList = false
         private var knownWordsImportFailures = if (failKnownWordsImportOnce) 1 else 0
@@ -2138,8 +2227,20 @@ class ResourceManagerTest {
                 "resource.cleanup" ->
                     envelope("resource.cleanup.result", """{"clean":true}""")
                 "resource.dictionary.import" -> {
-                    catalogDictionaryInstalled = true
-                    catalogDictionaryValid = true
+                    if (failDictionaryImport) {
+                        throw ResourceBridgeException(
+                            "dictionary_import_failed",
+                            "simulated import failure",
+                        )
+                    }
+                    if (customDictionaryInstalled) {
+                        // A real reimport rebuilds the index at the current schema,
+                        // so the slot stops being stale.
+                        customDictionaryValid = true
+                    } else {
+                        catalogDictionaryInstalled = true
+                        catalogDictionaryValid = true
+                    }
                     failNextDictionaryList =
                         failRefreshAfterDictionaryImport ||
                             failRefreshAfterMutation == "resource.dictionary.import"
@@ -2284,15 +2385,21 @@ class ResourceManagerTest {
                 failNextDictionaryList = false
                 error("simulated inventory failure after commit")
             }
-            val dictionaries =
-                if (catalogDictionaryInstalled) {
-                    val resource = FrozenResourceCatalog.value.dictionaries.first()
-                    // The decoder checks an installed catalog dictionary against the frozen
-                    // catalog identity, attribution included, so echo the catalog's own list.
-                    """[{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)}}]"""
-                } else {
-                    "[]"
-                }
+            val entries = mutableListOf<String>()
+            if (catalogDictionaryInstalled) {
+                val resource = FrozenResourceCatalog.value.dictionaries.first()
+                // The decoder checks an installed catalog dictionary against the frozen
+                // catalog identity, attribution included, so echo the catalog's own list.
+                entries +=
+                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null}"""
+            }
+            if (customDictionaryInstalled) {
+                val rebuildPath =
+                    installedCustomDictionaryRebuildPath?.let { "\"$it\"" } ?: "null"
+                entries +=
+                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) 1 else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath}"""
+            }
+            val dictionaries = entries.joinToString(",", prefix = "[", postfix = "]")
             return envelope(
                 "resource.dictionary.listed",
                 """{"dictionaries":$dictionaries}""",

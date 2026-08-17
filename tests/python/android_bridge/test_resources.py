@@ -463,6 +463,74 @@ def test_dictionary_preflight_derives_slot_from_archive_title_and_revision(
     assert preflight.payload == {"slotId": "fixture-dictionary-2026-08"}
 
 
+def _preflight_slot(source: Path, operation_id: str) -> str:
+    preflight = decode_envelope(
+        boundary.dispatch(
+            encode_message(
+                "resource.dictionary.preflight",
+                {"operationId": operation_id, "sourcePath": str(source)},
+            )
+        ),
+        expected_type="resource.dictionary.preflighted",
+    )
+    slot = preflight.payload["slotId"]
+    assert isinstance(slot, str)
+    return slot
+
+
+def test_dictionary_preflight_bounds_long_nonascii_slot(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    # Issue #13: a commercial Japanese title slugs every char to "uXXXX", so
+    # eleven title chars overflow the 64-char slot contract and the archive was
+    # rejected as "not a supported Yomitan dictionary".
+    source = _yomitan_zip(
+        tmp_path / "fixture.zip",
+        term="猫",
+        meaning="cat",
+        revision="1.0",
+        title="三省堂国語辞典　第七版",
+    )
+
+    slot = _preflight_slot(source, "dict-preflight-long")
+
+    # Pinned: the bounded derivation is a stable contract — replace-targeting
+    # matches on this exact id across app versions.
+    assert slot == "u4e09-u7701-u5802-u56fd-u8a9e-u8f9e-u5178-u3000-u7b2c-u-9c025921"
+    assert len(slot) <= 64
+    assert resources._SLOT_ID_RE.fullmatch(slot)
+    assert _preflight_slot(source, "dict-preflight-long-again") == slot
+
+
+def test_dictionary_preflight_bounded_slots_differ_past_truncation(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    # The digest covers the full unbounded slug, so two editions whose slugs
+    # only diverge past the truncation point still get distinct slots.
+    first = _yomitan_zip(
+        tmp_path / "first.zip",
+        term="猫",
+        meaning="cat",
+        revision="1.0",
+        title="三省堂国語辞典　第七版",
+    )
+    second = _yomitan_zip(
+        tmp_path / "second.zip",
+        term="猫",
+        meaning="cat",
+        revision="2.0",
+        title="三省堂国語辞典　第七版",
+    )
+
+    first_slot = _preflight_slot(first, "dict-preflight-first")
+    second_slot = _preflight_slot(second, "dict-preflight-second")
+
+    assert first_slot != second_slot
+    assert first_slot.rsplit("-", 1)[0] == second_slot.rsplit("-", 1)[0]
+
+
 @pytest.mark.parametrize(
     ("title", "revision"),
     [
@@ -732,6 +800,109 @@ def test_revisionless_yomitan_import_returns_and_lists_empty_revision(
     assert installed["sourceRevision"] == ""
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_long_nonascii_title_imports_under_its_bounded_slot(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(
+        tmp_path / "long-title.zip",
+        term="猫",
+        meaning="cat",
+        revision="1.0",
+        title="三省堂国語辞典　第七版",
+    )
+    slot = _preflight_slot(source, "dict-long-title-preflight")
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-long-title-import",
+                "sourcePath": str(source),
+                "slotId": slot,
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+    listed = decode_envelope(
+        resources.list_dictionaries({}),
+        expected_type="resource.dictionary.listed",
+    )
+
+    assert imported.payload["slotId"] == slot
+    installed = next(item for item in listed.payload["dictionaries"] if item["slotId"] == slot)
+    assert installed["sourceName"] == "三省堂国語辞典　第七版"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_schema_stale_dictionary_lists_rebuild_source_and_rebuilds_in_place(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(tmp_path / "stale.zip", term="猫", meaning="cat", revision="1")
+    decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-stale-import",
+                "sourcePath": str(source),
+                "slotId": "stale-fixture",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+    home = Path(resources.require_initialized())
+    index = home / "dicts" / "stale-fixture" / "index.sqlite"
+    connection = sqlite3.connect(index)
+    try:
+        connection.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
+        connection.commit()
+    finally:
+        connection.close()
+
+    listed = decode_envelope(
+        resources.list_dictionaries({}),
+        expected_type="resource.dictionary.listed",
+    ).payload["dictionaries"]
+    stale = next(item for item in listed if item["slotId"] == "stale-fixture")
+    assert stale["schemaOk"] is False
+    rebuild_source = stale["rebuildSourcePath"]
+    assert rebuild_source == str(home / "dicts" / "stale-fixture" / "source.zip")
+
+    # The retained archive is sealed read-only; the rebuild re-imports it in
+    # place with overwrite, exactly as startup recovery dispatches it.
+    decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-stale-rebuild",
+                "sourcePath": rebuild_source,
+                "slotId": "stale-fixture",
+                "overwrite": True,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    relisted = decode_envelope(
+        resources.list_dictionaries({}),
+        expected_type="resource.dictionary.listed",
+    ).payload["dictionaries"]
+    rebuilt = next(item for item in relisted if item["slotId"] == "stale-fixture")
+    assert rebuilt["schemaOk"] is True
+    assert rebuilt["valid"] is True
+    assert rebuilt["rebuildSourcePath"] == rebuild_source
+
+
 def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
     tmp_path: Path,
     initialized_bridge_home: Path,
@@ -771,6 +942,9 @@ def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
     assert installed["schemaOk"] is False
     assert installed["catalogResourceId"] == catalog_resource.resource_id
     assert installed["attribution"] == [item.payload() for item in catalog_resource.attribution]
+    # An unreadable slot is lost, not rebuildable stale: no retained archive is
+    # advertised even if a source.zip happens to exist beside the broken index.
+    assert installed["rebuildSourcePath"] is None
 
 
 def test_dictionary_inventory_discards_forged_catalog_sidecar(
@@ -849,6 +1023,7 @@ def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
             "embeddedAttribution": {},
             "catalogResourceId": None,
             "attribution": [],
+            "rebuildSourcePath": None,
         }
     ]
 

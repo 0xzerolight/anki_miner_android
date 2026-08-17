@@ -219,6 +219,7 @@ class ResourceIdentityTest {
                     embeddedAttribution = emptyMap(),
                     catalogResourceId = null,
                     attribution = emptyList(),
+                    rebuildSourcePath = null,
                 ),
             )
 
@@ -245,6 +246,7 @@ class ResourceIdentityTest {
                     embeddedAttribution = emptyMap(),
                     catalogResourceId = null,
                     attribution = emptyList(),
+                    rebuildSourcePath = null,
                 ),
                 InstalledDictionary(
                     slotId = "jmdict-2",
@@ -258,6 +260,7 @@ class ResourceIdentityTest {
                     embeddedAttribution = emptyMap(),
                     catalogResourceId = null,
                     attribution = emptyList(),
+                    rebuildSourcePath = null,
                 ),
                 InstalledDictionary(
                     slotId = "jmdict-3",
@@ -271,6 +274,7 @@ class ResourceIdentityTest {
                     embeddedAttribution = emptyMap(),
                     catalogResourceId = null,
                     attribution = emptyList(),
+                    rebuildSourcePath = null,
                 ),
             )
 
@@ -293,6 +297,7 @@ class ResourceIdentityTest {
                     embeddedAttribution = emptyMap(),
                     catalogResourceId = null,
                     attribution = emptyList(),
+                    rebuildSourcePath = null,
                 ),
             )
 
@@ -321,6 +326,7 @@ class ResourceIdentityTest {
                     embeddedAttribution = emptyMap(),
                     catalogResourceId = null,
                     attribution = emptyList(),
+                    rebuildSourcePath = null,
                 ),
             )
 

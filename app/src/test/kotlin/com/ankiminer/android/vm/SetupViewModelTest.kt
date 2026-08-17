@@ -137,6 +137,71 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `per-row custom dictionary replacement dispatches while startup recovery has failed`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // Issue #13: a schema-stale custom slot leaves startup FAILED; replacing
+            // that slot is the repair, so the picker flow must not park on READY.
+            val resources =
+                FakeResourceManager().apply {
+                    setInstalledDictionaries(
+                        listOf(installedDictionary("legacy-slot", "Legacy dictionary", valid = false)),
+                    )
+                    setStartupReadiness(ResourceStartupReadiness.FAILED)
+                }
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginCustomDictionaryReplacementPicker("legacy-slot"))
+            model.onCustomDictionaryPicked("content://test/replacement.zip")
+            advanceUntilIdle()
+
+            val pending = requireNotNull(model.uiState.value.pendingReplace)
+            assertEquals(ResourceReplaceKind.CUSTOM_DICTIONARY, pending.kind)
+            assertEquals("legacy-slot", pending.identity)
+
+            model.confirmPendingReplace()
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://test/replacement.zip", "legacy-slot", true)),
+                resources.customDictionaryImports,
+            )
+            // The pending picker slot must not leak: a later replacement attempt
+            // still gets the picker.
+            assertTrue(model.beginCustomDictionaryReplacementPicker("legacy-slot"))
+        }
+
+    @Test
+    fun `plain custom dictionary add stays parked while startup recovery has failed`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources =
+                FakeResourceManager().apply {
+                    setStartupReadiness(ResourceStartupReadiness.FAILED)
+                }
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings()),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginCustomDictionaryPicker())
+            model.onCustomDictionaryPicked("content://test/fixture.zip")
+            advanceUntilIdle()
+
+            // Preflight is deliberately readiness-free, but the import itself must
+            // stay parked until startup recovery succeeds.
+            assertEquals(listOf("content://test/fixture.zip"), resources.customDictionaryPreflights)
+            assertTrue(resources.customDictionaryImports.isEmpty())
+        }
+
+    @Test
     fun `picker result after recreation keeps the launched frequency import metadata`() =
         runTest(mainDispatcherRule.dispatcher) {
             val savedState = SavedStateHandle()
@@ -1587,6 +1652,7 @@ class SetupViewModelTest {
         embeddedAttribution = emptyMap(),
         catalogResourceId = null,
         attribution = emptyList(),
+        rebuildSourcePath = null,
     )
 
     private fun installedPitch(

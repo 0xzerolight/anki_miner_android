@@ -444,6 +444,12 @@ internal class AndroidResourceManager(
         slotId: String,
         replace: Boolean,
     ) {
+        // Replacing a broken slot is a startup repair, exactly like a catalog
+        // repair: gating it on READY left FAILED recovery with no custom-slot
+        // exit besides deletion.
+        val allowFailedReadiness =
+            replace && mutableState.value.startupReadiness == ResourceStartupReadiness.FAILED
+        val completesFailedStartupRecovery = allowFailedReadiness && startupRecoveryTailPending
         runOperation(
             strings.resolve(R.string.resource_operation_import_custom_dictionary),
             ResourceOperationPhase.PREPARING,
@@ -451,6 +457,7 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
             resourceImportUri = uri,
+            requiresStartupReady = !allowFailedReadiness,
         ) { operation ->
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
             val retainedUri =
@@ -490,7 +497,7 @@ internal class AndroidResourceManager(
                         ),
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
-                refreshAfterCommittedMutation()
+                refreshAfterCommittedMutation(completesFailedStartupRecovery)
             } finally {
                 staged?.file?.delete()
                 releaseResourceImportAfterOperation(
@@ -2001,8 +2008,15 @@ internal class AndroidResourceManager(
      * Runs inside the caller's operation. The importers stage and rename, so a
      * kill mid-rebuild leaves the old stale index rather than a torn one, and
      * the next launch simply tries again.
+     *
+     * Dictionary rebuild failures are caught per slot instead of propagating:
+     * [refreshFromPython] publishes inventory before its fatal
+     * `dictionary_resource_invalid`, and that failure maps to a replace retry
+     * the user can act on — aborting recovery here would wedge startup behind
+     * a Retry that can never succeed.
      */
     private fun rebuildStaleResourceIndexes() {
+        rebuildStaleDictionaries()
         val inventory =
             ResourceBridgeCodec.decodeLocalResourceList(
                 bridge.dispatch(ResourceBridgeCodec.encodeLocalResourceListRequest(), null),
@@ -2050,6 +2064,41 @@ internal class AndroidResourceManager(
                     null,
                 ),
             )
+        }
+    }
+
+    private fun rebuildStaleDictionaries() {
+        val dictionaries =
+            ResourceBridgeCodec.decodeDictionaryList(
+                bridge.dispatch(ResourceBridgeCodec.encodeDictionaryListRequest(), null),
+            )
+        for (slot in dictionaries) {
+            if (!slot.occupied || slot.schemaOk) continue
+            val path = slot.rebuildSourcePath ?: continue
+            try {
+                ResourceBridgeCodec.decodeImportedDictionary(
+                    bridge.dispatch(
+                        ResourceBridgeCodec.encodeDictionaryImportRequest(
+                            "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                            path,
+                            slot.slotId,
+                            overwrite = true,
+                            catalogResourceId = slot.catalogResourceId,
+                        ),
+                        null,
+                    ),
+                )
+            } catch (failure: Exception) {
+                AppLog.e(
+                    LogComponent.RESOURCES,
+                    "dictionary.rebuild",
+                    failure,
+                    "slot" to slot.slotId,
+                    "outcome" to "fail",
+                )
+                // Degrade: refreshFromPython surfaces dictionary_resource_invalid,
+                // which offers the replace retry for this slot.
+            }
         }
     }
 

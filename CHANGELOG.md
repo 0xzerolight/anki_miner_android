@@ -4,6 +4,12 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **A Yomitan dictionary with a long Japanese title imports again.** The archive-derived slot id introduced in 0.7.0 encodes every non-ASCII character as a `uXXXX` token, so a title of eleven or more Japanese characters overflowed the 64-character slot bound and preflight reported the archive as "not a supported Yomitan dictionary" (#13). Overflowing slugs now truncate and carry a digest of the full slug; short titles keep their existing slot ids.
+- **Dictionaries installed before 0.8.0 rebuild themselves at startup instead of blocking it.** The 0.8.0 engine re-pin moved the dictionary index schema, and the startup rebuild only covered frequency lists and pitch accent, so every upgraded install sat at "an occupied dictionary slot is damaged or stale" with no way out but deletion (#13). The retained `source.zip` beside each index is now re-imported in place, and a copy the current importer refuses degrades to the slot's replace prompt rather than wedging recovery.
+- **Replace works on a broken custom dictionary slot while startup recovery has failed.** Both gates on the flow were silent: the picker result waited forever for a readiness that could never arrive - and swallowed every later Add or Replace click with it - and the import itself required a ready startup that only the replace could produce (#13). Row-scoped replacement now dispatches from the failed state and a successful replace completes startup recovery, matching the existing catalog repair path.
+
 ## [0.8.0] - 2026-08-17
 
 ### Added

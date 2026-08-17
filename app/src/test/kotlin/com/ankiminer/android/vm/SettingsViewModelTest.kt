@@ -1239,6 +1239,7 @@ class SettingsViewModelTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = null,
             attribution = emptyList(),
+            rebuildSourcePath = null,
         )
 
     private fun pitchSource(id: String): InstalledPitchSource =

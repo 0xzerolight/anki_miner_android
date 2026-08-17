@@ -211,5 +211,6 @@ class SetupUiStateTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = "jitendex",
             attribution = emptyList(),
+            rebuildSourcePath = null,
         )
 }

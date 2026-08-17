@@ -48,6 +48,11 @@ _MAX_MANIFEST_BYTES = 16 * 1024
 _MAX_CUSTOM_DICTIONARY_ARCHIVE_BYTES = 1024 * 1024 * 1024
 _MAX_YOMITAN_INDEX_BYTES = 8 * 1024 * 1024
 _MAX_DICTIONARY_METADATA_BYTES = 4096
+# The _SLOT_ID_RE / _bounded_text contract for a slot id. Derived slots that
+# overflow it (non-ASCII titles slug to ``uXXXX`` runs) are truncated and
+# suffixed with a digest of the full slug instead of being rejected.
+_MAX_DERIVED_SLOT_CHARS = 64
+_DERIVED_SLOT_DIGEST_CHARS = 8
 # Anti-DoS backstop for archives whose catalog entry declares no member limit,
 # NOT a product limit: it exists only so a hostile central directory cannot make
 # zipfile materialise an unbounded ZipInfo list. Real Yomitan dictionaries are
@@ -1743,7 +1748,15 @@ def _validate_dictionary_metadata(title: str, revision: str) -> None:
 
 
 def _derive_dictionary_slot(source: Path) -> str:
-    """Apply the desktop importer's title+revision slot rule without loading the engine."""
+    """Derive the slot from title+revision, bounded to the bridge slot contract.
+
+    The composition follows the desktop importer's title+revision rule, but the
+    result is app-local: the engine receives it as an explicit ``dict_id`` and
+    replace-targeting matches on the occupied slot, so desktop parity of the
+    exact string does not matter. Non-ASCII titles slug to ``uXXXX`` runs, so a
+    Japanese title of eleven or more chars overflows ``_SLOT_ID_RE``'s 64-char
+    bound; those collapse to a truncated prefix plus a digest of the full slug.
+    """
 
     _preflight_zip_member_count(source, _MAX_CUSTOM_ZIP_MEMBERS)
     try:
@@ -1791,7 +1804,14 @@ def _derive_dictionary_slot(source: Path) -> str:
             parts.append("".join(buffer))
         return re.sub(r"[^a-z0-9]+", "-", "-".join(parts)).strip("-") or "dict"
 
-    return slug(title) + ("-" + slug(revision) if revision else "")
+    derived = slug(title) + ("-" + slug(revision) if revision else "")
+    if len(derived) <= _MAX_DERIVED_SLOT_CHARS:
+        return derived
+    # Digest the full unbounded slug so titles that only diverge past the
+    # truncation point still land in distinct slots.
+    digest = hashlib.sha256(derived.encode("utf-8")).hexdigest()[:_DERIVED_SLOT_DIGEST_CHARS]
+    prefix = derived[: _MAX_DERIVED_SLOT_CHARS - _DERIVED_SLOT_DIGEST_CHARS - 1].rstrip("-") or "dict"
+    return f"{prefix}-{digest}"
 
 
 def preflight_dictionary(payload: Mapping[str, object]) -> str:
@@ -1869,14 +1889,29 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
             )
             # Kotlin hands us an app-private staged file (SAF copy for a custom
             # pick, download for a catalog one), so copying it here only doubled
-            # the peak footprint of a multi-hundred-megabyte import.
-            copied = _hash_archive(
-                source,
-                operation,
-                maximum_bytes=maximum_archive,
-                expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
-                expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
-            )
+            # the peak footprint of a multi-hundred-megabyte import. The one
+            # exception is a startup rebuild sourced from a live slot's own
+            # retained source.zip: measuring that in place would let the
+            # streamed-rewrite path later move the slot's only copy into the
+            # candidate, where a failed publication destroys it.
+            in_place_rebuild = _dictionary_root(home) in source.parents
+            if in_place_rebuild:
+                copied = _copy_archive(
+                    source,
+                    operation_root / "source.zip",
+                    operation,
+                    maximum_bytes=maximum_archive,
+                    expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
+                    expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
+                )
+            else:
+                copied = _hash_archive(
+                    source,
+                    operation,
+                    maximum_bytes=maximum_archive,
+                    expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
+                    expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
+                )
             identity = _validate_zip_streamed(
                 copied.path,
                 operation,
@@ -2143,7 +2178,30 @@ def _invalid_dictionary_payload(
         "embeddedAttribution": {},
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
+        # An unreadable slot is lost, not rebuildable stale: advertising a
+        # rebuild source for it would re-import into a slot whose state is
+        # unknown instead of steering the user to an explicit replace.
+        "rebuildSourcePath": None,
     }
+
+
+def _dictionary_rebuild_source_path(slot: Path) -> str | None:
+    """Absolute path of the slot's retained archive, or None when it is gone.
+
+    Every dictionary import persists its input as ``source.zip`` beside
+    ``index.sqlite``, so a schema-stale slot can be rebuilt in place without a
+    file picker or SAF grant. Mirrors ``local_resources._persisted_source_copy``
+    (not reused: ``local_resources`` imports this module, so the reverse import
+    would be circular).
+    """
+
+    retained = slot / "source.zip"
+    try:
+        if retained.is_symlink() or not retained.is_file():
+            return None
+    except OSError:
+        return None
+    return str(retained)
 
 
 def _read_dictionary_meta(index: Path) -> dict[object, object]:
@@ -2226,6 +2284,7 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         "embeddedAttribution": embedded,
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
+        "rebuildSourcePath": _dictionary_rebuild_source_path(slot),
     }
 
 

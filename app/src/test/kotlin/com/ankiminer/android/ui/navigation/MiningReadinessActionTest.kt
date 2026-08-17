@@ -64,6 +64,7 @@ internal class MiningReadinessActionTest(
                 embeddedAttribution = emptyMap(),
                 catalogResourceId = "jitendex",
                 attribution = emptyList(),
+                rebuildSourcePath = null,
             )
 
         @JvmStatic
