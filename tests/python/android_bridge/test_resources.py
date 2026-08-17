@@ -839,6 +839,70 @@ def test_long_nonascii_title_imports_under_its_bounded_slot(
     assert installed["sourceName"] == "三省堂国語辞典　第七版"
 
 
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_schema_stale_dictionary_lists_rebuild_source_and_rebuilds_in_place(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(tmp_path / "stale.zip", term="猫", meaning="cat", revision="1")
+    decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-stale-import",
+                "sourcePath": str(source),
+                "slotId": "stale-fixture",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+    home = Path(resources.require_initialized())
+    index = home / "dicts" / "stale-fixture" / "index.sqlite"
+    connection = sqlite3.connect(index)
+    try:
+        connection.execute("UPDATE meta SET value = '4' WHERE key = 'schema_version'")
+        connection.commit()
+    finally:
+        connection.close()
+
+    listed = decode_envelope(
+        resources.list_dictionaries({}),
+        expected_type="resource.dictionary.listed",
+    ).payload["dictionaries"]
+    stale = next(item for item in listed if item["slotId"] == "stale-fixture")
+    assert stale["schemaOk"] is False
+    rebuild_source = stale["rebuildSourcePath"]
+    assert rebuild_source == str(home / "dicts" / "stale-fixture" / "source.zip")
+
+    # The retained archive is sealed read-only; the rebuild re-imports it in
+    # place with overwrite, exactly as startup recovery dispatches it.
+    decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-stale-rebuild",
+                "sourcePath": rebuild_source,
+                "slotId": "stale-fixture",
+                "overwrite": True,
+                "catalogResourceId": None,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    relisted = decode_envelope(
+        resources.list_dictionaries({}),
+        expected_type="resource.dictionary.listed",
+    ).payload["dictionaries"]
+    rebuilt = next(item for item in relisted if item["slotId"] == "stale-fixture")
+    assert rebuilt["schemaOk"] is True
+    assert rebuilt["valid"] is True
+    assert rebuilt["rebuildSourcePath"] == rebuild_source
+
+
 def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
     tmp_path: Path,
     initialized_bridge_home: Path,
@@ -878,6 +942,9 @@ def test_dictionary_inventory_surfaces_corrupt_occupied_catalog_slot(
     assert installed["schemaOk"] is False
     assert installed["catalogResourceId"] == catalog_resource.resource_id
     assert installed["attribution"] == [item.payload() for item in catalog_resource.attribution]
+    # An unreadable slot is lost, not rebuildable stale: no retained archive is
+    # advertised even if a source.zip happens to exist beside the broken index.
+    assert installed["rebuildSourcePath"] is None
 
 
 def test_dictionary_inventory_discards_forged_catalog_sidecar(
@@ -956,6 +1023,7 @@ def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
             "embeddedAttribution": {},
             "catalogResourceId": None,
             "attribution": [],
+            "rebuildSourcePath": None,
         }
     ]
 

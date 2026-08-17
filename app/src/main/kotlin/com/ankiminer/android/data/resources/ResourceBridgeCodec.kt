@@ -860,6 +860,7 @@ object ResourceBridgeCodec {
                 "embeddedAttribution",
                 "catalogResourceId",
                 "attribution",
+                "rebuildSourcePath",
             ),
             "installed dictionary",
         )
@@ -879,6 +880,7 @@ object ResourceBridgeCodec {
             embeddedAttribution = embedded.mapValues { (_, child) -> boundedText(child, "embedded attribution", 64 * 1024) },
             catalogResourceId = nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
             attribution = attributions(value.getValue("attribution"), allowEmpty = true),
+            rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
         )
         if (!installed.occupied || installed.valid != installed.schemaOk) {
             invalid("Dictionary occupancy or validity flags are inconsistent")

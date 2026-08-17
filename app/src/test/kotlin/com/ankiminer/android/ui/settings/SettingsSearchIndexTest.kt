@@ -114,5 +114,6 @@ class SettingsSearchIndexTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = "jmdict",
             attribution = emptyList(),
+            rebuildSourcePath = null,
         )
 }

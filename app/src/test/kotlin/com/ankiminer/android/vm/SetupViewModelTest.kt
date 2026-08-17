@@ -1652,6 +1652,7 @@ class SetupViewModelTest {
         embeddedAttribution = emptyMap(),
         catalogResourceId = null,
         attribution = emptyList(),
+        rebuildSourcePath = null,
     )
 
     private fun installedPitch(

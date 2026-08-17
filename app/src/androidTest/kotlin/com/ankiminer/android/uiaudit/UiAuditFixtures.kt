@@ -374,6 +374,7 @@ internal fun setupAuditState(): SetupUiState {
                     ),
                 catalogResourceId = resource.resourceId,
                 attribution = resource.attribution,
+                rebuildSourcePath = null,
             )
         }
     val noteFields =

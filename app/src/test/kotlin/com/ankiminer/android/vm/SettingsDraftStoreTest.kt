@@ -260,6 +260,7 @@ class SettingsDraftStoreTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = null,
             attribution = emptyList(),
+            rebuildSourcePath = null,
         )
 
     private fun frequencySource(id: String): InstalledFrequencySource =

@@ -110,6 +110,8 @@ data class InstalledDictionary(
     val embeddedAttribution: Map<String, String>,
     val catalogResourceId: String?,
     val attribution: List<ResourceAttribution>,
+    /** See [InstalledFrequencySource.rebuildSourcePath]. */
+    val rebuildSourcePath: String?,
 ) {
     val isUsable: Boolean
         get() = occupied && valid && schemaOk

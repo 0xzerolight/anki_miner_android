@@ -1889,14 +1889,29 @@ def import_dictionary(payload: Mapping[str, object]) -> str:
             )
             # Kotlin hands us an app-private staged file (SAF copy for a custom
             # pick, download for a catalog one), so copying it here only doubled
-            # the peak footprint of a multi-hundred-megabyte import.
-            copied = _hash_archive(
-                source,
-                operation,
-                maximum_bytes=maximum_archive,
-                expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
-                expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
-            )
+            # the peak footprint of a multi-hundred-megabyte import. The one
+            # exception is a startup rebuild sourced from a live slot's own
+            # retained source.zip: measuring that in place would let the
+            # streamed-rewrite path later move the slot's only copy into the
+            # candidate, where a failed publication destroys it.
+            in_place_rebuild = _dictionary_root(home) in source.parents
+            if in_place_rebuild:
+                copied = _copy_archive(
+                    source,
+                    operation_root / "source.zip",
+                    operation,
+                    maximum_bytes=maximum_archive,
+                    expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
+                    expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
+                )
+            else:
+                copied = _hash_archive(
+                    source,
+                    operation,
+                    maximum_bytes=maximum_archive,
+                    expected_size=(catalog_resource.archive.size_bytes if catalog_resource else None),
+                    expected_sha256=(catalog_resource.archive.sha256 if catalog_resource else None),
+                )
             identity = _validate_zip_streamed(
                 copied.path,
                 operation,
@@ -2163,7 +2178,30 @@ def _invalid_dictionary_payload(
         "embeddedAttribution": {},
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
+        # An unreadable slot is lost, not rebuildable stale: advertising a
+        # rebuild source for it would re-import into a slot whose state is
+        # unknown instead of steering the user to an explicit replace.
+        "rebuildSourcePath": None,
     }
+
+
+def _dictionary_rebuild_source_path(slot: Path) -> str | None:
+    """Absolute path of the slot's retained archive, or None when it is gone.
+
+    Every dictionary import persists its input as ``source.zip`` beside
+    ``index.sqlite``, so a schema-stale slot can be rebuilt in place without a
+    file picker or SAF grant. Mirrors ``local_resources._persisted_source_copy``
+    (not reused: ``local_resources`` imports this module, so the reverse import
+    would be circular).
+    """
+
+    retained = slot / "source.zip"
+    try:
+        if retained.is_symlink() or not retained.is_file():
+            return None
+    except OSError:
+        return None
+    return str(retained)
 
 
 def _read_dictionary_meta(index: Path) -> dict[object, object]:
@@ -2246,6 +2284,7 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         "embeddedAttribution": embedded,
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
+        "rebuildSourcePath": _dictionary_rebuild_source_path(slot),
     }
 
 

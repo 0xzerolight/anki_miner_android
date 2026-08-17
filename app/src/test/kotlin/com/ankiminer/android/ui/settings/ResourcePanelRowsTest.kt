@@ -349,6 +349,7 @@ class ResourcePanelRowsTest {
         embeddedAttribution = emptyMap(),
         catalogResourceId = catalogResourceId,
         attribution = emptyList(),
+        rebuildSourcePath = null,
     )
 
     private fun catalogDictionary(

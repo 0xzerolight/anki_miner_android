@@ -303,6 +303,7 @@ class SettingsBackupCodecTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = null,
             attribution = emptyList(),
+            rebuildSourcePath = null,
         )
 
     private fun frequency(

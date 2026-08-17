@@ -52,5 +52,6 @@ class AttributionScreenTest {
             embeddedAttribution = emptyMap(),
             catalogResourceId = "catalog-$slotId",
             attribution = listOf(notice),
+            rebuildSourcePath = null,
         )
 }
