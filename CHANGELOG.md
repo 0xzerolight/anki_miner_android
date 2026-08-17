@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-08-17
+
 ### Added
 
 - The diagnostics bundle carries per-thread CPU time as `system/thread-cpu.txt`, read from `/proc/self/task` and sorted by CPU descending. A tester bundle recorded three EXCESSIVE CPU USAGE kills with nothing that could name what was busy: `exit-reasons.txt` reports the kill but no thread, and the bundle's logcat only ever covers the session Export was pressed in.
