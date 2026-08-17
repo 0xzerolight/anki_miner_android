@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-08-17
+
 ### Fixed
 
 - **A Yomitan dictionary with a long Japanese title imports again.** The archive-derived slot id introduced in 0.7.0 encodes every non-ASCII character as a `uXXXX` token, so a title of eleven or more Japanese characters overflowed the 64-character slot bound and preflight reported the archive as "not a supported Yomitan dictionary" (#13). Overflowing slugs now truncate and carry a digest of the full slug; short titles keep their existing slot ids.
