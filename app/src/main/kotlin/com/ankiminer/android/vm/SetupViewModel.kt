@@ -987,8 +987,20 @@ internal class SetupViewModel(
                     request = request.withAudioPack(packs.single())
                     savePendingPicker(request)
                 }
+                // A row-scoped custom dictionary replacement is a startup repair:
+                // when a schema-stale slot leaves recovery FAILED, waiting for READY
+                // here would park the one flow that can end that state (issue #13).
+                val allowFailedReadiness =
+                    request.kind == ResourcePickerKind.CUSTOM_DICTIONARY &&
+                        request.target?.installedName != null
                 resources.state.first { state ->
-                    state.startupReadiness == ResourceStartupReadiness.READY &&
+                    (
+                        state.startupReadiness == ResourceStartupReadiness.READY ||
+                            (
+                                allowFailedReadiness &&
+                                    state.startupReadiness == ResourceStartupReadiness.FAILED
+                            )
+                    ) &&
                         state.activeOperation == null
                 }
                 runtimeWorkState.first { it == null }

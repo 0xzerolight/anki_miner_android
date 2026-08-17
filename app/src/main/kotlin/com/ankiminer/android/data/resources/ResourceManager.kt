@@ -444,6 +444,12 @@ internal class AndroidResourceManager(
         slotId: String,
         replace: Boolean,
     ) {
+        // Replacing a broken slot is a startup repair, exactly like a catalog
+        // repair: gating it on READY left FAILED recovery with no custom-slot
+        // exit besides deletion.
+        val allowFailedReadiness =
+            replace && mutableState.value.startupReadiness == ResourceStartupReadiness.FAILED
+        val completesFailedStartupRecovery = allowFailedReadiness && startupRecoveryTailPending
         runOperation(
             strings.resolve(R.string.resource_operation_import_custom_dictionary),
             ResourceOperationPhase.PREPARING,
@@ -451,6 +457,7 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
             resourceImportUri = uri,
+            requiresStartupReady = !allowFailedReadiness,
         ) { operation ->
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
             val retainedUri =
@@ -490,7 +497,7 @@ internal class AndroidResourceManager(
                         ),
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
-                refreshAfterCommittedMutation()
+                refreshAfterCommittedMutation(completesFailedStartupRecovery)
             } finally {
                 staged?.file?.delete()
                 releaseResourceImportAfterOperation(
