@@ -1,10 +1,13 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -56,13 +59,24 @@ class AudioPackSectionsTest {
         }
 
         composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.row("broken")).performClick()
+        selectRow("broken")
         composeRule
             .onNodeWithTag(ResourcePanelTestTags.REMOVE)
             .assertIsEnabled()
             .performClick()
 
         assertEquals(listOf("broken"), removed)
+    }
+
+    /**
+     * Clicks the row's own selectable area, as [ResourceChainPanelTest] does. The node centre falls
+     * on the enable checkbox once the title column is narrower than half the row, which is the case
+     * on a 320dp screen, so selection is driven from the title column instead.
+     */
+    private fun selectRow(id: String) {
+        composeRule.onNodeWithTag(ResourcePanelTestTags.row(id)).performTouchInput {
+            click(Offset(width * 0.1f, height / 2f))
+        }
     }
 
     private fun installedPack(
