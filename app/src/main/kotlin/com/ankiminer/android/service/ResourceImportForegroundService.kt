@@ -38,13 +38,15 @@ internal fun handleResourceImportSystemTimeout(
 }
 
 /**
- * Keeps a multi-gigabyte resource import running while the user is elsewhere.
+ * Keeps a long resource import running while the user is elsewhere.
  *
  * An audio pack from the upstream collection is thousands of seconds of copying
- * across a hundred thousand files. Without a foreground service the process is
- * cached the moment the user leaves the screen and killed under any memory
- * pressure, and the import has no resume — it restarts from zero. The type is
- * `dataSync` rather than `mediaProcessing` because nothing here is transcoded.
+ * across a hundred thousand files, and a Yomitan dictionary import is a quarter
+ * hour of pinned CPU on an entry-level phone. Without a foreground service the
+ * process is cached the moment the user leaves the screen and killed under
+ * memory pressure or the background CPU quota, and the import has no resume —
+ * it restarts from zero. The type is `dataSync` rather than `mediaProcessing`
+ * because nothing here is transcoded.
  *
  * The service owns the notification and the CPU lease and nothing else: the work
  * itself stays on the resource executor, which is what decides when this stops.

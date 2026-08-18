@@ -162,7 +162,7 @@
     <string name="mining_notification_channel">Ход майнинга</string>
     <string name="mining_notification_channel_description">Прогресс и управление отменой активных запусков майнинга</string>
     <string name="resource_import_notification_channel">Импорт ресурсов</string>
-    <string name="resource_import_notification_channel_description">Позволяет продолжать импорт крупного локального пакета аудио, когда приложение работает в фоне</string>
+    <string name="resource_import_notification_channel_description">Позволяет продолжать импорт крупного ресурса, когда приложение работает в фоне</string>
     <string name="resource_import_notification_working">Выполняется. Выход из приложения не прервёт процесс.</string>
     <string name="mining_notification_title">Anki Miner обрабатывает медиа</string>
     <string name="mining_notification_preparing">Подготовка выбранных слов…</string>
@@ -437,6 +437,7 @@
     <string name="resource_operation_install_unidic">Установить UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Импортировать словарь из каталога</string>
     <string name="resource_operation_import_custom_dictionary">Импортировать пользовательский словарь</string>
+    <string name="resource_operation_rebuild_dictionary">Перестроить словарь</string>
     <string name="resource_operation_import_frequency">Импортировать источник частотности</string>
     <string name="resource_operation_import_pitch">Импортировать тональное ударение</string>
     <string name="resource_operation_import_audio_pack">Импортировать локальный пакет аудио</string>

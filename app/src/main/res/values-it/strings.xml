@@ -162,7 +162,7 @@
     <string name="mining_notification_channel">Avanzamento mining</string>
     <string name="mining_notification_channel_description">Controlli di avanzamento e annullamento per le esecuzioni di mining attive</string>
     <string name="resource_import_notification_channel">Importazioni di risorse</string>
-    <string name="resource_import_notification_channel_description">Mantiene attiva una grande importazione locale di pacchetti audio mentre l\'app è in background</string>
+    <string name="resource_import_notification_channel_description">Mantiene attiva una grande importazione di risorse mentre l\'app è in background</string>
     <string name="resource_import_notification_working">Elaborazione. Uscire dall\'app non interromperà questa operazione.</string>
     <string name="mining_notification_title">Anki Miner sta elaborando contenuti multimediali</string>
     <string name="mining_notification_preparing">Preparazione del vocabolario selezionato…</string>
@@ -435,6 +435,7 @@
     <string name="resource_operation_install_unidic">Installa UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Importa dizionario del catalogo</string>
     <string name="resource_operation_import_custom_dictionary">Importa dizionario personalizzato</string>
+    <string name="resource_operation_rebuild_dictionary">Ricostruisci dizionario</string>
     <string name="resource_operation_import_frequency">Importa sorgente di frequenza</string>
     <string name="resource_operation_import_pitch">Importa accento tonale</string>
     <string name="resource_operation_import_audio_pack">Importa pacchetto audio locale</string>
