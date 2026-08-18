@@ -2,20 +2,8 @@
 
 from __future__ import annotations
 
-import json
-
 from android_bridge.resource_progress import ResourceProgressReporter, make_reporter
-
-
-class FakeCallbacks:
-    def __init__(self, fail_after=None):
-        self.messages = []
-        self._fail_after = fail_after
-
-    def onProgress(self, message):
-        if self._fail_after is not None and len(self.messages) >= self._fail_after:
-            raise RuntimeError("boom")
-        self.messages.append(json.loads(message))
+from conftest import FakeCallbacks
 
 
 class FakeClock:

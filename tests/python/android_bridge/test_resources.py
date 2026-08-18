@@ -27,6 +27,7 @@ from android_bridge.resource_catalog import (
     parse_catalog_json,
 )
 from android_bridge.unidic_resource import calculate_unidic_tree_sha256
+from conftest import FakeCallbacks
 
 
 def _engine_schema_version(family: str) -> int:
@@ -259,6 +260,87 @@ def test_unidic_install_verifies_tree_then_publishes_completion_manifest_last(
         expected_type="resource.unidic.installed",
     )
     assert repeated.payload["alreadyInstalled"] is True
+
+
+def test_unidic_install_reports_byte_progress_and_finalizing_before_publish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_tree = _fixture_dicdir(tmp_path / "source")
+    archive = _tar_bytes(source_tree)
+    resource = _fixture_unidic_resource(source_tree, archive)
+    source = _write(tmp_path / "unidic.tar.gz", archive)
+    home = tmp_path / "files"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    monkeypatch.setattr(
+        resources,
+        "load_resource_catalog",
+        lambda: ResourceCatalog(resources=(resource,)),
+    )
+    callbacks = FakeCallbacks()
+
+    decode_envelope(
+        resources.install_unidic(
+            {
+                "operationId": "install-progress",
+                "resourceId": resource.resource_id,
+                "archivePath": str(source),
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.unidic.installed",
+    )
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes, "expected at least one progress envelope"
+    installing = [e for e in envelopes if e["phase"] == "installing"]
+    assert installing
+    assert all(e["kind"] == "bytes" for e in installing)
+    currents = [e["current"] for e in installing]
+    assert currents == sorted(currents)
+    assert all(e["total"] == resource.install.size_bytes for e in installing)
+    assert currents[-1] == resource.install.size_bytes
+
+    finalizing_index = next(index for index, e in enumerate(envelopes) if e["phase"] == "finalizing")
+    assert envelopes[finalizing_index] == {
+        "operationId": "install-progress",
+        "phase": "finalizing",
+        "kind": "items",
+        "current": 0,
+        "total": 0,
+    }
+    assert all(e["phase"] == "installing" for e in envelopes[:finalizing_index])
+
+
+def test_unidic_install_with_no_callbacks_emits_nothing_and_does_not_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_tree = _fixture_dicdir(tmp_path / "source")
+    archive = _tar_bytes(source_tree)
+    resource = _fixture_unidic_resource(source_tree, archive)
+    source = _write(tmp_path / "unidic.tar.gz", archive)
+    home = tmp_path / "files"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    monkeypatch.setattr(
+        resources,
+        "load_resource_catalog",
+        lambda: ResourceCatalog(resources=(resource,)),
+    )
+
+    decoded = decode_envelope(
+        resources.install_unidic(
+            {
+                "operationId": "install-no-callbacks",
+                "resourceId": resource.resource_id,
+                "archivePath": str(source),
+            }
+        ),
+        expected_type="resource.unidic.installed",
+    )
+    assert decoded.payload["alreadyInstalled"] is False
 
 
 def test_unidic_install_repairs_corrupt_tree_with_intact_completion_metadata(

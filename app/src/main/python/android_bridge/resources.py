@@ -28,7 +28,7 @@ from collections import OrderedDict
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, Callable
 
 from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, encode_message
@@ -37,6 +37,7 @@ from .resource_catalog import (
     YomitanResource,
     load_resource_catalog,
 )
+from .resource_progress import make_reporter
 from .tokenizer_contract import TokenizerContractError
 
 logger = logging.getLogger(__name__)
@@ -619,10 +620,12 @@ def _extract_unidic(
     staging: Path,
     resource: UniDicResource,
     operation: _Operation,
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     install = resource.install
     dicdir = staging / "dicdir"
     dicdir.mkdir(parents=True)
+    cumulative_written = 0
     prefix_parts = PurePosixPath(install.member_prefix).parts
     archive_root = prefix_parts[0]
     seen: set[tuple[str, ...]] = set()
@@ -713,6 +716,9 @@ def _extract_unidic(
                                 "UniDic file exceeds its declared limit",
                             )
                         _write_all(output, chunk)
+                        cumulative_written += len(chunk)
+                        if progress is not None:
+                            progress(cumulative_written, install.size_bytes)
                     os.fsync(output.fileno())
                 if written != member.size:
                     raise _fail(
@@ -831,6 +837,7 @@ def install_unidic(payload: Mapping[str, object], *, callbacks: object | None = 
                         "attribution": [item.payload() for item in resource.attribution],
                     },
                 )
+        reporter = make_reporter(callbacks, operation_id, "installing")
         operation_root = _resource_work_root(home) / "operations" / operation_id
         _safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
@@ -851,8 +858,9 @@ def install_unidic(payload: Mapping[str, object], *, callbacks: object | None = 
                 expected_sha256=resource.archive.sha256,
             )
             staging.mkdir(parents=True)
-            _extract_unidic(copied.path, staging, resource, operation)
+            _extract_unidic(copied.path, staging, resource, operation, progress=reporter.bytes_fn())
             operation.check()
+            reporter.set_phase("finalizing")
             _publish_unidic(staging, final, resource, operation_id)
         finally:
             if staging.exists():
