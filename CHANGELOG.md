@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- README mining demo: a looping hero GIF of a full video-mining run (source pick → word curation → mining → 65 cards created → AnkiDroid review) plus the same run linked as an MP4 with sound. Recorded on-device with scrcpy at native 1080x2336 and cut with ffmpeg; the GIF speeds curation 10x, mining 100x and the card review 3x, while the MP4 keeps everything at real time except a 50x mining pass. Example-card GIFs are hotlinked from the desktop repo, since mining output is identical on both platforms.
+
 ## [0.8.2] - 2026-08-18
 
 ### Changed

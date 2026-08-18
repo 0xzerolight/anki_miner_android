@@ -23,6 +23,19 @@ Also on desktop - <a href="https://github.com/0xzerolight/anki_miner">Anki Miner
 Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 </p>
 
+
+# <p align="center">Mining Demo</p>
+
+<p align="center"><img src="https://raw.githubusercontent.com/0xzerolight/anki_miner_android/main/gifs/demo.gif" width="300" alt="Anki Miner for Android demo"></p>
+
+<p align="center">⬇️ <a href="https://raw.githubusercontent.com/0xzerolight/anki_miner_android/main/gifs/demo.mp4">Full demo with sound (MP4)</a></p>
+
+### Example cards
+
+| ![ホント](https://raw.githubusercontent.com/0xzerolight/anki_miner/main/gifs/ホント.gif) | ![いちゃいちゃ](https://raw.githubusercontent.com/0xzerolight/anki_miner/main/gifs/いちゃいちゃ.gif) | ![代](https://raw.githubusercontent.com/0xzerolight/anki_miner/main/gifs/代.gif) |
+|:--:|:--:|:--:|
+| ⬇️ [MP4 (sound)](https://raw.githubusercontent.com/0xzerolight/anki_miner/main/gifs/ホント.mp4) | ⬇️ [MP4 (sound)](https://raw.githubusercontent.com/0xzerolight/anki_miner/main/gifs/いちゃいちゃ.mp4) | ⬇️ [MP4 (sound)](https://raw.githubusercontent.com/0xzerolight/anki_miner/main/gifs/代.mp4) |
+
 ## Tabs
 
 - **Video** - mine a video + subtitle pair, with a screenshot and audio clip on every card.
