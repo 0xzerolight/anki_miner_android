@@ -162,7 +162,7 @@
     <string name="mining_notification_channel">Tiến trình khai thác</string>
     <string name="mining_notification_channel_description">Điều khiển tiến trình và hủy cho các lượt khai thác đang chạy</string>
     <string name="resource_import_notification_channel">Nhập tài nguyên</string>
-    <string name="resource_import_notification_channel_description">Duy trì việc nhập gói âm thanh cục bộ lớn khi ứng dụng chạy nền</string>
+    <string name="resource_import_notification_channel_description">Duy trì việc nhập tài nguyên lớn khi ứng dụng chạy nền</string>
     <string name="resource_import_notification_working">Đang xử lý. Rời ứng dụng sẽ không làm gián đoạn việc này.</string>
     <string name="mining_notification_title">Anki Miner đang xử lý phương tiện</string>
     <string name="mining_notification_preparing">Đang chuẩn bị từ vựng đã chọn…</string>
@@ -431,6 +431,7 @@
     <string name="resource_operation_install_unidic">Cài đặt UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Nhập từ điển trong danh mục</string>
     <string name="resource_operation_import_custom_dictionary">Nhập từ điển tùy chỉnh</string>
+    <string name="resource_operation_rebuild_dictionary">Xây dựng lại từ điển</string>
     <string name="resource_operation_import_frequency">Nhập nguồn tần suất</string>
     <string name="resource_operation_import_pitch">Nhập trọng âm cao độ</string>
     <string name="resource_operation_import_audio_pack">Nhập gói âm thanh cục bộ</string>

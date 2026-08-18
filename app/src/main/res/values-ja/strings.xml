@@ -162,7 +162,7 @@
     <string name="mining_notification_channel">マイニング進捗</string>
     <string name="mining_notification_channel_description">実行中のマイニングの進捗と中止操作</string>
     <string name="resource_import_notification_channel">リソースのインポート</string>
-    <string name="resource_import_notification_channel_description">大きなローカル音声パックのインポートをバックグラウンドでも継続します</string>
+    <string name="resource_import_notification_channel_description">大きなリソースのインポートをバックグラウンドでも継続します</string>
     <string name="resource_import_notification_working">処理中です。アプリを離れても中断されません。</string>
     <string name="mining_notification_title">Anki Miner がメディアを処理しています</string>
     <string name="mining_notification_preparing">選択した単語を準備しています…</string>
@@ -433,6 +433,7 @@
     <string name="resource_operation_install_unidic">UniDicをインストール</string>
     <string name="resource_operation_import_catalog_dictionary">カタログ辞書をインポート</string>
     <string name="resource_operation_import_custom_dictionary">カスタム辞書をインポート</string>
+    <string name="resource_operation_rebuild_dictionary">辞書を再構築</string>
     <string name="resource_operation_import_frequency">頻度ソースをインポート</string>
     <string name="resource_operation_import_pitch">アクセントをインポート</string>
     <string name="resource_operation_import_audio_pack">ローカル音声パックをインポート</string>

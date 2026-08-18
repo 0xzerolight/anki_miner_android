@@ -1552,6 +1552,132 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aCatalogDictionaryInstallHoldsTheForegroundServiceForItsWholeRun() =
+        runTest {
+            // A jitendex import is 15+ minutes of pinned CPU on an entry-level
+            // phone; without foreground importance the cached process is killed
+            // at the background CPU quota and the import restarts from zero.
+            val harness = Harness(fakePinnedDownloads = true)
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+
+            harness.manager.installCatalogDictionary(resource.resourceId, replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+            assertTrue(harness.foregroundLease.startedWhileRunning)
+            assertEquals("start:PREPARING", harness.foregroundLease.events.first())
+            assertEquals("stop", harness.foregroundLease.events.last())
+            assertFalse(harness.foregroundLease.isRunning())
+        }
+
+    @Test
+    fun aCustomDictionaryImportHoldsTheForegroundServiceForItsWholeRun() =
+        runTest {
+            val harness = Harness(sourceLabel = "dictionary archive")
+
+            harness.manager.importCustomDictionary(INPUT_URI, "fixture-dictionary", replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+            assertTrue(harness.foregroundLease.startedWhileRunning)
+            assertEquals("stop", harness.foregroundLease.events.last())
+            assertFalse(harness.foregroundLease.isRunning())
+        }
+
+    @Test
+    fun failedForegroundAdmissionPreventsDictionaryImportAndJournalAdmission() =
+        runTest {
+            val harness =
+                Harness(
+                    fakePinnedDownloads = true,
+                    foregroundStartFailure = true,
+                )
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+
+            harness.manager.installCatalogDictionary(resource.resourceId, replace = false)
+
+            assertEquals("resource_operation_failed", harness.manager.state.value.failure?.code)
+            assertEquals(listOf("start:PREPARING"), harness.foregroundLease.events)
+            assertTrue(harness.bridge.requestsOfType("resource.dictionary.import").isEmpty())
+            assertFalse(ResourceOperationJournal(harness.root, {}).exists())
+            assertNull(harness.manager.state.value.activeOperation)
+        }
+
+    @Test
+    fun aStaleDictionaryRebuildHoldsTheForegroundServiceWhileItRuns() =
+        runTest {
+            // The startup schema rebuild re-runs a full dictionary import; a
+            // 0.7.x upgrader with a big dictionary burns the same 15 minutes
+            // here as an interactive install does.
+            val harness =
+                Harness(
+                    rootName = "manager-rebuild-stale-dictionary-lease",
+                    installedCustomDictionaryValid = false,
+                    installedCustomDictionaryRebuildPath =
+                        "/data/user/0/files/dicts/fixture-dictionary/source.zip",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertTrue(harness.foregroundLease.startedWhileRunning)
+            assertEquals("stop", harness.foregroundLease.events.last())
+            assertFalse(harness.foregroundLease.isRunning())
+        }
+
+    @Test
+    fun aDeniedForegroundStartDoesNotBlockTheStaleDictionaryRebuild() =
+        runTest {
+            // Unlike an interactive import, the rebuild lease is best-effort:
+            // startup recovery must repair the slot even when the platform
+            // refuses a foreground start at launch.
+            val harness =
+                Harness(
+                    rootName = "manager-rebuild-stale-dictionary-no-fgs",
+                    installedCustomDictionaryValid = false,
+                    installedCustomDictionaryRebuildPath =
+                        "/data/user/0/files/dicts/fixture-dictionary/source.zip",
+                    foregroundStartFailure = true,
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertTrue(harness.manager.state.value.dictionaries.single().schemaOk)
+            assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun aFrequencyOrPitchOnlyRebuildDoesNotTakeTheForegroundLease() =
+        runTest {
+            val harness =
+                Harness(
+                    rootName = "manager-rebuild-stale-pitch-no-lease",
+                    installedPitchSourceId = "kanjium",
+                    installedPitchSchemaOk = false,
+                    installedPitchRebuildPath = "/data/user/0/files/pitch/kanjium/source.zip",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+            assertTrue(harness.foregroundLease.events.isEmpty())
+        }
+
+    @Test
     fun bridgeArchiveRejectionsNameTheLimitThatTripped() =
         runTest {
             // One Python code per limit class, so a rejection says which limit the

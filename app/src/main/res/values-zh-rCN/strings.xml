@@ -162,7 +162,7 @@
     <string name="mining_notification_channel">挖词进度</string>
     <string name="mining_notification_channel_description">正在进行的挖词任务的进度和取消控件</string>
     <string name="resource_import_notification_channel">资源导入</string>
-    <string name="resource_import_notification_channel_description">应用在后台时继续导入大型本地音频包</string>
+    <string name="resource_import_notification_channel_description">应用在后台时继续导入大型资源</string>
     <string name="resource_import_notification_working">正在处理。离开应用不会中断此操作。</string>
     <string name="mining_notification_title">Anki Miner 正在处理媒体</string>
     <string name="mining_notification_preparing">正在准备选中的词汇…</string>
@@ -431,6 +431,7 @@
     <string name="resource_operation_install_unidic">安装 UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">导入目录词典</string>
     <string name="resource_operation_import_custom_dictionary">导入自定义词典</string>
+    <string name="resource_operation_rebuild_dictionary">重建词典</string>
     <string name="resource_operation_import_frequency">导入词频来源</string>
     <string name="resource_operation_import_pitch">导入音调</string>
     <string name="resource_operation_import_audio_pack">导入本地音频包</string>

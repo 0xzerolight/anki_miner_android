@@ -175,9 +175,11 @@ internal fun interface PinnedArchiveProvider {
  * Keeps a long resource operation running while the app is not on screen.
  *
  * Importing a pack from the upstream audio collection copies gigabytes across a
- * hundred thousand files, and the operation has no resume: interrupt it and the
- * user starts over. Backed by a foreground service on device, and by nothing at
- * all in host tests, which is why this is a seam and not a Context.
+ * hundred thousand files, and a Yomitan dictionary import pins a core for a
+ * quarter hour on an entry-level phone — long enough for the background CPU
+ * quota to kill a cached process. Neither operation has a resume: interrupt it
+ * and the user starts over. Backed by a foreground service on device, and by
+ * nothing at all in host tests, which is why this is a seam and not a Context.
  */
 internal interface ResourceForegroundLease {
     fun start(progress: ResourceOperationProgress)
@@ -397,6 +399,7 @@ internal class AndroidResourceManager(
                     replace = replace,
                 ),
             persistForRecovery = true,
+            holdsForegroundLease = true,
             requiresStartupReady = !allowFailedReadiness,
         ) { operation ->
             val resource =
@@ -457,6 +460,7 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
             resourceImportUri = uri,
+            holdsForegroundLease = true,
             requiresStartupReady = !allowFailedReadiness,
         ) { operation ->
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
@@ -2072,33 +2076,60 @@ internal class AndroidResourceManager(
             ResourceBridgeCodec.decodeDictionaryList(
                 bridge.dispatch(ResourceBridgeCodec.encodeDictionaryListRequest(), null),
             )
-        for (slot in dictionaries) {
-            if (!slot.occupied || slot.schemaOk) continue
-            val path = slot.rebuildSourcePath ?: continue
-            try {
-                ResourceBridgeCodec.decodeImportedDictionary(
-                    bridge.dispatch(
-                        ResourceBridgeCodec.encodeDictionaryImportRequest(
-                            "resource_${UUID.randomUUID().toString().replace("-", "")}",
-                            path,
-                            slot.slotId,
-                            overwrite = true,
-                            catalogResourceId = slot.catalogResourceId,
-                        ),
-                        null,
+        val stale =
+            dictionaries.filter { it.occupied && !it.schemaOk && it.rebuildSourcePath != null }
+        if (stale.isEmpty()) return
+        // A rebuild re-runs the full import, so it burns the same quarter hour an
+        // interactive install does and dies to the same background CPU kill without
+        // foreground importance. Best-effort, unlike runOperation: recovery must
+        // still repair the slot when the platform refuses a foreground start.
+        val leaseHeld =
+            runCatching {
+                foregroundLease.start(
+                    ResourceOperationProgress(
+                        "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                        strings.resolve(R.string.resource_operation_rebuild_dictionary),
+                        ResourceOperationPhase.IMPORTING,
                     ),
                 )
-            } catch (failure: Exception) {
-                AppLog.e(
+            }.onFailure { failure ->
+                AppLog.w(
                     LogComponent.RESOURCES,
-                    "dictionary.rebuild",
+                    "dictionary.rebuild.foreground",
                     failure,
-                    "slot" to slot.slotId,
-                    "outcome" to "fail",
+                    "outcome" to "skip",
                 )
-                // Degrade: refreshFromPython surfaces dictionary_resource_invalid,
-                // which offers the replace retry for this slot.
+            }.isSuccess
+        try {
+            for (slot in stale) {
+                val path = slot.rebuildSourcePath ?: continue
+                try {
+                    ResourceBridgeCodec.decodeImportedDictionary(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                                path,
+                                slot.slotId,
+                                overwrite = true,
+                                catalogResourceId = slot.catalogResourceId,
+                            ),
+                            null,
+                        ),
+                    )
+                } catch (failure: Exception) {
+                    AppLog.e(
+                        LogComponent.RESOURCES,
+                        "dictionary.rebuild",
+                        failure,
+                        "slot" to slot.slotId,
+                        "outcome" to "fail",
+                    )
+                    // Degrade: refreshFromPython surfaces dictionary_resource_invalid,
+                    // which offers the replace retry for this slot.
+                }
             }
+        } finally {
+            if (leaseHeld) foregroundLease.stop()
         }
     }
 

@@ -162,7 +162,7 @@
     <string name="mining_notification_channel">Progres mining</string>
     <string name="mining_notification_channel_description">Kontrol progres dan pembatalan untuk proses mining aktif</string>
     <string name="resource_import_notification_channel">Impor sumber daya</string>
-    <string name="resource_import_notification_channel_description">Menjaga impor paket audio lokal besar tetap berjalan saat aplikasi berada di latar belakang</string>
+    <string name="resource_import_notification_channel_description">Menjaga impor sumber daya besar tetap berjalan saat aplikasi berada di latar belakang</string>
     <string name="resource_import_notification_working">Memproses. Meninggalkan aplikasi tidak akan menghentikan ini.</string>
     <string name="mining_notification_title">Anki Miner sedang memproses media</string>
     <string name="mining_notification_preparing">Menyiapkan kosakata yang dipilih…</string>
@@ -431,6 +431,7 @@
     <string name="resource_operation_install_unidic">Instal UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Impor kamus katalog</string>
     <string name="resource_operation_import_custom_dictionary">Impor kamus kustom</string>
+    <string name="resource_operation_rebuild_dictionary">Bangun ulang kamus</string>
     <string name="resource_operation_import_frequency">Impor sumber frekuensi</string>
     <string name="resource_operation_import_pitch">Impor aksen nada</string>
     <string name="resource_operation_import_audio_pack">Impor paket audio lokal</string>

@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **A dictionary import keeps running when you leave the app.** The import ran without the foreground service audio packs already use, so on newer Android the cached process was killed at the background CPU quota about five minutes after leaving the screen - and a large dictionary needs far longer than that on a slower phone. With no resume, every attempt restarted from zero, so the import could never land (#13, tester bundle 2026-08-18: three `EXCESSIVE CPU USAGE` kills). Catalog installs, custom imports and the startup schema rebuild now hold the resource-import foreground service and its CPU wake lease; the rebuild's hold is best-effort so startup recovery still runs where a foreground start is refused.
+
 ## [0.8.1] - 2026-08-17
 
 ### Fixed
