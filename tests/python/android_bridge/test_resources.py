@@ -508,6 +508,8 @@ def _yomitan_zip(
     meaning: str,
     revision: str,
     title: str = "Fixture Dictionary",
+    bank_count: int = 1,
+    rows_per_bank: int = 1,
 ) -> Path:
     index = {
         "title": title,
@@ -516,10 +518,23 @@ def _yomitan_zip(
         "author": "Fixture Author",
         "attribution": "Fixture Attribution",
     }
-    rows = [[term, "", "", "", 0, [meaning], 1, ""]]
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
-        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+        for bank in range(1, bank_count + 1):
+            rows = [
+                [
+                    term if bank == 1 and row == 1 else f"{term}{bank}-{row}",
+                    "",
+                    "",
+                    "",
+                    0,
+                    [meaning],
+                    1,
+                    "",
+                ]
+                for row in range(1, rows_per_bank + 1)
+            ]
+            archive.writestr(f"term_bank_{bank}.json", json.dumps(rows, ensure_ascii=False))
     return path
 
 
@@ -797,7 +812,16 @@ def test_dictionary_import_forwards_engine_progress_and_finalizes_before_publish
     tmp_path: Path,
     initialized_bridge_home: Path,
 ) -> None:
-    source = _yomitan_zip(tmp_path / "progress.zip", term="猫", meaning="cat", revision="1")
+    # Three term banks of two rows each: the bank denominator (3) and the entry
+    # count (6) are distinguishable in the forwarded envelopes.
+    source = _yomitan_zip(
+        tmp_path / "progress.zip",
+        term="猫",
+        meaning="cat",
+        revision="1",
+        bank_count=3,
+        rows_per_bank=2,
+    )
     callbacks = FakeCallbacks()
 
     decode_envelope(
@@ -824,13 +848,16 @@ def test_dictionary_import_forwards_engine_progress_and_finalizes_before_publish
     # items_fn; only the reporter's own set_phase("finalizing") may emit 0/0.
     assert not any(e["phase"] == "importing" and e["current"] == 0 and e["total"] == 0 for e in envelopes)
 
-    importing = [e for e in envelopes if e["phase"] == "importing"]
+    importing = [(e["current"], e["total"]) for e in envelopes if e["phase"] == "importing"]
     assert importing, "expected at least one forwarded importing envelope"
-    # Against the current engine pin, import_yomitan_zip's insert-progress
-    # callback reports (inserted, 0, message) per batch -- assert that passes
-    # through with total == 0. A later re-pin task (Task 8) flips the engine
-    # to emit (files_done, total_files) and this assertion moves with it.
-    assert any(e["current"] > 0 and e["total"] == 0 for e in importing)
+    # The pinned engine reports insert progress determinately against the
+    # term-bank count -- (files_done, total_term_files) -- and fires a terminal
+    # (total, total) once bulk_insert returns, so nothing forwarded from the
+    # insert stage is indeterminate any more.
+    assert all(total > 0 for _current, total in importing)
+    assert (3, 3) in importing
+    # The importer's closing "Done" call counts entries, not banks.
+    assert importing[-1] == (6, 6)
 
     assert envelopes[-1] == {
         "operationId": "dict-progress",
