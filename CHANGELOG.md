@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-08-18
+
 ### Changed
 
 - **Resource imports show a moving progress bar instead of a motionless "Importing...".** Dictionaries, frequency lists, pitch accent, audio packs, known words and the UniDic install now report real counts as they run - bank files for dictionaries, MiB for the rest - where downloads already had byte progress; dictionary imports get theirs bank by bank via an engine update.
