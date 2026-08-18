@@ -2176,6 +2176,43 @@ def _tar_xz_of(path: Path, members: dict[str, bytes]) -> Path:
     return path
 
 
+def _tar_of(path: Path, members: dict[str, bytes]) -> Path:
+    """Uncompressed tar -- raw bytes on disk equal logical member bytes 1:1.
+
+    Used where a test needs the extractor's raw-stream-position progress
+    (``_extract_audio_tar``) to advance in predictable steps: xz/gzip
+    compression ratios make the relationship between logical content size and
+    on-disk (and therefore ``stream.tell()``) position unpredictable, and
+    highly-repetitive filler content (the cheapest way to pad a fixture)
+    compresses away to almost nothing.
+    """
+    with tarfile.open(path, "w:") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+# tarfile's streaming reader (``_Stream``) pulls raw bytes from the underlying
+# fileobj in fixed ``tarfile.RECORDSIZE`` (10240-byte) chunks regardless of
+# compression, so a fixture must clear a few multiples of that before
+# ``_extract_audio_tar``'s ``stream.tell()``-based progress shows more than
+# one step. These files are never referenced by index.json/entries.json --
+# the ajt/nhk16 pack parsers only follow what the index points at, so orphan
+# media under a pack's own media/ directory is inert filler.
+_TAR_PROGRESS_PAD_ENTRY_BYTES = 6 * 1024
+_TAR_PROGRESS_PAD_COUNT = 6
+
+
+def _padded_collection_members(root: str = "user_files") -> dict[str, bytes]:
+    members = dict(_collection_members(root))
+    prefix = f"{root}/" if root else ""
+    for index in range(_TAR_PROGRESS_PAD_COUNT):
+        members[f"{prefix}jpod_files/media/pad-{index}.mp3"] = bytes(_TAR_PROGRESS_PAD_ENTRY_BYTES)
+    return members
+
+
 def test_audio_archive_kind_reads_the_container_from_its_bytes(tmp_path: Path) -> None:
     members = {"index.json": b"{}"}
     zipped = _zip_of(tmp_path / "named-wrong.tar.xz", members)
@@ -2284,6 +2321,63 @@ def test_audio_zip_preflights_member_count_before_zipfile_allocation(
                 {".mp3"},
             )
     assert failure.value.code == "resource_archive_member_count"
+
+
+def test_audio_extract_zip_progress_total_is_stable_and_reaches_terminal(tmp_path: Path) -> None:
+    source = _zip_of(tmp_path / "collection.zip", _collection_members())
+    destination = tmp_path / "extracted"
+    reports: list[tuple[int, int]] = []
+
+    local_resources._extract_audio_zip(
+        source,
+        destination,
+        resources._Operation("audio-zip-progress"),
+        ("user_files", "jpod_files"),
+        progress=lambda current, total: reports.append((current, total)),
+    )
+
+    assert reports
+    totals = {total for _current, total in reports}
+    assert len(totals) == 1, "ZIP's two-pass declared_total must not change across reports"
+    (total,) = totals
+    assert total > 0
+    assert any(current < total for current, _total in reports)
+    assert reports[-1] == (total, total)
+
+
+def test_audio_extract_tar_progress_total_is_stable_and_reaches_terminal(tmp_path: Path) -> None:
+    # Regression test for a Critical review finding on the original
+    # implementation: _extract_audio_tar grew a running "declared_total" by
+    # each member's own size immediately before copying that same member, so
+    # current == total on literally every report -- a permanently full,
+    # motionless progress bar for the whole extraction, and (since every
+    # report looked terminal) the reporter's throttle-bypass fired on every
+    # single call. The fix reports the archive's fixed stat size as total and
+    # the underlying raw stream's consumed position as current.
+    source = _tar_of(tmp_path / "collection.tar", _padded_collection_members())
+    destination = tmp_path / "extracted"
+    reports: list[tuple[int, int]] = []
+
+    local_resources._extract_audio_tar(
+        source,
+        destination,
+        resources._Operation("audio-tar-progress"),
+        ("user_files", "jpod_files"),
+        progress=lambda current, total: reports.append((current, total)),
+    )
+
+    assert reports
+    totals = {total for _current, total in reports}
+    assert len(totals) == 1, "tar's whole-archive total must not change across reports"
+    (total,) = totals
+    assert total == source.stat().st_size
+    assert any(
+        current < total for current, _total in reports
+    ), "the old per-member-growing total made current == total on every single report"
+    assert reports[-1] == (total, total)
+    assert all(
+        reports[index][0] <= reports[index + 1][0] for index in range(len(reports) - 1)
+    ), "current must be monotonically non-decreasing"
 
 
 def test_audio_extractor_names_a_total_size_rejection(tmp_path: Path) -> None:
@@ -2516,6 +2610,13 @@ def test_audio_pack_import_reports_hash_and_extract_byte_progress_then_finalizes
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    # Full-pipeline smoke coverage that progress is wired end to end. The
+    # reporter's own 200ms throttle collapses most intermediate reports for a
+    # fixture this small/fast -- current == total on nearly everything here is
+    # expected throttle behavior, not a signal about the extractors'
+    # total-computation correctness. That precise regression coverage lives
+    # in the direct _extract_audio_zip/_extract_audio_tar tests below, which
+    # bypass the reporter (and its throttle) entirely.
     _local_home(tmp_path, monkeypatch)
     source = _tar_xz_of(tmp_path / "collection.tar.xz", _collection_members())
     callbacks = FakeCallbacks()
@@ -2543,10 +2644,6 @@ def test_audio_pack_import_reports_hash_and_extract_byte_progress_then_finalizes
     assert importing
     assert all(e["kind"] == "bytes" for e in importing)
     assert all(e["current"] <= e["total"] for e in importing if e["total"] > 0)
-    # Distinct totals confirm both stages reported through the same reporter:
-    # the hash pass (total = the whole staged archive) and the extract pass
-    # (total = only the chosen pack's selected member bytes).
-    assert len({e["total"] for e in importing}) >= 2
 
     assert envelopes[-1] == {
         "operationId": "audio-progress",

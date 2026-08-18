@@ -879,19 +879,33 @@ def _extract_audio_tar(
 ) -> None:
     """Extract the *prefix* subtree of a streamed tar archive.
 
-    A tar has no central directory, so its selected declared total is checked
-    incrementally before each file is materialised. A device that fills up
-    surfaces through ``_raise_if_storage_exhausted``. ``declared_total`` (the
-    progress denominator) grows as new members are discovered, unlike the ZIP
-    path's stable two-pass total -- a streamed tar cannot know its selected
-    size upfront without buffering the whole archive.
+    A tar has no central directory, so its selected declared total (used only
+    for the "expands beyond its limit" guard below) is checked incrementally
+    before each file is materialised. A device that fills up surfaces through
+    ``_raise_if_storage_exhausted``.
+
+    ``progress``, unlike the ZIP path's stable two-pass ``declared_total``,
+    cannot report "bytes of the selected subtree extracted so far" -- a
+    streamed tar cannot know that sum upfront without buffering the whole
+    archive. Instead it reports whole-archive determinate bytes: total is the
+    archive file's fixed stat size, current is the raw (compressed or plain)
+    stream's consumed position, read directly off the underlying file object
+    tarfile is reading through. That position is monotone and bounded by the
+    file's actual size, so it stays a true fraction-of-completion signal even
+    though it also counts bytes spent on members outside *prefix*.
     """
     destination.mkdir(parents=True)
     seen: set[tuple[str, ...]] = set()
     members = 0
     declared_total = 0
     actual_total = 0
-    with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
+    with core._open_source(path) as (stream, source_stat), tarfile.open(fileobj=stream, mode="r|*") as archive:
+        archive_size = source_stat.st_size
+
+        def _report_stream_position() -> None:
+            if progress is not None:
+                progress(stream.tell(), archive_size)
+
         for member in archive:
             operation.check()
             members += 1
@@ -909,6 +923,7 @@ def _extract_audio_tar(
             limit = _accept_audio_member(parts, 0 if member.isdir() else member.size, seen)
             relative = _under_prefix(parts, prefix)
             if relative is None:
+                _report_stream_position()
                 continue
             if member.isreg():
                 if member.size > _AUDIO_TOTAL_LIMIT - declared_total:
@@ -927,6 +942,7 @@ def _extract_audio_tar(
                         )
                 else:
                     target.mkdir(parents=True)
+                _report_stream_position()
                 continue
             source = archive.extractfile(member)
             if source is None:
@@ -934,8 +950,14 @@ def _extract_audio_tar(
             target.parent.mkdir(parents=True, exist_ok=True)
             with source:
                 actual_total += _copy_audio_member(source, target, member.size, limit, operation)
-            if progress is not None:
-                progress(actual_total, declared_total)
+            _report_stream_position()
+        # The stream's own position can land short of the file's actual size
+        # (trailing zero-fill/EOF blocks a decompressor never surfaces as
+        # read() output), so the terminal report is forced to the true total
+        # rather than trusting tell() -- this is also what keeps the reporter's
+        # own current == total bypass firing exactly once, at the real end.
+        if progress is not None:
+            progress(archive_size, archive_size)
     if declared_total <= 0:
         raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
 
