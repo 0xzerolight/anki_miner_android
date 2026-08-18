@@ -79,12 +79,6 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 2. Download `anki-miner-android-<version>-arm64-v8a.apk` from the [latest release](https://github.com/0xzerolight/anki_miner_android/releases/latest).
 3. Allow installing from unknown sources, then open the APK to install.
 
-The app does not update itself; install a newer APK over the old one to update.
-
-On first run the app downloads the Japanese tokenizer dictionary (UniDic Lite):
-about 47 MB over the network, expanding to about 260 MB of private storage. Do
-it on Wi-Fi, and keep the space free before starting.
-
 ## Recommended Resources
 
 | Type | Resource | Download | Add via |
@@ -97,7 +91,10 @@ it on Wi-Fi, and keep the space free before starting.
 | Frequency | [JPDB v2.2 Kana](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip) | Settings -> Filtering -> Frequency List File |
 | Frequency | [BCCWJ SUW+LUW](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/BCCWJ_SUW_LUW_combined.zip) | Settings -> Filtering -> Frequency List File |
 
-Proper-noun filtering uses bundled name wordsets derived from [JMnedict](https://www.edrdg.org/enamdict/enamdict_doc.html) (JMdict/EDICT project, EDRDG, CC BY-SA 4.0).
+<details> 
+<summary><strong>JMnedict License</strong></summary>
+  Proper-noun filtering uses bundled name wordsets derived from [JMnedict](https://www.edrdg.org/enamdict/enamdict_doc.html) (JMdict/EDICT project, EDRDG, CC BY-SA 4.0).
+</details>
 
 ## Troubleshooting
 
@@ -119,7 +116,6 @@ Contributions of any kind are welcome.
 - Architecture overview: [ARCHITECTURE.md](ARCHITECTURE.md).
 - Bug reports and feature requests -> [Issues](https://github.com/0xzerolight/anki_miner_android/issues).
 - Security vulnerabilities -> [private advisory](https://github.com/0xzerolight/anki_miner_android/security/advisories/new), not a public issue. See [SECURITY.md](SECURITY.md).
-- Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 Main project: [Anki Miner](https://github.com/0xzerolight/anki_miner).
 
