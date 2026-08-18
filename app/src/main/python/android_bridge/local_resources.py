@@ -27,6 +27,7 @@ from pathlib import Path, PurePosixPath
 from . import resources as core
 from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, encode_message
+from .resource_progress import make_reporter
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +448,7 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -493,6 +495,7 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
                     import_root,
                     source_id=source_id,
                     source_name=source_name,
+                    progress=reporter.items_fn(),
                     cancel_check=operation.cancelled.is_set,
                 )
             except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
@@ -569,6 +572,7 @@ def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = No
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -615,6 +619,7 @@ def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = No
                     import_root,
                     source_id=source_id,
                     source_name=requested_name,
+                    progress=reporter.items_fn(),
                     cancel_check=operation.cancelled.is_set,
                 )
             except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:

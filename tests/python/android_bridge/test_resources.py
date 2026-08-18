@@ -1790,6 +1790,160 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+def test_frequency_csv_import_with_callbacks_emits_no_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The CSV branch (_import_csv) never receives a progress callback --
+    # attaching callbacks must not error and must produce no envelopes.
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "frequency.csv"
+    source.write_text("word,rank\n猫,10\n犬,20\n", encoding="utf-8")
+    callbacks = FakeCallbacks()
+
+    decode_envelope(
+        local_resources.import_frequency(
+            {
+                "operationId": "frequency-csv-progress",
+                "sourcePath": str(source),
+                "sourceId": "fixture-freq-csv",
+                "sourceName": "Fixture Frequency",
+                "sourceFormat": "csv",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.frequency.imported",
+    )
+
+    assert callbacks.messages == []
+
+
+# _rewrite_yomitan_banks (resources.py) unconditionally re-chunks every
+# term_meta_bank_*.json into fresh ~4 MiB (_YOMITAN_BANK_CHUNK_BYTES) output
+# banks before the frequency/pitch importers ever see the archive, so
+# iter_banks' (file_idx, total) reflects post-rewrite bank *count*, not the
+# number of banks in the source zip. Padding past one chunk is the only way
+# to observe a real total > 1 from a small fixture.
+_PROGRESS_PADDING_ENTRY_BYTES = 64 * 1024
+_PROGRESS_PADDING_COUNT = 80  # ~5 MiB, past the 4 MiB rewrite chunk size
+
+
+def _padded_frequency_zip(path: Path) -> Path:
+    index = {"title": "Progress Frequency", "revision": "1", "format": 3, "frequencyMode": "rank"}
+    rows = [
+        ["猫", "freq", 10],
+        ["犬", "freq", 20],
+        *[[f"pad-{i}", "pad", "A" * _PROGRESS_PADDING_ENTRY_BYTES] for i in range(_PROGRESS_PADDING_COUNT)],
+    ]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_meta_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_frequency_zip_import_forwards_real_bank_progress_with_terminal_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _padded_frequency_zip(tmp_path / "progress-freq.zip")
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_frequency(
+            {
+                "operationId": "frequency-zip-progress",
+                "sourcePath": str(source),
+                "sourceId": "progress-freq",
+                "sourceName": "Progress Frequency",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.frequency.imported",
+    )
+    assert imported.payload["entryCount"] == 2
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "frequency-zip-progress" for e in envelopes)
+    assert all(e["phase"] == "importing" and e["kind"] == "items" for e in envelopes)
+    pairs = [(e["current"], e["total"]) for e in envelopes]
+    max_total = max(total for _, total in pairs)
+    assert max_total > 1, "fixture padding should force iter_banks to emit more than one output bank"
+    # A real, non-terminal (file_idx, total) from iter_banks -- not a
+    # fabricated or stage-marker value.
+    assert (1, max_total) in pairs
+    # ... and the trailing terminal (total, total) "Done" report.
+    assert pairs[-1] == (max_total, max_total)
+
+
+def _pitch_bank_entry(term: str, reading: str) -> list:
+    return [term, "pitch", {"reading": reading, "pitches": [{"position": 0}]}]
+
+
+def _padded_pitch_zip(path: Path) -> Path:
+    index = {"title": "Progress Pitch", "revision": "1", "format": 3}
+    rows = [
+        _pitch_bank_entry("猫", "ねこ"),
+        _pitch_bank_entry("犬", "いぬ"),
+        *[[f"pad-{i}", "pad", "A" * _PROGRESS_PADDING_ENTRY_BYTES] for i in range(_PROGRESS_PADDING_COUNT)],
+    ]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_meta_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_pitch_zip_import_forwards_real_bank_progress_with_terminal_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _padded_pitch_zip(tmp_path / "progress-pitch.zip")
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_pitch(
+            {
+                "operationId": "pitch-zip-progress",
+                "sourcePath": str(source),
+                "sourceId": "progress-pitch",
+                "sourceName": "Progress Pitch",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.pitch.imported",
+    )
+    assert imported.payload["entryCount"] == 2
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "pitch-zip-progress" for e in envelopes)
+    assert all(e["phase"] == "importing" and e["kind"] == "items" for e in envelopes)
+    pairs = [(e["current"], e["total"]) for e in envelopes]
+    max_total = max(total for _, total in pairs)
+    assert max_total > 1, "fixture padding should force iter_banks to emit more than one output bank"
+    assert (1, max_total) in pairs
+    assert pairs[-1] == (max_total, max_total)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 @pytest.mark.parametrize("oversized_field", ["title", "revision"])
 def test_frequency_import_rejects_oversized_metadata_before_publication(
     tmp_path: Path,
