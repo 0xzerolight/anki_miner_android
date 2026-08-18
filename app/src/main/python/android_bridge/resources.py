@@ -475,6 +475,7 @@ def _copy_archive(
     maximum_bytes: int,
     expected_size: int | None = None,
     expected_sha256: str | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> _ArchiveCopy:
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.unlink(missing_ok=True)
@@ -507,6 +508,8 @@ def _copy_archive(
                         )
                     _write_all(output_stream, chunk)
                     digest.update(chunk)
+                    if progress is not None:
+                        progress(copied, source_stat.st_size)
                 os.fsync(output_stream.fileno())
         actual_hash = digest.hexdigest()
         if copied <= 0 or (expected_size is not None and copied != expected_size):
@@ -535,6 +538,7 @@ def _hash_archive(
     maximum_bytes: int,
     expected_size: int | None = None,
     expected_sha256: str | None = None,
+    progress: Callable[[int, int], None] | None = None,
 ) -> _ArchiveCopy:
     """Measure *source* in place, with the guarantees :func:`_copy_archive` gives.
 
@@ -574,6 +578,8 @@ def _hash_archive(
                     "Resource archive exceeds its limit",
                 )
             digest.update(chunk)
+            if progress is not None:
+                progress(read, source_stat.st_size)
     if read != source_stat.st_size:
         raise _fail(
             "resource_archive_mismatch",

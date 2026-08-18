@@ -788,6 +788,8 @@ def _extract_audio_zip(
     destination: Path,
     operation: core._Operation,
     prefix: tuple[str, ...],
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     try:
         declared_member_count = core._preflight_zip_member_count(path, _AUDIO_MEMBER_LIMIT)
@@ -861,6 +863,8 @@ def _extract_audio_zip(
                 )
             if actual_total > declared_total:
                 raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
+            if progress is not None:
+                progress(actual_total, declared_total)
         if actual_total != declared_total:
             raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
 
@@ -870,17 +874,23 @@ def _extract_audio_tar(
     destination: Path,
     operation: core._Operation,
     prefix: tuple[str, ...],
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Extract the *prefix* subtree of a streamed tar archive.
 
     A tar has no central directory, so its selected declared total is checked
     incrementally before each file is materialised. A device that fills up
-    surfaces through ``_raise_if_storage_exhausted``.
+    surfaces through ``_raise_if_storage_exhausted``. ``declared_total`` (the
+    progress denominator) grows as new members are discovered, unlike the ZIP
+    path's stable two-pass total -- a streamed tar cannot know its selected
+    size upfront without buffering the whole archive.
     """
     destination.mkdir(parents=True)
     seen: set[tuple[str, ...]] = set()
     members = 0
     declared_total = 0
+    actual_total = 0
     with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
         for member in archive:
             operation.check()
@@ -923,7 +933,9 @@ def _extract_audio_tar(
                 raise _fail("unsafe_resource_archive", "Audio pack member cannot be read")
             target.parent.mkdir(parents=True, exist_ok=True)
             with source:
-                _copy_audio_member(source, target, member.size, limit, operation)
+                actual_total += _copy_audio_member(source, target, member.size, limit, operation)
+            if progress is not None:
+                progress(actual_total, declared_total)
     if declared_total <= 0:
         raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
 
@@ -934,14 +946,15 @@ def _extract_audio_archive(
     operation: core._Operation,
     *,
     prefix: tuple[str, ...] = (),
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Extract the *prefix* subtree of a staged audio archive, ZIP or tar."""
     kind = _audio_archive_kind(path)
     try:
         if kind == "zip":
-            _extract_audio_zip(path, destination, operation, prefix)
+            _extract_audio_zip(path, destination, operation, prefix, progress=progress)
         else:
-            _extract_audio_tar(path, destination, operation, prefix)
+            _extract_audio_tar(path, destination, operation, prefix, progress=progress)
     except BridgeProtocolError:
         raise
     except OSError as exc:
@@ -1289,6 +1302,7 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -1300,12 +1314,19 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
                 source,
                 operation,
                 maximum_bytes=_AUDIO_ARCHIVE_LIMIT,
+                progress=reporter.bytes_fn(),
             )
             extracted = operation_root / "extracted"
             # Only the chosen subtree is extracted, so importing one pack out of
             # the four-pack collection costs that pack's bytes, not the whole
             # archive's.
-            _extract_audio_archive(copied.path, extracted, operation, prefix=pack_prefix)
+            _extract_audio_archive(
+                copied.path,
+                extracted,
+                operation,
+                prefix=pack_prefix,
+                progress=reporter.bytes_fn(),
+            )
             pack_roots = _detect_audio_pack_roots(extracted)
             if len(pack_roots) != 1:
                 raise _fail(
@@ -1381,6 +1402,7 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
             )
             _fsync_tree_directories(content)
             core._fsync_directory(candidate)
+            reporter.set_phase("finalizing")
             _publish_indexed_dir(
                 candidate,
                 home=home,

@@ -2512,6 +2512,104 @@ def test_audio_pack_import_extracts_only_the_chosen_pack(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+def test_audio_pack_import_reports_hash_and_extract_byte_progress_then_finalizes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _tar_xz_of(tmp_path / "collection.tar.xz", _collection_members())
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-progress",
+                "sourcePath": str(source),
+                "packId": "jpod",
+                "packPath": "user_files/jpod_files",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.audiopack.imported",
+    )
+    assert imported.payload["packId"] == "jpod"
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "audio-progress" for e in envelopes)
+
+    importing = [e for e in envelopes if e["phase"] == "importing"]
+    assert importing
+    assert all(e["kind"] == "bytes" for e in importing)
+    assert all(e["current"] <= e["total"] for e in importing if e["total"] > 0)
+    # Distinct totals confirm both stages reported through the same reporter:
+    # the hash pass (total = the whole staged archive) and the extract pass
+    # (total = only the chosen pack's selected member bytes).
+    assert len({e["total"] for e in importing}) >= 2
+
+    assert envelopes[-1] == {
+        "operationId": "audio-progress",
+        "phase": "finalizing",
+        "kind": "items",
+        "current": 0,
+        "total": 0,
+    }
+
+
+class _CancelOnFirstProgress(FakeCallbacks):
+    """Cancels the operation from inside the first onProgress callback.
+
+    Exercises that a reporter wired to callbacks does not interfere with (or
+    swallow) the operation's own cooperative cancellation check.
+    """
+
+    def __init__(self, operation_id: str) -> None:
+        super().__init__()
+        self._operation_id = operation_id
+        self._cancelled = False
+
+    def onProgress(self, message: str) -> None:
+        super().onProgress(message)
+        if not self._cancelled:
+            self._cancelled = True
+            resources._OPERATIONS.cancel(self._operation_id)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_import_cancel_still_works_with_callbacks_attached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = _tar_xz_of(tmp_path / "collection.tar.xz", _collection_members())
+    operation_id = "audio-cancel-progress"
+    callbacks = _CancelOnFirstProgress(operation_id)
+
+    with pytest.raises(BridgeProtocolError) as cancelled:
+        local_resources.import_audio_pack(
+            {
+                "operationId": operation_id,
+                "sourcePath": str(source),
+                "packId": "jpod",
+                "packPath": "user_files/jpod_files",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        )
+
+    assert cancelled.value.code == "resource_operation_cancelled"
+    assert callbacks.messages, "cancellation must fire after at least one progress report"
+    assert not (home / "audio_packs" / "jpod").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 def test_audio_pack_preflight_derives_id_without_copying_or_importing(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
