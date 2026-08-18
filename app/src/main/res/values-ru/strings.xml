@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">Част. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Част. —</string>
     <string name="candidate_occurrences_compact">Вхожд. %1$d</string>
-    <string name="candidate_part_of_speech">Часть речи: %1$s</string>
-    <string name="candidate_frequency">Ранг частотности: %1$d</string>
-    <string name="candidate_frequency_unknown">Ранг частотности недоступен</string>
-    <string name="candidate_occurrences">Вхождений: %1$d</string>
     <string name="sentence_selection_description">Использовать предложение: %1$s</string>
     <string name="success_title">Майнинг завершён</string>
     <string name="cancelled_title">Майнинг отменён</string>
@@ -452,7 +448,6 @@
     <string name="resource_operation_export_known_words">Экспортировать известные слова</string>
     <string name="resource_operation_dictionary_lookup">Поиск в словаре</string>
     <string name="resource_failure_busy">Завершите или отмените активный запуск майнинга перед изменением ресурсов</string>
-    <string name="resource_failure_download">Не удалось загрузить ресурс</string>
     <string name="resource_failure_download_cancelled">Операция с ресурсом отменена</string>
     <string name="resource_failure_download_redirect_limit">При загрузке ресурса слишком много перенаправлений</string>
     <string name="resource_failure_download_redirect_invalid">При загрузке ресурса получено недопустимое перенаправление</string>
@@ -516,7 +511,6 @@
     <string name="dictionary_replace">Безопасно заменить</string>
     <string name="dictionary_catalog_reinstall">Переустановить или заменить встроенный словарь</string>
     <string name="dictionary_repair">Восстановить слот словаря</string>
-    <string name="dictionary_replace_confirm_title">Заменить установленный словарь?</string>
     <string name="dictionary_repair_confirm_title">Восстановить слот с %1$s?</string>
     <string name="resource_replace_confirm_title">Заменить %1$s?</string>
     <string name="resource_replace_confirm_message">%1$s заменяется атомарно. Если проверка нового импорта не пройдёт, Anki Miner восстановит текущую установку.</string>
@@ -526,7 +520,6 @@
     <string name="resource_delete_confirm_title">Удалить %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s удаляется с этого устройства. Из Anki ничего не удаляется, резервная копия не сохраняется.</string>
     <string name="dictionary_repair_confirm">Восстановить слот</string>
-    <string name="frequency_source_id">Постоянный ID частотности</string>
     <string name="pitch_import_title">Импортировать тональное ударение</string>
     <string name="audio_pack_archive_guidance">Выберите скачанный архив .tar.xz, .tar.gz, .tar или .zip, а не файл .torrent.</string>
     <string name="audio_pack_choice_title">Какой пакет?</string>
@@ -563,7 +556,6 @@
     <string name="bundled_wordsets_title">Встроенные наборы имён собственных</string>
     <string name="bundled_wordset_item">%1$s · записей: %2$d</string>
     <string name="bundled_wordsets_unavailable">Не удалось учесть встроенные наборы слов.</string>
-    <string name="pitch_inventory_invalid">%1$s · недействительный список (записей: %2$d); замените его перед майнингом</string>
     <string name="local_import_complete">Локальный импорт завершён</string>
     <string name="frequency_import_result">%1$s: записей %2$d; пропущено некорректных строк: %3$d</string>
     <string name="pitch_import_result">%1$s: записей %2$d; пропущено некорректных строк: %3$d</string>
@@ -572,7 +564,6 @@
     <string name="readiness_python">Встроенный Python: %1$s</string>
     <string name="readiness_resource_recovery">Восстановление ресурсов: %1$s</string>
     <string name="readiness_anki_recovery">Восстановление Anki: %1$s</string>
-    <string name="readiness_unidic">UniDic: %1$s</string>
     <string name="check_again">Проверить снова</string>
     <string name="status_queued">в очереди</string>
     <string name="status_starting">запуск</string>
@@ -594,7 +585,6 @@
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">Интерфейс</string>
-    <string name="settings_theme">Тема</string>
     <string name="settings_theme_light">Светлая</string>
     <string name="settings_theme_dark">Тёмная</string>
     <string name="settings_theme_system">Следовать системе</string>

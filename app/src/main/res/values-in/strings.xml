@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">Frek. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Frek. —</string>
     <string name="candidate_occurrences_compact">%1$d kemunculan</string>
-    <string name="candidate_part_of_speech">Jenis kata: %1$s</string>
-    <string name="candidate_frequency">Peringkat frekuensi: %1$d</string>
-    <string name="candidate_frequency_unknown">Peringkat frekuensi tidak tersedia</string>
-    <string name="candidate_occurrences">Kemunculan: %1$d</string>
     <string name="sentence_selection_description">Gunakan kalimat: %1$s</string>
     <string name="success_title">Mining selesai</string>
     <string name="cancelled_title">Mining dibatalkan</string>
@@ -446,7 +442,6 @@
     <string name="resource_operation_export_known_words">Ekspor kata yang dikenal</string>
     <string name="resource_operation_dictionary_lookup">Pencarian kamus</string>
     <string name="resource_failure_busy">Selesaikan atau batalkan proses mining aktif sebelum mengubah sumber daya</string>
-    <string name="resource_failure_download">Pengunduhan sumber daya gagal</string>
     <string name="resource_failure_download_cancelled">Operasi sumber daya dibatalkan</string>
     <string name="resource_failure_download_redirect_limit">Pengunduhan sumber daya terlalu sering dialihkan</string>
     <string name="resource_failure_download_redirect_invalid">Pengunduhan sumber daya mengembalikan pengalihan tidak valid</string>
@@ -510,7 +505,6 @@
     <string name="dictionary_replace">Ganti dengan aman</string>
     <string name="dictionary_catalog_reinstall">Instal ulang atau ganti kamus bawaan</string>
     <string name="dictionary_repair">Perbaiki slot kamus</string>
-    <string name="dictionary_replace_confirm_title">Ganti kamus yang terpasang?</string>
     <string name="dictionary_repair_confirm_title">Perbaiki slot yang menyimpan %1$s?</string>
     <string name="resource_replace_confirm_title">Ganti %1$s?</string>
     <string name="resource_replace_confirm_message">%1$s diganti secara transaksional. Jika impor baru gagal diverifikasi, Anki Miner memulihkan yang terpasang saat ini.</string>
@@ -520,7 +514,6 @@
     <string name="resource_delete_confirm_title">Hapus %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s dihapus dari perangkat ini. Tidak ada yang dihapus dari Anki, dan tidak ada cadangan yang disimpan.</string>
     <string name="dictionary_repair_confirm">Perbaiki slot</string>
-    <string name="frequency_source_id">ID frekuensi stabil</string>
     <string name="pitch_import_title">Impor aksen nada</string>
     <string name="audio_pack_archive_guidance">Pilih arsip .tar.xz, .tar.gz, .tar, atau .zip yang telah diunduh, bukan file .torrent.</string>
     <string name="audio_pack_choice_title">Paket yang mana?</string>
@@ -557,7 +550,6 @@
     <string name="bundled_wordsets_title">Kumpulan kata nama diri bawaan</string>
     <string name="bundled_wordset_item">%1$s · %2$d entri</string>
     <string name="bundled_wordsets_unavailable">Kumpulan kata bawaan tidak dapat diinventarisasi.</string>
-    <string name="pitch_inventory_invalid">%1$s · inventaris tidak valid (%2$d entri); ganti sebelum mining</string>
     <string name="local_import_complete">Impor lokal selesai</string>
     <string name="frequency_import_result">%1$s: %2$d entri; %3$d baris rusak dilewati</string>
     <string name="pitch_import_result">%1$s: %2$d entri; %3$d baris rusak dilewati</string>
@@ -566,7 +558,6 @@
     <string name="readiness_python">Python tersemat: %1$s</string>
     <string name="readiness_resource_recovery">Pemulihan sumber daya: %1$s</string>
     <string name="readiness_anki_recovery">Pemulihan Anki: %1$s</string>
-    <string name="readiness_unidic">UniDic: %1$s</string>
     <string name="check_again">Periksa lagi</string>
     <string name="status_queued">dalam antrean</string>
     <string name="status_starting">memulai</string>
@@ -588,7 +579,6 @@
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">UI</string>
-    <string name="settings_theme">Tema</string>
     <string name="settings_theme_light">Terang</string>
     <string name="settings_theme_dark">Gelap</string>
     <string name="settings_theme_system">Ikuti sistem</string>

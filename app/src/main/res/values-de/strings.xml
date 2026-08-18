@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">Häuf. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Häuf. —</string>
     <string name="candidate_occurrences_compact">%1$d Vorkommen</string>
-    <string name="candidate_part_of_speech">Wortart: %1$s</string>
-    <string name="candidate_frequency">Häufigkeitsrang: %1$d</string>
-    <string name="candidate_frequency_unknown">Häufigkeitsrang nicht verfügbar</string>
-    <string name="candidate_occurrences">Vorkommen: %1$d</string>
     <string name="sentence_selection_description">Satz verwenden: %1$s</string>
     <string name="success_title">Mining abgeschlossen</string>
     <string name="cancelled_title">Mining abgebrochen</string>
@@ -448,7 +444,6 @@
     <string name="resource_operation_export_known_words">Bekannte Wörter exportieren</string>
     <string name="resource_operation_dictionary_lookup">Wörterbuchsuche</string>
     <string name="resource_failure_busy">Beenden Sie den aktiven Mining-Durchlauf oder brechen Sie ihn ab, bevor Sie Ressourcen ändern.</string>
-    <string name="resource_failure_download">Ressourcen-Download fehlgeschlagen</string>
     <string name="resource_failure_download_cancelled">Ressourcenvorgang wurde abgebrochen</string>
     <string name="resource_failure_download_redirect_limit">Der Ressourcen-Download wurde zu oft weitergeleitet</string>
     <string name="resource_failure_download_redirect_invalid">Der Ressourcen-Download gab eine ungültige Weiterleitung zurück</string>
@@ -512,7 +507,6 @@
     <string name="dictionary_replace">Sicher ersetzen</string>
     <string name="dictionary_catalog_reinstall">Mitgeliefertes Wörterbuch erneut installieren oder ersetzen</string>
     <string name="dictionary_repair">Wörterbuch-Slot reparieren</string>
-    <string name="dictionary_replace_confirm_title">Installiertes Wörterbuch ersetzen?</string>
     <string name="dictionary_repair_confirm_title">Slot mit %1$s reparieren?</string>
     <string name="resource_replace_confirm_title">%1$s ersetzen?</string>
     <string name="resource_replace_confirm_message">%1$s wird transaktional ersetzt. Schlägt die Überprüfung des neuen Imports fehl, stellt Anki Miner den aktuell installierten Zustand wieder her.</string>
@@ -522,7 +516,6 @@
     <string name="resource_delete_confirm_title">%1$s entfernen?</string>
     <string name="resource_delete_confirm_message">%1$s wird von diesem Gerät gelöscht. Aus Anki wird nichts entfernt, und es wird keine Sicherung behalten.</string>
     <string name="dictionary_repair_confirm">Slot reparieren</string>
-    <string name="frequency_source_id">Stabile Häufigkeits-ID</string>
     <string name="pitch_import_title">Tonhöhenakzent importieren</string>
     <string name="audio_pack_archive_guidance">Wähle das heruntergeladene Archiv im Format .tar.xz, .tar.gz, .tar oder .zip – nicht die .torrent-Datei.</string>
     <string name="audio_pack_choice_title">Welches Paket?</string>
@@ -559,7 +552,6 @@
     <string name="bundled_wordsets_title">Mitgelieferte Eigennamen-Wortsets</string>
     <string name="bundled_wordset_item">%1$s · %2$d Einträge</string>
     <string name="bundled_wordsets_unavailable">Inventar der mitgelieferten Wortsets konnte nicht erstellt werden.</string>
-    <string name="pitch_inventory_invalid">%1$s · ungültiges Inventar (%2$d Einträge); vor dem Mining ersetzen</string>
     <string name="local_import_complete">Lokaler Import abgeschlossen</string>
     <string name="frequency_import_result">%1$s: %2$d Einträge; %3$d fehlerhafte Zeilen übersprungen</string>
     <string name="pitch_import_result">%1$s: %2$d Einträge; %3$d fehlerhafte Zeilen übersprungen</string>
@@ -568,7 +560,6 @@
     <string name="readiness_python">Eingebettetes Python: %1$s</string>
     <string name="readiness_resource_recovery">Ressourcenwiederherstellung: %1$s</string>
     <string name="readiness_anki_recovery">Anki-Wiederherstellung: %1$s</string>
-    <string name="readiness_unidic">UniDic: %1$s</string>
     <string name="check_again">Erneut prüfen</string>
     <string name="status_queued">in Warteschlange</string>
     <string name="status_starting">wird gestartet</string>
@@ -590,7 +581,6 @@
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">Benutzeroberfläche</string>
-    <string name="settings_theme">Design</string>
     <string name="settings_theme_light">Hell</string>
     <string name="settings_theme_dark">Dunkel</string>
     <string name="settings_theme_system">Systemeinstellung folgen</string>

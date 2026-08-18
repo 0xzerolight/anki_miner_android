@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">词频 %1$d</string>
     <string name="candidate_frequency_unknown_compact">词频 —</string>
     <string name="candidate_occurrences_compact">出现 %1$d 次</string>
-    <string name="candidate_part_of_speech">词性：%1$s</string>
-    <string name="candidate_frequency">词频排名：%1$d</string>
-    <string name="candidate_frequency_unknown">词频排名不可用</string>
-    <string name="candidate_occurrences">出现次数：%1$d</string>
     <string name="sentence_selection_description">使用句子：%1$s</string>
     <string name="success_title">挖词完成</string>
     <string name="cancelled_title">已取消挖词</string>
@@ -446,7 +442,6 @@
     <string name="resource_operation_export_known_words">导出已知单词</string>
     <string name="resource_operation_dictionary_lookup">词典查询</string>
     <string name="resource_failure_busy">更改资源前，请完成或取消当前挖词任务</string>
-    <string name="resource_failure_download">资源下载失败</string>
     <string name="resource_failure_download_cancelled">资源操作已取消</string>
     <string name="resource_failure_download_redirect_limit">资源下载重定向次数过多</string>
     <string name="resource_failure_download_redirect_invalid">资源下载返回无效重定向</string>
@@ -510,7 +505,6 @@
     <string name="dictionary_replace">安全替换</string>
     <string name="dictionary_catalog_reinstall">重新安装或替换内置词典</string>
     <string name="dictionary_repair">修复词典槽位</string>
-    <string name="dictionary_replace_confirm_title">替换已安装的词典？</string>
     <string name="dictionary_repair_confirm_title">修复存放 %1$s 的槽位？</string>
     <string name="resource_replace_confirm_title">替换 %1$s？</string>
     <string name="resource_replace_confirm_message">将以事务方式替换 %1$s。若新导入未通过验证，Anki Miner 会恢复当前已安装的内容。</string>
@@ -520,7 +514,6 @@
     <string name="resource_delete_confirm_title">移除 %1$s？</string>
     <string name="resource_delete_confirm_message">将从此设备删除 %1$s。不会从 Anki 中移除任何内容，也不会保留备份。</string>
     <string name="dictionary_repair_confirm">修复槽位</string>
-    <string name="frequency_source_id">稳定词频 ID</string>
     <string name="pitch_import_title">导入音调</string>
     <string name="audio_pack_archive_guidance">请选择下载的 .tar.xz、.tar.gz、.tar 或 .zip 归档文件，不要选择 .torrent 文件。</string>
     <string name="audio_pack_choice_title">选择哪个包？</string>
@@ -557,7 +550,6 @@
     <string name="bundled_wordsets_title">内置专有名词单词集</string>
     <string name="bundled_wordset_item">%1$s · %2$d 个条目</string>
     <string name="bundled_wordsets_unavailable">无法清点内置单词集。</string>
-    <string name="pitch_inventory_invalid">%1$s · 清单无效（%2$d 个条目）；请在挖词前替换它</string>
     <string name="local_import_complete">本地导入完成</string>
     <string name="frequency_import_result">%1$s：%2$d 个条目；已跳过 %3$d 行格式错误的数据</string>
     <string name="pitch_import_result">%1$s：%2$d 个条目；已跳过 %3$d 行格式错误的数据</string>
@@ -566,7 +558,6 @@
     <string name="readiness_python">嵌入式 Python：%1$s</string>
     <string name="readiness_resource_recovery">资源恢复：%1$s</string>
     <string name="readiness_anki_recovery">Anki 恢复：%1$s</string>
-    <string name="readiness_unidic">UniDic：%1$s</string>
     <string name="check_again">再次检查</string>
     <string name="status_queued">已排队</string>
     <string name="status_starting">正在启动</string>
@@ -588,7 +579,6 @@
     <string name="dictionary_lookup_label">%1$s：%2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">界面</string>
-    <string name="settings_theme">主题</string>
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_dark">深色</string>
     <string name="settings_theme_system">跟随系统</string>

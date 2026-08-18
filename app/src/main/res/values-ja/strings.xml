@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">頻度 %1$d</string>
     <string name="candidate_frequency_unknown_compact">頻度 —</string>
     <string name="candidate_occurrences_compact">%1$d 回出現</string>
-    <string name="candidate_part_of_speech">品詞: %1$s</string>
-    <string name="candidate_frequency">頻度順位: %1$d</string>
-    <string name="candidate_frequency_unknown">頻度順位不明</string>
-    <string name="candidate_occurrences">出現回数: %1$d</string>
     <string name="sentence_selection_description">例文を使用: %1$s</string>
     <string name="success_title">マイニング完了</string>
     <string name="cancelled_title">マイニングをキャンセルしました</string>
@@ -448,7 +444,6 @@
     <string name="resource_operation_export_known_words">既知単語をエクスポート</string>
     <string name="resource_operation_dictionary_lookup">辞書検索</string>
     <string name="resource_failure_busy">リソースを変更する前に、実行中の採掘を完了またはキャンセルしてください</string>
-    <string name="resource_failure_download">リソースのダウンロードに失敗しました</string>
     <string name="resource_failure_download_cancelled">リソース操作がキャンセルされました</string>
     <string name="resource_failure_download_redirect_limit">リソースのダウンロードのリダイレクト回数が上限を超えました</string>
     <string name="resource_failure_download_redirect_invalid">リソースのダウンロードが無効なリダイレクトを返しました</string>
@@ -512,7 +507,6 @@
     <string name="dictionary_replace">安全に置き換え</string>
     <string name="dictionary_catalog_reinstall">同梱辞書を再インストールまたは置き換え</string>
     <string name="dictionary_repair">辞書スロットを修復</string>
-    <string name="dictionary_replace_confirm_title">インストール済み辞書を置き換えますか？</string>
     <string name="dictionary_repair_confirm_title">%1$sのスロットを修復しますか？</string>
     <string name="resource_replace_confirm_title">%1$sを置き換えますか？</string>
     <string name="resource_replace_confirm_message">%1$sはトランザクション処理で置き換えられます。新しいインポートの検証が失敗した場合、Anki Minerは現在インストールされているものを復元します。</string>
@@ -522,7 +516,6 @@
     <string name="resource_delete_confirm_title">%1$sを削除しますか？</string>
     <string name="resource_delete_confirm_message">%1$sをこの端末から削除します。Ankiからは何も削除されず、バックアップは保持されません。</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
-    <string name="frequency_source_id">固定頻度ID</string>
     <string name="pitch_import_title">アクセントをインポート</string>
     <string name="audio_pack_archive_guidance">ダウンロードした .tar.xz、.tar.gz、.tar、.zip アーカイブを選択してください。.torrent ファイルは選択しないでください。</string>
     <string name="audio_pack_choice_title">どのパックを取り込みますか</string>
@@ -559,7 +552,6 @@
     <string name="bundled_wordsets_title">同梱の固有名詞単語リスト</string>
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>
-    <string name="pitch_inventory_invalid">%1$s · 無効な一覧（エントリ%2$d件）。採掘前に置き換えてください</string>
     <string name="local_import_complete">ローカルインポート完了</string>
     <string name="frequency_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
     <string name="pitch_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
@@ -568,7 +560,6 @@
     <string name="readiness_python">組み込みPython: %1$s</string>
     <string name="readiness_resource_recovery">リソースリカバリー: %1$s</string>
     <string name="readiness_anki_recovery">Anki リカバリー: %1$s</string>
-    <string name="readiness_unidic">UniDic: %1$s</string>
     <string name="check_again">再確認</string>
     <string name="status_queued">待機中</string>
     <string name="status_starting">開始中</string>
@@ -591,7 +582,6 @@
 
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">UI</string>
-    <string name="settings_theme">テーマ</string>
     <string name="settings_theme_light">ライト</string>
     <string name="settings_theme_dark">ダーク</string>
     <string name="settings_theme_system">システムに従う</string>

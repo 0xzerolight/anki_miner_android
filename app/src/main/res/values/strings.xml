@@ -128,10 +128,6 @@
     <string name="candidate_frequency_compact">Freq. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Freq. —</string>
     <string name="candidate_occurrences_compact">%1$d occurrences</string>
-    <string name="candidate_part_of_speech">Part of speech: %1$s</string>
-    <string name="candidate_frequency">Frequency rank: %1$d</string>
-    <string name="candidate_frequency_unknown">Frequency rank unavailable</string>
-    <string name="candidate_occurrences">Occurrences: %1$d</string>
     <string name="sentence_selection_description">Use sentence: %1$s</string>
     <string name="success_title">Mining complete</string>
     <string name="cancelled_title">Mining cancelled</string>
@@ -457,7 +453,6 @@
     <string name="resource_operation_export_known_words">Export known words</string>
     <string name="resource_operation_dictionary_lookup">Dictionary lookup</string>
     <string name="resource_failure_busy">Finish or cancel the active mining run before changing resources</string>
-    <string name="resource_failure_download">Resource download failed</string>
     <string name="resource_failure_download_cancelled">Resource operation was cancelled</string>
     <string name="resource_failure_download_redirect_limit">Resource download redirected too many times</string>
     <string name="resource_failure_download_redirect_invalid">Resource download returned an invalid redirect</string>
@@ -521,7 +516,6 @@
     <string name="dictionary_replace">Replace safely</string>
     <string name="dictionary_catalog_reinstall">Reinstall or replace a bundled dictionary</string>
     <string name="dictionary_repair">Repair dictionary slot</string>
-    <string name="dictionary_replace_confirm_title">Replace the installed dictionary?</string>
     <string name="dictionary_repair_confirm_title">Repair the slot holding %1$s?</string>
     <string name="resource_replace_confirm_title">Replace %1$s?</string>
     <string name="resource_replace_confirm_message">%1$s is replaced transactionally. If the new import fails verification, Anki Miner restores what is installed now.</string>
@@ -531,7 +525,6 @@
     <string name="resource_delete_confirm_title">Remove %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s is deleted from this device. Nothing is removed from Anki, and no backup is kept.</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
-    <string name="frequency_source_id">Stable frequency ID</string>
     <string name="pitch_import_title">Import pitch accent</string>
     <string name="audio_pack_archive_guidance">Choose the downloaded .tar.xz, .tar.gz, .tar, or .zip archive—not the .torrent file.</string>
     <string name="audio_pack_choice_title">Which pack?</string>
@@ -568,7 +561,6 @@
     <string name="bundled_wordsets_title">Bundled proper-name wordsets</string>
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be inventoried.</string>
-    <string name="pitch_inventory_invalid">%1$s · invalid inventory (%2$d entries); replace it before mining</string>
     <string name="local_import_complete">Local import complete</string>
     <string name="frequency_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
     <string name="pitch_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
@@ -577,7 +569,6 @@
     <string name="readiness_python">Embedded Python: %1$s</string>
     <string name="readiness_resource_recovery">Resource recovery: %1$s</string>
     <string name="readiness_anki_recovery">Anki recovery: %1$s</string>
-    <string name="readiness_unidic">UniDic: %1$s</string>
     <string name="check_again">Check again</string>
     <string name="status_queued">queued</string>
     <string name="status_starting">starting</string>
@@ -600,7 +591,6 @@
 
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">UI</string>
-    <string name="settings_theme">Theme</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
     <string name="settings_theme_system">Follow system</string>

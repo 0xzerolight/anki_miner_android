@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">Fréq. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Fréq. —</string>
     <string name="candidate_occurrences_compact">%1$d occurrences</string>
-    <string name="candidate_part_of_speech">Partie du discours : %1$s</string>
-    <string name="candidate_frequency">Rang de fréquence : %1$d</string>
-    <string name="candidate_frequency_unknown">Rang de fréquence indisponible</string>
-    <string name="candidate_occurrences">Occurrences : %1$d</string>
     <string name="sentence_selection_description">Utiliser la phrase : %1$s</string>
     <string name="success_title">Extraction terminée</string>
     <string name="cancelled_title">Extraction annulée</string>
@@ -450,7 +446,6 @@
     <string name="resource_operation_export_known_words">Exporter les mots connus</string>
     <string name="resource_operation_dictionary_lookup">Recherche dans le dictionnaire</string>
     <string name="resource_failure_busy">Terminez ou annulez l\'extraction active avant de modifier les ressources</string>
-    <string name="resource_failure_download">Échec du téléchargement des ressources</string>
     <string name="resource_failure_download_cancelled">L\'opération sur les ressources a été annulée</string>
     <string name="resource_failure_download_redirect_limit">Le téléchargement de la ressource a été redirigé trop souvent</string>
     <string name="resource_failure_download_redirect_invalid">Le téléchargement de la ressource a renvoyé une redirection non valide</string>
@@ -514,7 +509,6 @@
     <string name="dictionary_replace">Remplacer en toute sécurité</string>
     <string name="dictionary_catalog_reinstall">Réinstaller ou remplacer un dictionnaire intégré</string>
     <string name="dictionary_repair">Réparer l\'emplacement du dictionnaire</string>
-    <string name="dictionary_replace_confirm_title">Remplacer le dictionnaire installé ?</string>
     <string name="dictionary_repair_confirm_title">Réparer l\'emplacement contenant %1$s ?</string>
     <string name="resource_replace_confirm_title">Remplacer %1$s ?</string>
     <string name="resource_replace_confirm_message">%1$s est remplacé de manière transactionnelle. Si le nouvel import échoue à la vérification, Anki Miner restaure ce qui est actuellement installé.</string>
@@ -524,7 +518,6 @@
     <string name="resource_delete_confirm_title">Supprimer %1$s ?</string>
     <string name="resource_delete_confirm_message">%1$s est supprimé de cet appareil. Aucune modification dans Anki, aucune sauvegarde conservée.</string>
     <string name="dictionary_repair_confirm">Réparer l\'emplacement</string>
-    <string name="frequency_source_id">ID de fréquence stable</string>
     <string name="pitch_import_title">Importer l\'accent de hauteur</string>
     <string name="audio_pack_archive_guidance">Sélectionnez l’archive téléchargée .tar.xz, .tar.gz, .tar ou .zip, et non le fichier .torrent.</string>
     <string name="audio_pack_choice_title">Quel pack ?</string>
@@ -561,7 +554,6 @@
     <string name="bundled_wordsets_title">Ensembles de mots de noms propres intégrés</string>
     <string name="bundled_wordset_item">%1$s · %2$d entrées</string>
     <string name="bundled_wordsets_unavailable">Impossible d\'inventorier les ensembles de mots intégrés.</string>
-    <string name="pitch_inventory_invalid">%1$s · inventaire invalide (%2$d entrées) ; remplacez-le avant l\'extraction</string>
     <string name="local_import_complete">Importation locale terminée</string>
     <string name="frequency_import_result">%1$s : %2$d entrées ; %3$d lignes malformées ignorées</string>
     <string name="pitch_import_result">%1$s : %2$d entrées ; %3$d lignes malformées ignorées</string>
@@ -570,7 +562,6 @@
     <string name="readiness_python">Python intégré : %1$s</string>
     <string name="readiness_resource_recovery">Récupération des ressources : %1$s</string>
     <string name="readiness_anki_recovery">Récupération Anki : %1$s</string>
-    <string name="readiness_unidic">UniDic : %1$s</string>
     <string name="check_again">Vérifier à nouveau</string>
     <string name="status_queued">en file d\'attente</string>
     <string name="status_starting">démarrage</string>
@@ -592,7 +583,6 @@
     <string name="dictionary_lookup_label">%1$s : %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">IU</string>
-    <string name="settings_theme">Thème</string>
     <string name="settings_theme_light">Clair</string>
     <string name="settings_theme_dark">Sombre</string>
     <string name="settings_theme_system">Suivre le système</string>

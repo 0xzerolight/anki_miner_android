@@ -121,10 +121,6 @@
     <string name="candidate_frequency_compact">Tần suất %1$d</string>
     <string name="candidate_frequency_unknown_compact">Tần suất —</string>
     <string name="candidate_occurrences_compact">%1$d lần xuất hiện</string>
-    <string name="candidate_part_of_speech">Từ loại: %1$s</string>
-    <string name="candidate_frequency">Hạng tần suất: %1$d</string>
-    <string name="candidate_frequency_unknown">Không có hạng tần suất</string>
-    <string name="candidate_occurrences">Số lần xuất hiện: %1$d</string>
     <string name="sentence_selection_description">Dùng câu: %1$s</string>
     <string name="success_title">Hoàn tất khai thác</string>
     <string name="cancelled_title">Đã hủy khai thác</string>
@@ -446,7 +442,6 @@
     <string name="resource_operation_export_known_words">Xuất từ đã biết</string>
     <string name="resource_operation_dictionary_lookup">Tra từ điển</string>
     <string name="resource_failure_busy">Hãy hoàn tất hoặc hủy lượt khai thác đang hoạt động trước khi thay đổi tài nguyên</string>
-    <string name="resource_failure_download">Tải tài nguyên thất bại</string>
     <string name="resource_failure_download_cancelled">Đã hủy thao tác tài nguyên</string>
     <string name="resource_failure_download_redirect_limit">Tải tài nguyên bị chuyển hướng quá nhiều lần</string>
     <string name="resource_failure_download_redirect_invalid">Tải tài nguyên trả về chuyển hướng không hợp lệ</string>
@@ -510,7 +505,6 @@
     <string name="dictionary_replace">Thay thế an toàn</string>
     <string name="dictionary_catalog_reinstall">Cài đặt lại hoặc thay thế một từ điển đi kèm</string>
     <string name="dictionary_repair">Sửa chữa khe từ điển</string>
-    <string name="dictionary_replace_confirm_title">Thay thế từ điển đã cài đặt?</string>
     <string name="dictionary_repair_confirm_title">Sửa chữa khe chứa %1$s?</string>
     <string name="resource_replace_confirm_title">Thay thế %1$s?</string>
     <string name="resource_replace_confirm_message">%1$s được thay thế theo giao dịch. Nếu lần nhập mới không xác minh được, Anki Miner sẽ khôi phục nội dung hiện đang cài đặt.</string>
@@ -520,7 +514,6 @@
     <string name="resource_delete_confirm_title">Xóa %1$s?</string>
     <string name="resource_delete_confirm_message">%1$s bị xóa khỏi thiết bị này. Không có gì bị xóa khỏi Anki và không giữ bản sao lưu.</string>
     <string name="dictionary_repair_confirm">Sửa chữa khe</string>
-    <string name="frequency_source_id">ID tần suất ổn định</string>
     <string name="pitch_import_title">Nhập trọng âm cao độ</string>
     <string name="audio_pack_archive_guidance">Hãy chọn tệp lưu trữ .tar.xz, .tar.gz, .tar hoặc .zip đã tải xuống, không chọn tệp .torrent.</string>
     <string name="audio_pack_choice_title">Gói nào?</string>
@@ -557,7 +550,6 @@
     <string name="bundled_wordsets_title">Các tập từ tên riêng đi kèm</string>
     <string name="bundled_wordset_item">%1$s · %2$d mục</string>
     <string name="bundled_wordsets_unavailable">Không thể kiểm kê các bộ từ đi kèm.</string>
-    <string name="pitch_inventory_invalid">%1$s · bản kiểm kê không hợp lệ (%2$d mục); hãy thay thế trước khi khai thác</string>
     <string name="local_import_complete">Đã hoàn tất nhập cục bộ</string>
     <string name="frequency_import_result">%1$s: %2$d mục; đã bỏ qua %3$d hàng sai định dạng</string>
     <string name="pitch_import_result">%1$s: %2$d mục; đã bỏ qua %3$d hàng sai định dạng</string>
@@ -566,7 +558,6 @@
     <string name="readiness_python">Python nhúng: %1$s</string>
     <string name="readiness_resource_recovery">Khôi phục tài nguyên: %1$s</string>
     <string name="readiness_anki_recovery">Khôi phục Anki: %1$s</string>
-    <string name="readiness_unidic">UniDic: %1$s</string>
     <string name="check_again">Kiểm tra lại</string>
     <string name="status_queued">đã xếp hàng</string>
     <string name="status_starting">đang bắt đầu</string>
@@ -588,7 +579,6 @@
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">Giao diện</string>
-    <string name="settings_theme">Chủ đề</string>
     <string name="settings_theme_light">Sáng</string>
     <string name="settings_theme_dark">Tối</string>
     <string name="settings_theme_system">Theo hệ thống</string>
