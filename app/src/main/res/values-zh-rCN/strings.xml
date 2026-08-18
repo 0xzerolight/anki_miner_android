@@ -148,7 +148,6 @@
     <string name="details">详情</string>
     <string name="hide_details">隐藏详情</string>
     <string name="copy_diagnostics">复制诊断信息</string>
-    <string name="mining_failure_summary">此挖词任务未能完成便已停止。</string>
     <string name="retry_mining">重试</string>
     <string name="reset_mining">重新开始</string>
     <string name="start_error">无法启动挖词任务。</string>

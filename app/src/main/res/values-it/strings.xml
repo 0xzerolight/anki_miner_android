@@ -148,7 +148,6 @@
     <string name="details">Dettagli</string>
     <string name="hide_details">Nascondi dettagli</string>
     <string name="copy_diagnostics">Copia diagnostica</string>
-    <string name="mining_failure_summary">Questa esecuzione di mining si è interrotta prima di poter terminare.</string>
     <string name="retry_mining">Riprova</string>
     <string name="reset_mining">Ricomincia</string>
     <string name="start_error">Non è stato possibile avviare l\'esecuzione di mining.</string>

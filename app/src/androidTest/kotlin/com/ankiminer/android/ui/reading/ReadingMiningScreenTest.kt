@@ -734,7 +734,7 @@ class ReadingMiningScreenTest {
 
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
         composeRule
-            .onNodeWithText("This mining run stopped before it could finish.")
+            .onNodeWithText("details")
             .assertIsDisplayed()
     }
 

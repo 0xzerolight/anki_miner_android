@@ -148,7 +148,6 @@
     <string name="details">Détails</string>
     <string name="hide_details">Masquer les détails</string>
     <string name="copy_diagnostics">Copier les diagnostics</string>
-    <string name="mining_failure_summary">Cette extraction s\'est arrêtée avant de pouvoir se terminer.</string>
     <string name="retry_mining">Réessayer</string>
     <string name="reset_mining">Recommencer</string>
     <string name="start_error">Impossible de démarrer l\'extraction.</string>

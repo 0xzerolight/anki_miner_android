@@ -148,7 +148,6 @@
     <string name="details">Подробности</string>
     <string name="hide_details">Скрыть подробности</string>
     <string name="copy_diagnostics">Копировать диагностику</string>
-    <string name="mining_failure_summary">Этот запуск майнинга остановлен до завершения.</string>
     <string name="retry_mining">Повторить</string>
     <string name="reset_mining">Начать заново</string>
     <string name="start_error">Не удалось начать запуск майнинга.</string>

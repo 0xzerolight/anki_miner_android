@@ -1025,7 +1025,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun terminalFailureSuppressesMatchingCommandErrorAndKeepsDiagnosticsBehindDetails() {
+    fun terminalFailureSuppressesMatchingCommandErrorAndShowsCause() {
         setScreen(
             state =
                 VideoMiningUiState(
@@ -1042,8 +1042,6 @@ class VideoMiningScreenTest {
         )
 
         composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
-        composeRule.onNodeWithText("Protocol detail 37").assertDoesNotExist()
-        composeRule.onNodeWithText("Details").performClick()
         composeRule.onNodeWithText("Protocol detail 37").assertIsDisplayed()
         composeRule.onNodeWithText("Retry").assertExists()
         composeRule.onNodeWithText("Start over").assertExists()
@@ -1274,7 +1272,7 @@ class VideoMiningScreenTest {
 
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
         composeRule
-            .onNodeWithText("This mining run stopped before it could finish.")
+            .onNodeWithText("details")
             .assertIsDisplayed()
     }
 

@@ -155,7 +155,6 @@
     <string name="details">Details</string>
     <string name="hide_details">Hide details</string>
     <string name="copy_diagnostics">Copy diagnostics</string>
-    <string name="mining_failure_summary">This mining run stopped before it could finish.</string>
     <string name="retry_mining">Retry</string>
     <string name="reset_mining">Start over</string>
     <string name="start_error">The mining run could not be started.</string>

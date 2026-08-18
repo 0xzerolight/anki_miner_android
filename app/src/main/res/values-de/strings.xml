@@ -148,7 +148,6 @@
     <string name="details">Details</string>
     <string name="hide_details">Details ausblenden</string>
     <string name="copy_diagnostics">Diagnose kopieren</string>
-    <string name="mining_failure_summary">Dieser Mining-Durchlauf wurde vor dem Abschluss angehalten.</string>
     <string name="retry_mining">Erneut versuchen</string>
     <string name="reset_mining">Neu beginnen</string>
     <string name="start_error">Der Mining-Durchlauf konnte nicht gestartet werden.</string>

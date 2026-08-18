@@ -148,7 +148,6 @@
     <string name="details">詳細</string>
     <string name="hide_details">詳細を閉じる</string>
     <string name="copy_diagnostics">診断情報をコピー</string>
-    <string name="mining_failure_summary">マイニングを完了できませんでした。</string>
     <string name="retry_mining">再試行</string>
     <string name="reset_mining">最初からやり直し</string>
     <string name="start_error">マイニングを開始できませんでした。</string>

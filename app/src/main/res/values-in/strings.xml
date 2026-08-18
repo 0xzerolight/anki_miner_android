@@ -148,7 +148,6 @@
     <string name="details">Detail</string>
     <string name="hide_details">Sembunyikan detail</string>
     <string name="copy_diagnostics">Salin diagnostik</string>
-    <string name="mining_failure_summary">Proses mining ini berhenti sebelum dapat selesai.</string>
     <string name="retry_mining">Coba lagi</string>
     <string name="reset_mining">Mulai ulang</string>
     <string name="start_error">Proses mining tidak dapat dimulai.</string>

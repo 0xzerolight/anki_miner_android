@@ -148,7 +148,6 @@
     <string name="details">詳細資料</string>
     <string name="hide_details">隱藏詳細資料</string>
     <string name="copy_diagnostics">複製診斷資訊</string>
-    <string name="mining_failure_summary">採集工作未完成便已停止。</string>
     <string name="retry_mining">重試</string>
     <string name="reset_mining">重新開始</string>
     <string name="start_error">無法開始採集工作。</string>
