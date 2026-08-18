@@ -2335,6 +2335,14 @@ internal class AndroidResourceManager(
             // Fail-open: an exception escaping here propagates into Python
             // mid-import and turns a cosmetic decode problem into a failed op.
             val event = runCatching { ResourceBridgeCodec.decodeResourceProgress(message) }
+                .onFailure { failure ->
+                    AppLog.ignored(
+                        LogComponent.RESOURCES,
+                        "resource.progress.decode",
+                        "malformed resource.progress envelope",
+                        failure,
+                    )
+                }
                 .getOrNull() ?: return
             if (event.operationId != operation.id) return
             if (operation.cancellation.isCancelled()) return // don't flip CANCELLING back
