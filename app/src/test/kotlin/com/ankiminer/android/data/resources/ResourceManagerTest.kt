@@ -510,6 +510,256 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun unidicInstallDispatchesWithProgressCallbacks() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+
+            harness.manager.installUniDic()
+
+            // installedUniDic in state is re-derived by refreshFromPython from the on-device
+            // tokenizer provider (fixed to null in this harness), not from this response, so
+            // success here is judged by the dispatch itself, not by state.installedUniDic.
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(1, harness.bridge.requestsOfType("resource.unidic.install").size)
+            assertEquals(
+                listOf(true),
+                harness.bridge.callbackPresenceForType("resource.unidic.install"),
+            )
+        }
+
+    @Test
+    fun progressCallbacksReachEachOfTheSevenImportAndInstallDispatchSites() =
+        runTest {
+            val resource = FrozenResourceCatalog.value.dictionaries.first()
+            val scenarios: List<Triple<String, Harness, suspend (Harness) -> Unit>> =
+                listOf(
+                    Triple(
+                        "resource.unidic.install",
+                        Harness(rootName = "progress-unidic", fakePinnedDownloads = true),
+                    ) { harness -> harness.manager.installUniDic() },
+                    Triple(
+                        "resource.dictionary.import",
+                        Harness(rootName = "progress-catalog-dictionary", fakePinnedDownloads = true),
+                    ) { harness ->
+                        harness.manager.installCatalogDictionary(resource.resourceId, replace = false)
+                    },
+                    Triple(
+                        "resource.dictionary.import",
+                        Harness(rootName = "progress-custom-dictionary", sourceLabel = "dictionary archive"),
+                    ) { harness ->
+                        harness.manager.importCustomDictionary(
+                            INPUT_URI,
+                            slotId = "fixture-dictionary",
+                            replace = false,
+                        )
+                    },
+                    Triple(
+                        "resource.frequency.import",
+                        Harness(rootName = "progress-frequency", sourceLabel = "frequency source"),
+                    ) { harness ->
+                        harness.manager.importFrequencySource(
+                            INPUT_URI,
+                            sourceId = "fixture-frequency",
+                            sourceName = "Fixture Frequency",
+                            format = FrequencySourceFormat.CSV,
+                            replace = false,
+                        )
+                    },
+                    Triple(
+                        "resource.pitch.import",
+                        Harness(rootName = "progress-pitch", sourceLabel = "pitch-accent source"),
+                    ) { harness ->
+                        harness.manager.importPitchAccent(
+                            INPUT_URI,
+                            sourceId = "fixture-pitch",
+                            sourceName = "Fixture Pitch",
+                            format = PitchAccentSourceFormat.YOMITAN_ZIP,
+                            replace = false,
+                        )
+                    },
+                    Triple(
+                        "resource.audiopack.import",
+                        Harness(rootName = "progress-audiopack", sourceLabel = "audio-pack archive"),
+                    ) { harness ->
+                        harness.manager.importAudioPack(
+                            INPUT_URI,
+                            AudioPackCandidate("jpod", "jpod_files", "ajt"),
+                            replace = false,
+                        )
+                    },
+                    Triple(
+                        "resource.knownwords.import",
+                        Harness(rootName = "progress-known-words"),
+                    ) { harness -> harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON) },
+                )
+
+            scenarios.forEach { (requestType, harness, operate) ->
+                operate(harness)
+
+                assertNull(requestType, harness.manager.state.value.failure)
+                assertEquals(
+                    requestType,
+                    listOf(true),
+                    harness.bridge.callbackPresenceForType(requestType),
+                )
+            }
+        }
+
+    @Test
+    fun nonProgressDispatchesReceiveNoCallbacks() =
+        runTest {
+            val harness = Harness(autoRecover = false, sourceLabel = "dictionary archive")
+
+            harness.manager.recoverAndRefresh()
+
+            // Preflight/list dispatches never carry a sink; recoverAndRefresh alone fans out to
+            // several of them (startup rebuild scan plus the post-rebuild inventory refresh).
+            for (type in listOf("resource.catalog.get", "resource.dictionary.list", "resource.local.list")) {
+                val presence = harness.bridge.callbackPresenceForType(type)
+                assertTrue(type, presence.isNotEmpty())
+                assertTrue(type, presence.none { it })
+            }
+
+            harness.manager.preflightCustomDictionary(INPUT_URI)
+
+            assertEquals(
+                listOf(false),
+                harness.bridge.callbackPresenceForType("resource.dictionary.preflight"),
+            )
+
+            lateinit var cancelHarness: Harness
+            cancelHarness =
+                Harness(
+                    rootName = "progress-cancel",
+                    initialUserCount = 2,
+                    onKnownWordsRemoveDispatch = { cancelHarness.manager.cancelActive() },
+                )
+            cancelHarness.manager.removeKnownWords(listOf("mutable0"))
+
+            assertEquals(
+                listOf(false),
+                cancelHarness.bridge.callbackPresenceForType("resource.operation.cancel"),
+            )
+        }
+
+    @Test
+    fun resourceProgressEnvelopeDuringDispatchAdvancesActiveOperationState() =
+        runTest {
+            val harness = Harness(sourceLabel = "frequency source")
+            var observed: ResourceOperationProgress? = null
+            harness.bridge.progressInjector = { rawRequest, callbacks ->
+                val operationId = stringField(rawRequest, "operationId")
+                callbacks.onProgress(
+                    envelope(
+                        "resource.progress",
+                        """{"operationId":"$operationId","phase":"importing","kind":"items","current":7,"total":20}""",
+                    ),
+                )
+                observed = harness.manager.state.value.activeOperation
+            }
+
+            harness.manager.importFrequencySource(
+                INPUT_URI,
+                sourceId = "fixture-frequency",
+                sourceName = "Fixture Frequency",
+                format = FrequencySourceFormat.CSV,
+                replace = false,
+            )
+
+            val progress = requireNotNull(observed)
+            assertEquals(ResourceOperationPhase.IMPORTING, progress.phase)
+            assertEquals(7L, progress.completed)
+            assertEquals(20L, progress.total)
+            assertEquals(ResourceProgressUnit.ITEMS, progress.unit)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun resourceProgressEnvelopeForAnotherOperationIsDropped() =
+        runTest {
+            val harness = Harness(sourceLabel = "frequency source")
+            var observed: ResourceOperationProgress? = null
+            harness.bridge.progressInjector = { _, callbacks ->
+                callbacks.onProgress(
+                    envelope(
+                        "resource.progress",
+                        """{"operationId":"resource_00000000000000000000000000000000","phase":"finalizing","kind":"items","current":7,"total":20}""",
+                    ),
+                )
+                observed = harness.manager.state.value.activeOperation
+            }
+
+            harness.manager.importFrequencySource(
+                INPUT_URI,
+                sourceId = "fixture-frequency",
+                sourceName = "Fixture Frequency",
+                format = FrequencySourceFormat.CSV,
+                replace = false,
+            )
+
+            val progress = requireNotNull(observed)
+            // The mismatched operationId must not move the phase to FINALIZING or adopt its counts;
+            // the state stays at whatever the real operation last published for itself.
+            assertEquals(ResourceOperationPhase.IMPORTING, progress.phase)
+            assertEquals(0L, progress.completed)
+            assertEquals(0L, progress.total)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun malformedResourceProgressEnvelopeDoesNotFailTheOperation() =
+        runTest {
+            val harness = Harness(sourceLabel = "frequency source")
+            harness.bridge.progressInjector = { _, callbacks ->
+                callbacks.onProgress("not a resource-progress envelope")
+            }
+
+            harness.manager.importFrequencySource(
+                INPUT_URI,
+                sourceId = "fixture-frequency",
+                sourceName = "Fixture Frequency",
+                format = FrequencySourceFormat.CSV,
+                replace = false,
+            )
+
+            assertNull(harness.manager.state.value.failure)
+            assertTrue(
+                harness.manager.state.value.frequencySources.any { it.sourceId == "fixture-frequency" },
+            )
+        }
+
+    @Test
+    fun audioPackImportProgressEnvelopeReachesTheForegroundLease() =
+        runTest {
+            val harness = Harness(sourceLabel = "audio-pack archive")
+            harness.bridge.progressInjector = { rawRequest, callbacks ->
+                val operationId = stringField(rawRequest, "operationId")
+                callbacks.onProgress(
+                    envelope(
+                        "resource.progress",
+                        """{"operationId":"$operationId","phase":"importing","kind":"bytes","current":1234,"total":98765}""",
+                    ),
+                )
+            }
+
+            harness.manager.importAudioPack(
+                INPUT_URI,
+                AudioPackCandidate("jpod", "jpod_files", "ajt"),
+                replace = false,
+            )
+
+            assertNull(harness.manager.state.value.failure)
+            assertTrue(
+                harness.foregroundLease.updates.any {
+                    it.phase == ResourceOperationPhase.IMPORTING &&
+                        it.completed == 1234L &&
+                        it.total == 98765L &&
+                        it.unit == ResourceProgressUnit.BYTES
+                },
+            )
+        }
+
+    @Test
     fun wordListReplacementFailurePreservesThePreviouslyPublishedFile() =
         runTest {
             var failReplacementPublish = false
@@ -1404,6 +1654,7 @@ class ResourceManagerTest {
     /** Records the foreground-service lifecycle a long import is supposed to drive. */
     private class RecordingForegroundLease : ResourceForegroundLease {
         val events = mutableListOf<String>()
+        val updates = mutableListOf<ResourceOperationProgress>()
         var failStart = false
         var startedWhileRunning = false
             private set
@@ -1418,6 +1669,7 @@ class ResourceManagerTest {
 
         override fun update(progress: ResourceOperationProgress) {
             events += "update:${progress.phase}"
+            updates += progress
         }
 
         override fun stop() {
@@ -2206,18 +2458,30 @@ class ResourceManagerTest {
             private set
         var emptyAudioPackPreflight = false
 
+        /** Invoked, when set, for every dispatch that receives a non-null callbacks object. */
+        var progressInjector: ((rawRequest: String, callbacks: EngineCallbacks) -> Unit)? = null
+
+        /** (request type, callbacks != null) for every dispatch, in call order. */
+        private val callbackPresence = mutableListOf<Pair<String, Boolean>>()
+
         val requestTypes: List<String>
             get() = requests.map(::requestType)
 
         fun requestsOfType(type: String): List<String> =
             requests.filter { requestType(it) == type }
 
+        /** Whether each dispatch of [type], in call order, carried a non-null callbacks object. */
+        fun callbackPresenceForType(type: String): List<Boolean> =
+            callbackPresence.filter { it.first == type }.map { it.second }
+
         fun clearRequests() {
             requests.clear()
+            callbackPresence.clear()
         }
 
         override fun dispatch(rawRequest: String, callbacks: EngineCallbacks?): String {
-            assertNull(callbacks)
+            callbackPresence += requestType(rawRequest) to (callbacks != null)
+            callbacks?.let { progressInjector?.invoke(rawRequest, it) }
             requests += rawRequest
             failureCode?.let { throw ResourceBridgeException(it, "cancelled") }
             return when (requestType(rawRequest)) {
@@ -2226,6 +2490,13 @@ class ResourceManagerTest {
                 "resource.local.list" -> inventoryResponse()
                 "resource.cleanup" ->
                     envelope("resource.cleanup.result", """{"clean":true}""")
+                "resource.unidic.install" -> {
+                    val expected = FrozenResourceCatalog.value.unidic
+                    envelope(
+                        "resource.unidic.installed",
+                        """{"resourceId":"${expected.resourceId}","dicDir":"/data/user/0/files/dicdir","treeSha256":"${expected.install.treeSha256}","fileCount":${expected.install.fileCount},"sizeBytes":${expected.install.sizeBytes},"alreadyInstalled":false,"attribution":${attributionJson(expected.attribution)}}""",
+                    )
+                }
                 "resource.dictionary.import" -> {
                     if (failDictionaryImport) {
                         throw ResourceBridgeException(
