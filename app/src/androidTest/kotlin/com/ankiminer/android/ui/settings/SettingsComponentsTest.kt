@@ -48,6 +48,9 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.resources.InstalledResourceKind
+import com.ankiminer.android.data.resources.ResourceOperationPhase
+import com.ankiminer.android.data.resources.ResourceOperationProgress
+import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
@@ -425,6 +428,75 @@ class SettingsComponentsTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.RadioButton))
     }
 
+    @Test
+    fun determinateItemsProgressShowsPhaseLabelAndCount() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ResourceOperationCard(
+                    operation =
+                        ResourceOperationProgress(
+                            operationId = "op-1",
+                            label = "JMdict",
+                            phase = ResourceOperationPhase.IMPORTING,
+                            completed = 3,
+                            total = 30,
+                            unit = ResourceProgressUnit.ITEMS,
+                        ),
+                    onCancel = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Importing…").assertIsDisplayed()
+        composeRule.onNodeWithText("3 of 30").assertIsDisplayed()
+    }
+
+    @Test
+    fun determinateBytesProgressShowsMebibyteCount() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ResourceOperationCard(
+                    operation =
+                        ResourceOperationProgress(
+                            operationId = "op-2",
+                            label = "Audio pack",
+                            phase = ResourceOperationPhase.DOWNLOADING,
+                            completed = 5L * BYTES_PER_MEBIBYTE,
+                            total = 10L * BYTES_PER_MEBIBYTE,
+                            unit = ResourceProgressUnit.BYTES,
+                        ),
+                    onCancel = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Downloading…").assertIsDisplayed()
+        composeRule.onNodeWithText("5.0 of 10.0 MiB").assertIsDisplayed()
+    }
+
+    @Test
+    fun zeroTotalProgressRendersIndeterminateWithNoCountText() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ResourceOperationCard(
+                    operation =
+                        ResourceOperationProgress(
+                            operationId = "op-3",
+                            label = "Frequency list",
+                            phase = ResourceOperationPhase.FINALIZING,
+                            completed = 0,
+                            total = 0,
+                            unit = ResourceProgressUnit.ITEMS,
+                        ),
+                    onCancel = {},
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Finishing…").assertIsDisplayed()
+        composeRule.onNodeWithText("0 of 0").assertDoesNotExist()
+    }
+
     private fun setBusyAnkiTarget(
         noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.Verified(1L),
         fieldMap: Map<String, String> = emptyMap(),
@@ -480,5 +552,6 @@ class SettingsComponentsTest {
 
     private companion object {
         val OPTIONS = listOf("First", "Second", "Third")
+        const val BYTES_PER_MEBIBYTE = 1024L * 1024L
     }
 }
