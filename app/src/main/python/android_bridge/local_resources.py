@@ -27,6 +27,7 @@ from pathlib import Path, PurePosixPath
 from . import resources as core
 from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, encode_message
+from .resource_progress import make_reporter
 
 logger = logging.getLogger(__name__)
 
@@ -424,7 +425,7 @@ def _frequency_import_payload(result: object, source_id: str, archive_sha256: st
     }
 
 
-def import_frequency(payload: Mapping[str, object]) -> str:
+def import_frequency(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
         {
@@ -447,6 +448,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -493,6 +495,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                     import_root,
                     source_id=source_id,
                     source_name=source_name,
+                    progress=reporter.items_fn(),
                     cancel_check=operation.cancelled.is_set,
                 )
             except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
@@ -537,7 +540,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def import_pitch(payload: Mapping[str, object]) -> str:
+def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     """Import one pitch source into its own slot under the pitch root.
 
     Mirrors :func:`import_frequency`: the engine builds a per-source
@@ -569,6 +572,7 @@ def import_pitch(payload: Mapping[str, object]) -> str:
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -615,6 +619,7 @@ def import_pitch(payload: Mapping[str, object]) -> str:
                     import_root,
                     source_id=source_id,
                     source_name=requested_name,
+                    progress=reporter.items_fn(),
                     cancel_check=operation.cancelled.is_set,
                 )
             except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
@@ -783,6 +788,8 @@ def _extract_audio_zip(
     destination: Path,
     operation: core._Operation,
     prefix: tuple[str, ...],
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     try:
         declared_member_count = core._preflight_zip_member_count(path, _AUDIO_MEMBER_LIMIT)
@@ -856,6 +863,8 @@ def _extract_audio_zip(
                 )
             if actual_total > declared_total:
                 raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
+            if progress is not None:
+                progress(actual_total, declared_total)
         if actual_total != declared_total:
             raise _fail("invalid_resource_archive", "Audio pack length is inconsistent")
 
@@ -865,18 +874,38 @@ def _extract_audio_tar(
     destination: Path,
     operation: core._Operation,
     prefix: tuple[str, ...],
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Extract the *prefix* subtree of a streamed tar archive.
 
-    A tar has no central directory, so its selected declared total is checked
-    incrementally before each file is materialised. A device that fills up
-    surfaces through ``_raise_if_storage_exhausted``.
+    A tar has no central directory, so its selected declared total (used only
+    for the "expands beyond its limit" guard below) is checked incrementally
+    before each file is materialised. A device that fills up surfaces through
+    ``_raise_if_storage_exhausted``.
+
+    ``progress``, unlike the ZIP path's stable two-pass ``declared_total``,
+    cannot report "bytes of the selected subtree extracted so far" -- a
+    streamed tar cannot know that sum upfront without buffering the whole
+    archive. Instead it reports whole-archive determinate bytes: total is the
+    archive file's fixed stat size, current is the raw (compressed or plain)
+    stream's consumed position, read directly off the underlying file object
+    tarfile is reading through. That position is monotone and bounded by the
+    file's actual size, so it stays a true fraction-of-completion signal even
+    though it also counts bytes spent on members outside *prefix*.
     """
     destination.mkdir(parents=True)
     seen: set[tuple[str, ...]] = set()
     members = 0
     declared_total = 0
-    with core._open_source(path) as (stream, _), tarfile.open(fileobj=stream, mode="r|*") as archive:
+    actual_total = 0
+    with core._open_source(path) as (stream, source_stat), tarfile.open(fileobj=stream, mode="r|*") as archive:
+        archive_size = source_stat.st_size
+
+        def _report_stream_position() -> None:
+            if progress is not None:
+                progress(stream.tell(), archive_size)
+
         for member in archive:
             operation.check()
             members += 1
@@ -894,6 +923,7 @@ def _extract_audio_tar(
             limit = _accept_audio_member(parts, 0 if member.isdir() else member.size, seen)
             relative = _under_prefix(parts, prefix)
             if relative is None:
+                _report_stream_position()
                 continue
             if member.isreg():
                 if member.size > _AUDIO_TOTAL_LIMIT - declared_total:
@@ -912,13 +942,22 @@ def _extract_audio_tar(
                         )
                 else:
                     target.mkdir(parents=True)
+                _report_stream_position()
                 continue
             source = archive.extractfile(member)
             if source is None:
                 raise _fail("unsafe_resource_archive", "Audio pack member cannot be read")
             target.parent.mkdir(parents=True, exist_ok=True)
             with source:
-                _copy_audio_member(source, target, member.size, limit, operation)
+                actual_total += _copy_audio_member(source, target, member.size, limit, operation)
+            _report_stream_position()
+        # The stream's own position can land short of the file's actual size
+        # (trailing zero-fill/EOF blocks a decompressor never surfaces as
+        # read() output), so the terminal report is forced to the true total
+        # rather than trusting tell() -- this is also what keeps the reporter's
+        # own current == total bypass firing exactly once, at the real end.
+        if progress is not None:
+            progress(archive_size, archive_size)
     if declared_total <= 0:
         raise _fail("resource_archive_expands_too_large", "Audio pack expands beyond its limit")
 
@@ -929,14 +968,15 @@ def _extract_audio_archive(
     operation: core._Operation,
     *,
     prefix: tuple[str, ...] = (),
+    progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Extract the *prefix* subtree of a staged audio archive, ZIP or tar."""
     kind = _audio_archive_kind(path)
     try:
         if kind == "zip":
-            _extract_audio_zip(path, destination, operation, prefix)
+            _extract_audio_zip(path, destination, operation, prefix, progress=progress)
         else:
-            _extract_audio_tar(path, destination, operation, prefix)
+            _extract_audio_tar(path, destination, operation, prefix, progress=progress)
     except BridgeProtocolError:
         raise
     except OSError as exc:
@@ -1267,7 +1307,7 @@ def _validate_audio_index(db_path: Path, content: Path, operation: core._Operati
         raise _fail("audio_pack_import_failed", "Audio pack index is invalid") from exc
 
 
-def import_audio_pack(payload: Mapping[str, object]) -> str:
+def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
         {"operationId", "sourcePath", "packId", "packPath", "overwrite"},
@@ -1284,6 +1324,7 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -1295,12 +1336,19 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
                 source,
                 operation,
                 maximum_bytes=_AUDIO_ARCHIVE_LIMIT,
+                progress=reporter.bytes_fn(),
             )
             extracted = operation_root / "extracted"
             # Only the chosen subtree is extracted, so importing one pack out of
             # the four-pack collection costs that pack's bytes, not the whole
             # archive's.
-            _extract_audio_archive(copied.path, extracted, operation, prefix=pack_prefix)
+            _extract_audio_archive(
+                copied.path,
+                extracted,
+                operation,
+                prefix=pack_prefix,
+                progress=reporter.bytes_fn(),
+            )
             pack_roots = _detect_audio_pack_roots(extracted)
             if len(pack_roots) != 1:
                 raise _fail(
@@ -1376,6 +1424,7 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
             )
             _fsync_tree_directories(content)
             core._fsync_directory(candidate)
+            reporter.set_phase("finalizing")
             _publish_indexed_dir(
                 candidate,
                 home=home,
@@ -1401,12 +1450,20 @@ def import_audio_pack(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def _parse_known_words_copy(source: Path, source_format: str, operation: object, operation_root: Path):
+def _parse_known_words_copy(
+    source: Path,
+    source_format: str,
+    operation: object,
+    operation_root: Path,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+):
     copied = core._copy_archive(
         source,
         operation_root / f"known-words.{source_format}",
         operation,
         maximum_bytes=_KNOWN_WORD_FILE_LIMIT,
+        progress=progress,
     )
     from anki_miner.services.known_words_import import (
         KnownWordsImportError,
@@ -1479,7 +1536,7 @@ def preview_known_words(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def import_known_words(payload: Mapping[str, object]) -> str:
+def import_known_words(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
         {"operationId", "sourcePath", "sourceFormat"},
@@ -1492,12 +1549,19 @@ def import_known_words(payload: Mapping[str, object]) -> str:
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
             from anki_miner.services.known_word_db import KnownWordDB
 
-            parsed = _parse_known_words_copy(source, source_format, operation, operation_root)
+            parsed = _parse_known_words_copy(
+                source,
+                source_format,
+                operation,
+                operation_root,
+                progress=reporter.bytes_fn(),
+            )
             operation.check()
             db_path = home / "known_words.db"
             if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):

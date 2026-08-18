@@ -4,6 +4,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.CancellableProviderIo
@@ -375,7 +376,7 @@ internal class AndroidResourceManager(
                                 resource.resourceId,
                                 staged.file.canonicalPath,
                             ),
-                            null,
+                            ResourceProgressSink(operation),
                         ),
                     )
                 mutableState.update { it.copy(installedUniDic = installed) }
@@ -433,7 +434,7 @@ internal class AndroidResourceManager(
                                 replace,
                                 resource.resourceId,
                             ),
-                            null,
+                            ResourceProgressSink(operation),
                         ),
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
@@ -497,7 +498,7 @@ internal class AndroidResourceManager(
                                 replace,
                                 catalogResourceId = null,
                             ),
-                            null,
+                            ResourceProgressSink(operation),
                         ),
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
@@ -682,7 +683,7 @@ internal class AndroidResourceManager(
                                     format,
                                     replace,
                                 ),
-                                null,
+                                ResourceProgressSink(operation),
                             ),
                         decode = ResourceBridgeCodec::decodeImportedFrequency,
                     )
@@ -757,7 +758,7 @@ internal class AndroidResourceManager(
                                     format,
                                     replace,
                                 ),
-                                null,
+                                ResourceProgressSink(operation),
                             ),
                         decode = ResourceBridgeCodec::decodeImportedPitch,
                     )
@@ -897,7 +898,7 @@ internal class AndroidResourceManager(
                                 pack.packPath,
                                 replace,
                             ),
-                            null,
+                            ResourceProgressSink(operation),
                         ),
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
@@ -959,7 +960,7 @@ internal class AndroidResourceManager(
                                 staged.file.canonicalPath,
                                 format,
                             ),
-                            null,
+                            ResourceProgressSink(operation),
                         ),
                     )
                 mutableState.update { it.copy(lastLocalImport = imported) }
@@ -2350,6 +2351,62 @@ internal class AndroidResourceManager(
                 published
             }
         if (operation.holdsForegroundLease && advanced != null) foregroundLease.update(advanced)
+    }
+
+    /**
+     * The `callbacks` object Python calls back into for the duration of one import/install
+     * dispatch. Resource operations only ever report `resource.progress` envelopes, so every
+     * other [EngineCallbacks] member -- the mining-run surface -- fails closed rather than
+     * silently no-opping if Python ever calls it here by mistake.
+     */
+    private inner class ResourceProgressSink(
+        private val operation: ActiveOperation,
+    ) : EngineCallbacks {
+        override fun onProgress(message: String) {
+            // Fail-open: an exception escaping here propagates into Python
+            // mid-import and turns a cosmetic decode problem into a failed op.
+            val event = runCatching { ResourceBridgeCodec.decodeResourceProgress(message) }
+                .onFailure { failure ->
+                    AppLog.ignored(
+                        LogComponent.RESOURCES,
+                        "resource.progress.decode",
+                        "malformed resource.progress envelope",
+                        failure,
+                    )
+                }
+                .getOrNull() ?: return
+            if (event.operationId != operation.id) return
+            if (operation.cancellation.isCancelled()) return // don't flip CANCELLING back
+            updateProgress(operation, event.phase, event.current, event.total, event.unit)
+        }
+
+        // Everything else fails closed: resource ops must never invoke these.
+        override fun registerJob(message: String): String = failClosed()
+
+        override fun onStart(message: String) = failClosed()
+
+        override fun onStage(message: String) = failClosed()
+
+        override fun onComplete(message: String) = failClosed()
+
+        override fun onError(message: String) = failClosed()
+
+        override fun onPresenterEvent(message: String) = failClosed()
+
+        override fun onCurationNeeded(message: String) = failClosed()
+
+        override fun ankiVerifyTarget(message: String): String = failClosed()
+
+        override fun ankiScanFirstFields(message: String): String = failClosed()
+
+        override fun ankiStoreMedia(message: String): String = failClosed()
+
+        override fun ankiCreateNotes(message: String): String = failClosed()
+
+        override fun ankiReleaseRunState(message: String): String = failClosed()
+
+        private fun failClosed(): Nothing =
+            throw IllegalStateException("Resource operations only receive onProgress")
     }
 
     private fun recordFailure(

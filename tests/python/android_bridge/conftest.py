@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -8,6 +9,19 @@ import pytest
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = PROJECT_ROOT / "app" / "src" / "main" / "python"
 sys.path.insert(0, str(PYTHON_ROOT))
+
+
+class FakeCallbacks:
+    """Records ``onProgress`` envelopes; shared across resource-progress tests."""
+
+    def __init__(self, fail_after: int | None = None):
+        self.messages: list[dict] = []
+        self._fail_after = fail_after
+
+    def onProgress(self, message: str) -> None:
+        if self._fail_after is not None and len(self.messages) >= self._fail_after:
+            raise RuntimeError("boom")
+        self.messages.append(json.loads(message))
 
 
 @pytest.fixture(scope="session")

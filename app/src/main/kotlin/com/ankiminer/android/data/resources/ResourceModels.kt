@@ -440,6 +440,21 @@ enum class ResourceProgressUnit {
 }
 
 /**
+ * A single decoded `resource.progress` bridge envelope.
+ *
+ * [phase] is restricted to the three phases the reporter on the Python side ever emits
+ * (`ResourceProgressReporter._PHASES`); every other phase in [ResourceOperationPhase] is
+ * Kotlin-only UI state that never arrives over the wire.
+ */
+data class ResourceProgressEvent(
+    val operationId: String,
+    val phase: ResourceOperationPhase,
+    val unit: ResourceProgressUnit,
+    val current: Long,
+    val total: Long,
+)
+
+/**
  * Counts are phase-local. A phase that cannot count reports `0/0` and renders as indeterminate
  * motion; carrying the previous phase's total forward is what left a full bar sitting motionless
  * over an import that had barely started.

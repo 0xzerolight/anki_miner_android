@@ -373,3 +373,88 @@ def test_dispatch_refuses_a_unidic_delete(initialized_bridge_home: Path) -> None
     raw = boundary.dispatch(encode_message("resource.unidic.delete", {"operationId": "delete-unidic"}))
 
     assert decode_envelope(raw, expected_type="bridge.error").payload["code"] == "unsupported_operation"
+
+
+_PROGRESS_ROUTES = [
+    ("resource.audiopack.import", "local_resources", "import_audio_pack"),
+    ("resource.frequency.import", "local_resources", "import_frequency"),
+    ("resource.knownwords.import", "local_resources", "import_known_words"),
+    ("resource.pitch.import", "local_resources", "import_pitch"),
+    ("resource.dictionary.import", "resources", "import_dictionary"),
+    ("resource.unidic.install", "resources", "install_unidic"),
+]
+
+
+def test_dispatch_forwards_callbacks_to_the_six_progress_handlers(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Task 5 wires these into progress reporting; this only pins the plumbing."""
+
+    import android_bridge.local_resources as local_resources
+    import android_bridge.resources as resources
+
+    modules = {"local_resources": local_resources, "resources": resources}
+    callback = object()
+    seen: dict[str, object] = {}
+
+    def make_handler(request_type: str):
+        def handler(payload: dict[str, object], *, callbacks: object | None = None) -> str:
+            seen[request_type] = callbacks
+            return encode_message("resource.progress.stub", {})
+
+        return handler
+
+    for request_type, module_name, attr in _PROGRESS_ROUTES:
+        monkeypatch.setattr(modules[module_name], attr, make_handler(request_type))
+
+    for request_type, _module_name, _attr in _PROGRESS_ROUTES:
+        raw = boundary.dispatch(encode_message(request_type, {}), callback)
+        assert decode_envelope(raw).message_type == "resource.progress.stub"
+
+    assert seen == {request_type: callback for request_type, _module_name, _attr in _PROGRESS_ROUTES}
+
+
+def test_dispatch_does_not_forward_callbacks_to_a_non_import_resource_handler(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``resource.dictionary.list`` is not one of the six import/install types."""
+
+    import android_bridge.resources as resources
+
+    calls: list[dict[str, object]] = []
+
+    def list_dictionaries(payload: dict[str, object]) -> str:
+        calls.append(payload)
+        return encode_message("resource.dictionary.listed", {"dictionaries": []})
+
+    monkeypatch.setattr(resources, "list_dictionaries", list_dictionaries)
+
+    raw = boundary.dispatch(encode_message("resource.dictionary.list", {}), object())
+
+    # If callbacks were forwarded, the fake above -- which takes no such kwarg
+    # -- would raise TypeError, which dispatch turns into an internal_error
+    # instead of the listed envelope asserted here.
+    assert decode_envelope(raw).message_type == "resource.dictionary.listed"
+    assert calls == [{}]
+
+
+def test_dispatch_import_type_still_works_with_callbacks_none(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import android_bridge.resources as resources
+
+    seen: list[object] = []
+
+    def install_unidic(payload: dict[str, object], *, callbacks: object | None = None) -> str:
+        seen.append(callbacks)
+        return encode_message("resource.progress.stub", {})
+
+    monkeypatch.setattr(resources, "install_unidic", install_unidic)
+
+    raw = boundary.dispatch(encode_message("resource.unidic.install", {}))
+
+    assert decode_envelope(raw).message_type == "resource.progress.stub"
+    assert seen == [None]

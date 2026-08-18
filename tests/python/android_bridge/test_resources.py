@@ -27,6 +27,7 @@ from android_bridge.resource_catalog import (
     parse_catalog_json,
 )
 from android_bridge.unidic_resource import calculate_unidic_tree_sha256
+from conftest import FakeCallbacks
 
 
 def _engine_schema_version(family: str) -> int:
@@ -261,6 +262,87 @@ def test_unidic_install_verifies_tree_then_publishes_completion_manifest_last(
     assert repeated.payload["alreadyInstalled"] is True
 
 
+def test_unidic_install_reports_byte_progress_and_finalizing_before_publish(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_tree = _fixture_dicdir(tmp_path / "source")
+    archive = _tar_bytes(source_tree)
+    resource = _fixture_unidic_resource(source_tree, archive)
+    source = _write(tmp_path / "unidic.tar.gz", archive)
+    home = tmp_path / "files"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    monkeypatch.setattr(
+        resources,
+        "load_resource_catalog",
+        lambda: ResourceCatalog(resources=(resource,)),
+    )
+    callbacks = FakeCallbacks()
+
+    decode_envelope(
+        resources.install_unidic(
+            {
+                "operationId": "install-progress",
+                "resourceId": resource.resource_id,
+                "archivePath": str(source),
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.unidic.installed",
+    )
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes, "expected at least one progress envelope"
+    installing = [e for e in envelopes if e["phase"] == "installing"]
+    assert installing
+    assert all(e["kind"] == "bytes" for e in installing)
+    currents = [e["current"] for e in installing]
+    assert currents == sorted(currents)
+    assert all(e["total"] == resource.install.size_bytes for e in installing)
+    assert currents[-1] == resource.install.size_bytes
+
+    finalizing_index = next(index for index, e in enumerate(envelopes) if e["phase"] == "finalizing")
+    assert envelopes[finalizing_index] == {
+        "operationId": "install-progress",
+        "phase": "finalizing",
+        "kind": "items",
+        "current": 0,
+        "total": 0,
+    }
+    assert all(e["phase"] == "installing" for e in envelopes[:finalizing_index])
+
+
+def test_unidic_install_with_no_callbacks_emits_nothing_and_does_not_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_tree = _fixture_dicdir(tmp_path / "source")
+    archive = _tar_bytes(source_tree)
+    resource = _fixture_unidic_resource(source_tree, archive)
+    source = _write(tmp_path / "unidic.tar.gz", archive)
+    home = tmp_path / "files"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    monkeypatch.setattr(
+        resources,
+        "load_resource_catalog",
+        lambda: ResourceCatalog(resources=(resource,)),
+    )
+
+    decoded = decode_envelope(
+        resources.install_unidic(
+            {
+                "operationId": "install-no-callbacks",
+                "resourceId": resource.resource_id,
+                "archivePath": str(source),
+            }
+        ),
+        expected_type="resource.unidic.installed",
+    )
+    assert decoded.payload["alreadyInstalled"] is False
+
+
 def test_unidic_install_repairs_corrupt_tree_with_intact_completion_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -426,6 +508,8 @@ def _yomitan_zip(
     meaning: str,
     revision: str,
     title: str = "Fixture Dictionary",
+    bank_count: int = 1,
+    rows_per_bank: int = 1,
 ) -> Path:
     index = {
         "title": title,
@@ -434,10 +518,23 @@ def _yomitan_zip(
         "author": "Fixture Author",
         "attribution": "Fixture Attribution",
     }
-    rows = [[term, "", "", "", 0, [meaning], 1, ""]]
     with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
-        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+        for bank in range(1, bank_count + 1):
+            rows = [
+                [
+                    term if bank == 1 and row == 1 else f"{term}{bank}-{row}",
+                    "",
+                    "",
+                    "",
+                    0,
+                    [meaning],
+                    1,
+                    "",
+                ]
+                for row in range(1, rows_per_bank + 1)
+            ]
+            archive.writestr(f"term_bank_{bank}.json", json.dumps(rows, ensure_ascii=False))
     return path
 
 
@@ -705,6 +802,70 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     )
     assert "dog" in dog.payload["html"]
     assert not any((home / "resource-work" / "dictionary-backups").iterdir())
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_dictionary_import_forwards_engine_progress_and_finalizes_before_publish(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    # Three term banks of two rows each: the bank denominator (3) and the entry
+    # count (6) are distinguishable in the forwarded envelopes.
+    source = _yomitan_zip(
+        tmp_path / "progress.zip",
+        term="猫",
+        meaning="cat",
+        revision="1",
+        bank_count=3,
+        rows_per_bank=2,
+    )
+    callbacks = FakeCallbacks()
+
+    decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-progress",
+                "sourcePath": str(source),
+                "slotId": "progress-fixture",
+                "overwrite": False,
+                "catalogResourceId": None,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "dict-progress" for e in envelopes)
+    assert all(e["kind"] == "items" for e in envelopes)
+    assert all("message" not in e for e in envelopes)
+    # Stage markers -- the engine's (0, 0, "Validating archive"/"Inserting
+    # entries"/"Finalizing import") calls -- are message-only and dropped by
+    # items_fn; only the reporter's own set_phase("finalizing") may emit 0/0.
+    assert not any(e["phase"] == "importing" and e["current"] == 0 and e["total"] == 0 for e in envelopes)
+
+    importing = [(e["current"], e["total"]) for e in envelopes if e["phase"] == "importing"]
+    assert importing, "expected at least one forwarded importing envelope"
+    # The pinned engine reports insert progress determinately against the
+    # term-bank count -- (files_done, total_term_files) -- and fires a terminal
+    # (total, total) once bulk_insert returns, so nothing forwarded from the
+    # insert stage is indeterminate any more.
+    assert all(total > 0 for _current, total in importing)
+    assert (3, 3) in importing
+    # The importer's closing "Done" call counts entries, not banks.
+    assert importing[-1] == (6, 6)
+
+    assert envelopes[-1] == {
+        "operationId": "dict-progress",
+        "phase": "finalizing",
+        "kind": "items",
+        "current": 0,
+        "total": 0,
+    }
 
 
 @pytest.mark.skipif(
@@ -1656,6 +1817,160 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+def test_frequency_csv_import_with_callbacks_emits_no_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The CSV branch (_import_csv) never receives a progress callback --
+    # attaching callbacks must not error and must produce no envelopes.
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "frequency.csv"
+    source.write_text("word,rank\n猫,10\n犬,20\n", encoding="utf-8")
+    callbacks = FakeCallbacks()
+
+    decode_envelope(
+        local_resources.import_frequency(
+            {
+                "operationId": "frequency-csv-progress",
+                "sourcePath": str(source),
+                "sourceId": "fixture-freq-csv",
+                "sourceName": "Fixture Frequency",
+                "sourceFormat": "csv",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.frequency.imported",
+    )
+
+    assert callbacks.messages == []
+
+
+# _rewrite_yomitan_banks (resources.py) unconditionally re-chunks every
+# term_meta_bank_*.json into fresh ~4 MiB (_YOMITAN_BANK_CHUNK_BYTES) output
+# banks before the frequency/pitch importers ever see the archive, so
+# iter_banks' (file_idx, total) reflects post-rewrite bank *count*, not the
+# number of banks in the source zip. Padding past one chunk is the only way
+# to observe a real total > 1 from a small fixture.
+_PROGRESS_PADDING_ENTRY_BYTES = 64 * 1024
+_PROGRESS_PADDING_COUNT = 80  # ~5 MiB, past the 4 MiB rewrite chunk size
+
+
+def _padded_frequency_zip(path: Path) -> Path:
+    index = {"title": "Progress Frequency", "revision": "1", "format": 3, "frequencyMode": "rank"}
+    rows = [
+        ["猫", "freq", 10],
+        ["犬", "freq", 20],
+        *[[f"pad-{i}", "pad", "A" * _PROGRESS_PADDING_ENTRY_BYTES] for i in range(_PROGRESS_PADDING_COUNT)],
+    ]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_meta_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_frequency_zip_import_forwards_real_bank_progress_with_terminal_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _padded_frequency_zip(tmp_path / "progress-freq.zip")
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_frequency(
+            {
+                "operationId": "frequency-zip-progress",
+                "sourcePath": str(source),
+                "sourceId": "progress-freq",
+                "sourceName": "Progress Frequency",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.frequency.imported",
+    )
+    assert imported.payload["entryCount"] == 2
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "frequency-zip-progress" for e in envelopes)
+    assert all(e["phase"] == "importing" and e["kind"] == "items" for e in envelopes)
+    pairs = [(e["current"], e["total"]) for e in envelopes]
+    max_total = max(total for _, total in pairs)
+    assert max_total > 1, "fixture padding should force iter_banks to emit more than one output bank"
+    # A real, non-terminal (file_idx, total) from iter_banks -- not a
+    # fabricated or stage-marker value.
+    assert (1, max_total) in pairs
+    # ... and the trailing terminal (total, total) "Done" report.
+    assert pairs[-1] == (max_total, max_total)
+
+
+def _pitch_bank_entry(term: str, reading: str) -> list:
+    return [term, "pitch", {"reading": reading, "pitches": [{"position": 0}]}]
+
+
+def _padded_pitch_zip(path: Path) -> Path:
+    index = {"title": "Progress Pitch", "revision": "1", "format": 3}
+    rows = [
+        _pitch_bank_entry("猫", "ねこ"),
+        _pitch_bank_entry("犬", "いぬ"),
+        *[[f"pad-{i}", "pad", "A" * _PROGRESS_PADDING_ENTRY_BYTES] for i in range(_PROGRESS_PADDING_COUNT)],
+    ]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_meta_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_pitch_zip_import_forwards_real_bank_progress_with_terminal_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _padded_pitch_zip(tmp_path / "progress-pitch.zip")
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_pitch(
+            {
+                "operationId": "pitch-zip-progress",
+                "sourcePath": str(source),
+                "sourceId": "progress-pitch",
+                "sourceName": "Progress Pitch",
+                "sourceFormat": "zip",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.pitch.imported",
+    )
+    assert imported.payload["entryCount"] == 2
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "pitch-zip-progress" for e in envelopes)
+    assert all(e["phase"] == "importing" and e["kind"] == "items" for e in envelopes)
+    pairs = [(e["current"], e["total"]) for e in envelopes]
+    max_total = max(total for _, total in pairs)
+    assert max_total > 1, "fixture padding should force iter_banks to emit more than one output bank"
+    assert (1, max_total) in pairs
+    assert pairs[-1] == (max_total, max_total)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 @pytest.mark.parametrize("oversized_field", ["title", "revision"])
 def test_frequency_import_rejects_oversized_metadata_before_publication(
     tmp_path: Path,
@@ -1888,6 +2203,43 @@ def _tar_xz_of(path: Path, members: dict[str, bytes]) -> Path:
     return path
 
 
+def _tar_of(path: Path, members: dict[str, bytes]) -> Path:
+    """Uncompressed tar -- raw bytes on disk equal logical member bytes 1:1.
+
+    Used where a test needs the extractor's raw-stream-position progress
+    (``_extract_audio_tar``) to advance in predictable steps: xz/gzip
+    compression ratios make the relationship between logical content size and
+    on-disk (and therefore ``stream.tell()``) position unpredictable, and
+    highly-repetitive filler content (the cheapest way to pad a fixture)
+    compresses away to almost nothing.
+    """
+    with tarfile.open(path, "w:") as archive:
+        for name, data in members.items():
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    return path
+
+
+# tarfile's streaming reader (``_Stream``) pulls raw bytes from the underlying
+# fileobj in fixed ``tarfile.RECORDSIZE`` (10240-byte) chunks regardless of
+# compression, so a fixture must clear a few multiples of that before
+# ``_extract_audio_tar``'s ``stream.tell()``-based progress shows more than
+# one step. These files are never referenced by index.json/entries.json --
+# the ajt/nhk16 pack parsers only follow what the index points at, so orphan
+# media under a pack's own media/ directory is inert filler.
+_TAR_PROGRESS_PAD_ENTRY_BYTES = 6 * 1024
+_TAR_PROGRESS_PAD_COUNT = 6
+
+
+def _padded_collection_members(root: str = "user_files") -> dict[str, bytes]:
+    members = dict(_collection_members(root))
+    prefix = f"{root}/" if root else ""
+    for index in range(_TAR_PROGRESS_PAD_COUNT):
+        members[f"{prefix}jpod_files/media/pad-{index}.mp3"] = bytes(_TAR_PROGRESS_PAD_ENTRY_BYTES)
+    return members
+
+
 def test_audio_archive_kind_reads_the_container_from_its_bytes(tmp_path: Path) -> None:
     members = {"index.json": b"{}"}
     zipped = _zip_of(tmp_path / "named-wrong.tar.xz", members)
@@ -1996,6 +2348,63 @@ def test_audio_zip_preflights_member_count_before_zipfile_allocation(
                 {".mp3"},
             )
     assert failure.value.code == "resource_archive_member_count"
+
+
+def test_audio_extract_zip_progress_total_is_stable_and_reaches_terminal(tmp_path: Path) -> None:
+    source = _zip_of(tmp_path / "collection.zip", _collection_members())
+    destination = tmp_path / "extracted"
+    reports: list[tuple[int, int]] = []
+
+    local_resources._extract_audio_zip(
+        source,
+        destination,
+        resources._Operation("audio-zip-progress"),
+        ("user_files", "jpod_files"),
+        progress=lambda current, total: reports.append((current, total)),
+    )
+
+    assert reports
+    totals = {total for _current, total in reports}
+    assert len(totals) == 1, "ZIP's two-pass declared_total must not change across reports"
+    (total,) = totals
+    assert total > 0
+    assert any(current < total for current, _total in reports)
+    assert reports[-1] == (total, total)
+
+
+def test_audio_extract_tar_progress_total_is_stable_and_reaches_terminal(tmp_path: Path) -> None:
+    # Regression test for a Critical review finding on the original
+    # implementation: _extract_audio_tar grew a running "declared_total" by
+    # each member's own size immediately before copying that same member, so
+    # current == total on literally every report -- a permanently full,
+    # motionless progress bar for the whole extraction, and (since every
+    # report looked terminal) the reporter's throttle-bypass fired on every
+    # single call. The fix reports the archive's fixed stat size as total and
+    # the underlying raw stream's consumed position as current.
+    source = _tar_of(tmp_path / "collection.tar", _padded_collection_members())
+    destination = tmp_path / "extracted"
+    reports: list[tuple[int, int]] = []
+
+    local_resources._extract_audio_tar(
+        source,
+        destination,
+        resources._Operation("audio-tar-progress"),
+        ("user_files", "jpod_files"),
+        progress=lambda current, total: reports.append((current, total)),
+    )
+
+    assert reports
+    totals = {total for _current, total in reports}
+    assert len(totals) == 1, "tar's whole-archive total must not change across reports"
+    (total,) = totals
+    assert total == source.stat().st_size
+    assert any(
+        current < total for current, _total in reports
+    ), "the old per-member-growing total made current == total on every single report"
+    assert reports[-1] == (total, total)
+    assert all(
+        reports[index][0] <= reports[index + 1][0] for index in range(len(reports) - 1)
+    ), "current must be monotonically non-decreasing"
 
 
 def test_audio_extractor_names_a_total_size_rejection(tmp_path: Path) -> None:
@@ -2218,6 +2627,107 @@ def test_audio_pack_import_extracts_only_the_chosen_pack(
     content = home / "audio_packs" / "jpod" / "content"
     assert [path.name for path in sorted(content.rglob("*.mp3"))] == ["cat.mp3"]
     assert not (home / "audio_packs" / "nhk16").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_import_reports_hash_and_extract_byte_progress_then_finalizes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Full-pipeline smoke coverage that progress is wired end to end. The
+    # reporter's own 200ms throttle collapses most intermediate reports for a
+    # fixture this small/fast -- current == total on nearly everything here is
+    # expected throttle behavior, not a signal about the extractors'
+    # total-computation correctness. That precise regression coverage lives
+    # in the direct _extract_audio_zip/_extract_audio_tar tests below, which
+    # bypass the reporter (and its throttle) entirely.
+    _local_home(tmp_path, monkeypatch)
+    source = _tar_xz_of(tmp_path / "collection.tar.xz", _collection_members())
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_audio_pack(
+            {
+                "operationId": "audio-progress",
+                "sourcePath": str(source),
+                "packId": "jpod",
+                "packPath": "user_files/jpod_files",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.audiopack.imported",
+    )
+    assert imported.payload["packId"] == "jpod"
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "audio-progress" for e in envelopes)
+
+    importing = [e for e in envelopes if e["phase"] == "importing"]
+    assert importing
+    assert all(e["kind"] == "bytes" for e in importing)
+    assert all(e["current"] <= e["total"] for e in importing if e["total"] > 0)
+
+    assert envelopes[-1] == {
+        "operationId": "audio-progress",
+        "phase": "finalizing",
+        "kind": "items",
+        "current": 0,
+        "total": 0,
+    }
+
+
+class _CancelOnFirstProgress(FakeCallbacks):
+    """Cancels the operation from inside the first onProgress callback.
+
+    Exercises that a reporter wired to callbacks does not interfere with (or
+    swallow) the operation's own cooperative cancellation check.
+    """
+
+    def __init__(self, operation_id: str) -> None:
+        super().__init__()
+        self._operation_id = operation_id
+        self._cancelled = False
+
+    def onProgress(self, message: str) -> None:
+        super().onProgress(message)
+        if not self._cancelled:
+            self._cancelled = True
+            resources._OPERATIONS.cancel(self._operation_id)
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_audio_pack_import_cancel_still_works_with_callbacks_attached(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = _tar_xz_of(tmp_path / "collection.tar.xz", _collection_members())
+    operation_id = "audio-cancel-progress"
+    callbacks = _CancelOnFirstProgress(operation_id)
+
+    with pytest.raises(BridgeProtocolError) as cancelled:
+        local_resources.import_audio_pack(
+            {
+                "operationId": operation_id,
+                "sourcePath": str(source),
+                "packId": "jpod",
+                "packPath": "user_files/jpod_files",
+                "overwrite": False,
+            },
+            callbacks=callbacks,
+        )
+
+    assert cancelled.value.code == "resource_operation_cancelled"
+    assert callbacks.messages, "cancellation must fire after at least one progress report"
+    assert not (home / "audio_packs" / "jpod").exists()
 
 
 @pytest.mark.skipif(
@@ -2862,6 +3372,69 @@ def test_known_words_import_is_transactional_and_wordsets_are_bundled(
         "place-names",
         "org-product",
     ]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_reports_copy_byte_progress_with_no_finalizing_phase(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known.txt"
+    source.write_text("# known words\n猫\n犬\n猫\n", encoding="utf-8")
+    source_size = source.stat().st_size
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-progress",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    assert imported.payload["importedCount"] == 2
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "known-progress" for e in envelopes)
+    # The vendored parser has no progress hook, so every envelope comes from
+    # the copy loop -- all "importing"/"bytes" against the source file size,
+    # and no finalizing phase (5e never transitions the reporter).
+    assert all(e["phase"] == "importing" and e["kind"] == "bytes" for e in envelopes)
+    assert all(e["total"] == source_size for e in envelopes)
+    assert envelopes[-1]["current"] == source_size
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_with_no_callbacks_emits_nothing_and_does_not_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known-no-callbacks.txt"
+    source.write_text("# known words\n猫\n", encoding="utf-8")
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-no-callbacks",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    assert imported.payload["importedCount"] == 1
 
 
 @pytest.mark.skipif(
