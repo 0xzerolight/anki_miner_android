@@ -1428,12 +1428,20 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
                 core._safe_rmtree(operation_root)
 
 
-def _parse_known_words_copy(source: Path, source_format: str, operation: object, operation_root: Path):
+def _parse_known_words_copy(
+    source: Path,
+    source_format: str,
+    operation: object,
+    operation_root: Path,
+    *,
+    progress: Callable[[int, int], None] | None = None,
+):
     copied = core._copy_archive(
         source,
         operation_root / f"known-words.{source_format}",
         operation,
         maximum_bytes=_KNOWN_WORD_FILE_LIMIT,
+        progress=progress,
     )
     from anki_miner.services.known_words_import import (
         KnownWordsImportError,
@@ -1519,12 +1527,19 @@ def import_known_words(payload: Mapping[str, object], *, callbacks: object | Non
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
             from anki_miner.services.known_word_db import KnownWordDB
 
-            parsed = _parse_known_words_copy(source, source_format, operation, operation_root)
+            parsed = _parse_known_words_copy(
+                source,
+                source_format,
+                operation,
+                operation_root,
+                progress=reporter.bytes_fn(),
+            )
             operation.check()
             db_path = home / "known_words.db"
             if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):

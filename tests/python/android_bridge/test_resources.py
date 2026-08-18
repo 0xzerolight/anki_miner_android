@@ -3254,6 +3254,69 @@ def test_known_words_import_is_transactional_and_wordsets_are_bundled(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+def test_known_words_import_reports_copy_byte_progress_with_no_finalizing_phase(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known.txt"
+    source.write_text("# known words\n猫\n犬\n猫\n", encoding="utf-8")
+    source_size = source.stat().st_size
+    callbacks = FakeCallbacks()
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-progress",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    assert imported.payload["importedCount"] == 2
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "known-progress" for e in envelopes)
+    # The vendored parser has no progress hook, so every envelope comes from
+    # the copy loop -- all "importing"/"bytes" against the source file size,
+    # and no finalizing phase (5e never transitions the reporter).
+    assert all(e["phase"] == "importing" and e["kind"] == "bytes" for e in envelopes)
+    assert all(e["total"] == source_size for e in envelopes)
+    assert envelopes[-1]["current"] == source_size
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_with_no_callbacks_emits_nothing_and_does_not_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "known-no-callbacks.txt"
+    source.write_text("# known words\n猫\n", encoding="utf-8")
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {
+                "operationId": "known-no-callbacks",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+    assert imported.payload["importedCount"] == 1
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 def test_known_words_import_uses_mining_normalization_before_preview_and_insert(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
