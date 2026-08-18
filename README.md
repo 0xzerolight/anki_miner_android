@@ -26,7 +26,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 
 # <p align="center">Mining Demo</p>
 
-<p align="center"><img src="https://raw.githubusercontent.com/0xzerolight/anki_miner_android/main/gifs/demo.gif" alt="Anki Miner for Android Showcase"></p>
+<p align="center"><img src="https://raw.githubusercontent.com/0xzerolight/anki_miner_android/main/gifs/demo.gif" width="260" alt="Anki Miner for Android Showcase"></p>
 
 <p align="center">⬇️ <a href="https://raw.githubusercontent.com/0xzerolight/anki_miner_android/main/gifs/demo.mp4">Full demo with sound (MP4)</a></p>
 
