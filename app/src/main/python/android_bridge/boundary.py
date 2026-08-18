@@ -15,6 +15,17 @@ from .protocol import (
 
 logger = logging.getLogger(__name__)
 
+# Import/install handlers that accept an EngineCallbacks object to report
+# progress. Task 5 wires it into actual reporting; here it is only forwarded.
+_PROGRESS_HANDLERS = {
+    "resource.audiopack.import",
+    "resource.frequency.import",
+    "resource.knownwords.import",
+    "resource.pitch.import",
+    "resource.dictionary.import",
+    "resource.unidic.install",
+}
+
 
 def _exact_payload(
     payload: Mapping[str, object],
@@ -114,6 +125,8 @@ def _dispatch_validated(
                 "resource.local.list": local_resources.list_local_resources,
                 "resource.pitch.import": local_resources.import_pitch,
             }
+            if request_type in _PROGRESS_HANDLERS:
+                return local_handlers[request_type](payload, callbacks=callbacks)
             return local_handlers[request_type](payload)
 
         handlers = {
@@ -127,6 +140,8 @@ def _dispatch_validated(
             "resource.operation.cancel": resources.cancel_operation,
             "resource.unidic.install": resources.install_unidic,
         }
+        if request_type in _PROGRESS_HANDLERS:
+            return handlers[request_type](payload, callbacks=callbacks)
         return handlers[request_type](payload)
 
     if request_type == "tokenizer.configure":

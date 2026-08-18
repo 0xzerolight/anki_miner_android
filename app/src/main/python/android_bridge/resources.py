@@ -799,7 +799,7 @@ def _publish_unidic(
             _safe_rmtree(backup)
 
 
-def install_unidic(payload: Mapping[str, object]) -> str:
+def install_unidic(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     _exact(
         payload,
         {"operationId", "resourceId", "archivePath"},
@@ -1843,7 +1843,7 @@ def preflight_dictionary(payload: Mapping[str, object]) -> str:
         )
 
 
-def import_dictionary(payload: Mapping[str, object]) -> str:
+def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     _exact(
         payload,
         {"operationId", "sourcePath", "slotId", "overwrite", "catalogResourceId"},

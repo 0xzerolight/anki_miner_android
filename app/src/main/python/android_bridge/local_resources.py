@@ -424,7 +424,7 @@ def _frequency_import_payload(result: object, source_id: str, archive_sha256: st
     }
 
 
-def import_frequency(payload: Mapping[str, object]) -> str:
+def import_frequency(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
         {
@@ -537,7 +537,7 @@ def import_frequency(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def import_pitch(payload: Mapping[str, object]) -> str:
+def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     """Import one pitch source into its own slot under the pitch root.
 
     Mirrors :func:`import_frequency`: the engine builds a per-source
@@ -1267,7 +1267,7 @@ def _validate_audio_index(db_path: Path, content: Path, operation: core._Operati
         raise _fail("audio_pack_import_failed", "Audio pack index is invalid") from exc
 
 
-def import_audio_pack(payload: Mapping[str, object]) -> str:
+def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
         {"operationId", "sourcePath", "packId", "packPath", "overwrite"},
@@ -1479,7 +1479,7 @@ def preview_known_words(payload: Mapping[str, object]) -> str:
                 core._safe_rmtree(operation_root)
 
 
-def import_known_words(payload: Mapping[str, object]) -> str:
+def import_known_words(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
         {"operationId", "sourcePath", "sourceFormat"},
