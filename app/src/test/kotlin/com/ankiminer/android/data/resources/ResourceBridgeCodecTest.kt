@@ -572,6 +572,93 @@ class ResourceBridgeCodecTest {
         )
     }
 
+    @Test
+    fun resourceProgressDecodesImportingItemsEnvelope() {
+        val raw =
+            """{"schemaVersion":1,"type":"resource.progress","payload":{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":3,"total":30}}"""
+
+        val event = ResourceBridgeCodec.decodeResourceProgress(raw)
+
+        assertEquals("resource_1a2b3c4d", event.operationId)
+        assertEquals(ResourceOperationPhase.IMPORTING, event.phase)
+        assertEquals(ResourceProgressUnit.ITEMS, event.unit)
+        assertEquals(3L, event.current)
+        assertEquals(30L, event.total)
+    }
+
+    @Test
+    fun resourceProgressDecodesInstallingBytesEnvelope() {
+        val raw =
+            """{"schemaVersion":1,"type":"resource.progress","payload":{"operationId":"resource_1a2b3c4d","phase":"installing","kind":"bytes","current":1024,"total":2048}}"""
+
+        val event = ResourceBridgeCodec.decodeResourceProgress(raw)
+
+        assertEquals(ResourceOperationPhase.INSTALLING, event.phase)
+        assertEquals(ResourceProgressUnit.BYTES, event.unit)
+        assertEquals(1024L, event.current)
+        assertEquals(2048L, event.total)
+    }
+
+    @Test
+    fun resourceProgressDecodesFinalizingStageMarker() {
+        val raw =
+            """{"schemaVersion":1,"type":"resource.progress","payload":{"operationId":"resource_1a2b3c4d","phase":"finalizing","kind":"items","current":0,"total":0}}"""
+
+        val event = ResourceBridgeCodec.decodeResourceProgress(raw)
+
+        assertEquals(ResourceOperationPhase.FINALIZING, event.phase)
+        assertEquals(0L, event.current)
+        assertEquals(0L, event.total)
+    }
+
+    @Test
+    fun resourceProgressRejectsMalformedEnvelopes() {
+        fun progress(payload: String) = """{"schemaVersion":1,"type":"resource.progress","payload":$payload}"""
+
+        val rejected =
+            listOf(
+                // unknown phase
+                progress(
+                    """{"operationId":"resource_1a2b3c4d","phase":"downloading","kind":"items","current":1,"total":2}""",
+                ),
+                // unknown kind
+                progress(
+                    """{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"percent","current":1,"total":2}""",
+                ),
+                // missing field (total)
+                progress("""{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":1}"""),
+                // negative current
+                progress(
+                    """{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":-1,"total":2}""",
+                ),
+                // negative total
+                progress(
+                    """{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":1,"total":-2}""",
+                ),
+                // unexpected extra field
+                progress(
+                    """{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":1,"total":2,"message":"hi"}""",
+                ),
+            )
+        for (raw in rejected) {
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeResourceProgress(raw)
+            }
+        }
+
+        val wrongType =
+            """{"schemaVersion":1,"type":"resource.progresss","payload":{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":1,"total":2}}"""
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeResourceProgress(wrongType)
+        }
+
+        val wrongSchemaVersion =
+            """{"schemaVersion":2,"type":"resource.progress","payload":{"operationId":"resource_1a2b3c4d","phase":"importing","kind":"items","current":1,"total":2}}"""
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeResourceProgress(wrongSchemaVersion)
+        }
+    }
+
     private fun frequencyArchive(revision: String): File {
         val archive = File(temporary.root, "frequency-${revision.length}.zip")
         ZipOutputStream(archive.outputStream()).use { output ->

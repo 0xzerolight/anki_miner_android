@@ -735,6 +735,36 @@ object ResourceBridgeCodec {
         if (!bool(payload.getValue("clean"), "clean")) invalid("Resource cleanup was not confirmed")
     }
 
+    /**
+     * `phase` accepts only the three values `android_bridge/resource_progress.py`'s
+     * `ResourceProgressReporter` ever emits -- every other [ResourceOperationPhase] is Kotlin-only
+     * UI state.
+     */
+    fun decodeResourceProgress(raw: String): ResourceProgressEvent {
+        val value = payload(raw, "resource.progress")
+        exact(value, setOf("operationId", "phase", "kind", "current", "total"), "resource progress")
+        val id = text(value.getValue("operationId"), "operationId")
+        if (!operationId.matches(id)) invalid("Invalid resource progress operationId")
+        val phase = when (val wire = text(value.getValue("phase"), "phase")) {
+            "importing" -> ResourceOperationPhase.IMPORTING
+            "installing" -> ResourceOperationPhase.INSTALLING
+            "finalizing" -> ResourceOperationPhase.FINALIZING
+            else -> invalid("Unsupported resource progress phase: $wire")
+        }
+        val unit = when (val wire = text(value.getValue("kind"), "kind")) {
+            "items" -> ResourceProgressUnit.ITEMS
+            "bytes" -> ResourceProgressUnit.BYTES
+            else -> invalid("Unsupported resource progress kind: $wire")
+        }
+        return ResourceProgressEvent(
+            operationId = id,
+            phase = phase,
+            unit = unit,
+            current = nonNegative(value.getValue("current"), "current"),
+            total = nonNegative(value.getValue("total"), "total"),
+        )
+    }
+
     private fun catalogResource(raw: BridgeJsonValue): CatalogResource {
         val value = objectValue(raw, "catalog resource")
         val kind = text(value["kind"] ?: invalid("Catalog resource kind is missing"), "kind")
