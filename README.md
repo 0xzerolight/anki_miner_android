@@ -39,23 +39,19 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 ## Tabs
 
 - **Video** - mine a video + subtitle pair, with a screenshot and audio clip on every card.
-- **Audio** - mine an audio file + transcript pair. The curator plays each line instead of showing a frame.
+- **Audio** - mine an audio file + transcript pair.
 - **Reading** - mine manga (mokuro), novels (`.epub`, Aozora `.txt`), or standalone subtitle files.
-- **Settings** - Anki, dictionaries, audio, frequency, filtering, UI. A skippable onboarding wizard walks the first run (tokenizer, dictionary, AnkiDroid).
+- **Settings** - everything configurable, with a skippable first-run wizard.
 
 ## Other Features
 
-- Animated screenshots: the card image can be a short looping clip of the line instead of a single frame. Off by default — clips take longer to mine and are several times the size of a still. Saved as AVIF where Android can store it, WebP everywhere else.
-- Extensive filtering: i+1, frequency limits, blacklist, wordsets, and more.
+- Animated screenshots - the card image can be a short looping clip of the line instead of a still (off by default).
+- Extensive filtering: i+1, frequency limits, blacklist, wordsets, proper-noun name lists, and more.
 - Offline Yomitan dictionary import - definitions, pitch accent, frequency - chained by priority.
-- Word audio tries AnkiConnect-Android's bounded on-device `localaudio` lookup first; imported local audio packs are the offline fallback. Sentence audio uses your device's offline Japanese text-to-speech.
-- Known-word controls include import preview, search, removal, export, reset, excluded Anki decks, and bundled proper-name wordset selection.
-- Confirmed settings resets are scoped to mining defaults, the Anki target, or resource choices; unrelated settings remain intact.
+- Word audio from on-device audio packs; sentence audio from your device's Japanese text-to-speech.
 - Optional Jisho.org online fallback for definitions (slower, rate-limited).
-- Proper-noun filtering from bundled name wordsets.
-- The interface is translated into 11 languages besides English: German, Spanish, French, Indonesian, Italian, Japanese, Brazilian Portuguese, Russian, Vietnamese, Simplified Chinese, and Traditional Chinese.
-- Light and dark themes are chosen separately from ported palettes including Catppuccin, Dracula, Nord, Gruvbox, Solarized, Tokyo Night, Rosé Pine, Everforest, Kanagawa, Ayu, and One Dark. On Android 12+ you can take the palette from your wallpaper instead.
-- An optional daily check asks GitHub whether a newer release exists. It never downloads or installs anything, and it can be switched off in Settings.
+- Interface translated into 11 languages besides English.
+- Light and dark themes from ported palettes - Catppuccin, Dracula, Nord, Gruvbox, Solarized, and more. Android 12+ can take colours from your wallpaper.
 
 <details>
 <summary><strong>How It Works</strong></summary>
