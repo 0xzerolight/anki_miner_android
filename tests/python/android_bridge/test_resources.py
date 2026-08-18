@@ -793,6 +793,58 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
     importlib.util.find_spec("requests") is None,
     reason="the lean host lane intentionally excludes runtime engine dependencies",
 )
+def test_dictionary_import_forwards_engine_progress_and_finalizes_before_publish(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    source = _yomitan_zip(tmp_path / "progress.zip", term="猫", meaning="cat", revision="1")
+    callbacks = FakeCallbacks()
+
+    decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dict-progress",
+                "sourcePath": str(source),
+                "slotId": "progress-fixture",
+                "overwrite": False,
+                "catalogResourceId": None,
+            },
+            callbacks=callbacks,
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    envelopes = [message["payload"] for message in callbacks.messages]
+    assert envelopes
+    assert all(e["operationId"] == "dict-progress" for e in envelopes)
+    assert all(e["kind"] == "items" for e in envelopes)
+    assert all("message" not in e for e in envelopes)
+    # Stage markers -- the engine's (0, 0, "Validating archive"/"Inserting
+    # entries"/"Finalizing import") calls -- are message-only and dropped by
+    # items_fn; only the reporter's own set_phase("finalizing") may emit 0/0.
+    assert not any(e["phase"] == "importing" and e["current"] == 0 and e["total"] == 0 for e in envelopes)
+
+    importing = [e for e in envelopes if e["phase"] == "importing"]
+    assert importing, "expected at least one forwarded importing envelope"
+    # Against the current engine pin, import_yomitan_zip's insert-progress
+    # callback reports (inserted, 0, message) per batch -- assert that passes
+    # through with total == 0. A later re-pin task (Task 8) flips the engine
+    # to emit (files_done, total_files) and this assertion moves with it.
+    assert any(e["current"] > 0 and e["total"] == 0 for e in importing)
+
+    assert envelopes[-1] == {
+        "operationId": "dict-progress",
+        "phase": "finalizing",
+        "kind": "items",
+        "current": 0,
+        "total": 0,
+    }
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
 def test_dictionary_lookup_returns_empty_html_for_absent_term(
     tmp_path: Path,
     initialized_bridge_home: Path,

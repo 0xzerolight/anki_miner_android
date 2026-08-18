@@ -1889,6 +1889,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
     operation_root = _resource_work_root(home) / "operations" / operation_id
     with _OPERATIONS.begin(operation_id) as operation:
         operation.check()
+        reporter = make_reporter(callbacks, operation_id, "importing")
         _safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
@@ -1973,6 +1974,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                 result = import_yomitan_zip(
                     import_source,
                     import_root,
+                    progress=reporter.items_fn(),
                     overwrite=False,
                     cancel_check=operation.cancelled.is_set,
                     dict_id=slot_id,
@@ -1989,6 +1991,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     ) from exc
                 raise
             operation.check()
+            reporter.set_phase("finalizing")
             _validate_dictionary_metadata(result.source_name, result.source_revision)
             if catalog_resource and (
                 result.source_name != catalog_resource.dictionary.title
