@@ -702,6 +702,103 @@ def test_dictionary_import_rejects_oversized_metadata_before_publication(
     assert not (initialized_bridge_home / "dicts" / f"long-metadata-{metadata_field}").exists()
 
 
+def _yomitan_zip_with_banks(
+    path: Path,
+    *,
+    banks: dict[str, list[object]],
+    title: str = "Fixture Dictionary",
+    revision: str = "1",
+) -> Path:
+    index = {
+        "title": title,
+        "revision": revision,
+        "format": 3,
+        "author": "Fixture Author",
+        "attribution": "Fixture Attribution",
+    }
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        for name, rows in banks.items():
+            archive.writestr(name, json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [],
+        [["猫", "", ""], ["犬", ""]],
+    ],
+    ids=["empty-bank", "all-malformed"],
+)
+def test_dictionary_import_rejects_archive_with_no_usable_entries(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    rows: list[object],
+) -> None:
+    # The engine importer only rejects archives with no term_bank files; banks
+    # whose rows are all skipped import "successfully" with entry_count 0, and a
+    # published 0-entry slot passes Kotlin usability while failing the engine's
+    # offline-provider gate at mining time.
+    source = _yomitan_zip_with_banks(
+        tmp_path / "no-usable-entries.zip",
+        banks={"term_bank_1.json": rows},
+    )
+
+    with pytest.raises(BridgeProtocolError, match="no usable entries") as failure:
+        resources.import_dictionary(
+            {
+                "operationId": "zero-entry-import",
+                "sourcePath": str(source),
+                "slotId": "zero-entry-dict",
+                "overwrite": False,
+                "catalogResourceId": None,
+            }
+        )
+
+    assert failure.value.code == "dictionary_import_failed"
+    assert not (initialized_bridge_home / "dicts" / "zero-entry-dict").exists()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="the lean host lane intentionally excludes runtime engine dependencies",
+)
+def test_zero_entry_replace_leaves_installed_dictionary_intact(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    good = _yomitan_zip(tmp_path / "good.zip", term="猫", meaning="cat", revision="1")
+    resources.import_dictionary(
+        {
+            "operationId": "replace-target-install",
+            "sourcePath": str(good),
+            "slotId": "replace-target",
+            "overwrite": False,
+            "catalogResourceId": None,
+        }
+    )
+
+    empty = _yomitan_zip_with_banks(tmp_path / "empty.zip", banks={"term_bank_1.json": []})
+    with pytest.raises(BridgeProtocolError, match="no usable entries") as failure:
+        resources.import_dictionary(
+            {
+                "operationId": "replace-target-empty",
+                "sourcePath": str(empty),
+                "slotId": "replace-target",
+                "overwrite": True,
+                "catalogResourceId": None,
+            }
+        )
+
+    assert failure.value.code == "dictionary_import_failed"
+    assert (initialized_bridge_home / "dicts" / "replace-target" / "index.sqlite").exists()
+
+
 # > the retired 16 MiB per-file cap, so a term/meta bank of this size exercises
 # the relaxed limits while providing enough entries for bounded bank splitting.
 _OVERSIZED_MEMBER_BYTES = 17 * 1024 * 1024
