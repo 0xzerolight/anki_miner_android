@@ -673,9 +673,7 @@ class ReadingMiningScreenTest {
         )
 
         composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
-        composeRule.onNodeWithText("Private protocol detail").assertDoesNotExist()
-        composeRule.onNodeWithText("Details").performClick()
-        composeRule.onNodeWithText("Private protocol detail").assertExists()
+        composeRule.onNodeWithText("Private protocol detail").assertIsDisplayed()
     }
 
     @Test
