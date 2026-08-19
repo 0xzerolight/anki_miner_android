@@ -536,7 +536,7 @@
     <string name="known_words_preview_samples">範例：%1$s</string>
     <string name="known_words_import_confirm">匯入</string>
     <string name="known_words_inventory">總計 %1$d · 已匯入 %2$d · Anki 快取 %3$d · 已採集 %4$d</string>
-    <string name="known_words_inventory_invalid">已知單字儲存空間無效（總計 %1$d · 已匯入 %2$d · Anki 快取 %3$d · 已採集 %4$d）。請重新開啟設定以重試復原。</string>
+    <string name="known_words_inventory_invalid">已知單字儲存空間無效。請重新開啟設定以重試復原。</string>
     <string name="bundled_wordsets_title">內建專有名稱單字集</string>
     <string name="bundled_wordset_item">%1$s · %2$d 個項目</string>
     <string name="bundled_wordsets_unavailable">無法盤點內建單字集。</string>

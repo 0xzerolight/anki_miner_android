@@ -542,7 +542,7 @@
     <string name="known_words_preview_samples">サンプル: %1$s</string>
     <string name="known_words_import_confirm">インポート</string>
     <string name="known_words_inventory">合計%1$d · インポート%2$d · Ankiキャッシュ%3$d · 採掘済み%4$d</string>
-    <string name="known_words_inventory_invalid">既知単語のストレージが無効です（合計%1$d · インポート%2$d · Ankiキャッシュ%3$d · 採掘済み%4$d）。設定を開き直すと復旧を再試行します。</string>
+    <string name="known_words_inventory_invalid">既知単語のストレージが無効です。設定を開き直すと復旧を再試行します。</string>
     <string name="bundled_wordsets_title">同梱の固有名詞単語リスト</string>
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを一覧化できませんでした。</string>

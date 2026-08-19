@@ -540,7 +540,7 @@
     <string name="known_words_preview_samples">示例：%1$s</string>
     <string name="known_words_import_confirm">导入</string>
     <string name="known_words_inventory">总计 %1$d · 已导入 %2$d · Anki 缓存 %3$d · 已挖词 %4$d</string>
-    <string name="known_words_inventory_invalid">已知单词存储无效（总计 %1$d · 已导入 %2$d · Anki 缓存 %3$d · 已挖词 %4$d）。重新打开设置以重试恢复。</string>
+    <string name="known_words_inventory_invalid">已知单词存储无效。重新打开设置以重试恢复。</string>
     <string name="bundled_wordsets_title">内置专有名词单词集</string>
     <string name="bundled_wordset_item">%1$s · %2$d 个条目</string>
     <string name="bundled_wordsets_unavailable">无法清点内置单词集。</string>

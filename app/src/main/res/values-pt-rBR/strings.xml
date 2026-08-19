@@ -544,7 +544,7 @@
     <string name="known_words_preview_samples">Exemplo: %1$s</string>
     <string name="known_words_import_confirm">Importar</string>
     <string name="known_words_inventory">Total %1$d · importadas %2$d · cache do Anki %3$d · mineradas %4$d</string>
-    <string name="known_words_inventory_invalid">O armazenamento de palavras conhecidas é inválido (total %1$d · importadas %2$d · cache do Anki %3$d · mineradas %4$d). Reabra as Configurações para tentar a recuperação novamente.</string>
+    <string name="known_words_inventory_invalid">O armazenamento de palavras conhecidas é inválido. Reabra as Configurações para tentar a recuperação novamente.</string>
     <string name="bundled_wordsets_title">Conjuntos integrados de nomes próprios</string>
     <string name="bundled_wordset_item">%1$s · %2$d entradas</string>
     <string name="bundled_wordsets_unavailable">Não foi possível inventariar os conjuntos integrados de palavras.</string>

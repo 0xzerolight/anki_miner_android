@@ -546,7 +546,7 @@
     <string name="known_words_preview_samples">Пример: %1$s</string>
     <string name="known_words_import_confirm">Импортировать</string>
     <string name="known_words_inventory">Всего %1$d · импортировано %2$d · кэш Anki %3$d · намайнено %4$d</string>
-    <string name="known_words_inventory_invalid">Хранилище известных слов повреждено (всего %1$d · импортировано %2$d · кэш Anki %3$d · намайнено %4$d). Откройте настройки снова, чтобы повторить восстановление.</string>
+    <string name="known_words_inventory_invalid">Хранилище известных слов повреждено. Откройте настройки снова, чтобы повторить восстановление.</string>
     <string name="bundled_wordsets_title">Встроенные наборы имён собственных</string>
     <string name="bundled_wordset_item">%1$s · записей: %2$d</string>
     <string name="bundled_wordsets_unavailable">Не удалось учесть встроенные наборы слов.</string>
