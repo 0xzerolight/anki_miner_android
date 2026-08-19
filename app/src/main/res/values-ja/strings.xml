@@ -315,6 +315,8 @@
     <string name="readiness_unknown">準備状態を確認できませんでした。</string>
     <string name="readiness_install_unidic">UniDicをインストール</string>
     <string name="readiness_install_dictionary">辞書をインストール</string>
+    <string name="readiness_dictionary_disabled">インストール済みの辞書が無効か空です</string>
+    <string name="readiness_review_dictionaries">辞書を確認</string>
     <string name="readiness_connect_ankidroid">AnkiDroidに接続</string>
     <string name="readiness_choose_note_type">ノートタイプを選択</string>
     <string name="readiness_resolve_recovery">復旧項目を解決</string>

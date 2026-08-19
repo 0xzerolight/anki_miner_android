@@ -692,7 +692,7 @@ private fun <T> changedValue(
 ): T = if (current != baseline) current else persisted
 
 private fun ResourceManagerState.usableDictionaryIds(): List<String> =
-    dictionaries.filter { it.isUsable }.map { it.slotId }
+    dictionaries.filter { it.isChainEligible }.map { it.slotId }
 
 private fun ResourceManagerState.usableFrequencyIds(): List<String> =
     frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }

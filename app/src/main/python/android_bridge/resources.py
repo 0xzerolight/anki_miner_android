@@ -1997,6 +1997,16 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     ) from exc
                 raise
             operation.check()
+            # The engine importer only rejects archives with no term_bank files;
+            # banks whose rows are all skipped come back with entry_count 0. A
+            # published 0-entry slot would pass inventory usability but fail the
+            # engine's offline-provider gate at mining time, so refuse it here
+            # while the user still has the file in hand.
+            if result.entry_count <= 0:
+                raise _fail(
+                    "dictionary_import_failed",
+                    "The dictionary archive contains no usable entries",
+                )
             reporter.set_phase("finalizing")
             _validate_dictionary_metadata(result.source_name, result.source_revision)
             if catalog_resource and (

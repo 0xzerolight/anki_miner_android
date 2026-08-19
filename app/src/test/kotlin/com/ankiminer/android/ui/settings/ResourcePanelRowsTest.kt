@@ -43,6 +43,26 @@ class ResourcePanelRowsTest {
     }
 
     @Test
+    fun `a zero-entry dictionary row warns and offers repair like any unusable slot`() {
+        val rows =
+            dictionaryPanelRows(
+                chain = listOf(ResourceChainSelection("jitendex")),
+                installed = listOf(dictionary("jitendex", entryCount = 0)),
+                jishoEnabled = false,
+                strings = dictionaryStrings,
+                onChainChange = {},
+                onJishoChange = {},
+                onRepair = {},
+                onReplace = {},
+            )
+
+        val row = rows.first()
+        assertEquals("jitendex", row.id)
+        assertEquals("repair", row.warning)
+        assertEquals("Repair", row.quietAction?.label)
+    }
+
+    @Test
     fun `a chain entry with no installed slot warns and stays removable`() {
         val rows =
             dictionaryPanelRows(

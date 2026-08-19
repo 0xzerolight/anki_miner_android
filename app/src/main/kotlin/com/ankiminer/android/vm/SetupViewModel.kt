@@ -180,6 +180,7 @@ internal class SetupViewModel(
                 pendingReplace = localState.pendingReplace,
                 pendingDelete = localState.pendingDelete,
                 dictionaries = resourceState.dictionaries,
+                dictionarySources = appSettings.dictionarySources,
                 frequencySources = resourceState.frequencySources,
                 pitchSources = resourceState.pitchSources,
                 audioPacks = resourceState.audioPacks,

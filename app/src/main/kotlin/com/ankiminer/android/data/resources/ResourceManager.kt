@@ -150,7 +150,7 @@ interface ResourceManager {
     fun dismissFailure()
 
     fun installedDictionaryIds(): List<String> =
-        state.value.dictionaries.filter { it.isUsable }.map { it.slotId }
+        state.value.dictionaries.filter { it.isChainEligible }.map { it.slotId }
 
     fun installedFrequencyIds(): List<String> =
         state.value.frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }

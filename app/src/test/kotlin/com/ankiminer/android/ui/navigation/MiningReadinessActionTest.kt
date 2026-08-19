@@ -15,6 +15,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonBootstrapStage
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
@@ -129,11 +130,29 @@ internal class MiningReadinessActionTest(
                     MiningReadinessAction.INSTALL_DICTIONARY,
                 ),
                 arrayOf(
-                    // Occupied but unreadable is the state a schema bump leaves behind, and it
-                    // is just as unusable to the engine as an empty slot.
-                    "unusable dictionary installs a dictionary",
+                    // Occupied but unreadable is the state a schema bump leaves behind. The slot
+                    // still exists, so the correction is to review it (the panel offers Repair),
+                    // not to install another one.
+                    "unusable dictionary reviews dictionaries",
                     ready.copy(dictionaries = listOf(usableDictionary().copy(schemaOk = false))),
-                    MiningReadinessAction.INSTALL_DICTIONARY,
+                    MiningReadinessAction.ENABLE_DICTIONARY,
+                ),
+                arrayOf(
+                    // Intact index with zero entries: passes inventory usability, fails the
+                    // engine's provider gate. The slot is there, so review it.
+                    "zero-entry dictionary reviews dictionaries",
+                    ready.copy(dictionaries = listOf(usableDictionary().copy(entryCount = 0L))),
+                    MiningReadinessAction.ENABLE_DICTIONARY,
+                ),
+                arrayOf(
+                    // A persisted enabled=false chain entry silently empties the engine's
+                    // provider chain while the inventory still looks healthy.
+                    "chain-disabled dictionary reviews dictionaries",
+                    ready.copy(
+                        dictionarySources =
+                            listOf(ResourceChainSelection("dictionary-1", enabled = false)),
+                    ),
+                    MiningReadinessAction.ENABLE_DICTIONARY,
                 ),
                 arrayOf(
                     "missing AnkiDroid installs",

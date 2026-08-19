@@ -2140,6 +2140,25 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aZeroEntryDictionaryStaysOutOfTheChainWithoutFailingStartup() =
+        runTest {
+            // A 0-entry index is intact — startup recovery must not treat it as corruption —
+            // but the engine's provider gate needs entry_count > 0, so the chain excludes it.
+            val harness =
+                Harness(
+                    rootName = "manager-zero-entry-dictionary",
+                    installedCustomDictionaryValid = true,
+                    installedCustomDictionaryEntryCount = 0,
+                )
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            val dictionary = harness.manager.state.value.dictionaries.single()
+            assertTrue(dictionary.isUsable)
+            assertFalse(dictionary.isChainEligible)
+            assertTrue(harness.manager.installedDictionaryIds().isEmpty())
+        }
+
+    @Test
     fun deleteDoesNotWriteTheRecoveryJournal() =
         runTest {
             // A journalled delete that succeeded before process death would be reported as an
@@ -2222,6 +2241,7 @@ class ResourceManagerTest {
         installedCatalogDictionaryValid: Boolean? = null,
         installedCustomDictionaryValid: Boolean? = null,
         installedCustomDictionaryRebuildPath: String? = null,
+        installedCustomDictionaryEntryCount: Long = 1,
         failDictionaryImport: Boolean = false,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
@@ -2283,6 +2303,7 @@ class ResourceManagerTest {
                 installedCatalogDictionaryValid,
                 installedCustomDictionaryValid,
                 installedCustomDictionaryRebuildPath,
+                installedCustomDictionaryEntryCount,
                 failDictionaryImport,
                 failRefreshAfterDictionaryImport,
                 failRefreshAfterMutation,
@@ -2550,6 +2571,7 @@ class ResourceManagerTest {
         installedCatalogDictionaryValid: Boolean?,
         installedCustomDictionaryValid: Boolean?,
         private val installedCustomDictionaryRebuildPath: String? = null,
+        private val installedCustomDictionaryEntryCount: Long = 1,
         private val failDictionaryImport: Boolean = false,
         private val failRefreshAfterDictionaryImport: Boolean,
         private val failRefreshAfterMutation: String?,
@@ -2794,7 +2816,7 @@ class ResourceManagerTest {
                 val rebuildPath =
                     installedCustomDictionaryRebuildPath?.let { "\"$it\"" } ?: "null"
                 entries +=
-                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) 1 else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath}"""
+                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath}"""
             }
             val dictionaries = entries.joinToString(",", prefix = "[", postfix = "]")
             return envelope(

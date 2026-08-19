@@ -115,6 +115,14 @@ data class InstalledDictionary(
 ) {
     val isUsable: Boolean
         get() = occupied && valid && schemaOk
+
+    /**
+     * Mirrors the engine's offline-provider gate: schema-current AND at least one entry.
+     * [isUsable] alone is the startup-corruption rule and must stay weaker — a 0-entry slot
+     * is intact, just ineligible for the mining chain.
+     */
+    val isChainEligible: Boolean
+        get() = isUsable && entryCount > 0
 }
 
 /**

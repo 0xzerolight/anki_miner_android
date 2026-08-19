@@ -882,6 +882,12 @@ internal fun MiningReadinessActions(
                     onImportDictionary,
                     opensSettings = true,
                 )
+            MiningReadinessAction.ENABLE_DICTIONARY ->
+                ReadinessActionSpec(
+                    R.string.readiness_review_dictionaries,
+                    onImportDictionary,
+                    opensSettings = true,
+                )
             MiningReadinessAction.INSTALL_ANKIDROID ->
                 ReadinessActionSpec(
                     R.string.install_or_update_ankidroid,
@@ -954,7 +960,12 @@ internal fun miningReadinessMessage(state: SetupUiState): Int =
         state.resourceStartup != com.ankiminer.android.data.resources.ResourceStartupReadiness.READY ->
             R.string.readiness_resources_pending
         !state.uniDicInstalled -> R.string.readiness_unidic_required
-        !state.dictionaryReady -> R.string.readiness_dictionary_required
+        !state.dictionaryReady ->
+            if (state.dictionaries.any { it.occupied }) {
+                R.string.readiness_dictionary_disabled
+            } else {
+                R.string.readiness_dictionary_required
+            }
         !state.ankiReady -> R.string.readiness_anki_required
         !state.targetReady -> R.string.readiness_model_required
         !state.recoveryReady -> R.string.readiness_recovery_required

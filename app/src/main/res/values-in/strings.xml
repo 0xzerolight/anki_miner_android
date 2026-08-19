@@ -314,6 +314,8 @@
     <string name="readiness_unknown">Kesiapan tidak dapat dikonfirmasi.</string>
     <string name="readiness_install_unidic">Instal UniDic</string>
     <string name="readiness_install_dictionary">Instal kamus</string>
+    <string name="readiness_dictionary_disabled">Kamus yang terpasang dinonaktifkan atau kosong</string>
+    <string name="readiness_review_dictionaries">Tinjau kamus</string>
     <string name="readiness_connect_ankidroid">Hubungkan AnkiDroid</string>
     <string name="readiness_choose_note_type">Pilih tipe catatan</string>
     <string name="readiness_resolve_recovery">Selesaikan pemulihan</string>
