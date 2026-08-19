@@ -395,16 +395,14 @@ class SettingsComponentsTest {
             .performClick()
         composeRule
             .onNodeWithText(
-                "This records that the exact stored media is not attached to a verified note. " +
-                    "The durable evidence is retained.",
+                "Records that this stored media is not attached to a verified note.",
             ).assertIsDisplayed()
 
         restorationTester.emulateSavedInstanceStateRestore()
 
         composeRule
             .onNodeWithText(
-                "This records that the exact stored media is not attached to a verified note. " +
-                    "The durable evidence is retained.",
+                "Records that this stored media is not attached to a verified note.",
             ).assertIsDisplayed()
     }
 

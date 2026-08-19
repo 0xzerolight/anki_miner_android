@@ -329,14 +329,14 @@
     <string name="readiness_wait_action">Setup in progress</string>
 
     <string name="anki_note_type_title">Anki note type</string>
-    <string name="anki_note_type_connect_first">Connect AnkiDroid first, then come back here to choose a note type.</string>
+    <string name="anki_note_type_connect_first">Connect AnkiDroid to discover note types.</string>
     <string name="anki_deck_title">Target deck</string>
-    <string name="anki_deck_connect_first">Connect AnkiDroid first so existing decks can be discovered.</string>
+    <string name="anki_deck_connect_first">Connect AnkiDroid to discover decks.</string>
     <string name="anki_deck_picker">Deck</string>
     <string name="anki_deck_create_or_use_default">Create or use Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (saved; not currently found)</string>
     <string name="anki_deck_saving">Saving deck choice…</string>
-    <string name="anki_deck_save_failed">Deck choice could not be saved. Retry the local settings write.</string>
+    <string name="anki_deck_save_failed">Deck choice could not be saved.</string>
     <string name="anki_deck_save_retry">Retry saving deck</string>
     <string name="anki_note_type_picker">Note type</string>
     <string name="anki_field_mapping_summary">Field mapping (%1$d of %2$d)</string>
@@ -347,7 +347,7 @@
     <string name="anki_field_mapping_changes">Mappings changed for this note type: %1$s</string>
     <string name="anki_field_none">Not mapped</string>
     <string name="anki_card_type_title">Card type</string>
-    <string name="anki_card_type_explainer">For JP Mining Note-style note types: an \"x\" is written into the marker field so every mined note renders as the chosen type.</string>
+    <string name="anki_card_type_explainer">For JP Mining Note-style types: writes \"x\" into the marker field to select the card type.</string>
     <string name="anki_card_type_picker">Card type</string>
     <string name="anki_card_type_marker_field">Marker field</string>
     <string name="anki_card_type_marker_missing">Pick a marker field, or the card type stays off.</string>
@@ -355,16 +355,16 @@
     <string name="anki_card_type_click">Click</string>
     <string name="anki_card_type_sentence">Sentence</string>
     <string name="anki_card_type_audio">Audio</string>
-    <string name="anki_note_type_status_verified">Verified writable and dedup-safe. Optional mappings still control how useful and enriched each Anki note can be.</string>
+    <string name="anki_note_type_status_verified">Verified writable and dedup-safe.</string>
     <string name="anki_note_type_status_not_selected">Choose a note type for created Anki notes.</string>
     <string name="anki_note_type_status_missing">The selected note type no longer exists in AnkiDroid. Choose another one.</string>
-    <string name="anki_note_type_status_fields_missing">Some required fields are not mapped to a field in this note type.</string>
-    <string name="anki_note_type_status_field_map_invalid">An Anki field is assigned to more than one mapped value. Choose a different field for each mapping.</string>
-    <string name="anki_note_type_status_first_field">The Word field must be the note type\'s first field. Map it there, or choose a note type whose first field holds the word.</string>
-    <string name="anki_note_type_status_provider_error">AnkiDroid could not be read. Re-check after confirming it is open and access is granted.</string>
-    <string name="anki_note_type_guidance">Missing required fields. Import a Japanese mining note type into AnkiDroid, then re-check.</string>
-    <string name="anki_quality_limited_warning">Nonblocking warning: this note type can accept Anki notes, but it cannot retain both sentence context and a definition or glossary. Mining remains allowed.</string>
-    <string name="anki_quality_optional_warning">Optional enrichment is missing. Mining remains allowed; map audio and image fields if this note type should retain them.</string>
+    <string name="anki_note_type_status_fields_missing">Required fields are not mapped.</string>
+    <string name="anki_note_type_status_field_map_invalid">One Anki field is used by more than one mapping.</string>
+    <string name="anki_note_type_status_first_field">The Word field must be the note type\'s first field.</string>
+    <string name="anki_note_type_status_provider_error">AnkiDroid could not be read. Check it is open and access is granted.</string>
+    <string name="anki_note_type_guidance">Missing required fields. Import a Japanese mining note type, then re-check.</string>
+    <string name="anki_quality_limited_warning">This note type cannot hold both sentence context and a definition.</string>
+    <string name="anki_quality_optional_warning">Audio and image fields are not mapped.</string>
     <string name="anki_recovery_title">Anki recovery</string>
     <string name="anki_recovery_clear">No unresolved Anki operations were found.</string>
     <plurals name="anki_recovery_attention">
@@ -372,12 +372,12 @@
         <item quantity="other">%1$d Anki operations need review before mining.</item>
     </plurals>
     <string name="anki_recovery_checking">Checking the local recovery journal…</string>
-    <string name="anki_recovery_inventory_unavailable">The local recovery journal could not be read. Its state is separate from AnkiDroid availability; check again before mining.</string>
-    <string name="anki_recovery_startup_blocked">Local interrupted work still needs reconciliation before mining.</string>
-    <string name="anki_recovery_startup_blocked_provider_unavailable">Local interrupted work is still recorded, but AnkiDroid is unavailable. Open or initialize AnkiDroid, allow access, then reconcile.</string>
+    <string name="anki_recovery_inventory_unavailable">The recovery journal could not be read. Check again before mining.</string>
+    <string name="anki_recovery_startup_blocked">Interrupted work needs review before mining.</string>
+    <string name="anki_recovery_startup_blocked_provider_unavailable">Interrupted work is recorded, but AnkiDroid is unavailable. Open it and allow access.</string>
     <plurals name="anki_recovery_attention_provider_unavailable">
-        <item quantity="one">%1$d recovery item remains, but AnkiDroid is unavailable. Open it and allow access to review.</item>
-        <item quantity="other">%1$d recovery items remain, but AnkiDroid is unavailable. Open it and allow access to review.</item>
+        <item quantity="one">%1$d recovery item remains, but AnkiDroid is unavailable. Open it and allow access.</item>
+        <item quantity="other">%1$d recovery items remain, but AnkiDroid is unavailable. Open it and allow access.</item>
     </plurals>
     <string name="anki_recovery_retry_inventory">Check local recovery again</string>
     <string name="anki_recovery_reconcile">Reconcile interrupted work</string>
@@ -388,11 +388,11 @@
     <string name="anki_recovery_confirm_missing">I confirmed it was not created</string>
     <string name="anki_recovery_confirm_corrected">I corrected or accept the current Anki state</string>
     <string name="anki_recovery_confirm_capacity">I confirmed media capacity is available</string>
-    <string name="anki_recovery_media_uncertain_help">The app cannot safely decide whether this media write committed. Continuing may leave one unused media file in AnkiDroid; no note was retried automatically.</string>
+    <string name="anki_recovery_media_uncertain_help">Whether this media write committed is unknown. Continuing may leave one unused media file in AnkiDroid.</string>
     <string name="anki_recovery_abandon_uncertain_media">I accept possible orphaned media and unblock mining</string>
     <string name="anki_recovery_confirm_title">Confirm recovery decision</string>
-    <string name="anki_recovery_confirm_unattached_detail">This records that the exact stored media is not attached to a verified note. The durable evidence is retained.</string>
-    <string name="anki_recovery_confirm_uncertain_detail">This abandons the unknown media claim and unblocks mining. One unused file may remain in AnkiDroid if the provider write committed.</string>
+    <string name="anki_recovery_confirm_unattached_detail">Records that this stored media is not attached to a verified note.</string>
+    <string name="anki_recovery_confirm_uncertain_detail">Abandons the unknown media claim and unblocks mining. One unused file may remain in AnkiDroid.</string>
     <string name="anki_recovery_confirm_exists_detail">Confirm that you reviewed AnkiDroid and the exact deck or note exists. This statement is retained as recovery evidence.</string>
     <string name="anki_recovery_confirm_missing_detail">Confirm that you reviewed AnkiDroid and the exact deck or note was not created. This statement is retained as recovery evidence.</string>
     <string name="anki_recovery_confirm_corrected_detail">Confirm that you corrected or explicitly accept the current AnkiDroid note and review-card state. This statement is retained as recovery evidence.</string>
