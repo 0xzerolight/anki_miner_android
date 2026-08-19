@@ -386,10 +386,6 @@
     <string name="anki_recovery_confirm_title">Confirmer la décision de récupération</string>
     <string name="anki_recovery_confirm_unattached_detail">Cela enregistre que le média stocké exact n\'est pas attaché à une note vérifiée. La preuve durable est conservée.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Cela abandonne la revendication de média inconnue et débloque l\'extraction. Un fichier inutilisé peut rester dans AnkiDroid si l\'écriture du fournisseur a été validée.</string>
-    <string name="anki_recovery_confirm_exists_detail">Confirmez que vous avez vérifié AnkiDroid et que le paquet ou la note spécifique existe. Cette déclaration est conservée comme preuve de récupération.</string>
-    <string name="anki_recovery_confirm_missing_detail">Confirmez que vous avez vérifié AnkiDroid et que le paquet ou la note spécifique n\'a pas été créé. Cette déclaration est conservée comme preuve de récupération.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Confirmez que vous avez corrigé ou acceptez explicitement l\'état actuel de la note AnkiDroid et de la carte de révision. Cette déclaration est conservée comme preuve de récupération.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Confirmez que vous avez rendu disponible la capacité pour les médias Anki. Cette déclaration est conservée comme preuve de récupération.</string>
     <string name="anki_recovery_confirm_action">Confirmer</string>
     <string name="anki_recovery_item_deck_uncertain_title">Création du paquet à vérifier</string>
     <string name="anki_recovery_item_media_uncertain_title">Enregistrement du média à vérifier</string>

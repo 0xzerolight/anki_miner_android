@@ -555,16 +555,7 @@ internal fun AnkiRecoveryCard(
                             is AnkiRecoveryConfirmation.UncertainMedia ->
                                 R.string.anki_recovery_confirm_uncertain_detail
                             is AnkiRecoveryConfirmation.ExternalReview ->
-                                when (pending.outcome) {
-                                    AnkiExternalReviewOutcome.COMMIT_CONFIRMED ->
-                                        R.string.anki_recovery_confirm_exists_detail
-                                    AnkiExternalReviewOutcome.NOT_COMMITTED_CONFIRMED ->
-                                        R.string.anki_recovery_confirm_missing_detail
-                                    AnkiExternalReviewOutcome.CURRENT_STATE_ACCEPTED_OR_CORRECTED ->
-                                        R.string.anki_recovery_confirm_corrected_detail
-                                    AnkiExternalReviewOutcome.CAPACITY_AVAILABLE ->
-                                        R.string.anki_recovery_confirm_capacity_detail
-                                }
+                                R.string.anki_recovery_confirm_recorded_detail
                         },
                     ),
                 )

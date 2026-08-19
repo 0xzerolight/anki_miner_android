@@ -386,10 +386,6 @@
     <string name="anki_recovery_confirm_title">Conferma decisione di ripristino</string>
     <string name="anki_recovery_confirm_unattached_detail">Questo registra che il supporto archiviato esatto non è allegato a una nota verificata. Viene conservata una prova permanente.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Questo abbandona la rivendicazione sul media sconosciuto e sblocca il mining. Un file inutilizzato può rimanere in AnkiDroid se la scrittura del provider è stata confermata.</string>
-    <string name="anki_recovery_confirm_exists_detail">Conferma di aver controllato AnkiDroid e che il mazzo o la nota esatti esistono. Questa dichiarazione viene conservata come prova di ripristino.</string>
-    <string name="anki_recovery_confirm_missing_detail">Conferma di aver controllato AnkiDroid e che il mazzo o la nota esatti non sono stati creati. Questa dichiarazione viene conservata come prova di ripristino.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Conferma di aver corretto o di accettare esplicitamente la nota Anki attuale e lo stato della carta di revisione. Questa dichiarazione viene conservata come prova di ripristino.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Conferma di aver reso disponibile la capacità per i media Anki. Questa dichiarazione viene conservata come prova di ripristino.</string>
     <string name="anki_recovery_confirm_action">Conferma</string>
     <string name="anki_recovery_item_deck_uncertain_title">Creazione del mazzo da controllare</string>
     <string name="anki_recovery_item_media_uncertain_title">Salvataggio media da controllare</string>

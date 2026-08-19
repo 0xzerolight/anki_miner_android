@@ -386,10 +386,6 @@
     <string name="anki_recovery_confirm_title">Confirmar decisão de recuperação</string>
     <string name="anki_recovery_confirm_unattached_detail">Isso registra que a mídia exata armazenada não está anexada a uma nota verificada. A evidência durável é mantida.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Isso abandona a reivindicação de mídia desconhecida e desbloqueia a mineração. Um arquivo não usado pode permanecer no AnkiDroid se a gravação do provedor foi confirmada.</string>
-    <string name="anki_recovery_confirm_exists_detail">Confirme que você revisou o AnkiDroid e que o baralho ou a nota exata existe. Esta declaração é mantida como evidência de recuperação.</string>
-    <string name="anki_recovery_confirm_missing_detail">Confirme que você revisou o AnkiDroid e que o baralho ou a nota exata não foi criado. Esta declaração é mantida como evidência de recuperação.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Confirme que você corrigiu ou aceita explicitamente o estado atual da nota do AnkiDroid e do cartão de revisão. Esta declaração é mantida como evidência de recuperação.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Confirme que você disponibilizou capacidade para mídia do Anki. Esta declaração é mantida como evidência de recuperação.</string>
     <string name="anki_recovery_confirm_action">Confirmar</string>
     <string name="anki_recovery_item_deck_uncertain_title">A criação do baralho precisa de revisão</string>
     <string name="anki_recovery_item_media_uncertain_title">O salvamento da mídia precisa de revisão</string>

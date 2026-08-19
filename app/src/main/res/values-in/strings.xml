@@ -382,10 +382,6 @@
     <string name="anki_recovery_confirm_title">Konfirmasi keputusan pemulihan</string>
     <string name="anki_recovery_confirm_unattached_detail">Ini mencatat bahwa media tersimpan persis ini tidak terlampir ke catatan terverifikasi. Bukti permanen dipertahankan.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Ini membatalkan klaim media yang tidak diketahui dan membuka blokir mining. Satu berkas tak terpakai mungkin tersisa di AnkiDroid jika penulisan penyedia berhasil.</string>
-    <string name="anki_recovery_confirm_exists_detail">Konfirmasi bahwa Anda meninjau AnkiDroid dan dek atau catatan persisnya ada. Pernyataan ini disimpan sebagai bukti pemulihan.</string>
-    <string name="anki_recovery_confirm_missing_detail">Konfirmasi bahwa Anda meninjau AnkiDroid dan dek atau catatan persisnya tidak dibuat. Pernyataan ini disimpan sebagai bukti pemulihan.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Konfirmasi bahwa Anda memperbaiki atau secara eksplisit menerima status catatan AnkiDroid dan kartu tinjauan saat ini. Pernyataan ini disimpan sebagai bukti pemulihan.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Konfirmasi bahwa Anda menyediakan kapasitas media Anki. Pernyataan ini disimpan sebagai bukti pemulihan.</string>
     <string name="anki_recovery_confirm_action">Konfirmasi</string>
     <string name="anki_recovery_item_deck_uncertain_title">Pembuatan dek perlu ditinjau</string>
     <string name="anki_recovery_item_media_uncertain_title">Penyimpanan media perlu ditinjau</string>

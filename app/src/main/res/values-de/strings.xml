@@ -384,10 +384,6 @@
     <string name="anki_recovery_confirm_title">Wiederherstellungsentscheidung bestätigen</string>
     <string name="anki_recovery_confirm_unattached_detail">Hiermit wird festgehalten, dass genau dieses gespeicherte Medium nicht an eine geprüfte Notiz angehängt ist. Der dauerhafte Nachweis bleibt erhalten.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Hiermit wird der Anspruch auf Medien mit ungewissem Status aufgegeben und das Mining entsperrt. Eine ungenutzte Datei kann in AnkiDroid verbleiben, wenn der Schreibvorgang des Anbieters abgeschlossen wurde.</string>
-    <string name="anki_recovery_confirm_exists_detail">Bestätigen Sie, dass Sie AnkiDroid geprüft haben und der genaue Stapel oder die genaue Notiz existiert. Diese Erklärung wird als Wiederherstellungsnachweis aufbewahrt.</string>
-    <string name="anki_recovery_confirm_missing_detail">Bestätigen Sie, dass Sie AnkiDroid geprüft haben und der genaue Stapel oder die genaue Notiz nicht erstellt wurde. Diese Erklärung wird als Wiederherstellungsnachweis aufbewahrt.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Bestätigen Sie, dass Sie die aktuelle AnkiDroid-Notiz und den Status der Wiederholungskarte korrigiert oder ausdrücklich akzeptiert haben. Diese Erklärung wird als Wiederherstellungsnachweis aufbewahrt.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Bestätigen Sie, dass Sie Anki-Medienkapazität verfügbar gemacht haben. Diese Erklärung wird als Wiederherstellungsnachweis aufbewahrt.</string>
     <string name="anki_recovery_confirm_action">Bestätigen</string>
     <string name="anki_recovery_item_deck_uncertain_title">Stapelerstellung muss geprüft werden</string>
     <string name="anki_recovery_item_media_uncertain_title">Medienspeicherung muss geprüft werden</string>

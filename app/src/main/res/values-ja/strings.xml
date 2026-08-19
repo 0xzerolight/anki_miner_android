@@ -384,10 +384,6 @@
     <string name="anki_recovery_confirm_title">リカバリの判断を確認</string>
     <string name="anki_recovery_confirm_unattached_detail">該当の保存済みメディアが検証済みノートに添付されていないことを記録します。この証跡は永続的に保持されます。</string>
     <string name="anki_recovery_confirm_uncertain_detail">この操作により、不明なメディアの申告を放棄し、マイニングのブロックを解除します。プロバイダへの書き込みがコミットされていた場合、未使用のファイルが1つAnkiDroidに残ることがあります。</string>
-    <string name="anki_recovery_confirm_exists_detail">AnkiDroidを確認し、該当のデッキまたはノートが存在することを確かめてください。この申告はリカバリの証跡として保持されます。</string>
-    <string name="anki_recovery_confirm_missing_detail">AnkiDroidを確認し、該当のデッキまたはノートが作成されていないことを確かめてください。この申告はリカバリの証跡として保持されます。</string>
-    <string name="anki_recovery_confirm_corrected_detail">AnkiDroidのノートと復習カードの現在の状態を修正した、または明示的に受け入れることを確認してください。この確認は復旧記録として保持されます。</string>
-    <string name="anki_recovery_confirm_capacity_detail">Ankiのメディア容量を確保したことを確認してください。この申告はリカバリの証跡として保持されます。</string>
     <string name="anki_recovery_confirm_action">確認</string>
     <string name="anki_recovery_item_deck_uncertain_title">デッキ作成の確認が必要</string>
     <string name="anki_recovery_item_media_uncertain_title">メディア保存の確認が必要</string>

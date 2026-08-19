@@ -393,10 +393,7 @@
     <string name="anki_recovery_confirm_title">Confirm recovery decision</string>
     <string name="anki_recovery_confirm_unattached_detail">Records that this stored media is not attached to a verified note.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Abandons the unknown media claim and unblocks mining. One unused file may remain in AnkiDroid.</string>
-    <string name="anki_recovery_confirm_exists_detail">Confirm that you reviewed AnkiDroid and the exact deck or note exists. This statement is retained as recovery evidence.</string>
-    <string name="anki_recovery_confirm_missing_detail">Confirm that you reviewed AnkiDroid and the exact deck or note was not created. This statement is retained as recovery evidence.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Confirm that you corrected or explicitly accept the current AnkiDroid note and review-card state. This statement is retained as recovery evidence.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Confirm that you made Anki media capacity available. This statement is retained as recovery evidence.</string>
+    <string name="anki_recovery_confirm_recorded_detail">Recorded as recovery evidence.</string>
     <string name="anki_recovery_confirm_action">Confirm</string>
     <string name="anki_recovery_item_deck_uncertain_title">Deck creation needs review</string>
     <string name="anki_recovery_item_media_uncertain_title">Media save needs review</string>

@@ -382,10 +382,6 @@
     <string name="anki_recovery_confirm_title">确认恢复决定</string>
     <string name="anki_recovery_confirm_unattached_detail">这会记录该已存储的特定媒体未附加到已验证的笔记。持久证据会被保留。</string>
     <string name="anki_recovery_confirm_uncertain_detail">这会放弃对未知媒体的声明，并解除挖词阻止。如果提供方写入已提交，AnkiDroid 中可能会留下一个未使用的文件。</string>
-    <string name="anki_recovery_confirm_exists_detail">请确认你已检查 AnkiDroid，且确切的牌组或笔记存在。此声明将作为恢复证据保留。</string>
-    <string name="anki_recovery_confirm_missing_detail">请确认你已检查 AnkiDroid，且未创建确切的牌组或笔记。此声明将作为恢复证据保留。</string>
-    <string name="anki_recovery_confirm_corrected_detail">请确认你已修正或明确接受当前 AnkiDroid 笔记和复习卡片状态。此声明将作为恢复证据保留。</string>
-    <string name="anki_recovery_confirm_capacity_detail">请确认你已腾出 Anki 媒体容量。此声明将作为恢复证据保留。</string>
     <string name="anki_recovery_confirm_action">确认</string>
     <string name="anki_recovery_item_deck_uncertain_title">牌组创建需要检查</string>
     <string name="anki_recovery_item_media_uncertain_title">媒体保存需要检查</string>

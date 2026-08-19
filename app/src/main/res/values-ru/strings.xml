@@ -388,10 +388,6 @@
     <string name="anki_recovery_confirm_title">Подтвердите решение по восстановлению</string>
     <string name="anki_recovery_confirm_unattached_detail">Записывается, что точный сохранённый медиафайл не прикреплён к проверенной заметке. Надёжное подтверждение сохраняется.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Неизвестный статус медиафайла отбрасывается, и майнинг разблокируется. Если запись провайдера завершилась, в AnkiDroid может остаться один неиспользуемый файл.</string>
-    <string name="anki_recovery_confirm_exists_detail">Подтвердите, что вы проверили AnkiDroid и что точная колода или заметка существует. Это утверждение сохраняется как подтверждение восстановления.</string>
-    <string name="anki_recovery_confirm_missing_detail">Подтвердите, что вы проверили AnkiDroid и что точная колода или заметка не была создана. Это утверждение сохраняется как подтверждение восстановления.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Подтвердите, что вы исправили или явно принимаете текущее состояние заметки AnkiDroid и карточки проверки. Это утверждение сохраняется как подтверждение восстановления.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Подтвердите, что вы освободили место для медиафайлов Anki. Это утверждение сохраняется как подтверждение восстановления.</string>
     <string name="anki_recovery_confirm_action">Подтвердить</string>
     <string name="anki_recovery_item_deck_uncertain_title">Создание колоды требует проверки</string>
     <string name="anki_recovery_item_media_uncertain_title">Сохранение медиафайла требует проверки</string>

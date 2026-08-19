@@ -386,10 +386,6 @@
     <string name="anki_recovery_confirm_title">Confirmar decisión de recuperación</string>
     <string name="anki_recovery_confirm_unattached_detail">Esto registra que el archivo multimedia exacto guardado no está adjunto a una nota verificada. Se conserva la evidencia duradera.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Esto abandona la reclamación de archivo multimedia desconocido y desbloquea la minería. Puede quedar un archivo sin usar en AnkiDroid si se confirmó la escritura del proveedor.</string>
-    <string name="anki_recovery_confirm_exists_detail">Confirme que revisó AnkiDroid y que existe el mazo o la nota exactos. Esta declaración se conserva como evidencia de recuperación.</string>
-    <string name="anki_recovery_confirm_missing_detail">Confirme que revisó AnkiDroid y que no se creó el mazo o la nota exactos. Esta declaración se conserva como evidencia de recuperación.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Confirme que corrigió o acepta explícitamente el estado actual de la nota de AnkiDroid y de la tarjeta de repaso. Esta declaración se conserva como evidencia de recuperación.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Confirme que dejó disponible capacidad para archivos multimedia de Anki. Esta declaración se conserva como evidencia de recuperación.</string>
     <string name="anki_recovery_confirm_action">Confirmar</string>
     <string name="anki_recovery_item_deck_uncertain_title">La creación de mazo necesita revisión</string>
     <string name="anki_recovery_item_media_uncertain_title">El guardado multimedia necesita revisión</string>

@@ -382,10 +382,6 @@
     <string name="anki_recovery_confirm_title">Xác nhận quyết định khôi phục</string>
     <string name="anki_recovery_confirm_unattached_detail">Việc này ghi nhận rằng phương tiện đã lưu chính xác không được đính kèm vào ghi chú đã xác minh. Bằng chứng bền vững được giữ lại.</string>
     <string name="anki_recovery_confirm_uncertain_detail">Việc này từ bỏ yêu cầu về phương tiện chưa rõ và mở chặn khai thác. Một tệp không dùng có thể còn lại trong AnkiDroid nếu lần ghi của nhà cung cấp đã hoàn tất.</string>
-    <string name="anki_recovery_confirm_exists_detail">Xác nhận rằng bạn đã xem xét AnkiDroid và đúng bộ thẻ hoặc ghi chú tồn tại. Tuyên bố này được giữ làm bằng chứng khôi phục.</string>
-    <string name="anki_recovery_confirm_missing_detail">Xác nhận rằng bạn đã xem xét AnkiDroid và đúng bộ thẻ hoặc ghi chú không được tạo. Tuyên bố này được giữ làm bằng chứng khôi phục.</string>
-    <string name="anki_recovery_confirm_corrected_detail">Xác nhận rằng bạn đã sửa hoặc chấp nhận rõ ràng ghi chú AnkiDroid hiện tại và trạng thái thẻ ôn tập. Tuyên bố này được giữ làm bằng chứng khôi phục.</string>
-    <string name="anki_recovery_confirm_capacity_detail">Xác nhận rằng bạn đã đảm bảo có dung lượng cho phương tiện Anki. Tuyên bố này được giữ làm bằng chứng khôi phục.</string>
     <string name="anki_recovery_confirm_action">Xác nhận</string>
     <string name="anki_recovery_item_deck_uncertain_title">Việc tạo bộ thẻ cần xem xét</string>
     <string name="anki_recovery_item_media_uncertain_title">Việc lưu phương tiện cần xem xét</string>
