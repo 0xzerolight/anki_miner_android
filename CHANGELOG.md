@@ -8,6 +8,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 - README mining demo: a looping hero GIF of a full video-mining run (source pick → word curation → mining → 65 cards created → AnkiDroid review) plus the same run linked as an MP4 with sound. Recorded on-device with scrcpy at native 1080x2336 and cut with ffmpeg; the GIF speeds curation 10x, mining 100x and the card review 3x, while the MP4 keeps everything at real time except a 50x mining pass. Example-card GIFs are hotlinked from the desktop repo, since mining output is identical on both platforms.
 
+### Changed
+
+- **The interface says less.** A full pass over UI copy cut roughly eighty strings to terse phrasing across mining, curation, settings, the wizard and the privacy screens, in English and all eleven translations. The recurring shapes removed: reassurance tails ("nothing is removed from Anki, and no backup is kept", "Mining remains allowed"), mechanism explanations, tutorial tone ("come back here"), and empty states that direct the user to the screen they are already on. The failed-run card now leads with the actual failure message instead of a generic "this mining run stopped" sentence that hid the cause behind Details; the four recovery confirm dialogs share one body line ("Recorded as recovery evidence."), since each body restated its own button; the curation "selections from earlier pages are already saved" line is gone. Ten unreferenced string keys deleted from all twelve catalogs. License text, the Jisho data-safety disclosure's substance, and the two exact-pinned progress strings are untouched.
+
 ## [0.8.2] - 2026-08-18
 
 ### Changed
