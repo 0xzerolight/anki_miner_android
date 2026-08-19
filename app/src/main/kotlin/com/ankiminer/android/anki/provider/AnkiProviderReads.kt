@@ -316,7 +316,10 @@ internal class AnkiProviderReadService(
                     selection = ProviderSelection.ExcludedDeck(deckName),
                     deadline = ProviderReadDeadline.BULK,
                 )
-            provider.queryRequired(query, cancellation).use { cursor ->
+            // AnkiDroid's browser-search URI reports a search with zero matches as a null
+            // cursor, so an empty excluded deck is a valid no-exclusions result, not a failure.
+            val browserCursor = provider.queryOptional(query, cancellation) ?: continue
+            browserCursor.use { cursor ->
                 requireProjection(cursor, query)
                 val seen = HashSet<Long>()
                 while (cursor.moveToNext()) {
