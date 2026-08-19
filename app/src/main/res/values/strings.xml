@@ -246,9 +246,9 @@
     <string name="mining_target_select_note_type">Select and verify a note type in Settings before mining</string>
     <string name="mining_target_resolve_recovery">Resolve pending Anki recovery items before mining</string>
     <string name="mining_target_note_type_missing">The selected note type was not found in AnkiDroid. Choose one in Settings.</string>
-    <string name="mining_target_fields_missing">The selected note type is missing mapped fields. Fix the field mapping in Settings.</string>
-    <string name="mining_target_field_map_invalid">An Anki field is used by multiple field mappings. Fix the field mapping in Settings before mining.</string>
-    <string name="mining_target_first_field_mismatch">The first field of the note type must hold the word (used for duplicate detection). Fix it in Settings.</string>
+    <string name="mining_target_fields_missing">The note type is missing mapped fields. Fix in Settings.</string>
+    <string name="mining_target_field_map_invalid">One Anki field is used by several mappings. Fix in Settings.</string>
+    <string name="mining_target_first_field_mismatch">The note type\'s first field must hold the word. Fix in Settings.</string>
     <string name="mining_target_provider_api_disabled">The AnkiDroid API is disabled</string>
     <string name="mining_target_provider_api_incompatible">The installed AnkiDroid API is incompatible</string>
     <string name="mining_target_provider_api_disabled_or_incompatible">The AnkiDroid API became disabled or incompatible</string>
@@ -453,7 +453,7 @@
     <string name="resource_failure_download_redirect_invalid">Resource download returned an invalid redirect</string>
     <string name="resource_failure_download_url_invalid">Resource URL is invalid or does not use HTTPS</string>
     <string name="resource_failure_download_staging">Private resource download staging is unavailable</string>
-    <string name="resource_failure_download_archive_mismatch">The selected or downloaded resource archive is empty, oversized, or does not match expected content</string>
+    <string name="resource_failure_download_archive_mismatch">The archive is empty, oversized, or does not match expected content</string>
     <string name="resource_failure_download_publish">Could not publish the verified private archive</string>
     <string name="resource_failure_download_retry_exhausted">Resource download failed after %1$d bounded attempts</string>
     <string name="resource_failure_download_http_retryable">Resource host returned retryable HTTP %1$d</string>
@@ -470,7 +470,7 @@
     <string name="resource_failure_unknown_bridge_code">Resource operation failed (%1$s)</string>
     <string name="resource_failure_storage">Not enough free private storage for this resource</string>
     <string name="resource_failure_operation">The resource operation did not complete</string>
-    <string name="resource_failure_saf_permission">The document provider did not grant lasting access to the selected file. Pick the file again with the system Files app.</string>
+    <string name="resource_failure_saf_permission">Lasting access was not granted. Pick the file again.</string>
     <string name="resource_failure_saf_provider">The app providing the selected file did not respond. Reopen the file from the Files app.</string>
     <string name="resource_failure_saf_uri">The selected item is not a readable document. Pick the file again.</string>
     <string name="resource_failure_storage_unavailable">Not enough private storage is available for this resource</string>
@@ -481,7 +481,7 @@
     <string name="resource_failure_archive_expands">The archive expands beyond the size an audio pack may reach</string>
     <string name="resource_failure_archive_invalid">The archive is damaged or incomplete</string>
     <string name="resource_failure_archive_unrecognized">Choose the archive itself (.tar.xz, .tar.gz, .tar, or .zip), not its .torrent file</string>
-    <string name="resource_failure_archive_provider_representation">This provider did not return the archive\'s original bytes. Copy the archive to device storage, then select it again.</string>
+    <string name="resource_failure_archive_provider_representation">The provider altered the archive\'s bytes. Copy it to device storage and retry.</string>
     <string name="resource_failure_archive_unsafe">The archive contains an unsafe entry and was rejected</string>
     <string name="resource_failure_archive_compression">The archive uses a compression method this app cannot read</string>
     <string name="resource_failure_slot_exists">That dictionary slot already exists; choose Replace to update it</string>
