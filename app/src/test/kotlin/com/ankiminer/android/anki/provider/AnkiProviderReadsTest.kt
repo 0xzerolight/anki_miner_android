@@ -879,6 +879,50 @@ class AnkiProviderReadsTest {
     }
 
     @Test
+    fun `an excluded deck whose browser search matches nothing contributes no exclusions`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.NOTES_V2 -> {
+                    if (query.selection == null) {
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(1L, 2L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
+                        )
+                    } else {
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(
+                                mapOf(
+                                    ProviderColumn.NOTE_ID to integer(1L),
+                                    ProviderColumn.NOTE_FIELDS to text("one"),
+                                ),
+                                mapOf(
+                                    ProviderColumn.NOTE_ID to integer(2L),
+                                    ProviderColumn.NOTE_FIELDS to text("two"),
+                                ),
+                            ),
+                        )
+                    }
+                }
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(query.projection, listOf(deckRow(20, "Empty")))
+                // AnkiDroid's browser-search URI returns a null cursor when the search matches
+                // zero notes, not an empty cursor.
+                ProviderEndpoint.NOTES_BROWSER -> null
+                else -> error("unexpected query $query")
+            }
+        }
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(excluded = listOf("Empty")))
+            } as KnownVocabularyResult
+
+        assertEquals(listOf("one", "two"), result.firstFields)
+        assertEquals(2, result.scannedNotes)
+    }
+
+    @Test
     fun `known vocabulary counts missing notes and closes every cursor on failure`() {
         val fixture = fixture()
         val snapshotCursor =
