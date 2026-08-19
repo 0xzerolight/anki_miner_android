@@ -75,7 +75,6 @@
     <string name="curation_selected_count">Đã chọn %1$d trên %2$d</string>
     <string name="curation_selected_count_page">Đã chọn %1$d trên %2$d ở trang này</string>
     <string name="curation_page_position">Trang %1$d trên %2$d · mục %3$d–%4$d trên %5$d</string>
-    <string name="curation_previous_pages_saved">Các lựa chọn từ trang trước đã được lưu.</string>
     <string name="select_visible">Chọn phần hiển thị (%1$d)</string>
     <string name="deselect_visible">Bỏ chọn phần hiển thị (%1$d)</string>
     <string name="curation_select_whole_page">Chọn cả %1$d mục ở trang này</string>

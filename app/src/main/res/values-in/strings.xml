@@ -75,7 +75,6 @@
     <string name="curation_selected_count">%1$d dari %2$d dipilih</string>
     <string name="curation_selected_count_page">%1$d dari %2$d dipilih di halaman ini</string>
     <string name="curation_page_position">Halaman %1$d dari %2$d · item %3$d–%4$d dari %5$d</string>
-    <string name="curation_previous_pages_saved">Pilihan dari halaman sebelumnya sudah disimpan.</string>
     <string name="select_visible">Pilih yang terlihat (%1$d)</string>
     <string name="deselect_visible">Batalkan pilihan yang terlihat (%1$d)</string>
     <string name="curation_select_whole_page">Pilih semua %1$d di halaman ini</string>

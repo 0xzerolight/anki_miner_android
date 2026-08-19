@@ -75,7 +75,6 @@
     <string name="curation_selected_count">已選取 %1$d／%2$d</string>
     <string name="curation_selected_count_page">此頁已選取 %1$d／%2$d</string>
     <string name="curation_page_position">第 %1$d／%2$d 頁 · 項目 %3$d–%4$d／%5$d</string>
-    <string name="curation_previous_pages_saved">先前頁面的選取項目已儲存。</string>
     <string name="select_visible">選取可見項目（%1$d）</string>
     <string name="deselect_visible">取消選取可見項目（%1$d）</string>
     <string name="curation_select_whole_page">選取此頁全部 %1$d 項</string>

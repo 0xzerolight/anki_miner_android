@@ -187,13 +187,6 @@ internal fun CurationChrome(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (it.pageIndex > 0) {
-                Text(
-                    text = stringResource(R.string.curation_previous_pages_saved),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
         }
         if (toolsExpanded) {
             CurationControls(

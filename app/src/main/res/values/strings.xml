@@ -82,7 +82,6 @@
     <string name="curation_selected_count">%1$d of %2$d selected</string>
     <string name="curation_selected_count_page">%1$d of %2$d selected on this page</string>
     <string name="curation_page_position">Page %1$d of %2$d · %3$d–%4$d of %5$d</string>
-    <string name="curation_previous_pages_saved">Selections from earlier pages are already saved.</string>
     <string name="select_visible">Select visible (%1$d)</string>
     <string name="deselect_visible">Deselect visible (%1$d)</string>
     <string name="curation_select_whole_page">Select all %1$d on this page</string>

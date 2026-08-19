@@ -75,7 +75,6 @@
     <string name="curation_selected_count">已选 %1$d/%2$d</string>
     <string name="curation_selected_count_page">本页已选 %1$d/%2$d</string>
     <string name="curation_page_position">第 %1$d/%2$d 页 · 第 %3$d–%4$d 项，共 %5$d 项</string>
-    <string name="curation_previous_pages_saved">之前页面中的选择已保存。</string>
     <string name="select_visible">选择可见项（%1$d）</string>
     <string name="deselect_visible">取消选择可见项（%1$d）</string>
     <string name="curation_select_whole_page">选择本页全部 %1$d 项</string>

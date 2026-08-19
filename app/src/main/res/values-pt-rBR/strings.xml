@@ -75,7 +75,6 @@
     <string name="curation_selected_count">%1$d de %2$d selecionadas</string>
     <string name="curation_selected_count_page">%1$d de %2$d selecionadas nesta página</string>
     <string name="curation_page_position">Página %1$d de %2$d · itens %3$d–%4$d de %5$d</string>
-    <string name="curation_previous_pages_saved">As seleções de páginas anteriores já estão salvas.</string>
     <string name="select_visible">Selecionar visíveis (%1$d)</string>
     <string name="deselect_visible">Desmarcar visíveis (%1$d)</string>
     <string name="curation_select_whole_page">Selecionar todas as %1$d desta página</string>

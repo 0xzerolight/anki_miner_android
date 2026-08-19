@@ -75,7 +75,6 @@
     <string name="curation_selected_count">%2$d件中%1$d件を選択</string>
     <string name="curation_selected_count_page">このページで%2$d件中%1$d件を選択</string>
     <string name="curation_page_position">ページ %1$d/%2$d · 項目 %3$d–%4$d/%5$d</string>
-    <string name="curation_previous_pages_saved">前のページまでの選択は保存済みです。</string>
     <string name="select_visible">表示中を選択 (%1$d)</string>
     <string name="deselect_visible">表示中を選択解除 (%1$d)</string>
     <string name="curation_select_whole_page">このページの%1$d件をすべて選択</string>
