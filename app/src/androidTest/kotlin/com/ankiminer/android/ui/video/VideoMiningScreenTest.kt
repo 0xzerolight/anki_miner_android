@@ -942,7 +942,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Page 1 of 2 · items 1–2 of 4").assertExists()
+        composeRule.onNodeWithText("Page 1 of 2 · 1–2 of 4").assertExists()
         composeRule.onNodeWithText("Next (2)").assertExists()
     }
 
@@ -1075,7 +1075,7 @@ class VideoMiningScreenTest {
 
         composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
         composeRule
-            .onNodeWithText("Your vocabulary choices could not be submitted.")
+            .onNodeWithText("Selections could not be submitted.")
             .assertIsDisplayed()
     }
 
@@ -1339,8 +1339,8 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasText("Notes added before the run stopped"))
-        composeRule.onNodeWithText("Notes added before the run stopped").assertExists()
+            .performScrollToNode(hasText("Notes added"))
+        composeRule.onNodeWithText("Notes added").assertExists()
     }
 
     @Test

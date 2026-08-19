@@ -35,8 +35,7 @@ internal val testStringResourceResolver =
             R.string.mining_admission_not_checked ->
                 "AnkiDroid readiness has not been checked"
             R.string.mining_notice_no_definition ->
-                "No dictionary entry for ${localizedArguments[0]} word(s), " +
-                    "so no card was made: ${localizedArguments[1]}"
+                "No dictionary entry for ${localizedArguments[0]} word(s): ${localizedArguments[1]}"
             R.string.setup_default_frequency_name -> "Imported frequency"
             R.string.setup_default_pitch_name -> "Imported pitch accent"
             else ->

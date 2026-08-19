@@ -291,7 +291,7 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Page 2 of 2 · items 3–4 of 4").assertExists()
+        composeRule.onNodeWithText("Page 2 of 2 · 3–4 of 4").assertExists()
         composeRule
             .onNodeWithText("Selections from earlier pages are already saved.")
             .assertExists()

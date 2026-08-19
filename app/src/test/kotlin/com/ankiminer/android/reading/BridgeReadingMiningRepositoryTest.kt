@@ -1449,7 +1449,7 @@ class BridgeReadingMiningRepositoryTest {
         val success =
             awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Success
         assertEquals(
-            listOf("No dictionary entry for 2 word(s), so no card was made: 本好き, 編み"),
+            listOf("No dictionary entry for 2 word(s): 本好き, 編み"),
             success.result.errors,
         )
     }
