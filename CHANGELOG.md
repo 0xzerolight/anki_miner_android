@@ -12,6 +12,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 - **The interface says less.** A full pass over UI copy cut roughly eighty strings to terse phrasing across mining, curation, settings, the wizard and the privacy screens, in English and all eleven translations. The recurring shapes removed: reassurance tails ("nothing is removed from Anki, and no backup is kept", "Mining remains allowed"), mechanism explanations, tutorial tone ("come back here"), and empty states that direct the user to the screen they are already on. The failed-run card now leads with the actual failure message instead of a generic "this mining run stopped" sentence that hid the cause behind Details; the four recovery confirm dialogs share one body line ("Recorded as recovery evidence."), since each body restated its own button; the curation "selections from earlier pages are already saved" line is gone. Ten unreferenced string keys deleted from all twelve catalogs. License text, the Jisho data-safety disclosure's substance, and the two exact-pinned progress strings are untouched.
 
+### Fixed
+
+- **Mining no longer reports "no usable offline dictionary" while Settings shows one installed.** The Kotlin readiness gate accepted any occupied, schema-current slot, but the engine's preflight also requires the slot's chain entry to be enabled and the index to hold at least one entry — so a dictionary unticked in Settings -> Dictionaries (or left disabled by the pre-0.7.0 "Reset resource choices" button, whose damage the persisted chain preserved indefinitely) or an imported archive whose rows were all skipped passed the UI gate and killed the run seconds in. Readiness now resolves the same chain the engine builds; an occupied-but-blocked slot gets a "Review dictionaries" prompt naming the disabled-or-empty state instead of a misleading install prompt; and the bridge refuses a dictionary import whose usable entry count is zero before publication, so a failed replace leaves the installed slot intact.
+
 ## [0.8.2] - 2026-08-18
 
 ### Changed
