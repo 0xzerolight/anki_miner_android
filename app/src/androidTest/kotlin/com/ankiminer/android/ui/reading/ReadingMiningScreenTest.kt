@@ -291,10 +291,7 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Page 2 of 2 · items 3–4 of 4").assertExists()
-        composeRule
-            .onNodeWithText("Selections from earlier pages are already saved.")
-            .assertExists()
+        composeRule.onNodeWithText("Page 2 of 2 · 3–4 of 4").assertExists()
         composeRule.onNodeWithText("Finish (2)").assertIsDisplayed()
     }
 
@@ -676,9 +673,7 @@ class ReadingMiningScreenTest {
         )
 
         composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
-        composeRule.onNodeWithText("Private protocol detail").assertDoesNotExist()
-        composeRule.onNodeWithText("Details").performClick()
-        composeRule.onNodeWithText("Private protocol detail").assertExists()
+        composeRule.onNodeWithText("Private protocol detail").assertIsDisplayed()
     }
 
     @Test
@@ -734,7 +729,7 @@ class ReadingMiningScreenTest {
 
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
         composeRule
-            .onNodeWithText("This mining run stopped before it could finish.")
+            .onNodeWithText("details")
             .assertIsDisplayed()
     }
 

@@ -927,9 +927,8 @@ private fun LazyListScope.terminalItems(
                     if (resetError) {
                         ReadingMiningCommandError.RESET.message()
                     } else {
-                        stringResource(R.string.mining_failure_summary)
+                        failureDetails ?: stringResource(title)
                     },
-                diagnosticDetails = failureDetails,
                 primaryAction =
                     if (canRetry) {
                         MiningFailureAction(

@@ -942,7 +942,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Page 1 of 2 · items 1–2 of 4").assertExists()
+        composeRule.onNodeWithText("Page 1 of 2 · 1–2 of 4").assertExists()
         composeRule.onNodeWithText("Next (2)").assertExists()
     }
 
@@ -1025,7 +1025,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun terminalFailureSuppressesMatchingCommandErrorAndKeepsDiagnosticsBehindDetails() {
+    fun terminalFailureSuppressesMatchingCommandErrorAndShowsCause() {
         setScreen(
             state =
                 VideoMiningUiState(
@@ -1042,8 +1042,6 @@ class VideoMiningScreenTest {
         )
 
         composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
-        composeRule.onNodeWithText("Protocol detail 37").assertDoesNotExist()
-        composeRule.onNodeWithText("Details").performClick()
         composeRule.onNodeWithText("Protocol detail 37").assertIsDisplayed()
         composeRule.onNodeWithText("Retry").assertExists()
         composeRule.onNodeWithText("Start over").assertExists()
@@ -1077,7 +1075,7 @@ class VideoMiningScreenTest {
 
         composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
         composeRule
-            .onNodeWithText("Your vocabulary choices could not be submitted.")
+            .onNodeWithText("Selections could not be submitted.")
             .assertIsDisplayed()
     }
 
@@ -1274,7 +1272,7 @@ class VideoMiningScreenTest {
 
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
         composeRule
-            .onNodeWithText("This mining run stopped before it could finish.")
+            .onNodeWithText("details")
             .assertIsDisplayed()
     }
 
@@ -1341,8 +1339,8 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasText("Notes added before the run stopped"))
-        composeRule.onNodeWithText("Notes added before the run stopped").assertExists()
+            .performScrollToNode(hasText("Notes added"))
+        composeRule.onNodeWithText("Notes added").assertExists()
     }
 
     @Test

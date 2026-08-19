@@ -178,16 +178,14 @@ class KnownWordsManagerScreenTest {
         composeRule.onNodeWithText("Reset user list").performClick()
         composeRule
             .onNodeWithText(
-                "Remove every word you added? Anki-cache rows are unchanged. " +
-                    "This cannot be undone.",
+                "Remove every word you added? Anki cache stays. This cannot be undone.",
             ).assertIsDisplayed()
 
         restorationTester.emulateSavedInstanceStateRestore()
 
         composeRule
             .onNodeWithText(
-                "Remove every word you added? Anki-cache rows are unchanged. " +
-                    "This cannot be undone.",
+                "Remove every word you added? Anki cache stays. This cannot be undone.",
             ).assertIsDisplayed()
     }
 }

@@ -11,7 +11,7 @@ class EngineNoticeRewriterTest {
         val rewritten = rewriter.rewrite("Skipped 2 words with no definition found: 本好き, 編み")
 
         assertEquals(
-            "No dictionary entry for 2 word(s), so no card was made: 本好き, 編み",
+            "No dictionary entry for 2 word(s): 本好き, 編み",
             rewritten,
         )
     }
@@ -25,7 +25,7 @@ class EngineNoticeRewriterTest {
             )
 
         assertEquals(
-            "No dictionary entry for 12 word(s), so no card was made: 本好き, 編み, 猫, 犬, 鳥 (+7 more)",
+            "No dictionary entry for 12 word(s): 本好き, 編み, 猫, 犬, 鳥 (+7 more)",
             rewritten,
         )
     }
@@ -59,7 +59,7 @@ class EngineNoticeRewriterTest {
         val rewritten = rewriter.rewrite("Skipped 2 words with no definition found: 本好き,\n編み")
 
         assertEquals(
-            "No dictionary entry for 2 word(s), so no card was made: 本好き,\n編み",
+            "No dictionary entry for 2 word(s): 本好き,\n編み",
             rewritten,
         )
     }
