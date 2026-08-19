@@ -314,6 +314,8 @@
     <string name="readiness_unknown">Bereitschaft konnte nicht bestätigt werden.</string>
     <string name="readiness_install_unidic">UniDic installieren</string>
     <string name="readiness_install_dictionary">Wörterbuch installieren</string>
+    <string name="readiness_dictionary_disabled">Installiertes Wörterbuch ist deaktiviert oder leer</string>
+    <string name="readiness_review_dictionaries">Wörterbücher überprüfen</string>
     <string name="readiness_connect_ankidroid">AnkiDroid verbinden</string>
     <string name="readiness_choose_note_type">Notiztyp auswählen</string>
     <string name="readiness_resolve_recovery">Wiederherstellung beheben</string>

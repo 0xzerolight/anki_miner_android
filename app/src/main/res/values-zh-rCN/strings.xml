@@ -314,6 +314,8 @@
     <string name="readiness_unknown">无法确认就绪状态。</string>
     <string name="readiness_install_unidic">安装 UniDic</string>
     <string name="readiness_install_dictionary">安装词典</string>
+    <string name="readiness_dictionary_disabled">已安装的词典已禁用或为空</string>
+    <string name="readiness_review_dictionaries">查看词典</string>
     <string name="readiness_connect_ankidroid">连接 AnkiDroid</string>
     <string name="readiness_choose_note_type">选择笔记类型</string>
     <string name="readiness_resolve_recovery">解决恢复问题</string>

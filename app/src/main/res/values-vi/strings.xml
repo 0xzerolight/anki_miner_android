@@ -314,6 +314,8 @@
     <string name="readiness_unknown">Không thể xác nhận trạng thái sẵn sàng.</string>
     <string name="readiness_install_unidic">Cài đặt UniDic</string>
     <string name="readiness_install_dictionary">Cài đặt từ điển</string>
+    <string name="readiness_dictionary_disabled">Từ điển đã cài đặt bị tắt hoặc trống</string>
+    <string name="readiness_review_dictionaries">Xem lại từ điển</string>
     <string name="readiness_connect_ankidroid">Kết nối AnkiDroid</string>
     <string name="readiness_choose_note_type">Chọn loại ghi chú</string>
     <string name="readiness_resolve_recovery">Giải quyết khôi phục</string>

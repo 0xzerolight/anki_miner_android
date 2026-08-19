@@ -29,6 +29,8 @@ import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
+import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
@@ -68,6 +70,8 @@ internal data class SetupUiState(
     val pendingReplace: PendingResourceReplace? = null,
     val pendingDelete: PendingResourceDelete? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
+    /** Persisted dictionary chain choices; a disabled entry blocks the engine's provider gate. */
+    val dictionarySources: List<ResourceChainSelection> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
     val pitchSources: List<InstalledPitchSource> = emptyList(),
     val audioPacks: List<InstalledAudioPack> = emptyList(),
@@ -124,10 +128,17 @@ internal data class SetupUiState(
     /**
      * A dictionary is a mining prerequisite, not a nicety: the engine's
      * `require_usable_offline_provider` raises `SetupError` before any work happens, so a run
-     * started without one dies seconds in with nothing to show for it.
+     * started without one dies seconds in with nothing to show for it. Mirrors the engine's
+     * gate exactly — the chain the engine sees is `resolveResourceChain` over the chain-eligible
+     * slots, and the engine skips disabled entries and 0-entry indexes.
      */
     val dictionaryReady: Boolean
-        get() = dictionaries.any { it.isUsable }
+        get() =
+            EngineSettingsSnapshotMapper
+                .resolveResourceChain(
+                    dictionarySources,
+                    dictionaries.filter { it.isChainEligible }.map { it.slotId },
+                ).any { it.enabled }
 
     val busy: Boolean
         get() =
@@ -192,7 +203,12 @@ internal data class SetupUiState(
                 resourceStartup == ResourceStartupReadiness.FAILED ->
                     MiningReadinessAction.CHECK_AGAIN
                 !uniDicInstalled -> MiningReadinessAction.INSTALL_UNIDIC
-                !dictionaryReady -> MiningReadinessAction.INSTALL_DICTIONARY
+                !dictionaryReady ->
+                    if (dictionaries.any { it.occupied }) {
+                        MiningReadinessAction.ENABLE_DICTIONARY
+                    } else {
+                        MiningReadinessAction.INSTALL_DICTIONARY
+                    }
                 anki == AnkiProviderReadiness.NotInstalled ->
                     MiningReadinessAction.INSTALL_ANKIDROID
                 anki == AnkiProviderReadiness.Uninitialized ->
@@ -250,6 +266,8 @@ internal enum class AnkiDroidSetupAction {
 internal enum class MiningReadinessAction {
     INSTALL_UNIDIC,
     INSTALL_DICTIONARY,
+    /** A dictionary slot is occupied but disabled in the chain or empty — review, don't install. */
+    ENABLE_DICTIONARY,
     INSTALL_ANKIDROID,
     OPEN_ANKIDROID,
     CONNECT_ANKIDROID,

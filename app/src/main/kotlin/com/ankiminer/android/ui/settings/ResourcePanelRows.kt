@@ -81,7 +81,7 @@ internal fun dictionaryPanelRows(
         chain = chain,
         slots =
             occupied.map {
-                ResourcePanelSlot(it.slotId, it.sourceName, it.entryCount, it.isUsable)
+                ResourcePanelSlot(it.slotId, it.sourceName, it.entryCount, it.isChainEligible)
             },
         strings = strings.rows,
         onChainChange = onChainChange,

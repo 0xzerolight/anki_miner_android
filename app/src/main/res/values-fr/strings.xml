@@ -314,6 +314,8 @@
     <string name="readiness_unknown">Impossible de confirmer l\'état de préparation.</string>
     <string name="readiness_install_unidic">Installer UniDic</string>
     <string name="readiness_install_dictionary">Installer un dictionnaire</string>
+    <string name="readiness_dictionary_disabled">Le dictionnaire installé est désactivé ou vide</string>
+    <string name="readiness_review_dictionaries">Vérifier les dictionnaires</string>
     <string name="readiness_connect_ankidroid">Connecter AnkiDroid</string>
     <string name="readiness_choose_note_type">Choisir un type de note</string>
     <string name="readiness_resolve_recovery">Résoudre la récupération</string>

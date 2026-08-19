@@ -13,6 +13,7 @@ import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
@@ -139,6 +140,55 @@ class SetupUiStateTest {
             ready.copy(resourceStartup = ResourceStartupReadiness.PENDING).miningReadinessAction,
         )
         assertTrue(ready.copy(dictionaries = listOf(usableDictionary())).isMiningReady)
+    }
+
+    @Test
+    fun dictionaryReadinessMirrorsTheEngineProviderGate() {
+        val recovered =
+            SetupUiState(
+                python = PythonRuntimeReadiness.Ready("/private/runtime"),
+                resourceStartup = ResourceStartupReadiness.READY,
+                anki = AnkiProviderReadiness.Ready(2, 24L),
+                ankiRecovery = AnkiRecoveryReadiness.Ready,
+                miningTarget = AnkiMiningTargetReadiness.Ready,
+                noteTypeStatus = NoteTypeSetupStatus.Verified(modelId = 1L),
+                recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
+                uniDicInstalled = true,
+                dictionaries = listOf(usableDictionary()),
+            )
+        assertTrue(recovered.dictionaryReady)
+
+        // The engine requires entry_count > 0; an intact-but-empty index must not count.
+        val empty =
+            recovered.copy(dictionaries = listOf(usableDictionary().copy(entryCount = 0L)))
+        assertFalse(empty.dictionaryReady)
+        assertFalse(empty.isMiningReady)
+        assertEquals(MiningReadinessAction.ENABLE_DICTIONARY, empty.miningReadinessAction)
+
+        // A persisted enabled=false chain entry is skipped by the engine's provider chain,
+        // so readiness has to respect it too (pre-v0.7.0 resource resets left these behind).
+        val disabled =
+            recovered.copy(
+                dictionarySources = listOf(ResourceChainSelection("dictionary-1", enabled = false)),
+            )
+        assertFalse(disabled.dictionaryReady)
+        assertFalse(disabled.isMiningReady)
+        assertEquals(MiningReadinessAction.ENABLE_DICTIONARY, disabled.miningReadinessAction)
+
+        // A stale persisted entry for an uninstalled slot never blocks the installed one,
+        // which resolveResourceChain appends enabled.
+        val strayChain =
+            recovered.copy(
+                dictionarySources = listOf(ResourceChainSelection("gone-dict", enabled = false)),
+            )
+        assertTrue(strayChain.dictionaryReady)
+        assertTrue(strayChain.isMiningReady)
+
+        // With no slot occupied at all the corrective action stays an install, not a review.
+        assertEquals(
+            MiningReadinessAction.INSTALL_DICTIONARY,
+            recovered.copy(dictionaries = emptyList()).miningReadinessAction,
+        )
     }
 
     @Test

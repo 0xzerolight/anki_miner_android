@@ -308,7 +308,14 @@ private fun SetupTaskAction(
         SetupTaskId.UNIDIC ->
             StatusAction(R.string.unidic_install, onInstallUniDic)
         SetupTaskId.DICTIONARY ->
-            StatusAction(R.string.readiness_install_dictionary, onImportDictionary)
+            StatusAction(
+                if (state.dictionaries.any { it.occupied }) {
+                    R.string.readiness_review_dictionaries
+                } else {
+                    R.string.readiness_install_dictionary
+                },
+                onImportDictionary,
+            )
         SetupTaskId.NOTIFICATIONS -> Unit
     }
     if (

@@ -314,6 +314,8 @@
     <string name="readiness_unknown">Não foi possível confirmar a prontidão.</string>
     <string name="readiness_install_unidic">Instalar UniDic</string>
     <string name="readiness_install_dictionary">Instalar um dicionário</string>
+    <string name="readiness_dictionary_disabled">O dicionário instalado está desativado ou vazio</string>
+    <string name="readiness_review_dictionaries">Revisar dicionários</string>
     <string name="readiness_connect_ankidroid">Conectar AnkiDroid</string>
     <string name="readiness_choose_note_type">Escolher tipo de nota</string>
     <string name="readiness_resolve_recovery">Resolver recuperação</string>
