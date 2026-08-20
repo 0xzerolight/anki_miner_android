@@ -132,7 +132,12 @@ def _valid_indexed_dir(path: Path, *, require_content: bool) -> bool:
         if not require_content:
             return True
         content = path / "content"
-        return content.is_dir() and not content.is_symlink()
+        if content.is_dir() and not content.is_symlink():
+            return True
+        # An android_db audio pack has no content directory; its media lives
+        # as blobs in the registered database file beside the index.
+        database = path / _ANDROID_DB_NAME
+        return database.is_file() and not database.is_symlink()
     except OSError:
         return False
 
@@ -675,20 +680,28 @@ def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = No
 _ZIP_MAGIC = b"PK\x03\x04"
 _XZ_MAGIC = b"\xfd7zXZ\x00"
 _GZIP_MAGIC = b"\x1f\x8b"
+_SQLITE_MAGIC = b"SQLite format 3\x00"
 _TAR_USTAR_OFFSET = 257
+# File name the local-audio-yomichan desktop add-on gives its generated Android
+# database, kept for the published slot so the meta paths stay recognizable.
+_ANDROID_DB_NAME = "android.db"
 
 
 def _audio_archive_kind(path: Path) -> str:
-    """Return ``"zip"`` or ``"tar"`` for *path*, decided by content not by name.
+    """Return ``"zip"``, ``"tar"`` or ``"sqlite"`` for *path*, decided by
+    content not by name.
 
-    The upstream local-audio-yomichan collection ships as ``.tar.xz`` while
-    single packs are usually rezipped, and a document provider's reported type
-    is not evidence of either, so the archive family comes from the bytes.
+    The upstream local-audio-yomichan collection ships as ``.tar.xz``, single
+    packs are usually rezipped, and its generated ``android.db`` is a bare
+    SQLite file; a document provider's reported type is not evidence of any of
+    them, so the family comes from the bytes.
     """
     with core._open_source(path) as (stream, _):
         head = stream.read(_TAR_USTAR_OFFSET + 8)
     if head.startswith(_ZIP_MAGIC):
         return "zip"
+    if head.startswith(_SQLITE_MAGIC):
+        return "sqlite"
     if (
         head.startswith(_XZ_MAGIC)
         or head.startswith(_GZIP_MAGIC)
@@ -1187,6 +1200,99 @@ def _accept_projected_metadata(count: int) -> int:
     return count + 1
 
 
+def _derived_audio_pack_id(folder_name: str) -> str:
+    from anki_miner.services.audio_packs.importer import derive_pack_id
+
+    pack_id = derive_pack_id(folder_name)
+    if pack_id == "jpod101":
+        raise _fail(
+            "audio_pack_id_reserved",
+            "Derived audio-pack ID 'jpod101' is reserved",
+        )
+    try:
+        core._slot_id(pack_id)
+    except BridgeProtocolError as exc:
+        raise _fail(
+            "audio_pack_import_failed",
+            "Derived audio-pack ID is invalid",
+        ) from exc
+    return pack_id
+
+
+def _register_android_audio_db(
+    db_path: Path,
+    index_root: Path,
+    pack_id: str,
+    operation: core._Operation,
+):
+    """Run the engine's android.db registration, mapping its failures to codes."""
+    from anki_miner.exceptions import SetupError
+    from anki_miner.services.audio_packs.importer import import_android_audio_db
+
+    try:
+        return import_android_audio_db(
+            db_path,
+            index_root,
+            pack_id=pack_id,
+            cancel_check=operation.cancelled.is_set,
+            overwrite=False,
+        )
+    except (SetupError, ValueError, OSError, sqlite3.Error) as exc:
+        operation.check()
+        core._raise_if_storage_exhausted(exc)
+        raise _fail(
+            "audio_pack_index_malformed",
+            "The chosen file is not a local-audio-yomichan Android database",
+        ) from exc
+
+
+def _preflight_android_audio_db(
+    source: Path,
+    display_name: str,
+    operation_root: Path,
+    operation: core._Operation,
+) -> dict[str, object]:
+    """Validate an android.db candidate without publishing anything.
+
+    The registration runs against a probe directory inside the operation root
+    (discarded by the caller), which exercises the exact validation the real
+    import will and keeps the bridge off the engine's private helpers.
+    """
+    pack_id = _derived_audio_pack_id(PurePosixPath(display_name).stem or source.stem)
+    _register_android_audio_db(source, operation_root / "probe", pack_id, operation)
+    return {"packId": pack_id, "packPath": "", "format": "android_db"}
+
+
+def _materialize_android_audio_db(
+    source: Path,
+    destination: Path,
+    operation: core._Operation,
+    *,
+    expected_sha256: str,
+    progress: Callable[[int, int], None] | None,
+) -> None:
+    """Place the staged database into the publication candidate.
+
+    A hard link is free and the staged copy is already private to this app;
+    the caller deletes its own name for the file after the import, which
+    leaves the published link untouched. Filesystems without hard links get
+    a verified streamed copy instead.
+    """
+    try:
+        os.link(source, destination)
+        return
+    except OSError:
+        pass
+    core._copy_archive(
+        source,
+        destination,
+        operation,
+        maximum_bytes=_AUDIO_ARCHIVE_LIMIT,
+        expected_sha256=expected_sha256,
+        progress=progress,
+    )
+
+
 def preflight_audio_pack(payload: Mapping[str, object]) -> str:
     core._exact(
         payload,
@@ -1203,6 +1309,9 @@ def preflight_audio_pack(payload: Mapping[str, object]) -> str:
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
+            if _audio_archive_kind(source) == "sqlite":
+                candidate = _preflight_android_audio_db(source, display_name, operation_root, operation)
+                return encode_message("resource.audiopack.preflighted", {"packs": [candidate]})
             projected = operation_root / "projected"
             _project_audio_archive(source, projected, operation)
             pack_roots = _detect_audio_pack_roots(projected)
@@ -1307,6 +1416,97 @@ def _validate_audio_index(db_path: Path, content: Path, operation: core._Operati
         raise _fail("audio_pack_import_failed", "Audio pack index is invalid") from exc
 
 
+def _import_android_audio_db(
+    copied: object,
+    *,
+    pack_id: str,
+    home: Path,
+    operation: core._Operation,
+    operation_root: Path,
+    operation_id: str,
+    overwrite: bool,
+    reporter: object,
+) -> str:
+    """Publish a local-audio-yomichan android.db as a metadata-only pack.
+
+    The database itself becomes the slot's ``android.db``; the managed
+    ``index.sqlite`` carries only registry meta (format ``android_db``), and
+    the runtime fetcher reads entries and blobs straight out of the database.
+    """
+    from anki_miner.services.audio_packs import storage
+
+    publication_parent = operation_root / "publication"
+    candidate = publication_parent / pack_id
+    candidate.mkdir(parents=True)
+    db_dest = candidate / _ANDROID_DB_NAME
+    _materialize_android_audio_db(
+        copied.path,
+        db_dest,
+        operation,
+        expected_sha256=copied.sha256,
+        progress=reporter.bytes_fn(),
+    )
+    operation.check()
+
+    index_root = operation_root / "index"
+    result = _register_android_audio_db(db_dest, index_root, pack_id, operation)
+    operation.check()
+    built = index_root / pack_id
+    index_db = built / "index.sqlite"
+    final_slot = _audio_root(home) / pack_id
+    try:
+        # The registration recorded the candidate's paths; the published slot
+        # is where the database will actually live, so repoint the meta before
+        # the slot is promoted (mirrors the folder importer's pack_dir rewrite).
+        metadata = storage.read_meta(index_db)
+        metadata["pack_dir"] = str(final_slot)
+        metadata["source_db"] = str(final_slot / _ANDROID_DB_NAME)
+        storage.write_meta(index_db, metadata)
+    except (OSError, sqlite3.Error) as exc:
+        operation.check()
+        core._raise_if_storage_exhausted(exc)
+        raise _fail(
+            "audio_pack_import_failed",
+            "Audio pack index could not be persisted",
+        ) from exc
+    for name in ("index.sqlite", "meta.json"):
+        (built / name).rename(candidate / name)
+        _fsync_file(candidate / name)
+    _write_sidecar(
+        candidate / _ANDROID_SIDECAR,
+        {
+            "schemaVersion": 1,
+            "kind": "audio-pack",
+            "packId": pack_id,
+            "archiveSha256": copied.sha256,
+            "archiveSizeBytes": copied.size_bytes,
+        },
+    )
+    _fsync_file(db_dest)
+    core._fsync_directory(candidate)
+    reporter.set_phase("finalizing")
+    _publish_indexed_dir(
+        candidate,
+        home=home,
+        kind="audio-pack",
+        identity=pack_id,
+        operation_id=operation_id,
+        overwrite=overwrite,
+        final_root=_audio_root(home),
+        require_content=True,
+    )
+    return encode_message(
+        "resource.audiopack.imported",
+        {
+            "packId": result.pack_id,
+            "sourceName": result.source_name,
+            "format": result.format,
+            "entryCount": result.entry_count,
+            "archiveSha256": copied.sha256,
+        },
+    )
+
+
 def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
         payload,
@@ -1338,6 +1538,22 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
                 maximum_bytes=_AUDIO_ARCHIVE_LIMIT,
                 progress=reporter.bytes_fn(),
             )
+            if _audio_archive_kind(copied.path) == "sqlite":
+                if pack_prefix:
+                    raise _fail(
+                        "invalid_resource_request",
+                        "packPath must be empty for a database import",
+                    )
+                return _import_android_audio_db(
+                    copied,
+                    pack_id=pack_id,
+                    home=home,
+                    operation=operation,
+                    operation_root=operation_root,
+                    operation_id=operation_id,
+                    overwrite=overwrite,
+                    reporter=reporter,
+                )
             extracted = operation_root / "extracted"
             # Only the chosen subtree is extracted, so importing one pack out of
             # the four-pack collection costs that pack's bytes, not the whole
@@ -2093,20 +2309,28 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
         except ValueError:
             version = 0
             count = 0
-        expected_content = child / "content"
-        configured_content = Path(meta.get("pack_dir", ""))
         content_available = False
         try:
-            # Folder packs only. The engine also knows an ``android_db`` format
-            # whose audio lives in an external database rather than a content
-            # directory, but Android has no way to register one.
-            content_available = (
-                version == core._AUDIO_PACK_SCHEMA_VERSION
-                and count > 0
-                and expected_content.is_dir()
-                and not expected_content.is_symlink()
-                and configured_content == expected_content
-            )
+            if meta.get("format") == "android_db":
+                # The pack's audio lives as blobs in the registered database
+                # beside the index; the fetcher reads entries from it too.
+                expected_db = child / _ANDROID_DB_NAME
+                content_available = (
+                    version == core._AUDIO_PACK_SCHEMA_VERSION
+                    and count > 0
+                    and expected_db.is_file()
+                    and not expected_db.is_symlink()
+                    and Path(meta.get("source_db", "")) == expected_db
+                )
+            else:
+                expected_content = child / "content"
+                content_available = (
+                    version == core._AUDIO_PACK_SCHEMA_VERSION
+                    and count > 0
+                    and expected_content.is_dir()
+                    and not expected_content.is_symlink()
+                    and Path(meta.get("pack_dir", "")) == expected_content
+                )
         except OSError:
             logger.debug("Failed to inspect audio-pack content availability", exc_info=True)
         result.append(
