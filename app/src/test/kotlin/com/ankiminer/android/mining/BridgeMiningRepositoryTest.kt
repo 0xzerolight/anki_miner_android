@@ -31,6 +31,7 @@ import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
 import java.io.File
 import java.util.Collections
+import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -745,7 +746,15 @@ class BridgeMiningRepositoryTest {
 
         runBlocking { harness.repository.cancel(curating.request.runId) }
 
-        assertTrue(harness.foreground.future.isCancelled)
+        // Either thread may cancel the pending future: cancel() snapshots
+        // run.foregroundStart, which the control thread only assigns after
+        // startSession() returns (and it trips the started latch inside that
+        // call), so an instant isCancelled check races the assignment. The
+        // bounded get() proves promptness — a regression that leaves the future
+        // to the 15s control timeout surfaces as a TimeoutException here.
+        assertThrows(CancellationException::class.java) {
+            harness.foreground.future.get(2, TimeUnit.SECONDS)
+        }
         harness.bridge.allowTerminal.countDown()
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
         assertEquals(1, harness.inputOwner.openCount.get())
