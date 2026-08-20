@@ -1282,6 +1282,8 @@ def _materialize_android_audio_db(
         os.link(source, destination)
         return
     except OSError:
+        # instrumentation: intentionally silent — the streamed copy below is
+        # the complete fallback for any filesystem that refuses the hard link
         pass
     core._copy_archive(
         source,
