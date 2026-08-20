@@ -1228,11 +1228,44 @@ def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback(
     chain.close()
 
     assert notices == [
-        "Expression audio: localaudio unavailable=1; timeouts=1; rejected sources=2; "
+        "Expression audio: localaudio not reachable=1; timeouts=1; rejected sources=2; "
         "oversized lists=1; malformed JSON=1; non-audio responses=1; fallback pack hits=1"
     ]
     assert "http" not in notices[0]
     assert "/cache" not in notices[0]
+
+
+def test_summary_separates_unreachable_server_from_erroring_server() -> None:
+    """`connection`/`ssl` mean the server never answered; `http_status` means it
+    answered non-200. The summary must name them apart — the first says
+    AnkiConnect-Android is not running, the second that it is up but failing."""
+
+    def chain_with_counts(counts: dict[str, int], sink: list[str]) -> mining._ExpressionAudioSourceChain:
+        class Localaudio:
+            def fetch(self, *_: object) -> None:
+                return None
+
+            def stats(self) -> dict[str, int]:
+                return counts
+
+            def close(self) -> None:
+                return None
+
+        localaudio = Localaudio()
+        return mining._ExpressionAudioSourceChain(
+            [localaudio],
+            localaudio_fetcher=localaudio,
+            fallback_fetchers=(),
+            diagnostic_callback=sink.append,
+        )
+
+    unreachable: list[str] = []
+    chain_with_counts({"ssl": 1, "connection": 1, "http_status": 0}, unreachable).close()
+    assert unreachable == ["Expression audio: localaudio not reachable=2"]
+
+    erroring: list[str] = []
+    chain_with_counts({"ssl": 0, "connection": 0, "http_status": 3}, erroring).close()
+    assert erroring == ["Expression audio: localaudio server errors=3"]
 
 
 def test_circuit_skips_appear_in_run_summary() -> None:

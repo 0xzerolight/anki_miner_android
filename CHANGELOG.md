@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- **The run summary says whether the word-audio server was unreachable or failing.** The end-of-run notice reported one aggregate — "localaudio unavailable" — for three different failures: the server never answering (AnkiConnect-Android not running, or listening on another port), the server answering with an error (for instance a stale `android.db`), and a TLS failure that cannot occur on loopback. A tester screenshot carrying `unavailable=1` was undiagnosable, because nothing else recorded which of the three had happened: the composite chain deliberately hides its counters from the vendored engine's own per-key logging, and the bridge fetcher's only per-failure log line is at debug level while the app logs at info. The notice now reports "localaudio not reachable" (transport family) separately from "localaudio server errors" (non-200 responses), and the chain logs the full per-cause counter dict once per run at info level, so a diagnostics bundle names the cause. A word absent from the audio collection was never part of this count — the server reports that as an empty source list and the run falls through to packs silently.
+
 ## [0.8.3] - 2026-08-19
 
 ### Added
