@@ -48,7 +48,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 - Animated screenshots - the card image can be a short looping clip of the line instead of a still (off by default).
 - Extensive filtering: i+1, frequency limits, blacklist, wordsets, proper-noun name lists, and more.
 - Offline Yomitan dictionary import - definitions, pitch accent, frequency - chained by priority.
-- Word audio from on-device audio packs; sentence audio from your device's Japanese text-to-speech.
+- Word audio from on-device audio packs - the local-audio-yomichan collection or its generated android.db; sentence audio from your device's Japanese text-to-speech.
 - Optional Jisho.org online fallback for definitions (slower, rate-limited).
 - Interface translated into 11 languages besides English.
 - Light and dark themes from ported palettes - Catppuccin, Dracula, Nord, Gruvbox, Solarized, and more. Android 12+ can take colours from your wallpaper.
@@ -86,6 +86,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 | Pitch | [アクセント辞典v2](https://learnjapanese.moe/yomichan/#dictionaries) | [Drive](https://drive.google.com/drive/folders/1tTdLppnqMfVC5otPlX_cs4ixlIgjv_lH) | Settings -> Dictionaries -> Pitch Accent File |
 | Frequency | [JPDB v2.2 Kana](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip) | Settings -> Filtering -> Frequency List File |
 | Frequency | [BCCWJ SUW+LUW](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/BCCWJ_SUW_LUW_combined.zip) | Settings -> Filtering -> Frequency List File |
+| Word audio | [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) | Collection torrent or generated `android.db` | Settings -> Audio |
 
 <details> 
 <summary><strong>JMnedict License</strong></summary>
@@ -101,6 +102,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 | No definitions found | Add a dictionary in Settings -> Dictionaries, or enable the Jisho fallback (slower, rate-limited). |
 | Setup notice on a mining tab | Open Settings and finish the flagged step (tokenizer, dictionary, or AnkiDroid). |
 | Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
+| Word audio missing on cards | Import an audio pack or android.db under Settings -> Audio, and map the expression audio field. |
 | Subtitles out of sync | Use the subtitle offset control on the mining screen. |
 | Reporting a bug | Settings -> Tester diagnostics can share a redacted log bundle. Check it before attaching it to an issue. |
 
