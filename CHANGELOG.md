@@ -4,9 +4,13 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
-### Changed
+### Added
 
-- **The run summary says whether the word-audio server was unreachable or failing.** The end-of-run notice reported one aggregate — "localaudio unavailable" — for three different failures: the server never answering (AnkiConnect-Android not running, or listening on another port), the server answering with an error (for instance a stale `android.db`), and a TLS failure that cannot occur on loopback. A tester screenshot carrying `unavailable=1` was undiagnosable, because nothing else recorded which of the three had happened: the composite chain deliberately hides its counters from the vendored engine's own per-key logging, and the bridge fetcher's only per-failure log line is at debug level while the app logs at info. The notice now reports "localaudio not reachable" (transport family) separately from "localaudio server errors" (non-200 responses), and the chain logs the full per-cause counter dict once per run at info level, so a diagnostics bundle names the cause. A word absent from the audio collection was never part of this count — the server reports that as an empty source list and the run falls through to packs silently.
+- **Word audio imports straight from local-audio-yomichan's `android.db` (Settings -> Audio).** The desktop add-on's "Generate Android database" file — the same one AnkiConnect-Android reads — now imports like any audio pack. The engine has carried an `android_db` pack format (metadata `entries` table plus `android` blob table, entries and audio read in place from the registered database) since the pack framework landed, but Android had no way to register one. The picker, staging and bridge now recognize a bare SQLite file by magic bytes; the database is hard-linked (streamed-copy fallback) into the published slot beside a metadata-only `index.sqlite`, so a ~5 GB import costs no second copy and no extraction. One preflight candidate auto-imports, so the flow is the same two taps as a folder pack.
+
+### Removed
+
+- **The AnkiConnect-Android word-audio server is no longer queried.** Since 0.7.x every run probed `localhost:8765` (AnkiConnect-Android's local-audio server) as an unconditionally injected primary expression-audio source. Most users never had that app installed: each run burned connection failures until the circuit breaker opened and ended with an untranslated "localaudio not reachable" notice nobody could act on, since the app never named AnkiConnect-Android anywhere. Word audio now comes only from imported packs — the collection archives or the new `android.db` import, which serves the same audio the server did without a second app running. The bridge's ported URL fetcher (1112 lines), the loopback-origin policy, and the localaudio failure classes in the run summary are gone with it; nothing in the app performs loopback HTTP any more. The unreleased "unreachable vs server errors" summary split is dropped along with its subject.
 
 ## [0.8.3] - 2026-08-19
 

@@ -33,11 +33,13 @@ target and may create only the selected target deck. Writes use exact readback
 and durable mutation recovery.
 
 Card and collection operations do not use a network backend. Expression audio
-is separate: AnkiConnect-Android's bounded on-device loopback `localaudio`
-source is the default primary, with imported local packs as the offline
-fallback. That order is not owned by the fetcher — `android_bridge/config_map.py`
-prepends the `localaudio` entry to `expression_audio_chain`, and
-`android_bridge/mining.py` builds the fetchers in config order.
+comes only from imported local packs — folder packs extracted from the
+local-audio-yomichan collection, or a registered `android.db` whose entries and
+audio blobs are read in place. `android_bridge/config_map.py` pins the chain to
+the snapshot's pack entries (the desktop default names cut network kinds), and
+`android_bridge/mining.py` builds the fetchers in config order. The former
+loopback `localaudio` source (AnkiConnect-Android, localhost:8765) was removed
+on 2026-08-20; nothing in the app performs loopback HTTP.
 
 Historical correction (2026-07-21): commit `99058d7` superseded the 2026-07-17
 completion checkpoint's app-owned note-model statement. The checkpoint remains

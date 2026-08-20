@@ -19,7 +19,7 @@ In scope:
 - Media extraction through the bundled `ffmpeg` and `ffprobe` executables, including the Storage Access Framework file descriptors handed to those child processes.
 - Card and collection writes through the AnkiDroid ContentProvider.
 - Network handling for Jisho lookups, the GitHub release check, and the one-time resource downloads (UniDic, Yomitan dictionaries, frequency lists, pitch accent files).
-- The on-device loopback `localaudio` source used for word audio.
+- Imported audio packs, including a registered `android.db` read as SQLite.
 - Redaction of the diagnostics bundle. Sensitive content surviving into an exported archive is a vulnerability.
 
 Out of scope:
