@@ -1150,8 +1150,7 @@ def test_expression_audio_chain_reraises_memory_error(
 
 
 def test_expression_audio_chain_pins_pack_copy_until_run_close(tmp_path: Path) -> None:
-    pytest.importorskip("requests", reason="runtime dependency lane")
-    from android_bridge.expression_audio_fetcher import _RunAudioCache
+    from android_bridge.audio_cache import _RunAudioCache
 
     cache_root = tmp_path / "audio_cache" / "local_packs"
     cache_root.mkdir(parents=True)
@@ -1184,26 +1183,13 @@ def test_expression_audio_chain_pins_pack_copy_until_run_close(tmp_path: Path) -
     assert not active.exists()
 
 
-def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback() -> None:
+def test_first_pack_miss_falls_through_to_next_pack() -> None:
     hit = Path("/cache/audio.mp3")
     notices: list[str] = []
 
-    class Localaudio:
+    class MissingPack:
         def fetch(self, *_: object) -> None:
             return None
-
-        def stats(self) -> dict[str, int]:
-            return {
-                "ssl": 0,
-                "connection": 1,
-                "timeout": 1,
-                "http_status": 0,
-                "non_audio": 1,
-                "policy_rejection": 2,
-                "oversized_response": 0,
-                "oversized_list": 1,
-                "malformed_json": 1,
-            }
 
         def close(self) -> None:
             return None
@@ -1215,83 +1201,40 @@ def test_failed_localaudio_falls_through_and_reports_privacy_safe_pack_fallback(
         def close(self) -> None:
             return None
 
-    localaudio = Localaudio()
-    pack = Pack()
     chain = mining._ExpressionAudioSourceChain(
-        [localaudio, pack],
-        localaudio_fetcher=localaudio,
-        fallback_fetchers=(pack,),
+        [MissingPack(), Pack()],
         diagnostic_callback=notices.append,
     )
 
     assert chain.fetch("猫", "ねこ") == hit
     chain.close()
 
-    assert notices == [
-        "Expression audio: localaudio not reachable=1; timeouts=1; rejected sources=2; "
-        "oversized lists=1; malformed JSON=1; non-audio responses=1; fallback pack hits=1"
-    ]
-    assert "http" not in notices[0]
-    assert "/cache" not in notices[0]
+    # A healthy run stays silent: no counts, no notice.
+    assert notices == []
 
 
-def test_summary_separates_unreachable_server_from_erroring_server() -> None:
-    """`connection`/`ssl` mean the server never answered; `http_status` means it
-    answered non-200. The summary must name them apart — the first says
-    AnkiConnect-Android is not running, the second that it is up but failing."""
+def test_raising_pack_is_skipped_and_the_chain_continues() -> None:
+    hit = Path("/cache/audio.mp3")
 
-    def chain_with_counts(counts: dict[str, int], sink: list[str]) -> mining._ExpressionAudioSourceChain:
-        class Localaudio:
-            def fetch(self, *_: object) -> None:
-                return None
-
-            def stats(self) -> dict[str, int]:
-                return counts
-
-            def close(self) -> None:
-                return None
-
-        localaudio = Localaudio()
-        return mining._ExpressionAudioSourceChain(
-            [localaudio],
-            localaudio_fetcher=localaudio,
-            fallback_fetchers=(),
-            diagnostic_callback=sink.append,
-        )
-
-    unreachable: list[str] = []
-    chain_with_counts({"ssl": 1, "connection": 1, "http_status": 0}, unreachable).close()
-    assert unreachable == ["Expression audio: localaudio not reachable=2"]
-
-    erroring: list[str] = []
-    chain_with_counts({"ssl": 0, "connection": 0, "http_status": 3}, erroring).close()
-    assert erroring == ["Expression audio: localaudio server errors=3"]
-
-
-def test_circuit_skips_appear_in_run_summary() -> None:
-    notices: list[str] = []
-
-    class Localaudio:
-        def fetch(self, *_: object) -> None:
-            return None
-
-        def stats(self) -> dict[str, int]:
-            return {"circuit_skipped": 4, "timeout": 3}
+    class BrokenPack:
+        def fetch(self, *_: object) -> Path:
+            raise OSError("index vanished mid-run")
 
         def close(self) -> None:
             return None
 
-    localaudio = Localaudio()
-    chain = mining._ExpressionAudioSourceChain(
-        [localaudio],
-        localaudio_fetcher=localaudio,
-        fallback_fetchers=(),
-        diagnostic_callback=notices.append,
-    )
+    class Pack:
+        def fetch(self, *_: object) -> Path:
+            return hit
 
-    chain.close()
+        def close(self) -> None:
+            return None
 
-    assert notices == ["Expression audio: timeouts=3; localaudio skipped after repeated failures=4"]
+    chain = mining._ExpressionAudioSourceChain([BrokenPack(), Pack()])
+    try:
+        assert chain.fetch("猫", "ねこ") == hit
+    finally:
+        chain.close()
 
 
 def test_unreadable_pack_index_is_counted_and_reported(tmp_path: Path) -> None:
@@ -1311,7 +1254,6 @@ def test_unreadable_pack_index_is_counted_and_reported(tmp_path: Path) -> None:
     wrapped = mining._DiagnosedPackFetcher(StubPack(), garbage_db)
     chain = mining._ExpressionAudioSourceChain(
         [wrapped],
-        fallback_fetchers=(wrapped,),
         diagnostic_callback=notices.append,
     )
 
@@ -1366,11 +1308,11 @@ def test_pack_wrapper_probe_never_raises_and_memoizes(tmp_path: Path) -> None:
     assert wrapped.pack_stats() == {"attempts": 3, "hits": 0, "index_unreadable": 1}
 
 
-@pytest.mark.parametrize("kind", ["jpod101", "googletts"])
-def test_expression_audio_builder_rejects_cut_network_kinds_before_allocation(kind: str) -> None:
-    # custom/custom_json are now deliberately accepted (localaudio + local-audio-
-    # yomichan); only the CUT network kinds must still raise, and before any
-    # Session/import/packs-dir scan.
+@pytest.mark.parametrize("kind", ["jpod101", "googletts", "custom", "custom_json"])
+def test_expression_audio_builder_rejects_non_pack_kinds_before_allocation(kind: str) -> None:
+    # Imported local packs are the only Android expression-audio source. The
+    # cut network kinds and the removed localaudio URL kinds must all raise,
+    # and before any Session/import/packs-dir scan.
     config = SimpleNamespace(
         expression_audio_chain=(SimpleNamespace(kind=kind, pack_id=None, url=None, enabled=True),),
         anki_fields={"expression_audio": "Audio"},
@@ -1420,74 +1362,20 @@ def test_expression_audio_builder_rejects_cut_kind_before_any_packs_scan(
 
 
 def test_expression_audio_builder_returns_none_when_field_unmapped() -> None:
-    # Even with the always-enabled injected localaudio entry, an unmapped
-    # expression_audio field means the fetcher is never consulted -> None.
+    # An unmapped expression_audio field means the fetcher is never consulted
+    # -> None, even when enabled pack entries exist.
     config = SimpleNamespace(
-        expression_audio_chain=(
-            SimpleNamespace(kind="custom_json", pack_id=None, url="http://localhost:8765/x", enabled=True),
-        ),
+        expression_audio_chain=(SimpleNamespace(kind="pack", pack_id="my-pack", url=None, enabled=True),),
         anki_fields={"expression_audio": ""},
     )
     assert mining._build_expression_audio_source_chain(config) is None
 
 
-def test_expression_audio_builder_builds_localaudio_custom_json_source(
-    initialized_bridge_home: Path,
-) -> None:
-    pytest.importorskip("requests", reason="runtime dependency lane")
-    from android_bridge.config_map import _LOCALAUDIO_URL
-    from android_bridge.expression_audio_fetcher import CustomAudioFetcher, custom_audio_slug
-    from anki_miner.config.paths import ANKI_MINER_HOME
-
-    config = SimpleNamespace(
-        expression_audio_chain=(SimpleNamespace(kind="custom_json", pack_id=None, url=_LOCALAUDIO_URL, enabled=True),),
-        anki_fields={"expression_audio": "Audio"},
-        audio_packs_root=initialized_bridge_home / "audio_packs",
-    )
-    chain = mining._build_expression_audio_source_chain(config)
-    assert chain is not None
-    try:
-        fetchers = chain._fetchers
-        assert len(fetchers) == 1
-        fetcher = fetchers[0]
-        assert isinstance(fetcher, CustomAudioFetcher)
-        # Cached UNDER the approved local-pack staging root (bug-6-independent).
-        slug = custom_audio_slug(_LOCALAUDIO_URL)
-        assert fetcher._cache_dir == ANKI_MINER_HOME / "audio_cache" / "local_packs" / f"custom_{slug}"
-    finally:
-        chain.close()
-
-
-def test_expression_audio_builder_authenticates_the_localaudio_loopback_origin(
-    initialized_bridge_home: Path,
-) -> None:
-    pytest.importorskip("requests", reason="runtime dependency lane")
-    from android_bridge.config_map import _LOCALAUDIO_URL
-
-    config = SimpleNamespace(
-        expression_audio_chain=(SimpleNamespace(kind="custom_json", pack_id=None, url=_LOCALAUDIO_URL, enabled=True),),
-        anki_fields={"expression_audio": "Audio"},
-        audio_packs_root=initialized_bridge_home / "audio_packs",
-    )
-    chain = mining._build_expression_audio_source_chain(config)
-    assert chain is not None
-    try:
-        fetcher = chain._fetchers[0]
-        # The production construction site is the only place that declares loopback
-        # trust; without it every localaudio fetch is rejected before the request.
-        fetcher._validate_url(_LOCALAUDIO_URL.format(term="食べる", reading="たべる"), directory_only=False)
-        fetcher._validate_url("http://127.0.0.1:8765/localaudio/audio.mp3", directory_only=False)
-    finally:
-        chain.close()
-
-
-def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
+def test_expression_audio_builder_orders_packs_by_config_order(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,
 ) -> None:
     pytest.importorskip("requests", reason="runtime dependency lane")
-    from android_bridge.config_map import _LOCALAUDIO_URL
-    from android_bridge.expression_audio_fetcher import CustomAudioFetcher
 
     class FakePackFetcher:
         def __init__(self, pack_id: str) -> None:
@@ -1496,7 +1384,8 @@ def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
         def close(self) -> None:
             return None
 
-    fake_pack = FakePackFetcher("my-pack")
+    first_pack = FakePackFetcher("first-pack")
+    second_pack = FakePackFetcher("second-pack")
 
     class FakeRegistry:
         def __init__(self, root: object) -> None:
@@ -1506,7 +1395,8 @@ def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
             return None
 
         def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
-            return [fake_pack]
+            # Registry scan order is storage order, not priority order.
+            return [second_pack, first_pack]
 
     monkeypatch.setattr(
         "anki_miner.services.audio_packs.registry.AudioPackRegistry",
@@ -1514,8 +1404,8 @@ def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
     )
     config = SimpleNamespace(
         expression_audio_chain=(
-            SimpleNamespace(kind="custom_json", pack_id=None, url=_LOCALAUDIO_URL, enabled=True),
-            SimpleNamespace(kind="pack", pack_id="my-pack", url=None, enabled=True),
+            SimpleNamespace(kind="pack", pack_id="first-pack", url=None, enabled=True),
+            SimpleNamespace(kind="pack", pack_id="second-pack", url=None, enabled=True),
         ),
         anki_fields={"expression_audio": "Audio"},
         audio_packs_root=initialized_bridge_home / "audio_packs",
@@ -1525,12 +1415,13 @@ def test_expression_audio_builder_orders_localaudio_primary_pack_fallback(
     try:
         fetchers = chain._fetchers
         assert len(fetchers) == 2
-        # Config order == source priority: localaudio primary, pack fallback.
-        assert isinstance(fetchers[0], CustomAudioFetcher)
-        # The pack fetcher is wrapped for diagnostics; identity holds beneath it.
+        # Config order == source priority, regardless of registry scan order.
+        # Pack fetchers are wrapped for diagnostics; identity holds beneath.
+        assert isinstance(fetchers[0], mining._DiagnosedPackFetcher)
         assert isinstance(fetchers[1], mining._DiagnosedPackFetcher)
-        assert fetchers[1].pack_id == "my-pack"
-        assert fetchers[1]._fetcher is fake_pack
+        assert [fetcher.pack_id for fetcher in fetchers] == ["first-pack", "second-pack"]
+        assert fetchers[0]._fetcher is first_pack
+        assert fetchers[1]._fetcher is second_pack
     finally:
         chain.close()
 

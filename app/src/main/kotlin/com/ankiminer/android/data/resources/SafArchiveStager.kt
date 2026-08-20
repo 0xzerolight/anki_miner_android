@@ -65,6 +65,9 @@ internal enum class AudioArchiveContainer(val wireValue: String) {
     XZ("xz"),
     GZIP("gzip"),
     TAR("tar"),
+    // local-audio-yomichan's generated android.db: a bare SQLite database the
+    // bridge registers as a metadata-only pack instead of extracting.
+    SQLITE("sqlite"),
 }
 
 internal data class StagedAudioArchive(
@@ -632,6 +635,7 @@ internal class SafArchiveStager(
         }
         if (prefix.startsWith(XZ_SIGNATURE)) return AudioArchiveContainer.XZ
         if (prefix.startsWith(GZIP_SIGNATURE)) return AudioArchiveContainer.GZIP
+        if (prefix.startsWith(SQLITE_SIGNATURE)) return AudioArchiveContainer.SQLITE
         if (
             prefix.size >= TAR_MAGIC_OFFSET + TAR_MAGIC.size &&
                 prefix.copyOfRange(TAR_MAGIC_OFFSET, TAR_MAGIC_OFFSET + TAR_MAGIC.size)
@@ -682,6 +686,7 @@ internal class SafArchiveStager(
         const val TAR_MAGIC_OFFSET = 257
         val XZ_SIGNATURE = byteArrayOf(0xfd.toByte(), 0x37, 0x7a, 0x58, 0x5a, 0x00)
         val GZIP_SIGNATURE = byteArrayOf(0x1f, 0x8b.toByte())
+        val SQLITE_SIGNATURE = "SQLite format 3".encodeToByteArray() + byteArrayOf(0x00)
         val TAR_MAGIC = "ustar".encodeToByteArray()
         val FILE_SUFFIX = Regex("\\.[a-z0-9]{1,8}")
     }

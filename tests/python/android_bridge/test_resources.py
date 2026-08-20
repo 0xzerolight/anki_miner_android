@@ -3247,7 +3247,7 @@ def test_replacing_audio_pack_does_not_reuse_previous_run_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from android_bridge import mining
-    from android_bridge.expression_audio_fetcher import _RunAudioCache
+    from android_bridge.audio_cache import _RunAudioCache
     from anki_miner.services.audio_packs.fetcher import LocalAudioPackFetcher
 
     home = _local_home(tmp_path, monkeypatch)
@@ -3352,6 +3352,237 @@ def test_corrupt_installed_pack_index_mines_gracefully_and_reports_diagnostics(
     assert "fixture-pack" in notices[0]
     assert "猫" not in notices[0]
     assert str(home) not in notices[0]
+
+
+def _android_audio_db(path: Path, audio_bytes: bytes = b"fixture opus") -> Path:
+    """Fixture android.db in the local-audio-yomichan layout: metadata rows in
+    ``entries`` plus audio blobs in ``android``, keyed by (file, source)."""
+    conn = sqlite3.connect(path)
+    try:
+        conn.executescript("""
+            CREATE TABLE entries (
+                id integer PRIMARY KEY NOT NULL,
+                expression text NOT NULL,
+                reading text,
+                source text NOT NULL,
+                speaker text,
+                display text,
+                file text NOT NULL
+            );
+            CREATE TABLE android (
+                id integer PRIMARY KEY NOT NULL,
+                file text NOT NULL,
+                source text NOT NULL,
+                data blob NOT NULL
+            );
+            """)
+        conn.execute(
+            "INSERT INTO entries (expression, reading, source, file) VALUES (?, ?, ?, ?)",
+            ("猫", "ねこ", "jpod", "media/cat.opus"),
+        )
+        conn.execute(
+            "INSERT INTO android (file, source, data) VALUES (?, ?, ?)",
+            ("media/cat.opus", "jpod", audio_bytes),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return path
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_preflight_android_audio_db_lists_single_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = _android_audio_db(tmp_path / "android.db")
+
+    preflighted = decode_envelope(
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "adb-preflight",
+                "sourcePath": str(source),
+                "displayName": "android.db",
+            }
+        ),
+        expected_type="resource.audiopack.preflighted",
+    )
+
+    assert preflighted.payload["packs"] == [{"packId": "android", "packPath": "", "format": "android_db"}]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_import_android_audio_db_registers_metadata_only_pack(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anki_miner.services.audio_packs import storage
+
+    home = _local_home(tmp_path, monkeypatch)
+    source = _android_audio_db(tmp_path / "android.db")
+
+    imported = decode_envelope(
+        local_resources.import_audio_pack(
+            {
+                "operationId": "adb-import",
+                "sourcePath": str(source),
+                "packId": "android",
+                "packPath": "",
+                "overwrite": False,
+            }
+        ),
+        expected_type="resource.audiopack.imported",
+    )
+
+    assert imported.payload["packId"] == "android"
+    assert imported.payload["format"] == "android_db"
+    assert imported.payload["entryCount"] == 1
+
+    final = home / "audio_packs" / "android"
+    assert (final / "index.sqlite").is_file()
+    assert (final / "android.db").is_file()
+    assert not (final / "content").exists()
+    # The registry meta must point INSIDE the published slot, never at the
+    # caller's staged copy (which Kotlin deletes right after the import).
+    meta = storage.read_meta(final / "index.sqlite")
+    assert meta["format"] == "android_db"
+    assert meta["source_db"] == str(final / "android.db")
+    assert meta["pack_dir"] == str(final)
+    # The staged source stays the caller's to clean up.
+    assert source.is_file()
+
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    assert listed.payload["audioPacks"] == [
+        {
+            "packId": "android",
+            "sourceName": "android",
+            "format": "android_db",
+            "entryCount": 1,
+            "contentAvailable": True,
+        }
+    ]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_android_db_pack_serves_audio_through_the_chain(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    import anki_miner.config.paths as engine_paths
+    from android_bridge import mining
+
+    home = _local_home(tmp_path, monkeypatch)
+    source = _android_audio_db(tmp_path / "android.db")
+    local_resources.import_audio_pack(
+        {
+            "operationId": "adb-serve",
+            "sourcePath": str(source),
+            "packId": "android",
+            "packPath": "",
+            "overwrite": False,
+        }
+    )
+
+    monkeypatch.setattr(engine_paths, "ANKI_MINER_HOME", home)
+    config = SimpleNamespace(
+        expression_audio_chain=(SimpleNamespace(kind="pack", pack_id="android", url=None, enabled=True),),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config)
+    assert chain is not None
+    try:
+        cached = chain.fetch("猫", "ねこ")
+        assert cached is not None
+        assert cached.suffix == ".opus"
+        assert cached.read_bytes() == b"fixture opus"
+    finally:
+        chain.close()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_android_db_pack_with_missing_database_reports_unusable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    source = _android_audio_db(tmp_path / "android.db")
+    local_resources.import_audio_pack(
+        {
+            "operationId": "adb-missing",
+            "sourcePath": str(source),
+            "packId": "android",
+            "packPath": "",
+            "overwrite": False,
+        }
+    )
+    (home / "audio_packs" / "android" / "android.db").unlink()
+
+    listed = decode_envelope(
+        local_resources.list_local_resources({}),
+        expected_type="resource.local.listed",
+    )
+    (pack,) = listed.payload["audioPacks"]
+    assert pack["packId"] == "android"
+    assert pack["contentAvailable"] is False
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_incompatible_sqlite_file_is_rejected_by_preflight_and_import(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "notes.db"
+    conn = sqlite3.connect(source)
+    try:
+        conn.execute("CREATE TABLE notes (id integer PRIMARY KEY, body text)")
+        conn.commit()
+    finally:
+        conn.close()
+
+    with pytest.raises(BridgeProtocolError) as preflight_failure:
+        local_resources.preflight_audio_pack(
+            {
+                "operationId": "adb-bad-preflight",
+                "sourcePath": str(source),
+                "displayName": "notes.db",
+            }
+        )
+    assert preflight_failure.value.code == "audio_pack_index_malformed"
+
+    with pytest.raises(BridgeProtocolError) as import_failure:
+        local_resources.import_audio_pack(
+            {
+                "operationId": "adb-bad-import",
+                "sourcePath": str(source),
+                "packId": "notes",
+                "packPath": "",
+                "overwrite": False,
+            }
+        )
+    assert import_failure.value.code == "audio_pack_index_malformed"
 
 
 def test_audio_pack_streaming_extractor_rejects_links(

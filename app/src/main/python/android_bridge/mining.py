@@ -22,10 +22,9 @@ from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from .audio_cache import _RunAudioCache
 from .callbacks import CallbackAdapters
 from .config_map import (
-    _LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
-    _LOCALAUDIO_AUTHENTICATED_LOOPBACK_ORIGINS,
     AndroidPaths,
     map_config_settings,
 )
@@ -62,10 +61,10 @@ _VIDEO_REQUEST_FIELDS = frozenset(
 )
 _CONFIG_SNAPSHOT_FIELDS = frozenset({"settings", "androidTtsEnabled"})
 _SUBTITLE_SUFFIXES = frozenset({".ass", ".srt", ".ssa", ".vtt"})
-# Expression-audio kinds the Android builder can construct: imported local
-# packs plus the URL-template custom sources (the localaudio localhost server).
-# The cut network kinds (jpod101/googletts) are rejected before any allocation.
-_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack", "custom", "custom_json"})
+# Imported local packs are the only expression-audio source the Android
+# builder can construct. The cut network kinds (jpod101/googletts) and the
+# removed URL-template kinds are rejected before any allocation.
+_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack"})
 _JISHO_TOTAL_DEADLINE_SECONDS = 10.0
 _JISHO_IO_TIMEOUT_SECONDS = 1.0
 _JISHO_WATCH_POLL_SECONDS = 0.05
@@ -95,8 +94,8 @@ class _DiagnosedPackFetcher:
     from an ordinary miss. This wrapper probes the index once after the first
     miss (via the same public storage API the fetcher uses) and exposes
     ``pack_stats()`` — deliberately NOT named ``stats()`` so the vendored
-    ``audio_stage._diagnose`` and the localaudio-only summary path never pick
-    it up. Only the pack id ever appears in diagnostics (no terms, no paths).
+    ``audio_stage._diagnose`` never picks it up. Only the pack id ever
+    appears in diagnostics (no terms, no paths).
     """
 
     def __init__(self, fetcher: object, db_path: Path | None) -> None:
@@ -181,72 +180,28 @@ class _DiagnosedPackFetcher:
 class _ExpressionAudioSourceChain:
     """Source-priority composite over the ordered expression-audio fetchers.
 
-    Members follow config order: the injected localaudio (localhost) source
-    first, then any imported local packs as fallback. Each member is tried in
-    turn; the first hit wins. A member raising is logged and skipped so a down
-    localaudio server falls through to the packs.
+    Members are the imported local packs in config order. Each member is
+    tried in turn; the first hit wins. A member raising is logged and skipped
+    so one broken pack falls through to the next.
     """
 
     def __init__(
         self,
         fetchers: Sequence[object],
         *,
-        localaudio_fetcher: object | None = None,
-        fallback_fetchers: Sequence[object] = (),
         diagnostic_callback: Callable[[str], None] | None = None,
         cache_lifetime: object | None = None,
         unavailable_pack_ids: Sequence[str] = (),
     ) -> None:
         self._fetchers = tuple(fetchers)
-        self._localaudio_fetcher = localaudio_fetcher
-        self._fallback_fetchers = tuple(fallback_fetchers)
         self._diagnostic_callback = diagnostic_callback
-        self._fallback_hits = 0
         self._diagnostic_reported = False
         self._cache_lifetime = cache_lifetime
         self._unavailable_pack_ids = tuple(unavailable_pack_ids)
 
-    def _record_fallback_hit(self, fetcher: object) -> None:
-        if any(fetcher is fallback for fallback in self._fallback_fetchers):
-            self._fallback_hits += 1
-
-    def _localaudio_counts(self) -> dict | None:
-        if self._localaudio_fetcher is None:
-            return None
-        stats = getattr(self._localaudio_fetcher, "stats", None)
-        if not callable(stats):
-            return None
-        try:
-            counts = stats()
-        except Exception:
-            return None
-        return counts if isinstance(counts, dict) else None
-
     def _diagnostic_summary(self) -> str | None:
         details: list[str] = []
-        counts = self._localaudio_counts()
-        if counts is not None:
-            # "not reachable" is the transport family (refused/reset/empty —
-            # the server never answered); "server errors" means it answered
-            # non-200. The old single "unavailable" sum hid which of the two a
-            # tester was hitting, and the distinction is the actionable part:
-            # the first means AnkiConnect-Android is not running, the second
-            # that it is up but failing (e.g. a stale android.db).
-            not_reachable = sum(int(counts.get(key, 0)) for key in ("ssl", "connection"))
-            fields = (
-                ("localaudio not reachable", not_reachable),
-                ("localaudio server errors", int(counts.get("http_status", 0))),
-                ("timeouts", int(counts.get("timeout", 0))),
-                ("rejected sources", int(counts.get("policy_rejection", 0))),
-                ("oversized responses", int(counts.get("oversized_response", 0))),
-                ("oversized lists", int(counts.get("oversized_list", 0))),
-                ("malformed JSON", int(counts.get("malformed_json", 0))),
-                ("non-audio responses", int(counts.get("non_audio", 0))),
-                ("localaudio skipped after repeated failures", int(counts.get("circuit_skipped", 0))),
-                ("fallback pack hits", self._fallback_hits),
-            )
-            details.extend(f"{label}={count}" for label, count in fields if count > 0)
-        for fetcher in self._fallback_fetchers:
+        for fetcher in self._fetchers:
             pack_stats = getattr(fetcher, "pack_stats", None)
             if not callable(pack_stats):
                 continue
@@ -280,7 +235,6 @@ class _ExpressionAudioSourceChain:
                 pin = getattr(self._cache_lifetime, "pin", None)
                 if callable(pin) and not pin(path):
                     continue
-                self._record_fallback_hit(fetcher)
                 return path
         return None
 
@@ -303,23 +257,12 @@ class _ExpressionAudioSourceChain:
                 pin = getattr(self._cache_lifetime, "pin", None)
                 if callable(pin) and not pin(path):
                     continue
-                self._record_fallback_hit(fetcher)
                 return path
         return None
 
     def close(self) -> None:
         if not self._diagnostic_reported:
             self._diagnostic_reported = True
-            counts = self._localaudio_counts()
-            if counts is not None:
-                # Counts only — no terms, no URLs. The run summary aggregates
-                # these; the per-key breakdown here is what lets a diagnostics
-                # bundle distinguish a dead server from an erroring one.
-                logger.info(
-                    "Expression audio localaudio counts: %s; fallback pack hits: %d",
-                    counts,
-                    self._fallback_hits,
-                )
             summary = self._diagnostic_summary()
             if summary is not None and self._diagnostic_callback is not None:
                 try:
@@ -488,22 +431,20 @@ def _build_expression_audio_source_chain(
 ) -> _ExpressionAudioSourceChain | None:
     """Compose the ordered expression-audio source chain for one run.
 
-    Mirrors the desktop ``_build_expression_audio_fetcher`` composition minus the
-    cut network kinds. Config order is source priority: the injected localaudio
-    (localhost) custom_json source is the default primary; imported local packs
-    follow as fallback.
+    Mirrors the desktop ``_build_expression_audio_fetcher`` composition minus
+    the cut network kinds. Config order is source priority: the imported local
+    packs are tried in the user's chosen order.
     """
 
     entries = tuple(getattr(config, "expression_audio_chain", ()))
 
-    # Reject-before-allocate: only the cut network kinds (jpod101/googletts)
-    # raise, and BEFORE any Session/import/packs-dir scan. pack/custom/custom_json
-    # are supported. Validate every entry first so a bad kind cannot slip through
-    # after a valid one has already allocated resources.
+    # Reject-before-allocate: any non-pack kind raises, and BEFORE any
+    # Session/import/packs-dir scan. Validate every entry first so a bad kind
+    # cannot slip through after a valid one has already allocated resources.
     if any(getattr(entry, "kind", None) not in _SUPPORTED_EXPRESSION_AUDIO_KINDS for entry in entries):
         raise BridgeProtocolError(
             "unsupported_android_feature",
-            "Android expression audio supports local packs and on-device local audio only",
+            "Android expression audio supports local packs only",
         )
 
     # Two-part fetch-gate mirror (audio_stage.py): the expression_audio Anki
@@ -515,91 +456,53 @@ def _build_expression_audio_source_chain(
         return None
 
     # Function-local imports are load-bearing: bootstrap and tokenizer resource
-    # registration must precede every engine service import. The bridge fetcher
-    # pulls ``requests`` at its module top, so it is imported here (never at
-    # mining.py's top) to keep the requests-free host test lane importing
-    # ``mining`` cleanly.
+    # registration must precede every engine service import, and the engine
+    # package pulls ``requests`` at import, so the requests-free host test lane
+    # must be able to import ``mining`` without reaching these.
     from anki_miner.config.paths import ANKI_MINER_HOME
     from anki_miner.services.audio_packs.registry import AudioPackRegistry
 
-    from .expression_audio_fetcher import (
-        CustomAudioFetcher,
-        _RunAudioCache,
-        custom_audio_slug,
-    )
-
-    # Nesting the custom cache UNDER the approved LOCAL_AUDIO_CACHE_ROOT
-    # (audio_cache/local_packs) keeps the localaudio download inside the
-    # already-approved media-staging prefix (startsWith approval), so bug 7 is
-    # independent of the media-staging approval boundary.
+    # The pack copy cache stays UNDER the approved LOCAL_AUDIO_CACHE_ROOT
+    # (audio_cache/local_packs), the already-approved media-staging prefix
+    # (startsWith approval).
     cache_root = ANKI_MINER_HOME / "audio_cache" / "local_packs"
     cache_lifetime = _RunAudioCache(cache_root)
 
-    # Lazily scan the packs dir only when an enabled pack entry is present.
     # Each resolved fetcher is wrapped so pack lookup failures become visible
     # in the run summary instead of dying in the vendored fetcher's debug log.
     pack_fetchers_by_id: dict[str, object] = {}
-    if any(getattr(entry, "kind", None) == "pack" and getattr(entry, "enabled", False) for entry in entries):
-        pack_registry = AudioPackRegistry(config.audio_packs_root)
-        pack_registry.load()
-        metas = getattr(pack_registry, "packs", None)
-        if not isinstance(metas, dict):
-            metas = {}
-        for pack_fetcher in pack_registry.build_fetcher_chain(config, cache_root):
-            meta = metas.get(pack_fetcher.pack_id)
-            db_path = getattr(meta, "db_path", None) if meta is not None else None
-            pack_fetchers_by_id[pack_fetcher.pack_id] = _DiagnosedPackFetcher(pack_fetcher, db_path)
+    pack_registry = AudioPackRegistry(config.audio_packs_root)
+    pack_registry.load()
+    metas = getattr(pack_registry, "packs", None)
+    if not isinstance(metas, dict):
+        metas = {}
+    for pack_fetcher in pack_registry.build_fetcher_chain(config, cache_root):
+        meta = metas.get(pack_fetcher.pack_id)
+        db_path = getattr(meta, "db_path", None) if meta is not None else None
+        pack_fetchers_by_id[pack_fetcher.pack_id] = _DiagnosedPackFetcher(pack_fetcher, db_path)
 
-    # Config order = source priority. This loop never raises: an empty-url custom
-    # entry or an unknown/missing pack is skipped (matching desktop), so combined
-    # with the validate-all-first check the reject-before-allocate invariant holds.
+    # Config order = source priority. This loop never raises: an unknown or
+    # missing pack is skipped (matching desktop), so combined with the
+    # validate-all-first check the reject-before-allocate invariant holds.
     fetchers: list[object] = []
-    localaudio_fetcher: object | None = None
-    fallback_fetchers: list[object] = []
     unavailable_pack_ids: list[str] = []
     for entry in entries:
         if not getattr(entry, "enabled", False):
             continue
-        kind = getattr(entry, "kind", None)
-        if kind in ("custom", "custom_json"):
-            url = getattr(entry, "url", None)
-            if not url:
-                continue
-            slug = custom_audio_slug(url)
-            custom_fetcher = CustomAudioFetcher(
-                url_template=url,
-                kind=kind,
-                cache_dir=cache_root / f"custom_{slug}",
-                file_prefix=f"custom_{slug}",
-                # Loopback needs no throttle; delay is timing-only and never
-                # affects fetched bytes, so desktop OUTPUT parity holds.
-                delay=0.0,
-                approved_audio_origins=_LOCALAUDIO_APPROVED_AUDIO_ORIGINS,
-                authenticated_loopback_origins=_LOCALAUDIO_AUTHENTICATED_LOOPBACK_ORIGINS,
-                ffprobe_path=getattr(config, "ffprobe_location", None),
-                cache_lifetime=cache_lifetime,
-            )
-            fetchers.append(custom_fetcher)
-            if kind == "custom_json":
-                localaudio_fetcher = custom_fetcher
-        elif kind == "pack":
-            pack_id = getattr(entry, "pack_id", None)
-            if pack_id is None:
-                continue
-            resolved = pack_fetchers_by_id.get(pack_id)
-            if resolved is None:
-                # Enabled in config but not resolvable on disk (corrupt index
-                # skipped at scan, stale schema, missing content dir) — report
-                # the id in the run summary instead of vanishing silently.
-                unavailable_pack_ids.append(pack_id)
-                continue
-            fetchers.append(resolved)
-            fallback_fetchers.append(resolved)
+        pack_id = getattr(entry, "pack_id", None)
+        if pack_id is None:
+            continue
+        resolved = pack_fetchers_by_id.get(pack_id)
+        if resolved is None:
+            # Enabled in config but not resolvable on disk (corrupt index
+            # skipped at scan, stale schema, missing content dir) — report
+            # the id in the run summary instead of vanishing silently.
+            unavailable_pack_ids.append(pack_id)
+            continue
+        fetchers.append(resolved)
 
     return _ExpressionAudioSourceChain(
         fetchers,
-        localaudio_fetcher=localaudio_fetcher,
-        fallback_fetchers=fallback_fetchers,
         diagnostic_callback=diagnostic_callback,
         cache_lifetime=cache_lifetime,
         unavailable_pack_ids=unavailable_pack_ids,

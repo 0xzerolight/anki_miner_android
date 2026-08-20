@@ -92,6 +92,8 @@ class SafArchiveStagerTest {
                 byteArrayOf(0xfd.toByte(), 0x37, 0x7a, 0x58, 0x5a, 0x00) to AudioArchiveContainer.XZ,
                 byteArrayOf(0x1f, 0x8b.toByte()) to AudioArchiveContainer.GZIP,
                 tar to AudioArchiveContainer.TAR,
+                "SQLite format 3".encodeToByteArray() + byteArrayOf(0x00) to
+                    AudioArchiveContainer.SQLITE,
             )
 
         fixtures.forEachIndexed { index, (signature, expected) ->

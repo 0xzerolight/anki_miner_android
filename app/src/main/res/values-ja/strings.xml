@@ -514,7 +514,7 @@
     <string name="resource_delete_confirm_message">%1$sをこの端末から削除します。Ankiからは何も削除されません。</string>
     <string name="dictionary_repair_confirm">スロットを修復</string>
     <string name="pitch_import_title">アクセントをインポート</string>
-    <string name="audio_pack_archive_guidance">ダウンロードした .tar.xz、.tar.gz、.tar、.zip アーカイブを選択してください。.torrent ファイルは選択しないでください。</string>
+    <string name="audio_pack_archive_guidance">ダウンロードした .tar.xz、.tar.gz、.tar、.zip アーカイブ、または生成した android.db を選択してください。.torrent ファイルは選択しないでください。</string>
     <string name="audio_pack_choice_title">どのパックを取り込みますか</string>
     <string name="audio_pack_choice_message">このアーカイブには%1$d個のパックが含まれています。取り込むのは選んだパックのみです。</string>
     <string name="audio_pack_choice_item">%1$s（%2$s）</string>

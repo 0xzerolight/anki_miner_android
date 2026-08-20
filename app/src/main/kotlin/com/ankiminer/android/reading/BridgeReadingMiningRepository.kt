@@ -2130,13 +2130,12 @@ internal class BridgeReadingMiningRepository(
     }
 
     /**
-     * True when the run will actually fetch expression audio, mirroring the engine's true fetch
+     * True when the run may fetch expression audio, approximating the engine's true fetch
      * condition ([anki_miner] audio_stage: `expression_audio_fetcher is not None and
-     * anki_fields["expression_audio"]`). The bridge injects the localaudio (localhost) source as an
-     * always-enabled default, so the builder returns a non-None fetcher iff the expression_audio
-     * field is mapped; the whole gate therefore reduces to "the field is mapped." The stored
-     * expression_audio_chain is NOT consulted: localaudio is injected Python-side and never appears
-     * in this Kotlin snapshot, so a chain check would miss the localaudio-only, zero-pack case.
+     * anki_fields["expression_audio"]`). The builder returns a non-None fetcher only when the
+     * expression_audio field is mapped AND an enabled pack entry exists; checking the field alone
+     * over-promotes the zero-pack case, which is the safe direction for a foreground-service
+     * decision (a promoted run that fetches nothing beats an unpromoted run that fetches).
      */
     private fun MiningConfigSnapshot.mapsExpressionAudioField(): Boolean {
         val fields = settings["anki_fields"] as? BridgeJsonValue.ObjectValue

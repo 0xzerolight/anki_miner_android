@@ -512,7 +512,7 @@
     <string name="resource_delete_confirm_message">将从此设备删除 %1$s，不会从 Anki 中移除任何内容。</string>
     <string name="dictionary_repair_confirm">修复槽位</string>
     <string name="pitch_import_title">导入音调</string>
-    <string name="audio_pack_archive_guidance">请选择下载的 .tar.xz、.tar.gz、.tar 或 .zip 归档文件，不要选择 .torrent 文件。</string>
+    <string name="audio_pack_archive_guidance">请选择下载的 .tar.xz、.tar.gz、.tar 或 .zip 归档文件，或生成的 android.db，不要选择 .torrent 文件。</string>
     <string name="audio_pack_choice_title">选择哪个包？</string>
     <string name="audio_pack_choice_message">此归档文件包含 %1$d 个包。导入只会解压所选的一个。</string>
     <string name="audio_pack_choice_item">%1$s（%2$s）</string>

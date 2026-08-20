@@ -137,8 +137,8 @@ class JournalBackedMediaMutationServiceTest {
         // application/octet-stream, which AnkiDroid stores as ".bin" (Issue #2).
         //
         // .wav is the anchor case: Android offline TTS publishes reading-mode sentence audio as WAV,
-        // so it needs no assumption about any server's behaviour. .ogg covers downloaded expression
-        // audio (the extension comes from the localaudio server's Content-Type) and .svg covers
+        // so it needs no assumption about any server's behaviour. .ogg covers pack expression
+        // audio (the extension comes from the pack's own file name) and .svg covers
         // Yomitan dictionary media, which arrives as MediaKind.IMAGE with its own basename.
         val request =
             requestOfKinds(

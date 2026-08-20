@@ -530,11 +530,10 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
-    fun `localaudio expression audio with zero packs promotes media foreground`() {
-        // The user's headline scenario: the expression_audio field is mapped and NO
-        // audio packs are imported. localaudio (localhost) is injected Python-side and
-        // never appears in this Kotlin snapshot, so the reading FGS must promote on the
-        // mapped field alone — mirroring the engine's true fetch gate (audio_stage).
+    fun `mapped expression audio field with zero packs promotes media foreground`() {
+        // The expression_audio field is mapped and NO audio packs are imported. The
+        // run will fetch nothing, but the FGS predicate promotes on the mapped field
+        // alone: over-promotion is the safe direction for a foreground decision.
         val harness = harness(expressionAudioFieldMapped = true)
 
         runBlocking { harness.repository.startReading(INPUT) }
@@ -1800,10 +1799,9 @@ class BridgeReadingMiningRepositoryTest {
                         MiningConfigSnapshot(
                             settings =
                                 if (expressionAudioFieldMapped) {
-                                    // Model the localaudio-only configuration: the expression_audio
-                                    // Anki field is mapped and ZERO packs are imported. The reading
-                                    // FGS predicate reads anki_fields — localaudio is injected
-                                    // Python-side and never appears in this Kotlin snapshot.
+                                    // The expression_audio Anki field is mapped and ZERO packs
+                                    // are imported. The reading FGS predicate reads anki_fields
+                                    // only, so it promotes on the mapped field alone.
                                     mapOf(
                                         "anki_fields" to
                                             BridgeJsonValue.ObjectValue(

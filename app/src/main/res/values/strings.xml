@@ -523,7 +523,7 @@
     <string name="resource_delete_confirm_message">Deletes %1$s from this device. Nothing is removed from Anki.</string>
     <string name="dictionary_repair_confirm">Repair slot</string>
     <string name="pitch_import_title">Import pitch accent</string>
-    <string name="audio_pack_archive_guidance">Choose the downloaded .tar.xz, .tar.gz, .tar, or .zip archive—not the .torrent file.</string>
+    <string name="audio_pack_archive_guidance">Choose the downloaded .tar.xz, .tar.gz, .tar, or .zip archive, or a generated android.db—not the .torrent file.</string>
     <string name="audio_pack_choice_title">Which pack?</string>
     <string name="audio_pack_choice_message">This archive holds %1$d packs. Importing extracts only the chosen one.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>

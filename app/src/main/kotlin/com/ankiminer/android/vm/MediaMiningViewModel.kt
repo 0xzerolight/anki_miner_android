@@ -234,8 +234,7 @@ class MediaMiningViewModel internal constructor(
                         !local.fieldMap["picture"].isNullOrBlank(),
                 // Not lane-gated: expression audio applies to every mining lane.
                 // Fires only when a usable pack proves the user wants word audio;
-                // a localaudio-server-only setup (no packs) is an accepted gap --
-                // detecting the server would need a network probe.
+                // with no pack there is no source to warn about.
                 expressionAudioFieldUnmapped =
                     local.fieldMap["expression_audio"].isNullOrBlank() &&
                         local.audioPacks.any { it.contentAvailable && it.entryCount > 0 },
