@@ -3247,7 +3247,7 @@ def test_replacing_audio_pack_does_not_reuse_previous_run_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from android_bridge import mining
-    from android_bridge.expression_audio_fetcher import _RunAudioCache
+    from android_bridge.audio_cache import _RunAudioCache
     from anki_miner.services.audio_packs.fetcher import LocalAudioPackFetcher
 
     home = _local_home(tmp_path, monkeypatch)
