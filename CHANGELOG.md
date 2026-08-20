@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-20
+
 ### Added
 
 - **Word audio imports straight from local-audio-yomichan's `android.db` (Settings -> Audio).** The desktop add-on's "Generate Android database" file — the same one AnkiConnect-Android reads — now imports like any audio pack. The engine has carried an `android_db` pack format (metadata `entries` table plus `android` blob table, entries and audio read in place from the registered database) since the pack framework landed, but Android had no way to register one. The picker, staging and bridge now recognize a bare SQLite file by magic bytes; the database is hard-linked (streamed-copy fallback) into the published slot beside a metadata-only `index.sqlite`, so a ~5 GB import costs no second copy and no extraction. One preflight candidate auto-imports, so the flow is the same two taps as a folder pack.
