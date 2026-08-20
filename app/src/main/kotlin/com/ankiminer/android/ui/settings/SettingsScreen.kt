@@ -126,13 +126,19 @@ private val TAR_IMPORT_MIME_TYPES =
         "application/gzip",
     )
 
+// local-audio-yomichan's generated android.db is a bare SQLite database; providers that know the
+// format type it as one of these, everything else reports application/octet-stream (also listed).
+private val SQLITE_IMPORT_MIME_TYPES =
+    arrayOf("application/x-sqlite3", "application/vnd.sqlite3")
+
 internal val CUSTOM_DICTIONARY_MIME_TYPES = ZIP_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
 internal val FREQUENCY_MIME_TYPES =
     ZIP_IMPORT_MIME_TYPES + TEXT_IMPORT_MIME_TYPES + CSV_IMPORT_MIME_TYPES +
         UNTYPED_IMPORT_MIME_TYPES
 internal val PITCH_MIME_TYPES = FREQUENCY_MIME_TYPES
 internal val AUDIO_PACK_MIME_TYPES =
-    ZIP_IMPORT_MIME_TYPES + TAR_IMPORT_MIME_TYPES + UNTYPED_IMPORT_MIME_TYPES
+    ZIP_IMPORT_MIME_TYPES + TAR_IMPORT_MIME_TYPES + SQLITE_IMPORT_MIME_TYPES +
+        UNTYPED_IMPORT_MIME_TYPES
 internal val KNOWN_WORDS_MIME_TYPES =
     arrayOf("application/json") + TEXT_IMPORT_MIME_TYPES + CSV_IMPORT_MIME_TYPES +
         UNTYPED_IMPORT_MIME_TYPES

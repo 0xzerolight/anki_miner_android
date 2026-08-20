@@ -518,7 +518,7 @@
     <string name="resource_delete_confirm_message">Удаляет %1$s с этого устройства. Из Anki ничего не удаляется.</string>
     <string name="dictionary_repair_confirm">Восстановить слот</string>
     <string name="pitch_import_title">Импортировать тональное ударение</string>
-    <string name="audio_pack_archive_guidance">Выберите скачанный архив .tar.xz, .tar.gz, .tar или .zip, а не файл .torrent.</string>
+    <string name="audio_pack_archive_guidance">Выберите скачанный архив .tar.xz, .tar.gz, .tar или .zip либо созданный файл android.db, а не файл .torrent.</string>
     <string name="audio_pack_choice_title">Какой пакет?</string>
     <string name="audio_pack_choice_message">В архиве %1$d пакетов. Импорт извлекает только выбранный.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>

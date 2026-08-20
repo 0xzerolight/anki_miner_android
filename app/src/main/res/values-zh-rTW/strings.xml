@@ -508,7 +508,7 @@
     <string name="resource_delete_confirm_message">將從此裝置刪除 %1$s。不會從 Anki 移除任何內容。</string>
     <string name="dictionary_repair_confirm">修復插槽</string>
     <string name="pitch_import_title">匯入高低音調</string>
-    <string name="audio_pack_archive_guidance">請選擇下載的 .tar.xz、.tar.gz、.tar 或 .zip 封存檔，不要選擇 .torrent 檔案。</string>
+    <string name="audio_pack_archive_guidance">請選擇下載的 .tar.xz、.tar.gz、.tar 或 .zip 封存檔，或產生的 android.db，不要選擇 .torrent 檔案。</string>
     <string name="audio_pack_choice_title">要匯入哪個音訊包？</string>
     <string name="audio_pack_choice_message">此封存檔含 %1$d 個音訊包。匯入僅會解壓所選的一個。</string>
     <string name="audio_pack_choice_item">%1$s（%2$s）</string>

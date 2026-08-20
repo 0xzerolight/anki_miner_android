@@ -512,7 +512,7 @@
     <string name="resource_delete_confirm_message">Xóa %1$s khỏi thiết bị này. Không có gì bị xóa khỏi Anki.</string>
     <string name="dictionary_repair_confirm">Sửa chữa khe</string>
     <string name="pitch_import_title">Nhập trọng âm cao độ</string>
-    <string name="audio_pack_archive_guidance">Hãy chọn tệp lưu trữ .tar.xz, .tar.gz, .tar hoặc .zip đã tải xuống, không chọn tệp .torrent.</string>
+    <string name="audio_pack_archive_guidance">Hãy chọn tệp lưu trữ .tar.xz, .tar.gz, .tar hoặc .zip đã tải xuống, hoặc tệp android.db đã tạo, không chọn tệp .torrent.</string>
     <string name="audio_pack_choice_title">Gói nào?</string>
     <string name="audio_pack_choice_message">Kho lưu trữ này chứa %1$d gói. Việc nhập chỉ giải nén gói đã chọn.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>

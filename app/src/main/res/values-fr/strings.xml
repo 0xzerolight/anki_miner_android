@@ -515,7 +515,7 @@
     <string name="resource_delete_confirm_message">Supprime %1$s de cet appareil. Rien n\'est supprimé d\'Anki.</string>
     <string name="dictionary_repair_confirm">Réparer l\'emplacement</string>
     <string name="pitch_import_title">Importer l\'accent de hauteur</string>
-    <string name="audio_pack_archive_guidance">Sélectionnez l’archive téléchargée .tar.xz, .tar.gz, .tar ou .zip, et non le fichier .torrent.</string>
+    <string name="audio_pack_archive_guidance">Sélectionnez l’archive téléchargée .tar.xz, .tar.gz, .tar ou .zip, ou un fichier android.db généré, et non le fichier .torrent.</string>
     <string name="audio_pack_choice_title">Quel pack ?</string>
     <string name="audio_pack_choice_message">Cette archive contient %1$d packs. L\'importation n\'extrait que celui choisi.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>

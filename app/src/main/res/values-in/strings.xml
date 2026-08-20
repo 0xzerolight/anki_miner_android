@@ -512,7 +512,7 @@
     <string name="resource_delete_confirm_message">Menghapus %1$s dari perangkat ini. Tidak ada yang dihapus dari Anki.</string>
     <string name="dictionary_repair_confirm">Perbaiki slot</string>
     <string name="pitch_import_title">Impor aksen nada</string>
-    <string name="audio_pack_archive_guidance">Pilih arsip .tar.xz, .tar.gz, .tar, atau .zip yang telah diunduh, bukan file .torrent.</string>
+    <string name="audio_pack_archive_guidance">Pilih arsip .tar.xz, .tar.gz, .tar, atau .zip yang telah diunduh, atau android.db yang dihasilkan, bukan file .torrent.</string>
     <string name="audio_pack_choice_title">Paket yang mana?</string>
     <string name="audio_pack_choice_message">Arsip ini berisi %1$d paket. Mengimpor hanya mengekstrak paket yang dipilih.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>

@@ -92,6 +92,21 @@ class ImportMimeTypesTest {
         }
     }
 
+    /**
+     * local-audio-yomichan's generated android.db is a bare SQLite database. Providers that know
+     * the format report it as application/x-sqlite3 or application/vnd.sqlite3; everything else
+     * falls back to application/octet-stream, which every picker already offers.
+     */
+    @Test
+    fun audioPackPickerOffersSqliteDatabases() {
+        for (mimeType in arrayOf("application/x-sqlite3", "application/vnd.sqlite3")) {
+            assertTrue(
+                "audio pack picker greys out $mimeType",
+                mimeTypeIsPickable(mimeType, AUDIO_PACK_MIME_TYPES),
+            )
+        }
+    }
+
     @Test
     fun wildcardMatchingFollowsTheTopLevelTypeOnly() {
         assertTrue(mimeTypeIsPickable("text/comma-separated-values", arrayOf("text/*")))

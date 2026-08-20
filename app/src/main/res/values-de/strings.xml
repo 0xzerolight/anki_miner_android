@@ -514,7 +514,7 @@
     <string name="resource_delete_confirm_message">Löscht %1$s von diesem Gerät. Aus Anki wird nichts entfernt.</string>
     <string name="dictionary_repair_confirm">Slot reparieren</string>
     <string name="pitch_import_title">Tonhöhenakzent importieren</string>
-    <string name="audio_pack_archive_guidance">Wähle das heruntergeladene Archiv im Format .tar.xz, .tar.gz, .tar oder .zip – nicht die .torrent-Datei.</string>
+    <string name="audio_pack_archive_guidance">Wähle das heruntergeladene Archiv im Format .tar.xz, .tar.gz, .tar oder .zip – oder eine generierte android.db – nicht die .torrent-Datei.</string>
     <string name="audio_pack_choice_title">Welches Paket?</string>
     <string name="audio_pack_choice_message">Dieses Archiv enthält %1$d Pakete. Der Import entpackt nur das gewählte.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>

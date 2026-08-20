@@ -515,7 +515,7 @@
     <string name="resource_delete_confirm_message">Exclui %1$s deste dispositivo. Nada é removido do Anki.</string>
     <string name="dictionary_repair_confirm">Reparar espaço</string>
     <string name="pitch_import_title">Importar acento tonal</string>
-    <string name="audio_pack_archive_guidance">Selecione o arquivo compactado baixado .tar.xz, .tar.gz, .tar ou .zip, não o arquivo .torrent.</string>
+    <string name="audio_pack_archive_guidance">Selecione o arquivo compactado baixado .tar.xz, .tar.gz, .tar ou .zip, ou um android.db gerado, não o arquivo .torrent.</string>
     <string name="audio_pack_choice_title">Qual pacote?</string>
     <string name="audio_pack_choice_message">Este arquivo contém %1$d pacotes. Importar extrai apenas o pacote escolhido.</string>
     <string name="audio_pack_choice_item">%1$s (%2$s)</string>
