@@ -226,9 +226,16 @@ class _ExpressionAudioSourceChain:
         details: list[str] = []
         counts = self._localaudio_counts()
         if counts is not None:
-            unavailable = sum(int(counts.get(key, 0)) for key in ("ssl", "connection", "http_status"))
+            # "not reachable" is the transport family (refused/reset/empty —
+            # the server never answered); "server errors" means it answered
+            # non-200. The old single "unavailable" sum hid which of the two a
+            # tester was hitting, and the distinction is the actionable part:
+            # the first means AnkiConnect-Android is not running, the second
+            # that it is up but failing (e.g. a stale android.db).
+            not_reachable = sum(int(counts.get(key, 0)) for key in ("ssl", "connection"))
             fields = (
-                ("localaudio unavailable", unavailable),
+                ("localaudio not reachable", not_reachable),
+                ("localaudio server errors", int(counts.get("http_status", 0))),
                 ("timeouts", int(counts.get("timeout", 0))),
                 ("rejected sources", int(counts.get("policy_rejection", 0))),
                 ("oversized responses", int(counts.get("oversized_response", 0))),
@@ -303,6 +310,16 @@ class _ExpressionAudioSourceChain:
     def close(self) -> None:
         if not self._diagnostic_reported:
             self._diagnostic_reported = True
+            counts = self._localaudio_counts()
+            if counts is not None:
+                # Counts only — no terms, no URLs. The run summary aggregates
+                # these; the per-key breakdown here is what lets a diagnostics
+                # bundle distinguish a dead server from an erroring one.
+                logger.info(
+                    "Expression audio localaudio counts: %s; fallback pack hits: %d",
+                    counts,
+                    self._fallback_hits,
+                )
             summary = self._diagnostic_summary()
             if summary is not None and self._diagnostic_callback is not None:
                 try:
