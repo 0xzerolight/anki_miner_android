@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">Expandido</string>
     <string name="disclosure_collapsed">Recolhido</string>
     <string name="settings_disclosure_summary">%1$s (%2$d de %3$d)</string>
+    <string name="anki_field_mapping_remap">Preencher mapeamentos pelos nomes dos campos</string>
+    <string name="anki_field_mapping_remap_help">Compara de novo os nomes dos campos deste tipo de nota e preenche todo mapeamento reconhecido. Nomes não reconhecidos mantêm o campo já escolhido.</string>
     <string name="anki_field_mapping_changes">Mapeamentos alterados para este tipo de nota: %1$s</string>
     <string name="anki_field_none">Não mapeado</string>
     <string name="anki_card_type_title">Tipo de cartão</string>

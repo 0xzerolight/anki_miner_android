@@ -115,6 +115,7 @@ internal fun AnkiTargetCard(
     onSetFieldMapping: (String, String) -> Unit,
     onSelectCardType: (CardType?) -> Unit,
     onSelectCardTypeMarker: (String) -> Unit,
+    onRemapFields: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -170,6 +171,17 @@ internal fun AnkiTargetCard(
                             ),
                         )
                     }
+                    // Selecting a note type maps its fields; selecting the SAME one again does
+                    // nothing. This is the way back for a map made against an older keyword table,
+                    // and it has to sit outside the collapsed section to be found at all.
+                    SecondaryActionButton(
+                        onClick = onRemapFields,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !state.busy && fields.isNotEmpty(),
+                    ) {
+                        Text(stringResource(R.string.anki_field_mapping_remap))
+                    }
+                    SupportingText(stringResource(R.string.anki_field_mapping_remap_help))
                     if (showMapping) {
                     AnkiFieldKeys.ALL.forEach { key ->
                         val base = key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
@@ -203,7 +215,8 @@ internal fun AnkiTargetCard(
                         val details =
                             state.fieldMapChanges.joinToString { change ->
                                 val replacement = change.newDestination.ifEmpty { noneLabel }
-                                "${change.logicalKey}: ${change.previousDestination} → $replacement"
+                                val previous = change.previousDestination.ifEmpty { noneLabel }
+                                "${change.logicalKey}: $previous → $replacement"
                             }
                         Text(
                             stringResource(R.string.anki_field_mapping_changes, details),

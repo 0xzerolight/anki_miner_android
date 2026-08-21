@@ -532,6 +532,7 @@ class SettingsComponentsTest {
                     onSetFieldMapping = { _, _ -> },
                     onSelectCardType = {},
                     onSelectCardTypeMarker = {},
+                    onRemapFields = {},
                 )
             }
         }
