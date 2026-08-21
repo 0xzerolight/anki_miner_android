@@ -45,16 +45,70 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun frozenCatalogPinsTheLocalResourcesAndTheRecommendedSet() {
+        val catalog = FrozenResourceCatalog.value
+
+        val frequency = catalog.frequencies.single()
+        assertEquals("jpdb", frequency.sourceId)
+        assertEquals(FrequencySourceFormat.YOMITAN_ZIP, frequency.sourceFormat)
+        assertEquals(5_996_363L, frequency.archive.sizeBytes)
+
+        val pitch = catalog.pitchSources.single()
+        assertEquals("kanjium", pitch.sourceId)
+        assertEquals(PitchAccentSourceFormat.TSV, pitch.sourceFormat)
+        assertEquals(3_226_405L, pitch.archive.sizeBytes)
+        assertEquals(
+            setOf("Kanjium pitch accent data", "EDICT and KANJIDIC"),
+            pitch.attribution.mapTo(mutableSetOf()) { it.name },
+        )
+
+        // JMdict, not Jitendex: the set matches the desktop recommendation.
+        assertEquals(
+            listOf("jmdict-en-2026-07-17", "jpdb-v2.2-kana-2024-10-13", "kanjium-pitch-8a0cdaa1"),
+            catalog.recommended,
+        )
+        assertEquals(catalog.recommended, catalog.recommendedResources.map { it.resourceId })
+    }
+
+    @Test
     fun committedPythonCatalogJsonMatchesTheFrozenKotlinCatalog() {
+        // decodeCatalog throws resource_catalog_mismatch on any divergence.
+        assertEquals(FrozenResourceCatalog.value, ResourceBridgeCodec.decodeCatalog(committedCatalogEnvelope()))
+    }
+
+    @Test
+    fun catalogRejectsALocalFormatOutsideTheImporterContract() {
+        // "txt" is a legal frequency format and an illegal pitch one.
+        val raw = committedCatalogEnvelope().replace(""""format": "tsv"""", """"format": "txt"""")
+
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCatalog(raw)
+            }
+        assertEquals("invalid_resource_response", failure.code)
+    }
+
+    @Test
+    fun catalogRejectsARecommendedIdThatNamesNoResource() {
+        val raw =
+            committedCatalogEnvelope()
+                .replace(""""recommended": [""", """"recommended": ["not-in-the-catalog",""")
+
+        // The Kotlin mirror is the authority here: an id the frozen copy does not list makes the
+        // decoded catalog differ, which is the mismatch the equality check exists to catch.
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCatalog(raw)
+            }
+        assertEquals("resource_catalog_mismatch", failure.code)
+    }
+
+    private fun committedCatalogEnvelope(): String {
         val payload =
             checkNotNull(javaClass.getResourceAsStream("/resource_catalog_v1.json")) {
                 "resource_catalog_v1.json missing from the test classpath"
             }.bufferedReader().use { it.readText() }
-        val raw =
-            """{"schemaVersion":1,"type":"resource.catalog","payload":${payload.trim()}}"""
-
-        // decodeCatalog throws resource_catalog_mismatch on any divergence.
-        assertEquals(FrozenResourceCatalog.value, ResourceBridgeCodec.decodeCatalog(raw))
+        return """{"schemaVersion":1,"type":"resource.catalog","payload":${payload.trim()}}"""
     }
 
     @Test

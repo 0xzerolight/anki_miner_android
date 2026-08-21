@@ -55,7 +55,7 @@ import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.navigation.AppChrome
 import com.ankiminer.android.ui.settings.AnkiDeckCard
 import com.ankiminer.android.ui.settings.AnkiOperationCard
-import com.ankiminer.android.ui.settings.CatalogDictionaryCards
+import com.ankiminer.android.ui.settings.RecommendedResourcesCard
 import com.ankiminer.android.ui.settings.ResourceReplaceDialog
 import com.ankiminer.android.ui.settings.InlineFailureContainer
 import com.ankiminer.android.ui.settings.ResourceCard
@@ -163,7 +163,7 @@ internal data class OnboardingWizardCallbacks(
     val onDismissFailure: () -> Unit = {},
     val onDismissAnkiFailure: () -> Unit = {},
     val onInstallUniDic: () -> Unit = {},
-    val onInstallCatalogDictionary: (String) -> Unit = {},
+    val onDownloadRecommendedResources: () -> Unit = {},
     val onSelectDeck: (String) -> Unit = {},
     val onRetryDeckSelection: () -> Unit = {},
     val onSelectNoteType: (String) -> Unit = {},
@@ -207,7 +207,7 @@ internal fun OnboardingWizard(
                 onDismissFailure = viewModel::dismissFailure,
                 onDismissAnkiFailure = viewModel::dismissAnkiFailure,
                 onInstallUniDic = viewModel::installUniDic,
-                onInstallCatalogDictionary = viewModel::installCatalogDictionary,
+                onDownloadRecommendedResources = viewModel::installRecommendedResources,
                 onSelectDeck = viewModel::selectDeck,
                 onRetryDeckSelection = viewModel::retryDeckSelection,
                 onSelectNoteType = viewModel::selectNoteType,
@@ -485,23 +485,18 @@ private fun WizardStepBody(
             )
         }
         WizardStep.DICTIONARY -> {
-            CatalogDictionaryCards(
-                state,
-                callbacks.onInstallCatalogDictionary,
-            ) { resourceId ->
-                val failure = state.failure
-                if (
-                    failure?.origin == ResourceFailureOrigin.CATALOG_DICTIONARY &&
-                    failure.retry.targetId == resourceId
-                ) {
+            RecommendedResourcesCard(
+                state = state,
+                onDownload = callbacks.onDownloadRecommendedResources,
+                inlineFailure = {
                     WizardResourceFailure(
                         state,
-                        ResourceFailureOrigin.CATALOG_DICTIONARY,
+                        ResourceFailureOrigin.RECOMMENDED_SET,
                         callbacks.onRetryResourceFailure,
                         callbacks.onDismissFailure,
                     )
-                }
-            }
+                },
+            )
         }
         WizardStep.DONE -> {
             val hasRecoveryFailure =

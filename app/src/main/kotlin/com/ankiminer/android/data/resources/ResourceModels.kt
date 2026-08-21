@@ -60,9 +60,46 @@ data class YomitanCatalogResource(
     override val attribution: List<ResourceAttribution>,
 ) : CatalogResource
 
+/**
+ * A pinned frequency source installed through `resource.frequency.import`.
+ *
+ * The bridge op takes an absolute path and cannot tell a downloaded file from a SAF-staged one,
+ * so no import machinery is specific to this kind.
+ */
+data class FrequencyCatalogResource(
+    override val resourceId: String,
+    override val displayName: String,
+    val sourceId: String,
+    override val archive: ResourceArchive,
+    override val attribution: List<ResourceAttribution>,
+) : CatalogResource {
+    /** For a local resource the pinned archive format IS the importer's wire format. */
+    val sourceFormat: FrequencySourceFormat =
+        requireNotNull(FrequencySourceFormat.entries.firstOrNull { it.wireValue == archive.format }) {
+            "Unsupported pinned frequency format: ${archive.format}"
+        }
+}
+
+/** A pinned pitch-accent source installed through `resource.pitch.import`. */
+data class PitchCatalogResource(
+    override val resourceId: String,
+    override val displayName: String,
+    val sourceId: String,
+    override val archive: ResourceArchive,
+    override val attribution: List<ResourceAttribution>,
+) : CatalogResource {
+    /** See [FrequencyCatalogResource.sourceFormat]. */
+    val sourceFormat: PitchAccentSourceFormat =
+        requireNotNull(PitchAccentSourceFormat.entries.firstOrNull { it.wireValue == archive.format }) {
+            "Unsupported pinned pitch format: ${archive.format}"
+        }
+}
+
 data class ResourceCatalog(
     val schemaVersion: Long,
     val resources: List<CatalogResource>,
+    /** Resource ids of the recommended set, in the order they are installed. */
+    val recommended: List<String>,
 ) {
     val unidic: UniDicCatalogResource
         get() = resources.filterIsInstance<UniDicCatalogResource>().single()
@@ -70,8 +107,18 @@ data class ResourceCatalog(
     val dictionaries: List<YomitanCatalogResource>
         get() = resources.filterIsInstance<YomitanCatalogResource>()
 
+    val frequencies: List<FrequencyCatalogResource>
+        get() = resources.filterIsInstance<FrequencyCatalogResource>()
+
+    val pitchSources: List<PitchCatalogResource>
+        get() = resources.filterIsInstance<PitchCatalogResource>()
+
     fun dictionary(resourceId: String): YomitanCatalogResource? =
         dictionaries.singleOrNull { it.resourceId == resourceId }
+
+    /** The recommended members themselves; catalog order is install order. */
+    val recommendedResources: List<CatalogResource>
+        get() = recommended.mapNotNull { id -> resources.firstOrNull { it.resourceId == id } }
 }
 
 data class InstalledUniDic(
@@ -516,6 +563,9 @@ enum class ResourceFailureOrigin {
     FREQUENCY,
     KNOWN_WORDS,
     WORD_LIST,
+
+    /** The pinned recommended set, downloaded and installed as one batch. */
+    RECOMMENDED_SET,
 }
 
 enum class ResourceFailureAction {
@@ -578,6 +628,10 @@ data class ResourceManagerState(
         get() = installedUniDic != null
 
     fun wordList(kind: WordListKind): InstalledWordList? = wordLists.firstOrNull { it.kind == kind }
+
+    /** What one press of the recommended-set download would install right now. */
+    val recommendedPlan: RecommendedResourcePlan
+        get() = recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources)
 
     val catalogDictionaries: List<CatalogDictionaryStatus>
         get() =

@@ -13,6 +13,7 @@ import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupOperation
 import com.ankiminer.android.data.resources.AudioPackCandidate
 import com.ankiminer.android.data.resources.CatalogDictionaryStatus
+import com.ankiminer.android.data.resources.RecommendedResourcePlan
 import com.ankiminer.android.data.resources.DictionaryLookup
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledAudioPack
@@ -67,6 +68,7 @@ internal data class SetupUiState(
     val audioPackChoices: List<AudioPackCandidate> = emptyList(),
     val uniDicInstalled: Boolean = false,
     val catalogDictionaries: List<CatalogDictionaryStatus> = emptyList(),
+    val recommendedPlan: RecommendedResourcePlan = RecommendedResourcePlan(),
     val pendingReplace: PendingResourceReplace? = null,
     val pendingDelete: PendingResourceDelete? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),

@@ -15,10 +15,6 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -29,83 +25,42 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
-import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
-import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.vm.SetupUiState
 
 /**
- * Bundled dictionary install cards. An installed dictionary has nothing to offer, so its card is
- * hidden behind a disclosure rather than sitting permanently at the top of the tab.
+ * The one affordance that installs the pinned recommended set.
  *
- * The disclosure and its state live here, not in the caller, because the onboarding wizard's
- * dictionary step is a bare call to this composable — without it that step renders empty on a
- * re-run with both dictionaries already installed.
+ * Rendered in the wizard's dictionary step and reachable from the dictionary panel's Add menu. The
+ * plan behind it is the same one the runner uses, so a satisfied set shows a disabled button rather
+ * than a no-op press. A broken slot is still repaired from its own panel row, which is why
+ * `installCatalogDictionary` survives with no install affordance of its own.
  */
 @Composable
-internal fun CatalogDictionaryCards(
+internal fun RecommendedResourcesCard(
     state: SetupUiState,
-    onInstall: (String) -> Unit,
-    inlineFailure: @Composable (String) -> Unit = {},
+    onDownload: () -> Unit,
+    inlineFailure: (@Composable () -> Unit)? = null,
 ) {
-    var showInstalled by rememberSaveable { mutableStateOf(false) }
-    // A failed *replace* leaves the dictionary installed, so filtering on installed alone would
-    // hide the card that owns the failure message.
-    val failureTargetId =
-        state.failure
-            ?.takeIf { it.origin == ResourceFailureOrigin.CATALOG_DICTIONARY }
-            ?.retry
-            ?.targetId
-    val visible =
-        state.catalogDictionaries.filter {
-            showInstalled || !it.installed || it.resource.resourceId == failureTargetId
-        }
-    val installedAreHidden =
-        !showInstalled &&
-            state.catalogDictionaries.any {
-                it.installed && it.resource.resourceId != failureTargetId
-            }
-    visible.forEach { status ->
-        ResourceCard(
-            title =
-                stringResource(
-                    if (status.resource.slotId == "jmdict") {
-                        R.string.jmdict_resource_title
-                    } else {
-                        R.string.jitendex_resource_title
-                    },
-                ),
-            description =
-                stringResource(
-                    if (status.resource.slotId == "jmdict") {
-                        R.string.jmdict_resource_description
-                    } else {
-                        R.string.jitendex_resource_description
-                    },
-                ),
-            installed = status.installed,
-            busy = state.busy,
-            action = { onInstall(status.resource.resourceId) },
-            actionLabel = stringResource(
-                when {
-                    status.needsRepair -> R.string.dictionary_repair
-                    status.installed -> R.string.dictionary_replace
-                    else -> R.string.dictionary_install
+    val plan = state.recommendedPlan
+    ResourceCard(
+        title = stringResource(R.string.recommended_resources_title),
+        description = stringResource(R.string.recommended_resources_description),
+        installed = plan.isSatisfied,
+        busy = state.busy,
+        action = onDownload,
+        actionEnabled = plan.isActionable,
+        actionLabel =
+            stringResource(
+                if (plan.isSatisfied) {
+                    R.string.recommended_resources_installed_action
+                } else {
+                    R.string.recommended_resources_download
                 },
             ),
-            inlineFailure = { inlineFailure(status.resource.resourceId) },
-        )
-    }
-    if (visible.isEmpty() || installedAreHidden) {
-        SecondaryActionButton(
-            onClick = { showInstalled = true },
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.dictionary_catalog_reinstall))
-        }
-    }
+        inlineFailure = inlineFailure,
+    )
 }
 
 @Composable

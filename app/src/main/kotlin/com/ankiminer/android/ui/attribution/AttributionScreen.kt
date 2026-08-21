@@ -23,6 +23,8 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.FrozenResourceCatalog
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.InstalledFrequencySource
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.ResourceAttribution
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SectionTitle
@@ -32,11 +34,15 @@ internal fun AttributionScreen(
     onOpenNotices: () -> Unit,
     modifier: Modifier = Modifier,
     installedDictionaries: List<InstalledDictionary> = emptyList(),
+    installedFrequencySources: List<InstalledFrequencySource> = emptyList(),
+    installedPitchSources: List<InstalledPitchSource> = emptyList(),
 ) {
     val catalog = FrozenResourceCatalog.value
     val uriHandler = LocalUriHandler.current
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
+    val installedDataAttribution =
+        installedLocalCatalogAttributions(installedFrequencySources, installedPitchSources)
     val jitendexInstalled = hasInstalledJitendex(occupiedDictionaries)
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -101,6 +107,14 @@ internal fun AttributionScreen(
                 AttributionGroup(
                     stringResource(R.string.attribution_installed_catalog_notices),
                     installedCatalogAttribution,
+                )
+            }
+        }
+        if (installedDataAttribution.isNotEmpty()) {
+            item(key = "attribution:local-data", contentType = "attribution-group") {
+                AttributionGroup(
+                    stringResource(R.string.attribution_installed_data_notices),
+                    installedDataAttribution,
                 )
             }
         }
@@ -186,6 +200,26 @@ internal fun installedCatalogAttributions(
         .filter { it.occupied }
         .flatMap { it.attribution }
         .distinctBy { listOf(it.name, it.copyright, it.license, it.url) }
+
+/**
+ * Attributions for pinned frequency and pitch data that is actually installed.
+ *
+ * Matched by source id against the frozen catalog rather than trusted from the inventory: unlike a
+ * dictionary, a local resource carries no attribution field of its own.
+ */
+internal fun installedLocalCatalogAttributions(
+    frequencySources: List<InstalledFrequencySource>,
+    pitchSources: List<InstalledPitchSource>,
+): List<ResourceAttribution> {
+    val catalog = FrozenResourceCatalog.value
+    val frequencyIds = frequencySources.mapTo(mutableSetOf()) { it.sourceId }
+    val pitchIds = pitchSources.mapTo(mutableSetOf()) { it.sourceId }
+    return (
+        catalog.frequencies.filter { it.sourceId in frequencyIds } +
+            catalog.pitchSources.filter { it.sourceId in pitchIds }
+    ).flatMap { it.attribution }
+        .distinctBy { listOf(it.name, it.copyright, it.license, it.url) }
+}
 
 @Composable
 private fun InstalledDictionaryAttribution(dictionary: InstalledDictionary) {

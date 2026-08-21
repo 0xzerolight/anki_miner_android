@@ -499,17 +499,12 @@
     <string name="unidic_resource_title">Японский токенизатор — требуется</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · загрузка около 45 MiB, установлено 249 MiB</string>
     <string name="jitendex_resource_title">Словарь Jitendex — рекомендуется</string>
-    <string name="jitendex_resource_description">Офлайн-словарь Yomitan · загрузка около 37 MiB, до 516 MiB при импорте</string>
     <string name="jmdict_resource_title">Словарь JMdict (английский)</string>
     <string name="jmdict_resource_description">Офлайн-словарь Yomitan с английскими глоссами · загрузка около 15 MiB, до 163 MiB при импорте</string>
     <string name="resource_installed">Установлено</string>
     <string name="resource_not_installed">Не установлено</string>
     <string name="unidic_install">Установить</string>
     <string name="unidic_repair">Восстановить</string>
-    <string name="dictionary_install">Установить</string>
-    <string name="dictionary_replace">Безопасно заменить</string>
-    <string name="dictionary_catalog_reinstall">Переустановить или заменить встроенный словарь</string>
-    <string name="dictionary_repair">Восстановить слот словаря</string>
     <string name="dictionary_repair_confirm_title">Восстановить слот с %1$s?</string>
     <string name="resource_replace_confirm_title">Заменить %1$s?</string>
     <string name="resource_replace_confirm_message">Заменяет %1$s. Если импорт не удастся, текущая установка восстановится.</string>

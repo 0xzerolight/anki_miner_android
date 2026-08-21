@@ -1,6 +1,5 @@
 package com.ankiminer.android.ui.settings
 
-import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
@@ -45,17 +44,6 @@ internal data class ResourcePanelSlot(
     val entryCount: Long,
     val usable: Boolean,
 )
-
-/**
- * The catalog dictionaries the Add menu may offer: only those whose slot is empty.
- *
- * `installed` alone is not enough. A catalog dictionary whose slot is occupied but unreadable has
- * `installed = false` and would come back into the menu as "Install …", beside the Repair its own
- * row already offers — two entries firing the same `installCatalogDictionary` call.
- */
-internal fun catalogInstallCandidates(
-    catalog: List<CatalogDictionaryStatus>,
-): List<CatalogDictionaryStatus> = catalog.filterNot { it.installed || it.slotOccupied }
 
 /**
  * Rows for the dictionary panel: the chain in its own order, then any slot the chain does not

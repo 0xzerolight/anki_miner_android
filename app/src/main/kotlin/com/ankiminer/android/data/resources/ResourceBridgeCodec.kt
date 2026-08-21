@@ -28,6 +28,17 @@ object ResourceBridgeCodec {
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
     private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
+    /**
+     * The formats a pinned local resource may declare: derived from the enums the import requests
+     * already encode, so the catalog can never name a format the bridge cannot send.
+     */
+    private val FREQUENCY_IMPORT_FORMATS = FrequencySourceFormat.entries.mapTo(mutableSetOf()) { it.wireValue }
+    private val PITCH_IMPORT_FORMATS = PitchAccentSourceFormat.entries.mapTo(mutableSetOf()) { it.wireValue }
+
+    /** Mirrors local_resources._FREQUENCY_ARCHIVE_LIMIT / _FREQUENCY_TEXT_LIMIT. */
+    private const val LOCAL_ARCHIVE_LIMIT = 512L * 1024 * 1024
+    private const val LOCAL_TEXT_LIMIT = 64L * 1024 * 1024
+
     /** Same shape android_bridge/faults.py mints and BridgeJsonCodec enforces. */
     private val faultId = Regex("f[0-9a-f]{8}")
 
@@ -279,10 +290,14 @@ object ResourceBridgeCodec {
 
     fun decodeCatalog(raw: String): ResourceCatalog {
         val payload = payload(raw, "resource.catalog")
-        exact(payload, setOf("schemaVersion", "resources"), "resource catalog")
+        exact(payload, setOf("schemaVersion", "resources", "recommended"), "resource catalog")
         val schema = positive(payload.getValue("schemaVersion"), "catalog schema")
         val resources = array(payload.getValue("resources"), "catalog resources").map(::catalogResource)
-        val catalog = ResourceCatalog(schema, resources)
+        val recommended =
+            array(payload.getValue("recommended"), "recommended set").map {
+                requireResourceId(text(it, "recommended resource id"))
+            }
+        val catalog = ResourceCatalog(schema, resources, recommended)
         if (catalog != FrozenResourceCatalog.value) {
             throw ResourceBridgeException(
                 "resource_catalog_mismatch",
@@ -798,8 +813,58 @@ object ResourceBridgeCodec {
                     attributions(value.getValue("attribution")),
                 )
             }
+            "frequency" -> {
+                exact(
+                    value,
+                    setOf("resourceId", "kind", "displayName", "sourceId", "archive", "attribution"),
+                    "frequency catalog resource",
+                )
+                FrequencyCatalogResource(
+                    requireResourceId(text(value.getValue("resourceId"), "resourceId")),
+                    boundedText(value.getValue("displayName"), "displayName", 256),
+                    requireSlotId(text(value.getValue("sourceId"), "sourceId")),
+                    localArchive(value.getValue("archive"), FREQUENCY_IMPORT_FORMATS),
+                    attributions(value.getValue("attribution")),
+                )
+            }
+            "pitch" -> {
+                exact(
+                    value,
+                    setOf("resourceId", "kind", "displayName", "sourceId", "archive", "attribution"),
+                    "pitch catalog resource",
+                )
+                PitchCatalogResource(
+                    requireResourceId(text(value.getValue("resourceId"), "resourceId")),
+                    boundedText(value.getValue("displayName"), "displayName", 256),
+                    requireSlotId(text(value.getValue("sourceId"), "sourceId")),
+                    localArchive(value.getValue("archive"), PITCH_IMPORT_FORMATS),
+                    attributions(value.getValue("attribution")),
+                )
+            }
             else -> invalid("Unsupported resource kind")
         }
+    }
+
+    /**
+     * A local-resource archive pins the importer's wire format, not a container name.
+     *
+     * The size ceiling mirrors the Python importer's own limit so a mis-pin is refused before the
+     * transfer rather than after it.
+     */
+    private fun localArchive(raw: BridgeJsonValue, allowed: Set<String>): ResourceArchive {
+        val value = objectValue(raw, "archive")
+        exact(value, setOf("url", "sha256", "sizeBytes", "format"), "archive")
+        val format = text(value.getValue("format"), "archive format")
+        if (format !in allowed) invalid("Archive format is invalid")
+        val sizeBytes = positive(value.getValue("sizeBytes"), "archive size")
+        val limit = if (format == FrequencySourceFormat.YOMITAN_ZIP.wireValue) LOCAL_ARCHIVE_LIMIT else LOCAL_TEXT_LIMIT
+        if (sizeBytes > limit) invalid("Pinned local resource exceeds its importer limit")
+        return ResourceArchive(
+            requireHttpsUrl(text(value.getValue("url"), "archive URL")),
+            requireSha256(text(value.getValue("sha256"), "archive sha256")),
+            sizeBytes,
+            format,
+        )
     }
 
     private fun archive(raw: BridgeJsonValue, expectedFormat: String): ResourceArchive {
@@ -1271,7 +1336,7 @@ object ResourceBridgeCodec {
 object FrozenResourceCatalog {
     val value =
         ResourceCatalog(
-            schemaVersion = 1,
+            schemaVersion = 2,
             resources =
                 listOf(
                     UniDicCatalogResource(
@@ -1367,6 +1432,46 @@ object FrozenResourceCatalog {
                                 ResourceAttribution("jmdict-yomitan", "yomidevs contributors (yomitan-import conversion)", "EDRDG-Licence", "https://github.com/yomidevs/jmdict-yomitan"),
                             ),
                     ),
+                    FrequencyCatalogResource(
+                        resourceId = "jpdb-v2.2-kana-2024-10-13",
+                        displayName = "JPDB v2.2 Kana Frequency",
+                        sourceId = "jpdb",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/Kuuuube/yomitan-dictionaries/d6fde809e3f26eb5aed6d41896f332179044998c/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip",
+                                sha256 = "4fa06c784155ea0ea0953740b99d421296c775ee0d035cfe1ff65a40d7d3e685",
+                                sizeBytes = 5_996_363,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("JPDB v2.2 frequency list", "Compiled by Kuuube and Gecko from the JPDB corpus", "No upstream licence stated", "https://github.com/Kuuuube/yomitan-dictionaries"),
+                                ResourceAttribution("JPDB corpus", "jpdb.io", "No upstream licence stated", "https://jpdb.io"),
+                            ),
+                    ),
+                    PitchCatalogResource(
+                        resourceId = "kanjium-pitch-8a0cdaa1",
+                        displayName = "Kanjium Pitch Accent",
+                        sourceId = "kanjium",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/mifunetoshiro/kanjium/8a0cdaa16d64a281a2048de2eee2ec5e3a440fa6/data/source_files/raw/accents.txt",
+                                sha256 = "8bd0dd127dab32ceec94cb03ab1ba6b68858ea73421dfa1731af2f373deb4f20",
+                                sizeBytes = 3_226_405,
+                                format = "tsv",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Kanjium pitch accent data", "Copyright Uros Ozvald and Kanjium contributors", "CC-BY-SA-4.0", "https://github.com/mifunetoshiro/kanjium"),
+                                ResourceAttribution("EDICT and KANJIDIC", "Electronic Dictionary Research and Development Group", "EDRDG-Licence", "https://www.edrdg.org/edrdg/licence.html"),
+                            ),
+                    ),
+                ),
+            recommended =
+                listOf(
+                    "jmdict-en-2026-07-17",
+                    "jpdb-v2.2-kana-2024-10-13",
+                    "kanjium-pitch-8a0cdaa1",
                 ),
         )
 }

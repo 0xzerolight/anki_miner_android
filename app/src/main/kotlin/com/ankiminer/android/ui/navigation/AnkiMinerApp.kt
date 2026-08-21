@@ -802,6 +802,8 @@ internal fun AnkiMinerApp(
             composable(AnkiMinerDestination.ATTRIBUTION.route) {
                 AttributionScreen(
                     installedDictionaries = setup.dictionaries,
+                    installedFrequencySources = setup.frequencySources,
+                    installedPitchSources = setup.pitchSources,
                     onOpenNotices = {
                         navController.navigate(AnkiMinerDestination.NOTICES.route)
                     },

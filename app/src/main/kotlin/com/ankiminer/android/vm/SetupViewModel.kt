@@ -177,6 +177,7 @@ internal class SetupViewModel(
                 audioPackChoices = localState.audioPackChoices,
                 uniDicInstalled = resourceState.hasUniDic,
                 catalogDictionaries = resourceState.catalogDictionaries,
+                recommendedPlan = resourceState.recommendedPlan,
                 pendingReplace = localState.pendingReplace,
                 pendingDelete = localState.pendingDelete,
                 dictionaries = resourceState.dictionaries,
@@ -597,6 +598,12 @@ internal class SetupViewModel(
         } else {
             viewModelScope.launch { resources.installCatalogDictionary(resourceId, replace = false) }
         }
+    }
+
+    /** Download every missing or broken member of the pinned recommended set. */
+    fun installRecommendedResources() {
+        if (currentState().busy) return
+        viewModelScope.launch { resources.installRecommendedResources() }
     }
 
     /** Dispatches the import the pending record describes, this time authorised to overwrite. */
@@ -1559,6 +1566,8 @@ internal class SetupViewModel(
                     )
                 }
             }
+            ResourceFailureOrigin.RECOMMENDED_SET ->
+                viewModelScope.launch { resources.installRecommendedResources() }
             ResourceFailureOrigin.DICTIONARY_LOOKUP -> lookup()
             ResourceFailureOrigin.KNOWN_WORDS ->
                 when (failure.knownWordsOperation) {

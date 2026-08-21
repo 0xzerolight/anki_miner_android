@@ -493,17 +493,12 @@
     <string name="unidic_resource_title">日语分词器 — 必需</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · 下载约 45 MiB，安装后 249 MiB</string>
     <string name="jitendex_resource_title">Jitendex 词典 — 推荐</string>
-    <string name="jitendex_resource_description">离线 Yomitan 词典 · 下载约 37 MiB，导入时最多 516 MiB</string>
     <string name="jmdict_resource_title">JMdict 词典（英语）</string>
     <string name="jmdict_resource_description">含英语释义的离线 Yomitan 词典 · 下载约 15 MiB，导入时最多 163 MiB</string>
     <string name="resource_installed">已安装</string>
     <string name="resource_not_installed">未安装</string>
     <string name="unidic_install">安装</string>
     <string name="unidic_repair">修复</string>
-    <string name="dictionary_install">安装</string>
-    <string name="dictionary_replace">安全替换</string>
-    <string name="dictionary_catalog_reinstall">重新安装或替换内置词典</string>
-    <string name="dictionary_repair">修复词典槽位</string>
     <string name="dictionary_repair_confirm_title">修复存放 %1$s 的槽位？</string>
     <string name="resource_replace_confirm_title">替换 %1$s？</string>
     <string name="resource_replace_confirm_message">将替换 %1$s。若导入失败，会恢复当前安装的内容。</string>

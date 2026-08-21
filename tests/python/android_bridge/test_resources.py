@@ -15,11 +15,14 @@ from dataclasses import replace
 from pathlib import Path
 
 import android_bridge.local_resources as local_resources
+import android_bridge.resource_catalog as resource_catalog
 import android_bridge.resources as resources
 import pytest
 from android_bridge import boundary
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 from android_bridge.resource_catalog import (
+    FrequencyResource,
+    PitchResource,
     ResourceCatalog,
     UniDicResource,
     YomitanResource,
@@ -176,9 +179,90 @@ def test_catalog_freezes_external_identity_and_attribution() -> None:
     }
 
 
+def test_catalog_freezes_local_resource_identity() -> None:
+    catalog = load_resource_catalog()
+    frequency = catalog.get("jpdb-v2.2-kana-2024-10-13")
+    pitch = catalog.get("kanjium-pitch-8a0cdaa1")
+
+    assert isinstance(frequency, FrequencyResource)
+    assert (frequency.kind, frequency.source_id, frequency.archive.format) == ("frequency", "jpdb", "zip")
+    assert frequency.archive.sha256 == "4fa06c784155ea0ea0953740b99d421296c775ee0d035cfe1ff65a40d7d3e685"
+    assert frequency.archive.size_bytes == 5_996_363
+    assert frequency.attribution
+
+    assert isinstance(pitch, PitchResource)
+    assert (pitch.kind, pitch.source_id, pitch.archive.format) == ("pitch", "kanjium", "tsv")
+    assert pitch.archive.sha256 == "8bd0dd127dab32ceec94cb03ab1ba6b68858ea73421dfa1731af2f373deb4f20"
+    assert pitch.archive.size_bytes == 3_226_405
+    assert {notice.license for notice in pitch.attribution} >= {"CC-BY-SA-4.0", "EDRDG-Licence"}
+
+
+def test_catalog_recommended_set_names_existing_resources_in_install_order() -> None:
+    catalog = load_resource_catalog()
+
+    assert catalog.recommended == (
+        "jmdict-en-2026-07-17",
+        "jpdb-v2.2-kana-2024-10-13",
+        "kanjium-pitch-8a0cdaa1",
+    )
+    assert set(catalog.recommended) <= {resource.resource_id for resource in catalog.resources}
+    assert "jitendex-2026.07.09.0" not in catalog.recommended
+
+
+@pytest.mark.parametrize(
+    ("mutate", "match"),
+    [
+        (lambda payload: payload["recommended"].append("does-not-exist"), "unknown resource"),
+        (lambda payload: payload["recommended"].append(payload["recommended"][0]), "repeats"),
+        (lambda payload: payload.__setitem__("recommended", []), "bounded array"),
+    ],
+    ids=["unknown-id", "duplicate-id", "empty"],
+)
+def test_catalog_parser_rejects_a_malformed_recommended_set(mutate, match: str) -> None:
+    payload = load_resource_catalog().payload()
+    mutate(payload)
+
+    with pytest.raises(BridgeProtocolError, match=match):
+        parse_catalog_json(json.dumps(payload))
+
+
+def _local_entry(payload: dict, kind: str) -> dict:
+    return next(entry for entry in payload["resources"] if entry["kind"] == kind)
+
+
+def test_catalog_rejects_a_pitch_format_the_importer_cannot_take() -> None:
+    """``txt`` is a legal frequency format and an illegal pitch one.
+
+    The bridge renames the download to ``source.<format>`` and the engine
+    dispatches on that suffix, so a format the importer never accepts must be
+    rejected at parse rather than after the transfer.
+    """
+
+    payload = load_resource_catalog().payload()
+    _local_entry(payload, "pitch")["archive"]["format"] = "txt"
+
+    with pytest.raises(BridgeProtocolError, match="Archive format"):
+        parse_catalog_json(json.dumps(payload))
+
+
+def test_catalog_rejects_a_local_archive_beyond_its_importer_limit() -> None:
+    payload = load_resource_catalog().payload()
+    _local_entry(payload, "pitch")["archive"]["sizeBytes"] = 65 * 1024 * 1024
+
+    with pytest.raises(BridgeProtocolError, match="importer limit"):
+        parse_catalog_json(json.dumps(payload))
+
+
+def test_catalog_local_formats_match_the_importer_contract() -> None:
+    """A future importer change must not leave a pinnable-but-unimportable format."""
+
+    assert resource_catalog._FREQUENCY_FORMATS == local_resources._FREQUENCY_FORMATS
+    assert resource_catalog._PITCH_FORMATS == local_resources._PITCH_FORMATS
+
+
 def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls() -> None:
     with pytest.raises(BridgeProtocolError, match="duplicate key"):
-        parse_catalog_json('{"schemaVersion":1,"schemaVersion":1,"resources":[]}')
+        parse_catalog_json('{"schemaVersion":2,"schemaVersion":2,"resources":[],"recommended":[]}')
 
     payload = load_resource_catalog().payload()
     payload["unexpected"] = True
@@ -198,8 +282,8 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
 
 @pytest.mark.parametrize(
     "schema_version",
-    [True, 1.0, 2],
-    ids=["boolean", "floating-point", "unsupported"],
+    [True, 2.0, 1, 3],
+    ids=["boolean", "floating-point", "superseded", "unsupported"],
 )
 def test_catalog_parser_rejects_non_integer_or_unsupported_schema_versions(
     schema_version: object,
@@ -227,7 +311,7 @@ def test_unidic_install_verifies_tree_then_publishes_completion_manifest_last(
     monkeypatch.setattr(
         resources,
         "load_resource_catalog",
-        lambda: ResourceCatalog(resources=(resource,)),
+        lambda: ResourceCatalog(resources=(resource,), recommended=(resource.resource_id,)),
     )
 
     decoded = decode_envelope(
@@ -276,7 +360,7 @@ def test_unidic_install_reports_byte_progress_and_finalizing_before_publish(
     monkeypatch.setattr(
         resources,
         "load_resource_catalog",
-        lambda: ResourceCatalog(resources=(resource,)),
+        lambda: ResourceCatalog(resources=(resource,), recommended=(resource.resource_id,)),
     )
     callbacks = FakeCallbacks()
 
@@ -327,7 +411,7 @@ def test_unidic_install_with_no_callbacks_emits_nothing_and_does_not_error(
     monkeypatch.setattr(
         resources,
         "load_resource_catalog",
-        lambda: ResourceCatalog(resources=(resource,)),
+        lambda: ResourceCatalog(resources=(resource,), recommended=(resource.resource_id,)),
     )
 
     decoded = decode_envelope(
@@ -357,7 +441,7 @@ def test_unidic_install_repairs_corrupt_tree_with_intact_completion_metadata(
     monkeypatch.setattr(
         resources,
         "load_resource_catalog",
-        lambda: ResourceCatalog(resources=(resource,)),
+        lambda: ResourceCatalog(resources=(resource,), recommended=(resource.resource_id,)),
     )
     request = {
         "operationId": "install-initial",

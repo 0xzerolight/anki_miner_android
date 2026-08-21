@@ -52,6 +52,14 @@ interface ResourceManager {
 
     suspend fun installCatalogDictionary(resourceId: String, replace: Boolean)
 
+    /**
+     * Download and install every missing or broken member of the pinned recommended set.
+     *
+     * One operation, one foreground lease, one journal record. Each member runs in its own
+     * try/catch so one failure never aborts the rest, and the aggregate is reported once.
+     */
+    suspend fun installRecommendedResources() = Unit
+
     /** Inspect a retained Yomitan archive and return its desktop-derived base slot. */
     suspend fun preflightCustomDictionary(uri: String): String? =
         error("Custom dictionary preflight is unavailable")
@@ -230,6 +238,8 @@ internal class AndroidResourceManager(
         val holdsForegroundLease: Boolean = false,
         val pythonStarted: AtomicBoolean = AtomicBoolean(false),
         val retainJournalForRecovery: AtomicBoolean = AtomicBoolean(false),
+        /** A batch runner retitles the one operation per member; null means the base label. */
+        val labelOverride: AtomicReference<String?> = AtomicReference(null),
         val cancelDelivery: AtomicReference<CancelDelivery> =
             AtomicReference(CancelDelivery.NOT_REQUESTED),
     )
@@ -439,6 +449,281 @@ internal class AndroidResourceManager(
                     decode = ResourceBridgeCodec::decodeImportedDictionary,
                 )
                 refreshAfterCommittedMutation(completesFailedStartupRecovery)
+            }
+        }
+    }
+
+    override suspend fun installRecommendedResources() {
+        // Pre-mutex early return so a satisfied set never takes the lease or writes a journal
+        // record. The plan is recomputed inside the operation because this one can be stale.
+        val plan = mutableState.value.recommendedPlan
+        if (!plan.isActionable) return
+        // A broken dictionary slot and a schema-stale pitch index are exactly what fails startup,
+        // and this button is the only install affordance the wizard has. Gating it on READY would
+        // make the press a silent no-op in the one state its REPLACE members exist to repair --
+        // the same reason installCatalogDictionary carries this allowance.
+        val allowFailedReadiness =
+            plan.pending.any { it.replace } &&
+                mutableState.value.startupReadiness == ResourceStartupReadiness.FAILED
+        val completesFailedStartupRecovery = allowFailedReadiness && startupRecoveryTailPending
+        val outcomes = mutableListOf<RecommendedOutcome>()
+        val ran =
+            runOperation(
+                strings.resolve(R.string.resource_operation_recommended_set),
+                ResourceOperationPhase.PREPARING,
+                failureOrigin = ResourceFailureOrigin.RECOMMENDED_SET,
+                failureRetry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                persistForRecovery = true,
+                holdsForegroundLease = true,
+                requiresStartupReady = !allowFailedReadiness,
+            ) { operation -> runRecommendedBatch(operation, outcomes, completesFailedStartupRecovery) }
+        // A refused operation has already recorded its own failure or was a deliberate no-op, so
+        // only a run that reached the loop reports a summary. Recording it after runOperation
+        // returns is deliberate: its finally clears a matching-origin failure on success first.
+        if (ran) publishRecommendedSummary(outcomes)
+    }
+
+    private sealed interface RecommendedOutcome {
+        val item: RecommendedResourceItem
+
+        data class Installed(override val item: RecommendedResourceItem) : RecommendedOutcome
+
+        data class Failed(
+            override val item: RecommendedResourceItem,
+            val code: String,
+            val message: String,
+        ) : RecommendedOutcome
+    }
+
+    private fun runRecommendedBatch(
+        operation: ActiveOperation,
+        outcomes: MutableList<RecommendedOutcome>,
+        completesFailedStartupRecovery: Boolean,
+    ) {
+        val state = mutableState.value
+        val pending =
+            recommendedResourcePlan(
+                catalog(),
+                state.dictionaries,
+                state.frequencySources,
+                state.pitchSources,
+            ).pending
+        var loopFailure: Throwable? = null
+        try {
+            pending.forEachIndexed { index, item ->
+                operation.cancellation.check()
+                setRecommendedLabel(operation, item, index + 1, pending.size)
+                try {
+                    installRecommendedItem(operation, item)
+                    outcomes += RecommendedOutcome.Installed(item)
+                } catch (failure: Throwable) {
+                    if (endsTheWholeBatch(failure, operation)) throw failure
+                    val (code, message) = recommendedItemFailure(failure)
+                    AppLog.e(
+                        LogComponent.RESOURCES,
+                        "recommended.item",
+                        diagnosticFailure(ResourceFailureOrigin.RECOMMENDED_SET, failure),
+                        "operation" to operation.id,
+                        "resource" to item.resource.resourceId,
+                        "code" to code,
+                        "outcome" to "fail",
+                    )
+                    outcomes += RecommendedOutcome.Failed(item, code, message)
+                }
+            }
+        } catch (failure: Throwable) {
+            loopFailure = failure
+        }
+        if (loopFailure != null) {
+            // Best effort: a partial batch has committed real installs, and the in-flight failure
+            // (usually cancellation) must not be masked by a reconciliation problem.
+            if (outcomes.any { it is RecommendedOutcome.Installed }) {
+                runCatching { refreshFromPython() }
+                    .onFailure {
+                        AppLog.e(
+                            LogComponent.RESOURCES,
+                            "recommended.reconcile",
+                            it,
+                            "operation" to operation.id,
+                            "outcome" to "fail",
+                        )
+                    }
+            }
+            throw loopFailure
+        }
+        // Only a batch that landed every member it planned has finished the repair; leaving one
+        // broken member behind must keep startup in FAILED rather than declare it recovered.
+        refreshAfterCommittedMutation(
+            completesFailedStartupRecovery && outcomes.none { it is RecommendedOutcome.Failed },
+        )
+    }
+
+    /**
+     * Whether [failure] ends the run rather than just this member.
+     *
+     * Cancellation and a committed-but-unreconciled mutation are about the batch as a whole;
+     * everything else belongs to the member that raised it and must not stop its successors.
+     */
+    private fun endsTheWholeBatch(
+        failure: Throwable,
+        operation: ActiveOperation,
+    ): Boolean =
+        failure is CancellationException ||
+            failure is ResourceInventoryReconciliationException ||
+            failure is ResourceCancellationDeliveryException ||
+            operation.cancellation.isCancelled()
+
+    /**
+     * One member, start to finish.
+     *
+     * `import_dictionary` re-verifies the pinned hash inside Python through `catalogResourceId`;
+     * the frequency and pitch ops have no catalog awareness, so their pin is proven by
+     * [PinnedResourceDownloader] alone -- post-transfer SHA-256 plus the startup re-verify of a
+     * staged `.ready` -- before the path is dispatched.
+     */
+    private fun installRecommendedItem(
+        operation: ActiveOperation,
+        item: RecommendedResourceItem,
+    ) {
+        val staged = download(item.resource, operation)
+        consumePinnedArchive(operation, item.resource.archive) {
+            updateProgress(operation, ResourceOperationPhase.IMPORTING)
+            operation.cancellation.check()
+            when (val resource = item.resource) {
+                is YomitanCatalogResource -> {
+                    operation.pythonStarted.set(true)
+                    decodePublishedMutation(
+                        raw =
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                    operation.id,
+                                    staged.file.canonicalPath,
+                                    resource.slotId,
+                                    item.replace,
+                                    resource.resourceId,
+                                ),
+                                ResourceProgressSink(operation),
+                            ),
+                        decode = ResourceBridgeCodec::decodeImportedDictionary,
+                    )
+                }
+                is FrequencyCatalogResource -> {
+                    if (resource.sourceFormat == FrequencySourceFormat.YOMITAN_ZIP) {
+                        ResourceBridgeCodec.validateFrequencyArchiveMetadata(staged.file)
+                    }
+                    operation.pythonStarted.set(true)
+                    val imported =
+                        decodePublishedMutation(
+                            raw =
+                                bridge.dispatch(
+                                    ResourceBridgeCodec.encodeFrequencyImportRequest(
+                                        operation.id,
+                                        staged.file.canonicalPath,
+                                        resource.sourceId,
+                                        resource.displayName,
+                                        resource.sourceFormat,
+                                        item.replace,
+                                    ),
+                                    ResourceProgressSink(operation),
+                                ),
+                            decode = ResourceBridgeCodec::decodeImportedFrequency,
+                        )
+                    mutableState.update { it.copy(lastLocalImport = imported) }
+                }
+                is PitchCatalogResource -> {
+                    operation.pythonStarted.set(true)
+                    val imported =
+                        decodePublishedMutation(
+                            raw =
+                                bridge.dispatch(
+                                    ResourceBridgeCodec.encodePitchImportRequest(
+                                        operation.id,
+                                        staged.file.canonicalPath,
+                                        resource.sourceId,
+                                        resource.displayName,
+                                        resource.sourceFormat,
+                                        item.replace,
+                                    ),
+                                    ResourceProgressSink(operation),
+                                ),
+                            decode = ResourceBridgeCodec::decodeImportedPitch,
+                        )
+                    mutableState.update { it.copy(lastLocalImport = imported) }
+                }
+                is UniDicCatalogResource -> error("UniDic is not part of the recommended set")
+            }
+        }
+    }
+
+    private fun setRecommendedLabel(
+        operation: ActiveOperation,
+        item: RecommendedResourceItem,
+        position: Int,
+        total: Int,
+    ) {
+        operation.labelOverride.set(
+            strings.resolve(
+                R.string.resource_operation_recommended_item,
+                listOf(
+                    strings.resolve(recommendedResourceTitleRes(item.resource)),
+                    position,
+                    total,
+                ),
+            ),
+        )
+        // PREPARING is a phase change at every item boundary, so counts reset to 0/0 and the bar
+        // goes indeterminate rather than inheriting the previous member's byte total.
+        updateProgress(operation, ResourceOperationPhase.PREPARING)
+    }
+
+    /** Per-member failures reuse the existing code and message tables; none is new vocabulary. */
+    private fun recommendedItemFailure(failure: Throwable): Pair<String, String> =
+        when (failure) {
+            is ResourceDownloadException -> failure.stableCode to downloadUserMessage(failure)
+            is ResourceStorageException ->
+                "insufficient_storage" to strings.resolve(R.string.resource_failure_storage)
+            is ResourceBridgeException -> failure.code to userMessage(failure.code)
+            is SafAccessException -> safAccessCode(failure.kind) to safAccessUserMessage(failure.kind)
+            else -> "resource_operation_failed" to strings.resolve(R.string.resource_failure_operation)
+        }
+
+    private fun publishRecommendedSummary(outcomes: List<RecommendedOutcome>) {
+        val failed = outcomes.filterIsInstance<RecommendedOutcome.Failed>()
+        if (failed.isEmpty()) {
+            clearInventoryVerdictsTheSetRepaired()
+            return
+        }
+        val names =
+            failed.joinToString(", ") {
+                strings.resolve(recommendedResourceTitleRes(it.item.resource))
+            }
+        recordFailure(
+            code = "recommended_set_incomplete",
+            message =
+                strings.resolve(
+                    R.string.resource_failure_recommended_incomplete,
+                    listOf(outcomes.size - failed.size, outcomes.size, names, failed.first().message),
+                ),
+            origin = ResourceFailureOrigin.RECOMMENDED_SET,
+            retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+        )
+    }
+
+    /**
+     * Drops a startup inventory verdict the completed batch has just disproved.
+     *
+     * A single-source re-import clears the matching banner on its own, because `runOperation`
+     * clears a failure whose origin equals the operation's. A batch carries one origin of its own,
+     * so without this the "replace this pitch source" banner would outlive the source it named.
+     * Gated on a satisfied plan: nothing is cleared while a member is still missing or broken.
+     */
+    private fun clearInventoryVerdictsTheSetRepaired() {
+        if (!mutableState.value.recommendedPlan.isSatisfied) return
+        mutableState.update { current ->
+            if (current.failure?.code in REPAIRABLE_INVENTORY_VERDICTS) {
+                current.copy(failure = null)
+            } else {
+                current
             }
         }
     }
@@ -2184,6 +2469,9 @@ internal class AndroidResourceManager(
                         it.installed && it.resource.resourceId == resourceId
                     }
             }
+            // A kill after the last member leaves the record behind; a satisfied plan means the
+            // batch finished and must not raise a spurious "interrupted".
+            ResourceFailureOrigin.RECOMMENDED_SET -> mutableState.value.recommendedPlan.isSatisfied
             else -> false
         }
 
@@ -2218,6 +2506,14 @@ internal class AndroidResourceManager(
         current.catalogDictionaries
             .filter { it.installed }
             .forEach { downloader.discard(it.resource.archive) }
+        catalog.frequencies
+            .filter { resource ->
+                current.frequencySources.any { it.sourceId == resource.sourceId && it.schemaOk }
+            }.forEach { downloader.discard(it.archive) }
+        catalog.pitchSources
+            .filter { resource ->
+                current.pitchSources.any { it.sourceId == resource.sourceId && it.schemaOk }
+            }.forEach { downloader.discard(it.archive) }
     }
 
     private fun catalog(): ResourceCatalog {
@@ -2339,7 +2635,7 @@ internal class AndroidResourceManager(
                     val next =
                         state.activeOperation.advancedTo(
                             operationId = operation.id,
-                            label = operation.label,
+                            label = operation.labelOverride.get() ?: operation.label,
                             phase = phase,
                             completed = current,
                             total = total,
@@ -2732,7 +3028,18 @@ internal class AndroidResourceManager(
                 "resource_inventory_failed",
                 "resource_cancel_delivery_failed",
                 "resource_cleanup_failed",
+                "recommended_set_incomplete",
             )
+
+        /**
+         * Startup inventory verdicts a completed recommended-set install disproves.
+         *
+         * Both name a slot the set owns, so a satisfied plan means the condition they describe is
+         * gone. Failures from a user's own action are absent by design: only a verdict re-derived
+         * from inventory can be retired by re-installing that inventory.
+         */
+        val REPAIRABLE_INVENTORY_VERDICTS =
+            setOf("dictionary_resource_invalid", "pitch_resource_invalid")
 
         val PINNED_ARCHIVE_INVALID_CODES =
             setOf(
@@ -2743,6 +3050,10 @@ internal class AndroidResourceManager(
                 "unsafe_resource_archive",
                 "unidic_provenance_mismatch",
                 "dictionary_import_failed",
+                // A pinned local resource the importer refuses is the wrong bytes, so the verified
+                // copy must not survive to be re-fed on retry.
+                "frequency_import_failed",
+                "pitch_import_failed",
             )
 
         const val FREQUENCY_ARCHIVE_LIMIT = 512L * 1024 * 1024

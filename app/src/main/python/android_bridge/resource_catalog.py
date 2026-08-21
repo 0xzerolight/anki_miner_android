@@ -12,9 +12,19 @@ from urllib.parse import urlsplit
 
 from .protocol import BridgeProtocolError
 
-CATALOG_SCHEMA_VERSION = 1
+CATALOG_SCHEMA_VERSION = 2
 _CATALOG_PATH = Path(__file__).with_name("resource_catalog_v1.json")
 _MAX_CATALOG_BYTES = 64 * 1024
+# Mirrors local_resources._FREQUENCY_FORMATS / _PITCH_FORMATS. For a local resource the pinned
+# archive format IS the importer's wire format: the bridge renames the download to
+# ``source.<format>`` and the engine dispatches on that suffix.
+_FREQUENCY_FORMATS = frozenset({"zip", "csv", "tsv", "txt"})
+_PITCH_FORMATS = frozenset({"zip", "csv", "tsv"})
+# Mirrors local_resources._FREQUENCY_ARCHIVE_LIMIT / _FREQUENCY_TEXT_LIMIT. A pin the importer
+# would refuse must fail here, before the bytes are fetched.
+_LOCAL_ARCHIVE_LIMIT = 512 * 1024 * 1024
+_LOCAL_TEXT_LIMIT = 64 * 1024 * 1024
+_MAX_RECOMMENDED = 8
 _ID_RE = re.compile(r"(?!.*\.\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -124,19 +134,32 @@ class ArchiveIdentity:
     format: str
 
     @classmethod
-    def parse(cls, value: Any, *, expected_format: str) -> ArchiveIdentity:
+    def parse(
+        cls,
+        value: Any,
+        *,
+        expected_format: str | None = None,
+        allowed_formats: frozenset[str] | None = None,
+    ) -> ArchiveIdentity:
         item = _exact(
             value,
             {"url", "sha256", "sizeBytes", "format"},
             context="archive identity",
         )
         archive_format = _text(item["format"], context="archive format", max_bytes=16)
-        if archive_format != expected_format:
+        if expected_format is not None and archive_format != expected_format:
             raise _error(f"Archive format must be {expected_format!r}")
+        if allowed_formats is not None and archive_format not in allowed_formats:
+            raise _error(f"Archive format must be one of {sorted(allowed_formats)!r}")
+        size_bytes = _positive_int(item["sizeBytes"], context="archive size")
+        if allowed_formats is not None:
+            limit = _LOCAL_ARCHIVE_LIMIT if archive_format == "zip" else _LOCAL_TEXT_LIMIT
+            if size_bytes > limit:
+                raise _error("Pinned local resource exceeds its importer limit")
         return cls(
             url=_https_url(item["url"], context="archive URL"),
             sha256=_sha256(item["sha256"], context="archive hash"),
-            size_bytes=_positive_int(item["sizeBytes"], context="archive size"),
+            size_bytes=size_bytes,
             format=archive_format,
         )
 
@@ -303,12 +326,62 @@ class YomitanResource:
         }
 
 
-PinnedResource = UniDicResource | YomitanResource
+@dataclass(frozen=True, slots=True)
+class FrequencyResource:
+    """A pinned frequency source installed through ``resource.frequency.import``.
+
+    Carries no entry-count or size-limit identity of its own: the importer
+    already validates the archive it is handed, and the downloader already pins
+    the bytes by hash and length.
+    """
+
+    resource_id: str
+    display_name: str
+    source_id: str
+    archive: ArchiveIdentity
+    attribution: tuple[Attribution, ...]
+    kind: str = "frequency"
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "resourceId": self.resource_id,
+            "kind": self.kind,
+            "displayName": self.display_name,
+            "sourceId": self.source_id,
+            "archive": self.archive.payload(),
+            "attribution": [item.payload() for item in self.attribution],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class PitchResource:
+    """A pinned pitch-accent source installed through ``resource.pitch.import``."""
+
+    resource_id: str
+    display_name: str
+    source_id: str
+    archive: ArchiveIdentity
+    attribution: tuple[Attribution, ...]
+    kind: str = "pitch"
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "resourceId": self.resource_id,
+            "kind": self.kind,
+            "displayName": self.display_name,
+            "sourceId": self.source_id,
+            "archive": self.archive.payload(),
+            "attribution": [item.payload() for item in self.attribution],
+        }
+
+
+PinnedResource = UniDicResource | YomitanResource | FrequencyResource | PitchResource
 
 
 @dataclass(frozen=True, slots=True)
 class ResourceCatalog:
     resources: tuple[PinnedResource, ...]
+    recommended: tuple[str, ...]
     schema_version: int = CATALOG_SCHEMA_VERSION
 
     def get(self, resource_id: str) -> PinnedResource:
@@ -321,6 +394,7 @@ class ResourceCatalog:
         return {
             "schemaVersion": self.schema_version,
             "resources": [resource.payload() for resource in self.resources],
+            "recommended": list(self.recommended),
         }
 
 
@@ -369,7 +443,33 @@ def _parse_resource(value: Any) -> PinnedResource:
             dictionary=YomitanDictionaryIdentity.parse(item["dictionary"]),
             attribution=_attribution(item["attribution"]),
         )
+    if kind in {"frequency", "pitch"}:
+        item = _exact(
+            value,
+            {"resourceId", "kind", "displayName", "sourceId", "archive", "attribution"},
+            context=f"{kind} resource",
+        )
+        formats = _FREQUENCY_FORMATS if kind == "frequency" else _PITCH_FORMATS
+        factory = FrequencyResource if kind == "frequency" else PitchResource
+        return factory(
+            resource_id=_resource_id(item["resourceId"], context="resource id"),
+            display_name=_text(item["displayName"], context="display name", max_bytes=256),
+            source_id=_slot_id(item["sourceId"], context="local source id"),
+            archive=ArchiveIdentity.parse(item["archive"], allowed_formats=formats),
+            attribution=_attribution(item["attribution"]),
+        )
     raise _error(f"Unsupported resource kind: {kind!r}")
+
+
+def _parse_recommended(value: Any, *, known: set[str]) -> tuple[str, ...]:
+    if not isinstance(value, list) or not value or len(value) > _MAX_RECOMMENDED:
+        raise _error("Recommended set must be a non-empty bounded array")
+    recommended = tuple(_resource_id(item, context="recommended resource id") for item in value)
+    if len(set(recommended)) != len(recommended):
+        raise _error("Recommended set repeats a resource id")
+    if not set(recommended) <= known:
+        raise _error("Recommended set names an unknown resource")
+    return recommended
 
 
 def parse_catalog_json(raw: str) -> ResourceCatalog:
@@ -385,7 +485,11 @@ def parse_catalog_json(raw: str) -> ResourceCatalog:
         raise
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
         raise _error("Resource catalog is not valid JSON") from exc
-    root = _exact(document, {"schemaVersion", "resources"}, context="resource catalog")
+    root = _exact(
+        document,
+        {"schemaVersion", "resources", "recommended"},
+        context="resource catalog",
+    )
     if type(root["schemaVersion"]) is not int or root["schemaVersion"] != CATALOG_SCHEMA_VERSION:
         raise _error("Unsupported resource catalog schema")
     values = root["resources"]
@@ -395,7 +499,8 @@ def parse_catalog_json(raw: str) -> ResourceCatalog:
     ids = [resource.resource_id for resource in resources]
     if len(set(ids)) != len(ids):
         raise _error("Resource catalog contains duplicate resource ids")
-    return ResourceCatalog(resources=resources)
+    recommended = _parse_recommended(root["recommended"], known=set(ids))
+    return ResourceCatalog(resources=resources, recommended=recommended)
 
 
 @lru_cache(maxsize=1)
