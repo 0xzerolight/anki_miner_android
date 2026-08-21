@@ -211,6 +211,10 @@ internal fun AnkiTargetCard(
                     }
                     // The uniqueness rule is enforced by isDestinationAvailable disabling taken
                     // fields, and the first-field rule surfaces as a verification status.
+                    }
+                    // Outside the collapsed section: this is the only feedback the remap action
+                    // gives, and the mapper is collapsed by default, so inside it the button would
+                    // read as doing nothing.
                     if (state.fieldMapChanges.isNotEmpty()) {
                         val details =
                             state.fieldMapChanges.joinToString { change ->
@@ -222,7 +226,6 @@ internal fun AnkiTargetCard(
                             stringResource(R.string.anki_field_mapping_changes, details),
                             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                         )
-                    }
                     }
                     CardTypeMarkerSection(
                         state = state,
