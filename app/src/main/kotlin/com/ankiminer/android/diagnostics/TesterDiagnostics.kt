@@ -2,6 +2,7 @@ package com.ankiminer.android.diagnostics
 
 import android.os.Build
 import com.ankiminer.android.BuildConfig
+import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
@@ -121,6 +122,17 @@ internal object TesterDiagnosticsBuilder {
                 line(
                     "resources.pitch_usable",
                     setup.pitchSources.count { it.schemaOk && it.entryCount > 0 }.toString(),
+                )
+                // "No pitch on my cards" splits two ways: no usable source (the line above), or
+                // nowhere to put the data. A bundle could not answer the second — LogRedactor
+                // redacts every mapped field NAME — so report the logical keys that have a
+                // destination. Our own key names, never the user's field names.
+                line(
+                    "anki.pitch_fields_mapped",
+                    AnkiFieldKeys.ALL
+                        .filter { key -> key.startsWith("pitch_") && !setup.fieldMap[key].isNullOrEmpty() }
+                        .joinToString(",")
+                        .ifBlank { NONE },
                 )
                 line("resources.operation", setup.operation?.phase?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("resources.failure", safeCode(setup.failure?.code))
