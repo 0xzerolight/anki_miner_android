@@ -42,6 +42,12 @@ class ExoCurationPreviewPlayerInstrumentedTest {
         SafJobFileOwner(context).use { owner ->
             val staged = owner.openVideo(SEEKABLE_URI)
             assertTrue(staged.path.endsWith(".media"))
+            // The preview plays this path for the whole curation session: it must live under
+            // noBackupFilesDir, where the OS cannot evict it mid-run the way it can cacheDir.
+            assertEquals(
+                File(context.noBackupFilesDir, "saf-inputs"),
+                File(staged.path).parentFile,
+            )
 
             assertPlayable(Uri.fromFile(File(staged.path)))
         }

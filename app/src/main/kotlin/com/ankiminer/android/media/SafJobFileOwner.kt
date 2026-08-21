@@ -54,10 +54,14 @@ internal fun interface SafCopyProgressListener {
  * Owns every SAF descriptor opened for one Python mining job.
  *
  * Keep this object alive around the complete parked Python call, including curation and every
- * ffmpeg child process. All inputs are copied once into app cache: a SAF grant lives in the
- * provider IPC layer, so an ffmpeg child that re-opens `/proc/self/fd/N` is denied by the
- * FUSE-backed shared-storage permission check (the app deliberately holds no READ_MEDIA_*
- * permission). Subtitles keep a filename suffix because the engine's parser dispatches on it.
+ * ffmpeg child process. All inputs are copied once under [Context.getNoBackupFilesDir]: a SAF
+ * grant lives in the provider IPC layer, so an ffmpeg child that re-opens `/proc/self/fd/N` is
+ * denied by the FUSE-backed shared-storage permission check (the app deliberately holds no
+ * READ_MEDIA_* permission). The copies deliberately avoid `cacheDir` — the OS may evict it at
+ * any time under storage pressure (and App Info -> Clear cache does it by hand), which killed
+ * curation preview playback with ERROR_CODE_IO_FILE_NOT_FOUND and doomed the run's ffmpeg
+ * phases on the same path. Only this app deletes `noBackupFilesDir`, and backup is excluded
+ * app-wide. Subtitles keep a filename suffix because the engine's parser dispatches on it.
  * The original [ParcelFileDescriptor] remains open until [close], so no backing resource can
  * change ownership underneath the engine.
  *
@@ -78,7 +82,7 @@ class SafJobFileOwner internal constructor(
 
     constructor(context: Context) : this(
         AndroidDescriptorOpener(context.applicationContext.contentResolver),
-        AndroidCacheFileFactory(context.applicationContext.cacheDir),
+        AndroidCacheFileFactory(context.applicationContext.noBackupFilesDir),
     )
 
     internal constructor(
@@ -87,7 +91,7 @@ class SafJobFileOwner internal constructor(
         progressListener: SafCopyProgressListener = SafCopyProgressListener.NONE,
     ) : this(
         AndroidDescriptorOpener(context.applicationContext.contentResolver),
-        AndroidCacheFileFactory(context.applicationContext.cacheDir),
+        AndroidCacheFileFactory(context.applicationContext.noBackupFilesDir),
         BoundedFileCopier(),
         cancellation,
         progressListener,
@@ -394,9 +398,9 @@ private class ParcelDescriptor(
 }
 
 private class AndroidCacheFileFactory(
-    cacheDir: File,
+    parentDir: File,
 ) : CacheFileFactory {
-    private val copyRoot = safInputCacheRoot(cacheDir)
+    private val copyRoot = safInputCacheRoot(parentDir)
 
     override fun create(suffix: String): File {
         require(SAFE_SUFFIX.matches(suffix)) { "SAF cache suffix is invalid" }
@@ -411,16 +415,36 @@ private class AndroidCacheFileFactory(
     }
 }
 
-internal fun safInputCacheRoot(cacheDir: File): File = File(cacheDir, "saf-inputs")
+internal fun safInputCacheRoot(parent: File): File = File(parent, "saf-inputs")
+
+/**
+ * The roots the startup janitor sweeps: the live `noBackupFilesDir` root first, then the legacy
+ * pre-move `cacheDir` root. An interrupted run from a version that staged under `cacheDir` can
+ * strand a multi-GiB orphan there that OS eviction may never reclaim on a roomy device.
+ */
+internal fun startupSweepRoots(
+    noBackupFilesDir: File,
+    cacheDir: File,
+): List<File> = listOf(safInputCacheRoot(noBackupFilesDir), safInputCacheRoot(cacheDir))
 
 /** Removes only recognized direct orphan files created by [SafJobFileOwner] in a prior process. */
 class SafInputCacheJanitor internal constructor(
-    private val copyRoot: File,
+    private val copyRoots: List<File>,
 ) {
-    constructor(context: Context) : this(safInputCacheRoot(context.applicationContext.cacheDir))
+    internal constructor(copyRoot: File) : this(listOf(copyRoot))
+
+    constructor(context: Context) : this(
+        startupSweepRoots(
+            context.applicationContext.noBackupFilesDir,
+            context.applicationContext.cacheDir,
+        ),
+    )
 
     @Throws(IOException::class)
-    fun removeOrphans(): Int {
+    fun removeOrphans(): Int = copyRoots.sumOf { removeOrphansFrom(it) }
+
+    @Throws(IOException::class)
+    private fun removeOrphansFrom(copyRoot: File): Int {
         if (!copyRoot.exists()) return 0
         if (!copyRoot.isDirectory) {
             throw IOException("SAF input cache root is not a directory")
