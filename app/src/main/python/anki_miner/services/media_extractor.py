@@ -69,6 +69,20 @@ def resolve_audio_window(word: TokenizedWord, padding: float) -> tuple[float, fl
     return start, duration
 
 
+#: Concurrent animated-screenshot encodes across the worker pool. libaom on a
+#: phone CPU is the one genuinely expensive spawn in this service: with the
+#: full pool (default 6 workers) encoding at once, every encode starves every
+#: other one and a stochastic subset blows the 60s timeout — the per-word
+#: "media extraction failed" drops in user diagnostics bundles. Two concurrent
+#: encodes keep an 8-core device saturated while leaving each encode its solo
+#: wall time (measured: a paired encode costs ~the solo encode). Static
+#: screenshots, audio extraction and probes stay on the full pool.
+_ANIMATED_ENCODE_GATE = threading.BoundedSemaphore(2)
+
+#: Seconds between cancellation checks while parked on the encode gate.
+_GATE_POLL_SECONDS = 0.2
+
+
 def _kill_quietly(proc: "subprocess.Popen[str]") -> None:
     """Kill *proc*, tolerating a process that already exited.
 
@@ -1152,7 +1166,13 @@ class MediaExtractorService:
         # here would let the probe pass while ffmpeg is handed an encoder the
         # binary does not contain.
         if fmt == "avif":
-            crf = self._quality_to_avif_crf(quality)
+            # Realtime usage encodes ~4x faster than the default good-deadline
+            # pipeline at equal SSIM (measured on the shipped command; the
+            # margin that keeps a heavy clip inside the 60s timeout below on
+            # phone hardware).  Its rate control overshoots good-mode sizes at
+            # equal CRF, so the mapped CRF carries a +12 offset to restore
+            # size parity.
+            crf = min(63, self._quality_to_avif_crf(quality) + 12)
             cmd.extend(
                 [
                     "-c:v",
@@ -1165,6 +1185,8 @@ class MediaExtractorService:
                     "8",
                     "-row-mt",
                     "1",
+                    "-usage",
+                    "realtime",
                     "-crf",
                     str(crf),
                     "-pix_fmt",
@@ -1187,10 +1209,25 @@ class MediaExtractorService:
 
         cmd.append(str(output_path))
 
-        if not self._run_ffmpeg(
-            cmd, "Animated screenshot extraction", timeout=60, context=output_path.name, proc_registry=proc_registry
-        ):
-            return False
+        # Park on the encode gate rather than spawning immediately: the wait
+        # costs nothing (the batch is CPU-bound on the encodes either way) and
+        # keeps every encode near its solo wall time.  A cancelled run must not
+        # sit out another encode's full duration, so the wait polls the batch
+        # registry the way the pool's own cancel path does.
+        while not _ANIMATED_ENCODE_GATE.acquire(timeout=_GATE_POLL_SECONDS):
+            if proc_registry is not None and proc_registry.cancelled:
+                return False
+        try:
+            if not self._run_ffmpeg(
+                cmd,
+                "Animated screenshot extraction",
+                timeout=60,
+                context=output_path.name,
+                proc_registry=proc_registry,
+            ):
+                return False
+        finally:
+            _ANIMATED_ENCODE_GATE.release()
         return output_path.exists()
 
     def _get_japanese_audio_stream(
