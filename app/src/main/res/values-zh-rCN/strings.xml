@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">已展开</string>
     <string name="disclosure_collapsed">已折叠</string>
     <string name="settings_disclosure_summary">%1$s（%2$d/%3$d）</string>
+    <string name="anki_field_mapping_remap">根据字段名填充映射</string>
+    <string name="anki_field_mapping_remap_help">重新匹配此笔记类型的字段名，填充所有可识别的映射。无法识别的名称保留已选择的字段。</string>
     <string name="anki_field_mapping_changes">此笔记类型的映射已更改：%1$s</string>
     <string name="anki_field_none">未映射</string>
     <string name="anki_card_type_title">卡片类型</string>

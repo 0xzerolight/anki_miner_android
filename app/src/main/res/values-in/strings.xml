@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">Diperluas</string>
     <string name="disclosure_collapsed">Diciutkan</string>
     <string name="settings_disclosure_summary">%1$s (%2$d dari %3$d)</string>
+    <string name="anki_field_mapping_remap">Isi pemetaan dari nama bidang</string>
+    <string name="anki_field_mapping_remap_help">Mencocokkan lagi nama bidang tipe catatan ini dan mengisi setiap pemetaan yang dikenali. Nama yang tidak dikenali tetap memakai bidang yang sudah dipilih.</string>
     <string name="anki_field_mapping_changes">Pemetaan berubah untuk tipe catatan ini: %1$s</string>
     <string name="anki_field_none">Tidak dipetakan</string>
     <string name="anki_card_type_title">Tipe kartu</string>

@@ -626,6 +626,42 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `remapping the selected note type fills the gaps a stale keyword table left`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // What a Senren user's saved map looked like before the plural pitch names were known:
+            // the pitch keys resolved to nothing and stayed that way, because re-selecting the same
+            // note type returns the map untouched.
+            val repository =
+                FakeSettingsRepository(
+                    AppSettings(
+                        noteType = "Senren",
+                        fieldMap = linkedMapOf("word" to "word", "sentence" to "sentence"),
+                    ),
+                )
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(model("Senren", "word", "sentence", "pitchPositions", "pitchAccents")),
+                )
+            val viewModel = viewModel(repository, setup)
+            advanceUntilIdle()
+
+            viewModel.selectNoteType("Senren")
+            advanceUntilIdle()
+            assertEquals(0, repository.writeCount)
+
+            viewModel.remapFieldsFromNoteType()
+            advanceUntilIdle()
+
+            assertEquals("pitchPositions", repository.current.fieldMap["pitch_position"])
+            assertEquals("pitchAccents", repository.current.fieldMap["pitch_text"])
+            assertEquals("word", repository.current.fieldMap["word"])
+            assertEquals(
+                listOf("pitch_position", "pitch_text"),
+                viewModel.uiState.value.fieldMapChanges.map { it.logicalKey },
+            )
+        }
+
+    @Test
     fun `card type preselects the conventional marker only when the note type has it`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository =

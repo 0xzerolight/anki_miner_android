@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">Развёрнуто</string>
     <string name="disclosure_collapsed">Свёрнуто</string>
     <string name="settings_disclosure_summary">%1$s (%2$d из %3$d)</string>
+    <string name="anki_field_mapping_remap">Заполнить сопоставления по именам полей</string>
+    <string name="anki_field_mapping_remap_help">Повторно сверяет имена полей этого типа заметки и заполняет каждое распознанное сопоставление. Нераспознанные имена сохраняют уже выбранное поле.</string>
     <string name="anki_field_mapping_changes">Сопоставления для этого типа заметки изменены: %1$s</string>
     <string name="anki_field_none">Не сопоставлено</string>
     <string name="anki_card_type_title">Тип карточки</string>

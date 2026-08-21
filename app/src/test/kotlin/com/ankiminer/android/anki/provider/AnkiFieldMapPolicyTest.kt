@@ -97,6 +97,76 @@ class AnkiFieldMapPolicyTest {
     }
 
     @Test
+    fun `remap fills the keys a stale map left empty without touching a manual choice`() {
+        // The map a Senren user saved before the plural spellings were known: pitch went nowhere,
+        // and they hand-picked "notes" for source rather than the miscInfo the table now matches.
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = listOf("word", "sentence", "notes", "pitchPositions", "pitchAccents"),
+                currentFieldMap =
+                    linkedMapOf(
+                        "word" to "word",
+                        "sentence" to "sentence",
+                        "source" to "notes",
+                    ),
+            )
+
+        assertEquals("pitchPositions", result.fieldMap["pitch_position"])
+        assertEquals("pitchAccents", result.fieldMap["pitch_text"])
+        // "notes" matches no keyword, so the manual choice survives.
+        assertEquals("notes", result.fieldMap["source"])
+        assertEquals("word", result.fieldMap["word"])
+        assertEquals(
+            listOf("pitch_position", "pitch_text"),
+            result.changes
+                .map(AnkiFieldMappingChange::logicalKey)
+                .filter { it.startsWith("pitch") },
+        )
+    }
+
+    @Test
+    fun `remap lets a keyword match take a destination back off a manual owner`() {
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = listOf("Expression", "PitchCategories", "Sentence"),
+                currentFieldMap =
+                    linkedMapOf(
+                        "word" to "Expression",
+                        // Parked on the category field before the table knew the plural name.
+                        "source" to "PitchCategories",
+                    ),
+            )
+
+        assertEquals("PitchCategories", result.fieldMap["pitch_category"])
+        assertEquals("", result.fieldMap["source"])
+        val destinations = result.fieldMap.values.filter(String::isNotEmpty)
+        assertEquals(destinations.size, destinations.distinct().size)
+    }
+
+    @Test
+    fun `remap never steals the card type marker field`() {
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = listOf("Expression", "Sentence", "Frequency"),
+                currentFieldMap = linkedMapOf("word" to "Expression"),
+                reservedDestinations = setOf("Frequency"),
+            )
+
+        assertEquals("", result.fieldMap["frequency"])
+        assertEquals("Sentence", result.fieldMap["sentence"])
+    }
+
+    @Test
+    fun `remap of an empty note type is a no-op`() {
+        val existing = linkedMapOf("word" to "Expression")
+
+        val result = AnkiFieldMapPolicy.remap(fieldNames = emptyList(), currentFieldMap = existing)
+
+        assertSame(existing, result.fieldMap)
+        assertTrue(result.changes.isEmpty())
+    }
+
+    @Test
     fun `manual assignment rejects a destination owned by another logical field`() {
         val existing = mapOf("word" to "Expression", "sentence" to "Sentence")
 

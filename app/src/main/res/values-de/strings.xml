@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">Ausgeklappt</string>
     <string name="disclosure_collapsed">Eingeklappt</string>
     <string name="settings_disclosure_summary">%1$s (%2$d von %3$d)</string>
+    <string name="anki_field_mapping_remap">Zuordnungen aus Feldnamen füllen</string>
+    <string name="anki_field_mapping_remap_help">Gleicht die Feldnamen dieses Notiztyps erneut ab und füllt jede erkannte Zuordnung. Nicht erkannte Namen behalten das bereits gewählte Feld.</string>
     <string name="anki_field_mapping_changes">Zuordnungen für diesen Notiztyp geändert: %1$s</string>
     <string name="anki_field_none">Nicht zugeordnet</string>
     <string name="anki_card_type_title">Kartentyp</string>

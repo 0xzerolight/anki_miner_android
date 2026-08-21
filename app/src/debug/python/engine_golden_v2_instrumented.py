@@ -617,11 +617,13 @@ def _frequency(
 
 
 def _pitch(root: Path, value: Mapping[str, Any]) -> tuple[list[dict[str, Any]], Any]:
+    from anki_miner.services.pitch_accent.multi_pitch_service import MultiPitchAccentService
+    from anki_miner.services.pitch_accent.provider import IndexedPitchProvider
     from anki_miner.services.pitch_accent.render import (
         render_pitch_graph_field,
         render_pitch_text_field,
     )
-    from anki_miner.services.pitch_accent_service import PitchAccentService
+    from anki_miner.services.pitch_accent.source_importer import import_pitch_source
 
     root.mkdir(parents=True, exist_ok=True)
     path = root / "pitch.csv"
@@ -632,9 +634,16 @@ def _pitch(root: Path, value: Mapping[str, Any]) -> tuple[list[dict[str, Any]], 
             raise AssertionError("pitch rows must have five strings")
         lines.append(",".join(row))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-    service = PitchAccentService(path)
-    if not service.load():
+    # The same shape mining builds: one imported per-source index behind the
+    # first-hit-wins chain. The single-file PitchAccentService this used to
+    # construct was removed upstream when the chain landed.
+    source_id = "golden-pitch"
+    dest_root = root / "sources"
+    imported = import_pitch_source(path, dest_root, source_id=source_id, source_name="Golden Pitch")
+    provider = IndexedPitchProvider(source_id, dest_root / source_id / "index.sqlite", imported.source_name)
+    if not provider.load():
         raise AssertionError("cannot load pitch fixture")
+    service = MultiPitchAccentService([provider])
     output: list[dict[str, Any]] = []
     for raw in _list(value.get("queries"), "pitch queries"):
         query = _mapping(raw, "pitch query")

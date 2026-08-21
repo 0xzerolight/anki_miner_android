@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">Đã mở rộng</string>
     <string name="disclosure_collapsed">Đã thu gọn</string>
     <string name="settings_disclosure_summary">%1$s (%2$d trên %3$d)</string>
+    <string name="anki_field_mapping_remap">Điền ánh xạ từ tên trường</string>
+    <string name="anki_field_mapping_remap_help">Đối chiếu lại tên trường của loại ghi chú này và điền mọi ánh xạ nhận ra được. Tên không nhận ra vẫn giữ trường đã chọn.</string>
     <string name="anki_field_mapping_changes">Đã thay đổi ánh xạ cho loại ghi chú này: %1$s</string>
     <string name="anki_field_none">Chưa ánh xạ</string>
     <string name="anki_card_type_title">Loại thẻ</string>

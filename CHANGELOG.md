@@ -4,6 +4,16 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Added
+
+- **Fill mappings from field names (Settings -> Anki).** Selecting a note type maps its fields; selecting the same one again returns the map unchanged (`AnkiFieldMapPolicy.merge` short-circuits on an unchanged note type), so a field map saved against an older keyword table kept its gaps for good — the update above fixes nothing for anyone already set up. The new action re-runs the keyword match over the selected note type: keys the table recognizes are overwritten, keys it does not keep whatever the user picked, and a manual choice colliding with a keyword match is dropped rather than duplicated. Mirrors desktop's "Auto-Map Fields from Note Type", which had no Android counterpart — `AnkiFieldAutoMap.autoMap` existed but had no production call site at all.
+- **Diagnostics report which pitch fields have a destination** (`anki.pitch_fields_mapped`). "No pitch on my cards" splits two ways — no usable source, or nowhere to put the data — and only the first was answerable from a tester bundle, since `LogRedactor` redacts every mapped field name. The line carries our own logical keys, never the user's field names, so the redaction is intact.
+
+### Fixed
+
+- **Senren note types get pitch accent again, and Lapis/Kiku fill their category and source fields.** `AnkiFieldAutoMap.FIELD_KEYWORDS` was a stale copy of desktop `_FIELD_KEYWORDS`: desktop `466b2047` added the plural spellings the community note types actually ship, and Android never received it. Matching is exact after normalization (lowercase, strip spaces and underscores), so a missing spelling maps to nothing at all, silently. Senren spells all three of its pitch fields plural — `pitchPositions`, `pitchCategories`, `pitchAccents` — so the engine emitted no pitch data whatsoever and the note type drew no accent; Lapis, Kiku and JPMN lost `PitchCategories` and `MiscInfo` the same way, and every note type lost `frequencies`. All five spellings are back, restoring desktop parity. Existing setups need the new fill action above; a fresh note-type selection picks them up on its own.
+- **The engine golden's pitch section runs again.** `engine_golden_v2_instrumented._pitch` still imported `PitchAccentService`, removed upstream when the per-source pitch chain replaced the single-file service, so the section raised `ImportError` on execution — invisible because the instrumented replay that owns it is on the API 26 lane's UNEXECUTED allowlist. It now builds the same shape mining does (imported per-source index behind `MultiPitchAccentService`), and a host test in the secretless job re-derives the section from the committed input and compares it with the committed expectation, so the module cannot rot unobserved again.
+
 ## [0.9.0] - 2026-08-20
 
 ### Added

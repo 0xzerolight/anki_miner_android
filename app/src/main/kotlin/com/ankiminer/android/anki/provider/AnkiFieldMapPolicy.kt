@@ -82,6 +82,64 @@ internal object AnkiFieldMapPolicy {
         return AnkiFieldMapMergeResult(merged, changes)
     }
 
+    /**
+     * Re-run keyword auto-mapping over the note type the user already has selected.
+     *
+     * [merge] deliberately does nothing on a same-type reselection, so a map saved against an older
+     * keyword table keeps its gaps forever. This is the explicit way out, and it mirrors desktop's
+     * "Auto-Map Fields from Note Type": a key the keyword table matches is overwritten, a key it
+     * does not match keeps whatever the user chose. The one place it goes further than desktop is
+     * ownership — Android allows a destination exactly one owner, so a retained manual choice that
+     * collides with a keyword match is dropped rather than duplicated.
+     */
+    fun remap(
+        fieldNames: List<String>,
+        currentFieldMap: Map<String, String>,
+        reservedDestinations: Set<String> = emptySet(),
+    ): AnkiFieldMapMergeResult {
+        val firstField =
+            fieldNames.firstOrNull()
+                ?: return AnkiFieldMapMergeResult(currentFieldMap, emptyList())
+
+        val merged = AnkiFieldKeys.ALL.associateWithTo(linkedMapOf()) { "" }
+        val usedDestinations =
+            reservedDestinations
+                .filterTo(mutableSetOf()) { destination ->
+                    destination.isNotEmpty() && destination in fieldNames && destination != firstField
+                }
+        merged[AnkiFieldKeys.WORD] = firstField
+        usedDestinations += firstField
+
+        AnkiFieldKeys.OPTIONAL.forEach { key ->
+            val suggested = AnkiFieldAutoMap.firstAvailableMatch(key, fieldNames, usedDestinations)
+            if (suggested.isNotEmpty()) {
+                merged[key] = suggested
+                usedDestinations += suggested
+            }
+        }
+
+        AnkiFieldKeys.OPTIONAL.forEach { key ->
+            if (merged.getValue(key).isNotEmpty()) return@forEach
+            val current = currentFieldMap[key].orEmpty()
+            if (current.isNotEmpty() && current in fieldNames && current !in usedDestinations) {
+                merged[key] = current
+                usedDestinations += current
+            }
+        }
+
+        val changes =
+            AnkiFieldKeys.ALL.mapNotNull { key ->
+                val previous = currentFieldMap[key].orEmpty()
+                val replacement = merged.getValue(key)
+                if (previous != replacement) {
+                    AnkiFieldMappingChange(key, previous, replacement)
+                } else {
+                    null
+                }
+            }
+        return AnkiFieldMapMergeResult(merged, changes)
+    }
+
     /** Return an updated map, or null when the manual choice violates destination ownership. */
     fun assign(
         currentFieldMap: Map<String, String>,

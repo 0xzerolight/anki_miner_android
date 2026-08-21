@@ -301,6 +301,49 @@ internal class SetupViewModel(
         )
     }
 
+    /**
+     * Re-run keyword auto-mapping over the note type that is already selected.
+     *
+     * [selectNoteType] maps only on a CHANGE, so a field map saved against an older keyword table
+     * keeps its gaps for good — the reason a Senren user who set the app up before the plural pitch
+     * names were known still gets no pitch on their cards after updating.
+     */
+    fun remapFieldsFromNoteType() {
+        val state = currentState()
+        if (state.busy) return
+        val noteType = state.noteType ?: return
+        val fields =
+            state.availableNoteTypes.firstOrNull { it.name == noteType }?.fieldNames ?: return
+        var changes = emptyList<AnkiFieldMappingChange>()
+        persistAnkiSettings(
+            transform = { current ->
+                if (current.noteType != noteType) {
+                    current
+                } else {
+                    val retainedMarker =
+                        current.cardTypeMarkerField?.takeIf { marker ->
+                            marker in fields && marker != fields.firstOrNull()
+                        }
+                    val remapped =
+                        AnkiFieldMapPolicy.remap(
+                            fieldNames = fields,
+                            currentFieldMap = current.fieldMap,
+                            reservedDestinations = setOfNotNull(retainedMarker),
+                        )
+                    changes = remapped.changes
+                    current.copy(
+                        fieldMap = remapped.fieldMap,
+                        cardTypeMarkerField = retainedMarker,
+                    )
+                }
+            },
+            afterSuccess = { persisted ->
+                local.update { it.copy(fieldMapChanges = changes) }
+                refreshPersistedTarget(persisted)
+            },
+        )
+    }
+
     fun selectDeck(deckName: String) {
         val state = currentState()
         if (state.busy || deckName !in state.deckSelection.choices.map(DeckChoice::deckName)) return

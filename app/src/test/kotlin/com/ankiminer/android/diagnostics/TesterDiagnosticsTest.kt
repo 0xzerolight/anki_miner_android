@@ -205,6 +205,44 @@ class TesterDiagnosticsTest {
     }
 
     @Test
+    fun `mapped pitch fields are reported by logical key and never by the user's field name`() {
+        val unmapped =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(),
+                video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+            )
+
+        assertTrue(unmapped.report.contains("anki.pitch_fields_mapped=none"))
+
+        val mapped =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup =
+                    SetupUiState(
+                        fieldMap =
+                            mapOf(
+                                "word" to "Expression",
+                                "pitch_position" to "PitchPosition",
+                                "pitch_graph" to "MyPrivateGraphField",
+                                "pitch_category" to "",
+                            ),
+                    ),
+                video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+            )
+
+        assertTrue(mapped.report.contains("anki.pitch_fields_mapped=pitch_position,pitch_graph"))
+        // The destination names stay out of the bundle, exactly as LogRedactor keeps them out
+        // of the log.
+        assertFalse(mapped.report.contains("MyPrivateGraphField"))
+        assertFalse(mapped.report.contains("PitchPosition"))
+    }
+
+    @Test
     fun `a run id is reported only once its run has failed`() {
         val report =
             TesterDiagnosticsBuilder.build(

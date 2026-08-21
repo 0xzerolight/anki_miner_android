@@ -337,6 +337,8 @@
     <string name="disclosure_expanded">Espanso</string>
     <string name="disclosure_collapsed">Compresso</string>
     <string name="settings_disclosure_summary">%1$s (%2$d di %3$d)</string>
+    <string name="anki_field_mapping_remap">Compila le mappature dai nomi dei campi</string>
+    <string name="anki_field_mapping_remap_help">Confronta di nuovo i nomi dei campi di questo tipo di nota e compila ogni mappatura riconosciuta. I nomi non riconosciuti mantengono il campo già scelto.</string>
     <string name="anki_field_mapping_changes">Mappature modificate per questo tipo di nota: %1$s</string>
     <string name="anki_field_none">Non mappato</string>
     <string name="anki_card_type_title">Tipo di carta</string>
