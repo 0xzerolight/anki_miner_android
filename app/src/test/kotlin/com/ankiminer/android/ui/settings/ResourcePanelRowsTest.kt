@@ -1,13 +1,9 @@
 package com.ankiminer.android.ui.settings
 
-import com.ankiminer.android.data.resources.CatalogDictionaryStatus
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
-import com.ankiminer.android.data.resources.ResourceArchive
-import com.ankiminer.android.data.resources.YomitanCatalogResource
-import com.ankiminer.android.data.resources.YomitanDictionaryIdentity
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -145,21 +141,6 @@ class ResourcePanelRowsTest {
             )
 
         assertEquals(listOf(JISHO_ROW_ID), rows.map { it.id })
-    }
-
-    @Test
-    fun `the add menu offers a catalog dictionary only while its slot is empty`() {
-        val candidates =
-            catalogInstallCandidates(
-                listOf(
-                    catalogDictionary("jitendex", installed = false, slotOccupied = false),
-                    catalogDictionary("jmdict", installed = true, slotOccupied = true),
-                    // Occupied but unreadable: Repair on its own row, never a second Install entry.
-                    catalogDictionary("broken", installed = false, slotOccupied = true),
-                ),
-            )
-
-        assertEquals(listOf("jitendex"), candidates.map { it.resource.slotId })
     }
 
     @Test
@@ -370,34 +351,6 @@ class ResourcePanelRowsTest {
         catalogResourceId = catalogResourceId,
         attribution = emptyList(),
         rebuildSourcePath = null,
-    )
-
-    private fun catalogDictionary(
-        slotId: String,
-        installed: Boolean,
-        slotOccupied: Boolean,
-    ) = CatalogDictionaryStatus(
-        resource =
-            YomitanCatalogResource(
-                resourceId = "$slotId-1",
-                displayName = slotId,
-                slotId = slotId,
-                archive = ResourceArchive("https://example.invalid/$slotId.zip", "sha", 1L, "zip"),
-                dictionary =
-                    YomitanDictionaryIdentity(
-                        title = slotId,
-                        revision = "1",
-                        format = 3L,
-                        memberCount = 1L,
-                        uncompressedBytes = 1L,
-                        archiveMemberLimit = 1L,
-                        uncompressedBytesLimit = 1L,
-                        fileBytesLimit = 1L,
-                    ),
-                attribution = emptyList(),
-            ),
-        installed = installed,
-        slotOccupied = slotOccupied,
     )
 
     private fun pitch(

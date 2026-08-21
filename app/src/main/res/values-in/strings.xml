@@ -493,17 +493,12 @@
     <string name="unidic_resource_title">Tokenizer bahasa Jepang — wajib</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · sekitar 45 MiB unduhan dan 249 MiB terpasang</string>
     <string name="jitendex_resource_title">Kamus Jitendex — direkomendasikan</string>
-    <string name="jitendex_resource_description">Kamus Yomitan luring · sekitar 37 MiB unduhan dan hingga 516 MiB saat mengimpor</string>
     <string name="jmdict_resource_title">Kamus JMdict (Inggris)</string>
     <string name="jmdict_resource_description">Kamus Yomitan luring dengan definisi bahasa Inggris · sekitar 15 MiB unduhan dan hingga 163 MiB saat mengimpor</string>
     <string name="resource_installed">Terpasang</string>
     <string name="resource_not_installed">Tidak terpasang</string>
     <string name="unidic_install">Instal</string>
     <string name="unidic_repair">Perbaiki</string>
-    <string name="dictionary_install">Instal</string>
-    <string name="dictionary_replace">Ganti dengan aman</string>
-    <string name="dictionary_catalog_reinstall">Instal ulang atau ganti kamus bawaan</string>
-    <string name="dictionary_repair">Perbaiki slot kamus</string>
     <string name="dictionary_repair_confirm_title">Perbaiki slot yang menyimpan %1$s?</string>
     <string name="resource_replace_confirm_title">Ganti %1$s?</string>
     <string name="resource_replace_confirm_message">Mengganti %1$s. Jika impor gagal, pemasangan saat ini dipulihkan.</string>

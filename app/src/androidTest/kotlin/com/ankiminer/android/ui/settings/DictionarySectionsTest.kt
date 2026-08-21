@@ -12,14 +12,14 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import com.ankiminer.android.data.resources.CatalogDictionaryStatus
-import com.ankiminer.android.data.resources.ResourceArchive
+import com.ankiminer.android.data.resources.FrozenResourceCatalog
+import com.ankiminer.android.data.resources.RecommendedResourceAction
+import com.ankiminer.android.data.resources.RecommendedResourceItem
+import com.ankiminer.android.data.resources.RecommendedResourcePlan
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
-import com.ankiminer.android.data.resources.YomitanCatalogResource
-import com.ankiminer.android.data.resources.YomitanDictionaryIdentity
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
@@ -133,59 +133,29 @@ class DictionarySectionsTest {
     }
 
     @Test
-    fun installedCatalogDictionaryCanBeRevealedBesideMissingPeer() {
+    fun recommendedResourcesCardDisablesItsActionWhenTheSetIsSatisfied() {
+        val catalog = FrozenResourceCatalog.value
         composeRule.setContent {
             AnkiMinerTheme {
-                CatalogDictionaryCards(
+                RecommendedResourcesCard(
                     state =
                         SetupUiState(
                             resourceStartup = ResourceStartupReadiness.READY,
-                            catalogDictionaries =
-                                listOf(
-                                    catalogDictionary("jmdict", installed = false),
-                                    catalogDictionary("jitendex", installed = true),
+                            recommendedPlan =
+                                RecommendedResourcePlan(
+                                    catalog.recommendedResources.map {
+                                        RecommendedResourceItem(it, RecommendedResourceAction.SKIP)
+                                    },
                                 ),
                         ),
-                    onInstall = {},
+                    onDownload = {},
                 )
             }
         }
 
-        composeRule.onNodeWithText("JMdict dictionary (English)").assertIsDisplayed()
-        composeRule.onNodeWithText("Jitendex dictionary — recommended").assertDoesNotExist()
-        composeRule
-            .onNodeWithText("Reinstall or replace a bundled dictionary")
-            .assertIsDisplayed()
-            .performClick()
-        composeRule.onNodeWithText("Jitendex dictionary — recommended").assertIsDisplayed()
+        composeRule.onNodeWithText("Recommended resources").assertIsDisplayed()
+        composeRule.onNodeWithText("All installed").assertIsDisplayed().assertIsNotEnabled()
     }
-
-    private fun catalogDictionary(
-        slotId: String,
-        installed: Boolean,
-    ) = CatalogDictionaryStatus(
-        resource =
-            YomitanCatalogResource(
-                resourceId = slotId,
-                displayName = slotId,
-                slotId = slotId,
-                archive = ResourceArchive("https://example.invalid/$slotId.zip", "sha", 1L, "zip"),
-                dictionary =
-                    YomitanDictionaryIdentity(
-                        title = slotId,
-                        revision = "1",
-                        format = 3L,
-                        memberCount = 1L,
-                        uncompressedBytes = 1L,
-                        archiveMemberLimit = 1L,
-                        uncompressedBytesLimit = 1L,
-                        fileBytesLimit = 1L,
-                    ),
-                attribution = emptyList(),
-            ),
-        installed = installed,
-        slotOccupied = installed,
-    )
 
     private class CountingWebView(context: Context) : WebView(context) {
         var loadCount = 0

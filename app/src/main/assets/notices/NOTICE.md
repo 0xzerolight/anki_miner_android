@@ -21,7 +21,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 
 ## Downloaded language resources
 
-UniDic Lite and the recommended Jitendex/Yomitan dictionary are downloaded as data after installation. Their immutable identities and attributions are stored in `app/src/main/python/android_bridge/resource_catalog_v1.json` and presented by the app. Jitendex includes data under CC BY-SA and source-specific terms, including EDRDG/JMdict attribution. Download-on-demand does not remove the need to preserve required notices in the product and store listing.
+UniDic Lite, the Jitendex and JMdict Yomitan dictionaries, the JPDB v2.2 kana frequency list and the Kanjium pitch accent data are downloaded as data after installation. Their immutable identities and attributions are stored in `app/src/main/python/android_bridge/resource_catalog_v1.json` and presented by the app. Jitendex includes data under CC BY-SA and source-specific terms, including EDRDG/JMdict attribution. Download-on-demand does not remove the need to preserve required notices in the product and store listing.
 
 ## Source availability
 

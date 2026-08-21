@@ -665,6 +665,7 @@ internal fun UiAuditFullSettingsFixture(
             onAttributions = {},
             onRunSetupWizard = {},
             onImportCustom = {},
+            onDownloadRecommended = {},
             onReplaceCustom = { _ -> },
             onImportFrequency = {},
             onImportPitch = {},

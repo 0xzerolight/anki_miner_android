@@ -44,6 +44,10 @@ class SettingsScreenModelTest {
         )
         assertEquals(
             SettingsCategory.DICTIONARIES,
+            settingsCategoryFor(ResourceFailureOrigin.RECOMMENDED_SET),
+        )
+        assertEquals(
+            SettingsCategory.DICTIONARIES,
             settingsCategoryFor(ResourceFailureOrigin.PITCH),
         )
         assertEquals(
@@ -76,6 +80,7 @@ class SettingsScreenModelTest {
         // dictionary-lookup(4).
         assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CATALOG_DICTIONARY))
         assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CUSTOM_DICTIONARY))
+        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.RECOMMENDED_SET))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.PITCH))
         assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
         // Audio and Frequency are one panel card each.

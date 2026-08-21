@@ -496,17 +496,12 @@
     <string name="unidic_resource_title">Tokenizador de japonês — obrigatório</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · download de cerca de 45 MiB e 249 MiB instalado</string>
     <string name="jitendex_resource_title">Dicionário Jitendex — recomendado</string>
-    <string name="jitendex_resource_description">Dicionário Yomitan offline · download de cerca de 37 MiB e até 516 MiB durante a importação</string>
     <string name="jmdict_resource_title">Dicionário JMdict (inglês)</string>
     <string name="jmdict_resource_description">Dicionário Yomitan offline com definições em inglês · download de cerca de 15 MiB e até 163 MiB durante a importação</string>
     <string name="resource_installed">Instalado</string>
     <string name="resource_not_installed">Não instalado</string>
     <string name="unidic_install">Instalar</string>
     <string name="unidic_repair">Reparar</string>
-    <string name="dictionary_install">Instalar</string>
-    <string name="dictionary_replace">Substituir com segurança</string>
-    <string name="dictionary_catalog_reinstall">Reinstalar ou substituir um dicionário integrado</string>
-    <string name="dictionary_repair">Reparar espaço do dicionário</string>
     <string name="dictionary_repair_confirm_title">Reparar o espaço que contém %1$s?</string>
     <string name="resource_replace_confirm_title">Substituir %1$s?</string>
     <string name="resource_replace_confirm_message">Substitui %1$s. Se a importação falhar, a instalação atual é restaurada.</string>

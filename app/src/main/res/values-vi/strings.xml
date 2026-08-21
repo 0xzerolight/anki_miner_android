@@ -493,17 +493,12 @@
     <string name="unidic_resource_title">Trình tách từ tiếng Nhật — bắt buộc</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · tải xuống khoảng 45 MiB và cài đặt 249 MiB</string>
     <string name="jitendex_resource_title">Từ điển Jitendex — được đề xuất</string>
-    <string name="jitendex_resource_description">Từ điển Yomitan ngoại tuyến · tải xuống khoảng 37 MiB và tối đa 516 MiB khi nhập</string>
     <string name="jmdict_resource_title">Từ điển JMdict (tiếng Anh)</string>
     <string name="jmdict_resource_description">Từ điển Yomitan ngoại tuyến có chú giải tiếng Anh · tải xuống khoảng 15 MiB và tối đa 163 MiB khi nhập</string>
     <string name="resource_installed">Đã cài đặt</string>
     <string name="resource_not_installed">Chưa cài đặt</string>
     <string name="unidic_install">Cài đặt</string>
     <string name="unidic_repair">Sửa chữa</string>
-    <string name="dictionary_install">Cài đặt</string>
-    <string name="dictionary_replace">Thay thế an toàn</string>
-    <string name="dictionary_catalog_reinstall">Cài đặt lại hoặc thay thế một từ điển đi kèm</string>
-    <string name="dictionary_repair">Sửa chữa khe từ điển</string>
     <string name="dictionary_repair_confirm_title">Sửa chữa khe chứa %1$s?</string>
     <string name="resource_replace_confirm_title">Thay thế %1$s?</string>
     <string name="resource_replace_confirm_message">Thay thế %1$s. Nếu nhập thất bại, bản cài đặt hiện tại được khôi phục.</string>

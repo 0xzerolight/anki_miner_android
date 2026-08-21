@@ -563,6 +563,7 @@ internal fun ResourceCard(
     action: () -> Unit,
     actionLabel: String,
     inlineFailure: (@Composable () -> Unit)? = null,
+    actionEnabled: Boolean = true,
 ) {
     // Install/Repair on the button already says which state the resource is in, so the state line
     // is announced rather than drawn. The description is what the download actually is.
@@ -588,7 +589,7 @@ internal fun ResourceCard(
             inlineFailure?.invoke()
             SecondaryActionButton(
                 onClick = action,
-                enabled = !busy,
+                enabled = !busy && actionEnabled,
             ) { Text(actionLabel) }
         }
     }

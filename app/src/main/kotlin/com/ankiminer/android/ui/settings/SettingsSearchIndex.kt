@@ -138,14 +138,14 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         entry("media.subtitle_presets", SettingsCategory.MEDIA, "subtitle-text", R.string.settings_subtitle_presets),
 
         // Dictionaries
-        // Both catalog dictionaries stay searchable even though their install cards are gone: the
-        // panel's Add menu is where they are installed, and searching "Jitendex" has to land on it.
+        // The recommended set is installed from the panel's Add menu, so searching for it has to
+        // land on that panel rather than on a card of its own.
         entry(
-            "dictionaries.jitendex",
+            "dictionaries.recommended",
             SettingsCategory.DICTIONARIES,
             "dictionary-sources",
-            R.string.jitendex_resource_title,
-            R.string.jitendex_resource_description,
+            R.string.recommended_resources_title,
+            R.string.recommended_resources_description,
         ),
         entry(
             "dictionaries.jmdict",

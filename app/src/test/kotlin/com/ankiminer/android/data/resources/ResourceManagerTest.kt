@@ -2223,6 +2223,147 @@ class ResourceManagerTest {
             assertTrue(harness.foregroundLease.events.isEmpty())
         }
 
+    @Test
+    fun theRecommendedSetInstallsDictionaryThenFrequencyThenPitchInOneOperation() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+
+            harness.manager.installRecommendedResources()
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(
+                listOf(
+                    "resource.dictionary.import",
+                    "resource.frequency.import",
+                    "resource.pitch.import",
+                ),
+                harness.bridge.requestTypes.filter { it.endsWith(".import") },
+            )
+            assertTrue(harness.manager.state.value.recommendedPlan.isSatisfied)
+        }
+
+    @Test
+    fun theRecommendedSetHoldsOneForegroundLeaseAndOneJournalRecord() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+
+            harness.manager.installRecommendedResources()
+
+            assertEquals(1, harness.foregroundLease.events.count { it.startsWith("start:") })
+            assertEquals(1, harness.foregroundLease.events.count { it == "stop" })
+            assertFalse(harness.foregroundLease.isRunning())
+            assertFalse(ResourceOperationJournal(harness.root).exists())
+        }
+
+    @Test
+    fun aSatisfiedRecommendedSetDispatchesNothingOnASecondPress() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+            harness.manager.installRecommendedResources()
+            assertEquals(3, harness.bridge.requestTypes.count { it.endsWith(".import") })
+            harness.bridge.clearRequests()
+            harness.foregroundLease.events.clear()
+
+            harness.manager.installRecommendedResources()
+
+            assertTrue(harness.bridge.requestTypes.none { it.endsWith(".import") })
+            assertTrue(harness.foregroundLease.events.isEmpty())
+        }
+
+    @Test
+    fun theRecommendedSetRepairsWhatFailedStartupAndOverwritesOnlyThat() =
+        runTest {
+            // A schema-stale pitch index is one of the things that fails startup, and this button
+            // is the wizard's only install affordance: gating it on READY would make the press a
+            // silent no-op in the very state its REPLACE members exist to repair.
+            val harness =
+                Harness(
+                    fakePinnedDownloads = true,
+                    installedPitchSourceId = "kanjium",
+                    installedPitchSchemaOk = false,
+                )
+            assertEquals(
+                ResourceStartupReadiness.FAILED,
+                harness.manager.state.value.startupReadiness,
+            )
+
+            harness.manager.installRecommendedResources()
+
+            // The missing members are fresh installs; only the stale one is overwritten.
+            assertTrue(
+                harness.bridge.requestsOfType("resource.dictionary.import").single()
+                    .contains("\"overwrite\":false"),
+            )
+            assertTrue(
+                harness.bridge.requestsOfType("resource.pitch.import").single()
+                    .contains("\"overwrite\":true"),
+            )
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(
+                ResourceStartupReadiness.READY,
+                harness.manager.state.value.startupReadiness,
+            )
+        }
+
+    @Test
+    fun oneFailedMemberNeitherAbortsTheBatchNorHidesItself() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true, failFrequencyImport = true)
+
+            harness.manager.installRecommendedResources()
+
+            // The pitch member still ran even though frequency failed before it.
+            assertEquals(1, harness.bridge.requestsOfType("resource.pitch.import").size)
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("recommended_set_incomplete", failure.code)
+            assertEquals(ResourceFailureOrigin.RECOMMENDED_SET, failure.origin)
+            assertEquals(ResourceFailureAction.RETRY, failure.retry.action)
+            assertTrue(failure.retryable)
+            // Retry re-runs the batch and installs only what is still missing.
+            assertEquals(
+                listOf("jpdb-v2.2-kana-2024-10-13"),
+                harness.manager.state.value.recommendedPlan.pending.map { it.resource.resourceId },
+            )
+        }
+
+    @Test
+    fun anInterruptedRecommendedSetReportsNothingWhenEveryMemberLanded() =
+        runTest {
+            // A kill after the last member still leaves the journal record behind, so replay must
+            // read the satisfied plan rather than announce an interruption that changed nothing.
+            val harness = Harness(fakePinnedDownloads = true)
+            harness.manager.installRecommendedResources()
+            assertTrue(harness.manager.state.value.recommendedPlan.isSatisfied)
+            ResourceOperationJournal(harness.root, syncDirectory = {}).write(
+                PersistedResourceOperation(
+                    origin = ResourceFailureOrigin.RECOMMENDED_SET,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                ),
+            )
+
+            harness.manager.recoverAndRefresh()
+
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun anInterruptedRecommendedSetOffersRetryWhileAMemberIsMissing() =
+        runTest {
+            val harness = Harness(autoRecover = false)
+            ResourceOperationJournal(harness.root, syncDirectory = {}).write(
+                PersistedResourceOperation(
+                    origin = ResourceFailureOrigin.RECOMMENDED_SET,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                ),
+            )
+
+            harness.manager.recoverAndRefresh()
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("resource_operation_interrupted", failure.code)
+            assertEquals(ResourceFailureOrigin.RECOMMENDED_SET, failure.origin)
+        }
+
     private inner class Harness(
         rootName: String = "manager",
         initialUserCount: Int = 0,
@@ -2243,6 +2384,7 @@ class ResourceManagerTest {
         installedCustomDictionaryRebuildPath: String? = null,
         installedCustomDictionaryEntryCount: Long = 1,
         failDictionaryImport: Boolean = false,
+        failFrequencyImport: Boolean = false,
         autoRecover: Boolean = true,
         resourceExecutor: Executor = DIRECT_EXECUTOR,
         controlExecutor: Executor = DIRECT_EXECUTOR,
@@ -2305,6 +2447,7 @@ class ResourceManagerTest {
                 installedCustomDictionaryRebuildPath,
                 installedCustomDictionaryEntryCount,
                 failDictionaryImport,
+                failFrequencyImport,
                 failRefreshAfterDictionaryImport,
                 failRefreshAfterMutation,
                 failKnownWordsImportOnce,
@@ -2343,7 +2486,14 @@ class ResourceManagerTest {
                         PinnedArchiveProvider { archive, cancellation, _ ->
                             cancellation.check()
                             val file = File(root, "fake-${archive.sha256}.zip")
-                            file.writeText("fixture")
+                            val frequency = FrozenResourceCatalog.value.frequencies.single().archive
+                            if (archive == frequency) {
+                                // validateFrequencyArchiveMetadata reads this before dispatch, so a
+                                // placeholder would fail the member for the wrong reason.
+                                file.writeBytes(fixtureFrequencyArchiveBytes())
+                            } else {
+                                file.writeText("fixture")
+                            }
                             StagedArchive(file, archive.sha256, archive.sizeBytes)
                         }
                     } else {
@@ -2573,6 +2723,7 @@ class ResourceManagerTest {
         private val installedCustomDictionaryRebuildPath: String? = null,
         private val installedCustomDictionaryEntryCount: Long = 1,
         private val failDictionaryImport: Boolean = false,
+        private val failFrequencyImport: Boolean = false,
         private val failRefreshAfterDictionaryImport: Boolean,
         private val failRefreshAfterMutation: String?,
         failKnownWordsImportOnce: Boolean,
@@ -2594,6 +2745,10 @@ class ResourceManagerTest {
         private var installedFrequencySourceId: String? = null
         private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
+
+        /** Which catalog dictionary the inventory echoes; an import retargets it. */
+        private var catalogDictionaryResourceId =
+            FrozenResourceCatalog.value.dictionaries.first().resourceId
         private var catalogDictionaryValid = installedCatalogDictionaryValid ?: true
         private var customDictionaryInstalled = installedCustomDictionaryValid != null
         private var customDictionaryValid = installedCustomDictionaryValid ?: true
@@ -2652,11 +2807,13 @@ class ResourceManagerTest {
                             "simulated import failure",
                         )
                     }
-                    if (customDictionaryInstalled) {
+                    val requestedCatalogId = nullableStringField(rawRequest, "catalogResourceId")
+                    if (customDictionaryInstalled && requestedCatalogId == null) {
                         // A real reimport rebuilds the index at the current schema,
                         // so the slot stops being stale.
                         customDictionaryValid = true
                     } else {
+                        requestedCatalogId?.let { catalogDictionaryResourceId = it }
                         catalogDictionaryInstalled = true
                         catalogDictionaryValid = true
                     }
@@ -2680,6 +2837,12 @@ class ResourceManagerTest {
                         """{"slotId":"fixture-dictionary-2026-08"}""",
                     )
                 "resource.frequency.import" -> {
+                    if (failFrequencyImport) {
+                        throw ResourceBridgeException(
+                            "frequency_import_failed",
+                            "simulated frequency import failure",
+                        )
+                    }
                     installedFrequencySourceId = stringField(rawRequest, "sourceId")
                     armLocalRefreshFailure("resource.frequency.import")
                     val revision = if (committedFrequencyDecodeFailure) "a".repeat(4097) else "1"
@@ -2806,7 +2969,7 @@ class ResourceManagerTest {
             }
             val entries = mutableListOf<String>()
             if (catalogDictionaryInstalled) {
-                val resource = FrozenResourceCatalog.value.dictionaries.first()
+                val resource = catalogDictionaryOf(catalogDictionaryResourceId)
                 // The decoder checks an installed catalog dictionary against the frozen
                 // catalog identity, attribution included, so echo the catalog's own list.
                 entries +=
@@ -2825,8 +2988,12 @@ class ResourceManagerTest {
             )
         }
 
+        private fun catalogDictionaryOf(resourceId: String): YomitanCatalogResource =
+            FrozenResourceCatalog.value.dictionary(resourceId)
+                ?: error("fake asked for a dictionary outside the frozen catalog: $resourceId")
+
         private fun importedDictionaryResponse(): String {
-            val resource = FrozenResourceCatalog.value.dictionaries.first()
+            val resource = catalogDictionaryOf(catalogDictionaryResourceId)
             return envelope(
                 "resource.dictionary.imported",
                 """{"slotId":"${resource.slotId}","catalogResourceId":"${resource.resourceId}","sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${resource.archive.sha256}","attribution":[]}""",
@@ -2926,23 +3093,17 @@ class ResourceManagerTest {
                 "$field missing"
             }
 
+        /** Null when the field is JSON null, as `catalogResourceId` is for a custom import. */
+        private fun nullableStringField(raw: String, field: String): String? =
+            Regex("\"$field\":\"([^\"]*)\"").find(raw)?.groupValues?.get(1)
+
         private fun intField(raw: String, field: String): Int =
             checkNotNull(Regex("\"$field\":([0-9]+)").find(raw)?.groupValues?.get(1)) {
                 "$field missing"
             }.toInt()
 
-        private fun frequencyArchiveBytes(revision: String): ByteArray {
-            val bytes = ByteArrayOutputStream()
-            ZipOutputStream(bytes).use { output ->
-                output.putNextEntry(ZipEntry("index.json"))
-                output.write(
-                    """{"title":"Fixture Frequency","revision":"$revision"}"""
-                        .toByteArray(Charsets.UTF_8),
-                )
-                output.closeEntry()
-            }
-            return bytes.toByteArray()
-        }
+        private fun frequencyArchiveBytes(revision: String): ByteArray =
+            fixtureFrequencyArchiveBytes(revision)
     }
 
     private class QueuedExecutor : Executor {
@@ -2987,3 +3148,17 @@ class ResourceManagerTest {
         }
     }
 }
+
+/** A minimal Yomitan frequency archive: enough for the real pre-dispatch metadata validation. */
+private fun fixtureFrequencyArchiveBytes(revision: String = "1"): ByteArray {
+    val bytes = ByteArrayOutputStream()
+    ZipOutputStream(bytes).use { output ->
+        output.putNextEntry(ZipEntry("index.json"))
+        output.write(
+            """{"title":"Fixture Frequency","revision":"$revision"}""".toByteArray(Charsets.UTF_8),
+        )
+        output.closeEntry()
+    }
+    return bytes.toByteArray()
+}
+

@@ -495,17 +495,12 @@
     <string name="unidic_resource_title">日本語形態素解析器 — 必須</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · ダウンロード約45 MiB、インストール後249 MiB</string>
     <string name="jitendex_resource_title">Jitendex辞書 — 推奨</string>
-    <string name="jitendex_resource_description">オフラインYomitan辞書 · ダウンロード約37 MiB、インポート中最大516 MiB</string>
     <string name="jmdict_resource_title">JMdict辞書（英語）</string>
     <string name="jmdict_resource_description">英語訳付きオフラインYomitan辞書 · ダウンロード約15 MiB、インポート中最大163 MiB</string>
     <string name="resource_installed">インストール済み</string>
     <string name="resource_not_installed">未インストール</string>
     <string name="unidic_install">インストール</string>
     <string name="unidic_repair">修復</string>
-    <string name="dictionary_install">インストール</string>
-    <string name="dictionary_replace">安全に置き換え</string>
-    <string name="dictionary_catalog_reinstall">同梱辞書を再インストールまたは置き換え</string>
-    <string name="dictionary_repair">辞書スロットを修復</string>
     <string name="dictionary_repair_confirm_title">%1$sのスロットを修復しますか？</string>
     <string name="resource_replace_confirm_title">%1$sを置き換えますか？</string>
     <string name="resource_replace_confirm_message">%1$sを置き換えます。インポートが失敗した場合、現在のインストールを復元します。</string>

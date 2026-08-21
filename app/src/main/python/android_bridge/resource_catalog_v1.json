@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "resources": [
     {
       "resourceId": "unidic-lite-1.0.8",
@@ -122,6 +122,63 @@
           "url": "https://github.com/yomidevs/jmdict-yomitan"
         }
       ]
+    },
+    {
+      "resourceId": "jpdb-v2.2-kana-2024-10-13",
+      "kind": "frequency",
+      "displayName": "JPDB v2.2 Kana Frequency",
+      "sourceId": "jpdb",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/Kuuuube/yomitan-dictionaries/d6fde809e3f26eb5aed6d41896f332179044998c/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip",
+        "sha256": "4fa06c784155ea0ea0953740b99d421296c775ee0d035cfe1ff65a40d7d3e685",
+        "sizeBytes": 5996363,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "JPDB v2.2 frequency list",
+          "copyright": "Compiled by Kuuube and Gecko from the JPDB corpus",
+          "license": "No upstream licence stated",
+          "url": "https://github.com/Kuuuube/yomitan-dictionaries"
+        },
+        {
+          "name": "JPDB corpus",
+          "copyright": "jpdb.io",
+          "license": "No upstream licence stated",
+          "url": "https://jpdb.io"
+        }
+      ]
+    },
+    {
+      "resourceId": "kanjium-pitch-8a0cdaa1",
+      "kind": "pitch",
+      "displayName": "Kanjium Pitch Accent",
+      "sourceId": "kanjium",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/mifunetoshiro/kanjium/8a0cdaa16d64a281a2048de2eee2ec5e3a440fa6/data/source_files/raw/accents.txt",
+        "sha256": "8bd0dd127dab32ceec94cb03ab1ba6b68858ea73421dfa1731af2f373deb4f20",
+        "sizeBytes": 3226405,
+        "format": "tsv"
+      },
+      "attribution": [
+        {
+          "name": "Kanjium pitch accent data",
+          "copyright": "Copyright Uros Ozvald and Kanjium contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/mifunetoshiro/kanjium"
+        },
+        {
+          "name": "EDICT and KANJIDIC",
+          "copyright": "Electronic Dictionary Research and Development Group",
+          "license": "EDRDG-Licence",
+          "url": "https://www.edrdg.org/edrdg/licence.html"
+        }
+      ]
     }
+  ],
+  "recommended": [
+    "jmdict-en-2026-07-17",
+    "jpdb-v2.2-kana-2024-10-13",
+    "kanjium-pitch-8a0cdaa1"
   ]
 }

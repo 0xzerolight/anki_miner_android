@@ -74,6 +74,7 @@ internal fun settingsCategoryFor(origin: ResourceFailureOrigin): SettingsCategor
         -> SettingsCategory.DIAGNOSTICS
         ResourceFailureOrigin.CATALOG_DICTIONARY,
         ResourceFailureOrigin.CUSTOM_DICTIONARY,
+        ResourceFailureOrigin.RECOMMENDED_SET,
         ResourceFailureOrigin.PITCH,
         ResourceFailureOrigin.DICTIONARY_LOOKUP,
         -> SettingsCategory.DICTIONARIES
@@ -106,6 +107,7 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
         // dictionary-lookup(4).
         ResourceFailureOrigin.CATALOG_DICTIONARY,
         ResourceFailureOrigin.CUSTOM_DICTIONARY,
+        ResourceFailureOrigin.RECOMMENDED_SET,
         -> 2
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         ResourceFailureOrigin.UNIDIC -> 3

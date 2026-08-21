@@ -78,6 +78,7 @@ internal data class SettingsScreenCallbacks(
     val onAttributions: () -> Unit,
     val onRunSetupWizard: (() -> Unit)?,
     val onImportCustom: () -> Unit,
+    val onDownloadRecommended: () -> Unit,
     val onReplaceCustom: (String) -> Unit,
     val onImportFrequency: () -> Unit,
     val onImportPitch: () -> Unit,
@@ -539,7 +540,7 @@ private fun LazyListScope.dictionarySettings(
                     // click into a second import path.
                     onClick = callbacks.onImportCustom,
                 ),
-            addMenu = dictionaryAddActions(resources, setupViewModel, callbacks),
+            addMenu = dictionaryAddActions(resources, callbacks),
             busy = setup.busy,
             footer = {
                 ResourceOriginFailure(
@@ -547,6 +548,7 @@ private fun LazyListScope.dictionarySettings(
                     setOf(
                         ResourceFailureOrigin.CATALOG_DICTIONARY,
                         ResourceFailureOrigin.CUSTOM_DICTIONARY,
+                        ResourceFailureOrigin.RECOMMENDED_SET,
                     ),
                     setupViewModel,
                     callbacks,
@@ -647,36 +649,27 @@ private fun LazyListScope.dictionarySettings(
 }
 
 /**
- * The Add menu of the dictionary panel: each catalog dictionary whose slot is empty, then the
- * Yomitan importer.
+ * The Add menu of the dictionary panel: the recommended set while it still has work to do, then
+ * the Yomitan importer.
  *
- * A catalog dictionary that already owns its slot is absent from the menu whatever its state —
- * `catalogInstallCandidates` drops the installed ones (re-installing a healthy one is the wizard's
- * job) and the broken ones (their own row offers Repair, and a menu entry beside it would be a
- * second name for the same call).
+ * A satisfied set is absent rather than disabled — a menu row that installs nothing is a dead end.
+ * A broken slot is repaired from its own row, which is the only remaining caller of
+ * `installCatalogDictionary`.
  */
 @Composable
 private fun dictionaryAddActions(
     resources: ResourceManagerState,
-    setupViewModel: SetupViewModel,
     callbacks: SettingsScreenCallbacks,
 ): List<ResourcePanelAction> =
     buildList {
-        catalogInstallCandidates(resources.catalogDictionaries)
-            .forEach { status ->
-                add(
-                    ResourcePanelAction(
-                        label =
-                            stringResource(
-                                if (status.resource.slotId == JMDICT_SLOT_ID) {
-                                    R.string.jmdict_resource_title
-                                } else {
-                                    R.string.jitendex_resource_title
-                                },
-                            ),
-                    ) { setupViewModel.installCatalogDictionary(status.resource.resourceId) },
-                )
-            }
+        if (resources.recommendedPlan.isActionable) {
+            add(
+                ResourcePanelAction(
+                    label = stringResource(R.string.resource_panel_download_recommended),
+                    onClick = callbacks.onDownloadRecommended,
+                ),
+            )
+        }
         add(
             ResourcePanelAction(
                 label = stringResource(R.string.resource_panel_import_yomitan_zip),
@@ -716,7 +709,6 @@ internal fun dictionaryRowStrings(): DictionaryRowStrings =
         jishoWarning = stringResource(R.string.resource_panel_warning_jisho),
     )
 
-private const val JMDICT_SLOT_ID = "jmdict"
 
 private fun LazyListScope.audioSettings(
     draft: SettingsDraft,
