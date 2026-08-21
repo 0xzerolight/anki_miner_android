@@ -401,6 +401,52 @@ class SafJobFileOwnerTest {
         }
     }
 
+    @Test
+    fun startupSweepRootsListNoBackupRootBeforeLegacyCacheRoot() {
+        val noBackupFilesDir = File("/data/user/0/app/no_backup")
+        val cacheDir = File("/data/user/0/app/cache")
+
+        assertEquals(
+            listOf(File(noBackupFilesDir, "saf-inputs"), File(cacheDir, "saf-inputs")),
+            startupSweepRoots(noBackupFilesDir, cacheDir),
+        )
+    }
+
+    @Test
+    fun startupJanitorSweepsOrphansFromEveryConfiguredRoot() {
+        val parent = Files.createTempDirectory("saf-janitor-multi-test").toFile()
+        try {
+            val primary = File(parent, "primary").apply { mkdir() }
+            val legacy = File(parent, "legacy").apply { mkdir() }
+            File(primary, "input-one.media").writeText("video")
+            File(legacy, "input-two.srt").writeText("subtitle")
+            val unrelated = File(legacy, "future-resource.bin").apply { writeText("keep") }
+
+            assertEquals(2, SafInputCacheJanitor(listOf(primary, legacy)).removeOrphans())
+            assertTrue(unrelated.isFile)
+            assertEquals(0, SafInputCacheJanitor(listOf(primary, legacy)).removeOrphans())
+        } finally {
+            parent.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun startupJanitorSweepsPrimaryRootBeforeFailingOnBrokenLegacyRoot() {
+        val parent = Files.createTempDirectory("saf-janitor-order-test").toFile()
+        try {
+            val primary = File(parent, "primary").apply { mkdir() }
+            val orphan = File(primary, "input-one.media").apply { writeText("video") }
+            val brokenLegacy = File(parent, "not-a-directory").apply { writeText("x") }
+
+            assertThrows(IOException::class.java) {
+                SafInputCacheJanitor(listOf(primary, brokenLegacy)).removeOrphans()
+            }
+            assertFalse(orphan.exists())
+        } finally {
+            parent.deleteRecursively()
+        }
+    }
+
     private fun ownerWith(
         descriptor: FakeDescriptor,
         cache: File = File("unused"),

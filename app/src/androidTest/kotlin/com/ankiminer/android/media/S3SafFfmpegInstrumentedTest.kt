@@ -24,8 +24,8 @@ class S3SafFfmpegInstrumentedTest {
         createFixture()
         val output = File(context.cacheDir, "s3-copy-output").resetDirectory()
         // The seekable provider variant is the production-realistic descriptor; since the
-        // copy-always fix it must behave exactly like the pipe variant: plain cache path,
-        // no /proc/self/fd, no inherited fds.
+        // copy-always fix it must behave exactly like the pipe variant: a plain app-private
+        // file path, no /proc/self/fd, no inherited fds.
         val uri = Uri.parse("content://${BuildConfig.APPLICATION_ID}.s3.provider/seekable")
         var copiedPath = ""
 
@@ -35,6 +35,12 @@ class S3SafFfmpegInstrumentedTest {
 
             assertFalse(input.path.startsWith("/proc/self/fd/"))
             assertTrue(File(input.path).isFile)
+            // Staged under noBackupFilesDir, not cacheDir: the OS may evict cacheDir while the
+            // run (preview playback + ffmpeg phases) is still reading the copy.
+            assertEquals(
+                File(context.noBackupFilesDir, "saf-inputs"),
+                File(input.path).parentFile,
+            )
 
             val result = probeAndExtract(input.path, output)
             assertEquals(
