@@ -602,6 +602,113 @@ class AnimatedEncoderOverlayTests(unittest.TestCase):
             cmd = self._animated_command(fmt)
             self.assertEqual("empty_output", cmd[cmd.index("-abort_on") + 1], fmt)
 
+    def test_avif_realtime_usage_with_crf_offset(self) -> None:
+        # Phone-CPU headroom: libaom's realtime usage encodes ~4x faster at
+        # equal SSIM, which is what keeps a heavy clip inside the 60s timeout.
+        # Realtime rate control overshoots the good-mode size at equal CRF, so
+        # the mapped CRF is offset (+12, clamped to 63) to restore size parity.
+        avif = self._animated_command("avif")
+        self.assertEqual("realtime", avif[avif.index("-usage") + 1])
+        # quality=30 maps to CRF 44 in good mode; realtime carries the offset.
+        self.assertEqual("56", avif[avif.index("-crf") + 1])
+
+        webp = self._animated_command("webp")
+        self.assertNotIn("-usage", webp)
+
+
+class AnimatedEncodeGateTests(unittest.TestCase):
+    """Concurrent animated encodes are bounded so six workers cannot starve
+    each other into the 60s timeout (the per-word "media extraction failed"
+    drops reported from user diagnostics bundles)."""
+
+    def _service(self, media):
+        service = object.__new__(media.MediaExtractorService)
+        service.config = SimpleNamespace(
+            screenshot_animated=True,
+            screenshot_animated_format="avif",
+            screenshot_animated_match_audio=False,
+            screenshot_animated_clip_duration=2.0,
+            screenshot_animated_fps=20,
+            screenshot_animated_height=720,
+            screenshot_animated_quality=30,
+            audio_padding=0.5,
+        )
+        service._check_encoder_available = lambda *_a, **_k: True
+        return service
+
+    def test_concurrent_animated_encodes_never_exceed_the_gate(self) -> None:
+        media = _load_media_extractor()
+        service = self._service(media)
+        lock = threading.Lock()
+        active = 0
+        peak = 0
+        release = threading.Event()
+
+        def run(_cmd: list[str], *_args: object, **_kwargs: object) -> bool:
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            release.wait(5)
+            with lock:
+                active -= 1
+            return False
+
+        service._run_ffmpeg = run
+        threads = [
+            threading.Thread(
+                target=service._extract_animated_screenshot,
+                args=(Path("video.mkv"), float(i), 2.0, Path(f"out{i}.avif")),
+            )
+            for i in range(6)
+        ]
+        for thread in threads:
+            thread.start()
+        # Two encodes enter and hold; the other four must be parked on the gate.
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            with lock:
+                if active == 2:
+                    break
+            time.sleep(0.02)
+        time.sleep(0.3)  # give a third encode every chance to slip through
+        with lock:
+            self.assertEqual(2, active)
+        release.set()
+        for thread in threads:
+            thread.join(timeout=10)
+            self.assertFalse(thread.is_alive())
+        self.assertEqual(2, peak)
+
+    def test_gate_wait_aborts_promptly_on_cancel(self) -> None:
+        media = _load_media_extractor()
+        service = self._service(media)
+        spawned = threading.Event()
+        service._run_ffmpeg = lambda *_a, **_k: spawned.set() or True
+        registry = _Registry()
+        registry.kill_all()  # cancelled before the encode ever queues
+
+        gate = media._ANIMATED_ENCODE_GATE
+        holders = [gate.acquire(), gate.acquire()]  # both slots taken elsewhere
+        try:
+            result: list[bool] = []
+            worker = threading.Thread(
+                target=lambda: result.append(
+                    service._extract_animated_screenshot(
+                        Path("video.mkv"), 1.0, 2.0, Path("out.avif"), registry
+                    )
+                )
+            )
+            worker.start()
+            worker.join(timeout=5)
+            self.assertFalse(worker.is_alive(), "gate wait must not hang a cancelled run")
+            self.assertEqual([False], result)
+            self.assertFalse(spawned.is_set())
+        finally:
+            del holders
+            gate.release()
+            gate.release()
+
 
 if __name__ == "__main__":
     unittest.main()
