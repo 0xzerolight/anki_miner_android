@@ -37,13 +37,16 @@ internal object AnkiFieldAutoMap {
             "expression_reading" to listOf("expressionreading", "wordreading", "reading"),
             "sentence_furigana" to listOf("sentencefurigana", "contextfurigana"),
             "sentence_reading" to listOf("sentencereading", "contextreading"),
-            "pitch_position" to listOf("pitchposition", "pitchaccent", "pitch"),
-            "pitch_category" to listOf("pitchcategory", "accenttype", "accentcategory"),
+            // The plurals are the names Lapis / Kiku / Senren actually ship, and Senren spells all
+            // three of its pitch fields plural. Without them a Senren note type auto-maps to no
+            // pitch data at all, so the note type draws no pitch accent.
+            "pitch_position" to listOf("pitchposition", "pitchpositions", "pitchaccent", "pitch"),
+            "pitch_category" to listOf("pitchcategory", "pitchcategories", "accenttype", "accentcategory"),
             "pitch_graph" to listOf("pitchgraph", "pitchsvg"),
-            "pitch_text" to listOf("pitchtext"),
-            "frequency" to listOf("frequency", "freq", "rank", "frequencyrank"),
+            "pitch_text" to listOf("pitchtext", "pitchaccents"),
+            "frequency" to listOf("frequency", "frequencies", "freq", "rank", "frequencyrank"),
             "frequency_sort" to listOf("freqsort", "frequencysort"),
-            "source" to listOf("source", "origin"),
+            "source" to listOf("source", "origin", "miscinfo"),
         )
 
     /**

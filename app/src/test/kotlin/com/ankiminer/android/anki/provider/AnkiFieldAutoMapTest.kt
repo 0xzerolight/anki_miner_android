@@ -82,6 +82,104 @@ class AnkiFieldAutoMapTest {
     }
 
     @Test
+    fun `the field names Lapis actually ships map the plural pitch category and MiscInfo`() {
+        // Verbatim from donkuri/lapis build/anki_fields.yaml, minus the card-type marker fields
+        // (never auto-mapped). PitchCategories is plural and MiscInfo matches no `source` word —
+        // the two names desktop note_presets calls out as the ones the keyword table has to know.
+        val lapisFields =
+            listOf(
+                "Expression",
+                "ExpressionFurigana",
+                "ExpressionReading",
+                "ExpressionAudio",
+                "SelectionText",
+                "MainDefinition",
+                "DefinitionPicture",
+                "Sentence",
+                "SentenceFurigana",
+                "SentenceAudio",
+                "Picture",
+                "Glossary",
+                "Hint",
+                "PitchPosition",
+                "PitchCategories",
+                "Frequency",
+                "FreqSort",
+                "MiscInfo",
+            )
+
+        val map = AnkiFieldAutoMap.autoMap(lapisFields)
+
+        assertEquals("PitchPosition", map["pitch_position"])
+        assertEquals("PitchCategories", map["pitch_category"])
+        assertEquals("MiscInfo", map["source"])
+        assertEquals("Frequency", map["frequency"])
+        assertEquals("FreqSort", map["frequency_sort"])
+        assertEquals("ExpressionReading", map["expression_reading"])
+        assertEquals("ExpressionAudio", map["expression_audio"])
+        // Lapis draws the pitch graph itself from PitchPosition and ships no field for a rendered
+        // SVG or overline, so both stay unmapped.
+        assertEquals("", map["pitch_graph"])
+        assertEquals("", map["pitch_text"])
+    }
+
+    @Test
+    fun `the field names Senren actually ships map every plural pitch and frequency name`() {
+        // Verbatim from BrenoAqua/Senren docs/yomitan.md, minus the card-type marker fields.
+        // Senren spells all three pitch fields plural; before desktop 466b2047's spellings landed
+        // here, pitchPositions and pitchAccents matched nothing and the note type got no pitch data
+        // at all.
+        val senrenFields =
+            listOf(
+                "word",
+                "reading",
+                "sentence",
+                "sentenceFurigana",
+                "sentenceTranslation",
+                "notes",
+                "selectionText",
+                "definition",
+                "wordAudio",
+                "sentenceAudio",
+                "picture",
+                "glossary",
+                "hint",
+                "pitchAccents",
+                "pitchPositions",
+                "pitchCategories",
+                "frequencies",
+                "freqSort",
+                "miscInfo",
+                "dictionaryPreference",
+            )
+
+        val map = AnkiFieldAutoMap.autoMap(senrenFields)
+
+        val expected =
+            mapOf(
+                "word" to "word",
+                "sentence" to "sentence",
+                "definition" to "definition",
+                "glossary" to "glossary",
+                "picture" to "picture",
+                "audio" to "sentenceAudio",
+                "expression_furigana" to "",
+                "expression_reading" to "reading",
+                "sentence_furigana" to "sentenceFurigana",
+                "sentence_reading" to "",
+                "pitch_position" to "pitchPositions",
+                "pitch_category" to "pitchCategories",
+                "pitch_graph" to "",
+                "pitch_text" to "pitchAccents",
+                "frequency" to "frequencies",
+                "frequency_sort" to "freqSort",
+                "source" to "miscInfo",
+                "expression_audio" to "wordAudio",
+            )
+        assertEquals(expected, map)
+    }
+
+    @Test
     fun `keys with no matching field map to empty`() {
         // A field list that matches only `word` (first) and `sentence` leaves every other key blank.
         val map = AnkiFieldAutoMap.autoMap(listOf("Front", "Sentence"))
