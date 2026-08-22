@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.vm.SetupUiState
@@ -63,6 +64,15 @@ internal fun RecommendedResourcesCard(
     )
 }
 
+/**
+ * Human-readable label for a dictionary slot: the imported title when the slot is installed,
+ * the raw slot id when the slot is gone (stale lookup result) or the title is blank.
+ */
+internal fun dictionaryDisplayName(
+    slotId: String,
+    dictionaries: List<InstalledDictionary>,
+): String = dictionaries.firstOrNull { it.slotId == slotId }?.sourceName?.ifBlank { null } ?: slotId
+
 @Composable
 internal fun DictionaryLookupCard(
     state: SetupUiState,
@@ -88,7 +98,7 @@ internal fun DictionaryLookupCard(
                         selected = dictionary.slotId == state.lookupSlotId,
                         onClick = { onSelectSlot(dictionary.slotId) },
                         enabled = !state.busy,
-                        label = { Text(dictionary.slotId) },
+                        label = { Text(dictionaryDisplayName(dictionary.slotId, state.dictionaries)) },
                     )
                 }
             }
@@ -106,7 +116,7 @@ internal fun DictionaryLookupCard(
             ) { Text(stringResource(R.string.dictionary_render_html)) }
             inlineFailure?.invoke()
             state.lookup?.let { result ->
-                Text(stringResource(R.string.dictionary_lookup_label, result.slotId, result.term))
+                Text(stringResource(R.string.dictionary_lookup_label, dictionaryDisplayName(result.slotId, state.dictionaries), result.term))
                 DictionaryHtml(
                     html = result.html,
                     modifier = Modifier.fillMaxWidth().height(360.dp),
