@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Changed
+
+- **The offline dictionary test names dictionaries (Settings -> Dictionaries).** The slot chips and the result line showed the internal slot id — a title+revision slug that collapses to `prefix-<sha256[:8]>` past 64 chars, so an imported Japanese-titled dictionary rendered as a hex-ish blob (#14). Both now show the imported `index.json` title (`sourceName`, the field the dictionary panel rows and attribution screen already display), falling back to the slot id when a stale lookup result outlives its slot.
+
 ## [0.10.0] - 2026-08-22
 
 ### Added
