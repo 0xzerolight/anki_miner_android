@@ -200,9 +200,9 @@ source_commit="$(git rev-parse HEAD)"
 ```
 
 The signed APK is at `app/build/outputs/apk/device/release/`. Publish it on a
-GitHub Release together with a `SHA256SUMS` and `NOTICE.md`. Release variants
-fail before compilation unless `ankiMinerSourceCommit` is a full lowercase Git
-SHA. Debug variants may use `development`.
+GitHub Release as the single asset `anki-miner-android-<version>-arm64-v8a.apk`.
+Release variants fail before compilation unless `ankiMinerSourceCommit` is a
+full lowercase Git SHA. Debug variants may use `development`.
 
 Retain `app/build/outputs/mapping/deviceRelease/mapping.txt` under the released
 version before the next build overwrites it. To symbolicate a Java/Kotlin stack
