@@ -2610,7 +2610,7 @@ class AnkiJsonCodecBoundaryTest {
         const val BASELINE_TOKEN = "baseline_88888888888888888888888888888888"
 
         const val KNOWN_LIMITS =
-            "{\"maxScannedNotes\":256,\"maxTotalScannedNotes\":100000,\"maxItems\":256,\"maxItemUtf8Bytes\":65536,\"maxTotalUtf8Bytes\":262144}"
+            "{\"maxScannedNotes\":256,\"maxItems\":256,\"maxItemUtf8Bytes\":65536,\"maxTotalUtf8Bytes\":262144}"
         const val DUPLICATE_LIMITS =
             "{\"maxHitsPerCandidate\":100,\"maxTotalHits\":1000,\"maxItemUtf8Bytes\":65536,\"maxTotalUtf8Bytes\":1048576}"
         const val STORE_LIMITS =

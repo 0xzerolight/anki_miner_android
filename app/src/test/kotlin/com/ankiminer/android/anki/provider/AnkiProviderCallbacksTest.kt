@@ -860,26 +860,19 @@ class AnkiProviderCallbacksTest {
 
     private fun knownRowsHandler(fields: List<String>): (ProviderQuery, AnkiCancellation) -> ProviderCursor? =
         { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
-                    FakeProviderCursor(
-                        query.projection,
-                        fields.indices.map { index ->
-                            mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
-                        },
-                    )
-                query.selection is ProviderSelection.NoteIds ->
-                    FakeProviderCursor(
-                        query.projection,
-                        fields.mapIndexed { index, field ->
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(index + 1L),
-                                ProviderColumn.NOTE_FIELDS to text(field),
-                            )
-                        },
-                    )
-                else -> error("unexpected query $query")
-            }
+            val fromId = (query.selection as ProviderSelection.NoteIdsAfter).fromId
+            FakeProviderCursor(
+                query.projection,
+                fields
+                    .mapIndexed { index, field -> index + 1L to field }
+                    .filter { (id, _) -> id > fromId }
+                    .map { (id, field) ->
+                        mapOf(
+                            ProviderColumn.NOTE_ID to integer(id),
+                            ProviderColumn.NOTE_FIELDS to text(field),
+                        )
+                    },
+            )
         }
 
     private fun verifyEnvelope(requestId: String = REQUEST_ID): String =
@@ -891,7 +884,7 @@ class AnkiProviderCallbacksTest {
     private fun knownEnvelope(requestId: String = REQUEST_ID): String =
         envelope(
             "anki.scanfirstfields.request",
-            """{"runId":"$RUN_ID","requestId":"$requestId","scope":{"kind":"knownVocabulary","excludedDecks":[],"cursor":null,"limits":{"maxScannedNotes":256,"maxTotalScannedNotes":100000,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}""",
+            """{"runId":"$RUN_ID","requestId":"$requestId","scope":{"kind":"knownVocabulary","excludedDecks":[],"cursor":null,"limits":{"maxScannedNotes":256,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}""",
         )
 
     private fun storeMediaEnvelope(includeSecondAsset: Boolean = false): String {

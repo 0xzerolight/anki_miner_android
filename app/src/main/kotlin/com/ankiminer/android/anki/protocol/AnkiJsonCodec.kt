@@ -501,7 +501,7 @@ internal object AnkiJsonCodec {
                         invalidateSeen = true
                         invalidateBaselineToken = readNullable { readString("baseline invalidation token") }
                     }
-                    "limits" -> limits = readNumericObject("scan limits", 5)
+                    "limits" -> limits = readNumericObject("scan limits", 4)
                     else -> unknownPayload(field)
                 }
             }
@@ -513,7 +513,6 @@ internal object AnkiJsonCodec {
                         limits!!,
                         mapOf(
                             "maxScannedNotes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT.toLong(),
-                            "maxTotalScannedNotes" to AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT.toLong(),
                             "maxItems" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT.toLong(),
                             "maxItemUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES.toLong(),
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES.toLong(),

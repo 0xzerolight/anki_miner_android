@@ -61,6 +61,14 @@ internal sealed interface ProviderSelection {
     /** Parameterized v2 notes-table ID lookup. */
     data class NoteIds(val ids: List<Long>) : ProviderSelection
 
+    /**
+     * Keyset page bound for the known-vocabulary walk: every note ordered after [fromId].
+     *
+     * The walk pages on the note ID itself rather than on an offset into a retained list, so it
+     * holds no per-collection state and needs no collection-size ceiling. `0` starts a traversal.
+     */
+    data class NoteIdsAfter(val fromId: Long) : ProviderSelection
+
     /** Parameterized v2 notes-table duplicate lookup. */
     data class DuplicateChecksums(
         val modelId: Long,
@@ -77,9 +85,10 @@ internal enum class ProviderOrder {
  *
  * The deadline is armed when the cursor opens and disarmed when it closes, so it bounds the entire
  * Binder walk rather than a single row. [INTERACTIVE] suits the bounded reads a screen waits on.
- * [BULK] is for the ceiling-bounded full-table walks the known-vocabulary scan makes: at the
- * interactive deadline a large deck tree could not finish, and its row ceiling — the bound that is
- * supposed to refuse loudly — could never fire, because the deadline always tripped first.
+ * [BULK] is for the walks the known-vocabulary scan makes over a whole collection: at the
+ * interactive deadline a large deck tree could not finish, and the excluded-deck row budget — the
+ * bound that is supposed to refuse loudly — could never fire, because the deadline always tripped
+ * first.
  */
 internal enum class ProviderReadDeadline {
     INTERACTIVE,
@@ -227,9 +236,11 @@ internal object ProviderQueryShapes {
     private fun notesV2Allowed(query: ProviderQuery): Boolean {
         if (query.endpointId != null) return false
         return when (val selection = query.selection) {
-            null ->
-                query.projection == NOTE_ID_PROJECTION &&
-                    query.sortOrder == ProviderOrder.NOTE_ID_ASCENDING
+            null -> false
+            is ProviderSelection.NoteIdsAfter ->
+                query.projection == NOTE_PAGE_PROJECTION &&
+                    query.sortOrder == ProviderOrder.NOTE_ID_ASCENDING &&
+                    selection.fromId >= 0L
             is ProviderSelection.NoteIds ->
                 query.projection == NOTE_PAGE_PROJECTION &&
                     query.sortOrder == null &&

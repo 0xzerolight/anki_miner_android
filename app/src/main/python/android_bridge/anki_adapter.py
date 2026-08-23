@@ -63,7 +63,6 @@ _MAX_RAW_FIRST_FIELD_UTF8_BYTES = _SCAN_LIMITS["firstFieldMaxUtf8Bytes"]
 _MAX_DUPLICATE_HITS_UTF8_BYTES = _SCAN_LIMITS["duplicateHitsTotalMaxUtf8Bytes"]
 _KNOWN_VOCABULARY_PAGE_ITEMS = _SCAN_LIMITS["knownPageMaxItems"]
 _KNOWN_VOCABULARY_PAGE_UTF8_BYTES = _SCAN_LIMITS["knownPageMaxUtf8Bytes"]
-_MAX_KNOWN_VOCABULARY_SCANNED_NOTES = _SCAN_LIMITS["knownTotalScannedNotes"]
 _MAX_KNOWN_CURSOR_UTF8_BYTES = _SCAN_LIMITS["knownCursorMaxUtf8Bytes"]
 _MAX_NOTE_FIELDS = _NOTE_LIMITS["maxFieldsPerNote"]
 _MAX_CARDS_PER_NOTE = _NOTE_LIMITS["maxCardsPerNote"]
@@ -960,7 +959,6 @@ class AndroidAnkiAdapter:
         )
         limits = {
             "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
-            "maxTotalScannedNotes": _MAX_KNOWN_VOCABULARY_SCANNED_NOTES,
             "maxItems": _KNOWN_VOCABULARY_PAGE_ITEMS,
             "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
@@ -1083,21 +1081,9 @@ class AndroidAnkiAdapter:
         existing: set[str] = set()
         cursor: dict[str, Any] | None = None
         seen_cursor_tokens: set[str] = set()
-        total_scanned_notes = 0
         try:
             while True:
-                raw_fields, scanned_notes, next_cursor = self._scan_known_vocabulary_page(cursor)
-                total_scanned_notes += scanned_notes
-                if total_scanned_notes > _MAX_KNOWN_VOCABULARY_SCANNED_NOTES:
-                    _protocol_error(
-                        "invalid_anki_response",
-                        "Known-vocabulary scan exceeds its total note ceiling",
-                    )
-                if total_scanned_notes == _MAX_KNOWN_VOCABULARY_SCANNED_NOTES and next_cursor is not None:
-                    _protocol_error(
-                        "invalid_anki_response",
-                        "Known-vocabulary scan continued past its total note ceiling",
-                    )
+                raw_fields, _scanned_notes, next_cursor = self._scan_known_vocabulary_page(cursor)
                 for raw in raw_fields:
                     normalized = _strip_for_dedup(raw)
                     if normalized and _JAPANESE_RE.search(normalized):

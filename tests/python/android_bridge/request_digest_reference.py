@@ -301,7 +301,6 @@ def _scan_scope(value: object) -> _Object:
             scope["limits"],
             {
                 "maxScannedNotes": scan_limits["knownPageMaxItems"],
-                "maxTotalScannedNotes": scan_limits["knownTotalScannedNotes"],
                 "maxItems": scan_limits["knownPageMaxItems"],
                 "maxItemUtf8Bytes": scan_limits["firstFieldMaxUtf8Bytes"],
                 "maxTotalUtf8Bytes": scan_limits["knownPageMaxUtf8Bytes"],

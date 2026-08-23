@@ -124,9 +124,21 @@ internal data class KnownPageLease(
     internal val runId: String,
     internal val ownerId: Long,
     internal val generation: Long,
-    internal val startIndex: Int,
-    val noteIds: List<Long>,
+    /** Exclusive lower bound: this page reads the notes ordered after it. */
+    internal val fromId: Long,
+    val excludedNoteIds: Set<Long>,
     val responseCursorOrdinal: Long,
+)
+
+/**
+ * What the provider actually saw while draining one keyset page.
+ *
+ * The page's extent is not knowable when the lease is issued — the walk holds no retained note-ID
+ * list to slice, so how far it reached and whether anything follows are results of the read, not
+ * inputs to it. The caller reports them back here and the registry advances on them.
+ */
+internal data class KnownPageObservation(
+    val lastId: Long,
     val hasMoreAfterPage: Boolean,
 )
 
@@ -531,13 +543,13 @@ internal class AnkiRunStateRegistry(
     fun finishKnownTraversalInitialization(
         owner: RunOwner,
         initialization: KnownTraversalInitialization,
-        noteIds: List<Long>,
+        excludedNoteIds: Set<Long>,
     ): KnownPageLease =
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
             requireInitialization(state, owner, initialization)
             state.knownInitialization = null
-            val traversal = KnownTraversal(initialization.scope, noteIds.toList())
+            val traversal = KnownTraversal(initialization.scope, excludedNoteIds.toSet())
             state.knownTraversal = traversal
             reserveKnownPageLocked(state, owner, traversal, requestedCursor = null)
         }
@@ -570,15 +582,22 @@ internal class AnkiRunStateRegistry(
     fun completeKnownPage(
         owner: RunOwner,
         lease: KnownPageLease,
+        observation: KnownPageObservation,
         nextToken: String?,
     ): KnownVocabularyCursor? =
         synchronized(lock) {
             val state = requireOwnerLocked(owner)
             val traversal = requireKnownLease(state, owner, lease)
-            if (lease.hasMoreAfterPage != (nextToken != null)) throw RunStateConflictException()
+            if (observation.hasMoreAfterPage != (nextToken != null)) throw RunStateConflictException()
+            // A continuing traversal that did not advance would hand out the same page forever, so
+            // the report is refused rather than stored.
+            if (observation.lastId < lease.fromId) throw RunStateConflictException()
+            if (observation.hasMoreAfterPage && observation.lastId == lease.fromId) {
+                throw RunStateConflictException()
+            }
             traversal.pageInFlight = false
-            traversal.nextIndex = lease.startIndex + lease.noteIds.size
-            if (!lease.hasMoreAfterPage) {
+            traversal.lastId = observation.lastId
+            if (!observation.hasMoreAfterPage) {
                 state.knownTraversal = null
                 null
             } else {
@@ -810,18 +829,14 @@ internal class AnkiRunStateRegistry(
         if (traversal.pageInFlight) throw InvalidCapabilityException()
         traversal.pageInFlight = true
         traversal.expectedCursor = null
-        val start = traversal.nextIndex
-        val end = minOf(start + AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT, traversal.noteIds.size)
-        val ids = traversal.noteIds.subList(start, end).toList()
         val responseOrdinal = requestedCursor?.ordinal?.let(Math::incrementExact) ?: 1L
         return KnownPageLease(
             runId = state.runId,
             ownerId = owner.ownerId,
             generation = traversal.generation,
-            startIndex = start,
-            noteIds = ids,
+            fromId = traversal.lastId,
+            excludedNoteIds = traversal.excludedNoteIds,
             responseCursorOrdinal = responseOrdinal,
-            hasMoreAfterPage = end < traversal.noteIds.size,
         )
     }
 
@@ -947,7 +962,7 @@ internal class AnkiRunStateRegistry(
             lease.runId != state.runId ||
                 lease.ownerId != owner.ownerId ||
                 lease.generation != traversal.generation ||
-                lease.startIndex != traversal.nextIndex ||
+                lease.fromId != traversal.lastId ||
                 !traversal.pageInFlight
         ) {
             throw InvalidCapabilityException()
@@ -1002,10 +1017,10 @@ internal class AnkiRunStateRegistry(
 
     private inner class KnownTraversal(
         val scope: KnownTraversalScope,
-        val noteIds: List<Long>,
+        val excludedNoteIds: Set<Long>,
     ) {
         val generation = nextGeneration++
-        var nextIndex = 0
+        var lastId = 0L
         var expectedCursor: KnownVocabularyCursor? = null
         var pageInFlight = false
     }
