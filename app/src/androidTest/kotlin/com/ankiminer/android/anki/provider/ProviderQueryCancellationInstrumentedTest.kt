@@ -3,6 +3,7 @@ package com.ankiminer.android.anki.provider
 import android.database.MatrixCursor
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.ichi2.anki.FlashCardsContract
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.assertEquals
@@ -145,7 +146,7 @@ class ProviderQueryCancellationInstrumentedTest {
     fun gateway_closes_cursor_and_registrations_when_cancelled_after_resolver_return() {
         val cancellation = TestCancellation()
         val scheduler = CapturingDeadlineScheduler()
-        val cursor = TrackingCursor(arrayOf("_id"))
+        val cursor = TrackingCursor(NOTE_PAGE_COLUMNS)
         val gateway =
             ContentResolverAnkiGateway(
                 context = ApplicationProvider.getApplicationContext(),
@@ -162,7 +163,7 @@ class ProviderQueryCancellationInstrumentedTest {
         assertEquals(
             ProviderFailureKind.CANCELLED,
             assertThrows(ProviderGatewayException::class.java) {
-                gateway.query(NOTE_SNAPSHOT_QUERY, cancellation)
+                gateway.query(NOTE_PAGE_QUERY, cancellation)
             }.kind,
         )
         assertEquals(1, cursor.closeCount)
@@ -172,9 +173,9 @@ class ProviderQueryCancellationInstrumentedTest {
 
     @Test
     fun bulk_reads_get_the_bulk_deadline_and_every_other_read_keeps_the_interactive_one() {
-        // The deadline is armed for the whole cursor walk, so a ceiling-bounded scan of up to a
-        // million rows cannot share the deadline a screen waits on: the timeout would always beat
-        // the row ceiling, and the ceiling is the bound that refuses with a reason.
+        // The deadline is armed for the whole cursor walk, so a scan that pages over a whole
+        // collection cannot share the deadline a screen waits on: the timeout would always beat
+        // the excluded-deck note budget, and that budget is the bound that refuses with a reason.
         val scheduler = CapturingDeadlineScheduler()
         val gateway =
             ContentResolverAnkiGateway(
@@ -183,13 +184,13 @@ class ProviderQueryCancellationInstrumentedTest {
                 deadlineScheduler = scheduler,
                 accessStatusOverride = { AVAILABLE },
                 resolverQueryOverride =
-                    ProviderResolverQuery { _, _, _, _, _, _ -> MatrixCursor(arrayOf("_id")) },
+                    ProviderResolverQuery { _, _, _, _, _, _ -> MatrixCursor(NOTE_PAGE_COLUMNS) },
             )
 
-        gateway.query(NOTE_SNAPSHOT_QUERY, TestCancellation())?.close()
+        gateway.query(NOTE_PAGE_QUERY, TestCancellation())?.close()
         assertEquals(30_000L, scheduler.lastDelayMs)
 
-        gateway.query(BULK_NOTE_SNAPSHOT_QUERY, TestCancellation())?.close()
+        gateway.query(BULK_NOTE_PAGE_QUERY, TestCancellation())?.close()
         assertEquals(300_000L, scheduler.lastDelayMs)
     }
 
@@ -211,7 +212,7 @@ class ProviderQueryCancellationInstrumentedTest {
         assertEquals(
             ProviderFailureKind.QUERY_FAILED,
             assertThrows(ProviderGatewayException::class.java) {
-                gateway.query(NOTE_SNAPSHOT_QUERY, cancellation)
+                gateway.query(NOTE_PAGE_QUERY, cancellation)
             }.kind,
         )
         assertEquals(1, cursor.closeCount)
@@ -239,7 +240,7 @@ class ProviderQueryCancellationInstrumentedTest {
         }
 
         val (available, availableChecks) = gatewayFor(AVAILABLE)
-        assertNull(available.query(NOTE_SNAPSHOT_QUERY, AnkiCancellation.NONE))
+        assertNull(available.query(NOTE_PAGE_QUERY, AnkiCancellation.NONE))
         assertEquals(2, availableChecks())
 
         val failures =
@@ -254,7 +255,7 @@ class ProviderQueryCancellationInstrumentedTest {
             assertEquals(
                 expected,
                 assertThrows(ProviderGatewayException::class.java) {
-                    gateway.query(NOTE_SNAPSHOT_QUERY, AnkiCancellation.NONE)
+                    gateway.query(NOTE_PAGE_QUERY, AnkiCancellation.NONE)
                 }.kind,
             )
             assertEquals(2, checks())
@@ -349,13 +350,18 @@ class ProviderQueryCancellationInstrumentedTest {
 
     private companion object {
         val AVAILABLE = ProviderAccessStatus.Available("com.ichi2.anki", 2, 1L)
-        val NOTE_SNAPSHOT_QUERY =
+
+        /** The first page of the known-vocabulary keyset walk, which is what the scan issues. */
+        val NOTE_PAGE_QUERY =
             ProviderQuery(
                 endpoint = ProviderEndpoint.NOTES_V2,
-                projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                selection = ProviderSelection.NoteIdsAfter(0L),
                 sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
             )
-        val BULK_NOTE_SNAPSHOT_QUERY =
-            NOTE_SNAPSHOT_QUERY.copy(deadline = ProviderReadDeadline.BULK)
+        val BULK_NOTE_PAGE_QUERY = NOTE_PAGE_QUERY.copy(deadline = ProviderReadDeadline.BULK)
+
+        /** Column names the gateway expects back for [NOTE_PAGE_QUERY]'s projection. */
+        val NOTE_PAGE_COLUMNS = arrayOf(FlashCardsContract.Note._ID, FlashCardsContract.Note.FLDS)
     }
 }
