@@ -51,6 +51,44 @@ class ProviderQueryContractTest {
     }
 
     @Test
+    fun `keyset page translation binds the exclusive lower bound only`() {
+        val query =
+            ProviderQuery(
+                endpoint = ProviderEndpoint.NOTES_V2,
+                projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                selection = ProviderSelection.NoteIdsAfter(4096L),
+                sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
+            )
+        val compiled =
+            compileProviderSelection(
+                query = query,
+                noteIdColumn = "_id",
+                modelIdColumn = "mid",
+                checksumColumn = "csum",
+            )
+
+        assertEquals("_id > ?", compiled.text)
+        assertEquals(listOf("4096"), compiled.arguments)
+        // The page needs its rows ordered to resume from the last one, and a negative bound would
+        // put the traversal before a note ID that cannot exist.
+        assertThrows(IllegalArgumentException::class.java) {
+            ProviderQuery(
+                endpoint = ProviderEndpoint.NOTES_V2,
+                projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                selection = ProviderSelection.NoteIdsAfter(4096L),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ProviderQuery(
+                endpoint = ProviderEndpoint.NOTES_V2,
+                projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                selection = ProviderSelection.NoteIdsAfter(-1L),
+                sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
+            )
+        }
+    }
+
+    @Test
     fun `duplicate translation parameterizes model and every checksum`() {
         val query =
             ProviderQuery(
@@ -169,7 +207,8 @@ class ProviderQueryContractTest {
                 ),
                 ProviderQuery(
                     ProviderEndpoint.NOTES_V2,
-                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                    selection = ProviderSelection.NoteIdsAfter(0L),
                     sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
                 ),
                 ProviderQuery(

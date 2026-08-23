@@ -277,7 +277,6 @@ def test_synchronous_anki_callback_is_correlated_and_versioned() -> None:
                 "cursor": None,
                 "limits": {
                     "maxScannedNotes": 256,
-                    "maxTotalScannedNotes": 100000,
                     "maxItems": 256,
                     "maxItemUtf8Bytes": 65536,
                     "maxTotalUtf8Bytes": 262144,
@@ -347,7 +346,6 @@ def test_synchronous_anki_callback_requires_json_string(result: object) -> None:
                     "cursor": None,
                     "limits": {
                         "maxScannedNotes": 256,
-                        "maxTotalScannedNotes": 100000,
                         "maxItems": 256,
                         "maxItemUtf8Bytes": 65536,
                         "maxTotalUtf8Bytes": 262144,
@@ -386,7 +384,6 @@ def test_synchronous_anki_callback_rejects_mismatched_request_id() -> None:
                     "cursor": None,
                     "limits": {
                         "maxScannedNotes": 256,
-                        "maxTotalScannedNotes": 100000,
                         "maxItems": 256,
                         "maxItemUtf8Bytes": 65536,
                         "maxTotalUtf8Bytes": 262144,

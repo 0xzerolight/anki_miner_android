@@ -995,9 +995,17 @@ class AnkiRunStateRegistryTest {
                 registry.finishKnownTraversalInitialization(
                     owner,
                     initialization,
-                    (1L..257L).toList(),
+                    setOf(7L),
                 )
-            val cursor = registry.completeKnownPage(owner, first, "cursor_${"1".repeat(32)}")
+            assertEquals(0L, first.fromId)
+            assertEquals(setOf(7L), first.excludedNoteIds)
+            val cursor =
+                registry.completeKnownPage(
+                    owner,
+                    first,
+                    KnownPageObservation(lastId = 256L, hasMoreAfterPage = true),
+                    "cursor_${"1".repeat(32)}",
+                )
             assertNotNull(cursor)
             assertThrows(InvalidCapabilityException::class.java) {
                 registry.reserveKnownPage(
@@ -1012,8 +1020,16 @@ class AnkiRunStateRegistryTest {
                     scope,
                     requireNotNull(cursor),
                 )
-            assertEquals(listOf(257L), second.noteIds)
-            assertNull(registry.completeKnownPage(owner, second, null))
+            assertEquals(256L, second.fromId)
+            assertEquals(setOf(7L), second.excludedNoteIds)
+            assertNull(
+                registry.completeKnownPage(
+                    owner,
+                    second,
+                    KnownPageObservation(lastId = 257L, hasMoreAfterPage = false),
+                    null,
+                ),
+            )
             assertThrows(InvalidCapabilityException::class.java) {
                 registry.reserveKnownPage(owner, scope, cursor)
             }

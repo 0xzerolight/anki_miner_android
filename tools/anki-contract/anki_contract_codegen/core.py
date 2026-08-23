@@ -187,10 +187,6 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
         _integer("knownPageMaxItems", "KNOWN_PAGE_MAX_ITEM_COUNT"),
         _integer("knownPageMaxUtf8Bytes", "KNOWN_PAGE_MAX_UTF8_BYTES"),
         _integer(
-            "knownTotalScannedNotes",
-            "KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT",
-        ),
-        _integer(
             "knownTotalScannedExcludedRows",
             "KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT",
         ),

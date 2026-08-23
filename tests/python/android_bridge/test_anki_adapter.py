@@ -31,7 +31,6 @@ from android_bridge.anki_adapter import (
     _MAX_EXCLUDED_DECKS_UTF8_BYTES,
     _MAX_FIELD_NAME_UTF8_BYTES,
     _MAX_FIELD_VALUE_UTF8_BYTES,
-    _MAX_KNOWN_VOCABULARY_SCANNED_NOTES,
     _MAX_MEDIA_ASSET_BYTES,
     _MAX_MEDIA_BINDINGS_PER_NOTE,
     _MAX_MEDIA_BINDINGS_TOTAL,
@@ -88,7 +87,6 @@ _CREATE_LIMITS = {
 }
 _KNOWN_VOCABULARY_LIMITS = {
     "maxScannedNotes": 256,
-    "maxTotalScannedNotes": 100000,
     "maxItems": 256,
     "maxItemUtf8Bytes": 65536,
     "maxTotalUtf8Bytes": 262144,
@@ -607,7 +605,6 @@ class FakeKotlinAnki:
                 start,
                 min(
                     start + limits["maxScannedNotes"],
-                    start + limits["maxTotalScannedNotes"] - scanned_before,
                     len(self.known_fields),
                 ),
             ):
@@ -628,18 +625,6 @@ class FakeKotlinAnki:
                     page_utf8_bytes += field_bytes
             next_index = start + scanned_notes
             total_scanned = scanned_before + scanned_notes
-            if next_index < len(self.known_fields) and total_scanned >= limits["maxTotalScannedNotes"]:
-                return encode_message(
-                    "anki.error",
-                    {
-                        "runId": request["runId"],
-                        "requestId": request["requestId"],
-                        "operation": "scanFirstFields",
-                        "code": "query_failed",
-                        "message": "known-vocabulary total scan ceiling reached",
-                        "retryable": False,
-                    },
-                )
             if next_index < len(self.known_fields):
                 token = f"known_cursor_{self._known_cursor_counter:032x}"
                 self._known_cursor_counter += 1
@@ -1456,22 +1441,14 @@ def test_known_vocabulary_scan_uses_monotonic_bounded_pages(
     assert all(scope["limits"] == _KNOWN_VOCABULARY_LIMITS for scope in scopes)
 
 
-@pytest.mark.parametrize(
-    ("total_notes", "force_continuation", "expect_error"),
-    [
-        (_MAX_KNOWN_VOCABULARY_SCANNED_NOTES, False, False),
-        (_MAX_KNOWN_VOCABULARY_SCANNED_NOTES, True, True),
-        (_MAX_KNOWN_VOCABULARY_SCANNED_NOTES + 1, False, True),
-    ],
-    ids=["exact-terminal", "exact-with-cursor", "over-ceiling"],
-)
-def test_known_vocabulary_total_scan_ceiling_is_defensively_enforced(
-    total_notes: int,
-    force_continuation: bool,
-    expect_error: bool,
+def test_known_vocabulary_drains_a_collection_past_the_retired_note_ceiling(
     initialized_bridge_home: Path,
 ) -> None:
-    class TotalScanKotlin(FakeKotlinAnki):
+    # The adapter used to stop the walk at a cumulative 100,000 scanned notes, which refused the
+    # whole run for anyone whose collection was merely large. Only the per-page bounds remain.
+    total_notes = 100_001
+
+    class LargeCollectionKotlin(FakeKotlinAnki):
         def __init__(self) -> None:
             super().__init__()
             self.scanned = 0
@@ -1482,40 +1459,28 @@ def test_known_vocabulary_total_scan_ceiling_is_defensively_enforced(
             cursor = request["scope"]["cursor"]
             assert cursor is None if self.page == 0 else cursor["ordinal"] == self.page
             page_size = min(256, total_notes - self.scanned)
+            fields = [f"語{self.scanned + offset}" for offset in range(page_size)]
             self.scanned += page_size
             self.page += 1
-            has_more = self.scanned < total_notes or (
-                force_continuation and self.scanned == _MAX_KNOWN_VOCABULARY_SCANNED_NOTES
-            )
             next_cursor = (
-                {
-                    "ordinal": self.page,
-                    "token": f"total-page-{self.page}",
-                }
-                if has_more
-                else None
+                {"ordinal": self.page, "token": f"large-page-{self.page}"} if self.scanned < total_notes else None
             )
             return encode_message(
                 "anki.scanfirstfields.result",
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": [],
+                    "firstFields": fields,
                     "scannedNotes": page_size,
                     "nextCursor": next_cursor,
                 },
             )
 
-    kotlin = TotalScanKotlin()
+    kotlin = LargeCollectionKotlin()
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    if expect_error:
-        with pytest.raises(BridgeProtocolError) as exc_info:
-            adapter.get_existing_vocabulary()
-        assert exc_info.value.code == "invalid_anki_response"
-    else:
-        assert adapter.get_existing_vocabulary() == set()
-    assert kotlin.scanned >= _MAX_KNOWN_VOCABULARY_SCANNED_NOTES
+    assert len(adapter.get_existing_vocabulary()) == total_notes
+    assert kotlin.scanned == total_notes
 
 
 def test_known_vocabulary_excludes_parent_descendants_and_whole_mixed_note(

@@ -661,6 +661,11 @@ internal fun compileProviderSelection(
                 selection.ids.map(Long::toString),
             )
         }
+        is ProviderSelection.NoteIdsAfter ->
+            CompiledProviderSelection(
+                "$noteIdColumn > ?",
+                listOf(selection.fromId.toString()),
+            )
         is ProviderSelection.DuplicateChecksums -> {
             val placeholders = List(selection.checksums.size) { "?" }.joinToString(",")
             CompiledProviderSelection(

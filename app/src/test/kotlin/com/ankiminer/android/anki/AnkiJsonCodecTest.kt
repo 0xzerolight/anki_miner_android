@@ -517,7 +517,7 @@ class AnkiJsonCodecTest {
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","deckName":"$deck","modelName":"Mining","requiredFields":["Expression"]}"""
 
     private fun knownVocabularyPayload(): String =
-        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":["Suspended"],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxTotalScannedNotes":100000,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
+        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":["Suspended"],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
 
     private fun duplicateScanPayload(): String =
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","candidates":[{"key":"猫","firstField":"<b>猫</b>"}],"occurrences":[0,0],"invalidateBaselineToken":null,"limits":{"maxHitsPerCandidate":100,"maxTotalHits":1000,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":1048576}}}"""

@@ -243,8 +243,8 @@ internal class AnkiProviderReadService(
             if (scope.cursor == null) {
                 val initialization = registry.beginKnownTraversal(owner, traversalScope)
                 try {
-                    val noteIds = snapshotKnownNoteIds(traversalScope, cancellation)
-                    registry.finishKnownTraversalInitialization(owner, initialization, noteIds)
+                    val excluded = excludedNoteIds(traversalScope, cancellation)
+                    registry.finishKnownTraversalInitialization(owner, initialization, excluded)
                 } catch (error: RuntimeException) {
                     registry.abortKnownTraversalInitialization(owner, initialization)
                     throw error
@@ -253,9 +253,9 @@ internal class AnkiProviderReadService(
                 registry.reserveKnownPage(owner, traversalScope, scope.cursor)
             }
         try {
-            val firstFields = readKnownPage(lease.noteIds, cancellation)
+            val page = readKnownPageAfter(lease.fromId, lease.excludedNoteIds, cancellation)
             val nextToken =
-                if (lease.hasMoreAfterPage) tokenFactory.nextToken(KNOWN_CURSOR_PREFIX) else null
+                if (page.observation.hasMoreAfterPage) tokenFactory.nextToken(KNOWN_CURSOR_PREFIX) else null
             val expectedNextCursor =
                 nextToken?.let { token ->
                     com.ankiminer.android.anki.protocol.KnownVocabularyCursor(
@@ -267,12 +267,12 @@ internal class AnkiProviderReadService(
                 KnownVocabularyResult(
                     runId = request.runId,
                     requestId = request.requestId,
-                    firstFields = firstFields,
-                    scannedNotes = lease.noteIds.size,
+                    firstFields = page.firstFields,
+                    scannedNotes = page.scannedNotes,
                     nextCursor = expectedNextCursor,
                 )
             preflightCanonicalResponse(request, response)
-            registry.completeKnownPage(owner, lease, nextToken)
+            registry.completeKnownPage(owner, lease, page.observation, nextToken)
             return response
         } catch (error: RuntimeException) {
             registry.abortKnownPage(owner, lease)
@@ -280,33 +280,15 @@ internal class AnkiProviderReadService(
         }
     }
 
-    private fun snapshotKnownNoteIds(
+    private fun excludedNoteIds(
         scope: KnownTraversalScope,
         cancellation: AnkiCancellation,
-    ): List<Long> {
-        val snapshot = ArrayList<Long>()
-        provider.queryRequired(NOTE_ID_SNAPSHOT_QUERY, cancellation).use { cursor ->
-            requireProjection(cursor, NOTE_ID_SNAPSHOT_QUERY)
-            var prior = 0L
-            while (cursor.moveToNext()) {
-                ensureActive(cancellation)
-                val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                if (id <= prior) throw queryFailed()
-                prior = id
-                snapshot += id
-                if (snapshot.size > AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT) {
-                    throw knownVocabularyLimitExceeded("an Anki collection")
-                }
-            }
-        }
-        if (scope.excludedDecks.isEmpty() || snapshot.isEmpty()) return snapshot
-
+    ): Set<Long> {
+        if (scope.excludedDecks.isEmpty()) return emptySet()
         val existingNames = targets.readAllDeckNames(cancellation)
         val minimalScopes = minimalExistingDeckScopes(scope.excludedDecks, existingNames)
-        if (minimalScopes.isEmpty()) return snapshot
-        val snapshotSet = snapshot.toHashSet()
+        if (minimalScopes.isEmpty()) return emptySet()
         val excluded = HashSet<Long>()
-        var excludedBrowserRows = 0
         for (deckName in minimalScopes) {
             ensureActive(cancellation)
             val query =
@@ -324,59 +306,81 @@ internal class AnkiProviderReadService(
                 val seen = HashSet<Long>()
                 while (cursor.moveToNext()) {
                     ensureActive(cancellation)
-                    // Counted per row and checked before the cell read, so the scan refuses on
-                    // reaching the first row past its budget without pulling that row's cells.
-                    excludedBrowserRows = checkedAdd(excludedBrowserRows, 1)
+                    val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
+                    if (!seen.add(id)) throw queryFailed()
+                    // Budgeted on distinct notes rather than rows read. A note whose cards sit in
+                    // two excluded sibling decks comes back from both searches, and counting it
+                    // once per search refused exclusion sets far inside the bound.
                     if (
-                        excludedBrowserRows >
+                        excluded.add(id) &&
+                        excluded.size >
                         AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT
                     ) {
                         throw knownVocabularyExcludedScanTooLarge()
                     }
-                    val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                    if (!seen.add(id)) throw queryFailed()
-                    if (id in snapshotSet) excluded += id
                 }
             }
         }
-        return snapshot.filterNot(excluded::contains)
+        return excluded
     }
 
-    private fun readKnownPage(
-        noteIds: List<Long>,
+    /**
+     * One keyset page: every note ordered after [fromId], capped at the page's item count.
+     *
+     * The page reads its own note IDs and first fields in a single query. There is no prior
+     * collection-wide ID snapshot to slice, which is what let a collection size refuse the scan
+     * outright; the walk now costs one indexed seek per page and holds nothing per collection.
+     */
+    private fun readKnownPageAfter(
+        fromId: Long,
+        excludedNoteIds: Set<Long>,
         cancellation: AnkiCancellation,
-    ): List<String> {
-        if (noteIds.isEmpty()) return emptyList()
+    ): KnownPage {
         val query =
             ProviderQuery(
                 endpoint = ProviderEndpoint.NOTES_V2,
                 projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
-                selection = ProviderSelection.NoteIds(noteIds),
+                selection = ProviderSelection.NoteIdsAfter(fromId),
+                sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
+                deadline = ProviderReadDeadline.BULK,
             )
-        val fieldsById = HashMap<Long, String>()
+        val firstFields = ArrayList<String>()
+        var scannedNotes = 0
+        var lastId = fromId
+        var hasMoreAfterPage = false
         var totalBytes = 0
         provider.queryRequired(query, cancellation).use { cursor ->
             requireProjection(cursor, query)
             while (cursor.moveToNext()) {
                 ensureActive(cancellation)
+                if (scannedNotes == AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT) {
+                    // The row past the page proves only that the traversal continues; it belongs
+                    // to the next page, so its cells are never pulled and it is not counted.
+                    hasMoreAfterPage = true
+                    break
+                }
                 val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                if (id !in noteIds || fieldsById.containsKey(id)) throw queryFailed()
+                if (id <= lastId) throw queryFailed()
+                lastId = id
+                scannedNotes += 1
+                if (id in excludedNoteIds) continue
                 val rawFields = cursor.text(ProviderColumn.NOTE_FIELDS)
                 val firstField = ProviderSnapshotValidation.firstField(rawFields)
                 totalBytes = checkedAdd(totalBytes, validateProviderFirstField(firstField))
                 if (totalBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
                     throw queryFailed("An Anki known-vocabulary page exceeds the v1 text limit")
                 }
-                fieldsById[id] = firstField
+                firstFields += firstField
             }
         }
-        val result = ArrayList<String>(fieldsById.size)
-        for (id in noteIds) {
-            val value = fieldsById[id] ?: continue
-            result += value
-        }
-        return result
+        return KnownPage(firstFields, scannedNotes, KnownPageObservation(lastId, hasMoreAfterPage))
     }
+
+    private class KnownPage(
+        val firstFields: List<String>,
+        val scannedNotes: Int,
+        val observation: KnownPageObservation,
+    )
 
     private fun scanDuplicates(
         owner: AnkiRunStateRegistry.RunOwner,
@@ -513,13 +517,6 @@ internal class AnkiProviderReadService(
         const val KNOWN_CURSOR_PREFIX = "cursor_"
         const val BASELINE_PREFIX = "baseline_"
         const val MAX_FIELD_CHECKSUM = 0xffff_ffffL
-        val NOTE_ID_SNAPSHOT_QUERY =
-            ProviderQuery(
-                endpoint = ProviderEndpoint.NOTES_V2,
-                projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
-                sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
-                deadline = ProviderReadDeadline.BULK,
-            )
     }
 }
 
@@ -1268,31 +1265,13 @@ private fun queryFailed(
 )
 
 /**
- * Over-limit scans answer in the connection class, not the protocol class.
+ * The excluded-deck walk carries the one bound this scan still has.
  *
- * `unsupported_operation` is a protocol code, and `anki_adapter` turns protocol codes into
- * `BridgeProtocolError` -- a `ValueError`, outside the engine's `AnkiMinerException` handler. A
- * collection that is simply large therefore reached the user as "Unexpected error" with a stack
- * logged as an app bug. It is a condition of their collection, so it takes the same class the
- * predecessor refusal used and arrives as a sentence they can act on.
- */
-private fun knownVocabularyLimitExceeded(scope: String) =
-    AnkiReadFailure(
-        AnkiErrorCode.QUERY_FAILED,
-        retryable = false,
-        stableMessage =
-            "Known-word filtering supports at most " +
-                "${AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT} notes in $scope",
-    )
-
-/**
- * The excluded-deck walk has its own budget too.
- *
- * Its rows are the notes of the *excluded* decks, which are subtracted from the result rather than
- * counted into it, so they have no ratio to the scan's own size. Spending the note ceiling on them
+ * Its notes are the ones of the *excluded* decks, which are subtracted from the result rather than
+ * counted into it, so they have no ratio to the scan's own size. Spending a note ceiling on them
  * aborted a 2k-note target simply because the user excluded a large Core deck — while the identical
- * run without that exclusion succeeded. In collection scope the collection-wide cap already bounded
- * this walk; in deck scope nothing does, so the bound has to be its own.
+ * run without that exclusion succeeded. The page walk itself is bounded per page and needs no total,
+ * so nothing else bounds this one.
  */
 private fun knownVocabularyExcludedScanTooLarge() =
     AnkiReadFailure(

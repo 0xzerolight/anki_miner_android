@@ -132,9 +132,6 @@ internal object AnkiLimitsV1 {
         // Manifest: scanFirstFields.knownPageMaxUtf8Bytes
         const val KNOWN_PAGE_MAX_UTF8_BYTES: Int = 262144
 
-        // Manifest: scanFirstFields.knownTotalScannedNotes
-        const val KNOWN_TOTAL_SCANNED_NOTE_MAX_COUNT: Int = 100000
-
         // Manifest: scanFirstFields.knownTotalScannedExcludedRows
         const val KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT: Int = 1000000
 

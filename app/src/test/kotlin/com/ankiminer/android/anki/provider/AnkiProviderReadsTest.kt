@@ -4,6 +4,7 @@ import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
+import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.KnownVocabularyResult
 import com.ankiminer.android.anki.protocol.KnownVocabularyScope
 import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
@@ -680,30 +681,10 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `known vocabulary pages deterministic v2 snapshot and consumes each cursor once`() {
+    fun `known vocabulary pages a keyset walk and consumes each cursor once`() {
         val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
-                    FakeProviderCursor(
-                        query.projection,
-                        (1L..257L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
-                    )
-                query.selection is ProviderSelection.NoteIds -> {
-                    val ids = (query.selection as ProviderSelection.NoteIds).ids
-                    FakeProviderCursor(
-                        query.projection,
-                        ids.map { id ->
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(id),
-                                ProviderColumn.NOTE_FIELDS to text("word-$id\u001fmeaning"),
-                            )
-                        },
-                    )
-                }
-                else -> error("unexpected query $query")
-            }
-        }
+        fixture.gateway.queryHandler =
+            keysetPageHandler((1L..257L).map { id -> id to "word-$id\u001fmeaning" })
         val firstRequest = knownRequest()
         val first =
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, firstRequest) }
@@ -721,36 +702,20 @@ class AnkiProviderReadsTest {
         assertThrows(InvalidCapabilityException::class.java) {
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, secondRequest) }
         }
-        assertEquals(ProviderOrder.NOTE_ID_ASCENDING, fixture.gateway.queries.first().sortOrder)
-        val pageQueries = fixture.gateway.queries.filter { it.selection is ProviderSelection.NoteIds }
-        assertEquals((1L..256L).toList(), (pageQueries[0].selection as ProviderSelection.NoteIds).ids)
+        // One query per page, each bounded by the note ID the previous page stopped on. Nothing
+        // snapshots the collection's IDs up front, so no collection size can refuse the walk.
+        val pageQueries = fixture.gateway.queries.filter { it.selection is ProviderSelection.NoteIdsAfter }
+        assertEquals(2, pageQueries.size)
+        assertTrue(pageQueries.all { it.sortOrder == ProviderOrder.NOTE_ID_ASCENDING })
+        assertEquals(0L, (pageQueries[0].selection as ProviderSelection.NoteIdsAfter).fromId)
+        assertEquals(256L, (pageQueries[1].selection as ProviderSelection.NoteIdsAfter).fromId)
     }
 
     @Test
     fun `known continuation failure is nonretryable after consuming its cursor`() {
         val fixture = fixture(tokens = listOf("cursor_${"a".repeat(32)}"))
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
-                    FakeProviderCursor(
-                        query.projection,
-                        (1L..257L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
-                    )
-                query.selection is ProviderSelection.NoteIds -> {
-                    val ids = (query.selection as ProviderSelection.NoteIds).ids
-                    FakeProviderCursor(
-                        query.projection,
-                        ids.map { id ->
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(id),
-                                ProviderColumn.NOTE_FIELDS to text("word-$id"),
-                            )
-                        },
-                    )
-                }
-                else -> error("unexpected query $query")
-            }
-        }
+        fixture.gateway.queryHandler =
+            keysetPageHandler((1L..257L).map { id -> id to "word-$id" })
         val first =
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
                 as KnownVocabularyResult
@@ -821,32 +786,12 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `known vocabulary excludes parent scope once and preserves mixed snapshot order`() {
+    fun `known vocabulary excludes parent scope once`() {
         val fixture = fixture()
-        fixture.gateway.queryHandler = { query, _ ->
+        val pages =
+            keysetPageHandler(listOf(1L to "one\u001f", 2L to "two\u001f", 3L to "three\u001f"))
+        fixture.gateway.queryHandler = { query, cancellation ->
             when (query.endpoint) {
-                ProviderEndpoint.NOTES_V2 -> {
-                    if (query.selection == null) {
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(1L, 2L, 3L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
-                        )
-                    } else {
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(
-                                mapOf(
-                                    ProviderColumn.NOTE_ID to integer(3L),
-                                    ProviderColumn.NOTE_FIELDS to text("three\u001f"),
-                                ),
-                                mapOf(
-                                    ProviderColumn.NOTE_ID to integer(1L),
-                                    ProviderColumn.NOTE_FIELDS to text("one\u001f"),
-                                ),
-                            ),
-                        )
-                    }
-                }
                 ProviderEndpoint.DECKS ->
                     FakeProviderCursor(
                         query.projection,
@@ -861,7 +806,7 @@ class AnkiProviderReadsTest {
                         query.projection,
                         listOf(mapOf(ProviderColumn.NOTE_ID to integer(2L))),
                     )
-                else -> error("unexpected query $query")
+                else -> pages(query, cancellation)
             }
         }
         val result =
@@ -872,7 +817,10 @@ class AnkiProviderReadsTest {
                 )
             } as KnownVocabularyResult
 
+        // The excluded note is dropped from the page, but it is still walked, so it counts toward
+        // the page's scanned notes.
         assertEquals(listOf("one", "three"), result.firstFields)
+        assertEquals(3, result.scannedNotes)
         val browserQueries = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.NOTES_BROWSER }
         assertEquals(1, browserQueries.size)
         assertEquals(ProviderSelection.ExcludedDeck("Parent"), browserQueries.single().selection)
@@ -881,36 +829,15 @@ class AnkiProviderReadsTest {
     @Test
     fun `an excluded deck whose browser search matches nothing contributes no exclusions`() {
         val fixture = fixture()
-        fixture.gateway.queryHandler = { query, _ ->
+        val pages = keysetPageHandler(listOf(1L to "one", 2L to "two"))
+        fixture.gateway.queryHandler = { query, cancellation ->
             when (query.endpoint) {
-                ProviderEndpoint.NOTES_V2 -> {
-                    if (query.selection == null) {
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(1L, 2L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
-                        )
-                    } else {
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(
-                                mapOf(
-                                    ProviderColumn.NOTE_ID to integer(1L),
-                                    ProviderColumn.NOTE_FIELDS to text("one"),
-                                ),
-                                mapOf(
-                                    ProviderColumn.NOTE_ID to integer(2L),
-                                    ProviderColumn.NOTE_FIELDS to text("two"),
-                                ),
-                            ),
-                        )
-                    }
-                }
                 ProviderEndpoint.DECKS ->
                     FakeProviderCursor(query.projection, listOf(deckRow(20, "Empty")))
                 // AnkiDroid's browser-search URI returns a null cursor when the search matches
                 // zero notes, not an empty cursor.
                 ProviderEndpoint.NOTES_BROWSER -> null
-                else -> error("unexpected query $query")
+                else -> pages(query, cancellation)
             }
         }
         val result =
@@ -923,19 +850,11 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `known vocabulary counts missing notes and closes every cursor on failure`() {
+    fun `known vocabulary closes its page cursor`() {
         val fixture = fixture()
-        val snapshotCursor =
-            FakeProviderCursor(
-                listOf(ProviderColumn.NOTE_ID),
-                listOf(
-                    mapOf(ProviderColumn.NOTE_ID to integer(1L)),
-                    mapOf(ProviderColumn.NOTE_ID to integer(2L)),
-                ),
-            )
         val pageCursor =
             FakeProviderCursor(
-                listOf(ProviderColumn.NOTE_ID, ProviderColumn.NOTE_FIELDS),
+                ProviderQueryShapes.NOTE_PAGE_PROJECTION,
                 listOf(
                     mapOf(
                         ProviderColumn.NOTE_ID to integer(2L),
@@ -943,60 +862,93 @@ class AnkiProviderReadsTest {
                     ),
                 ),
             )
-        fixture.gateway.queryHandler = { query, _ ->
-            if (query.selection == null) snapshotCursor else pageCursor
-        }
+        fixture.gateway.queryHandler = { _, _ -> pageCursor }
         val result =
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
                 as KnownVocabularyResult
         assertEquals(listOf("two"), result.firstFields)
-        assertEquals(2, result.scannedNotes)
-        assertEquals(1, snapshotCursor.closeCount)
+        assertEquals(1, result.scannedNotes)
         assertEquals(1, pageCursor.closeCount)
-
-        val malformed = fixture()
-        val bad =
-            FakeProviderCursor(
-                listOf(ProviderColumn.NOTE_ID),
-                listOf(
-                    mapOf(ProviderColumn.NOTE_ID to integer(2L)),
-                    mapOf(ProviderColumn.NOTE_ID to integer(1L)),
-                ),
-            )
-        malformed.gateway.queryHandler = { _, _ -> bad }
-        assertThrows(AnkiReadFailure::class.java) {
-            malformed.withOwner { owner -> malformed.reads.scanFirstFields(owner, knownRequest()) }
-        }
-        assertEquals(1, bad.closeCount)
     }
 
     @Test
-    fun `known vocabulary closes immediately at the 100001st note`() {
-        val fixture = fixture()
-        val cursor =
+    fun `known vocabulary drains a collection past the retired 100000 note ceiling`() {
+        // The scan used to snapshot every note ID up front and refuse at 100,001, which made
+        // mining permanently unavailable to anyone whose collection was merely large -- excluding
+        // decks could not help, because the refusal fired before exclusions were applied.
+        val noteCount = 100_001L
+        val fixture =
+            fixture(tokens = (1..500).map { "cursor_${it.toString().padStart(32, '0')}" })
+        fixture.gateway.queryHandler = { query, _ ->
+            val from = (query.selection as ProviderSelection.NoteIdsAfter).fromId
             GeneratedFakeProviderCursor(
-                listOf(ProviderColumn.NOTE_ID),
-                rowCount = 100_001,
+                query.projection,
+                rowCount = (noteCount - from).toInt(),
                 rowAt = { index ->
-                    mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
+                    val id = from + index + 1L
+                    mapOf(
+                        ProviderColumn.NOTE_ID to integer(id),
+                        ProviderColumn.NOTE_FIELDS to text("word-$id"),
+                    )
                 },
             )
-        fixture.gateway.queryHandler = { _, _ -> cursor }
-
-        val failure = assertThrows(AnkiReadFailure::class.java) {
-            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
         }
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
-        assertEquals(false, failure.retryable)
-        assertEquals(
-            "Known-word filtering supports at most 100000 notes in an Anki collection",
-            failure.stableMessage,
-        )
-        assertEquals(1, cursor.closeCount)
+
+        var drained = 0
+        var lastField: String? = null
+        var cursor: KnownVocabularyCursor? = null
+        var ordinal = 0
+        do {
+            ordinal += 1
+            val page =
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(
+                        owner,
+                        knownRequest(
+                            cursor = cursor,
+                            requestId = "anki_${ordinal.toString().padStart(32, '0')}",
+                        ),
+                    )
+                } as KnownVocabularyResult
+            drained += page.firstFields.size
+            lastField = page.firstFields.lastOrNull() ?: lastField
+            cursor = page.nextCursor
+        } while (cursor != null)
+
+        assertEquals(noteCount.toInt(), drained)
+        assertEquals("word-$noteCount", lastField)
     }
 
     @Test
-    fun `known vocabulary distinguishes null empty and exact 100000 note snapshots`() {
+    fun `known vocabulary refuses a page whose rows do not ascend`() {
+        // Ascending note IDs are what makes the keyset cursor a valid resume point: a page that
+        // repeats or rewinds an ID would hand the next page a bound it has already passed.
+        fun refusal(rows: List<Map<ProviderColumn, ProviderCell>>): AnkiReadFailure {
+            val fixture = fixture()
+            val cursor = FakeProviderCursor(ProviderQueryShapes.NOTE_PAGE_PROJECTION, rows)
+            fixture.gateway.queryHandler = { _, _ -> cursor }
+            val failure =
+                assertThrows(AnkiReadFailure::class.java) {
+                    fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                }
+            assertEquals(1, cursor.closeCount)
+            return failure
+        }
+
+        fun row(
+            id: Long,
+            field: String,
+        ) = mapOf(
+            ProviderColumn.NOTE_ID to integer(id),
+            ProviderColumn.NOTE_FIELDS to text(field),
+        )
+
+        assertEquals(AnkiErrorCode.QUERY_FAILED, refusal(listOf(row(2L, "two"), row(1L, "one"))).code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, refusal(listOf(row(1L, "one"), row(1L, "again"))).code)
+    }
+
+    @Test
+    fun `known vocabulary distinguishes a null cursor an empty page and an exact page boundary`() {
         val nullFixture = fixture()
         nullFixture.gateway.queryHandler = { _, _ -> null }
         assertEquals(
@@ -1009,9 +961,7 @@ class AnkiProviderReadsTest {
         )
 
         val emptyFixture = fixture()
-        emptyFixture.gateway.queryHandler = { query, _ ->
-            FakeProviderCursor(query.projection, emptyList())
-        }
+        emptyFixture.gateway.queryHandler = keysetPageHandler(emptyList())
         val empty =
             emptyFixture.withOwner { owner ->
                 emptyFixture.reads.scanFirstFields(owner, knownRequest())
@@ -1020,113 +970,35 @@ class AnkiProviderReadsTest {
         assertEquals(0, empty.scannedNotes)
         assertNull(empty.nextCursor)
 
+        // Exactly one page of notes ends the traversal: the lookahead row the page reads to decide
+        // whether anything follows finds nothing, so no continuation cursor is issued.
         val boundaryFixture = fixture(tokens = listOf("cursor_${"9".repeat(32)}"))
-        val snapshot =
-            GeneratedFakeProviderCursor(
-                ProviderQueryShapes.NOTE_ID_PROJECTION,
-                rowCount = 100_000,
-                rowAt = { index ->
-                    mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
-                },
-            )
-        boundaryFixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.selection == null -> snapshot
-                query.selection is ProviderSelection.NoteIds ->
-                    FakeProviderCursor(query.projection, emptyList())
-                else -> error("unexpected query $query")
-            }
-        }
+        boundaryFixture.gateway.queryHandler =
+            keysetPageHandler((1L..256L).map { id -> id to "word-$id" })
         val boundary =
             boundaryFixture.withOwner { owner ->
                 boundaryFixture.reads.scanFirstFields(owner, knownRequest())
             } as KnownVocabularyResult
         assertEquals(256, boundary.scannedNotes)
-        assertEquals(emptyList<String>(), boundary.firstFields)
-        assertEquals(1L, boundary.nextCursor?.ordinal)
-        assertEquals(1, snapshot.closeCount)
+        assertEquals(256, boundary.firstFields.size)
+        assertNull(boundary.nextCursor)
     }
 
     @Test
-    fun `known vocabulary rejects snapshot page and continuation cursor corruption`() {
-        fun pageFailure(rows: List<Map<ProviderColumn, ProviderCell>>): AnkiReadFailure {
-            val fixture = fixture(tokens = listOf("cursor_${"8".repeat(32)}"))
-            fixture.gateway.queryHandler = { query, _ ->
-                when {
-                    query.selection == null ->
-                        FakeProviderCursor(
-                            query.projection,
-                            listOf(
-                                mapOf(ProviderColumn.NOTE_ID to integer(1L)),
-                                mapOf(ProviderColumn.NOTE_ID to integer(2L)),
-                            ),
-                        )
-                    query.selection is ProviderSelection.NoteIds ->
-                        FakeProviderCursor(query.projection, rows)
-                    else -> error("unexpected query $query")
-                }
-            }
-            return assertThrows(AnkiReadFailure::class.java) {
-                fixture.withOwner { owner ->
-                    fixture.reads.scanFirstFields(owner, knownRequest())
-                }
-            }
-        }
-
-        assertEquals(
-            AnkiErrorCode.QUERY_FAILED,
-            pageFailure(
-                listOf(
-                    mapOf(
-                        ProviderColumn.NOTE_ID to integer(3L),
-                        ProviderColumn.NOTE_FIELDS to text("unexpected"),
-                    ),
-                ),
-            ).code,
-        )
-        assertEquals(
-            AnkiErrorCode.QUERY_FAILED,
-            pageFailure(
-                listOf(
-                    mapOf(
-                        ProviderColumn.NOTE_ID to integer(1L),
-                        ProviderColumn.NOTE_FIELDS to text("one"),
-                    ),
-                    mapOf(
-                        ProviderColumn.NOTE_ID to integer(1L),
-                        ProviderColumn.NOTE_FIELDS to text("duplicate"),
-                    ),
-                ),
-            ).code,
-        )
-
-        val continuationFixture = fixture(tokens = listOf("cursor_${"7".repeat(32)}"))
-        continuationFixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.selection == null ->
-                    GeneratedFakeProviderCursor(
-                        query.projection,
-                        rowCount = 257,
-                        rowAt = { index ->
-                            mapOf(ProviderColumn.NOTE_ID to integer(index + 1L))
-                        },
-                    )
-                query.selection is ProviderSelection.NoteIds ->
-                    FakeProviderCursor(query.projection, emptyList())
-                else -> error("unexpected query $query")
-            }
-        }
+    fun `known vocabulary rejects continuation cursor corruption`() {
+        val fixture = fixture(tokens = listOf("cursor_${"7".repeat(32)}"))
+        fixture.gateway.queryHandler =
+            keysetPageHandler((1L..257L).map { id -> id to "word-$id" })
         val first =
-            continuationFixture.withOwner { owner ->
-                continuationFixture.reads.scanFirstFields(owner, knownRequest())
-            } as KnownVocabularyResult
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                as KnownVocabularyResult
         val corrupt =
             requireNotNull(first.nextCursor).copy(
                 token = "cursor_${"6".repeat(32)}",
             )
         assertThrows(InvalidCapabilityException::class.java) {
-            continuationFixture.withOwner { owner ->
-                continuationFixture.reads.scanFirstFields(
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
                     owner,
                     knownRequest(cursor = corrupt, requestId = SECOND_REQUEST_ID),
                 )
@@ -1135,7 +1007,7 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `excluded deck browser scan closes at row 1000001 before reading its cells`() {
+    fun `excluded deck browser scan closes at the 1000001st distinct note`() {
         val fixture = fixture()
         var browserCellReads = 0
         val browserCursor =
@@ -1149,11 +1021,6 @@ class AnkiProviderReadsTest {
             )
         fixture.gateway.queryHandler = { query, _ ->
             when (query.endpoint) {
-                ProviderEndpoint.NOTES_V2 ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(1L))),
-                    )
                 ProviderEndpoint.DECKS ->
                     FakeProviderCursor(query.projection, listOf(deckRow(name = "Excluded")))
                 ProviderEndpoint.NOTES_BROWSER -> browserCursor
@@ -1175,14 +1042,56 @@ class AnkiProviderReadsTest {
         // is a condition of theirs, not a protocol violation.
         assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
-        // The refusal names the excluded decks and their own budget, not the result ceiling: these
-        // rows are subtracted from the scan rather than counted into it.
+        // The refusal names the excluded decks and their own budget: these notes are subtracted
+        // from the scan rather than counted into it.
         assertEquals(
             "Known-word filtering scans at most 1000000 notes in the excluded Anki decks",
             failure.stableMessage,
         )
-        assertEquals(1_000_000, browserCellReads)
+        // Distinctness is what the budget counts, so the ID of the row that trips it is read; its
+        // cells are the last ones pulled.
+        assertEquals(1_000_001, browserCellReads)
         assertEquals(1, browserCursor.closeCount)
+    }
+
+    @Test
+    fun `a note in two excluded sibling decks counts once against the excluded budget`() {
+        // Each browser search returns the same notes because their cards are split across the two
+        // excluded decks. Counting the rows rather than the notes refused an exclusion set at a
+        // fraction of the budget, on a collection the scan could otherwise handle.
+        val fixture = fixture()
+        val sharedNoteCount = 600_000
+        fun browserCursor() =
+            GeneratedFakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                rowCount = sharedNoteCount,
+                rowAt = { index -> mapOf(ProviderColumn.NOTE_ID to integer(index + 2L)) },
+            )
+        val browserCursors = ArrayDeque(listOf(browserCursor(), browserCursor()))
+        val pages = keysetPageHandler(listOf(1L to "one"))
+        fixture.gateway.queryHandler = { query, cancellation ->
+            when (query.endpoint) {
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(deckRow(20, "Split::A"), deckRow(21, "Split::B")),
+                    )
+                ProviderEndpoint.NOTES_BROWSER -> browserCursors.removeFirst()
+                else -> pages(query, cancellation)
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(excluded = listOf("Split::A", "Split::B")),
+                )
+            } as KnownVocabularyResult
+
+        // 1.2 million rows read, 600,000 distinct notes, well inside the budget.
+        assertEquals(listOf("one"), result.firstFields)
+        assertEquals(1, result.scannedNotes)
     }
 
     @Test
@@ -1191,36 +1100,21 @@ class AnkiProviderReadsTest {
         fixture.gateway.queryHandler = targetQueryHandler()
         fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
         fixture.gateway.queries.clear()
-        // The collection holds one note; the excluded deck holds far more rows than the note ceiling.
-        // Spending the result ceiling on them aborted the run, while the identical run without the
-        // exclusion configured succeeded.
+        // The collection holds one note; the excluded deck holds far more rows than the excluded
+        // walk's own budget allows the scan to have spent on the result.
         val browserCursor =
             GeneratedFakeProviderCursor(
                 listOf(ProviderColumn.NOTE_ID),
                 rowCount = 150_000,
                 rowAt = { index -> mapOf(ProviderColumn.NOTE_ID to integer(index + 2L)) },
             )
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(1L))),
-                    )
-                query.endpoint == ProviderEndpoint.DECKS ->
+        val pages = keysetPageHandler(listOf(1L to "one\u001fmeaning"))
+        fixture.gateway.queryHandler = { query, cancellation ->
+            when (query.endpoint) {
+                ProviderEndpoint.DECKS ->
                     FakeProviderCursor(query.projection, listOf(deckRow(name = "Core")))
-                query.endpoint == ProviderEndpoint.NOTES_BROWSER -> browserCursor
-                query.selection is ProviderSelection.NoteIds ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(1L),
-                                ProviderColumn.NOTE_FIELDS to text("one\u001fmeaning"),
-                            ),
-                        ),
-                    )
-                else -> error("unexpected query $query")
+                ProviderEndpoint.NOTES_BROWSER -> browserCursor
+                else -> pages(query, cancellation)
             }
         }
 
@@ -1237,28 +1131,8 @@ class AnkiProviderReadsTest {
     fun `known initial and continuation pages preflight escape-expanded responses`() {
         val fixture = fixture(tokens = listOf("cursor_${"e".repeat(32)}"))
         val escapeHeavy = "\u0001".repeat(1024)
-        fixture.gateway.queryHandler = { query, _ ->
-            when {
-                query.endpoint == ProviderEndpoint.NOTES_V2 && query.selection == null ->
-                    FakeProviderCursor(
-                        query.projection,
-                        (1L..257L).map { id -> mapOf(ProviderColumn.NOTE_ID to integer(id)) },
-                    )
-                query.selection is ProviderSelection.NoteIds -> {
-                    val ids = (query.selection as ProviderSelection.NoteIds).ids
-                    FakeProviderCursor(
-                        query.projection,
-                        ids.map { id ->
-                            mapOf(
-                                ProviderColumn.NOTE_ID to integer(id),
-                                ProviderColumn.NOTE_FIELDS to text(escapeHeavy),
-                            )
-                        },
-                    )
-                }
-                else -> error("unexpected query $query")
-            }
-        }
+        fixture.gateway.queryHandler =
+            keysetPageHandler((1L..257L).map { id -> id to escapeHeavy })
 
         val first =
             fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
@@ -1654,9 +1528,28 @@ class AnkiProviderReadsTest {
 
     private fun knownRequest(
         excluded: List<String> = emptyList(),
-        cursor: com.ankiminer.android.anki.protocol.KnownVocabularyCursor? = null,
+        cursor: KnownVocabularyCursor? = null,
         requestId: String = REQUEST_ID,
     ) = ScanFirstFieldsRequest(RUN_ID, requestId, KnownVocabularyScope(excluded, cursor))
+
+    /** Serves keyset pages out of an ascending note table, the way the v2 notes URI does. */
+    private fun keysetPageHandler(
+        notes: List<Pair<Long, String>>,
+    ): (ProviderQuery, AnkiCancellation) -> ProviderCursor =
+        { query, _ ->
+            val fromId = (query.selection as ProviderSelection.NoteIdsAfter).fromId
+            FakeProviderCursor(
+                query.projection,
+                notes
+                    .filter { (id, _) -> id > fromId }
+                    .map { (id, fields) ->
+                        mapOf(
+                            ProviderColumn.NOTE_ID to integer(id),
+                            ProviderColumn.NOTE_FIELDS to text(fields),
+                        )
+                    },
+            )
+        }
 
     private fun duplicateRequest(
         scope: DuplicateScanScope,
