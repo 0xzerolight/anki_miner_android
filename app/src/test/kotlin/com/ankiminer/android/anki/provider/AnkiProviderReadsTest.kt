@@ -1007,7 +1007,7 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `excluded deck browser scan closes at row 1000001 before reading its cells`() {
+    fun `excluded deck browser scan closes at the 1000001st distinct note`() {
         val fixture = fixture()
         var browserCellReads = 0
         val browserCursor =
@@ -1042,14 +1042,56 @@ class AnkiProviderReadsTest {
         // is a condition of theirs, not a protocol violation.
         assertEquals(AnkiErrorCode.QUERY_FAILED, failure.code)
         assertEquals(false, failure.retryable)
-        // The refusal names the excluded decks and their own budget, not the result ceiling: these
-        // rows are subtracted from the scan rather than counted into it.
+        // The refusal names the excluded decks and their own budget: these notes are subtracted
+        // from the scan rather than counted into it.
         assertEquals(
             "Known-word filtering scans at most 1000000 notes in the excluded Anki decks",
             failure.stableMessage,
         )
-        assertEquals(1_000_000, browserCellReads)
+        // Distinctness is what the budget counts, so the ID of the row that trips it is read; its
+        // cells are the last ones pulled.
+        assertEquals(1_000_001, browserCellReads)
         assertEquals(1, browserCursor.closeCount)
+    }
+
+    @Test
+    fun `a note in two excluded sibling decks counts once against the excluded budget`() {
+        // Each browser search returns the same notes because their cards are split across the two
+        // excluded decks. Counting the rows rather than the notes refused an exclusion set at a
+        // fraction of the budget, on a collection the scan could otherwise handle.
+        val fixture = fixture()
+        val sharedNoteCount = 600_000
+        fun browserCursor() =
+            GeneratedFakeProviderCursor(
+                listOf(ProviderColumn.NOTE_ID),
+                rowCount = sharedNoteCount,
+                rowAt = { index -> mapOf(ProviderColumn.NOTE_ID to integer(index + 2L)) },
+            )
+        val browserCursors = ArrayDeque(listOf(browserCursor(), browserCursor()))
+        val pages = keysetPageHandler(listOf(1L to "one"))
+        fixture.gateway.queryHandler = { query, cancellation ->
+            when (query.endpoint) {
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(deckRow(20, "Split::A"), deckRow(21, "Split::B")),
+                    )
+                ProviderEndpoint.NOTES_BROWSER -> browserCursors.removeFirst()
+                else -> pages(query, cancellation)
+            }
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(excluded = listOf("Split::A", "Split::B")),
+                )
+            } as KnownVocabularyResult
+
+        // 1.2 million rows read, 600,000 distinct notes, well inside the budget.
+        assertEquals(listOf("one"), result.firstFields)
+        assertEquals(1, result.scannedNotes)
     }
 
     @Test

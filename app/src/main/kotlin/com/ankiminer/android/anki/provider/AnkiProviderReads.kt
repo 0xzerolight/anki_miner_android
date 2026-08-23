@@ -289,7 +289,6 @@ internal class AnkiProviderReadService(
         val minimalScopes = minimalExistingDeckScopes(scope.excludedDecks, existingNames)
         if (minimalScopes.isEmpty()) return emptySet()
         val excluded = HashSet<Long>()
-        var excludedBrowserRows = 0
         for (deckName in minimalScopes) {
             ensureActive(cancellation)
             val query =
@@ -307,18 +306,18 @@ internal class AnkiProviderReadService(
                 val seen = HashSet<Long>()
                 while (cursor.moveToNext()) {
                     ensureActive(cancellation)
-                    // Counted per row and checked before the cell read, so the scan refuses on
-                    // reaching the first row past its budget without pulling that row's cells.
-                    excludedBrowserRows = checkedAdd(excludedBrowserRows, 1)
+                    val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
+                    if (!seen.add(id)) throw queryFailed()
+                    // Budgeted on distinct notes rather than rows read. A note whose cards sit in
+                    // two excluded sibling decks comes back from both searches, and counting it
+                    // once per search refused exclusion sets far inside the bound.
                     if (
-                        excludedBrowserRows >
+                        excluded.add(id) &&
+                        excluded.size >
                         AnkiLimitsV1.ScanFirstFields.KNOWN_TOTAL_SCANNED_EXCLUDED_ROW_MAX_COUNT
                     ) {
                         throw knownVocabularyExcludedScanTooLarge()
                     }
-                    val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
-                    if (!seen.add(id)) throw queryFailed()
-                    excluded += id
                 }
             }
         }
@@ -1268,7 +1267,7 @@ private fun queryFailed(
 /**
  * The excluded-deck walk carries the one bound this scan still has.
  *
- * Its rows are the notes of the *excluded* decks, which are subtracted from the result rather than
+ * Its notes are the ones of the *excluded* decks, which are subtracted from the result rather than
  * counted into it, so they have no ratio to the scan's own size. Spending a note ceiling on them
  * aborted a 2k-note target simply because the user excluded a large Core deck — while the identical
  * run without that exclusion succeeded. The page walk itself is bounded per page and needs no total,
