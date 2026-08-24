@@ -169,7 +169,6 @@ internal data class OnboardingWizardCallbacks(
     val onSelectNoteType: (String) -> Unit = {},
     val onSetFieldMapping: (String, String) -> Unit = { _, _ -> },
     val onCustomizeFields: () -> Unit = {},
-    val onResolveRecovery: () -> Unit = {},
     val onRefresh: () -> Unit = {},
     val onCancelOperation: () -> Unit = {},
     val onRetryResourceFailure: () -> Unit = {},
@@ -188,7 +187,6 @@ internal fun OnboardingWizard(
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
     onCustomizeFields: () -> Unit = {},
-    onResolveRecovery: () -> Unit = onCustomizeFields,
 ) {
     var step by rememberSaveable { mutableStateOf(WizardStep.WELCOME) }
     OnboardingWizardContent(
@@ -213,7 +211,6 @@ internal fun OnboardingWizard(
                 onSelectNoteType = viewModel::selectNoteType,
                 onSetFieldMapping = viewModel::setFieldMapping,
                 onCustomizeFields = onCustomizeFields,
-                onResolveRecovery = onResolveRecovery,
                 onRefresh = viewModel::refresh,
                 onCancelOperation = viewModel::cancelOperation,
                 onRetryResourceFailure = viewModel::retryResourceFailure,
@@ -414,7 +411,6 @@ private fun WizardStepBody(
                 onChooseNoteType = {
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },
-                onResolveRecovery = callbacks.onResolveRecovery,
                 onImportDictionary = {
                     callbacks.onStep(WizardStep.DICTIONARY)
                 },
@@ -499,9 +495,6 @@ private fun WizardStepBody(
             )
         }
         WizardStep.DONE -> {
-            val hasRecoveryFailure =
-                state.ankiFailure?.origin == AnkiSetupFailureOrigin.RECOVERY ||
-                    state.ankiRecoveryFailure?.origin == AnkiSetupFailureOrigin.RECOVERY
             SystemStatusCard(
                 state = state,
                 onRefresh = callbacks.onRefresh,
@@ -513,23 +506,9 @@ private fun WizardStepBody(
                 onChooseNoteType = {
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },
-                onResolveRecovery = callbacks.onResolveRecovery,
                 onImportDictionary = {
                     callbacks.onStep(WizardStep.DICTIONARY)
                 },
-                inlineFailureTaskId = SetupTaskId.RECOVERY.takeIf { hasRecoveryFailure },
-                inlineFailure =
-                    if (hasRecoveryFailure) {
-                        {
-                            WizardAnkiFailure(
-                                state,
-                                callbacks,
-                                origin = AnkiSetupFailureOrigin.RECOVERY,
-                            )
-                        }
-                    } else {
-                        null
-                    },
             )
         }
     }
@@ -587,26 +566,12 @@ private fun WizardAnkiFailure(
     callbacks: OnboardingWizardCallbacks,
     origin: AnkiSetupFailureOrigin = AnkiSetupFailureOrigin.TARGET,
 ) {
-    val failure =
-        listOfNotNull(state.ankiFailure, state.ankiRecoveryFailure)
-            .firstOrNull { it.origin == origin }
+    val failure = state.ankiFailure?.takeIf { it.origin == origin }
     failure?.let {
         InlineFailureContainer(
             message = it.message,
-            actionLabel =
-                stringResource(
-                    if (it.origin == AnkiSetupFailureOrigin.RECOVERY) {
-                        R.string.b3_resolve
-                    } else {
-                        R.string.b3_retry
-                    },
-                ),
-            onAction =
-                if (it.origin == AnkiSetupFailureOrigin.RECOVERY) {
-                    callbacks.onResolveRecovery
-                } else {
-                    callbacks.onRefresh
-                },
+            actionLabel = stringResource(R.string.b3_retry),
+            onAction = callbacks.onRefresh,
             onDismiss = callbacks.onDismissAnkiFailure,
         )
     }

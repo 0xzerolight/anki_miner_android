@@ -68,7 +68,6 @@ import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
 import com.ankiminer.android.ui.reading.ReadingMiningCommandError
 import com.ankiminer.android.ui.reading.ReadingMiningUiState
 import com.ankiminer.android.ui.reading.ReadingSourceKindUi
-import com.ankiminer.android.ui.settings.AnkiRecoveryCard
 import com.ankiminer.android.ui.settings.AnkiTargetCard
 import com.ankiminer.android.ui.settings.BooleanSetting
 import com.ankiminer.android.ui.settings.DictionaryLookupCard
@@ -784,15 +783,6 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
             onSelectCardType = {},
             onSelectCardTypeMarker = {},
             onRemapFields = {},
-        )
-        AnkiRecoveryCard(
-            state = setup,
-            onRefresh = {},
-            onReconcile = {},
-            onRetryStaging = {},
-            onAcknowledgeMedia = {},
-            onAcknowledgeUncertainMedia = {},
-            onResolveReview = { _, _ -> },
         )
     }
 }

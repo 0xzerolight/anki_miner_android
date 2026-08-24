@@ -160,7 +160,6 @@ internal fun SystemStatusCard(
     compact: Boolean = false,
     onInstallUniDic: () -> Unit = {},
     onChooseNoteType: () -> Unit = {},
-    onResolveRecovery: () -> Unit = onRefresh,
     onImportDictionary: () -> Unit = onRefresh,
     inlineFailureTaskId: SetupTaskId? = null,
     inlineFailure: (@Composable () -> Unit)? = null,
@@ -186,7 +185,6 @@ internal fun SystemStatusCard(
                         onOpenAnkiDroid = onOpenAnkiDroid,
                         onInstallUniDic = onInstallUniDic,
                         onChooseNoteType = onChooseNoteType,
-                        onResolveRecovery = onResolveRecovery,
                         onImportDictionary = onImportDictionary,
                         showAction = row.id != inlineFailureTaskId,
                     )
@@ -222,7 +220,6 @@ private fun SetupStatusRow(
     onOpenAnkiDroid: () -> Unit,
     onInstallUniDic: () -> Unit,
     onChooseNoteType: () -> Unit,
-    onResolveRecovery: () -> Unit,
     onImportDictionary: () -> Unit,
     showAction: Boolean,
 ) {
@@ -265,7 +262,6 @@ private fun SetupStatusRow(
                 onOpenAnkiDroid = onOpenAnkiDroid,
                 onInstallUniDic = onInstallUniDic,
                 onChooseNoteType = onChooseNoteType,
-                onResolveRecovery = onResolveRecovery,
                 onImportDictionary = onImportDictionary,
             )
         }
@@ -283,7 +279,6 @@ private fun SetupTaskAction(
     onOpenAnkiDroid: () -> Unit,
     onInstallUniDic: () -> Unit,
     onChooseNoteType: () -> Unit,
-    onResolveRecovery: () -> Unit,
     onImportDictionary: () -> Unit,
 ) {
     when (id) {
@@ -304,7 +299,7 @@ private fun SetupTaskAction(
         SetupTaskId.NOTE_TYPE ->
             StatusAction(R.string.b3_status_choose_note_type, onChooseNoteType)
         SetupTaskId.RECOVERY ->
-            StatusAction(R.string.b3_resolve, onResolveRecovery)
+            StatusAction(R.string.check_again, onRefresh)
         SetupTaskId.UNIDIC ->
             StatusAction(R.string.unidic_install, onInstallUniDic)
         SetupTaskId.DICTIONARY ->

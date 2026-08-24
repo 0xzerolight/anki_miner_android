@@ -99,59 +99,6 @@ internal fun classifyNoteTypeQuality(
     )
 }
 
-internal enum class RecoveryPresentationKind {
-    CHECKING,
-    INVENTORY_UNAVAILABLE,
-    STARTUP_BLOCKED,
-    STARTUP_BLOCKED_PROVIDER_UNAVAILABLE,
-    PENDING,
-    PENDING_PROVIDER_UNAVAILABLE,
-    CLEAR,
-}
-
-internal data class RecoveryPresentationDecision(
-    val kind: RecoveryPresentationKind,
-    val showInventory: Boolean,
-    val canReconcile: Boolean,
-)
-
-/** Keeps local journal visibility independent from current ContentProvider availability. */
-internal fun decideRecoveryPresentation(
-    provider: AnkiProviderReadiness,
-    startupRecovery: AnkiRecoveryReadiness,
-    inventoryStatus: AnkiRecoveryInventoryStatus,
-    pendingCount: Int,
-): RecoveryPresentationDecision {
-    require(pendingCount >= 0)
-    val providerReady = provider is AnkiProviderReadiness.Ready
-    val showInventory = inventoryStatus == AnkiRecoveryInventoryStatus.AVAILABLE
-    val kind =
-        when {
-            inventoryStatus == AnkiRecoveryInventoryStatus.NOT_CHECKED ->
-                RecoveryPresentationKind.CHECKING
-            inventoryStatus == AnkiRecoveryInventoryStatus.UNAVAILABLE ->
-                RecoveryPresentationKind.INVENTORY_UNAVAILABLE
-            pendingCount > 0 && !providerReady ->
-                RecoveryPresentationKind.PENDING_PROVIDER_UNAVAILABLE
-            pendingCount > 0 -> RecoveryPresentationKind.PENDING
-            startupRecovery == AnkiRecoveryReadiness.Blocked && !providerReady ->
-                RecoveryPresentationKind.STARTUP_BLOCKED_PROVIDER_UNAVAILABLE
-            startupRecovery == AnkiRecoveryReadiness.Blocked ->
-                RecoveryPresentationKind.STARTUP_BLOCKED
-            startupRecovery == AnkiRecoveryReadiness.NotChecked ->
-                RecoveryPresentationKind.CHECKING
-            else -> RecoveryPresentationKind.CLEAR
-        }
-    return RecoveryPresentationDecision(
-        kind = kind,
-        showInventory = showInventory,
-        canReconcile =
-            providerReady &&
-                inventoryStatus == AnkiRecoveryInventoryStatus.AVAILABLE &&
-                (pendingCount > 0 || startupRecovery == AnkiRecoveryReadiness.Blocked),
-    )
-}
-
 internal enum class WizardCompletionStatus {
     IDLE,
     SAVING,

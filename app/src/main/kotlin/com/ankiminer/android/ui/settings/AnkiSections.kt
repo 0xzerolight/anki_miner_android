@@ -25,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.heading
@@ -34,11 +33,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
-import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
-import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
-import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -46,7 +42,6 @@ import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.vm.DeckChoiceKind
 import com.ankiminer.android.vm.DeckPersistenceStatus
-import com.ankiminer.android.vm.RecoveryPresentationKind
 import com.ankiminer.android.vm.SetupUiState
 
 @Composable
@@ -449,240 +444,3 @@ internal fun AnkiOperationCard() {
     }
 }
 
-@Composable
-internal fun AnkiRecoveryCard(
-    state: SetupUiState,
-    onRefresh: () -> Unit,
-    onReconcile: () -> Unit,
-    onRetryStaging: (Long) -> Unit,
-    onAcknowledgeMedia: (Long) -> Unit,
-    onAcknowledgeUncertainMedia: (Long) -> Unit,
-    onResolveReview: (Long, AnkiExternalReviewOutcome) -> Unit,
-    inlineFailure: (@Composable () -> Unit)? = null,
-) {
-    var confirmationKey by rememberSaveable { mutableStateOf<String?>(null) }
-    val presentation = state.recoveryPresentation
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
-            Text(stringResource(R.string.anki_recovery_title), style = MaterialTheme.typography.titleMedium)
-            val statusText =
-                when (presentation.kind) {
-                    RecoveryPresentationKind.CHECKING ->
-                        stringResource(R.string.anki_recovery_checking)
-                    RecoveryPresentationKind.INVENTORY_UNAVAILABLE ->
-                        stringResource(R.string.anki_recovery_inventory_unavailable)
-                    RecoveryPresentationKind.STARTUP_BLOCKED ->
-                        stringResource(R.string.anki_recovery_startup_blocked)
-                    RecoveryPresentationKind.STARTUP_BLOCKED_PROVIDER_UNAVAILABLE ->
-                        stringResource(R.string.anki_recovery_startup_blocked_provider_unavailable)
-                    RecoveryPresentationKind.PENDING ->
-                        pluralStringResource(
-                            R.plurals.anki_recovery_attention,
-                            state.remediations.pending.size,
-                            state.remediations.pending.size,
-                        )
-                    RecoveryPresentationKind.PENDING_PROVIDER_UNAVAILABLE ->
-                        pluralStringResource(
-                            R.plurals.anki_recovery_attention_provider_unavailable,
-                            state.remediations.pending.size,
-                            state.remediations.pending.size,
-                        )
-                    RecoveryPresentationKind.CLEAR ->
-                        stringResource(R.string.anki_recovery_clear)
-                }
-            Text(statusText)
-            inlineFailure?.invoke()
-            if (
-                presentation.kind == RecoveryPresentationKind.CHECKING ||
-                    presentation.kind == RecoveryPresentationKind.INVENTORY_UNAVAILABLE
-            ) {
-                SecondaryActionButton(
-                    onClick = onRefresh,
-                    enabled = !state.busy,
-                ) {
-                    Text(stringResource(R.string.anki_recovery_retry_inventory))
-                }
-            }
-            if (presentation.canReconcile) {
-                SecondaryActionButton(
-                    onClick = onReconcile,
-                    enabled = !state.busy,
-                ) {
-                    Text(stringResource(R.string.anki_recovery_reconcile))
-                }
-            }
-        }
-        if (presentation.showInventory) {
-            Column(Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related)) {
-                state.remediations.pending.forEach { item ->
-                    HorizontalDivider()
-                    Text(item.title, style = MaterialTheme.typography.titleSmall)
-                    Text(item.summary)
-                    if (AnkiRemediationActionKind.RETRY_STAGING_CLEANUP in item.availableActions) {
-                        SecondaryActionButton(
-                            onClick = { onRetryStaging(item.id) },
-                            enabled = !state.busy,
-                        ) { Text(stringResource(R.string.anki_recovery_retry_cleanup)) }
-                    }
-                    if (AnkiRemediationActionKind.ACKNOWLEDGE_UNATTACHED_MEDIA in item.availableActions) {
-                        SecondaryActionButton(
-                            onClick = {
-                                confirmationKey =
-                                    AnkiRecoveryConfirmation.UnattachedMedia(item.id).saveableKey
-                            },
-                            enabled = !state.busy,
-                        ) { Text(stringResource(R.string.anki_recovery_acknowledge_unattached)) }
-                    }
-                    if (AnkiRemediationActionKind.ACKNOWLEDGE_UNCERTAIN_MEDIA in item.availableActions) {
-                        Text(stringResource(R.string.anki_recovery_media_uncertain_help))
-                        SecondaryActionButton(
-                            onClick = {
-                                confirmationKey =
-                                    AnkiRecoveryConfirmation.UncertainMedia(item.id).saveableKey
-                            },
-                            enabled = !state.busy,
-                        ) { Text(stringResource(R.string.anki_recovery_abandon_uncertain_media)) }
-                    }
-                    if (AnkiRemediationActionKind.RESOLVE_AFTER_EXTERNAL_REVIEW in item.availableActions) {
-                        ExternalReviewActions(
-                            item.id,
-                            item.type,
-                            state.busy || !state.ankiReady,
-                        ) { id, outcome ->
-                            confirmationKey =
-                                AnkiRecoveryConfirmation.ExternalReview(id, outcome).saveableKey
-                        }
-                    }
-                }
-            }
-        }
-    }
-    val confirmation = confirmationKey?.let { AnkiRecoveryConfirmation.fromSaveableKey(it) }
-    confirmation?.let { pending ->
-        AlertDialog(
-            onDismissRequest = { confirmationKey = null },
-            title = { Text(stringResource(R.string.anki_recovery_confirm_title)) },
-            text = {
-                Text(
-                    stringResource(
-                        when (pending) {
-                            is AnkiRecoveryConfirmation.UnattachedMedia ->
-                                R.string.anki_recovery_confirm_unattached_detail
-                            is AnkiRecoveryConfirmation.UncertainMedia ->
-                                R.string.anki_recovery_confirm_uncertain_detail
-                            is AnkiRecoveryConfirmation.ExternalReview ->
-                                R.string.anki_recovery_confirm_recorded_detail
-                        },
-                    ),
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        confirmationKey = null
-                        when (pending) {
-                            is AnkiRecoveryConfirmation.UnattachedMedia ->
-                                onAcknowledgeMedia(pending.remediationId)
-                            is AnkiRecoveryConfirmation.UncertainMedia ->
-                                onAcknowledgeUncertainMedia(pending.remediationId)
-                            is AnkiRecoveryConfirmation.ExternalReview ->
-                                onResolveReview(pending.remediationId, pending.outcome)
-                        }
-                    },
-                ) { Text(stringResource(R.string.anki_recovery_confirm_action)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { confirmationKey = null }) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
-}
-
-private sealed interface AnkiRecoveryConfirmation {
-    val remediationId: Long
-    val saveableKey: String
-        get() =
-            when (this) {
-                is UnattachedMedia -> "unattached:$remediationId"
-                is UncertainMedia -> "uncertain:$remediationId"
-                is ExternalReview -> "external:$remediationId:${outcome.name}"
-            }
-
-    data class UnattachedMedia(
-        override val remediationId: Long,
-    ) : AnkiRecoveryConfirmation
-
-    data class UncertainMedia(
-        override val remediationId: Long,
-    ) : AnkiRecoveryConfirmation
-
-    data class ExternalReview(
-        override val remediationId: Long,
-        val outcome: AnkiExternalReviewOutcome,
-    ) : AnkiRecoveryConfirmation
-
-    companion object {
-        fun fromSaveableKey(key: String): AnkiRecoveryConfirmation? {
-            val parts = key.split(':', limit = 3)
-            val remediationId = parts.getOrNull(1)?.toLongOrNull() ?: return null
-            return when (parts.firstOrNull()) {
-                "unattached" -> UnattachedMedia(remediationId)
-                "uncertain" -> UncertainMedia(remediationId)
-                "external" -> {
-                    val outcomeName = parts.getOrNull(2) ?: return null
-                    val outcome =
-                        AnkiExternalReviewOutcome.entries
-                            .firstOrNull { it.name == outcomeName }
-                            ?: return null
-                    ExternalReview(remediationId, outcome)
-                }
-                else -> null
-            }
-        }
-    }
-}
-
-@Composable
-private fun ExternalReviewActions(
-    remediationId: Long,
-    type: AnkiRemediationType,
-    busy: Boolean,
-    onResolve: (Long, AnkiExternalReviewOutcome) -> Unit,
-) {
-    when (type) {
-        AnkiRemediationType.DECK_COMMIT_UNCERTAIN,
-        AnkiRemediationType.NOTE_COMMIT_UNCERTAIN,
-        -> {
-            Text(stringResource(R.string.anki_recovery_review_in_ankidroid))
-            SecondaryActionButton(
-                onClick = { onResolve(remediationId, AnkiExternalReviewOutcome.COMMIT_CONFIRMED) },
-                enabled = !busy,
-            ) { Text(stringResource(R.string.anki_recovery_confirm_exists)) }
-            SecondaryActionButton(
-                onClick = { onResolve(remediationId, AnkiExternalReviewOutcome.NOT_COMMITTED_CONFIRMED) },
-                enabled = !busy,
-            ) { Text(stringResource(R.string.anki_recovery_confirm_missing)) }
-        }
-        AnkiRemediationType.NOTE_COMMITTED_FAILED,
-        AnkiRemediationType.CARD_ROUTING_FAILED,
-        -> SecondaryActionButton(
-            onClick = {
-                onResolve(
-                    remediationId,
-                    AnkiExternalReviewOutcome.CURRENT_STATE_ACCEPTED_OR_CORRECTED,
-                )
-            },
-            enabled = !busy,
-        ) { Text(stringResource(R.string.anki_recovery_confirm_corrected)) }
-        AnkiRemediationType.CAPACITY_EXHAUSTED -> SecondaryActionButton(
-            onClick = { onResolve(remediationId, AnkiExternalReviewOutcome.CAPACITY_AVAILABLE) },
-            enabled = !busy,
-        ) { Text(stringResource(R.string.anki_recovery_confirm_capacity)) }
-        AnkiRemediationType.MEDIA_COMMIT_UNCERTAIN,
-        AnkiRemediationType.MEDIA_STORED_UNATTACHED,
-        AnkiRemediationType.STAGING_QUARANTINED,
-        -> Unit
-    }
-}

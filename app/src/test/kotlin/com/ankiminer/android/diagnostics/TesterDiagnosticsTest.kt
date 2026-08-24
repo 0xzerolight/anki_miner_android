@@ -67,11 +67,6 @@ class TesterDiagnosticsTest {
                                 code = "provider_timeout",
                                 message = "Provider failed for secret collection",
                             ),
-                        ankiRecoveryFailure =
-                            AnkiSetupFailure(
-                                code = "journal_read_failed",
-                                message = "Recovery failed for secret journal",
-                            ),
                     ),
                 video =
                     VideoMiningUiState(
@@ -140,7 +135,6 @@ class TesterDiagnosticsTest {
         assertTrue(diagnostics.report.contains("anki.recovery_startup=blocked"))
         assertTrue(diagnostics.report.contains("anki.recovery_inventory=available"))
         assertTrue(diagnostics.report.contains("anki.failure=provider_timeout"))
-        assertTrue(diagnostics.report.contains("anki.recovery_failure=journal_read_failed"))
         assertTrue(diagnostics.report.contains("video.run=failed"))
         assertTrue(diagnostics.report.contains("video.pending=start"))
         assertTrue(diagnostics.report.contains("audio.run=running"))

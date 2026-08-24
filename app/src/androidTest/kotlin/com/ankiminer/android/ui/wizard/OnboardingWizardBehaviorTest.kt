@@ -16,7 +16,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import com.ankiminer.android.data.anki.AnkiSetupFailure
-import com.ankiminer.android.data.anki.AnkiSetupFailureAction
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
@@ -93,7 +92,6 @@ class OnboardingWizardBehaviorTest {
         var step by mutableStateOf(WizardStep.WELCOME)
         var resourceRetries = 0
         var ankiRetries = 0
-        var recoveryActions = 0
         composeRule.setContent {
             AnkiMinerTheme {
                 OnboardingWizardContent(
@@ -103,7 +101,6 @@ class OnboardingWizardBehaviorTest {
                         OnboardingWizardCallbacks(
                             onInstallUniDic = { resourceRetries += 1 },
                             onRefresh = { ankiRetries += 1 },
-                            onResolveRecovery = { recoveryActions += 1 },
                         ),
                 )
             }
@@ -137,7 +134,6 @@ class OnboardingWizardBehaviorTest {
                             code = "anki",
                             message = "Anki failed",
                             origin = AnkiSetupFailureOrigin.TARGET,
-                            action = AnkiSetupFailureAction.RETRY,
                         ),
                 )
             step = WizardStep.ANKIDROID_NOTE_TYPE
@@ -148,24 +144,6 @@ class OnboardingWizardBehaviorTest {
         composeRule.onNodeWithText("Retry").performClick()
         composeRule.runOnIdle { assertEquals(1, ankiRetries) }
 
-        composeRule.runOnIdle {
-            state =
-                SetupUiState(
-                    ankiRecoveryFailure =
-                        AnkiSetupFailure(
-                            code = "recovery",
-                            message = "Recovery failed",
-                            origin = AnkiSetupFailureOrigin.RECOVERY,
-                            action = AnkiSetupFailureAction.RESOLVE,
-                        ),
-                )
-            step = WizardStep.ANKIDROID
-        }
-        composeRule.onNodeWithText("Recovery failed").assertDoesNotExist()
-        composeRule.runOnIdle { step = WizardStep.DONE }
-        composeRule.onNodeWithText("Recovery failed").assertIsDisplayed()
-        composeRule.onNodeWithText("Resolve").performClick()
-        composeRule.runOnIdle { assertEquals(1, recoveryActions) }
     }
 
     @Test

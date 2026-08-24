@@ -29,7 +29,6 @@ import androidx.compose.ui.text.input.ImeAction
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
-import com.ankiminer.android.data.anki.AnkiSetupFailureAction
 import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -278,24 +277,6 @@ private fun LazyListScope.ankiSettings(
                 AnkiOriginFailure(
                     setup,
                     AnkiSetupFailureOrigin.TARGET,
-                    setupViewModel,
-                )
-            },
-        )
-    }
-    settingsCard(SettingsCategory.ANKI, recorder, "anki-recovery") {
-        AnkiRecoveryCard(
-            state = setup,
-            onRefresh = setupViewModel::refresh,
-            onReconcile = setupViewModel::reconcileInterruptedWork,
-            onRetryStaging = setupViewModel::retryStagingCleanup,
-            onAcknowledgeMedia = setupViewModel::acknowledgeUnattachedMedia,
-            onAcknowledgeUncertainMedia = setupViewModel::acknowledgeUncertainMedia,
-            onResolveReview = setupViewModel::resolveAfterExternalReview,
-            inlineFailure = {
-                AnkiOriginFailure(
-                    setup,
-                    AnkiSetupFailureOrigin.RECOVERY,
                     setupViewModel,
                 )
             },
@@ -1449,28 +1430,11 @@ private fun AnkiOriginFailure(
     origin: AnkiSetupFailureOrigin,
     setupViewModel: SetupViewModel,
 ) {
-    val failure =
-        listOfNotNull(setup.ankiFailure, setup.ankiRecoveryFailure)
-            .firstOrNull { it.origin == origin }
-            ?: return
+    val failure = setup.ankiFailure?.takeIf { it.origin == origin } ?: return
     InlineFailureContainer(
         message = failure.message,
-        actionLabel =
-            stringResource(
-                if (failure.origin == AnkiSetupFailureOrigin.RECOVERY) {
-                    R.string.b3_resolve
-                } else {
-                    R.string.b3_retry
-                },
-            ),
-        onAction =
-            when {
-                failure.origin == AnkiSetupFailureOrigin.TARGET ->
-                    setupViewModel::verifyNoteType
-                failure.action == AnkiSetupFailureAction.RESOLVE ->
-                    setupViewModel::reconcileInterruptedWork
-                else -> setupViewModel::refresh
-            },
+        actionLabel = stringResource(R.string.b3_retry),
+        onAction = setupViewModel::verifyNoteType,
         onDismiss = setupViewModel::dismissAnkiFailure,
     )
 }

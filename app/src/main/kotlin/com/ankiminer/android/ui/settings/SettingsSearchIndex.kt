@@ -17,7 +17,7 @@ internal data class SettingsSearchEntry(
 internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
     mapOf(
         SettingsCategory.ANKI to
-            setOf("anki-deck-options", "anki-target", "anki-recovery", "anki-operation"),
+            setOf("anki-deck-options", "anki-target", "anki-operation"),
         SettingsCategory.MEDIA to setOf("media-options", "subtitle-text"),
         SettingsCategory.DICTIONARIES to
             setOf("dictionary-sources", "pitch-sources", "dictionary-lookup"),

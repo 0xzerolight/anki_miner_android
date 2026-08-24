@@ -54,10 +54,7 @@ internal class AnkiProviderRuntime(
     private val remediation =
         AnkiRemediationService(
             journal = StoreAnkiRemediationJournal(store),
-            interruptedWorkRecovery = InterruptedAnkiWorkRecovery(recoveryGate::ensureRecovered),
-            stagingRecovery = MediaStagingRecovery(mediaStaging::recover),
             workerThreadGuard = workerThreadGuard,
-            strings = AndroidStringResourceResolver(context),
         )
 
     private val readiness =
@@ -116,15 +113,6 @@ internal class AnkiProviderRuntime(
     fun remediationInventory(
         cancellation: AnkiCancellation,
     ): AnkiRemediationInventory = remediation.inventory(cancellation)
-
-    fun reconcileInterruptedWork(
-        cancellation: AnkiCancellation,
-    ): AnkiRemediationInventory = remediation.reconcileInterruptedWork(cancellation)
-
-    fun performRemediation(
-        command: AnkiRemediationCommand,
-        cancellation: AnkiCancellation,
-    ): AnkiRemediationInventory = remediation.perform(command, cancellation).inventory
 
     override fun close() {
         store.close()

@@ -62,9 +62,9 @@ class MediaStartupRecoveryInstrumentedTest {
         }
 
     @Test
-    fun enteredReceiptlessMediaBecomesUncertainWithoutProviderReissue() =
+    fun enteredReceiptlessMediaResolvesUncertainWithoutProviderReissue() =
         withStore { store, _ ->
-            prepareMedia(store, entered = true)
+            val fixture = prepareMedia(store, entered = true)
             val gateway = NoWriteGateway()
             val staging = ScriptedStagingRecovery(store, cleanOutcomes = listOf(true))
             val gate = gate(store, gateway, staging)
@@ -73,17 +73,17 @@ class MediaStartupRecoveryInstrumentedTest {
 
             assertTrue(gate.isOpen())
             assertTrue(gateway.mediaCommands.isEmpty())
-            val claim = store.recoveryInventory().unresolvedClaims.single()
-            assertEquals(MediaClaimState.COMMIT_UNCERTAIN, claim.state)
+            assertTrue(store.recoveryInventory().unresolvedClaims.isEmpty())
+            assertTrue(store.openRemediations().isEmpty())
             assertEquals(
-                listOf(RemediationKind.MEDIA_COMMIT_UNCERTAIN),
-                store.openRemediations().map { it.kind },
+                MediaClaimState.ACKNOWLEDGED_BY_USER,
+                store.mediaClaim(fixture.request.key, ASSET_ID)?.state,
             )
             assertInventoryDrained(store)
         }
 
     @Test
-    fun exactPersistedReceiptIsCommittedWithoutProviderReissue() =
+    fun exactPersistedReceiptIsCommittedAndOrphanedMediaAutoResolves() =
         withStore { store, databaseName ->
             val fixture = prepareMedia(store, entered = true)
             insertRawMediaReceipt(
@@ -100,18 +100,16 @@ class MediaStartupRecoveryInstrumentedTest {
 
             assertTrue(gate.isOpen())
             assertTrue(gateway.mediaCommands.isEmpty())
-            val claim = store.recoveryInventory().unresolvedClaims.single()
-            assertEquals(MediaClaimState.STORED, claim.state)
+            assertTrue(store.recoveryInventory().unresolvedClaims.isEmpty())
+            assertTrue(store.openRemediations().isEmpty())
+            val claim = requireNotNull(store.mediaClaim(fixture.request.key, ASSET_ID))
+            assertEquals(MediaClaimState.ACKNOWLEDGED_BY_USER, claim.state)
             assertEquals(REQUESTED_FILENAME, claim.actualFilename)
-            assertEquals(
-                listOf(RemediationKind.MEDIA_STORED_UNATTACHED),
-                store.openRemediations().map { it.kind },
-            )
             assertInventoryDrained(store)
         }
 
     @Test
-    fun presentBytesClaimIsQuiescentOnlyWithStoredUnattachedRemediation() =
+    fun presentBytesClaimSurvivesLiveNoteBindingThenAutoResolvesWhenItsOwnerDies() =
         withStore { store, _ ->
             val fixture = prepareMedia(store, entered = true)
             store.commitMediaReceipt(
@@ -128,7 +126,6 @@ class MediaStartupRecoveryInstrumentedTest {
                     error = null,
                 ),
             )
-            store.abandonOwnerless(emptySet())
 
             val noteRequest = noteRequest()
             store.createParent(noteRequest)
@@ -154,6 +151,18 @@ class MediaStartupRecoveryInstrumentedTest {
                         ),
                 ),
             )
+            store.prepareChild(
+                noteRequest.key,
+                MutationCommand.InsertNote(0, CLIENT_NOTE_ID, 11, "語\u001fword", "mined"),
+            )
+
+            // The media parent finalizes while a live note materialization still references the
+            // claim's bytes: the sweep must leave the claim and its remediation for the resume.
+            store.abandonOwnerless(emptySet())
+            assertEquals(
+                listOf(RemediationKind.MEDIA_STORED_UNATTACHED),
+                store.openRemediations().map { it.kind },
+            )
             store.transitionClaim(
                 claimId = fixture.claimId,
                 state = MediaClaimState.PRESENT_BYTES_VERIFIED,
@@ -172,14 +181,13 @@ class MediaStartupRecoveryInstrumentedTest {
 
             assertTrue(gate.isOpen())
             assertTrue(gateway.mediaCommands.isEmpty())
+            assertTrue(store.recoveryInventory().unresolvedClaims.isEmpty())
+            assertTrue(store.openRemediations().isEmpty())
             assertEquals(
-                MediaClaimState.PRESENT_BYTES_VERIFIED,
-                store.recoveryInventory().unresolvedClaims.single().state,
+                MediaClaimState.ACKNOWLEDGED_BY_USER,
+                store.mediaClaim(fixture.request.key, ASSET_ID)?.state,
             )
-            assertEquals(
-                listOf(RemediationKind.MEDIA_STORED_UNATTACHED),
-                store.openRemediations().map { it.kind },
-            )
+            assertInventoryDrained(store)
         }
 
     @Test

@@ -1,9 +1,6 @@
 package com.ankiminer.android.vm
 
-import com.ankiminer.android.anki.provider.AnkiProviderReadiness
-import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
-import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -83,43 +80,5 @@ class SetupDecisionLogicTest {
         assertTrue(enriched.usefulForMining)
         assertTrue(enriched.fullyEnriched)
         assertEquals(listOf("SentenceAudio", "WordAudio"), enriched.fields.audio)
-    }
-
-    @Test
-    fun `provider outage leaves available local recovery inventory actionable and visible`() {
-        val decision =
-            decideRecoveryPresentation(
-                provider = AnkiProviderReadiness.NotInstalled,
-                startupRecovery = AnkiRecoveryReadiness.Blocked,
-                inventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
-                pendingCount = 2,
-            )
-
-        assertEquals(RecoveryPresentationKind.PENDING_PROVIDER_UNAVAILABLE, decision.kind)
-        assertTrue(decision.showInventory)
-        assertFalse(decision.canReconcile)
-    }
-
-    @Test
-    fun `recovery decision distinguishes unreadable inventory from clear local state`() {
-        val unavailable =
-            decideRecoveryPresentation(
-                provider = AnkiProviderReadiness.Ready(2, 24L),
-                startupRecovery = AnkiRecoveryReadiness.Ready,
-                inventoryStatus = AnkiRecoveryInventoryStatus.UNAVAILABLE,
-                pendingCount = 0,
-            )
-        assertEquals(RecoveryPresentationKind.INVENTORY_UNAVAILABLE, unavailable.kind)
-        assertFalse(unavailable.showInventory)
-
-        val clear =
-            decideRecoveryPresentation(
-                provider = AnkiProviderReadiness.Ready(2, 24L),
-                startupRecovery = AnkiRecoveryReadiness.Ready,
-                inventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
-                pendingCount = 0,
-            )
-        assertEquals(RecoveryPresentationKind.CLEAR, clear.kind)
-        assertTrue(clear.showInventory)
     }
 }

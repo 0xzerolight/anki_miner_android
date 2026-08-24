@@ -5,9 +5,7 @@ import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
-import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
-import com.ankiminer.android.anki.provider.AnkiRemediationSummary
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
@@ -222,12 +220,12 @@ internal class MiningReadinessActionTest(
                     MiningReadinessAction.CHECK_AGAIN,
                 ),
                 arrayOf(
-                    "blocked recovery resolves recovery",
+                    "blocked recovery checks again",
                     ready.copy(ankiRecovery = AnkiRecoveryReadiness.Blocked),
-                    MiningReadinessAction.RESOLVE_RECOVERY,
+                    MiningReadinessAction.CHECK_AGAIN,
                 ),
                 arrayOf(
-                    "pending recovery item resolves recovery",
+                    "pending recovery item leaves mining ready action untouched",
                     ready.copy(
                         remediations =
                             AnkiRemediationInventory(
@@ -235,22 +233,14 @@ internal class MiningReadinessActionTest(
                                     AnkiPendingRemediation(
                                         id = 1L,
                                         type = AnkiRemediationType.STAGING_QUARANTINED,
-                                        summaryReason =
-                                            AnkiRemediationSummary.STAGING_CLEANUP_RETRY,
-                                        title = "Cleanup required",
-                                        summary = "Retry cleanup",
                                         compactEvidence = null,
                                         createdAtMs = 1L,
                                         updatedAtMs = 1L,
-                                        availableActions =
-                                            setOf(
-                                                AnkiRemediationActionKind.RETRY_STAGING_CLEANUP,
-                                            ),
                                     ),
                                 ),
                             ),
                     ),
-                    MiningReadinessAction.RESOLVE_RECOVERY,
+                    MiningReadinessAction.CHECK_AGAIN,
                 ),
                 arrayOf(
                     "unchecked recovery checks again",

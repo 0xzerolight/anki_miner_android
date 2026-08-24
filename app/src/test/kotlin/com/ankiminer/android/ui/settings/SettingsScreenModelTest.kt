@@ -68,7 +68,6 @@ class SettingsScreenModelTest {
             settingsCategoryFor(ResourceFailureOrigin.WORD_LIST),
         )
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.TARGET))
-        assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.RECOVERY))
         // These are constants only because every conditional card is emitted after the last
         // deep-link target in its category. dictionary-lookup is the only conditional card in
         // Dictionaries and it is emitted last, so nothing behind it can shift.
@@ -91,7 +90,6 @@ class SettingsScreenModelTest {
         // filtering-import-result card.
         assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.WORD_LIST))
         assertEquals(3, settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET))
-        assertEquals(4, settingsCardIndexFor(AnkiSetupFailureOrigin.RECOVERY))
     }
 
     @Test

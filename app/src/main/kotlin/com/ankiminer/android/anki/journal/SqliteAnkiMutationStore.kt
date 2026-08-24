@@ -9,6 +9,8 @@ import android.os.Build
 import android.os.Looper
 import androidx.annotation.RequiresApi
 import com.ankiminer.android.anki.protocol.AnkiRequestDigest
+import com.ankiminer.android.diagnostics.log.AppLog
+import com.ankiminer.android.diagnostics.log.LogComponent
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** SQLite implementation; every public method is synchronous and must run off the main thread. */
@@ -1513,6 +1515,7 @@ internal class SqliteAnkiMutationStore(
                         }
                     finalizeAndScrub(db, terminal, finalState)
                 }
+                resolveConsequenceFreeRemediationsDb(db)
                 releaseRunCapabilitiesDb(db, runId)
                 pruneCompletedCohortsDb(db, timestamp())
                 RunCleanupResult(acknowledged, abandoned, evidenceAccepted)
@@ -1539,6 +1542,7 @@ internal class SqliteAnkiMutationStore(
                 finalizeAndScrub(db, terminal, ParentState.ABANDONED)
                 parentById(db, terminal.id)
             }
+            resolveConsequenceFreeRemediationsDb(db)
             candidates.map { it.key.runId }.distinct().forEach { runId ->
                 if (preparedChildForRun(db, runId) == null && parentsForRun(db, runId).all { it.state.isFinalized }) {
                     releaseRunCapabilitiesDb(db, runId)
@@ -3931,6 +3935,96 @@ internal class SqliteAnkiMutationStore(
             "created_at_ms, id",
         ).use { it.mapRows(::remediationFromCursor) }
 
+    /**
+     * Resolves every OPEN remediation the journal can complete without inventing evidence once
+     * its parent is finalized. Media claims take the same typed acknowledgement transition the
+     * explicit remediation actions performed, recording a system actor in the evidence; uncertain
+     * or failed note/deck/routing rows resolve directly, because the engine's first-field
+     * duplicate scan makes both commit outcomes safe on the next run. A claim whose bytes a
+     * still-live note materialization references is left open so the resumed note can attach it.
+     * STAGING_QUARANTINED resolves only through actual cleanup success and CAPACITY_EXHAUSTED has
+     * no production writer, so both are left untouched. Idempotent: a crash before commit leaves
+     * rows OPEN for the next finalization boundary.
+     */
+    private fun resolveConsequenceFreeRemediationsDb(db: SQLiteDatabase) {
+        val counts = mutableMapOf<RemediationKind, Int>()
+        openRemediationsDb(db).forEach { remediation ->
+            val parentId = remediation.parentId ?: return@forEach
+            if (!parentById(db, parentId).state.isFinalized) return@forEach
+            when (remediation.kind) {
+                RemediationKind.MEDIA_STORED_UNATTACHED -> {
+                    val claim = claimById(db, remediation.claimId ?: return@forEach)
+                    if (claim.state != MediaClaimState.STORED &&
+                        claim.state != MediaClaimState.PRESENT_BYTES_VERIFIED
+                    ) {
+                        return@forEach
+                    }
+                    if (hasDurableNoteBindingDb(db, claim)) return@forEach
+                    updateClaim(
+                        db,
+                        claim,
+                        MediaClaimState.ACKNOWLEDGED_BY_USER,
+                        claim.actualFilename,
+                        SWEEP_ORPHAN_MEDIA_EVIDENCE,
+                    )
+                }
+                RemediationKind.MEDIA_COMMIT_UNCERTAIN -> {
+                    val claim = claimById(db, remediation.claimId ?: return@forEach)
+                    if (claim.state != MediaClaimState.COMMIT_UNCERTAIN) return@forEach
+                    updateClaim(
+                        db,
+                        claim,
+                        MediaClaimState.ACKNOWLEDGED_BY_USER,
+                        claim.actualFilename,
+                        SWEEP_UNCERTAIN_MEDIA_EVIDENCE,
+                    )
+                    resolveRemediationRowDb(db, remediation, SWEEP_UNCERTAIN_MEDIA_EVIDENCE)
+                }
+                RemediationKind.NOTE_COMMIT_UNCERTAIN,
+                RemediationKind.DECK_COMMIT_UNCERTAIN,
+                -> resolveRemediationRowDb(db, remediation, SWEEP_UNCERTAIN_COMMIT_EVIDENCE)
+                RemediationKind.NOTE_COMMITTED_FAILED,
+                RemediationKind.CARD_ROUTING_FAILED,
+                -> resolveRemediationRowDb(db, remediation, SWEEP_COMMITTED_FAILURE_EVIDENCE)
+                RemediationKind.STAGING_QUARANTINED,
+                RemediationKind.CAPACITY_EXHAUSTED,
+                -> return@forEach
+            }
+            counts.merge(remediation.kind, 1, Int::plus)
+        }
+        if (counts.isNotEmpty()) {
+            AppLog.i(
+                LogComponent.JOURNAL,
+                "remediation.sweep",
+                "outcome" to "ok",
+                *counts.map { (kind, count) -> kind.name.lowercase() to count }.toTypedArray(),
+            )
+        }
+    }
+
+    /** Keeps the original classification evidence in place, appending the system resolution. */
+    private fun resolveRemediationRowDb(
+        db: SQLiteDatabase,
+        remediation: RemediationRecord,
+        evidence: String,
+    ) {
+        val combined =
+            remediation.compactEvidence
+                ?.let { existing -> "$existing;$evidence" }
+                ?.takeIf { it.toByteArray(Charsets.UTF_8).size <= MAX_COMPACT_EVIDENCE_UTF8_BYTES }
+                ?: evidence
+        db.updateOrThrow(
+            "remediations",
+            values(
+                "state" to RemediationState.RESOLVED.name,
+                "compact_evidence" to combined,
+                "updated_at_ms" to nextTimestamp(remediation.updatedAtMs),
+            ),
+            "id = ?",
+            arrayOf(remediation.id.toString()),
+        )
+    }
+
     private fun updateClaim(
         db: SQLiteDatabase,
         claim: MediaClaimRecord,
@@ -4457,6 +4551,15 @@ internal class SqliteAnkiMutationStore(
             MediaClaimState.entries.filter { it.isUnresolved }.joinToString(",") { "'${it.name}'" }
         private const val OPEN_VALIDATION_ROW_LIMIT = GLOBAL_UNRESOLVED_CLAIM_LIMIT
         private const val RETENTION_PRUNE_BATCH = 512
+
+        internal const val SWEEP_ORPHAN_MEDIA_EVIDENCE =
+            "systemResolve=orphan-media;actor=finalization-sweep"
+        internal const val SWEEP_UNCERTAIN_MEDIA_EVIDENCE =
+            "systemResolve=uncertain-media;actor=finalization-sweep"
+        internal const val SWEEP_UNCERTAIN_COMMIT_EVIDENCE =
+            "systemResolve=uncertain-commit;dedupGuard=first-field-checksum;actor=finalization-sweep"
+        internal const val SWEEP_COMMITTED_FAILURE_EVIDENCE =
+            "systemResolve=committed-failure-recorded;actor=finalization-sweep"
     }
 }
 
