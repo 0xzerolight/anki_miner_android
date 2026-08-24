@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **Mining results no longer list routine engine diagnostics as issues.** A run that went entirely to plan could still show `Ambiguous reading review required for N word(s); current readings kept` — and five more receipts of the same kind — among the result card's issues. The desktop app files these into its Activity console as plain uncoloured text, one line among thirty; Android has no console, keeps only the engine's WARNING and ERROR levels, and renders what survives as the run's issue list, so the same line arrived as a bulleted problem, tinted `errorContainer` on a run that failed for an unrelated reason, and could even be promoted to the failure headline when the engine sent no terminal message of its own. `EngineNoticeRewriter` now drops six of them at the presenter seam: ambiguous readings, Anki duplicate skips, the WebP-instead-of-AVIF encoder note, text-only mokuro volumes, unmatched mokuro page images, and gaiji images carrying no text. Severity cannot separate a receipt from a real warning because the engine raises all of them through `show_warning`, so the rules key on content, and `test_android_localization.py` renders each vendored literal through the engine's own i18n helpers to fail closed on an `engine.lock` re-pin that reworded one. Notices that report something lost — a filter that emptied the run, a corrupt archive, media Anki refused, a resource that failed to load — are untouched.
+
 ## [0.10.2] - 2026-08-24
 
 ### Fixed

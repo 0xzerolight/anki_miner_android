@@ -1713,7 +1713,8 @@ internal class BridgeReadingMiningRepository(
                     is PresenterEvent.Processing -> emptyList()
                 }
             // Rewrite before the dedup so two spellings of one notice cannot both survive.
-            notices.map(noticeRewriter::rewrite).forEach { notice ->
+            // mapNotNull: the rewriter drops receipts the result screen must not carry.
+            notices.mapNotNull(noticeRewriter::rewrite).forEach { notice ->
                 if (
                     run.presenterNotices.size < MAX_PRESENTER_NOTICES &&
                     notice !in run.presenterNotices
