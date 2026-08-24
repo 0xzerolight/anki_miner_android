@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **Mining no longer fails on collections with long note fields.** The keyset walk that closed AM-007 kept the fixed 256-note page item count and treated the page's 256 KiB first-field byte budget as a failure: any 256-note ID window averaging over 1 KiB of retained first-field text raised `An Anki known-vocabulary page exceeds the v1 text limit` and aborted the run in phase 2, so the very collection the keyset walk unblocked hit the next cliff on sentence-length first fields. The budget now ends a page early the way the item count does — the row that did not fit is not consumed and opens the next page against a fresh budget, so a page carries up to 256 notes or 256 KiB of retained text, whichever fills first. No wire or schema change: every contract layer already accepted short continuing pages, and progress is guaranteed because the 64 KiB per-field cap sits below the page budget. Reported by the same first-run user as AM-007, the day after v0.10.1 shipped.
+
 ## [0.10.1] - 2026-08-23
 
 ### Changed

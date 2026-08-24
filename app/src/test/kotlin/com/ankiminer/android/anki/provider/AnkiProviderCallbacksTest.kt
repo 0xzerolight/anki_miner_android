@@ -209,7 +209,7 @@ class AnkiProviderCallbacksTest {
     }
 
     @Test
-    fun `known fields enforce exact aggregate bound and invalid unicode maps to query failure`() {
+    fun `known fields split at the exact aggregate bound and invalid unicode maps to query failure`() {
         fun resultFor(fields: List<String>): String {
             val harness = harness()
             harness.gateway.queryHandler = knownRowsHandler(fields)
@@ -217,8 +217,12 @@ class AnkiProviderCallbacksTest {
         }
 
         val exact = List(4) { "x".repeat(65_536) }
-        assertTrue(resultFor(exact).contains("\"type\":\"anki.scanfirstfields.result\""))
-        assertTrue(resultFor(exact + "x").contains("\"code\":\"query_failed\""))
+        val fit = resultFor(exact)
+        assertTrue(fit.contains("\"type\":\"anki.scanfirstfields.result\""))
+        assertTrue(fit.contains("\"nextCursor\":null"))
+        val split = resultFor(exact + "x")
+        assertTrue(split.contains("\"type\":\"anki.scanfirstfields.result\""))
+        assertTrue(split.contains("\"nextCursor\":{"))
         assertTrue(resultFor(listOf("\uD800")).contains("\"code\":\"query_failed\""))
     }
 

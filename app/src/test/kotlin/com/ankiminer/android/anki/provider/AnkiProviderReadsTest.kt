@@ -985,6 +985,98 @@ class AnkiProviderReadsTest {
     }
 
     @Test
+    fun `known vocabulary splits a page on the byte budget and resumes at the cutoff note`() {
+        // Dense first fields fill the page's byte budget long before its item count. The budget
+        // ends the page early instead of failing the scan, and the row that did not fit opens the
+        // next page.
+        val fixture = fixture(tokens = listOf("cursor_${"b".repeat(32)}"))
+        fun field(id: Long) = "word-$id".padEnd(60_000, 'x')
+        fixture.gateway.queryHandler = keysetPageHandler((1L..5L).map { id -> id to field(id) })
+
+        val first =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                as KnownVocabularyResult
+        assertEquals((1L..4L).map { field(it) }, first.firstFields)
+        assertEquals(4, first.scannedNotes)
+
+        val second =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(cursor = requireNotNull(first.nextCursor), requestId = SECOND_REQUEST_ID),
+                )
+            } as KnownVocabularyResult
+        assertEquals(listOf(field(5L)), second.firstFields)
+        assertEquals(1, second.scannedNotes)
+        assertNull(second.nextCursor)
+
+        val pageQueries = fixture.gateway.queries.filter { it.selection is ProviderSelection.NoteIdsAfter }
+        assertEquals(2, pageQueries.size)
+        assertEquals(4L, (pageQueries[1].selection as ProviderSelection.NoteIdsAfter).fromId)
+    }
+
+    @Test
+    fun `known vocabulary keeps a page that exactly fits the byte budget whole`() {
+        val sizes = listOf(60_000, 60_000, 60_000, 60_000, 22_144)
+        assertEquals(262_144, sizes.sum())
+        val fixture = fixture()
+        fixture.gateway.queryHandler =
+            keysetPageHandler(sizes.mapIndexed { index, size -> (index + 1L) to "f".repeat(size) })
+
+        val result =
+            fixture.withOwner { owner -> fixture.reads.scanFirstFields(owner, knownRequest()) }
+                as KnownVocabularyResult
+        assertEquals(5, result.firstFields.size)
+        assertEquals(5, result.scannedNotes)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `known vocabulary keeps excluded rows consumed when a byte cutoff ends the page`() {
+        // Only the row that overflowed the budget rolls to the next page; excluded rows walked
+        // before it stay consumed, so the continuation resumes after them.
+        val fixture = fixture(tokens = listOf("cursor_${"c".repeat(32)}"))
+        fun field(id: Long) = "word-$id".padEnd(60_000, 'x')
+        val pages = keysetPageHandler((1L..6L).map { id -> id to field(id) })
+        fixture.gateway.queryHandler = { query, cancellation ->
+            when (query.endpoint) {
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(query.projection, listOf(deckRow(20, "Skip")))
+                ProviderEndpoint.NOTES_BROWSER ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(4L))),
+                    )
+                else -> pages(query, cancellation)
+            }
+        }
+
+        val first =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(excluded = listOf("Skip")))
+            } as KnownVocabularyResult
+        assertEquals(listOf(1L, 2L, 3L, 5L).map { field(it) }, first.firstFields)
+        assertEquals(5, first.scannedNotes)
+
+        val second =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(
+                        excluded = listOf("Skip"),
+                        cursor = requireNotNull(first.nextCursor),
+                        requestId = SECOND_REQUEST_ID,
+                    ),
+                )
+            } as KnownVocabularyResult
+        assertEquals(listOf(field(6L)), second.firstFields)
+        assertNull(second.nextCursor)
+
+        val pageQueries = fixture.gateway.queries.filter { it.selection is ProviderSelection.NoteIdsAfter }
+        assertEquals(5L, (pageQueries[1].selection as ProviderSelection.NoteIdsAfter).fromId)
+    }
+
+    @Test
     fun `known vocabulary rejects continuation cursor corruption`() {
         val fixture = fixture(tokens = listOf("cursor_${"7".repeat(32)}"))
         fixture.gateway.queryHandler =
