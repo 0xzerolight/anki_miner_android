@@ -19,6 +19,20 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         root = ET.parse(REPO_ROOT / "app/src/main/res/values/strings.xml").getroot()
         return {element.attrib["name"]: "".join(element.itertext()).strip() for element in root.findall("string")}
 
+    @staticmethod
+    def _load_engine_module(relative: str, name: str):  # noqa: ANN205
+        spec = importlib.util.spec_from_file_location(name, REPO_ROOT / relative)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    @staticmethod
+    def _rewriter_source() -> str:
+        return (REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/localization/EngineNoticeRewriter.kt").read_text(
+            encoding="utf-8"
+        )
+
     def _assert_distinct_non_empty_resources(self, resources: list[str]) -> None:
         strings = self._source_strings()
         self.assertEqual(len(resources), len(set(resources)), resources)
@@ -392,28 +406,63 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         )
         self.assertIn(template, processor)
 
-        rewriter = (
-            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/localization/EngineNoticeRewriter.kt"
-        ).read_text(encoding="utf-8")
+        rewriter = self._rewriter_source()
         pattern_match = re.search(r'Regex\("""(.+?)"""', rewriter)
         self.assertIsNotNone(pattern_match, "EngineNoticeRewriter no longer declares a raw-string Regex")
         assert pattern_match is not None
         self.assertIn("mining_notice_no_definition", rewriter)
         self.assertIn("mining_notice_no_definition", self._source_strings())
 
-        i18n_spec = importlib.util.spec_from_file_location(
-            "_engine_i18n",
-            REPO_ROOT / "app/src/main/python/anki_miner/utils/i18n.py",
-        )
-        assert i18n_spec is not None and i18n_spec.loader is not None
-        i18n = importlib.util.module_from_spec(i18n_spec)
-        i18n_spec.loader.exec_module(i18n)
+        i18n = self._load_engine_module("app/src/main/python/anki_miner/utils/i18n.py", "_engine_i18n")
 
         rendered = i18n.tr_format(template, 2, "本好き, 編み", " (+3 more)")
         matched = re.fullmatch(pattern_match.group(1), rendered, re.DOTALL)
         self.assertIsNotNone(matched, rendered)
         assert matched is not None
         self.assertEqual(("2", "本好き, 編み (+3 more)"), matched.groups())
+
+    def test_engine_receipt_patterns_still_match_the_vendored_literals(self) -> None:
+        """Pin every suppression rule against the string the vendored engine actually renders.
+
+        A dropped receipt is invisible by design, so an ``engine.lock`` re-pin that reworded one
+        would put it back on the result screen with nothing failing anywhere. Each pattern is run
+        over the real rendered text, through the engine's own ``tr_format`` and Qt shim.
+        """
+        i18n = self._load_engine_module("app/src/main/python/anki_miner/utils/i18n.py", "_engine_i18n")
+        qtcore = self._load_engine_module("app/src/main/python/PyQt6/QtCore.py", "_engine_qtcore")
+        translate = qtcore.QCoreApplication.translate
+
+        processor = "app/src/main/python/anki_miner/orchestration/episode_processor.py"
+        mokuro = "app/src/main/python/anki_miner/services/reading/mokuro_source.py"
+        epub = "app/src/main/python/anki_miner/services/reading/epub_source.py"
+
+        ambiguous = "Ambiguous reading review required for %1 word(s); current readings kept"
+        duplicates = "Skipped %n word(s) Anki flagged as duplicates (same Expression)"
+        webp = "Using WebP for animated screenshots — this ffmpeg build has no AVIF (libsvtav1) encoder."
+        text_only = "text-only volume: pages have no paired images"
+        # The reading loaders build their warnings as f-strings, so the pin is the source expression.
+        page_miss = 'f"page {page_num}: no image matched {img_path!r}"'
+        gaiji = 'f"Skipped {gaiji_total} inline image(s) (gaiji) that carried no text."'
+
+        # (vendored file, the literal that must still be in it, what the user would have seen)
+        receipts = [
+            (processor, ambiguous, i18n.tr_format(ambiguous, 3)),
+            (processor, duplicates, translate("EpisodeProcessor", duplicates, "", 3)),
+            (processor, webp, webp),
+            (mokuro, text_only, text_only),
+            (mokuro, page_miss, f"page {12}: no image matched {'volume01/012.jpg'!r}"),
+            (epub, gaiji, f"Skipped {4} inline image(s) (gaiji) that carried no text."),
+        ]
+
+        # Declaration order is the contract: the no-definition restatement pinned by the test above
+        # comes first, the receipts follow in list order. A pattern wrapped onto a second line drops
+        # out of findall, which the count catches rather than silently skipping it.
+        patterns = re.findall(r'Regex\("""(.+?)"""', self._rewriter_source())
+        self.assertEqual(len(receipts) + 1, len(patterns), patterns)
+
+        for (relative, literal, rendered), pattern in zip(receipts, patterns[1:], strict=True):
+            self.assertIn(literal, (REPO_ROOT / relative).read_text(encoding="utf-8"), relative)
+            self.assertIsNotNone(re.fullmatch(pattern, rendered), (pattern, rendered))
 
     def test_extracted_mokuro_progress_copy_is_exact(self) -> None:
         strings = self._source_strings()
