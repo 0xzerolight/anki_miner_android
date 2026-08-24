@@ -325,7 +325,8 @@ internal class AnkiProviderReadService(
     }
 
     /**
-     * One keyset page: every note ordered after [fromId], capped at the page's item count.
+     * One keyset page: every note ordered after [fromId], capped at the page's item count and
+     * its byte budget, whichever fills first.
      *
      * The page reads its own note IDs and first fields in a single query. There is no prior
      * collection-wide ID snapshot to slice, which is what let a collection size refuse the scan
@@ -361,15 +362,25 @@ internal class AnkiProviderReadService(
                 }
                 val id = cursor.positiveLong(ProviderColumn.NOTE_ID)
                 if (id <= lastId) throw queryFailed()
-                lastId = id
-                scannedNotes += 1
-                if (id in excludedNoteIds) continue
+                if (id in excludedNoteIds) {
+                    lastId = id
+                    scannedNotes += 1
+                    continue
+                }
                 val rawFields = cursor.text(ProviderColumn.NOTE_FIELDS)
                 val firstField = ProviderSnapshotValidation.firstField(rawFields)
-                totalBytes = checkedAdd(totalBytes, validateProviderFirstField(firstField))
-                if (totalBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
-                    throw queryFailed("An Anki known-vocabulary page exceeds the v1 text limit")
+                val pageBytes = checkedAdd(totalBytes, validateProviderFirstField(firstField))
+                if (pageBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
+                    // The budget ends the page the way the item count does: the row that did not
+                    // fit is not consumed, so the next page's keyset query serves it first with a
+                    // fresh budget. A single field always fits an empty page because the per-field
+                    // cap is below the page budget.
+                    hasMoreAfterPage = true
+                    break
                 }
+                lastId = id
+                scannedNotes += 1
+                totalBytes = pageBytes
                 firstFields += firstField
             }
         }
