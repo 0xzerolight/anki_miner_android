@@ -103,7 +103,7 @@ class DurableTargetRecoveryInstrumentedTest {
         }
 
     @Test
-    fun inconclusive_entered_deck_becomes_remediated_uncertainty_and_gate_can_open() =
+    fun inconclusive_entered_deck_resolves_as_recorded_uncertainty_and_gate_opens() =
         withStore { store ->
             val request = request()
             store.createParent(request)
@@ -121,15 +121,13 @@ class DurableTargetRecoveryInstrumentedTest {
 
             assertTrue(gate.isOpen())
             assertTrue(gateway.deckCommands.isEmpty())
-            assertEquals(
-                listOf(RemediationKind.DECK_COMMIT_UNCERTAIN),
-                store.openRemediations().map { it.kind },
-            )
+            assertTrue(store.openRemediations().isEmpty())
+            assertResolvedRemediation(store, RemediationKind.DECK_COMMIT_UNCERTAIN, "systemResolve=uncertain-commit")
             assertInventoryDrained(store)
         }
 
     @Test
-    fun entered_receiptless_note_is_never_reinserted_and_recovery_persists_uncertainty() =
+    fun entered_receiptless_note_is_never_reinserted_and_uncertainty_resolves_silently() =
         withStore { store ->
             val request = createNotesRequest()
             store.createParent(request)
@@ -161,10 +159,8 @@ class DurableTargetRecoveryInstrumentedTest {
             val parent = requireNotNull(store.parent(request.key))
             assertEquals(ParentState.ABANDONED, parent.state)
             assertEquals("UNCERTAIN", terminalStatus(store, parent.id))
-            assertEquals(
-                listOf(RemediationKind.NOTE_COMMIT_UNCERTAIN),
-                store.openRemediations().map { it.kind },
-            )
+            assertTrue(store.openRemediations().isEmpty())
+            assertResolvedRemediation(store, RemediationKind.NOTE_COMMIT_UNCERTAIN, "systemResolve=uncertain-commit")
             assertInventoryDrained(store)
         }
 
@@ -245,10 +241,8 @@ class DurableTargetRecoveryInstrumentedTest {
             val parent = requireNotNull(store.parent(request.key))
             assertEquals(ParentState.ABANDONED, parent.state)
             assertEquals("COMMITTED_FAILED", terminalStatus(store, parent.id))
-            assertEquals(
-                listOf(RemediationKind.NOTE_COMMITTED_FAILED),
-                store.openRemediations().map { it.kind },
-            )
+            assertTrue(store.openRemediations().isEmpty())
+            assertResolvedRemediation(store, RemediationKind.NOTE_COMMITTED_FAILED, "systemResolve=committed-failure-recorded")
             assertInventoryDrained(store)
         }
 
@@ -445,6 +439,22 @@ class DurableTargetRecoveryInstrumentedTest {
             check(cursor.moveToFirst()) { "missing terminal result audit" }
             cursor.getString(0)
         }
+
+    private fun assertResolvedRemediation(
+        store: SqliteAnkiMutationStore,
+        kind: RemediationKind,
+        evidenceMarker: String,
+    ) {
+        store.writableDatabase.rawQuery(
+            "SELECT state, compact_evidence FROM remediations WHERE kind = ?",
+            arrayOf(kind.name),
+        ).use { cursor ->
+            assertTrue(cursor.moveToFirst())
+            assertEquals("RESOLVED", cursor.getString(0))
+            assertTrue(requireNotNull(cursor.getString(1)).contains(evidenceMarker))
+            assertFalse(cursor.moveToNext())
+        }
+    }
 
     private inline fun withStore(block: (SqliteAnkiMutationStore) -> Unit) {
         val name = "target-recovery-${System.nanoTime()}.db"

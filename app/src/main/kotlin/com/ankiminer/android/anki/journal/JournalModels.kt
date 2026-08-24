@@ -1020,6 +1020,12 @@ internal enum class MediaClaimState {
     PRESENT_BYTES_VERIFIED,
     ATTACHED_VERIFIED,
     CLEANED_VERIFIED,
+
+    /**
+     * Terminal acknowledgement of a claim whose note never verified. The actor is recorded in
+     * `compact_evidence`: the finalization sweep resolves these with a `systemResolve=` string,
+     * distinct from the explicit-acknowledgement strings the remediation actions used.
+     */
     ACKNOWLEDGED_BY_USER,
     ;
 
