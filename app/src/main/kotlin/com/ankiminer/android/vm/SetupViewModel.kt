@@ -8,10 +8,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.generated.UnicodeContractV151
-import com.ankiminer.android.anki.provider.AnkiExternalReviewOutcome
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
-import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.resources.AudioPackCandidate
@@ -170,7 +168,6 @@ internal class SetupViewModel(
                 recoveryInventoryStatus = ankiState.recoveryInventoryStatus,
                 ankiOperation = ankiState.operation,
                 ankiFailure = ankiState.failure,
-                ankiRecoveryFailure = ankiState.recoveryFailure,
                 runtimeWorkKind = runtimeKind,
                 wizardSeen = appSettings.setupWizardSeen,
                 wizardCompletion = localState.wizardCompletion,
@@ -534,39 +531,6 @@ internal class SetupViewModel(
             settings.fieldMap,
             settings.cardType?.let { settings.cardTypeMarkerField },
         )
-    }
-
-    fun reconcileInterruptedWork() {
-        if (!currentState().busy) ankiSetup.reconcileInterruptedWork()
-    }
-
-    fun retryStagingCleanup(remediationId: Long) {
-        if (!currentState().busy) {
-            ankiSetup.performRemediation(AnkiRemediationCommand.RetryStagingCleanup(remediationId))
-        }
-    }
-
-    fun acknowledgeUnattachedMedia(remediationId: Long) {
-        if (!currentState().busy) {
-            ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUnattachedMedia(remediationId))
-        }
-    }
-
-    fun acknowledgeUncertainMedia(remediationId: Long) {
-        if (!currentState().busy) {
-            ankiSetup.performRemediation(AnkiRemediationCommand.AcknowledgeUncertainMedia(remediationId))
-        }
-    }
-
-    fun resolveAfterExternalReview(
-        remediationId: Long,
-        outcome: AnkiExternalReviewOutcome,
-    ) {
-        if (!currentState().busy) {
-            ankiSetup.performRemediation(
-                AnkiRemediationCommand.ResolveAfterExternalReview(remediationId, outcome),
-            )
-        }
     }
 
     fun dismissAnkiFailure() = ankiSetup.dismissFailure()

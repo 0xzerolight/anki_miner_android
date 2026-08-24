@@ -217,13 +217,12 @@ class AppShellNavigationTest {
     @Test
     fun readinessRemediationsTargetTheirAnkiSettingsCards() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        var action by mutableStateOf(MiningReadinessAction.CHOOSE_NOTE_TYPE)
         var openedOrigin: AnkiSetupFailureOrigin? = null
 
         composeRule.setContent {
             AnkiMinerTheme(palette = ThemePalettes.Light) {
                 MiningReadinessActions(
-                    action = action,
+                    action = MiningReadinessAction.CHOOSE_NOTE_TYPE,
                     onRequestPermissions = {},
                     onInstallUniDic = {},
                     onInstallAnkiDroid = {},
@@ -242,17 +241,6 @@ class AppShellNavigationTest {
             assertTrue(openedOrigin == AnkiSetupFailureOrigin.TARGET)
             assertTrue(settingsCategoryFor(requireNotNull(openedOrigin)) == SettingsCategory.ANKI)
             assertTrue(settingsCardIndexFor(requireNotNull(openedOrigin)) == 3)
-            openedOrigin = null
-            action = MiningReadinessAction.RESOLVE_RECOVERY
-        }
-
-        composeRule
-            .onNodeWithText(context.getString(R.string.readiness_resolve_recovery))
-            .performClick()
-        composeRule.runOnIdle {
-            assertTrue(openedOrigin == AnkiSetupFailureOrigin.RECOVERY)
-            assertTrue(settingsCategoryFor(requireNotNull(openedOrigin)) == SettingsCategory.ANKI)
-            assertTrue(settingsCardIndexFor(requireNotNull(openedOrigin)) == 4)
         }
     }
 

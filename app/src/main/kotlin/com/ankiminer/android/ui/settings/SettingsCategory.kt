@@ -87,9 +87,7 @@ internal fun settingsCategoryFor(origin: ResourceFailureOrigin): SettingsCategor
 
 internal fun settingsCategoryFor(origin: AnkiSetupFailureOrigin): SettingsCategory =
     when (origin) {
-        AnkiSetupFailureOrigin.TARGET,
-        AnkiSetupFailureOrigin.RECOVERY,
-        -> SettingsCategory.ANKI
+        AnkiSetupFailureOrigin.TARGET -> SettingsCategory.ANKI
     }
 
 /**
@@ -126,7 +124,6 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
 internal fun settingsCardIndexFor(origin: AnkiSetupFailureOrigin): Int =
     when (origin) {
         AnkiSetupFailureOrigin.TARGET -> 3
-        AnkiSetupFailureOrigin.RECOVERY -> 4
     }
 
 @Composable

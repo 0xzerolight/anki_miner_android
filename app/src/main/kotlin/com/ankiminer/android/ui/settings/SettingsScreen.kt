@@ -84,7 +84,6 @@ private fun externalSettingsTargetCardKey(
 ): String? =
     when (category to itemIndex) {
         SettingsCategory.ANKI to 3 -> "anki-target"
-        SettingsCategory.ANKI to 4 -> "anki-recovery"
         SettingsCategory.DICTIONARIES to 2 -> "dictionary-sources"
         SettingsCategory.DICTIONARIES to 3 -> "pitch-sources"
         SettingsCategory.DICTIONARIES to 4 -> "dictionary-lookup"
@@ -610,9 +609,6 @@ private fun SettingsScreen(
                                 compact = true,
                                 onInstallUniDic = setupViewModel::installUniDic,
                                 onChooseNoteType = {
-                                    selectedCategory = SettingsCategory.ANKI
-                                },
-                                onResolveRecovery = {
                                     selectedCategory = SettingsCategory.ANKI
                                 },
                                 onImportDictionary = {

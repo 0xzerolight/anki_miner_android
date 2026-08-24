@@ -33,7 +33,6 @@ class FailureOriginRoutingTest {
                 "Known words failed" to
                     settingsCategoryFor(ResourceFailureOrigin.KNOWN_WORDS),
                 "Anki failed" to settingsCategoryFor(AnkiSetupFailureOrigin.TARGET),
-                "Recovery failed" to settingsCategoryFor(AnkiSetupFailureOrigin.RECOVERY),
             )
         var selected by mutableStateOf(SettingsCategory.UI)
         var expected by mutableStateOf(SettingsCategory.ANKI)

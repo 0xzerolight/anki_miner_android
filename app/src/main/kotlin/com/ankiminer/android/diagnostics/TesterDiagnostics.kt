@@ -162,7 +162,6 @@ internal object TesterDiagnosticsBuilder {
                 line("anki.operation", setup.ankiOperation?.name?.lowercase(Locale.ROOT) ?: NONE)
                 line("anki.failure", safeCode(setup.ankiFailure?.code))
                 line("anki.last_fault", safeFaultToken(lastAnkiFault))
-                line("anki.recovery_failure", safeCode(setup.ankiRecoveryFailure?.code))
                 line("permissions.notifications", setup.notifications.name.lowercase(Locale.ROOT))
                 line("video.run", miningRun(video.runState))
                 line("video.pending", videoPending(video))

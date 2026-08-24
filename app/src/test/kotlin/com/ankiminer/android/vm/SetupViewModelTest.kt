@@ -5,7 +5,6 @@ import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
-import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
@@ -1798,10 +1797,6 @@ class SetupViewModelTest {
             lastFieldMap = fieldMap
             lastCardTypeMarkerField = cardTypeMarkerField
         }
-
-        override fun reconcileInterruptedWork() = Unit
-
-        override fun performRemediation(command: AnkiRemediationCommand) = Unit
 
         override fun dismissFailure() = Unit
     }

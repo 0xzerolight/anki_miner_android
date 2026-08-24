@@ -39,9 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
-import com.ankiminer.android.anki.provider.AnkiRemediationActionKind
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
-import com.ankiminer.android.anki.provider.AnkiRemediationSummary
 import com.ankiminer.android.anki.provider.AnkiRemediationType
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
@@ -351,59 +349,6 @@ class SettingsComponentsTest {
         dropdown("Marker field", "Marker").performClick()
 
         composeRule.onNodeWithText("Reading").assertIsNotEnabled()
-    }
-
-    @Test
-    fun ankiRecoveryConfirmationSurvivesStateRestoration() {
-        val restorationTester = StateRestorationTester(composeRule)
-        val remediation =
-            AnkiPendingRemediation(
-                id = 42L,
-                type = AnkiRemediationType.MEDIA_STORED_UNATTACHED,
-                summaryReason = AnkiRemediationSummary.MEDIA_STORED_UNATTACHED,
-                title = "Unattached media",
-                summary = "Stored media needs acknowledgement",
-                compactEvidence = null,
-                createdAtMs = 1L,
-                updatedAtMs = 1L,
-                availableActions =
-                    setOf(AnkiRemediationActionKind.ACKNOWLEDGE_UNATTACHED_MEDIA),
-            )
-        restorationTester.setContent {
-            AnkiMinerTheme {
-                AnkiRecoveryCard(
-                    state =
-                        SetupUiState(
-                            resourceStartup = ResourceStartupReadiness.READY,
-                            anki = AnkiProviderReadiness.Ready(2, null),
-                            ankiRecovery = AnkiRecoveryReadiness.Ready,
-                            recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
-                            remediations = AnkiRemediationInventory(listOf(remediation)),
-                        ),
-                    onRefresh = {},
-                    onReconcile = {},
-                    onRetryStaging = {},
-                    onAcknowledgeMedia = {},
-                    onAcknowledgeUncertainMedia = {},
-                    onResolveReview = { _, _ -> },
-                )
-            }
-        }
-
-        composeRule
-            .onNodeWithText("I understand this stored media is not attached")
-            .performClick()
-        composeRule
-            .onNodeWithText(
-                "Records that this stored media is not attached to a verified note.",
-            ).assertIsDisplayed()
-
-        restorationTester.emulateSavedInstanceStateRestore()
-
-        composeRule
-            .onNodeWithText(
-                "Records that this stored media is not attached to a verified note.",
-            ).assertIsDisplayed()
     }
 
     @Test

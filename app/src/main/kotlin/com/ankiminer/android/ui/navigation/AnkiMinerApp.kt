@@ -543,15 +543,12 @@ internal fun AnkiMinerApp(
     val snackbarHostState = remember { SnackbarHostState() }
     val linkedFailureMessage =
         setup.failure?.message
-            ?: setup.ankiRecoveryFailure?.message
             ?: setup.ankiFailure?.message
     val linkedFailureCategory =
         setup.failure?.let { settingsCategoryFor(it.origin) }
-            ?: setup.ankiRecoveryFailure?.let { settingsCategoryFor(it.origin) }
             ?: setup.ankiFailure?.let { settingsCategoryFor(it.origin) }
     val linkedFailureItemIndex =
         setup.failure?.let { settingsCardIndexFor(it.origin) }
-            ?: setup.ankiRecoveryFailure?.let { settingsCardIndexFor(it.origin) }
             ?: setup.ankiFailure?.let { settingsCardIndexFor(it.origin) }
             ?: 2
     MessageSnackbarEffect(
@@ -606,13 +603,6 @@ internal fun AnkiMinerApp(
                                 wizardRedirectedToSettings = true
                                 requestedSettingsCategory = SettingsCategory.ANKI
                                 requestedSettingsItemIndex = 3
-                                navigateTo(AnkiMinerDestination.SETTINGS)
-                            },
-                            onResolveRecovery = {
-                                wizardRerunRequested = false
-                                wizardRedirectedToSettings = true
-                                requestedSettingsCategory = SettingsCategory.ANKI
-                                requestedSettingsItemIndex = 4
                                 navigateTo(AnkiMinerDestination.SETTINGS)
                             },
                         )
@@ -912,12 +902,6 @@ internal fun MiningReadinessActions(
                 ReadinessActionSpec(
                     R.string.readiness_choose_note_type,
                     { onOpenSettings(AnkiSetupFailureOrigin.TARGET) },
-                    opensSettings = true,
-                )
-            MiningReadinessAction.RESOLVE_RECOVERY ->
-                ReadinessActionSpec(
-                    R.string.readiness_resolve_recovery,
-                    { onOpenSettings(AnkiSetupFailureOrigin.RECOVERY) },
                     opensSettings = true,
                 )
             MiningReadinessAction.CHECK_AGAIN ->

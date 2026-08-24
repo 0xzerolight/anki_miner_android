@@ -3,7 +3,6 @@ package com.ankiminer.android
 import android.app.Application
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiProviderRuntime
-import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
@@ -378,14 +377,6 @@ class AnkiMinerApplication : Application() {
 
                     override fun remediationInventory(cancellation: AnkiCancellation) =
                         ankiProviderRuntime.remediationInventory(cancellation)
-
-                    override fun reconcileInterruptedWork(cancellation: AnkiCancellation) =
-                        ankiProviderRuntime.reconcileInterruptedWork(cancellation)
-
-                    override fun performRemediation(
-                        command: AnkiRemediationCommand,
-                        cancellation: AnkiCancellation,
-                    ) = ankiProviderRuntime.performRemediation(command, cancellation)
                 },
             executor = ankiSetupExecutor,
             runtimeWorkCoordinator = runtimeWorkCoordinator,

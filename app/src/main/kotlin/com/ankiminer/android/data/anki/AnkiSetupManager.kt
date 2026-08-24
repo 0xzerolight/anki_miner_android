@@ -4,7 +4,6 @@ import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiReadFailure
-import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
@@ -20,25 +19,16 @@ import kotlinx.coroutines.flow.update
 
 internal enum class AnkiSetupOperation {
     REFRESHING,
-    RECONCILING,
-    RESOLVING_REMEDIATION,
 }
 
 internal enum class AnkiSetupFailureOrigin {
     TARGET,
-    RECOVERY,
-}
-
-internal enum class AnkiSetupFailureAction {
-    RETRY,
-    RESOLVE,
 }
 
 internal data class AnkiSetupFailure(
     val code: String,
     val message: String,
     val origin: AnkiSetupFailureOrigin = AnkiSetupFailureOrigin.TARGET,
-    val action: AnkiSetupFailureAction = AnkiSetupFailureAction.RETRY,
 )
 
 internal enum class AnkiRecoveryInventoryStatus {
@@ -56,7 +46,6 @@ internal data class AnkiSetupManagerState(
         AnkiRecoveryInventoryStatus.NOT_CHECKED,
     val operation: AnkiSetupOperation? = null,
     val failure: AnkiSetupFailure? = null,
-    val recoveryFailure: AnkiSetupFailure? = null,
 ) {
     val busy: Boolean
         get() = operation != null
@@ -76,13 +65,6 @@ internal interface AnkiSetupBackend {
     ): NoteTypeSetupStatus
 
     fun remediationInventory(cancellation: AnkiCancellation): AnkiRemediationInventory
-
-    fun reconcileInterruptedWork(cancellation: AnkiCancellation): AnkiRemediationInventory
-
-    fun performRemediation(
-        command: AnkiRemediationCommand,
-        cancellation: AnkiCancellation,
-    ): AnkiRemediationInventory
 }
 
 internal interface AnkiSetupManager {
@@ -101,10 +83,6 @@ internal interface AnkiSetupManager {
     ) {
         refresh(noteType, fieldMap, cardTypeMarkerField)
     }
-
-    fun reconcileInterruptedWork()
-
-    fun performRemediation(command: AnkiRemediationCommand)
 
     fun dismissFailure()
 }
@@ -155,36 +133,8 @@ internal class ProcessAnkiSetupManager(
         completion.await()
     }
 
-    override fun reconcileInterruptedWork() {
-        runOperation(AnkiSetupOperation.RECONCILING) {
-            val remediations = backend.reconcileInterruptedWork(AnkiCancellation.NONE)
-            mutableState.update { current ->
-                current.copy(
-                    remediations = remediations,
-                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
-                    failure = null,
-                    recoveryFailure = null,
-                )
-            }
-        }
-    }
-
-    override fun performRemediation(command: AnkiRemediationCommand) {
-        runOperation(AnkiSetupOperation.RESOLVING_REMEDIATION) {
-            val remediations = backend.performRemediation(command, AnkiCancellation.NONE)
-            mutableState.update { current ->
-                current.copy(
-                    remediations = remediations,
-                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
-                    failure = null,
-                    recoveryFailure = null,
-                )
-            }
-        }
-    }
-
     override fun dismissFailure() {
-        mutableState.update { it.copy(failure = null, recoveryFailure = null) }
+        mutableState.update { it.copy(failure = null) }
     }
 
     private fun refreshRecoveryInventory() {
@@ -194,21 +144,12 @@ internal class ProcessAnkiSetupManager(
                 current.copy(
                     remediations = remediations,
                     recoveryInventoryStatus = AnkiRecoveryInventoryStatus.AVAILABLE,
-                    recoveryFailure = null,
                 )
             }
         } catch (_: RuntimeException) {
+            // Diagnostics-only signal: mining no longer gates on the local inventory read.
             mutableState.update { current ->
-                current.copy(
-                    recoveryInventoryStatus = AnkiRecoveryInventoryStatus.UNAVAILABLE,
-                    recoveryFailure =
-                        AnkiSetupFailure(
-                            "anki_recovery_inventory_unavailable",
-                            strings.resolve(R.string.anki_setup_recovery_read_failed),
-                            origin = AnkiSetupFailureOrigin.RECOVERY,
-                            action = AnkiSetupFailureAction.RETRY,
-                        ),
-                )
+                current.copy(recoveryInventoryStatus = AnkiRecoveryInventoryStatus.UNAVAILABLE)
             }
         }
     }
@@ -253,7 +194,6 @@ internal class ProcessAnkiSetupManager(
                             failure.code.wireName,
                             failure.stableMessage,
                             origin = AnkiSetupFailureOrigin.TARGET,
-                            action = AnkiSetupFailureAction.RETRY,
                         ),
                 )
             }
@@ -275,7 +215,6 @@ internal class ProcessAnkiSetupManager(
                             "anki_provider_unavailable",
                             message,
                             origin = AnkiSetupFailureOrigin.TARGET,
-                            action = AnkiSetupFailureAction.RETRY,
                         ),
                 )
             }
@@ -428,27 +367,9 @@ internal class ProcessAnkiSetupManager(
         message: String,
         operation: AnkiSetupOperation,
     ) {
-        val origin =
-            if (operation == AnkiSetupOperation.REFRESHING) {
-                AnkiSetupFailureOrigin.TARGET
-            } else {
-                AnkiSetupFailureOrigin.RECOVERY
-            }
+        check(operation == AnkiSetupOperation.REFRESHING)
         mutableState.update {
-            it.copy(
-                failure =
-                    AnkiSetupFailure(
-                        code = code,
-                        message = message,
-                        origin = origin,
-                        action =
-                            if (origin == AnkiSetupFailureOrigin.RECOVERY) {
-                                AnkiSetupFailureAction.RESOLVE
-                            } else {
-                                AnkiSetupFailureAction.RETRY
-                            },
-                    ),
-            )
+            it.copy(failure = AnkiSetupFailure(code = code, message = message))
         }
     }
 }

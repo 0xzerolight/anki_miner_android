@@ -244,54 +244,6 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
                 failures.append(f"setup: raw default {raw_default}")
         self.assertEqual([], failures)
 
-    def test_anki_recovery_preserves_every_typed_title_and_durable_summary(self) -> None:
-        remediation_path = (
-            REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiRemediationService.kt"
-        )
-        remediation = remediation_path.read_text(encoding="utf-8")
-        recovery_ui = (REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/settings/AnkiSections.kt").read_text(
-            encoding="utf-8"
-        )
-        producers = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in (
-                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/journal/SqliteAnkiMutationStore.kt",
-                REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt",
-            )
-        )
-
-        remediation_types = set(re.findall(r"^\s{4}([A-Z][A-Z0-9_]+),$", remediation.split("}", 1)[0], re.MULTILINE))
-        title_map = dict(
-            re.findall(
-                r"AnkiRemediationType\.([A-Z0-9_]+)\s*->\s*R\.string\.([a-z0-9_]+)",
-                remediation,
-            )
-        )
-        self.assertEqual(remediation_types, set(title_map))
-        self._assert_distinct_non_empty_resources(list(title_map.values()))
-
-        stable_summaries = dict(re.findall(r'^\s{4}([A-Z][A-Z0-9_]+)\("([^"]+)"\),?$', remediation, re.MULTILINE))
-        produced_summaries = set(re.findall(r'summary = "([^"]+)"', producers))
-        self.assertTrue(produced_summaries, "no durable remediation summaries found")
-        self.assertEqual(produced_summaries, set(stable_summaries.values()))
-
-        summary_map = dict(
-            re.findall(
-                r"AnkiRemediationSummary\.([A-Z0-9_]+)\s*->\s*R\.string\.([a-z0-9_]+)",
-                remediation,
-            )
-        )
-        self.assertEqual(set(stable_summaries) | {"UNKNOWN"}, set(summary_map))
-        self._assert_distinct_non_empty_resources(list(summary_map.values()))
-        strings = self._source_strings()
-        self.assertNotIn("failed", strings[summary_map["NOTE_POSTCHECK_UNFINISHED"]].lower())
-        self.assertIn("did not finish", strings[summary_map["NOTE_POSTCHECK_UNFINISHED"]].lower())
-        self.assertIn("failed", strings[summary_map["NOTE_POSTCHECK_FAILED"]].lower())
-
-        self.assertIn("Text(item.title", recovery_ui)
-        self.assertIn("Text(item.summary", recovery_ui)
-        self.assertNotIn("item.type.summaryResource()", recovery_ui)
-
     def test_resource_download_and_bridge_codes_keep_distinct_messages(self) -> None:
         resource_manager = (
             REPO_ROOT / "app/src/main/kotlin/com/ankiminer/android/data/resources/ResourceManager.kt"

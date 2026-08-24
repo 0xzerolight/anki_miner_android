@@ -2,7 +2,6 @@ package com.ankiminer.android.vm
 
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
-import com.ankiminer.android.anki.provider.AnkiRemediationCommand
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
@@ -156,10 +155,6 @@ private class SessionAnkiSetupManager(deckNames: List<String>) : AnkiSetupManage
         fieldMap: Map<String, String>,
         cardTypeMarkerField: String?,
     ) = Unit
-
-    override fun reconcileInterruptedWork() = Unit
-
-    override fun performRemediation(command: AnkiRemediationCommand) = Unit
 
     override fun dismissFailure() = Unit
 }

@@ -59,7 +59,6 @@ internal data class SetupUiState(
         AnkiRecoveryInventoryStatus.NOT_CHECKED,
     val ankiOperation: AnkiSetupOperation? = null,
     val ankiFailure: AnkiSetupFailure? = null,
-    val ankiRecoveryFailure: AnkiSetupFailure? = null,
     val runtimeWorkKind: RuntimeWorkCoordinator.Kind? = null,
     /** Tri-state startup-flash guard: null until the settings store has emitted once. */
     val wizardSeen: Boolean? = null,
@@ -109,20 +108,8 @@ internal data class SetupUiState(
     val noteTypeQuality: NoteTypeQualityAssessment
         get() = classifyNoteTypeQuality(noteTypeStatus, fieldMap)
 
-    val recoveryPresentation: RecoveryPresentationDecision
-        get() =
-            decideRecoveryPresentation(
-                provider = anki,
-                startupRecovery = ankiRecovery,
-                inventoryStatus = recoveryInventoryStatus,
-                pendingCount = remediations.pending.size,
-            )
-
     val recoveryReady: Boolean
-        get() =
-            ankiRecovery == AnkiRecoveryReadiness.Ready &&
-                recoveryInventoryStatus == AnkiRecoveryInventoryStatus.AVAILABLE &&
-                remediations.pending.isEmpty()
+        get() = ankiRecovery == AnkiRecoveryReadiness.Ready
 
     val targetReady: Boolean
         get() = modelReady && miningTarget == AnkiMiningTargetReadiness.Ready
@@ -228,11 +215,6 @@ internal data class SetupUiState(
                 noteTypeStatus is NoteTypeSetupStatus.ProviderError ->
                     noteTypeStatus.readinessAction()
                 !targetReady -> MiningReadinessAction.CHOOSE_NOTE_TYPE
-                ankiRecovery == AnkiRecoveryReadiness.Blocked ->
-                    MiningReadinessAction.RESOLVE_RECOVERY
-                recoveryInventoryStatus == AnkiRecoveryInventoryStatus.AVAILABLE &&
-                    remediations.pending.isNotEmpty() ->
-                    MiningReadinessAction.RESOLVE_RECOVERY
                 !recoveryReady -> MiningReadinessAction.CHECK_AGAIN
                 else -> MiningReadinessAction.CHECK_AGAIN
             }
@@ -274,7 +256,6 @@ internal enum class MiningReadinessAction {
     OPEN_ANKIDROID,
     CONNECT_ANKIDROID,
     CHOOSE_NOTE_TYPE,
-    RESOLVE_RECOVERY,
     CHECK_AGAIN,
     WAIT,
 }
