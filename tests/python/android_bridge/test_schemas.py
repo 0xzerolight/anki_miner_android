@@ -304,7 +304,17 @@ def test_audio_tracks_schema_accepts_valid_and_rejects_invalid_requests_and_resu
     invalid_result = {
         "videoPath": "/videos/ep1.mkv",
         "autoAudioIndex": None,
-        "tracks": [{"audioIndex": -1, "globalIndex": 0, "languageTag": None, "title": None, "codec": None, "channels": None, "isDefault": False}],
+        "tracks": [
+            {
+                "audioIndex": -1,
+                "globalIndex": 0,
+                "languageTag": None,
+                "title": None,
+                "codec": None,
+                "channels": None,
+                "isDefault": False,
+            }
+        ],
     }
     with pytest.raises(ValidationError):
         validator.validate(invalid_request)
