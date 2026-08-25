@@ -29,6 +29,7 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AlwaysReadyMiningRunAdmissionGate
 import com.ankiminer.android.mining.CoordinatorAnkiCallbacks
 import com.ankiminer.android.mining.CoordinatorAnkiCancellation
+import com.ankiminer.android.mining.CurationPageImageBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSessionState
@@ -215,6 +216,7 @@ internal class BridgeReadingMiningRepository(
         var sentenceAudioDispatcher: SentenceAudioCallbackDispatcher? = null
         var requiresMediaForeground = false
         var hasSelectedCandidate = false
+        var imageArchiveCachePath: String? = null
         val presenterNotices = mutableListOf<String>()
         val progressErrors = mutableListOf<String>()
     }
@@ -371,7 +373,12 @@ internal class BridgeReadingMiningRepository(
                     mutableState.value = MiningRunState.Running(runId, progress)
                 } else {
                     transition = run.transition(Phase.ADVANCING, "curation_page")
-                    mutableState.value = MiningRunState.Curating(request, pageSubmissionPending = true)
+                    mutableState.value =
+                        MiningRunState.Curating(
+                            request,
+                            pageSubmissionPending = true,
+                            pageImage = run.imageArchiveCachePath?.let(::CurationPageImageBinding),
+                        )
                 }
                 run.generation to run.hasSelectedCandidate
             }
@@ -552,6 +559,7 @@ internal class BridgeReadingMiningRepository(
                         throw failure
                     }
                 if (run.cancellation.isCancelled()) return
+                run.imageArchiveCachePath = stagedSource.imageArchivePath
                 run.requiresMediaForeground =
                     run.requiresMediaForeground ||
                         stagedSource.sourceKind == StagedReadingSourceKind.EPUB ||
@@ -1581,7 +1589,12 @@ internal class BridgeReadingMiningRepository(
             if (run.cancelRequested || run.phase != admittedPhase) return
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
-            mutableState.value = MiningRunState.Curating(message.request, pageSubmissionPending = false)
+            mutableState.value =
+                MiningRunState.Curating(
+                    message.request,
+                    pageSubmissionPending = false,
+                    pageImage = run.imageArchiveCachePath?.let(::CurationPageImageBinding),
+                )
         }
         transition.emit()
     }
