@@ -84,6 +84,10 @@
     <string name="curation_known_pending">Conhecida · pendente</string>
     <string name="curation_copy_word">Copiar palavra</string>
     <string name="curation_copy_sentence">Copiar frase</string>
+    <string name="curation_expand_previous_line">+ Linha anterior</string>
+    <string name="curation_expand_next_line">+ Próxima linha</string>
+    <string name="curation_expand_reset">Redefinir linhas</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · clipe de %3$.1f s</string>
     <string name="curation_copied_word">Palavra copiada</string>
     <string name="curation_copied_sentence">Frase copiada</string>
     <string name="curation_preview_play_description">Reproduzir vídeo</string>

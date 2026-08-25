@@ -84,6 +84,10 @@
     <string name="curation_known_pending">既知・保留中</string>
     <string name="curation_copy_word">単語をコピー</string>
     <string name="curation_copy_sentence">例文をコピー</string>
+    <string name="curation_expand_previous_line">+ 前の行</string>
+    <string name="curation_expand_next_line">+ 次の行</string>
+    <string name="curation_expand_reset">行をリセット</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f 秒 · クリップ %3$.1f 秒</string>
     <string name="curation_copied_word">単語をコピーしました</string>
     <string name="curation_copied_sentence">例文をコピーしました</string>
     <string name="curation_preview_play_description">動画を再生</string>
