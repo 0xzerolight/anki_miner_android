@@ -17,6 +17,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -27,6 +28,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -126,10 +128,45 @@ class AudioTrackProbeLoaderTest {
             }
         }
 
+    @Test
+    fun successBecomesAFailureWhenCloseFailsButLeaseIsStillReleased() =
+        runTest {
+            val closeFailure = IOException("close failed")
+            withHarness(closeFailure = closeFailure) { harness ->
+                val result = harness.loader().probe(VIDEO)
+
+                assertTrue(result.isFailure)
+                assertEquals(closeFailure, result.exceptionOrNull())
+                assertEquals(null, harness.coordinator.activeKind.value)
+            }
+        }
+
+    @Test
+    fun cancellationSurvivesACleanupFailureAsASuppressedException() =
+        runTest {
+            val closeFailure = IOException("close failed")
+            val cancellationFailure = CancellationException("lookup cancelled")
+            withHarness(closeFailure = closeFailure, lookupThrow = cancellationFailure) { harness ->
+                var caught: CancellationException? = null
+                try {
+                    harness.loader().probe(VIDEO)
+                    fail("expected a CancellationException")
+                } catch (failure: CancellationException) {
+                    caught = failure
+                }
+
+                assertEquals(cancellationFailure, caught)
+                assertTrue(caught!!.suppressed.contains(closeFailure))
+                assertEquals(null, harness.coordinator.activeKind.value)
+            }
+        }
+
     private suspend fun withHarness(
         stageFailure: Throwable? = null,
         blockingStage: ((FileCopyCancellation) -> OwnedDescriptor)? = null,
         lookupResult: Result<AudioTrackList> = Result.success(AUDIO_TRACK_LIST),
+        lookupThrow: Throwable? = null,
+        closeFailure: Throwable? = null,
         block: suspend (Harness) -> Unit,
     ) {
         val ioExecutor =
@@ -143,6 +180,8 @@ class AudioTrackProbeLoaderTest {
                     stageFailure = stageFailure,
                     blockingStage = blockingStage,
                     lookupResult = lookupResult,
+                    lookupThrow = lookupThrow,
+                    closeFailure = closeFailure,
                 ),
             )
         } finally {
@@ -156,6 +195,8 @@ class AudioTrackProbeLoaderTest {
         private val stageFailure: Throwable?,
         private val blockingStage: ((FileCopyCancellation) -> OwnedDescriptor)?,
         private val lookupResult: Result<AudioTrackList>,
+        private val lookupThrow: Throwable?,
+        private val closeFailure: Throwable?,
     ) {
         val coordinator = RuntimeWorkCoordinator()
         val events = mutableListOf<String>()
@@ -171,6 +212,7 @@ class AudioTrackProbeLoaderTest {
             AudioTrackLookupService { path ->
                 events += "lookup"
                 lookupPath.set(path)
+                lookupThrow?.let { throw it }
                 lookupResult
             }
 
@@ -196,6 +238,7 @@ class AudioTrackProbeLoaderTest {
                                 ?: RecordingDescriptor(
                                     closeCount = descriptorCloseCount,
                                     closeThread = descriptorCloseThread,
+                                    closeFailure = closeFailure,
                                 )
                         },
                     cacheFileFactory =
@@ -212,6 +255,7 @@ class AudioTrackProbeLoaderTest {
     private class RecordingDescriptor(
         private val closeCount: AtomicInteger,
         private val closeThread: AtomicReference<String>,
+        private val closeFailure: Throwable? = null,
     ) : OwnedDescriptor {
         override val knownSizeBytes: Long = VIDEO_BYTES.size.toLong()
 
@@ -220,6 +264,7 @@ class AudioTrackProbeLoaderTest {
         override fun close() {
             closeThread.set(Thread.currentThread().name)
             closeCount.incrementAndGet()
+            closeFailure?.let { throw it }
         }
     }
 

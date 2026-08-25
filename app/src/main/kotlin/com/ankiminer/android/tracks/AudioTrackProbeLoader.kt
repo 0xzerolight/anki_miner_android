@@ -42,6 +42,8 @@ internal class AudioTrackProbeLoader(
                 lease.close()
                 return Result.failure(failure)
             }
+        var cancellation: CancellationException? = null
+        var outcome: Result<AudioTrackList>? = null
         try {
             val videoPath =
                 stageVideo(
@@ -49,22 +51,55 @@ internal class AudioTrackProbeLoader(
                     video = video,
                     cancellation = copyCancellation,
                 )
-            return lookup.tracks(videoPath)
+            outcome = lookup.tracks(videoPath)
         } catch (failure: CancellationException) {
             copyCancellation.cancel()
-            throw failure
+            cancellation = failure
         } catch (failure: Throwable) {
-            return Result.failure(failure)
-        } finally {
-            withContext(NonCancellable + io) {
+            outcome = Result.failure(failure)
+        }
+
+        // A cleanup failure must never mask the outcome decided above by simply being the last
+        // thing to throw: cancellation always wins over it (structured concurrency must not lose
+        // the cancellation signal), and a resolved outcome absorbs it deliberately, as a failure,
+        // with whatever it replaced attached via addSuppressed.
+        val cleanupFailure = closeQuietly(owner, lease)
+        cancellation?.let { pending ->
+            cleanupFailure?.let(pending::addSuppressed)
+            throw pending
+        }
+        if (cleanupFailure != null) {
+            outcome?.exceptionOrNull()?.let(cleanupFailure::addSuppressed)
+            return Result.failure(cleanupFailure)
+        }
+        return checkNotNull(outcome) { "audio track probe completed without an outcome" }
+    }
+
+    private suspend fun closeQuietly(
+        owner: SafJobFileOwner,
+        lease: RuntimeWorkCoordinator.Lease,
+    ): Throwable? =
+        withContext(NonCancellable + io) {
+            val ownerFailure =
                 try {
                     owner.close()
-                } finally {
-                    lease.close()
+                    null
+                } catch (failure: Throwable) {
+                    failure
                 }
+            val leaseFailure =
+                try {
+                    lease.close()
+                    null
+                } catch (failure: Throwable) {
+                    failure
+                }
+            when {
+                ownerFailure == null -> leaseFailure
+                leaseFailure == null -> ownerFailure
+                else -> ownerFailure.also { it.addSuppressed(leaseFailure) }
             }
         }
-    }
 
     private suspend fun stageVideo(
         owner: SafJobFileOwner,
