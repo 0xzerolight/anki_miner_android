@@ -8,7 +8,9 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupBackend
 import com.ankiminer.android.data.anki.AnkiSetupManager
+import com.ankiminer.android.data.anki.MiningRunUndoManager
 import com.ankiminer.android.data.anki.ProcessAnkiSetupManager
+import com.ankiminer.android.data.anki.ProcessMiningRunUndoManager
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.AndroidResourceDocumentWriter
 import com.ankiminer.android.data.resources.AndroidResourceForegroundLease
@@ -413,6 +415,16 @@ class AnkiMinerApplication : Application() {
                 SharingStarted.Eagerly,
                 ResourceStartupReadiness.PENDING,
             )
+    }
+
+    /** Shares [ankiSetupExecutor], so an undo can never run alongside an explicit setup write. */
+    internal val miningRunUndoManager: MiningRunUndoManager by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        ProcessMiningRunUndoManager(
+            backend = ankiProviderRuntime::deleteNotes,
+            executor = ankiSetupExecutor,
+            runtimeWorkCoordinator = runtimeWorkCoordinator,
+            reverter = resourceManager::removeMinedWords,
+        )
     }
 
     private fun buildMediaMiningRepository(lane: MiningLane): MiningRepository =
