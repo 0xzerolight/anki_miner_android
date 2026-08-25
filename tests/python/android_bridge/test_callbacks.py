@@ -171,6 +171,46 @@ def test_legacy_terminal_notification_helpers_are_not_exposed() -> None:
     assert not hasattr(CallbackAdapters, "notify_job_error")
 
 
+def test_sentence_context_defaults_to_none() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
+
+    assert adapters.sentence_context is None
+
+
+def test_curate_forwards_sentence_context_to_await_curation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
+
+    def lookup(word: object) -> None:
+        return None
+
+    adapters.sentence_context = lookup
+    captured: dict[str, object] = {}
+
+    def fake_await_curation(
+        run_id: str,
+        candidates: list[object],
+        emit_request: object,
+        cancellation_requested: object = None,
+        *,
+        allow_line_expansion: bool = False,
+        sentence_context: object = None,
+    ) -> list[object] | None:
+        captured["sentence_context"] = sentence_context
+        return None
+
+    monkeypatch.setattr(registry, "await_curation", fake_await_curation)
+
+    adapters.curate([])
+
+    assert captured["sentence_context"] is lookup
+
+
 def test_job_registration_is_synchronous_strict_and_correlated() -> None:
     registry = JobRegistry()
     handle = registry.begin()

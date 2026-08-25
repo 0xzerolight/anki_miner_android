@@ -1,6 +1,9 @@
 package com.ankiminer.android.ui.reading
 
 import android.content.ClipboardManager
+import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
+import android.graphics.Color as AndroidColor
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.getValue
@@ -30,8 +33,10 @@ import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
+import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningFailure
@@ -40,9 +45,14 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
+import com.ankiminer.android.ui.mining.CurationPageImageTestTags
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -799,6 +809,96 @@ class ReadingMiningScreenTest {
     }
 
     @Test
+    fun pageImageSurfaceIsVisibleWhenFocusedSentenceHasPageContext() {
+        val archive = pageImageArchive()
+        try {
+            val request = requestWithPageContext(pageContext(archive.entryName))
+            setScreen(
+                state =
+                    ReadingMiningUiState(
+                        runState = MiningRunState.Curating(request),
+                        curation =
+                            curationState(request, pageImage = CurationPageImageUiState(archive.file.path)),
+                    ),
+            )
+
+            // SURFACE is tagged only on the loaded Canvas (not the loading placeholder), so
+            // waiting for it here proves the archive was actually decoded and drawn, not just
+            // that the pane mounted.
+            waitForPageImageSurface()
+            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
+        } finally {
+            archive.file.delete()
+        }
+    }
+
+    @Test
+    fun pageImagePaneIsAbsentWithoutAPageImage() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPageImageTestTags.PLACEHOLDER).assertDoesNotExist()
+    }
+
+    @Test
+    fun pageImagePlaceholderShowsWhenTheFocusedSentenceLacksPageContext() {
+        // The pane's mount gate needs SOME candidate on the page to carry a pageContext (an
+        // all-null-pageContext page keeps the slot unmounted entirely, not showing a permanent
+        // placeholder) — attach it to the second candidate so the focused (first, default-focus)
+        // candidate's sentence still has none and the placeholder still renders for it.
+        val request = requestWithPageContext(pageContext("unused-entry.png"), candidateIndex = 1)
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            pageImage = CurationPageImageUiState("/nonexistent/staged.cbz"),
+                        ),
+                ),
+        )
+
+        composeRule.onNodeWithTag(CurationPageImageTestTags.PLACEHOLDER).assertIsDisplayed()
+        composeRule.onNodeWithText("No page image for this word").assertExists()
+    }
+
+    @Test
+    fun pageImageCollapseTogglesTheExpandedContent() {
+        val archive = pageImageArchive()
+        try {
+            val request = requestWithPageContext(pageContext(archive.entryName))
+            setScreen(
+                state =
+                    ReadingMiningUiState(
+                        runState = MiningRunState.Curating(request),
+                        curation =
+                            curationState(request, pageImage = CurationPageImageUiState(archive.file.path)),
+                    ),
+            )
+
+            waitForPageImageSurface()
+            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
+            composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
+            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
+            composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
+            // Collapsing disposes PageImageContent's remembered decode state, so re-expanding
+            // decodes again from scratch — wait for it the same way as the initial expand.
+            waitForPageImageSurface()
+            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
+        } finally {
+            archive.file.delete()
+        }
+    }
+
+    @Test
     fun readingFailureTransitionResetsDeepCurationScroll() {
         val candidates =
             (0 until 100).map { index ->
@@ -936,6 +1036,7 @@ class ReadingMiningScreenTest {
         focusedCandidateId: String? = selectedCandidateIds.firstOrNull(),
         previousPageSelectedCount: Int = 0,
         definition: CurationDefinition? = null,
+        pageImage: CurationPageImageUiState? = null,
     ): ReadingCurationUiState =
         ReadingCurationUiState(
             runId = request.runId,
@@ -948,7 +1049,75 @@ class ReadingMiningScreenTest {
             previousPageSelectedCount = previousPageSelectedCount,
             page = request.page,
             definition = definition,
+            pageImage = pageImage,
         )
+
+    /**
+     * Attaches [pageContext] to the sentences of the candidate at [candidateIndex] (default the
+     * first) in a two-candidate page.
+     */
+    private fun requestWithPageContext(
+        pageContext: CurationPageContext,
+        candidateIndex: Int = 0,
+    ): CurationRequest {
+        val base = request(CurationPage(0, 2, 0, 4))
+        val targetCandidateId = base.candidates[candidateIndex].candidateId
+        return base.copy(
+            candidates =
+                base.candidates.map { candidate ->
+                    if (candidate.candidateId == targetCandidateId) {
+                        candidate.copy(
+                            sentences = candidate.sentences.map { it.copy(pageContext = pageContext) },
+                        )
+                    } else {
+                        candidate
+                    }
+                },
+        )
+    }
+
+    private fun pageContext(entryName: String): CurationPageContext =
+        CurationPageContext(
+            imageEntry = entryName,
+            blockBox = CurationBlockBox(xMin = 10, yMin = 10, xMax = 100, yMax = 100),
+            locationLabel = "Page 1",
+        )
+
+    private class PageImageArchive(val file: File, val entryName: String)
+
+    /** A real `.cbz` with one decodable page entry, so the pane's decoder has real bytes to read. */
+    private fun pageImageArchive(): PageImageArchive {
+        val entryName = "page1.png"
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val file = File(context.cacheDir, "reading-page-image-test-${System.nanoTime()}.cbz")
+        ZipOutputStream(file.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry(entryName))
+            zip.write(renderPng(width = 400, height = 600))
+            zip.closeEntry()
+        }
+        return PageImageArchive(file, entryName)
+    }
+
+    private fun renderPng(
+        width: Int,
+        height: Int,
+    ): ByteArray {
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        AndroidCanvas(bitmap).drawColor(AndroidColor.RED)
+        val out = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+        return out.toByteArray()
+    }
+
+    /** Real decode runs on `Dispatchers.IO`, outside what the compose test rule auto-syncs with. */
+    private fun waitForPageImageSurface() {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule
+                .onAllNodesWithTag(CurationPageImageTestTags.SURFACE)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
+    }
 
     private fun clipboardText(): String? =
         composeRule.runOnUiThread {

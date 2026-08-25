@@ -498,6 +498,7 @@ class BridgeReadingMiningRepositoryTest {
         assertEquals("Novel.txt", stagedFile.name)
         assertTrue(stagedFile.toPath().startsWith(harness.cacheDir.toPath().toRealPath()))
         assertNull(wire.imageArchivePath)
+        assertNull(curating.pageImage)
         assertNull(wire.seriesName)
         assertEquals(1, harness.foreground.startCount.get())
         assertNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.RESOURCE))
@@ -1588,6 +1589,7 @@ class BridgeReadingMiningRepositoryTest {
         )
         assertEquals(ReadingMiningSourceKind.MOKURO, wire.sourceKind)
         assertNotNull(wire.imageArchivePath)
+        assertEquals(wire.imageArchivePath, curating.pageImage?.archivePath)
         drain(harness, curating.request.runId)
     }
 
@@ -1630,6 +1632,8 @@ class BridgeReadingMiningRepositoryTest {
             wire.sourcePath,
             File(wire.sourcePath).toPath().startsWith(cache.toPath().toRealPath()),
         )
+        assertNotNull(wire.imageArchivePath)
+        assertEquals(wire.imageArchivePath, curating.pageImage?.archivePath)
         drain(harness, curating.request.runId)
     }
 

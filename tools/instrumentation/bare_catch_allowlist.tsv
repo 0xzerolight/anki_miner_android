@@ -34,7 +34,7 @@ app/src/main/kotlin/com/ankiminer/android/media/BoundedFileCopier.kt	253,263	Exi
 app/src/main/kotlin/com/ankiminer/android/media/SafBroker.kt	224,235,350	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt	259,289,436,590,758,773,864,914,1065,1076,1115,1127,1197,1204,1319,1806,1811,1865	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown, and the tokenizer sealed-failure sites map each typed failure to a recorded fault plus a rethrown mining error.
 app/src/main/kotlin/com/ankiminer/android/mining/MiningRuntimeContracts.kt	65,283	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt	323,353,494,689,859,874,974,1024,1175,1186,1225,1237,1306,1313,1457,1996,2001,2055	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown.
+app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt	325,355,501,697,867,882,982,1032,1183,1194,1233,1245,1314,1321,1465,2009,2014,2068	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown.
 app/src/main/kotlin/com/ankiminer/android/reading/ReadingSourceStager.kt	735,887,1025	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/service/MiningForegroundSessionController.kt	136	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/tts/AndroidTextToSpeechBackend.kt	89,144,148,277,281,309,318	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -42,6 +42,6 @@ app/src/main/kotlin/com/ankiminer/android/tts/CachedSentenceAudioSynthesizer.kt	
 app/src/main/kotlin/com/ankiminer/android/tts/SentenceAudioProtocol.kt	116	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/DiagnosticsViewModel.kt	71,95	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/MediaMiningViewModel.kt	1320,1340	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	1062,1225	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	1064,1227	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	1163,1251	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	376,521,1587	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.

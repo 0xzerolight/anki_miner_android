@@ -5,8 +5,10 @@ import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.mining.AnkiWriteState
+import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
@@ -639,9 +641,10 @@ object BridgeJsonCodec {
     }
 
     private fun readCurationSentence(payload: Map<String, BridgeJsonValue>): CurationSentence {
-        requireExact(
+        requireExactWithOptional(
             payload,
             setOf("sentenceId", "sentence", "sentenceFurigana", "sentenceReading", "startTime", "endTime", "duration"),
+            setOf("imageEntry", "blockBox", "locationLabel"),
             "curation sentence",
         )
         return CurationSentence(
@@ -652,6 +655,34 @@ object BridgeJsonCodec {
             number(payload.getValue("startTime"), "startTime"),
             number(payload.getValue("endTime"), "endTime"),
             number(payload.getValue("duration"), "duration"),
+            readCurationPageContext(payload),
+        )
+    }
+
+    /**
+     * The optional mokuro page context on a curation sentence: `imageEntry`, `blockBox` and
+     * `locationLabel` travel all-three-or-none, never as a partial set.
+     */
+    private fun readCurationPageContext(payload: Map<String, BridgeJsonValue>): CurationPageContext? {
+        val keys = setOf("imageEntry", "blockBox", "locationLabel")
+        val present = keys.filter { it in payload }
+        if (present.isEmpty()) return null
+        if (present.size != keys.size) {
+            fail(BridgeProtocolCategory.INVALID_PAYLOAD, "curation sentence has a partial page context")
+        }
+        val box = array(payload.getValue("blockBox"), "blockBox")
+        if (box.size != 4) {
+            fail(BridgeProtocolCategory.INVALID_PAYLOAD, "blockBox must contain exactly 4 elements")
+        }
+        return CurationPageContext(
+            nonEmptyText(payload.getValue("imageEntry"), "imageEntry"),
+            CurationBlockBox(
+                integral(box[0], "blockBox xMin"),
+                integral(box[1], "blockBox yMin"),
+                integral(box[2], "blockBox xMax"),
+                integral(box[3], "blockBox yMax"),
+            ),
+            text(payload.getValue("locationLabel"), "locationLabel"),
         )
     }
 

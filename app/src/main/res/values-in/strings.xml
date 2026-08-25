@@ -113,6 +113,11 @@
     <string name="curation_preview_audio_unsupported">Perangkat ini tidak dapat mendekode audio ini (%1$s)</string>
     <string name="curation_preview_playback_failed">Pemutaran pratinjau gagal (%1$s)</string>
     <string name="curation_preview_retry">Coba lagi</string>
+    <string name="curation_page_image_missing">Tidak ada gambar halaman untuk kata ini</string>
+    <string name="curation_page_image_error">Gambar halaman tidak dapat dimuat</string>
+    <string name="curation_page_image_description">Gambar halaman manga</string>
+    <string name="curation_page_collapse_description">Ciutkan gambar halaman</string>
+    <string name="curation_page_expand_description">Luaskan gambar halaman</string>
     <string name="definition_loading">Mencari…</string>
     <string name="definition_missing">Tidak ada entri kamus luring</string>
     <string name="definition_unavailable">Pencarian kamus tidak tersedia</string>

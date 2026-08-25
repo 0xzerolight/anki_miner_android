@@ -67,6 +67,15 @@ class _CandidateRef:
 
 
 @dataclass(frozen=True)
+class SentencePageContext:
+    """Mokuro page context attached to one curation sentence occurrence."""
+
+    image_entry: str
+    block_box: tuple[int, int, int, int]
+    location_label: str
+
+
+@dataclass(frozen=True)
 class _CurationPagePlan:
     candidate_ids: tuple[str, ...]
     candidate_start: int
@@ -93,6 +102,7 @@ class _CurationGate:
     selected: list[object] = field(default_factory=list)
     known_forms: set[str] = field(default_factory=set)
     allow_line_expansion: bool = False
+    sentence_context: Callable[[object], SentencePageContext | None] | None = None
 
     @property
     def paged(self) -> bool:
@@ -131,8 +141,12 @@ def _same_sentence(first: object, second: object) -> bool:
     ) == getattr(second, "start_time", None)
 
 
-def _sentence_payload(sentence_id: str, word: object) -> dict[str, Any]:
-    return {
+def _sentence_payload(
+    sentence_id: str,
+    word: object,
+    sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+) -> dict[str, Any]:
+    payload = {
         "sentenceId": sentence_id,
         "sentence": _as_string(getattr(word, "sentence", "")),
         "sentenceFurigana": _as_string(getattr(word, "sentence_furigana", "")),
@@ -141,6 +155,12 @@ def _sentence_payload(sentence_id: str, word: object) -> dict[str, Any]:
         "endTime": _as_number(getattr(word, "end_time", 0.0), fallback=0.0),
         "duration": _as_number(getattr(word, "duration", 0.0), fallback=0.0),
     }
+    context = sentence_context(word) if sentence_context is not None else None
+    if context is not None:
+        payload["imageEntry"] = context.image_entry
+        payload["blockBox"] = list(context.block_box)
+        payload["locationLabel"] = context.location_label
+    return payload
 
 
 def _candidate_ref(word: object) -> _CandidateRef:
@@ -170,10 +190,15 @@ def _candidate_mined_form(reference: _CandidateRef) -> str:
     )
 
 
-def _candidate_payload_from_ref(candidate_id: str, reference: _CandidateRef) -> dict[str, Any]:
+def _candidate_payload_from_ref(
+    candidate_id: str,
+    reference: _CandidateRef,
+    sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+) -> dict[str, Any]:
     word = reference.original
     sentence_payloads = [
-        _sentence_payload(sentence_id, sentence) for sentence_id, sentence in reference.sentences.items()
+        _sentence_payload(sentence_id, sentence, sentence_context)
+        for sentence_id, sentence in reference.sentences.items()
     ]
 
     return {
@@ -195,11 +220,15 @@ def _candidate_payload_from_ref(candidate_id: str, reference: _CandidateRef) -> 
     }
 
 
-def _candidate_payload(candidate_id: str, word: object) -> tuple[dict[str, Any], _CandidateRef]:
+def _candidate_payload(
+    candidate_id: str,
+    word: object,
+    sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+) -> tuple[dict[str, Any], _CandidateRef]:
     """Retain the original raw-word helper contract used by existing tests."""
 
     reference = _candidate_ref(word)
-    return _candidate_payload_from_ref(candidate_id, reference), reference
+    return _candidate_payload_from_ref(candidate_id, reference, sentence_context), reference
 
 
 def _utf8_size(raw: str) -> int:
@@ -429,6 +458,7 @@ class JobRegistry:
         cancellation_requested: Callable[[], bool] | None = None,
         *,
         allow_line_expansion: bool = False,
+        sentence_context: Callable[[object], SentencePageContext | None] | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
@@ -467,7 +497,8 @@ class JobRegistry:
             pages: tuple[_CurationPagePlan, ...] = ()
             if len(refs) <= CURATION_PAGE_MAX_CANDIDATES:
                 payloads = [
-                    _candidate_payload_from_ref(candidate_id, reference) for candidate_id, reference in refs.items()
+                    _candidate_payload_from_ref(candidate_id, reference, sentence_context)
+                    for candidate_id, reference in refs.items()
                 ]
                 small_request = encode_message(
                     "curation.request",
@@ -494,7 +525,7 @@ class JobRegistry:
                     entries=(
                         (
                             candidate_id,
-                            _candidate_payload_from_ref(candidate_id, reference),
+                            _candidate_payload_from_ref(candidate_id, reference, sentence_context),
                         )
                         for candidate_id, reference in refs.items()
                     ),
@@ -505,6 +536,7 @@ class JobRegistry:
                 request_json=request_json,
                 pages=pages,
                 allow_line_expansion=allow_line_expansion,
+                sentence_context=sentence_context,
             )
             state.curation = gate
 
@@ -563,7 +595,7 @@ class JobRegistry:
             return cast(str, gate.request_json)
         plan = gate.pages[gate.page_index]
         payloads = [
-            _candidate_payload_from_ref(candidate_id, gate.candidates[candidate_id])
+            _candidate_payload_from_ref(candidate_id, gate.candidates[candidate_id], gate.sentence_context)
             for candidate_id in plan.candidate_ids
         ]
         raw = encode_message(

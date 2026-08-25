@@ -242,6 +242,27 @@ class MiningModelsTest {
         assertNotEquals(MiningLane.VIDEO.subtitleSlot, MiningLane.AUDIO.subtitleSlot)
     }
 
+    @Test
+    fun curationSentencePageContextDefaultsToNullForNonMangaCallSites() {
+        assertNull(request().candidates.single().sentences.single().pageContext)
+    }
+
+    @Test
+    fun curationPageContextRejectsAnEmptyImageEntry() {
+        assertThrows(IllegalArgumentException::class.java) {
+            CurationPageContext(
+                imageEntry = "",
+                blockBox = CurationBlockBox(0, 0, 1, 1),
+                locationLabel = "Page 1",
+            )
+        }
+    }
+
+    @Test
+    fun curatingPageImageDefaultsToNullForVideoAndAudioLanes() {
+        assertNull(MiningRunState.Curating(request()).pageImage)
+    }
+
     private fun request(): CurationRequest =
         CurationRequest(
             runId = "run",

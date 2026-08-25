@@ -1501,6 +1501,49 @@ def _curation_request_payload(
     }
 
 
+def _curation_request_with_sentence_fields(sentence_fields: dict[str, Any]) -> dict[str, Any]:
+    payload = _curation_request_payload()
+    payload["candidates"][0]["sentences"][0].update(sentence_fields)
+    return payload
+
+
+def test_curation_schema_accepts_sentence_with_full_page_context(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = _curation_request_with_sentence_fields(
+        {"imageEntry": "pages/003.png", "blockBox": [1, 2, 30, 40], "locationLabel": "p.3"}
+    )
+
+    Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "sentence_fields",
+    [
+        {"imageEntry": "pages/003.png"},
+        {"blockBox": [1, 2, 30, 40]},
+        {"locationLabel": "p.3"},
+        {"imageEntry": "pages/003.png", "blockBox": [1, 2, 30], "locationLabel": "p.3"},
+        {"imageEntry": "", "blockBox": [1, 2, 30, 40], "locationLabel": "p.3"},
+    ],
+    ids=[
+        "image-entry-only",
+        "block-box-only",
+        "location-label-only",
+        "block-box-three-elements",
+        "empty-image-entry",
+    ],
+)
+def test_curation_schema_rejects_partial_or_invalid_page_context(
+    schemas: dict[str, dict[str, Any]],
+    sentence_fields: dict[str, Any],
+) -> None:
+    payload = _curation_request_with_sentence_fields(sentence_fields)
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

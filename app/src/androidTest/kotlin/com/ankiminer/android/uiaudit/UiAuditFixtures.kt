@@ -55,7 +55,9 @@ import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
+import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningFailure
@@ -920,6 +922,15 @@ private fun curationCandidates(count: Int): List<CurationCandidate> =
                     startTime = index.toDouble(),
                     endTime = index + 2.4,
                     duration = 2.4,
+                    pageContext = if (index == 0) {
+                        CurationPageContext(
+                            imageEntry = "pages/001.png",
+                            blockBox = CurationBlockBox(xMin = 10, yMin = 20, xMax = 300, yMax = 400),
+                            locationLabel = "p.1",
+                        )
+                    } else {
+                        null
+                    },
                 ),
                 CurationSentence(
                     sentenceId = "candidate-$index-sentence-2",

@@ -19,7 +19,7 @@ import pytest
 from android_bridge.anki_adapter import AnkiOperationCancelled
 from android_bridge.faults import FAULT_ID_PATTERN
 from android_bridge.jobs import JobRegistry
-from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
+from android_bridge.protocol import BridgeProtocolError, DecodedMessage, decode_envelope, encode_message
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 LIFECYCLE_RUN_ID = "run_" + "4" * 32
@@ -698,6 +698,39 @@ def test_load_document_rejects_missing_or_undeclared_inputs(
     assert companion_error.value.code == "invalid_reading_mining_request"
 
 
+class _Unit:
+    def __init__(
+        self,
+        index: int,
+        entry: str | None = None,
+        box: tuple[int, int, int, int] | None = None,
+        label: str = "",
+    ) -> None:
+        self.index = index
+        self.image_ref = SimpleNamespace(entry=entry) if entry is not None else None
+        self.block_box = box
+        self.location_label = label
+
+
+def test_sentence_page_context_maps_manga_units() -> None:
+    document = SimpleNamespace(
+        kind="manga",
+        units=[_Unit(0, "pages/001.png", (1, 2, 30, 40), "p.1"), _Unit(1)],
+    )
+    lookup = reading_mining._sentence_page_context(document)
+    context = lookup(SimpleNamespace(start_time=0.0))
+    assert context.image_entry == "pages/001.png"
+    assert context.block_box == (1, 2, 30, 40)
+    assert context.location_label == "p.1"
+    assert lookup(SimpleNamespace(start_time=1.0)) is None  # unit without image/box
+    assert lookup(SimpleNamespace(start_time="bad")) is None  # non-numeric start_time
+
+
+def test_sentence_page_context_none_for_books_and_empty_maps() -> None:
+    assert reading_mining._sentence_page_context(SimpleNamespace(kind="book", units=[])) is None
+    assert reading_mining._sentence_page_context(SimpleNamespace(kind="manga", units=[_Unit(0)])) is None
+
+
 def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1349,6 +1382,103 @@ def test_reading_curation_rejects_line_expansion_and_survives_clean_resend(
     assert selections == [[]]
     terminal = decode_envelope(terminal_results[0], expected_type="mining.terminal")
     assert terminal.payload["outcome"] == "success"
+
+
+def _run_reading_and_capture_curation_request(
+    monkeypatch: pytest.MonkeyPatch,
+    document: object,
+    candidate: object,
+) -> DecodedMessage:
+    """Drive one real run_reading through await_curation and return the request it emits."""
+
+    registry = JobRegistry()
+    monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
+    monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: document)
+
+    emitted = threading.Event()
+    curation_requests: list[str] = []
+
+    class CurationCallbacks(RecordingCallbacks):
+        def onCurationNeeded(self, raw: str) -> None:
+            curation_requests.append(raw)
+            emitted.set()
+
+    callbacks = CurationCallbacks(registry=registry)
+
+    def process(_: object, __: object, adapters: object) -> FakeResult:
+        adapters.curate([candidate])
+        return FakeResult(cards_created=0, card_ids=[], mined_forms=[])
+
+    monkeypatch.setattr(reading_mining, "_process_reading", process)
+
+    thread = threading.Thread(target=lambda: reading_mining.run_reading(_request(), callbacks), daemon=True)
+    thread.start()
+    try:
+        assert emitted.wait(5), "curation request was not emitted"
+        request = decode_envelope(curation_requests[0], expected_type="curation.request")
+        jobs_module.submit_curation(
+            encode_message(
+                "curation.response",
+                {"runId": request.payload["runId"], "requestId": request.payload["requestId"], "selection": []},
+            )
+        )
+        thread.join(5)
+        assert not thread.is_alive()
+    finally:
+        if thread.is_alive() and registry.active_run_id is not None:
+            registry.cancel(registry.active_run_id)
+        thread.join(5)
+    return request
+
+
+_CURATION_CANDIDATE = SimpleNamespace(
+    surface="猫",
+    lemma="猫",
+    reading="ネコ",
+    expression_reading="ねこ",
+    pos="名詞",
+    frequency_rank=100,
+    occurrence_count=1,
+    sentence="猫だ。",
+    sentence_furigana="猫[ねこ]だ。",
+    sentence_reading="ねこだ。",
+    start_time=0.0,
+    end_time=1.0,
+    duration=1.0,
+    sentence_candidates=[],
+    mined_form="猫",
+)
+
+
+def test_reading_curation_carries_manga_page_context_for_mokuro_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = SimpleNamespace(
+        kind="manga",
+        units=[_Unit(0, "pages/001.png", (1, 2, 30, 40), "p.1")],
+    )
+
+    request = _run_reading_and_capture_curation_request(monkeypatch, document, _CURATION_CANDIDATE)
+
+    sentence = request.payload["candidates"][0]["sentences"][0]
+    assert sentence["imageEntry"] == "pages/001.png"
+    assert sentence["blockBox"] == [1, 2, 30, 40]
+    assert sentence["locationLabel"] == "p.1"
+
+
+def test_reading_curation_omits_page_context_for_non_manga_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    document = SimpleNamespace(kind="book", units=[])
+
+    request = _run_reading_and_capture_curation_request(monkeypatch, document, _CURATION_CANDIDATE)
+
+    sentence = request.payload["candidates"][0]["sentences"][0]
+    assert "imageEntry" not in sentence
+    assert "blockBox" not in sentence
+    assert "locationLabel" not in sentence
 
 
 def test_boundary_routes_reading_without_changing_video_dispatch(

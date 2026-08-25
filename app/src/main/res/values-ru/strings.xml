@@ -113,6 +113,11 @@
     <string name="curation_preview_audio_unsupported">Это устройство не может декодировать это аудио (%1$s)</string>
     <string name="curation_preview_playback_failed">Ошибка воспроизведения предпросмотра (%1$s)</string>
     <string name="curation_preview_retry">Повторить</string>
+    <string name="curation_page_image_missing">Нет изображения страницы для этого слова</string>
+    <string name="curation_page_image_error">Не удалось загрузить изображение страницы</string>
+    <string name="curation_page_image_description">Изображение страницы манги</string>
+    <string name="curation_page_collapse_description">Свернуть изображение страницы</string>
+    <string name="curation_page_expand_description">Развернуть изображение страницы</string>
     <string name="definition_loading">Поиск…</string>
     <string name="definition_missing">Нет записи в офлайн-словаре</string>
     <string name="definition_unavailable">Поиск в словаре недоступен</string>

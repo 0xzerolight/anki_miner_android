@@ -946,6 +946,152 @@ def test_curation_schema_matches_generated_ids_and_optional_sentence_selection()
     thread.join(1)
 
 
+def test_sentence_payload_carries_page_context_when_lookup_hits() -> None:
+    word = FakeWord("猫", "猫", "猫を見る。", 3.0, 4.0, 1.0)
+    context = jobs.SentencePageContext(image_entry="pages/003.png", block_box=(1, 2, 30, 40), location_label="p.3")
+    payload = jobs._sentence_payload("sentence_" + "0" * 32, word, lambda w: context)
+    assert payload["imageEntry"] == "pages/003.png"
+    assert payload["blockBox"] == [1, 2, 30, 40]
+    assert payload["locationLabel"] == "p.3"
+
+
+def test_sentence_payload_omits_page_context_keys_by_default() -> None:
+    payload = jobs._sentence_payload("sentence_" + "0" * 32, FakeWord("x", "x", "x", 0.0, 0.0, 0.0))
+    assert set(payload) == {
+        "sentenceId",
+        "sentence",
+        "sentenceFurigana",
+        "sentenceReading",
+        "startTime",
+        "endTime",
+        "duration",
+    }
+
+
+def test_sentence_payload_omits_page_context_keys_when_lookup_misses() -> None:
+    payload = jobs._sentence_payload("sentence_" + "0" * 32, FakeWord("x", "x", "x", 0.0, 0.0, 0.0), lambda w: None)
+    assert "imageEntry" not in payload
+    assert "blockBox" not in payload
+    assert "locationLabel" not in payload
+
+
+def test_await_curation_threads_sentence_context_into_emitted_sentences() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    word = FakeWord("猫", "猫", "猫を見る。", 3.0, 4.0, 1.0)
+    context = jobs.SentencePageContext(image_entry="pages/003.png", block_box=(1, 2, 30, 40), location_label="p.3")
+    emitted = threading.Event()
+    request: dict[str, object] = {}
+
+    def emit(raw: str) -> None:
+        request.update(json.loads(raw))
+        emitted.set()
+
+    def wait() -> None:
+        registry.await_curation(handle.run_id, [word], emit, sentence_context=lambda w: context)
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+    assert emitted.wait(1), "curation request was not emitted"
+
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    sentence_payload = payload["candidates"][0]["sentences"][0]
+    assert sentence_payload["imageEntry"] == "pages/003.png"
+    assert sentence_payload["blockBox"] == [1, 2, 30, 40]
+    assert sentence_payload["locationLabel"] == "p.3"
+
+    registry.cancel(handle.run_id)
+    thread.join(1)
+
+
+def test_await_curation_without_sentence_context_omits_new_keys() -> None:
+    registry = JobRegistry()
+    word = FakeWord("猫", "猫", "猫を見る。", 3.0, 4.0, 1.0)
+    run_id, request, _, thread = _start_wait(registry, [word])
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    sentence_payload = payload["candidates"][0]["sentences"][0]
+    assert set(sentence_payload) == {
+        "sentenceId",
+        "sentence",
+        "sentenceFurigana",
+        "sentenceReading",
+        "startTime",
+        "endTime",
+        "duration",
+    }
+
+    registry.cancel(run_id)
+    thread.join(1)
+
+
+def test_paged_curation_threads_sentence_context_into_every_emitted_page() -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    words = [FakeWord(str(index), str(index), f"sentence-{index}", 1, 2, 1) for index in range(101)]
+    context = jobs.SentencePageContext(image_entry="pages/003.png", block_box=(1, 2, 30, 40), location_label="p.3")
+    emitted: queue.Queue[tuple[str, dict[str, object]]] = queue.Queue()
+
+    def emit(raw: str) -> None:
+        emitted.put((raw, json.loads(raw)))
+
+    def wait() -> None:
+        registry.await_curation(handle.run_id, words, emit, sentence_context=lambda w: context)
+
+    thread = threading.Thread(target=wait, daemon=True)
+    thread.start()
+
+    request_id: str | None = None
+    for page_index in range(2):
+        _, request = emitted.get(timeout=1)
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        if request_id is None:
+            request_id = payload["requestId"]
+        assert payload["candidates"], "expected at least one candidate on this page"
+        for candidate in payload["candidates"]:
+            for sentence in candidate["sentences"]:
+                assert sentence["imageEntry"] == "pages/003.png"
+                assert sentence["blockBox"] == [1, 2, 30, 40]
+                assert sentence["locationLabel"] == "p.3"
+        registry.resolve_curation(_page_response(handle.run_id, request_id, page_index, []))
+
+    thread.join(1)
+    assert not thread.is_alive()
+
+
+def test_paged_curation_without_sentence_context_omits_new_keys_on_every_page() -> None:
+    registry = JobRegistry()
+    words = [FakeWord(str(index), str(index), str(index), 1, 2, 1) for index in range(101)]
+    run_id, emitted, returned, thread = _start_paged_wait(registry, words)
+
+    request_id: str | None = None
+    for page_index in range(2):
+        _, request = emitted.get(timeout=1)
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        if request_id is None:
+            request_id = payload["requestId"]
+        assert payload["candidates"], "expected at least one candidate on this page"
+        for candidate in payload["candidates"]:
+            for sentence in candidate["sentences"]:
+                assert set(sentence) == {
+                    "sentenceId",
+                    "sentence",
+                    "sentenceFurigana",
+                    "sentenceReading",
+                    "startTime",
+                    "endTime",
+                    "duration",
+                }
+        registry.resolve_curation(_page_response(run_id, request_id, page_index, []))
+
+    thread.join(1)
+    assert not thread.is_alive()
+    assert returned == [[]]
+
+
 def test_known_forms_commit_once_on_the_final_page(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,

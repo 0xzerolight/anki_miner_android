@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .callbacks import CallbackAdapters
 from .config_map import AndroidPaths, map_config_settings
-from .jobs import JobRegistry, registry
+from .jobs import JobRegistry, SentencePageContext, registry
 from .mining import (
     _build_processor,
     _cleanup_failure_terminal,
@@ -320,6 +320,41 @@ def _load_document(
     return document
 
 
+def _sentence_page_context(document: object) -> Callable[[object], SentencePageContext | None] | None:
+    """Per-word page-context lookup for manga documents, else None.
+
+    Reading-lane curation sentences carry the owning ReadingUnit's index in
+    start_time; the closure resolves it back to that unit's page entry, block
+    box, and page label. Only mokuro qualifies — EPUB covers carry an image
+    but no block box and add no curation context.
+    """
+
+    if getattr(document, "kind", None) != "manga":
+        return None
+    contexts: dict[int, SentencePageContext] = {}
+    for unit in getattr(document, "units", ()):
+        entry = getattr(getattr(unit, "image_ref", None), "entry", None)
+        box = getattr(unit, "block_box", None)
+        index = getattr(unit, "index", None)
+        if not isinstance(entry, str) or not entry or box is None or not isinstance(index, int):
+            continue
+        contexts[index] = SentencePageContext(
+            image_entry=entry,
+            block_box=tuple(int(value) for value in box),
+            location_label=str(getattr(unit, "location_label", "")),
+        )
+    if not contexts:
+        return None
+
+    def lookup(word: object) -> SentencePageContext | None:
+        start_time = getattr(word, "start_time", None)
+        if type(start_time) not in (int, float):
+            return None
+        return contexts.get(int(start_time))
+
+    return lookup
+
+
 def _process_reading(
     document: object,
     config: object,
@@ -419,6 +454,7 @@ def run_reading(
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             document = _load_document(request, adapters.cancel_event.is_set)
+            adapters.sentence_context = _sentence_page_context(document)
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             result = _process_reading(document, config, adapters)

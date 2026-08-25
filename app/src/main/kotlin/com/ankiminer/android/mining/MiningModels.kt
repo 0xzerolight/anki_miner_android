@@ -165,6 +165,32 @@ enum class AnkiWriteState(val wireValue: String) {
     }
 }
 
+/** A mokuro page-image crop box, in source-image pixel coordinates. */
+@Immutable
+data class CurationBlockBox(
+    val xMin: Long,
+    val yMin: Long,
+    val xMax: Long,
+    val yMax: Long,
+)
+
+/**
+ * Where a manga curation sentence was read from, for the reading-lane page preview.
+ *
+ * Optional on [CurationSentence]: present only for manga runs, and always all three fields
+ * together — the bridge never sends a partial page context.
+ */
+@Immutable
+data class CurationPageContext(
+    val imageEntry: String,
+    val blockBox: CurationBlockBox,
+    val locationLabel: String,
+) {
+    init {
+        require(imageEntry.isNotEmpty()) { "imageEntry must not be empty" }
+    }
+}
+
 @Immutable
 data class CurationSentence(
     val sentenceId: String,
@@ -174,6 +200,7 @@ data class CurationSentence(
     val startTime: Double,
     val endTime: Double,
     val duration: Double,
+    val pageContext: CurationPageContext? = null,
 ) {
     init {
         require(sentenceId.isNotBlank())
@@ -345,6 +372,11 @@ data class CurationMediaBinding(
     val audioTrackOverride: Long? = null,
 )
 
+/** The manga archive a curation pane can render page crops from. Null on non-manga lanes. */
+data class CurationPageImageBinding(
+    val archivePath: String,
+)
+
 /** Which media mining lane a repository/ViewModel pair serves. */
 internal enum class MiningLane(
     val runKind: MiningRunKind,
@@ -387,6 +419,7 @@ sealed interface MiningRunState {
         val pageSubmissionPending: Boolean = false,
         val cancellationPending: Boolean = false,
         val media: CurationMediaBinding? = null,
+        val pageImage: CurationPageImageBinding? = null,
     ) : MiningRunState
 
     data class Running(

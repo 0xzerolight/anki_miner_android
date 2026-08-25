@@ -42,6 +42,7 @@ import com.ankiminer.android.ui.mining.draftFor
 import com.ankiminer.android.ui.mining.forRequest
 import com.ankiminer.android.ui.mining.request
 import com.ankiminer.android.ui.mining.toCurationSessionState
+import com.ankiminer.android.ui.reading.CurationPageImageUiState
 import com.ankiminer.android.ui.reading.ReadingCurationUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import com.ankiminer.android.ui.reading.ReadingDocumentSlotState
@@ -189,11 +190,12 @@ class ReadingMiningViewModel internal constructor(
             definitionState,
         ) { runState, local, aux, definition ->
             val curation =
-                (runState as? MiningRunState.Curating)?.request?.let { request ->
-                    request.toUiState(
+                (runState as? MiningRunState.Curating)?.let { curating ->
+                    curating.request.toUiState(
                         draft = local.curationDraft,
                         previousPageSelectedCount = local.previousPageSelectedCount,
                         definition = definition.visible,
+                        pageImage = curating.pageImage?.let { CurationPageImageUiState(it.archivePath) },
                     )
                 }
             val repositoryCurationPending =
@@ -1371,6 +1373,7 @@ class ReadingMiningViewModel internal constructor(
         draft: SharedCurationDraft?,
         previousPageSelectedCount: Int,
         definition: CurationDefinition?,
+        pageImage: CurationPageImageUiState? = null,
     ): ReadingCurationUiState {
         val current = draft?.forRequest(this) ?: defaultCurationDraft()
         return ReadingCurationUiState(
@@ -1384,6 +1387,7 @@ class ReadingMiningViewModel internal constructor(
             focusedCandidateId = current.focusedCandidateId,
             previousPageSelectedCount = previousPageSelectedCount,
             definition = definition,
+            pageImage = pageImage,
         )
     }
 

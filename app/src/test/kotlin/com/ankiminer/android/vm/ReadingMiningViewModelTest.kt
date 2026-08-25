@@ -28,6 +28,7 @@ import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.CurationPageImageBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
@@ -40,6 +41,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
+import com.ankiminer.android.ui.reading.CurationPageImageUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import com.ankiminer.android.ui.reading.ReadingMiningCommandError
 import com.ankiminer.android.ui.reading.ReadingSourceKindUi
@@ -1101,6 +1103,37 @@ class ReadingMiningViewModelTest {
 
             assertEquals(listOf(candidateId), repository.confirmedKnownCandidateIds)
             assertTrue(repository.confirmedSelection.orEmpty().none { it.candidateId == candidateId })
+        }
+
+    @Test
+    fun curatingWithAPageImageBindingSurfacesTheArchivePath() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository =
+                RecordingReadingRepository(
+                    MiningRunState.Curating(
+                        request,
+                        pageImage = CurationPageImageBinding(archivePath = "/staged/manga.zip"),
+                    ),
+                )
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertEquals(
+                CurationPageImageUiState(archivePath = "/staged/manga.zip"),
+                viewModel.uiState.value.curation?.pageImage,
+            )
+        }
+
+    @Test
+    fun curatingWithoutAPageImageBindingLeavesItNull() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.curation?.pageImage)
         }
 
     @Test

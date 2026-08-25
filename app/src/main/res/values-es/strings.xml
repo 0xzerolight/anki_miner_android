@@ -113,6 +113,11 @@
     <string name="curation_preview_audio_unsupported">Este dispositivo no puede decodificar este audio (%1$s)</string>
     <string name="curation_preview_playback_failed">Falló la reproducción de la vista previa (%1$s)</string>
     <string name="curation_preview_retry">Reintentar</string>
+    <string name="curation_page_image_missing">No hay imagen de la página para esta palabra</string>
+    <string name="curation_page_image_error">No se pudo cargar la imagen de la página</string>
+    <string name="curation_page_image_description">Imagen de la página de manga</string>
+    <string name="curation_page_collapse_description">Contraer imagen de la página</string>
+    <string name="curation_page_expand_description">Expandir imagen de la página</string>
     <string name="definition_loading">Buscando…</string>
     <string name="definition_missing">No hay entrada en el diccionario sin conexión</string>
     <string name="definition_unavailable">Consulta de diccionario no disponible</string>

@@ -48,6 +48,11 @@ data class ReadingDocumentSlotState(
 )
 
 @Immutable
+data class CurationPageImageUiState(
+    val archivePath: String,
+)
+
+@Immutable
 data class ReadingCurationUiState(
     val runId: String,
     val requestId: String,
@@ -59,6 +64,7 @@ data class ReadingCurationUiState(
     val previousPageSelectedCount: Int = 0,
     val page: CurationPage? = null,
     val definition: CurationDefinition? = null,
+    val pageImage: CurationPageImageUiState? = null,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size

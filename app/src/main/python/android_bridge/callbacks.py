@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
 from .anki_limits import ANKI_ENVELOPE_LIMITS_V1
-from .jobs import JobHandle, JobRegistry
+from .jobs import JobHandle, JobRegistry, SentencePageContext
 from .protocol import (
     BridgeProtocolError,
     DecodedMessage,
@@ -454,6 +455,7 @@ class CallbackAdapters:
         self.progress = AndroidProgressCallback(callbacks, handle.run_id)
         self.presenter = AndroidPresenter(callbacks, handle.run_id)
         self.anki = AndroidAnkiCallbacks(callbacks, handle.run_id)
+        self.sentence_context: Callable[[object], SentencePageContext | None] | None = None
 
     @property
     def run_id(self) -> str:
@@ -502,6 +504,7 @@ class CallbackAdapters:
             lambda message: _invoke(self._callbacks, "onCurationNeeded", message),
             self.cancellation_requested,
             allow_line_expansion=self._supports_line_expansion,
+            sentence_context=self.sentence_context,
         )
 
     def cancellation_requested(self) -> bool:

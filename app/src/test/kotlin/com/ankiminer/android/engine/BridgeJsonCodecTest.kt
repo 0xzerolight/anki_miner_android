@@ -1,7 +1,9 @@
 package com.ankiminer.android.engine
 
+import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
+import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
@@ -11,6 +13,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -275,6 +278,89 @@ class BridgeJsonCodecTest {
                 listOf(CurationSelection("candidate_${"f".repeat(32)}", null)),
             )
         }
+    }
+
+    @Test
+    fun `curation sentence decodes an optional mokuro page context`() {
+        val request = curationRequest()
+        val raw =
+            curationRequestJson(
+                request,
+                ""","imageEntry":"page_003.jpg","blockBox":[10,20,30,40],"locationLabel":"Page 3, panel 2"""",
+            )
+
+        val decoded = (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationNeeded).request
+        assertEquals(
+            CurationPageContext("page_003.jpg", CurationBlockBox(10, 20, 30, 40), "Page 3, panel 2"),
+            decoded.candidates.single().sentences.single().pageContext,
+        )
+    }
+
+    @Test
+    fun `curation sentence page context is null without the optional keys`() {
+        val request = curationRequest()
+        val raw = curationRequestJson(request, "")
+
+        val decoded = (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationNeeded).request
+        assertNull(decoded.candidates.single().sentences.single().pageContext)
+    }
+
+    @Test
+    fun `curation sentence rejects a partial page context`() {
+        val request = curationRequest()
+        listOf(
+            ""","imageEntry":"page_003.jpg"""",
+            ""","blockBox":[10,20,30,40]""",
+            ""","locationLabel":"Page 3, panel 2"""",
+        ).forEach { extra ->
+            assertEquals(
+                extra,
+                BridgeProtocolCategory.INVALID_PAYLOAD,
+                protocolFailure { BridgeJsonCodec.decode(curationRequestJson(request, extra)) }.category,
+            )
+        }
+    }
+
+    @Test
+    fun `curation sentence rejects a block box with the wrong element count`() {
+        val request = curationRequest()
+        val raw =
+            curationRequestJson(
+                request,
+                ""","imageEntry":"page_003.jpg","blockBox":[10,20,30],"locationLabel":"Page 3"""",
+            )
+
+        assertEquals(
+            BridgeProtocolCategory.INVALID_PAYLOAD,
+            protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+        )
+    }
+
+    @Test
+    fun `curation sentence rejects a non-integral block box value`() {
+        val request = curationRequest()
+        val raw =
+            curationRequestJson(
+                request,
+                ""","imageEntry":"page_003.jpg","blockBox":[10.5,20,30,40],"locationLabel":"Page 3"""",
+            )
+
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+        )
+    }
+
+    @Test
+    fun `curation sentence rejects an empty image entry`() {
+        val request = curationRequest()
+        val raw =
+            curationRequestJson(
+                request,
+                ""","imageEntry":"","blockBox":[10,20,30,40],"locationLabel":"Page 3"""",
+            )
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
     }
 
     @Test
@@ -980,6 +1066,16 @@ class BridgeJsonCodecTest {
                 ),
             ),
         )
+    }
+
+    /** [curationRequest]'s single sentence, re-encoded with [sentenceFields] appended to its JSON object. */
+    private fun curationRequestJson(
+        request: CurationRequest,
+        sentenceFields: String,
+    ): String {
+        val candidate = request.candidates.single()
+        val sentence = candidate.sentences.single()
+        return """{"schemaVersion":1,"type":"curation.request","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","candidates":[{"candidateId":"${candidate.candidateId}","minedForm":"猫","surface":"猫","lemma":"猫","reading":"ネコ","expressionReading":"ねこ","partOfSpeech":null,"frequencyRank":12,"occurrenceCount":2,"defaultSentenceId":"${candidate.defaultSentenceId}","sentences":[{"sentenceId":"${sentence.sentenceId}","sentence":"猫だ。","sentenceFurigana":"猫[ねこ]だ。","sentenceReading":"ねこだ。","startTime":1.0,"endTime":2.0,"duration":1.0$sentenceFields}]}]}}"""
     }
 
     @Test
