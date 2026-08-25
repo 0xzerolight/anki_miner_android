@@ -800,6 +800,76 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `encodes an audio tracks request with an exact JSON pin`() {
+        val raw = BridgeJsonCodec.encodeAudioTracksRequest("/cache/v.mkv", "/native")
+        assertEquals(
+            """{"schemaVersion":1,"type":"media.audiotracks","payload":{"videoPath":"/cache/v.mkv","nativeLibraryDir":"/native"}}""",
+            raw,
+        )
+        assertEquals(
+            BridgeMessage.AudioTracksRequest("/cache/v.mkv", "/native"),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `decodes an audio tracks result with a full track and an all null metadata track`() {
+        val raw =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":0,"tracks":[""" +
+                """{"audioIndex":0,"globalIndex":1,"languageTag":"jpn","title":"Japanese","codec":"aac","channels":2,"isDefault":true},""" +
+                """{"audioIndex":1,"globalIndex":2,"languageTag":null,"title":null,"codec":null,"channels":null,"isDefault":false}""" +
+                """]}}"""
+        assertEquals(
+            BridgeMessage.AudioTracksResult(
+                videoPath = "/cache/v.mkv",
+                autoAudioIndex = 0,
+                tracks =
+                    listOf(
+                        AudioTrackInfo(0, 1, "jpn", "Japanese", "aac", 2, true),
+                        AudioTrackInfo(1, 2, null, null, null, null, false),
+                    ),
+            ),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `rejects an audio tracks result exceeding its track limit`() {
+        val track =
+            """{"audioIndex":0,"globalIndex":0,"languageTag":null,"title":null,"codec":null,"channels":null,"isDefault":false}"""
+        val tracks = (0 until 129).joinToString(",") { track }
+        val raw =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":null,"tracks":[$tracks]}}"""
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+        )
+    }
+
+    @Test
+    fun `rejects an audio tracks result with missing or unknown payload fields`() {
+        val missingField =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","tracks":[]}}"""
+        val extraField =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":null,"tracks":[],"extra":1}}"""
+        listOf(missingField, extraField).forEach { raw ->
+            assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+        }
+    }
+
+    @Test
+    fun `rejects an audio tracks result with a negative audio index`() {
+        val raw =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":null,"tracks":[""" +
+                """{"audioIndex":-1,"globalIndex":0,"languageTag":null,"title":null,"codec":null,"channels":null,"isDefault":false}""" +
+                """]}}"""
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+        )
+    }
+
+    @Test
     fun `nesting and UTF-8 envelope ceilings are enforced before routing`() {
         val deep =
             """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"x","message":${"[".repeat(130)}null${"]".repeat(130)}}}"""
