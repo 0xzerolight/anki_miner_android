@@ -390,6 +390,7 @@
     <string name="resource_operation_delete_resource">Удалить ресурс</string>
     <string name="resource_operation_reset_known_words">Сбросить известные слова</string>
     <string name="resource_operation_export_known_words">Экспортировать известные слова</string>
+    <string name="resource_operation_revert_mined_words">Отменить намайненные слова</string>
     <string name="resource_operation_dictionary_lookup">Поиск в словаре</string>
     <string name="resource_failure_busy">Завершите или отмените активный запуск майнинга перед изменением ресурсов</string>
     <string name="resource_failure_download_cancelled">Операция с ресурсом отменена</string>

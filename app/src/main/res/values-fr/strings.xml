@@ -390,6 +390,7 @@
     <string name="resource_operation_delete_resource">Supprimer la ressource</string>
     <string name="resource_operation_reset_known_words">Réinitialiser les mots connus</string>
     <string name="resource_operation_export_known_words">Exporter les mots connus</string>
+    <string name="resource_operation_revert_mined_words">Annuler les mots extraits</string>
     <string name="resource_operation_dictionary_lookup">Recherche dans le dictionnaire</string>
     <string name="resource_failure_busy">Terminez ou annulez l\'extraction active avant de modifier les ressources</string>
     <string name="resource_failure_download_cancelled">L\'opération sur les ressources a été annulée</string>

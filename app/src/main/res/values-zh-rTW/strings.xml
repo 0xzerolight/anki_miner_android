@@ -390,6 +390,7 @@
     <string name="resource_operation_delete_resource">移除資源</string>
     <string name="resource_operation_reset_known_words">重設已知單字</string>
     <string name="resource_operation_export_known_words">匯出已知單字</string>
+    <string name="resource_operation_revert_mined_words">復原已採集的單字</string>
     <string name="resource_operation_dictionary_lookup">字典查詢</string>
     <string name="resource_failure_busy">完成或取消目前的採集工作，再變更資源</string>
     <string name="resource_failure_download_cancelled">資源操作已取消</string>

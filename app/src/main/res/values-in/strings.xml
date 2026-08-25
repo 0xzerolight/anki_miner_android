@@ -390,6 +390,7 @@
     <string name="resource_operation_delete_resource">Hapus sumber daya</string>
     <string name="resource_operation_reset_known_words">Setel ulang kata yang dikenal</string>
     <string name="resource_operation_export_known_words">Ekspor kata yang dikenal</string>
+    <string name="resource_operation_revert_mined_words">Batalkan kata yang di-mining</string>
     <string name="resource_operation_dictionary_lookup">Pencarian kamus</string>
     <string name="resource_failure_busy">Selesaikan atau batalkan proses mining aktif sebelum mengubah sumber daya</string>
     <string name="resource_failure_download_cancelled">Operasi sumber daya dibatalkan</string>

@@ -2013,6 +2013,8 @@ class SetupViewModelTest {
             resetCalls += scope
         }
 
+        override suspend fun removeMinedWords(words: List<String>) = false
+
         override suspend fun exportKnownWords(uri: String) {
             exportCalls += uri
         }

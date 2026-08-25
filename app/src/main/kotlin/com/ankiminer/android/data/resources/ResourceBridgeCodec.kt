@@ -257,6 +257,25 @@ object ResourceBridgeCodec {
         }
     }
 
+    /** Mirrors encodeKnownWordsRemoveRequest: same bounds, distinct wire type and payload. */
+    fun encodeMinedWordsRemoveRequest(operation: String, words: List<String>): String {
+        requireOperationId(operation)
+        require(words.size in 1..256 && words.distinct().size == words.size)
+        require(
+            words.all {
+                it.isNotEmpty() &&
+                    it.toByteArray(Charsets.UTF_8).size <= 1024 &&
+                    '\u0000' !in it
+            },
+        )
+        return encode("resource.minedwords.remove") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeArrayFieldStart("words")
+            words.forEach(generator::writeString)
+            generator.writeEndArray()
+        }
+    }
+
     fun encodeKnownWordsResetRequest(operation: String, scope: KnownWordsResetScope): String {
         requireOperationId(operation)
         return encode("resource.knownwords.reset") { generator ->
@@ -603,6 +622,12 @@ object ResourceBridgeCodec {
     fun decodeKnownWordsRemoved(raw: String): Long {
         val value = payload(raw, "resource.knownwords.removed")
         exact(value, setOf("removedCount"), "known-word removal")
+        return nonNegative(value.getValue("removedCount"), "removedCount")
+    }
+
+    fun decodeMinedWordsRemoved(raw: String): Long {
+        val value = payload(raw, "resource.minedwords.removed")
+        exact(value, setOf("removedCount"), "mined-word removal")
         return nonNegative(value.getValue("removedCount"), "removedCount")
     }
 

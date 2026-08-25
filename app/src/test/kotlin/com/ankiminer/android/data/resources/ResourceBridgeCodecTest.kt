@@ -521,6 +521,43 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun minedWordsRemovalRequestValidatesAndRoundTripsTheRemovedCount() {
+        val request =
+            ResourceBridgeCodec.encodeMinedWordsRemoveRequest(
+                operation = "mined_remove",
+                words = listOf("猫", "犬"),
+            )
+
+        assertTrue(request.contains("\"type\":\"resource.minedwords.remove\""))
+        assertTrue(request.contains("\"words\":[\"猫\",\"犬\"]"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ResourceBridgeCodec.encodeMinedWordsRemoveRequest("mined_remove", emptyList())
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResourceBridgeCodec.encodeMinedWordsRemoveRequest("mined_remove", List(257) { "word$it" })
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResourceBridgeCodec.encodeMinedWordsRemoveRequest("mined_remove", listOf("dup", "dup"))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ResourceBridgeCodec.encodeMinedWordsRemoveRequest("mined_remove", listOf(""))
+        }
+
+        assertEquals(
+            2L,
+            ResourceBridgeCodec.decodeMinedWordsRemoved(
+                """{"schemaVersion":1,"type":"resource.minedwords.removed","payload":{"removedCount":2}}""",
+            ),
+        )
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeMinedWordsRemoved(
+                """{"schemaVersion":1,"type":"resource.minedwords.removed","payload":{"removedCount":2,"extra":1}}""",
+            )
+        }
+    }
+
+    @Test
     fun localResourceInventoryDecodesEveryInstalledClass() {
         val raw =
             """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}]}}"""

@@ -390,6 +390,7 @@
     <string name="resource_operation_delete_resource">Xóa tài nguyên</string>
     <string name="resource_operation_reset_known_words">Đặt lại từ đã biết</string>
     <string name="resource_operation_export_known_words">Xuất từ đã biết</string>
+    <string name="resource_operation_revert_mined_words">Hoàn tác các từ đã khai thác</string>
     <string name="resource_operation_dictionary_lookup">Tra từ điển</string>
     <string name="resource_failure_busy">Hãy hoàn tất hoặc hủy lượt khai thác đang hoạt động trước khi thay đổi tài nguyên</string>
     <string name="resource_failure_download_cancelled">Đã hủy thao tác tài nguyên</string>

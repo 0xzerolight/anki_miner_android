@@ -390,6 +390,7 @@
     <string name="resource_operation_delete_resource">Remover recurso</string>
     <string name="resource_operation_reset_known_words">Redefinir palavras conhecidas</string>
     <string name="resource_operation_export_known_words">Exportar palavras conhecidas</string>
+    <string name="resource_operation_revert_mined_words">Reverter palavras mineradas</string>
     <string name="resource_operation_dictionary_lookup">Consulta ao dicionário</string>
     <string name="resource_failure_busy">Conclua ou cancele a execução de mineração ativa antes de alterar recursos</string>
     <string name="resource_failure_download_cancelled">A operação de recurso foi cancelada</string>
