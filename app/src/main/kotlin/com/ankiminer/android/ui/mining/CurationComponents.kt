@@ -645,6 +645,94 @@ internal fun CurationRowActions(
 }
 
 @Composable
+internal fun CurationExpansionControls(
+    containerColor: Color,
+    linesBefore: Int,
+    linesAfter: Int,
+    preview: ExpansionPreview?,
+    surface: String,
+    enabled: Boolean,
+    expandPrevTestTag: String,
+    expandNextTestTag: String,
+    resetTestTag: String,
+    previewTestTag: String,
+    onExpandPrev: () -> Unit,
+    onExpandNext: () -> Unit,
+    onReset: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (preview == null) return
+    val expanded = linesBefore > 0 || linesAfter > 0
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
+        Column {
+            HorizontalDivider()
+            if (expanded) {
+                Column(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(
+                                horizontal = AnkiMinerTokens.Space.group,
+                                vertical = AnkiMinerTokens.Space.line,
+                            ).testTag(previewTestTag),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+                ) {
+                    Text(
+                        text = highlightMinedForm(preview.sentence, surface),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.curation_expansion_window,
+                                preview.startTime,
+                                preview.endTime,
+                                preview.duration,
+                            ),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            FlowRow(
+                modifier =
+                    Modifier.fillMaxWidth().padding(
+                        horizontal = AnkiMinerTokens.Space.group,
+                        vertical = AnkiMinerTokens.Space.line,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            ) {
+                TextButton(
+                    onClick = onExpandPrev,
+                    enabled = enabled && preview.canExpandPrev,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(expandPrevTestTag),
+                ) {
+                    Text(stringResource(R.string.curation_expand_previous_line))
+                }
+                TextButton(
+                    onClick = onExpandNext,
+                    enabled = enabled && preview.canExpandNext,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(expandNextTestTag),
+                ) {
+                    Text(stringResource(R.string.curation_expand_next_line))
+                }
+                TextButton(
+                    onClick = onReset,
+                    enabled = enabled && expanded,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(resetTestTag),
+                ) {
+                    Text(stringResource(R.string.curation_expand_reset))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 internal fun CurationDefinitionPane(
     definition: CurationDefinition,
     containerColor: Color,

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-FIXTURE_SHA256 = "65428b10e51e4864677ffb3b557d2004a6e66a22ff752fee2c6a1f748c200b72"
+FIXTURE_SHA256 = "f97f7a5ee9d7fb7ece6e8107ec64da1489e251f9cf47ef1a3dc40c90c7a61bdb"
 SECTIONS = (
     "tokenization",
     "morphology",

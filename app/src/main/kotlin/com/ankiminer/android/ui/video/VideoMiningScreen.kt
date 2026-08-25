@@ -61,6 +61,7 @@ import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
+import com.ankiminer.android.ui.mining.CurationExpansionControls
 import com.ankiminer.android.ui.mining.CurationFilter
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
@@ -116,6 +117,9 @@ fun VideoMiningScreen(
     onSetSelectionForPage: (Boolean) -> Unit,
     onReconcileFocus: (List<String>, List<String>) -> Unit,
     onSelectSentence: (String, String) -> Unit,
+    onExpandSentencePrev: (String) -> Unit = {},
+    onExpandSentenceNext: (String) -> Unit = {},
+    onResetSentenceExpansion: (String) -> Unit = {},
     onConfirmCuration: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -427,6 +431,9 @@ fun VideoMiningScreen(
                                 onSetCandidateSelected = onSetCandidateSelected,
                                 onMarkCandidateKnown = onMarkCandidateKnown,
                                 onSelectSentence = onSelectSentence,
+                                onExpandSentencePrev = onExpandSentencePrev,
+                                onExpandSentenceNext = onExpandSentenceNext,
+                                onResetSentenceExpansion = onResetSentenceExpansion,
                                 copy = copy,
                                 wordLabel = wordLabel,
                                 sentenceLabel = sentenceLabel,
@@ -567,10 +574,12 @@ private fun CurationPlayerSlot(
         modifier = modifier,
     )
 
-    LaunchedEffect(curation.focusedCandidateId, selectedSentenceId) {
-        val sentence = selectedSentence ?: return@LaunchedEffect
+    // Line expansion widens the window: "+ Previous line"/reset move the start and snap the
+    // preview there; "+ Next line" leaves the start (and so the key) unchanged - no reseek.
+    val seekTarget = curation.expansionPreview?.startTime ?: selectedSentence?.startTime
+    LaunchedEffect(curation.focusedCandidateId, selectedSentenceId, seekTarget) {
         delay(CURATION_SEEK_DEBOUNCE_MS)
-        player.seekTo(sentence.startTime)
+        player.seekTo(seekTarget ?: return@LaunchedEffect)
     }
 }
 
@@ -823,6 +832,9 @@ private fun LazyListScope.curationItems(
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
     onSelectSentence: (String, String) -> Unit,
+    onExpandSentencePrev: (String) -> Unit,
+    onExpandSentenceNext: (String) -> Unit,
+    onResetSentenceExpansion: (String) -> Unit,
     copy: (String, String, String?) -> Unit,
     wordLabel: String,
     sentenceLabel: String,
@@ -897,6 +909,29 @@ private fun LazyListScope.curationItems(
                         copy(sentenceLabel, chosen.sentence, copiedSentence)
                     },
                 )
+            }
+            if (curation.player != null) {
+                item(
+                    key = "expansion:${candidate.candidateId}",
+                    contentType = "expansion",
+                ) {
+                    val expansion = curation.lineExpansions[candidate.candidateId]
+                    CurationExpansionControls(
+                        containerColor = curationRowContainerColor(selected, animateSelection),
+                        linesBefore = expansion?.linesBefore ?: 0,
+                        linesAfter = expansion?.linesAfter ?: 0,
+                        preview = curation.expansionPreview,
+                        surface = candidate.surface,
+                        enabled = enabled,
+                        expandPrevTestTag = VideoMiningTestTags.candidateExpandPrev(candidate.candidateId),
+                        expandNextTestTag = VideoMiningTestTags.candidateExpandNext(candidate.candidateId),
+                        resetTestTag = VideoMiningTestTags.candidateExpandReset(candidate.candidateId),
+                        previewTestTag = VideoMiningTestTags.expansionPreview(candidate.candidateId),
+                        onExpandPrev = { onExpandSentencePrev(candidate.candidateId) },
+                        onExpandNext = { onExpandSentenceNext(candidate.candidateId) },
+                        onReset = { onResetSentenceExpansion(candidate.candidateId) },
+                    )
+                }
             }
             curation.definition?.let { definition ->
                 item(

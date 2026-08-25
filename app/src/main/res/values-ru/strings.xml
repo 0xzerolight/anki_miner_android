@@ -84,6 +84,10 @@
     <string name="curation_known_pending">Известные · ожидают</string>
     <string name="curation_copy_word">Скопировать слово</string>
     <string name="curation_copy_sentence">Скопировать предложение</string>
+    <string name="curation_expand_previous_line">+ Предыдущая строка</string>
+    <string name="curation_expand_next_line">+ Следующая строка</string>
+    <string name="curation_expand_reset">Сбросить строки</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f с · клип %3$.1f с</string>
     <string name="curation_copied_word">Слово скопировано</string>
     <string name="curation_copied_sentence">Предложение скопировано</string>
     <string name="curation_preview_play_description">Воспроизвести видео</string>

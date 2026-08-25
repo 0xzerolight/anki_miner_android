@@ -84,6 +84,10 @@
     <string name="curation_known_pending">Dikenal · tertunda</string>
     <string name="curation_copy_word">Salin kata</string>
     <string name="curation_copy_sentence">Salin kalimat</string>
+    <string name="curation_expand_previous_line">+ Baris sebelumnya</string>
+    <string name="curation_expand_next_line">+ Baris berikutnya</string>
+    <string name="curation_expand_reset">Atur ulang baris</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · klip %3$.1f s</string>
     <string name="curation_copied_word">Kata disalin</string>
     <string name="curation_copied_sentence">Kalimat disalin</string>
     <string name="curation_preview_play_description">Putar video</string>

@@ -7,7 +7,7 @@ import re
 import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -26,6 +26,7 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
 _MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
+_MAX_LINE_EXPANSION = 100
 _CURATION_CANCELLATION_POLL_SECONDS = 0.05
 logger = logging.getLogger(__name__)
 
@@ -91,6 +92,7 @@ class _CurationGate:
     failure: BridgeProtocolError | None = None
     selected: list[object] = field(default_factory=list)
     known_forms: set[str] = field(default_factory=set)
+    allow_line_expansion: bool = False
 
     @property
     def paged(self) -> bool:
@@ -425,12 +427,16 @@ class JobRegistry:
         candidates: Sequence[object],
         emit_request: Callable[[str], None],
         cancellation_requested: Callable[[], bool] | None = None,
+        *,
+        allow_line_expansion: bool = False,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
         The returned objects are the exact original candidate or sentence
-        variant instances held by the engine.  No model is reconstructed from
-        JSON.
+        variant instances held by the engine, except that a selection carrying
+        line-expansion counts returns a ``dataclasses.replace`` copy with
+        ``line_expansion`` stamped; the engine-owned original stays ``(0, 0)``.
+        No model is reconstructed from JSON.
         """
 
         if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes, bytearray)):
@@ -498,6 +504,7 @@ class JobRegistry:
                 candidates=refs,
                 request_json=request_json,
                 pages=pages,
+                allow_line_expansion=allow_line_expansion,
             )
             state.curation = gate
 
@@ -742,7 +749,9 @@ class JobRegistry:
         resolved: list[object] = []
         seen_candidates: set[str] = set()
         for item in selection:
-            if not isinstance(item, dict) or not set(item).issubset({"candidateId", "sentenceId"}):
+            if not isinstance(item, dict) or not set(item).issubset(
+                {"candidateId", "sentenceId", "linesBefore", "linesAfter"}
+            ):
                 raise _reject(
                     "invalid_curation_response",
                     "Each selection must identify a candidate",
@@ -759,6 +768,19 @@ class JobRegistry:
                     "invalid_curation_response",
                     "sentenceId must be omitted or contain a valid opaque ID",
                 )
+            expansion: list[int] = []
+            for count_key in ("linesBefore", "linesAfter"):
+                if count_key not in item:
+                    expansion.append(0)
+                    continue
+                raw_count = item[count_key]
+                if type(raw_count) is not int or not 1 <= raw_count <= _MAX_LINE_EXPANSION:
+                    raise _reject(
+                        "invalid_curation_response",
+                        f"{count_key} must be omitted or an integer between 1 and {_MAX_LINE_EXPANSION}",
+                    )
+                expansion.append(raw_count)
+            lines_before, lines_after = expansion
             if candidate_id in seen_candidates:
                 raise _reject("duplicate_candidate", "A candidate may only be selected once")
             candidate = gate.candidates.get(candidate_id)
@@ -768,6 +790,15 @@ class JobRegistry:
             chosen = candidate.sentences.get(chosen_sentence_id)
             if chosen is None:
                 raise _reject("unknown_sentence", "The sentence does not belong to this candidate")
+            if (lines_before, lines_after) != (0, 0):
+                if not gate.allow_line_expansion:
+                    raise _reject(
+                        "line_expansion_unsupported",
+                        "Line expansion is not available on this run",
+                    )
+                # Stamp intent on a copy, desktop get_selected_words style; the
+                # engine-owned original keeps (0, 0).
+                chosen = replace(cast(Any, chosen), line_expansion=(lines_before, lines_after))
             seen_candidates.add(candidate_id)
             resolved.append(chosen)
         return resolved

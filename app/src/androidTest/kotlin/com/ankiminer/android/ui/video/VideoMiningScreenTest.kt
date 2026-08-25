@@ -39,6 +39,7 @@ import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
@@ -49,6 +50,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.CurationPlayerTestTags
+import com.ankiminer.android.ui.mining.ExpansionPreview
 import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
@@ -249,6 +251,135 @@ class VideoMiningScreenTest {
             )
             assertTrue(confirmed)
         }
+    }
+
+    @Test
+    fun expansionControlsRenderAndFireForFocusedCandidateWithPlayer() {
+        val request = request()
+        val pressed = mutableListOf<String>()
+        val state =
+            VideoMiningUiState(
+                runState = MiningRunState.Curating(request),
+                curation =
+                    curationState(request).copy(
+                        player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                        expansionPreview =
+                            ExpansionPreview(
+                                sentence = "魚を食べる。",
+                                startTime = 0.0,
+                                endTime = 1.0,
+                                duration = 1.0,
+                                canExpandPrev = true,
+                                canExpandNext = true,
+                            ),
+                    ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onExpandSentencePrev = { pressed += "prev:$it" },
+                    onExpandSentenceNext = { pressed += "next:$it" },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandPrev("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandPrev("candidate-1")).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandNext("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandNext("candidate-1")).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf("prev:candidate-1", "next:candidate-1"), pressed)
+        }
+    }
+
+    @Test
+    fun expansionControlsAbsentWithoutPlayer() {
+        val request = request()
+        val state =
+            VideoMiningUiState(
+                runState = MiningRunState.Curating(request),
+                curation = curationState(request),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(state = state)
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateKnown("candidate-1")))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateExpandPrev("candidate-1"))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun expansionResetGatingAndPreviewText() {
+        val request = request()
+        val preview =
+            ExpansionPreview(
+                sentence = "前の文 魚を食べる。",
+                startTime = 0.0,
+                endTime = 2.0,
+                duration = 2.0,
+                canExpandPrev = true,
+                canExpandNext = true,
+            )
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                            lineExpansions = mapOf("candidate-1" to CurationLineExpansion(1, 0)),
+                            expansionPreview = preview,
+                        ),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(state = state)
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.expansionPreview("candidate-1")))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("前の文 魚を食べる。").assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandReset("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertIsEnabled()
+
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    curation =
+                        requireNotNull(state.curation).copy(
+                            lineExpansions = emptyMap(),
+                            expansionPreview = preview.copy(sentence = "魚を食べる。"),
+                        ),
+                )
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandReset("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertIsNotEnabled()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
+            .assertDoesNotExist()
     }
 
     @Test
@@ -1692,6 +1823,9 @@ class VideoMiningScreenTest {
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
+        onExpandSentencePrev: (String) -> Unit = {},
+        onExpandSentenceNext: (String) -> Unit = {},
+        onResetSentenceExpansion: (String) -> Unit = {},
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
@@ -1718,6 +1852,9 @@ class VideoMiningScreenTest {
             onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
             onSelectSentence = onSelectSentence,
+            onExpandSentencePrev = onExpandSentencePrev,
+            onExpandSentenceNext = onExpandSentenceNext,
+            onResetSentenceExpansion = onResetSentenceExpansion,
             onConfirmCuration = onConfirmCuration,
             onCancel = onCancel,
             onRetry = onRetry,
