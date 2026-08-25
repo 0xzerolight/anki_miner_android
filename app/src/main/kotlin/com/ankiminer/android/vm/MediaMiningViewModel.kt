@@ -592,7 +592,6 @@ class MediaMiningViewModel internal constructor(
             if (
                 local.video.isResolving ||
                 repository.state.value != MiningRunState.Idle ||
-                runtimeWorkState.value != null ||
                 local.pending.start ||
                 local.pending.reset ||
                 local.timingPreviewPending ||

@@ -1790,6 +1790,37 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun openAudioTrackPickerSurfacesBusyInsteadOfSilentlyRefusingDuringRuntimeWork() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val runtimeWork = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null)
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    runtimeWorkState = runtimeWork,
+                    audioTrackProbeOpener = opener,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+
+            runtimeWork.value = RuntimeWorkCoordinator.Kind.MINING
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+            assertEquals(1, opener.probedVideos.size)
+
+            opener.complete(Result.failure(AudioTrackProbeBusyException()))
+            runCurrent()
+
+            assertEquals(AudioTrackPickerError.BUSY, viewModel.uiState.value.audioTrackPickerError)
+            assertFalse(viewModel.uiState.value.audioTrackProbePending)
+        }
+
+    @Test
     fun openAudioTrackPickerIsRefusedWhileTimingPreviewIsPendingOrOpen() =
         runTest(mainDispatcherRule.dispatcher) {
             val timingGate = CompletableDeferred<Result<TimingPreviewSession>>()
