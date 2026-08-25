@@ -97,6 +97,10 @@
     <string name="curation_known_pending">Известные · ожидают</string>
     <string name="curation_copy_word">Скопировать слово</string>
     <string name="curation_copy_sentence">Скопировать предложение</string>
+    <string name="curation_expand_previous_line">+ Предыдущая строка</string>
+    <string name="curation_expand_next_line">+ Следующая строка</string>
+    <string name="curation_expand_reset">Сбросить строки</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f с · клип %3$.1f с</string>
     <string name="curation_copied_word">Слово скопировано</string>
     <string name="curation_copied_sentence">Предложение скопировано</string>
     <string name="curation_preview_play_description">Воспроизвести видео</string>
@@ -127,6 +131,13 @@
     <string name="curation_bulk_action">Выбрать…</string>
     <string name="curation_tools_hide">Скрыть поиск и фильтры</string>
     <string name="curation_tools_show">Показать поиск и фильтры</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Показать %1$d альтернативу</item>
+        <item quantity="few">Показать %1$d альтернативы</item>
+        <item quantity="many">Показать %1$d альтернатив</item>
+        <item quantity="other">Показать %1$d альтернативы</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Скрыть альтернативы</string>
     <string name="candidate_state_selected">Выбрано</string>
     <string name="candidate_state_excluded">Исключено</string>
     <string name="candidate_part_of_speech_unknown">Неизвестная часть речи</string>

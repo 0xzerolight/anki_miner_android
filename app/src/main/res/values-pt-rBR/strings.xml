@@ -97,6 +97,10 @@
     <string name="curation_known_pending">Conhecida · pendente</string>
     <string name="curation_copy_word">Copiar palavra</string>
     <string name="curation_copy_sentence">Copiar frase</string>
+    <string name="curation_expand_previous_line">+ Linha anterior</string>
+    <string name="curation_expand_next_line">+ Próxima linha</string>
+    <string name="curation_expand_reset">Redefinir linhas</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · clipe de %3$.1f s</string>
     <string name="curation_copied_word">Palavra copiada</string>
     <string name="curation_copied_sentence">Frase copiada</string>
     <string name="curation_preview_play_description">Reproduzir vídeo</string>
@@ -127,6 +131,12 @@
     <string name="curation_bulk_action">Selecionar…</string>
     <string name="curation_tools_hide">Ocultar pesquisa e filtros</string>
     <string name="curation_tools_show">Mostrar pesquisa e filtros</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Mostrar %1$d alternativa</item>
+        <item quantity="many">Mostrar %1$d alternativas</item>
+        <item quantity="other">Mostrar %1$d alternativas</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Ocultar alternativas</string>
     <string name="candidate_state_selected">Selecionada</string>
     <string name="candidate_state_excluded">Excluída</string>
     <string name="candidate_part_of_speech_unknown">Classe gramatical desconhecida</string>

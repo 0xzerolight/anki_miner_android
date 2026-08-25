@@ -119,6 +119,62 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `line expansion counts survive the wire into the bridge`() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                listOf(CurationSelection(CANDIDATE_ID, SENTENCE_ID, linesBefore = 2, linesAfter = 1)),
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        val decoded = requireNotNull(harness.bridge.selection).single()
+        assertEquals(2, decoded.linesBefore)
+        assertEquals(1, decoded.linesAfter)
+    }
+
+    @Test
+    fun `session state with expansions round-trips and clears on terminal`() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        val session =
+            CurationSessionState(
+                runId = curating.request.runId,
+                requestId = curating.request.requestId,
+                pageIndex = null,
+                selectedCandidateIds = setOf(CANDIDATE_ID),
+                sentenceIds = mapOf(CANDIDATE_ID to SENTENCE_ID),
+                focusedCandidateId = CANDIDATE_ID,
+                previousPageSelectedCount = 0,
+                lineExpansions = mapOf(CANDIDATE_ID to CurationLineExpansion(1, 2)),
+            )
+        harness.repository.saveCurationSessionState(session)
+        assertEquals(session, harness.repository.curationSessionState())
+
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertNull(harness.repository.curationSessionState())
+    }
+
+    @Test
     fun `stage start and update retain the whole run progress band`() {
         val harness = harness()
 

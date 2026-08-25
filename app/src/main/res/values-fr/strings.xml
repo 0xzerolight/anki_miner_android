@@ -97,6 +97,10 @@
     <string name="curation_known_pending">Connu · en attente</string>
     <string name="curation_copy_word">Copier le mot</string>
     <string name="curation_copy_sentence">Copier la phrase</string>
+    <string name="curation_expand_previous_line">+ Ligne précédente</string>
+    <string name="curation_expand_next_line">+ Ligne suivante</string>
+    <string name="curation_expand_reset">Réinitialiser les lignes</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · extrait de %3$.1f s</string>
     <string name="curation_copied_word">Mot copié</string>
     <string name="curation_copied_sentence">Phrase copiée</string>
     <string name="curation_preview_play_description">Lire la vidéo</string>
@@ -127,6 +131,12 @@
     <string name="curation_bulk_action">Sélectionner…</string>
     <string name="curation_tools_hide">Masquer la recherche et les filtres</string>
     <string name="curation_tools_show">Afficher la recherche et les filtres</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Afficher %1$d alternative</item>
+        <item quantity="many">Afficher %1$d alternatives</item>
+        <item quantity="other">Afficher %1$d alternatives</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Masquer les alternatives</string>
     <string name="candidate_state_selected">Sélectionné</string>
     <string name="candidate_state_excluded">Exclu</string>
     <string name="candidate_part_of_speech_unknown">Partie du discours inconnue</string>

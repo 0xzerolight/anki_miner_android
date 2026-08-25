@@ -77,6 +77,8 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            audioPaddingSeconds =
+                app.settingsRepository.settings.map { it.audioPaddingSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
@@ -95,6 +97,8 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            audioPaddingSeconds =
+                app.settingsRepository.settings.map { it.audioPaddingSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,

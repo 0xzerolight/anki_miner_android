@@ -97,6 +97,10 @@
     <string name="curation_known_pending">已知 · 待處理</string>
     <string name="curation_copy_word">複製單字</string>
     <string name="curation_copy_sentence">複製句子</string>
+    <string name="curation_expand_previous_line">+ 上一行</string>
+    <string name="curation_expand_next_line">+ 下一行</string>
+    <string name="curation_expand_reset">重設行</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f 秒 · 片段 %3$.1f 秒</string>
     <string name="curation_copied_word">已複製單字</string>
     <string name="curation_copied_sentence">已複製句子</string>
     <string name="curation_preview_play_description">播放影片</string>
@@ -127,6 +131,10 @@
     <string name="curation_bulk_action">選取…</string>
     <string name="curation_tools_hide">隱藏搜尋和篩選</string>
     <string name="curation_tools_show">顯示搜尋和篩選</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">顯示 %1$d 個備選例句</item>
+    </plurals>
+    <string name="curation_alternatives_hide">隱藏備選例句</string>
     <string name="candidate_state_selected">已選取</string>
     <string name="candidate_state_excluded">已排除</string>
     <string name="candidate_part_of_speech_unknown">未知詞性</string>

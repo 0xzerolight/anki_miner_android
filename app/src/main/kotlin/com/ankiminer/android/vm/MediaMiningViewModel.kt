@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
+import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.log.AppLog
@@ -43,6 +44,8 @@ import com.ankiminer.android.tracks.AudioTrackProbeBusyException
 import com.ankiminer.android.tracks.AudioTrackProbeOpener
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
+import com.ankiminer.android.ui.mining.ExpansionPreview
+import com.ankiminer.android.ui.mining.expansionPreview
 import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
@@ -99,6 +102,7 @@ class MediaMiningViewModel internal constructor(
     private val definitionLookup: DefinitionLookupService? = null,
     private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
     effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+    audioPaddingSeconds: Flow<Double?> = flowOf(null),
     fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
     audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
     private val timingPreviewOpener: TimingPreviewOpener? = null,
@@ -112,6 +116,7 @@ class MediaMiningViewModel internal constructor(
         val subtitle: DocumentSlotState = DocumentSlotState(),
         val subtitleOffsetDraft: String = "",
         val globalSubtitleOffset: Double? = null,
+        val audioPaddingSeconds: Double? = null,
         val fieldMap: Map<String, String> = emptyMap(),
         val audioPacks: List<InstalledAudioPack> = emptyList(),
         val curationDraft: SharedCurationDraft? = null,
@@ -226,6 +231,8 @@ class MediaMiningViewModel internal constructor(
                         previousPageSelectedCount = local.previousPageSelectedCount,
                         definition = definition.visible,
                         player = curating.toPlayerUiState(cues),
+                        audioPaddingSeconds =
+                            local.audioPaddingSeconds ?: EngineDefaults.AUDIO_PADDING_SECONDS,
                     )
                 }
             val repositoryCurationPending =
@@ -277,6 +284,13 @@ class MediaMiningViewModel internal constructor(
             effectiveSubtitleOffset.distinctUntilChanged().collect { offset ->
                 localState.update { local ->
                     local.copy(globalSubtitleOffset = offset?.takeIf { it.isFinite() })
+                }
+            }
+        }
+        viewModelScope.launch {
+            audioPaddingSeconds.distinctUntilChanged().collect { padding ->
+                localState.update { local ->
+                    local.copy(audioPaddingSeconds = padding?.takeIf { it.isFinite() && it >= 0 })
                 }
             }
         }
@@ -811,6 +825,42 @@ class MediaMiningViewModel internal constructor(
         localState.update { local ->
             val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
             val updated = draft.selectSentence(request, candidateId, sentenceId) ?: return@update local
+            local.copy(curationDraft = updated)
+        }
+        saveCurationSession(request)
+    }
+
+    fun expandSentencePrev(candidateId: String) = changeExpansion(candidateId) { draft, request ->
+        draft.expandSentence(request, candidateId, 1, 0)
+    }
+
+    fun expandSentenceNext(candidateId: String) = changeExpansion(candidateId) { draft, request ->
+        draft.expandSentence(request, candidateId, 0, 1)
+    }
+
+    fun resetSentenceExpansion(candidateId: String) = changeExpansion(candidateId) { draft, request ->
+        draft.resetExpansion(request, candidateId)
+    }
+
+    private fun changeExpansion(
+        candidateId: String,
+        transform: (SharedCurationDraft, CurationRequest) -> SharedCurationDraft?,
+    ) {
+        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
+        if (isCurationSubmissionPending() || localState.value.pending.cancel) return
+        if (request.candidates.none { it.candidateId == candidateId }) return
+        LogContext.withRunId(request.runId) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "target_change",
+                "target" to "expansion",
+                "outcome" to "ok",
+            )
+        }
+        localState.update { local ->
+            val draft = local.curationDraft?.forRequest(request) ?: request.defaultCurationDraft()
+            val updated = transform(draft, request) ?: return@update local
             local.copy(curationDraft = updated)
         }
         saveCurationSession(request)
@@ -1529,6 +1579,7 @@ class MediaMiningViewModel internal constructor(
         previousPageSelectedCount: Int,
         definition: CurationDefinition?,
         player: CurationPlayerUiState?,
+        audioPaddingSeconds: Double,
     ): CurationUiState {
         val current = draft?.forRequest(this) ?: defaultCurationDraft()
         return CurationUiState(
@@ -1543,6 +1594,30 @@ class MediaMiningViewModel internal constructor(
             previousPageSelectedCount = previousPageSelectedCount,
             definition = definition,
             player = player,
+            lineExpansions = current.lineExpansions,
+            expansionPreview = expansionPreviewFor(current, player, audioPaddingSeconds),
+        )
+    }
+
+    /** Preview for the focused candidate's chosen sentence, from the run's own cue list. */
+    private fun CurationRequest.expansionPreviewFor(
+        draft: SharedCurationDraft,
+        player: CurationPlayerUiState?,
+        audioPaddingSeconds: Double,
+    ): ExpansionPreview? {
+        val focused = draft.focusedCandidateId ?: return null
+        val cues = player?.takeUnless { it.cuesUnavailable }?.cues ?: return null
+        if (cues.isEmpty()) return null
+        val candidate = candidates.firstOrNull { it.candidateId == focused } ?: return null
+        val sentenceId = draft.sentenceIds[focused] ?: candidate.defaultSentenceId
+        val sentence = candidate.sentences.firstOrNull { it.sentenceId == sentenceId } ?: return null
+        val expansion = draft.lineExpansions[focused]
+        return expansionPreview(
+            cues = cues,
+            sentence = sentence,
+            linesBefore = expansion?.linesBefore ?: 0,
+            linesAfter = expansion?.linesAfter ?: 0,
+            audioPaddingSeconds = audioPaddingSeconds,
         )
     }
 
@@ -1553,6 +1628,7 @@ class MediaMiningViewModel internal constructor(
         private val definitionLookup: DefinitionLookupService,
         private val cueLookup: SubtitleCueLookupService = NO_CUE_LOOKUP,
         private val effectiveSubtitleOffset: Flow<Double?> = flowOf(null),
+        private val audioPaddingSeconds: Flow<Double?> = flowOf(null),
         private val fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
         private val audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
         private val timingPreviewOpener: TimingPreviewOpener? = null,
@@ -1579,6 +1655,7 @@ class MediaMiningViewModel internal constructor(
                 definitionLookup = definitionLookup,
                 cueLookup = cueLookup,
                 effectiveSubtitleOffset = effectiveSubtitleOffset,
+                audioPaddingSeconds = audioPaddingSeconds,
                 fieldMap = fieldMap,
                 audioPacks = audioPacks,
                 timingPreviewOpener = timingPreviewOpener,

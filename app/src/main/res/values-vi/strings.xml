@@ -97,6 +97,10 @@
     <string name="curation_known_pending">Đã biết · chờ xử lý</string>
     <string name="curation_copy_word">Sao chép từ</string>
     <string name="curation_copy_sentence">Sao chép câu</string>
+    <string name="curation_expand_previous_line">+ Dòng trước</string>
+    <string name="curation_expand_next_line">+ Dòng sau</string>
+    <string name="curation_expand_reset">Đặt lại dòng</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f giây · đoạn %3$.1f giây</string>
     <string name="curation_copied_word">Đã sao chép từ</string>
     <string name="curation_copied_sentence">Đã sao chép câu</string>
     <string name="curation_preview_play_description">Phát video</string>
@@ -127,6 +131,10 @@
     <string name="curation_bulk_action">Chọn…</string>
     <string name="curation_tools_hide">Ẩn tìm kiếm và bộ lọc</string>
     <string name="curation_tools_show">Hiện tìm kiếm và bộ lọc</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">Hiện %1$d câu thay thế</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Ẩn câu thay thế</string>
     <string name="candidate_state_selected">Đã chọn</string>
     <string name="candidate_state_excluded">Đã loại trừ</string>
     <string name="candidate_part_of_speech_unknown">Không rõ từ loại</string>

@@ -987,6 +987,22 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun readingSelectionsNeverCarryLineExpansion() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(page = null)
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.confirmCuration()
+            runCurrent()
+
+            val selection = requireNotNull(repository.confirmedSelection)
+            assertTrue(selection.isNotEmpty())
+            assertTrue(selection.all { it.linesBefore == 0 && it.linesAfter == 0 })
+        }
+
+    @Test
     fun pagedReadingCurationCarriesSubmittedCountAcrossRequestIdsInSameRun() =
         runTest(mainDispatcherRule.dispatcher) {
             val first =

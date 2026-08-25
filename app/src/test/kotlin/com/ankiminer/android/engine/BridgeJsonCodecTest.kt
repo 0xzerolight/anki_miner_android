@@ -287,6 +287,72 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `line expansion counts ride the selection wire and round-trip`() {
+        val request = curationRequest()
+        val candidate = request.candidates.single()
+
+        val both =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(candidate.candidateId, candidate.defaultSentenceId, linesBefore = 2, linesAfter = 1)),
+            )
+        assertTrue(both.contains("\"linesBefore\":2"))
+        assertTrue(both.contains("\"linesAfter\":1"))
+        val decoded = (BridgeJsonCodec.decode(both) as BridgeMessage.CurationResponse).selection!!.single()
+        assertEquals(2, decoded.linesBefore)
+        assertEquals(1, decoded.linesAfter)
+
+        val onlyBefore =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(candidate.candidateId, null, linesBefore = 1)),
+            )
+        assertTrue(onlyBefore.contains("\"linesBefore\":1"))
+        assertFalse(onlyBefore.contains("linesAfter"))
+        val decodedBefore = (BridgeJsonCodec.decode(onlyBefore) as BridgeMessage.CurationResponse).selection!!.single()
+        assertEquals(1, decodedBefore.linesBefore)
+        assertEquals(0, decodedBefore.linesAfter)
+    }
+
+    @Test
+    fun `zero line counts never reach the wire`() {
+        val request = curationRequest()
+        val raw =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(request.candidates.single().candidateId, null)),
+            )
+
+        assertFalse(raw.contains("linesBefore"))
+        assertFalse(raw.contains("linesAfter"))
+    }
+
+    @Test
+    fun `expansion without a sentence id round-trips`() {
+        val request = curationRequest()
+        val raw =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(request.candidates.single().candidateId, null, linesAfter = 3)),
+            )
+
+        val decoded = (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationResponse).selection!!.single()
+        assertEquals(null, decoded.sentenceId)
+        assertEquals(3, decoded.linesAfter)
+    }
+
+    @Test
+    fun `decode rejects out-of-range line expansion counts`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        for (expansion in listOf("\"linesBefore\":0", "\"linesBefore\":-1", "\"linesAfter\":101", "\"linesAfter\":1.5")) {
+            val raw =
+                """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[{"candidateId":"$candidateId",$expansion}]}}"""
+            assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+        }
+    }
+
+    @Test
     fun `encodes known candidate ids`() {
         val request = curationRequest()
         val candidateId = request.candidates.single().candidateId

@@ -97,6 +97,10 @@
     <string name="curation_known_pending">既知・保留中</string>
     <string name="curation_copy_word">単語をコピー</string>
     <string name="curation_copy_sentence">例文をコピー</string>
+    <string name="curation_expand_previous_line">+ 前の行</string>
+    <string name="curation_expand_next_line">+ 次の行</string>
+    <string name="curation_expand_reset">行をリセット</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f 秒 · クリップ %3$.1f 秒</string>
     <string name="curation_copied_word">単語をコピーしました</string>
     <string name="curation_copied_sentence">例文をコピーしました</string>
     <string name="curation_preview_play_description">動画を再生</string>
@@ -127,6 +131,10 @@
     <string name="curation_bulk_action">選択…</string>
     <string name="curation_tools_hide">検索とフィルターを隠す</string>
     <string name="curation_tools_show">検索とフィルターを表示</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">%1$d 件の代替文を表示</item>
+    </plurals>
+    <string name="curation_alternatives_hide">代替文を隠す</string>
     <string name="candidate_state_selected">選択済み</string>
     <string name="candidate_state_excluded">除外済み</string>
     <string name="candidate_part_of_speech_unknown">品詞不明</string>

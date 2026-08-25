@@ -439,10 +439,18 @@ class AndroidPresenter:
 class CallbackAdapters:
     """One coherent adapter set bound to a single live job."""
 
-    def __init__(self, callbacks: object, registry: JobRegistry, handle: JobHandle) -> None:
+    def __init__(
+        self,
+        callbacks: object,
+        registry: JobRegistry,
+        handle: JobHandle,
+        *,
+        supports_line_expansion: bool = False,
+    ) -> None:
         self._callbacks = callbacks
         self._registry = registry
         self._handle = handle
+        self._supports_line_expansion = supports_line_expansion
         self.progress = AndroidProgressCallback(callbacks, handle.run_id)
         self.presenter = AndroidPresenter(callbacks, handle.run_id)
         self.anki = AndroidAnkiCallbacks(callbacks, handle.run_id)
@@ -493,6 +501,7 @@ class CallbackAdapters:
             candidates,
             lambda message: _invoke(self._callbacks, "onCurationNeeded", message),
             self.cancellation_requested,
+            allow_line_expansion=self._supports_line_expansion,
         )
 
     def cancellation_requested(self) -> bool:

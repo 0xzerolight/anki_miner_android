@@ -49,10 +49,23 @@ object VideoMiningTestTags {
     fun candidateCopySentence(candidateId: String): String =
         "candidate_copy_sentence:$candidateId"
 
+    fun candidateExpandPrev(candidateId: String): String = "candidate_expand_prev:$candidateId"
+
+    fun candidateExpandNext(candidateId: String): String = "candidate_expand_next:$candidateId"
+
+    fun candidateExpandReset(candidateId: String): String = "candidate_expand_reset:$candidateId"
+
+    fun expansionPreview(candidateId: String): String = "expansion_preview:$candidateId"
+
     fun sentence(
         candidateId: String,
         sentenceId: String,
     ): String = "sentence:$candidateId:$sentenceId"
 
     fun audioTrackRow(audioIndex: Long?): String = "audio_track_row:${audioIndex ?: "auto"}"
+
+    fun chosenSentence(candidateId: String): String = "chosen_sentence:$candidateId"
+
+    fun alternativesToggle(candidateId: String): String =
+        "sentence_alternatives_toggle:$candidateId"
 }
