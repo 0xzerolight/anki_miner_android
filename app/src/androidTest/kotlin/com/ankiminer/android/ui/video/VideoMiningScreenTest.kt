@@ -661,8 +661,13 @@ class VideoMiningScreenTest {
             },
         )
         val tailTag = VideoMiningTestTags.sentence(candidateId, sentences.last().sentenceId)
+        val toggleTag = VideoMiningTestTags.alternativesToggle(candidateId)
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithTag(toggleTag).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(tailTag))
@@ -672,6 +677,160 @@ class VideoMiningScreenTest {
         composeRule.runOnIdle {
             assertEquals(candidateId to sentences.last().sentenceId, selection)
         }
+    }
+
+    @Test
+    fun exactlyThreeAlternativesRenderInlineWithoutDisclosure() {
+        val candidateId = "candidate-inline"
+        val sentences = (0 until 4).map { sentence("sentence-$it", "Sentence number $it") }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate(candidateId, "食べる", sentences)),
+            )
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidateId),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.alternativesToggle(candidateId))
+            .assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.chosenSentence(candidateId))
+            .assertDoesNotExist()
+        sentences.forEach { sentence ->
+            val tag = VideoMiningTestTags.sentence(candidateId, sentence.sentenceId)
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertExists()
+        }
+    }
+
+    @Test
+    fun fourAlternativesFoldBehindACollapsedDisclosureWithTheChosenSentencePinnedFirst() {
+        val candidateId = "candidate-folded"
+        val sentences = (0 until 5).map { sentence("sentence-$it", "Sentence number $it") }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate(candidateId, "食べる", sentences)),
+            )
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            sentenceIds = mapOf(candidateId to "sentence-2"),
+                            focusedCandidateId = candidateId,
+                        ),
+                ),
+        )
+        val toggleTag = VideoMiningTestTags.alternativesToggle(candidateId)
+
+        // The mined sentence is never hidden: it is pinned right below the actions.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.chosenSentence(candidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.chosenSentence(candidateId))
+            .assert(hasText("Sentence number 2", substring = true))
+        // Collapsed by default: no alternative rows, only the disclosure.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithText("Show 4 alternatives").assertExists()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(candidateId, "sentence-0"))
+            .assertDoesNotExist()
+
+        composeRule.onNodeWithTag(toggleTag).performClick()
+
+        // Open: alternatives in source order, chosen excluded.
+        composeRule.onNodeWithText("Hide alternatives").assertExists()
+        listOf("sentence-0", "sentence-1", "sentence-3", "sentence-4").forEach { id ->
+            val tag = VideoMiningTestTags.sentence(candidateId, id)
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertExists()
+        }
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(candidateId, "sentence-2"))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun tappingAnAlternativePromotesItToThePinnedChosenSlot() {
+        val candidateId = "candidate-promote"
+        val sentences = (0 until 5).map { sentence("sentence-$it", "Sentence number $it") }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate(candidateId, "食べる", sentences)),
+            )
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidateId),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onSelectSentence = { id, sentenceId ->
+                        val curation = requireNotNull(state.curation)
+                        state =
+                            state.copy(
+                                curation =
+                                    curation.copy(
+                                        sentenceIds = curation.sentenceIds + (id to sentenceId),
+                                    ),
+                            )
+                    },
+                )
+            }
+        }
+        val toggleTag = VideoMiningTestTags.alternativesToggle(candidateId)
+        val promotedTag = VideoMiningTestTags.sentence(candidateId, "sentence-3")
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithTag(toggleTag).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(promotedTag))
+        composeRule.onNodeWithTag(promotedTag).performClick()
+
+        // The tapped sentence owns the pinned slot; the disclosure stays open (neither requestId
+        // nor focusedCandidateId changed); the previous chosen re-enters the alternatives.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.chosenSentence(candidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.chosenSentence(candidateId))
+            .assert(hasText("Sentence number 3", substring = true))
+        composeRule.onNodeWithTag(promotedTag).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.sentence(candidateId, "sentence-0")),
+            )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(candidateId, "sentence-0"))
+            .assertExists()
     }
 
     @Test

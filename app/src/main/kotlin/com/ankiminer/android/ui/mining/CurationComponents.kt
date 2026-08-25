@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -828,6 +829,72 @@ internal fun CurationSentenceChoice(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Folds a large alternative set behind one row: "Show N alternatives" / "Hide alternatives".
+ *
+ * Sits between the pinned chosen sentence and the alternative rows, so the mined sentence stays
+ * visible while the flood stays collapsed.
+ */
+@Composable
+internal fun CurationAlternativesToggle(
+    alternativeCount: Int,
+    expanded: Boolean,
+    containerColor: Color,
+    enabled: Boolean,
+    isLast: Boolean,
+    testTag: String,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label =
+        if (expanded) {
+            stringResource(R.string.curation_alternatives_hide)
+        } else {
+            pluralStringResource(
+                R.plurals.curation_alternatives_show,
+                alternativeCount,
+                alternativeCount,
+            )
+        }
+    val toggleState =
+        stringResource(
+            if (expanded) R.string.disclosure_expanded else R.string.disclosure_collapsed,
+        )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape =
+            if (isLast) {
+                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+            } else {
+                RoundedCornerShape(0.dp)
+            },
+    ) {
+        Column {
+            HorizontalDivider()
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(enabled = enabled, role = Role.Button, onClick = onToggle)
+                        .testTag(testTag)
+                        .semantics { stateDescription = toggleState }
+                        .padding(
+                            horizontal = AnkiMinerTokens.Space.group,
+                            vertical = AnkiMinerTokens.Space.related,
+                        ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = label, style = MaterialTheme.typography.labelLarge)
+                ChevronGlyph(pointsUp = expanded)
             }
         }
     }
