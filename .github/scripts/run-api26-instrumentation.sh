@@ -41,7 +41,7 @@ readonly unexecuted_tests=(
     "$s5_definition_lookup_test"
     "${ui_audit_tests[@]}"
 )
-readonly expected_executed_test_count=296
+readonly expected_executed_test_count=299
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
 # The lane runs everything the runner discovers except the allowlist above. The result contract is
