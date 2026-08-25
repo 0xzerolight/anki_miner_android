@@ -98,6 +98,7 @@
     <string name="curation_preview_retry">Erneut versuchen</string>
     <string name="curation_page_image_missing">Kein Seitenbild für dieses Wort</string>
     <string name="curation_page_image_error">Seitenbild konnte nicht geladen werden</string>
+    <string name="curation_page_image_description">Manga-Seitenbild</string>
     <string name="curation_page_collapse_description">Seitenbild einklappen</string>
     <string name="curation_page_expand_description">Seitenbild ausklappen</string>
     <string name="definition_loading">Wird nachgeschlagen…</string>

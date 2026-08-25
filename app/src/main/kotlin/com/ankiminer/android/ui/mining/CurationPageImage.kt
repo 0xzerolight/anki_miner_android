@@ -116,7 +116,7 @@ private sealed interface PageDecodeState {
 // alpha fill so the bubble text stays legible under it.
 private val HighlightColor = Color(0xFFFF503C)
 private const val HIGHLIGHT_FILL_ALPHA = 35f / 255f
-private const val HIGHLIGHT_STROKE_WIDTH_PX = 2.5f
+private val HighlightStrokeWidth = 2.5.dp
 
 // Placeholder/loading aspect while the real page dimensions aren't known yet: a typical portrait
 // manga page, so the pane doesn't jump size once the decode resolves.
@@ -267,11 +267,13 @@ private fun PageImageCanvas(
         remember(scaledBox, decoded.bitmap) {
             clampBlockBox(scaledBox, decoded.bitmap.width, decoded.bitmap.height)
         }
+    val imageDescription = stringResource(R.string.curation_page_image_description)
     Canvas(
         modifier =
             Modifier
                 .paneContentSize(decoded.bitmap.width / decoded.bitmap.height.toFloat())
-                .testTag(CurationPageImageTestTags.SURFACE),
+                .testTag(CurationPageImageTestTags.SURFACE)
+                .semantics { contentDescription = imageDescription },
     ) {
         val transform =
             pageFitTransform(size.width, size.height, decoded.bitmap.width, decoded.bitmap.height)
@@ -305,7 +307,7 @@ private fun PageImageCanvas(
                 color = HighlightColor,
                 topLeft = highlightTopLeft,
                 size = highlightSize,
-                style = Stroke(width = HIGHLIGHT_STROKE_WIDTH_PX),
+                style = Stroke(width = HighlightStrokeWidth.toPx()),
             )
         }
     }

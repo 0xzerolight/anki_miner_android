@@ -215,6 +215,16 @@ fun ReadingMiningScreen(
                     target.initialState
                 }
             val targetCuration = targetState.curation
+            // A mokuro volume whose blocks are ALL malformed produces zero pageContexts across
+            // every candidate/sentence; without this the pane would stay mounted showing nothing
+            // but the "missing" placeholder for the whole run. A page with partial coverage still
+            // keeps the pane's existing stay-mounted behavior once any pageContext exists.
+            val curationHasPageContext =
+                remember(targetCuration?.candidates) {
+                    targetCuration?.candidates.orEmpty().any { candidate ->
+                        candidate.sentences.any { it.pageContext != null }
+                    }
+                }
             val selectionProjectionKey =
                 if (filter == CurationFilter.ALL) {
                     emptySet()
@@ -306,7 +316,11 @@ fun ReadingMiningScreen(
                         .consumeWindowInsets(scaffoldPadding)
                         .semantics { paneTitle = phaseTitle },
             ) {
-                if (targetState.runState is MiningRunState.Curating && targetCuration?.pageImage != null) {
+                if (
+                    targetState.runState is MiningRunState.Curating &&
+                    targetCuration?.pageImage != null &&
+                    curationHasPageContext
+                ) {
                     key(targetCuration.runId) {
                         CurationPageImageSlot(
                             curation = targetCuration,

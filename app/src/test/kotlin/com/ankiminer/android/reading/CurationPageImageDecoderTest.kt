@@ -2,6 +2,7 @@ package com.ankiminer.android.reading
 
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.junit.Assert.assertArrayEquals
@@ -77,6 +78,28 @@ class CurationPageImageDecoderTest {
         assertEquals(2, computeInSampleSize(1500, 2100, maxLongEdge = 1280))
         assertEquals(1, computeInSampleSize(800, 600, maxLongEdge = 1280))
         assertEquals(4, computeInSampleSize(4000, 4000, maxLongEdge = 1280))
+    }
+
+    @Test
+    fun `an Error thrown mid-read is contained as null, not propagated`() {
+        // decode()'s own OutOfMemoryError path (BitmapFactory) needs a real Android runtime and
+        // is not reachable from a JVM unit test; this proves the same containment at the byte-read
+        // boundary instead — an Error, not just an Exception, thrown out of the InputStream must
+        // still surface as `null`.
+        val explodingInput =
+            object : InputStream() {
+                override fun read(): Int = error("single-byte read must not be used by readBounded")
+
+                override fun read(
+                    b: ByteArray,
+                    off: Int,
+                    len: Int,
+                ): Int = throw OutOfMemoryError("simulated mid-read allocation failure")
+            }
+
+        val result = readBoundedContained(explodingInput, declaredSize = 10, byteCap = 1024)
+
+        assertNull(result)
     }
 
     private fun buildZip(vararg members: Pair<String, ByteArray>): File {

@@ -98,6 +98,7 @@
     <string name="curation_preview_retry">Thử lại</string>
     <string name="curation_page_image_missing">Không có hình ảnh trang cho từ này</string>
     <string name="curation_page_image_error">Không thể tải hình ảnh trang</string>
+    <string name="curation_page_image_description">Hình ảnh trang manga</string>
     <string name="curation_page_collapse_description">Thu gọn hình ảnh trang</string>
     <string name="curation_page_expand_description">Mở rộng hình ảnh trang</string>
     <string name="definition_loading">Đang tra cứu…</string>

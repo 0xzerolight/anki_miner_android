@@ -98,6 +98,7 @@
     <string name="curation_preview_retry">Réessayer</string>
     <string name="curation_page_image_missing">Aucune image de page pour ce mot</string>
     <string name="curation_page_image_error">Impossible de charger l\'image de la page</string>
+    <string name="curation_page_image_description">Image de la page de manga</string>
     <string name="curation_page_collapse_description">Réduire l\'image de la page</string>
     <string name="curation_page_expand_description">Agrandir l\'image de la page</string>
     <string name="definition_loading">Recherche…</string>

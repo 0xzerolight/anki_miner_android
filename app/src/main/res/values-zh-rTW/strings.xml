@@ -98,6 +98,7 @@
     <string name="curation_preview_retry">重試</string>
     <string name="curation_page_image_missing">此詞彙沒有頁面影像</string>
     <string name="curation_page_image_error">無法載入頁面影像</string>
+    <string name="curation_page_image_description">漫畫頁面影像</string>
     <string name="curation_page_collapse_description">收合頁面影像</string>
     <string name="curation_page_expand_description">展開頁面影像</string>
     <string name="definition_loading">查詢中…</string>

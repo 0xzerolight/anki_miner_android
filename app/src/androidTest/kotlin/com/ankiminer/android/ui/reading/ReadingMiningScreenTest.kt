@@ -727,7 +727,11 @@ class ReadingMiningScreenTest {
 
     @Test
     fun pageImagePlaceholderShowsWhenTheFocusedSentenceLacksPageContext() {
-        val request = request(CurationPage(0, 2, 0, 4))
+        // The pane's mount gate needs SOME candidate on the page to carry a pageContext (an
+        // all-null-pageContext page keeps the slot unmounted entirely, not showing a permanent
+        // placeholder) — attach it to the second candidate so the focused (first, default-focus)
+        // candidate's sentence still has none and the placeholder still renders for it.
+        val request = requestWithPageContext(pageContext("unused-entry.png"), candidateIndex = 1)
         setScreen(
             state =
                 ReadingMiningUiState(
@@ -926,14 +930,20 @@ class ReadingMiningScreenTest {
             pageImage = pageImage,
         )
 
-    /** Attaches [pageContext] to the sentences of the first candidate in a two-candidate page. */
-    private fun requestWithPageContext(pageContext: CurationPageContext): CurationRequest {
+    /**
+     * Attaches [pageContext] to the sentences of the candidate at [candidateIndex] (default the
+     * first) in a two-candidate page.
+     */
+    private fun requestWithPageContext(
+        pageContext: CurationPageContext,
+        candidateIndex: Int = 0,
+    ): CurationRequest {
         val base = request(CurationPage(0, 2, 0, 4))
-        val firstCandidateId = base.candidates.first().candidateId
+        val targetCandidateId = base.candidates[candidateIndex].candidateId
         return base.copy(
             candidates =
                 base.candidates.map { candidate ->
-                    if (candidate.candidateId == firstCandidateId) {
+                    if (candidate.candidateId == targetCandidateId) {
                         candidate.copy(
                             sentences = candidate.sentences.map { it.copy(pageContext = pageContext) },
                         )

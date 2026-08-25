@@ -98,6 +98,7 @@
     <string name="curation_preview_retry">重试</string>
     <string name="curation_page_image_missing">此词没有页面图像</string>
     <string name="curation_page_image_error">无法加载页面图像</string>
+    <string name="curation_page_image_description">漫画页面图像</string>
     <string name="curation_page_collapse_description">收起页面图像</string>
     <string name="curation_page_expand_description">展开页面图像</string>
     <string name="definition_loading">正在查询…</string>
