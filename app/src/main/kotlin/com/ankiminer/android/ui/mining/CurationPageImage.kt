@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationPageContext
@@ -97,12 +98,18 @@ internal fun clampBlockBox(
     return Rect(left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat())
 }
 
+// [entry] is the imageEntry the state was produced for. produceState's underlying MutableState
+// is NOT recreated when key1/key2 restart the producer coroutine (only the coroutine restarts),
+// so a stale Loaded/Failed from a PREVIOUS entry keeps rendering until the new coroutine catches
+// up. Every variant carries its entry so the render side can detect and discard that staleness.
 private sealed interface PageDecodeState {
-    data object Loading : PageDecodeState
+    val entry: String
 
-    data class Loaded(val image: DecodedPageImage) : PageDecodeState
+    data class Loading(override val entry: String) : PageDecodeState
 
-    data object Failed : PageDecodeState
+    data class Loaded(override val entry: String, val image: DecodedPageImage) : PageDecodeState
+
+    data class Failed(override val entry: String) : PageDecodeState
 }
 
 // Desktop parity (page_image_view.py _HIGHLIGHT_*): warm accent that reads on B/W manga art, low
@@ -114,6 +121,22 @@ private const val HIGHLIGHT_STROKE_WIDTH_PX = 2.5f
 // Placeholder/loading aspect while the real page dimensions aren't known yet: a typical portrait
 // manga page, so the pane doesn't jump size once the decode resolves.
 private const val FALLBACK_ASPECT_RATIO = 3f / 4f
+
+// Caps the pane's image/placeholder region so it cannot starve the candidate list below it: on
+// the 320x640@160 CI emulator a full-width portrait page (no cap) leaves the list 0dp tall. This
+// also means the box's real aspect ratio stops matching the declared one once a tall page hits
+// the cap, which is what makes pageFitTransform's dx/dy letterboxing actually draw (matches the
+// video lane's own 16:9-at-full-width player surface, which lands at 180dp on that geometry).
+private val PaneContentMaxHeight = 180.dp
+
+// fillMaxWidth MUST run before heightIn/aspectRatio: it locks width to an exact constraint so
+// aspectRatio, seeing a capped maxHeight from heightIn, can only give way on height — producing a
+// capped box instead of one that silently ignores the cap and grows past it.
+private fun Modifier.paneContentSize(aspectRatio: Float): Modifier =
+    this
+        .fillMaxWidth()
+        .heightIn(max = PaneContentMaxHeight)
+        .aspectRatio(aspectRatio)
 
 /**
  * Collapsible pane showing the mokuro page a focused curation word came from, with the mokuro
@@ -139,7 +162,7 @@ fun CurationPageImagePane(
                 if (pageContext == null) {
                     PageImagePlaceholder(
                         text = stringResource(R.string.curation_page_image_missing),
-                        modifier = Modifier.aspectRatio(FALLBACK_ASPECT_RATIO),
+                        modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO),
                     )
                 } else {
                     PageImageContent(
@@ -174,45 +197,51 @@ private fun PageImageContent(
     // Two adjacent candidates commonly share (or alternate between) the same page image; the
     // cache spares a re-decode of a ~1280px-long-edge bitmap on every focus flip between them.
     val cache = remember { LruCache<String, DecodedPageImage>(2) }
-    val state by
+    val rawState by
         produceState<PageDecodeState>(
-            initialValue = PageDecodeState.Loading,
+            initialValue = PageDecodeState.Loading(pageContext.imageEntry),
             key1 = archivePath,
             key2 = pageContext.imageEntry,
         ) {
-            val cached = cache.get(pageContext.imageEntry)
+            val entry = pageContext.imageEntry
+            val cached = cache.get(entry)
             value =
                 if (cached != null) {
-                    PageDecodeState.Loaded(cached)
+                    PageDecodeState.Loaded(entry, cached)
                 } else {
-                    val decoded =
-                        withContext(Dispatchers.IO) {
-                            decoder.decode(archivePath, pageContext.imageEntry)
-                        }
+                    val decoded = withContext(Dispatchers.IO) { decoder.decode(archivePath, entry) }
                     if (decoded != null) {
-                        cache.put(pageContext.imageEntry, decoded)
-                        PageDecodeState.Loaded(decoded)
+                        cache.put(entry, decoded)
+                        PageDecodeState.Loaded(entry, decoded)
                     } else {
-                        PageDecodeState.Failed
+                        PageDecodeState.Failed(entry)
                     }
                 }
         }
-    when (val decodeState = state) {
-        PageDecodeState.Failed ->
+    // See PageDecodeState's kdoc: rawState can still be Loaded/Failed for the PREVIOUS entry for
+    // one frame after pageContext changes (produceState reuses its state holder across producer
+    // restarts). Treat anything not for the current entry as Loading so a stale bitmap is never
+    // drawn under the new block box.
+    val state =
+        rawState.takeIf { it.entry == pageContext.imageEntry }
+            ?: PageDecodeState.Loading(pageContext.imageEntry)
+    when (state) {
+        is PageDecodeState.Failed ->
             PageImagePlaceholder(
                 text = stringResource(R.string.curation_page_image_error),
-                modifier = Modifier.aspectRatio(FALLBACK_ASPECT_RATIO),
+                modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO),
             )
-        PageDecodeState.Loading ->
+        is PageDecodeState.Loading ->
+            // Tagged PLACEHOLDER, not SURFACE: SURFACE is reserved for the loaded Canvas so tests
+            // asserting it proves a real bitmap decoded and drew, not just that the pane mounted.
             Box(
                 modifier =
                     Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(FALLBACK_ASPECT_RATIO)
-                        .testTag(CurationPageImageTestTags.SURFACE),
+                        .paneContentSize(FALLBACK_ASPECT_RATIO)
+                        .testTag(CurationPageImageTestTags.PLACEHOLDER),
             )
         is PageDecodeState.Loaded ->
-            PageImageCanvas(decoded = decodeState.image, blockBox = pageContext.blockBox)
+            PageImageCanvas(decoded = state.image, blockBox = pageContext.blockBox)
     }
 }
 
@@ -241,8 +270,7 @@ private fun PageImageCanvas(
     Canvas(
         modifier =
             Modifier
-                .fillMaxWidth()
-                .aspectRatio(decoded.bitmap.width / decoded.bitmap.height.toFloat())
+                .paneContentSize(decoded.bitmap.width / decoded.bitmap.height.toFloat())
                 .testTag(CurationPageImageTestTags.SURFACE),
     ) {
         val transform =
@@ -289,10 +317,7 @@ private fun PageImagePlaceholder(
     modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .testTag(CurationPageImageTestTags.PLACEHOLDER),
+        modifier = modifier.testTag(CurationPageImageTestTags.PLACEHOLDER),
         contentAlignment = Alignment.Center,
     ) {
         Text(

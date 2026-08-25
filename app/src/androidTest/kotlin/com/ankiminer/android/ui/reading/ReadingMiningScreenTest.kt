@@ -700,6 +700,10 @@ class ReadingMiningScreenTest {
                     ),
             )
 
+            // SURFACE is tagged only on the loaded Canvas (not the loading placeholder), so
+            // waiting for it here proves the archive was actually decoded and drawn, not just
+            // that the pane mounted.
+            waitForPageImageSurface()
             composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
         } finally {
             archive.file.delete()
@@ -754,10 +758,14 @@ class ReadingMiningScreenTest {
                     ),
             )
 
+            waitForPageImageSurface()
             composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
             composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
             composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
             composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
+            // Collapsing disposes PageImageContent's remembered decode state, so re-expanding
+            // decodes again from scratch — wait for it the same way as the initial expand.
+            waitForPageImageSurface()
             composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
         } finally {
             archive.file.delete()
@@ -967,6 +975,16 @@ class ReadingMiningScreenTest {
         val out = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
         return out.toByteArray()
+    }
+
+    /** Real decode runs on `Dispatchers.IO`, outside what the compose test rule auto-syncs with. */
+    private fun waitForPageImageSurface() {
+        composeRule.waitUntil(timeoutMillis = 5_000) {
+            composeRule
+                .onAllNodesWithTag(CurationPageImageTestTags.SURFACE)
+                .fetchSemanticsNodes()
+                .isNotEmpty()
+        }
     }
 
     private fun clipboardText(): String? =
