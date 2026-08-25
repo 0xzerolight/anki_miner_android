@@ -4224,9 +4224,7 @@ def test_remove_mined_words_reports_zero_for_an_absent_word(
 
 def test_remove_mined_words_rejects_an_extra_payload_key() -> None:
     with pytest.raises(BridgeProtocolError) as failure:
-        local_resources.remove_mined_words(
-            {"operationId": "mined-remove-extra", "words": ["掘る"], "unexpected": True}
-        )
+        local_resources.remove_mined_words({"operationId": "mined-remove-extra", "words": ["掘る"], "unexpected": True})
 
     assert failure.value.code == "invalid_resource_request"
 
