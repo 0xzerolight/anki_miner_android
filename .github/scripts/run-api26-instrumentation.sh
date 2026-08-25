@@ -49,11 +49,11 @@ readonly unexecuted_tests=(
     "$note_delete_invalid_id_test"
     "${ui_audit_tests[@]}"
 )
-readonly expected_executed_test_count=299
+readonly expected_executed_test_count=301
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
 # The lane runs everything the runner discovers except the allowlist above. The result contract is
-# pinned at 299 executed tests: 320 source @Test methods minus the 21 explicit UNEXECUTED identities
+# pinned at 301 executed tests: 322 source @Test methods minus the 21 explicit UNEXECUTED identities
 # above. The host script test re-derives that count from source, so additions, removals, and renamed
 # annotations require an intentional count update. The terminal contract also rejects failures,
 # crashes, skips, assumption violations, and duplicate or missing terminal codes.

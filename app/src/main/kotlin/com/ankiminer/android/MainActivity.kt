@@ -33,6 +33,7 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsBuilder
 import com.ankiminer.android.diagnostics.currentTesterBuildIdentity
 import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepositoryFactory
+import com.ankiminer.android.mining.MiningRunUndoManagerFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
 import com.ankiminer.android.service.MiningForegroundService
@@ -80,7 +81,7 @@ class MainActivity : ComponentActivity() {
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
-            undoManager = app.miningRunUndoManager,
+            undoManager = MiningRunUndoManagerFactory.create(app),
         )
     }
     private val audioViewModelFactory by lazy {
@@ -98,7 +99,7 @@ class MainActivity : ComponentActivity() {
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
-            undoManager = app.miningRunUndoManager,
+            undoManager = MiningRunUndoManagerFactory.create(app),
         )
     }
     private val setupViewModelFactory by lazy {
@@ -132,7 +133,7 @@ class MainActivity : ComponentActivity() {
             definitionLookup = app.definitionLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
-            undoManager = app.miningRunUndoManager,
+            undoManager = MiningRunUndoManagerFactory.create(app),
         )
     }
 
