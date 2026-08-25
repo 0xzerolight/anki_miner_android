@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.engine.AudioTrackInfo
 import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
@@ -157,6 +158,74 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun audioTracksButtonVisibleButDisabledWithoutVideo() {
+        setScreen(state = VideoMiningUiState())
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
+    }
+
+    @Test
+    fun audioTrackProbePendingDisablesTracksButtonAndStart() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    audioTrackProbePending = true,
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
+        composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun audioTrackPickerStateRendersDialogWithPickerTag() {
+        val tracks =
+            listOf(
+                audioTrack(audioIndex = 0, languageTag = "jpn"),
+                audioTrack(audioIndex = 1, languageTag = "eng"),
+            )
+        setScreen(
+            state = VideoMiningUiState(),
+            audioTrackPicker =
+                AudioTrackPickerState(tracks = tracks, autoAudioIndex = 0, selectedAudioIndex = null),
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACK_PICKER).assertIsDisplayed()
+    }
+
+    @Test
+    fun audioTrackPickerErrorCardDismissFiresCallback() {
+        var dismissed = false
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    audioTrackPickerError = AudioTrackPickerError.PROBE,
+                ),
+            onDismissAudioTrackPickerError = { dismissed = true },
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(MINING_FAILURE_TEST_TAG))
+        composeRule.onNodeWithText("Audio tracks could not be read.").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss error").performClick()
+
+        composeRule.runOnIdle { assertTrue(dismissed) }
     }
 
     @Test
@@ -1496,6 +1565,12 @@ class VideoMiningScreenTest {
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
         onTestTiming: () -> Unit = {},
+        audioTrackPicker: AudioTrackPickerState? = null,
+        onAudioTracks: () -> Unit = {},
+        onSelectAudioTrack: (Long?) -> Unit = {},
+        onApplyAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPickerError: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
@@ -1511,6 +1586,12 @@ class VideoMiningScreenTest {
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
                     onTestTiming = onTestTiming,
+                    audioTrackPicker = audioTrackPicker,
+                    onAudioTracks = onAudioTracks,
+                    onSelectAudioTrack = onSelectAudioTrack,
+                    onApplyAudioTrackPicker = onApplyAudioTrackPicker,
+                    onDismissAudioTrackPicker = onDismissAudioTrackPicker,
+                    onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
                     onMarkCandidateKnown = onMarkCandidateKnown,
                     onSetSelectionForVisible = onSetSelectionForVisible,
                     onSelectSentence = onSelectSentence,
@@ -1530,6 +1611,12 @@ class VideoMiningScreenTest {
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
         onTestTiming: () -> Unit = {},
+        audioTrackPicker: AudioTrackPickerState? = null,
+        onAudioTracks: () -> Unit = {},
+        onSelectAudioTrack: (Long?) -> Unit = {},
+        onApplyAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPickerError: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
@@ -1552,6 +1639,12 @@ class VideoMiningScreenTest {
             onDismissCommandError = {},
             onStart = onStart,
             onTestTiming = onTestTiming,
+            audioTrackPicker = audioTrackPicker,
+            onAudioTracks = onAudioTracks,
+            onSelectAudioTrack = onSelectAudioTrack,
+            onApplyAudioTrackPicker = onApplyAudioTrackPicker,
+            onDismissAudioTrackPicker = onDismissAudioTrackPicker,
+            onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
             onFocusCandidate = onFocusCandidate,
             onSetCandidateSelected = onSetCandidateSelected,
             onMarkCandidateKnown = onMarkCandidateKnown,
@@ -1664,6 +1757,20 @@ class VideoMiningScreenTest {
             displayName = displayName,
             mimeType = null,
             sizeBytes = null,
+        )
+
+    private fun audioTrack(
+        audioIndex: Long,
+        languageTag: String?,
+    ): AudioTrackInfo =
+        AudioTrackInfo(
+            audioIndex = audioIndex,
+            globalIndex = audioIndex,
+            languageTag = languageTag,
+            title = null,
+            codec = "aac",
+            channels = 2,
+            isDefault = false,
         )
 
     private fun result(): ProcessingResult =

@@ -120,6 +120,12 @@ fun VideoMiningScreen(
     onReset: () -> Unit,
     onSubtitleOffsetDraftChange: (String) -> Unit = {},
     onTestTiming: () -> Unit = {},
+    audioTrackPicker: AudioTrackPickerState? = null,
+    onAudioTracks: () -> Unit = {},
+    onSelectAudioTrack: (Long?) -> Unit = {},
+    onApplyAudioTrackPicker: () -> Unit = {},
+    onDismissAudioTrackPicker: () -> Unit = {},
+    onDismissAudioTrackPickerError: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
     labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
     playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
@@ -390,6 +396,8 @@ fun VideoMiningScreen(
                                 onDismissTimingPreviewError = onDismissTimingPreviewError,
                                 onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
                                 onTestTiming = onTestTiming,
+                                onAudioTracks = onAudioTracks,
+                                onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
                                 onStart = onStart,
                                 onReturnToActiveRun = onReturnToActiveRun,
                             )
@@ -510,6 +518,10 @@ fun VideoMiningScreen(
             }
         }
     }
+
+    audioTrackPicker?.let {
+        AudioTrackPickerDialog(it, onSelectAudioTrack, onApplyAudioTrackPicker, onDismissAudioTrackPicker)
+    }
 }
 
 @Composable
@@ -597,6 +609,8 @@ private fun LazyListScope.setupItems(
     onDismissTimingPreviewError: () -> Unit,
     onSubtitleOffsetDraftChange: (String) -> Unit,
     onTestTiming: () -> Unit,
+    onAudioTracks: () -> Unit,
+    onDismissAudioTrackPickerError: () -> Unit,
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
@@ -711,6 +725,26 @@ private fun LazyListScope.setupItems(
             ) {
                 Text(stringResource(R.string.timing_preview_test_action))
             }
+            SecondaryActionButton(
+                onClick = onAudioTracks,
+                enabled = state.canPickAudioTracks,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(VideoMiningTestTags.AUDIO_TRACKS),
+            ) {
+                if (state.audioTrackProbePending) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(stringResource(R.string.audio_tracks_button))
+                    }
+                } else {
+                    Text(stringResource(R.string.audio_tracks_button))
+                }
+            }
             if (state.audioFieldUnmapped) {
                 MiningFailureCard(
                     message = stringResource(R.string.audio_field_unmapped_warning),
@@ -753,6 +787,16 @@ private fun LazyListScope.setupItems(
                         MiningFailureAction(
                             label = stringResource(R.string.dismiss_error),
                             onClick = onDismissTimingPreviewError,
+                        ),
+                )
+            }
+            state.audioTrackPickerError?.let { error ->
+                MiningFailureCard(
+                    message = stringResource(error.messageResource()),
+                    primaryAction =
+                        MiningFailureAction(
+                            label = stringResource(R.string.dismiss_error),
+                            onClick = onDismissAudioTrackPickerError,
                         ),
                 )
             }
@@ -1142,4 +1186,12 @@ private fun TimingPreviewError.messageResource(): Int =
         TimingPreviewError.BUSY -> R.string.timing_preview_busy
         TimingPreviewError.TOKENIZER_REQUIRED -> R.string.timing_preview_tokenizer_required
         TimingPreviewError.OPEN -> R.string.timing_preview_open_error
+    }
+
+@StringRes
+private fun AudioTrackPickerError.messageResource(): Int =
+    when (this) {
+        // Same string as TimingPreviewError.BUSY: both surface the exclusive-runtime-lease refusal.
+        AudioTrackPickerError.BUSY -> R.string.timing_preview_busy
+        AudioTrackPickerError.PROBE -> R.string.audio_tracks_probe_error
     }
