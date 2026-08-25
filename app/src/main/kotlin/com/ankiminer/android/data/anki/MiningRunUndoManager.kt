@@ -179,19 +179,24 @@ internal class ProcessMiningRunUndoManager(
         val completion = CompletableDeferred<DeletePhase>()
         try {
             executor.execute {
-                val phase =
+                var phase: DeletePhase = DeletePhase.Failed(IllegalStateException("undo delete did not complete"))
+                try {
+                    val deleted = backend.deleteNotes(noteIds, AnkiCancellation.NONE)
+                    recordReceipt(
+                        UndoneRunReceipt(runId, deletedNotes = deleted, knownWordsReverted = false),
+                    )
+                    phase = DeletePhase.Deleted(deleted)
+                } catch (failure: RuntimeException) {
+                    phase = DeletePhase.Failed(failure)
+                } finally {
+                    // Nested so a throwing lease.close() (stale-lease check, RuntimeWorkCoordinator.kt)
+                    // still lets the deferred complete instead of leaving the caller awaiting forever.
                     try {
-                        val deleted = backend.deleteNotes(noteIds, AnkiCancellation.NONE)
-                        recordReceipt(
-                            UndoneRunReceipt(runId, deletedNotes = deleted, knownWordsReverted = false),
-                        )
-                        DeletePhase.Deleted(deleted)
-                    } catch (failure: RuntimeException) {
-                        DeletePhase.Failed(failure)
-                    } finally {
                         lease.close()
+                    } finally {
+                        completion.complete(phase)
                     }
-                completion.complete(phase)
+                }
             }
         } catch (failure: RuntimeException) {
             lease.close()
