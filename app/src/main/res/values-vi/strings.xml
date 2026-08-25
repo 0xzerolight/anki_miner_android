@@ -136,6 +136,13 @@
     <string name="result_no_items">Không có</string>
     <string name="result_unknown_file">Tệp không rõ</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Hoàn tác (%1$d ghi chú)</string>
+    <string name="undo_confirm_title">Hoàn tác lượt khai thác này?</string>
+    <string name="undo_confirm_message">Xóa %1$d ghi chú khỏi Anki? Không thể hoàn tác.</string>
+    <string name="undo_confirm_delete">Xóa</string>
+    <string name="undo_done">Đã hoàn tác (%1$d ghi chú đã xóa)</string>
+    <string name="undo_failed">Hoàn tác thất bại. Không có ghi chú nào bị xóa.</string>
+    <string name="undo_words_failed">Đã xóa ghi chú, nhưng khôi phục từ đã biết thất bại.</string>
     <string name="mining_notice_no_definition">Không có mục từ điển cho %1$d từ: %2$s</string>
     <string name="result_metric_created">Đã tạo</string>
     <string name="result_metric_skipped_new">Đã bỏ qua / mới</string>

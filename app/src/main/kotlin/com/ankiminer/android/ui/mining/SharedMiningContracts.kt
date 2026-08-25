@@ -332,6 +332,7 @@ internal enum class MiningPendingAction {
     CURATION,
     CANCEL,
     RESET,
+    UNDO,
 }
 
 internal data class MiningPendingState(
@@ -339,6 +340,7 @@ internal data class MiningPendingState(
     val curation: Boolean = false,
     val cancel: Boolean = false,
     val reset: Boolean = false,
+    val undo: Boolean = false,
 ) {
     fun begin(action: MiningPendingAction): MiningPendingState = set(action, true)
 
@@ -358,6 +360,7 @@ internal data class MiningPendingState(
             MiningPendingAction.CURATION -> copy(curation = value)
             MiningPendingAction.CANCEL -> copy(cancel = value)
             MiningPendingAction.RESET -> copy(reset = value)
+            MiningPendingAction.UNDO -> copy(undo = value)
         }
 }
 

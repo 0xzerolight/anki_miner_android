@@ -136,6 +136,13 @@
     <string name="result_no_items">無</string>
     <string name="result_unknown_file">未知檔案</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">復原（%1$d 則筆記）</string>
+    <string name="undo_confirm_title">要復原這次採集嗎？</string>
+    <string name="undo_confirm_message">要從 Anki 刪除 %1$d 則筆記嗎？此操作無法復原。</string>
+    <string name="undo_confirm_delete">刪除</string>
+    <string name="undo_done">已復原（已刪除 %1$d 則筆記）</string>
+    <string name="undo_failed">復原失敗。沒有刪除任何筆記。</string>
+    <string name="undo_words_failed">筆記已刪除，但已知單字的復原失敗。</string>
     <string name="mining_notice_no_definition">%1$d 個單字無字典條目：%2$s</string>
     <string name="result_metric_created">已建立</string>
     <string name="result_metric_skipped_new">略過／新增</string>

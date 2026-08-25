@@ -136,6 +136,13 @@
     <string name="result_no_items">なし</string>
     <string name="result_unknown_file">不明なファイル</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">元に戻す（%1$d件のノート）</string>
+    <string name="undo_confirm_title">この実行を元に戻しますか？</string>
+    <string name="undo_confirm_message">Ankiから%1$d件のノートを削除しますか？元に戻せません。</string>
+    <string name="undo_confirm_delete">削除</string>
+    <string name="undo_done">元に戻しました（%1$d件のノートを削除）</string>
+    <string name="undo_failed">元に戻せませんでした。ノートは削除されていません。</string>
+    <string name="undo_words_failed">ノートは削除されましたが、既知単語の復元に失敗しました。</string>
     <string name="mining_notice_no_definition">%1$d 語に辞書項目がありません: %2$s</string>
     <string name="result_metric_created">作成</string>
     <string name="result_metric_skipped_new">スキップ / 新規</string>

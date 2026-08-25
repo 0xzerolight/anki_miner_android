@@ -136,6 +136,13 @@
     <string name="result_no_items">Nessuno</string>
     <string name="result_unknown_file">File sconosciuto</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Annulla (%1$d note)</string>
+    <string name="undo_confirm_title">Annullare questa esecuzione?</string>
+    <string name="undo_confirm_message">Eliminare %1$d note da Anki? Operazione irreversibile.</string>
+    <string name="undo_confirm_delete">Elimina</string>
+    <string name="undo_done">Annullato (%1$d note eliminate)</string>
+    <string name="undo_failed">Annullamento non riuscito. Nessuna nota è stata eliminata.</string>
+    <string name="undo_words_failed">Note eliminate, ma il ripristino delle parole conosciute non è riuscito.</string>
     <string name="mining_notice_no_definition">Nessuna voce nel dizionario per %1$d parola/e: %2$s</string>
     <string name="result_metric_created">Create</string>
     <string name="result_metric_skipped_new">Saltate / nuove</string>

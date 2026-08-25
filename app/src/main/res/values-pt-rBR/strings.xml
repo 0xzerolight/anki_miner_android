@@ -136,6 +136,13 @@
     <string name="result_no_items">Nenhum</string>
     <string name="result_unknown_file">Arquivo desconhecido</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Desfazer (%1$d notas)</string>
+    <string name="undo_confirm_title">Desfazer esta execução?</string>
+    <string name="undo_confirm_message">Excluir %1$d notas do Anki? Isso não pode ser desfeito.</string>
+    <string name="undo_confirm_delete">Excluir</string>
+    <string name="undo_done">Desfeito (%1$d notas excluídas)</string>
+    <string name="undo_failed">Falha ao desfazer. Nenhuma nota foi excluída.</string>
+    <string name="undo_words_failed">Notas excluídas, mas a reversão das palavras conhecidas falhou.</string>
     <string name="mining_notice_no_definition">Nenhuma entrada de dicionário para %1$d palavra(s): %2$s</string>
     <string name="result_metric_created">Criados</string>
     <string name="result_metric_skipped_new">Ignorados / novos</string>
