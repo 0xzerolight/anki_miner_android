@@ -40,6 +40,7 @@ class FakeWord:
     frequency_rank: int | None = None
     occurrence_count: int = 1
     sentence_candidates: list[FakeWord] = field(default_factory=list)
+    line_expansion: tuple[int, int] = (0, 0)
 
     @property
     def mined_form(self) -> str:
@@ -60,9 +61,16 @@ def _fake(surface: str) -> FakeWord:
 def _start_wait(
     registry: JobRegistry,
     candidates: list[object],
+    *,
+    allow_line_expansion: bool = True,
 ) -> tuple[str, dict[str, object], list[object], threading.Thread]:
     handle = registry.begin()
-    request, returned, thread = _start_wait_for_run(registry, handle.run_id, candidates)
+    request, returned, thread = _start_wait_for_run(
+        registry,
+        handle.run_id,
+        candidates,
+        allow_line_expansion=allow_line_expansion,
+    )
     return handle.run_id, request, returned, thread
 
 
@@ -70,6 +78,8 @@ def _start_wait_for_run(
     registry: JobRegistry,
     run_id: str,
     candidates: list[object],
+    *,
+    allow_line_expansion: bool = True,
 ) -> tuple[dict[str, object], list[object], threading.Thread]:
     emitted = threading.Event()
     request: dict[str, object] = {}
@@ -80,7 +90,14 @@ def _start_wait_for_run(
         emitted.set()
 
     def wait() -> None:
-        returned.append(registry.await_curation(run_id, candidates, emit))
+        returned.append(
+            registry.await_curation(
+                run_id,
+                candidates,
+                emit,
+                allow_line_expansion=allow_line_expansion,
+            )
+        )
 
     thread = threading.Thread(target=wait, daemon=True)
     thread.start()
@@ -285,6 +302,136 @@ def test_null_and_empty_selection_remain_distinct(selection: object, expected: o
     thread.join(1)
 
     assert returned == [expected]
+
+
+def test_selection_expansion_stamps_a_copy_and_leaves_the_engine_object_untouched() -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word])
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [{"candidateId": candidate_id, "linesBefore": 2, "linesAfter": 1}],
+        )
+    )
+    thread.join(1)
+
+    assert not thread.is_alive()
+    (chosen,) = returned[0]
+    assert chosen is not word
+    assert chosen.line_expansion == (2, 1)
+    assert word.line_expansion == (0, 0)
+    assert (chosen.surface, chosen.sentence, chosen.start_time) == (
+        word.surface,
+        word.sentence,
+        word.start_time,
+    )
+
+
+def test_selection_without_expansion_still_returns_the_exact_original_object() -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word])
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [{"candidateId": payload["candidates"][0]["candidateId"]}],
+        )
+    )
+    thread.join(1)
+
+    assert returned[0][0] is word
+
+
+def test_expansion_rides_a_sentence_variant_selection() -> None:
+    registry = JobRegistry()
+    original = FakeWord("食べた", "食べる", "最初の文", 1, 2, 1)
+    alternative = FakeWord("食べた", "食べる", "別の文", 4, 5, 1)
+    original.sentence_candidates = [original, alternative]
+    run_id, request, returned, thread = _start_wait(registry, [original])
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    first_payload = payload["candidates"][0]
+    alternative_id = first_payload["sentences"][1]["sentenceId"]
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [
+                {
+                    "candidateId": first_payload["candidateId"],
+                    "sentenceId": alternative_id,
+                    "linesBefore": 1,
+                }
+            ],
+        )
+    )
+    thread.join(1)
+
+    (chosen,) = returned[0]
+    assert chosen is not alternative
+    assert chosen.line_expansion == (1, 0)
+    assert chosen.sentence == alternative.sentence
+    assert alternative.line_expansion == (0, 0)
+
+
+def test_expansion_when_disallowed_is_rejected_and_gate_survives() -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word], allow_line_expansion=False)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        registry.resolve_curation(
+            _response(
+                run_id,
+                payload["requestId"],
+                [{"candidateId": candidate_id, "linesBefore": 1}],
+            )
+        )
+    assert rejected.value.code == "line_expansion_unsupported"
+
+    registry.resolve_curation(_response(run_id, payload["requestId"], [{"candidateId": candidate_id}]))
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned[0][0] is word
+
+
+@pytest.mark.parametrize("key", ["linesBefore", "linesAfter"])
+@pytest.mark.parametrize("value", [0, -1, 101, 1.5, True, "2", None])
+def test_expansion_counts_are_strictly_validated(key: str, value: object) -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, _, thread = _start_wait(registry, [word])
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        registry.resolve_curation(
+            _response(
+                run_id,
+                payload["requestId"],
+                [{"candidateId": candidate_id, key: value}],
+            )
+        )
+    assert rejected.value.code == "invalid_curation_response"
+
+    registry.cancel(run_id)
+    thread.join(1)
 
 
 def test_duplicate_and_stale_responses_are_rejected() -> None:

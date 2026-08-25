@@ -1666,6 +1666,47 @@ def test_unknown_curation_map_key_is_schema_invalid(
         Draft202012Validator(schemas["curation"]).validate(payload)
 
 
+def test_selection_line_expansion_bounds_validate(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "selection": [
+            {
+                "candidateId": "candidate_" + "c" * 32,
+                "linesBefore": 1,
+                "linesAfter": 100,
+            }
+        ],
+    }
+
+    Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "expansion",
+    [
+        {"linesBefore": 0},
+        {"linesBefore": None},
+        {"linesAfter": 101},
+        {"linesAfter": "2"},
+    ],
+)
+def test_selection_line_expansion_out_of_bounds_is_schema_invalid(
+    schemas: dict[str, dict[str, Any]],
+    expansion: dict[str, Any],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "selection": [{"candidateId": "candidate_" + "c" * 32, **expansion}],
+    }
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
