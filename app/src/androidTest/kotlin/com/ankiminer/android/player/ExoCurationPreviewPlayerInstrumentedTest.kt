@@ -137,6 +137,60 @@ class ExoCurationPreviewPlayerInstrumentedTest {
     }
 
     @Test
+    fun dualAudioOverrideSelectsTheEnglishOrdinalOverJapaneseAuto() {
+        val fixture = createDualAudioFixture()
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val playbackError = AtomicReference<PlaybackException?>()
+        val listener =
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) ready.countDown()
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    playbackError.set(error)
+                }
+            }
+        lateinit var player: ExoCurationPreviewPlayer
+
+        instrumentation.runOnMainSync { player = ExoCurationPreviewPlayer(context) }
+        try {
+            instrumentation.runOnMainSync {
+                player.media3Player.addListener(listener)
+                player.bind(Uri.fromFile(fixture), audioTrackOverride = 1L)
+            }
+
+            assertTrue(
+                "Player did not reach STATE_READY for the dual-audio override fixture",
+                ready.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+            assertNull(
+                "Dual-audio override preview raised an error: ${playbackError.get()}",
+                playbackError.get(),
+            )
+
+            instrumentation.runOnMainSync {
+                // audio_index 1 is the English track (ffprobe ordinal). The JP-auto rule can
+                // never pick "en" on this fixture, so a pass proves the Media3-group ↔ ffprobe
+                // audio_index mapping holds on a real container.
+                val selected =
+                    player.media3Player.currentTracks.groups
+                        .filter { it.type == C.TRACK_TYPE_AUDIO }
+                        .also { assertEquals("fixture should carry two audio tracks", 2, it.size) }
+                        .single { it.isTrackSelected(0) }
+                assertEquals("en", selected.getTrackFormat(0).language)
+            }
+        } finally {
+            instrumentation.runOnMainSync {
+                player.media3Player.removeListener(listener)
+                player.release()
+            }
+        }
+    }
+
+    @Test
     fun ffmpegRenderersAreLoadedAndHandleTenBitH264() {
         assertTrue("nextlib native library failed to load", FfmpegLibrary.isAvailable())
 
