@@ -732,6 +732,38 @@ internal fun highlightMinedForm(
     }
 }
 
+/** Alternatives render inline up to this count; above it they fold behind a disclosure. */
+internal const val MAX_INLINE_ALTERNATIVES = 3
+
+@Immutable
+internal data class CurationSentenceLayout(
+    val chosen: CurationSentence,
+    val alternatives: List<CurationSentence>,
+    val disclose: Boolean,
+)
+
+/**
+ * Splits a candidate's sentences into the sentence that will be mined and the rest.
+ *
+ * The chosen sentence is the curation draft's selection, falling back to the engine default when
+ * the draft has no entry (or a stale one). Alternatives keep source order — the wire order is the
+ * engine's own — and never include the chosen sentence.
+ */
+internal fun curationSentenceLayout(
+    candidate: CurationCandidate,
+    selectedSentenceId: String?,
+): CurationSentenceLayout {
+    val chosen =
+        candidate.sentences.firstOrNull { it.sentenceId == selectedSentenceId }
+            ?: candidate.sentences.first { it.sentenceId == candidate.defaultSentenceId }
+    val alternatives = candidate.sentences.filter { it.sentenceId != chosen.sentenceId }
+    return CurationSentenceLayout(
+        chosen = chosen,
+        alternatives = alternatives,
+        disclose = alternatives.size > MAX_INLINE_ALTERNATIVES,
+    )
+}
+
 @Composable
 internal fun CurationSentenceChoice(
     candidate: CurationCandidate,
