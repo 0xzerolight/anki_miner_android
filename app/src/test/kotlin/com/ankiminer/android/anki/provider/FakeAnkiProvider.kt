@@ -13,11 +13,13 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     var storeMediaHandler: (AnkiProviderMutationCommand.StoreMedia) -> String? = { null }
     var insertNoteHandler: (AnkiProviderMutationCommand.InsertNote) -> String? = { null }
     var routeCardHandler: (AnkiProviderMutationCommand.RouteCard) -> Int = { 0 }
+    var deleteNoteHandler: (AnkiProviderMutationCommand.DeleteNote) -> Int = { 0 }
     val queries = mutableListOf<ProviderQuery>()
     val deckCommands = mutableListOf<AnkiProviderMutationCommand.CreateDeck>()
     val mediaCommands = mutableListOf<AnkiProviderMutationCommand.StoreMedia>()
     val noteCommands = mutableListOf<AnkiProviderMutationCommand.InsertNote>()
     val cardCommands = mutableListOf<AnkiProviderMutationCommand.RouteCard>()
+    val noteDeleteCommands = mutableListOf<AnkiProviderMutationCommand.DeleteNote>()
     var accessChecks = 0
 
     override fun accessStatus(): ProviderAccessStatus {
@@ -53,6 +55,11 @@ internal class FakeAnkiProviderGateway : AnkiProviderGateway {
     override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int {
         cardCommands += command
         return routeCardHandler(command)
+    }
+
+    override fun deleteNote(command: AnkiProviderMutationCommand.DeleteNote): Int {
+        noteDeleteCommands += command
+        return deleteNoteHandler(command)
     }
 }
 

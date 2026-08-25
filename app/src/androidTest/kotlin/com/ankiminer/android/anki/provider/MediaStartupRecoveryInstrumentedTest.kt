@@ -544,4 +544,7 @@ private class NoWriteGateway : AnkiProviderGateway {
 
     override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int =
         error("media startup recovery must not route a card")
+
+    override fun deleteNote(command: AnkiProviderMutationCommand.DeleteNote): Int =
+        error("media startup recovery must not delete a note")
 }
