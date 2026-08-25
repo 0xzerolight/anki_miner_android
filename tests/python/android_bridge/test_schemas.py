@@ -68,6 +68,7 @@ def schemas() -> dict[str, dict[str, Any]]:
         "tokenizer": _load_schema("tokenizer.schema.json"),
         "dictionary": _load_schema("dictionary.schema.json"),
         "subtitle_cues": _load_schema("subtitle-cues.schema.json"),
+        "audio_tracks": _load_schema("audio-tracks.schema.json"),
     }
 
 
@@ -265,6 +266,50 @@ def test_subtitle_cues_contract_rejects_reversed_intervals(
     Draft202012Validator(schemas["subtitle_cues"]).validate(payload)
     with pytest.raises(BridgeProtocolError, match="end >= start >= 0"):
         encode_message("subtitle.cues.result", payload)
+
+
+def test_audio_tracks_schema_accepts_valid_and_rejects_invalid_requests_and_results(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    validator = Draft202012Validator(schemas["audio_tracks"])
+    valid_request = {"videoPath": "/videos/ep1.mkv", "nativeLibraryDir": "/native"}
+    valid_result = {
+        "videoPath": "/videos/ep1.mkv",
+        "autoAudioIndex": 1,
+        "tracks": [
+            {
+                "audioIndex": 0,
+                "globalIndex": 1,
+                "languageTag": "eng",
+                "title": None,
+                "codec": "aac",
+                "channels": 2,
+                "isDefault": True,
+            },
+            {
+                "audioIndex": 1,
+                "globalIndex": 2,
+                "languageTag": "jpn",
+                "title": None,
+                "codec": "aac",
+                "channels": 2,
+                "isDefault": False,
+            },
+        ],
+    }
+    validator.validate(valid_request)
+    validator.validate(valid_result)
+
+    invalid_request = {"videoPath": "/videos/ep1.mkv"}
+    invalid_result = {
+        "videoPath": "/videos/ep1.mkv",
+        "autoAudioIndex": None,
+        "tracks": [{"audioIndex": -1, "globalIndex": 0, "languageTag": None, "title": None, "codec": None, "channels": None, "isDefault": False}],
+    }
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_request)
+    with pytest.raises(ValidationError):
+        validator.validate(invalid_result)
 
 
 def test_kotlin_facing_config_mining_and_event_integers_have_explicit_bounds(
