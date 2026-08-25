@@ -26,6 +26,7 @@ internal fun interface MinedWordsReverter {
 
 internal data class UndoneRunReceipt(
     val runId: String,
+    /** Requested-count, not verified-deletion (AnkiProviderRuntime.deleteNotesLoop); matches desktop. */
     val deletedNotes: Int,
     val knownWordsReverted: Boolean,
 )

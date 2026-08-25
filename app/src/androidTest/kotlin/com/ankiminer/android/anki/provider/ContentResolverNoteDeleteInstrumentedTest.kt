@@ -36,15 +36,22 @@ class ContentResolverNoteDeleteInstrumentedTest {
         assertFalse(noteExists(noteId))
     }
 
+    /**
+     * AnkiDroid 2.24.0's `CardContentProvider` reports request-count, not affected-rows, for
+     * item-URI note deletes: a second delete of an already-gone note still returns 1 — observed
+     * on-device 2026-08-25. `deletedNotes` downstream is therefore "requested", not "verified"
+     * deletion count, matching the desktop engine's own contract (no per-note ack there either).
+     */
     @Test
-    fun delete_missing_note_reports_zero_rows() {
+    fun delete_missing_note_still_reports_request_count() {
         assumeRealAnkiDroid()
         val noteId = createProbeNote()
         assertEquals(1, gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(noteId)))
 
         val secondDelete = gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(noteId))
 
-        assertEquals(0, secondDelete)
+        assertEquals(1, secondDelete)
+        assertFalse(noteExists(noteId))
     }
 
     /** No real provider round trip needed: the sealed command rejects id 0 during construction. */

@@ -21,7 +21,7 @@ readonly s5_definition_lookup_test="com.ankiminer.android.mining.S5VideoMiningAc
 # The provider note-delete probe needs a real, operational AnkiDroid install to create and delete
 # a note against; hosted runners carry no AnkiDroid app, so it stays UNEXECUTED like S2.
 readonly note_delete_removes_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_note_removes_created_note"
-readonly note_delete_missing_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_missing_note_reports_zero_rows"
+readonly note_delete_missing_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_missing_note_still_reports_request_count"
 readonly note_delete_invalid_id_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_note_rejects_invalid_id_before_provider"
 readonly ui_audit_tests=(
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop"

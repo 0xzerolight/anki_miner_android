@@ -28,7 +28,7 @@ SELECTOR_GATED_TESTS = (
     "com.ankiminer.android.mining.S5VideoMiningAcceptanceInstrumentedTest#definitionLookupRunsBesideAParkedRun",
     "com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_note_removes_created_note",
     "com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest"
-    "#delete_missing_note_reports_zero_rows",
+    "#delete_missing_note_still_reports_request_count",
     "com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest"
     "#delete_note_rejects_invalid_id_before_provider",
 )

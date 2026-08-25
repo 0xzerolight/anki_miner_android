@@ -114,7 +114,10 @@ internal class AnkiProviderRuntime(
         cancellation: AnkiCancellation,
     ): AnkiRemediationInventory = remediation.inventory(cancellation)
 
-    /** Non-run-scoped delete loop for a later undo manager, called by method reference. */
+    /**
+     * Non-run-scoped delete loop for a later undo manager, called by method reference. The
+     * returned count is requested-count, not verified-deletion, semantics — see [deleteNotesLoop].
+     */
     fun deleteNotes(
         noteIds: List<Long>,
         cancellation: AnkiCancellation,
@@ -126,10 +129,15 @@ internal class AnkiProviderRuntime(
 }
 
 /**
- * Loops the raw delete boundary one note at a time, counting affected rows and checking
+ * Loops the raw delete boundary one note at a time, counting requested notes and checking
  * cancellation between notes. Extracted from [AnkiProviderRuntime] so it is JVM-testable against
  * a faked [AnkiProviderGateway]; the runtime itself needs a real `android.content.Context` and
  * cannot be constructed in a JVM unit test.
+ *
+ * The count is request-count, not affected-rows, semantics: AnkiDroid 2.24.0's `CardContentProvider`
+ * reports 1 for an item-URI note delete regardless of whether that note still existed (observed
+ * on-device 2026-08-25, see `ContentResolverNoteDeleteInstrumentedTest`), the same "requested, not
+ * verified" contract the desktop engine and AnkiConnect already carry — there is no per-note ack.
  */
 internal fun deleteNotesLoop(
     gateway: AnkiProviderGateway,
