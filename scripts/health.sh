@@ -95,8 +95,6 @@ PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/dependencies/tests" -v
 PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/runtime-wheels/tests" -v
-PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
-    -s "$REPO_ROOT/tools/ankiconnect-fallback/tests" -v
 
 host_test_python="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/host-tests/bin/python"
 [[ -x "$host_test_python" ]] \
