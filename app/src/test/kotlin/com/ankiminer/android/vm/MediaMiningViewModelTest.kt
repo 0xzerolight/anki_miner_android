@@ -27,6 +27,7 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -324,6 +325,132 @@ class MediaMiningViewModelTest {
             assertEquals(media.videoPath, player.videoPath)
             assertEquals(emptyList<SubtitleCue>(), player.cues)
             assertTrue(player.cuesUnavailable)
+        }
+
+    @Test
+    fun expansionAccumulatesRendersThePreviewAndPersistsTheSession() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.success(
+                                listOf(
+                                    SubtitleCue(0.0, 1.0, "魚を食べる。"),
+                                    SubtitleCue(1.5, 2.5, "次の文"),
+                                    SubtitleCue(3.0, 4.0, "三番目"),
+                                ),
+                            )
+                        },
+                )
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            runCurrent()
+            val unexpanded = requireNotNull(viewModel.uiState.value.curation?.expansionPreview)
+            assertEquals("魚を食べる。", unexpanded.sentence)
+            assertFalse(unexpanded.canExpandPrev)
+            assertTrue(unexpanded.canExpandNext)
+
+            viewModel.expandSentenceNext("candidate")
+            viewModel.expandSentenceNext("candidate")
+            runCurrent()
+
+            val curation = requireNotNull(viewModel.uiState.value.curation)
+            assertEquals(CurationLineExpansion(0, 2), curation.lineExpansions["candidate"])
+            val preview = requireNotNull(curation.expansionPreview)
+            assertEquals("魚を食べる。 次の文 三番目", preview.sentence)
+            assertEquals(0.0, preview.startTime, 0.0)
+            assertEquals(4.0, preview.endTime, 0.0)
+            assertFalse(preview.canExpandNext)
+            assertEquals(
+                CurationLineExpansion(0, 2),
+                repository.curationSessionState()?.lineExpansions?.get("candidate"),
+            )
+
+            viewModel.resetSentenceExpansion("candidate")
+            runCurrent()
+            val resetCuration = requireNotNull(viewModel.uiState.value.curation)
+            assertEquals(emptyMap<String, CurationLineExpansion>(), resetCuration.lineExpansions)
+            assertEquals("魚を食べる。", resetCuration.expansionPreview?.sentence)
+            assertEquals(
+                emptyMap<String, CurationLineExpansion>(),
+                repository.curationSessionState()?.lineExpansions,
+            )
+        }
+
+    @Test
+    fun confirmForwardsExpansionCountsToTheRepository() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.expandSentenceNext("candidate")
+            viewModel.expandSentencePrev("candidate")
+            viewModel.expandSentenceNext("candidate")
+            viewModel.confirmCuration()
+            runCurrent()
+
+            val selection = requireNotNull(repository.confirmedSelection).single()
+            assertEquals(1, selection.linesBefore)
+            assertEquals(2, selection.linesAfter)
+        }
+
+    @Test
+    fun savedExpansionSurvivesViewModelRecreation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val cueLookup =
+                SubtitleCueLookupService { _, _ ->
+                    Result.success(
+                        listOf(
+                            SubtitleCue(0.0, 1.0, "魚を食べる。"),
+                            SubtitleCue(1.5, 2.5, "次の文"),
+                        ),
+                    )
+                }
+            val first = mediaViewModel(repository, ImmediateSafBroker(), cueLookup = cueLookup)
+            runCurrent()
+            first.focusCandidate("candidate")
+            first.expandSentenceNext("candidate")
+            runCurrent()
+
+            val recreated = mediaViewModel(repository, ImmediateSafBroker(), cueLookup = cueLookup)
+            runCurrent()
+
+            val curation = requireNotNull(recreated.uiState.value.curation)
+            assertEquals(CurationLineExpansion(0, 1), curation.lineExpansions["candidate"])
+            assertEquals("魚を食べる。 次の文", curation.expansionPreview?.sentence)
+        }
+
+    @Test
+    fun expansionIsIgnoredWhileASubmissionIsPending() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository =
+                RecordingRepository(
+                    MiningRunState.Curating(request, pageSubmissionPending = true),
+                )
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.expandSentenceNext("candidate")
+            runCurrent()
+
+            assertEquals(
+                emptyMap<String, CurationLineExpansion>(),
+                viewModel.uiState.value.curation?.lineExpansions,
+            )
         }
 
     @Test

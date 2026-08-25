@@ -5,10 +5,12 @@ import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.ui.mining.ExpansionPreview
 
 enum class DocumentSelectionError {
     VIDEO,
@@ -56,6 +58,9 @@ data class CurationUiState(
     val page: CurationPage? = null,
     val definition: CurationDefinition? = null,
     val player: CurationPlayerUiState? = null,
+    val lineExpansions: Map<String, CurationLineExpansion> = emptyMap(),
+    /** Merged-window preview for the focused candidate's chosen sentence; null hides the controls. */
+    val expansionPreview: ExpansionPreview? = null,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size
