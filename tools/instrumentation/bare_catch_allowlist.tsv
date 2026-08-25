@@ -42,6 +42,6 @@ app/src/main/kotlin/com/ankiminer/android/tts/CachedSentenceAudioSynthesizer.kt	
 app/src/main/kotlin/com/ankiminer/android/tts/SentenceAudioProtocol.kt	116	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/DiagnosticsViewModel.kt	71,95	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/MediaMiningViewModel.kt	1079,1099	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	967,1130	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	969,1132	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	1163,1251	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	376,521,1587	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.
