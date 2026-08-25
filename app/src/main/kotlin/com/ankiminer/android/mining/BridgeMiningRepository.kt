@@ -150,7 +150,7 @@ internal class BridgeMiningRepository(
         fun mediaBinding(): CurationMediaBinding? {
             val video = videoCachePath ?: return null
             val subtitle = subtitleCachePath ?: return null
-            return CurationMediaBinding(video, subtitle, lane.audioOnly)
+            return CurationMediaBinding(video, subtitle, lane.audioOnly, input.audioTrackOverride)
         }
     }
 
@@ -520,7 +520,7 @@ internal class BridgeMiningRepository(
                                 episodeName = labels.first,
                                 seriesName = labels.second,
                                 sourceLabel = null,
-                                audioTrackOverride = null,
+                                audioTrackOverride = run.input.audioTrackOverride,
                                 audioOnly = lane.audioOnly,
                                 cacheDir = runtimePaths.cacheDir.canonicalPath,
                                 nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
