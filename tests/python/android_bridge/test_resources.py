@@ -4189,6 +4189,8 @@ def test_remove_mined_words_only_removes_the_mined_row_for_a_shared_lemma(
     database = KnownWordDB(home / "known_words.db")
     database.initialize()
     database.add_words({"掘る"}, source="user")
+    # ``lemma`` is the known_words PRIMARY KEY, so this is a no-op: the row already
+    # exists as source='user' and add_words() never downgrades it to 'mined'.
     database.add_words({"掘る"}, source="mined")
     database.add_words({"食べる"}, source="mined")
 
@@ -4196,7 +4198,9 @@ def test_remove_mined_words_only_removes_the_mined_row_for_a_shared_lemma(
         local_resources.remove_mined_words({"operationId": "mined-remove", "words": ["掘る", "食べる"]}),
         expected_type="resource.minedwords.removed",
     )
-    assert removed.payload == {"removedCount": 2}
+    # Only 食べる was ever stored with source='mined'; 掘る has no mined row to
+    # remove, so remove_words(source="mined") deletes one row, not two.
+    assert removed.payload == {"removedCount": 1}
     assert database.get_words_by_source("user") == {"掘る"}
     assert database.get_words_by_source("mined") == set()
 
