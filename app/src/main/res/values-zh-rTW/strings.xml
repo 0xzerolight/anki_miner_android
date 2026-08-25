@@ -114,6 +114,10 @@
     <string name="curation_bulk_action">選取…</string>
     <string name="curation_tools_hide">隱藏搜尋和篩選</string>
     <string name="curation_tools_show">顯示搜尋和篩選</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">顯示 %1$d 個備選例句</item>
+    </plurals>
+    <string name="curation_alternatives_hide">隱藏備選例句</string>
     <string name="candidate_state_selected">已選取</string>
     <string name="candidate_state_excluded">已排除</string>
     <string name="candidate_part_of_speech_unknown">未知詞性</string>

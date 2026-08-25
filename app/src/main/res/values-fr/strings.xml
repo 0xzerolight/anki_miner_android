@@ -114,6 +114,12 @@
     <string name="curation_bulk_action">Sélectionner…</string>
     <string name="curation_tools_hide">Masquer la recherche et les filtres</string>
     <string name="curation_tools_show">Afficher la recherche et les filtres</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Afficher %1$d alternative</item>
+        <item quantity="many">Afficher %1$d alternatives</item>
+        <item quantity="other">Afficher %1$d alternatives</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Masquer les alternatives</string>
     <string name="candidate_state_selected">Sélectionné</string>
     <string name="candidate_state_excluded">Exclu</string>
     <string name="candidate_part_of_speech_unknown">Partie du discours inconnue</string>

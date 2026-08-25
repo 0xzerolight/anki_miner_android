@@ -43,6 +43,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -732,6 +733,38 @@ internal fun highlightMinedForm(
     }
 }
 
+/** Alternatives render inline up to this count; above it they fold behind a disclosure. */
+internal const val MAX_INLINE_ALTERNATIVES = 3
+
+@Immutable
+internal data class CurationSentenceLayout(
+    val chosen: CurationSentence,
+    val alternatives: List<CurationSentence>,
+    val disclose: Boolean,
+)
+
+/**
+ * Splits a candidate's sentences into the sentence that will be mined and the rest.
+ *
+ * The chosen sentence is the curation draft's selection, falling back to the engine default when
+ * the draft has no entry (or a stale one). Alternatives keep source order — the wire order is the
+ * engine's own — and never include the chosen sentence.
+ */
+internal fun curationSentenceLayout(
+    candidate: CurationCandidate,
+    selectedSentenceId: String?,
+): CurationSentenceLayout {
+    val chosen =
+        candidate.sentences.firstOrNull { it.sentenceId == selectedSentenceId }
+            ?: candidate.sentences.first { it.sentenceId == candidate.defaultSentenceId }
+    val alternatives = candidate.sentences.filter { it.sentenceId != chosen.sentenceId }
+    return CurationSentenceLayout(
+        chosen = chosen,
+        alternatives = alternatives,
+        disclose = alternatives.size > MAX_INLINE_ALTERNATIVES,
+    )
+}
+
 @Composable
 internal fun CurationSentenceChoice(
     candidate: CurationCandidate,
@@ -796,6 +829,72 @@ internal fun CurationSentenceChoice(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Folds a large alternative set behind one row: "Show N alternatives" / "Hide alternatives".
+ *
+ * Sits between the pinned chosen sentence and the alternative rows, so the mined sentence stays
+ * visible while the flood stays collapsed.
+ */
+@Composable
+internal fun CurationAlternativesToggle(
+    alternativeCount: Int,
+    expanded: Boolean,
+    containerColor: Color,
+    enabled: Boolean,
+    isLast: Boolean,
+    testTag: String,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val label =
+        if (expanded) {
+            stringResource(R.string.curation_alternatives_hide)
+        } else {
+            pluralStringResource(
+                R.plurals.curation_alternatives_show,
+                alternativeCount,
+                alternativeCount,
+            )
+        }
+    val toggleState =
+        stringResource(
+            if (expanded) R.string.disclosure_expanded else R.string.disclosure_collapsed,
+        )
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        shape =
+            if (isLast) {
+                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+            } else {
+                RoundedCornerShape(0.dp)
+            },
+    ) {
+        Column {
+            HorizontalDivider()
+            Row(
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(enabled = enabled, role = Role.Button, onClick = onToggle)
+                        .testTag(testTag)
+                        .semantics { stateDescription = toggleState }
+                        .padding(
+                            horizontal = AnkiMinerTokens.Space.group,
+                            vertical = AnkiMinerTokens.Space.related,
+                        ),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(text = label, style = MaterialTheme.typography.labelLarge)
+                ChevronGlyph(pointsUp = expanded)
             }
         }
     }
