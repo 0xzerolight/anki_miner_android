@@ -114,7 +114,33 @@ internal class AnkiProviderRuntime(
         cancellation: AnkiCancellation,
     ): AnkiRemediationInventory = remediation.inventory(cancellation)
 
+    /** Non-run-scoped delete loop for a later undo manager, called by method reference. */
+    fun deleteNotes(
+        noteIds: List<Long>,
+        cancellation: AnkiCancellation,
+    ): Int = deleteNotesLoop(gateway, noteIds, cancellation)
+
     override fun close() {
         store.close()
     }
+}
+
+/**
+ * Loops the raw delete boundary one note at a time, counting affected rows and checking
+ * cancellation between notes. Extracted from [AnkiProviderRuntime] so it is JVM-testable against
+ * a faked [AnkiProviderGateway]; the runtime itself needs a real `android.content.Context` and
+ * cannot be constructed in a JVM unit test.
+ */
+internal fun deleteNotesLoop(
+    gateway: AnkiProviderGateway,
+    noteIds: List<Long>,
+    cancellation: AnkiCancellation,
+): Int {
+    var deletedCount = 0
+    for (noteId in noteIds) {
+        if (cancellation.isCancelled()) break
+        val affected = gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(noteId))
+        if (affected >= 1) deletedCount += 1
+    }
+    return deletedCount
 }
