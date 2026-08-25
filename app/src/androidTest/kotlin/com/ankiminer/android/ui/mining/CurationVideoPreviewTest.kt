@@ -154,7 +154,17 @@ class CurationVideoPreviewTest {
         composeRule.onNodeWithTag(CurationPlayerTestTags.RETRY).assertDoesNotExist()
     }
 
-    private fun setPreview(audioOnly: Boolean = false): FakeCurationPreviewPlayer {
+    @Test
+    fun bindForwardsTheAudioTrackOverrideToThePlayer() {
+        val fake = setPreview(audioTrackOverride = 1L)
+
+        assertEquals(listOf(1L), fake.boundOverrides)
+    }
+
+    private fun setPreview(
+        audioOnly: Boolean = false,
+        audioTrackOverride: Long? = null,
+    ): FakeCurationPreviewPlayer {
         val fake = FakeCurationPreviewPlayer()
         composeRule.setContent {
             AnkiMinerTheme {
@@ -175,6 +185,7 @@ class CurationVideoPreviewTest {
                         collapsed = collapsed,
                         onToggleCollapsed = { collapsed = !collapsed },
                         audioOnly = audioOnly,
+                        audioTrackOverride = audioTrackOverride,
                     )
                 }
             }

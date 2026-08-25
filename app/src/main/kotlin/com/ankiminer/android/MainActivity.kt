@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
+            audioTrackProbeOpener = app.audioTrackProbeLoader,
         )
     }
     private val audioViewModelFactory by lazy {
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
+            audioTrackProbeOpener = app.audioTrackProbeLoader,
         )
     }
     private val setupViewModelFactory by lazy {

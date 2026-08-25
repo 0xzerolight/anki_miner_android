@@ -39,6 +39,9 @@ import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.timing.TimingPreviewBusyException
 import com.ankiminer.android.timing.TimingPreviewOpener
 import com.ankiminer.android.timing.TimingPreviewSession
+import com.ankiminer.android.tracks.AudioTrackList
+import com.ankiminer.android.tracks.AudioTrackProbeBusyException
+import com.ankiminer.android.tracks.AudioTrackProbeOpener
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.ExpansionPreview
@@ -53,6 +56,8 @@ import com.ankiminer.android.ui.mining.draftFor
 import com.ankiminer.android.ui.mining.forRequest
 import com.ankiminer.android.ui.mining.request
 import com.ankiminer.android.ui.mining.toCurationSessionState
+import com.ankiminer.android.ui.video.AudioTrackPickerError
+import com.ankiminer.android.ui.video.AudioTrackPickerState
 import com.ankiminer.android.ui.video.CurationPlayerUiState
 import com.ankiminer.android.ui.video.CurationUiState
 import com.ankiminer.android.ui.video.DocumentSelectionError
@@ -102,6 +107,7 @@ class MediaMiningViewModel internal constructor(
     audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
     private val timingPreviewOpener: TimingPreviewOpener? = null,
     timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val audioTrackProbeOpener: AudioTrackProbeOpener? = null,
 ) : ViewModel() {
     private val subtitleOffsetDraftKey = "${lane.savedStateKeyPrefix}.subtitleOffsetDraft"
 
@@ -119,6 +125,9 @@ class MediaMiningViewModel internal constructor(
         val commandError: MiningCommandError? = null,
         val timingPreviewPending: Boolean = false,
         val timingPreviewError: TimingPreviewError? = null,
+        val audioTrackOverride: Long? = null,
+        val audioTrackProbePending: Boolean = false,
+        val audioTrackPickerError: AudioTrackPickerError? = null,
     )
 
     private enum class DocumentKind {
@@ -167,6 +176,8 @@ class MediaMiningViewModel internal constructor(
     private val cueState = MutableStateFlow<CueState?>(null)
     private val mutableTimingPreviewState = MutableStateFlow<TimingPreviewState?>(null)
     val timingPreviewState: StateFlow<TimingPreviewState?> = mutableTimingPreviewState
+    private val mutableAudioTrackPickerState = MutableStateFlow<AudioTrackPickerState?>(null)
+    val audioTrackPickerState: StateFlow<AudioTrackPickerState?> = mutableAudioTrackPickerState
     private val timingPreviewCleanupScope =
         CoroutineScope(SupervisorJob() + timingPreviewCleanupDispatcher)
     private var timingPreviewSession: TimingPreviewSession? = null
@@ -256,6 +267,9 @@ class MediaMiningViewModel internal constructor(
                 commandError = local.commandError,
                 timingPreviewPending = local.timingPreviewPending,
                 timingPreviewError = local.timingPreviewError,
+                audioTrackOverride = local.audioTrackOverride,
+                audioTrackProbePending = local.audioTrackProbePending,
+                audioTrackPickerError = local.audioTrackPickerError,
                 runtimeConflict =
                     activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
             )
@@ -323,6 +337,8 @@ class MediaMiningViewModel internal constructor(
                             curationDraft = null,
                             previousPageSelectedCount = 0,
                             pending = local.pending.afterTerminalState(),
+                            audioTrackOverride =
+                                if (runState is MiningRunState.Success) null else local.audioTrackOverride,
                         )
                     }
                 }
@@ -378,7 +394,9 @@ class MediaMiningViewModel internal constructor(
             repository.state.value != MiningRunState.Idle ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
-            mutableTimingPreviewState.value != null
+            mutableTimingPreviewState.value != null ||
+            localState.value.audioTrackProbePending ||
+            mutableAudioTrackPickerState.value != null
         ) {
             return
         }
@@ -392,7 +410,7 @@ class MediaMiningViewModel internal constructor(
         videoDocumentRequest += 1
         videoDocumentJob?.cancel()
         val document = localState.value.video.document
-        localState.update { it.copy(video = DocumentSlotState()) }
+        localState.update { it.copy(video = DocumentSlotState(), audioTrackOverride = null) }
         videoSelection.clear()
         document?.let(::releaseDocument)
     }
@@ -402,7 +420,9 @@ class MediaMiningViewModel internal constructor(
             repository.state.value != MiningRunState.Idle ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
-            mutableTimingPreviewState.value != null
+            mutableTimingPreviewState.value != null ||
+            localState.value.audioTrackProbePending ||
+            mutableAudioTrackPickerState.value != null
         ) {
             return
         }
@@ -470,7 +490,9 @@ class MediaMiningViewModel internal constructor(
                 local.pending.start ||
                 local.pending.reset ||
                 local.timingPreviewPending ||
-                mutableTimingPreviewState.value != null
+                mutableTimingPreviewState.value != null ||
+                local.audioTrackProbePending ||
+                mutableAudioTrackPickerState.value != null
             ) {
                 return
             }
@@ -576,6 +598,77 @@ class MediaMiningViewModel internal constructor(
         }
     }
 
+    fun openAudioTrackPicker() {
+        val opener = audioTrackProbeOpener ?: return
+        while (true) {
+            val local = localState.value
+            val video = local.video.document ?: return
+            if (
+                local.video.isResolving ||
+                repository.state.value != MiningRunState.Idle ||
+                local.pending.start ||
+                local.pending.reset ||
+                local.timingPreviewPending ||
+                mutableTimingPreviewState.value != null ||
+                local.audioTrackProbePending ||
+                mutableAudioTrackPickerState.value != null
+            ) {
+                return
+            }
+            if (
+                localState.compareAndSet(
+                    local,
+                    local.copy(
+                        audioTrackProbePending = true,
+                        audioTrackPickerError = null,
+                    ),
+                )
+            ) {
+                val videoRequest = videoDocumentRequest
+                viewModelScope.launch {
+                    try {
+                        val result = opener.probe(video)
+                        result.fold(
+                            onSuccess = { list ->
+                                publishAudioTrackPicker(video, videoRequest, list)
+                            },
+                            onFailure = { failure ->
+                                publishAudioTrackPickerFailure(failure)
+                            },
+                        )
+                    } catch (failure: CancellationException) {
+                        throw failure
+                    } catch (failure: Exception) {
+                        publishAudioTrackPickerFailure(failure)
+                    } finally {
+                        localState.update { it.copy(audioTrackProbePending = false) }
+                    }
+                }
+                return
+            }
+        }
+    }
+
+    fun selectAudioTrack(index: Long?) {
+        mutableAudioTrackPickerState.update { state -> state?.copy(selectedAudioIndex = index) }
+    }
+
+    fun applyAudioTrackPicker() {
+        val state = mutableAudioTrackPickerState.value ?: return
+        if (state.tracks.size >= 2) {
+            localState.update { it.copy(audioTrackOverride = state.selectedAudioIndex) }
+        }
+        mutableAudioTrackPickerState.value = null
+    }
+
+    fun dismissAudioTrackPicker() {
+        mutableAudioTrackPickerState.value = null
+    }
+
+    fun dismissAudioTrackPickerError() {
+        localState.update { it.copy(audioTrackPickerError = null) }
+    }
+
     fun start() {
         while (true) {
             val local = localState.value
@@ -587,7 +680,9 @@ class MediaMiningViewModel internal constructor(
                 local.pending.start ||
                 local.pending.reset ||
                 local.timingPreviewPending ||
-                mutableTimingPreviewState.value != null
+                mutableTimingPreviewState.value != null ||
+                local.audioTrackProbePending ||
+                mutableAudioTrackPickerState.value != null
             ) {
                 return
             }
@@ -1025,7 +1120,9 @@ class MediaMiningViewModel internal constructor(
             (!restoring && repository.state.value != MiningRunState.Idle) ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
-            mutableTimingPreviewState.value != null
+            mutableTimingPreviewState.value != null ||
+            localState.value.audioTrackProbePending ||
+            mutableAudioTrackPickerState.value != null
         ) {
             return
         }
@@ -1177,6 +1274,45 @@ class MediaMiningViewModel internal constructor(
         localState.update { it.copy(timingPreviewError = error) }
     }
 
+    /** Re-validates against the current state before publishing, dropping a now-stale result. */
+    private fun publishAudioTrackPicker(
+        video: SafDocument,
+        videoRequest: Long,
+        list: AudioTrackList,
+    ) {
+        val current = localState.value
+        if (
+            repository.state.value != MiningRunState.Idle ||
+            current.video.document?.uri != video.uri ||
+            !isCurrentDocumentRequest(DocumentKind.VIDEO, videoRequest) ||
+            mutableAudioTrackPickerState.value != null
+        ) {
+            return
+        }
+        val preselect =
+            current.audioTrackOverride?.takeIf { override ->
+                list.tracks.any { it.audioIndex == override }
+            }
+        mutableAudioTrackPickerState.value =
+            AudioTrackPickerState(
+                tracks = list.tracks,
+                autoAudioIndex = list.autoAudioIndex,
+                selectedAudioIndex = preselect,
+            )
+        if (list.tracks.size < 2) {
+            localState.update { it.copy(audioTrackOverride = null) }
+        }
+    }
+
+    private fun publishAudioTrackPickerFailure(failure: Throwable) {
+        val error =
+            when (failure) {
+                is AudioTrackProbeBusyException -> AudioTrackPickerError.BUSY
+                else -> AudioTrackPickerError.PROBE
+            }
+        localState.update { it.copy(audioTrackPickerError = error) }
+    }
+
     private fun queueTimingPreviewClose(
         session: TimingPreviewSession,
         clearPendingOnFinish: Boolean = false,
@@ -1225,7 +1361,8 @@ class MediaMiningViewModel internal constructor(
         document: SafDocument,
     ): LocalState =
         when (kind) {
-            DocumentKind.VIDEO -> copy(video = DocumentSlotState(document = document))
+            DocumentKind.VIDEO ->
+                copy(video = DocumentSlotState(document = document), audioTrackOverride = null)
             DocumentKind.SUBTITLE -> copy(subtitle = DocumentSlotState(document = document))
         }
 
@@ -1286,6 +1423,7 @@ class MediaMiningViewModel internal constructor(
             video = MiningSource(uri = video.uri, displayName = video.displayName),
             subtitle = MiningSource(uri = subtitle.uri, displayName = subtitle.displayName),
             subtitleOffsetOverride = local.subtitleOffsetOverride,
+            audioTrackOverride = local.audioTrackOverride,
         )
     }
 
@@ -1432,6 +1570,7 @@ class MediaMiningViewModel internal constructor(
                 cues = current?.cues.orEmpty(),
                 cuesUnavailable = current?.unavailable == true,
                 audioOnly = media.audioOnly,
+                audioTrackOverride = media.audioTrackOverride,
             )
         }
 
@@ -1494,6 +1633,7 @@ class MediaMiningViewModel internal constructor(
         private val audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
         private val timingPreviewOpener: TimingPreviewOpener? = null,
         private val timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        private val audioTrackProbeOpener: AudioTrackProbeOpener? = null,
         private val runtimeWorkState: StateFlow<RuntimeWorkCoordinator.Kind?> = MutableStateFlow(null),
         private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
@@ -1520,6 +1660,7 @@ class MediaMiningViewModel internal constructor(
                 audioPacks = audioPacks,
                 timingPreviewOpener = timingPreviewOpener,
                 timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
+                audioTrackProbeOpener = audioTrackProbeOpener,
             ) as T
         }
     }

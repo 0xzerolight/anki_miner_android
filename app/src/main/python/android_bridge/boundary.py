@@ -84,6 +84,7 @@ def _dispatch_validated(
         "tokenizer.configure",
         "dictionary.define",
         "subtitle.cues",
+        "media.audiotracks",
     }
     if request_type not in supported_after_bootstrap:
         raise BridgeProtocolError("unsupported_operation", f"Unsupported bridge operation: {request_type}")
@@ -163,6 +164,11 @@ def _dispatch_validated(
         from .subtitles import get_cues
 
         return get_cues(payload)
+
+    if request_type == "media.audiotracks":
+        from .media_probe import get_audio_tracks
+
+        return get_audio_tracks(payload)
 
     if request_type == "mining.video.run":
         if callbacks is None:

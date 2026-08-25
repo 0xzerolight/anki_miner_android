@@ -80,6 +80,34 @@ class PreviewFailureMappingTest {
     }
 
     @Test
+    fun overriddenAudioTrackDecidesTheUnsupportedAudioFailure() {
+        val supported =
+            Format.Builder()
+                .setSampleMimeType(MimeTypes.AUDIO_AAC)
+                .setLanguage("eng")
+                .build()
+        val unsupported =
+            Format.Builder()
+                .setSampleMimeType(MimeTypes.AUDIO_DTS)
+                .setCodecs("dts")
+                .setLanguage("eng")
+                .build()
+        val tracks =
+            Tracks(
+                listOf(
+                    group(supported, C.FORMAT_HANDLED, selected = true),
+                    group(unsupported, C.FORMAT_UNSUPPORTED_SUBTYPE, selected = false),
+                ),
+            )
+
+        assertNull(previewFailureFor(tracks))
+        assertEquals(
+            PreviewFailure.AudioTrackUnsupported("dts"),
+            previewFailureFor(tracks, 1L),
+        )
+    }
+
+    @Test
     fun unsupportedVideoWinsOverUnsupportedAudio() {
         val tracks =
             Tracks(

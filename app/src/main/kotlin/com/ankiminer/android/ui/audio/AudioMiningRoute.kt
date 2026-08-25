@@ -20,6 +20,7 @@ fun AudioMiningRoute(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val audioTrackPicker by viewModel.audioTrackPickerState.collectAsStateWithLifecycle()
     val audioPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { viewModel.onVideoPicked(it.toString()) }
@@ -40,6 +41,12 @@ fun AudioMiningRoute(
         onDismissTimingPreviewError = viewModel::dismissTimingPreviewError,
         onSubtitleOffsetDraftChange = viewModel::setSubtitleOffsetDraft,
         onTestTiming = viewModel::openTimingPreview,
+        audioTrackPicker = audioTrackPicker,
+        onAudioTracks = viewModel::openAudioTrackPicker,
+        onSelectAudioTrack = viewModel::selectAudioTrack,
+        onApplyAudioTrackPicker = viewModel::applyAudioTrackPicker,
+        onDismissAudioTrackPicker = viewModel::dismissAudioTrackPicker,
+        onDismissAudioTrackPickerError = viewModel::dismissAudioTrackPickerError,
         onStart = viewModel::start,
         onFocusCandidate = viewModel::focusCandidate,
         onSetCandidateSelected = viewModel::setCandidateSelected,

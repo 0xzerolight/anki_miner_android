@@ -46,9 +46,12 @@ data class VideoMiningInput(
     val subtitle: MiningSource,
     /** Per-run override; null keeps the global setting or the engine default. */
     val subtitleOffsetOverride: Double? = null,
+    /** Per-run override; null keeps the global setting or the engine default. */
+    val audioTrackOverride: Long? = null,
 ) {
     init {
         subtitleOffsetOverride?.let { require(it.isFinite()) }
+        audioTrackOverride?.let { require(it >= 0) }
     }
 }
 
@@ -338,6 +341,8 @@ data class CurationMediaBinding(
     val videoPath: String,
     val subtitlePath: String,
     val audioOnly: Boolean = false,
+    /** Per-run override; null keeps the global setting or the engine default. */
+    val audioTrackOverride: Long? = null,
 )
 
 /** Which media mining lane a repository/ViewModel pair serves. */

@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://anki-miner.app/schemas/android-bridge/v1/audio-tracks.json",
+  "title": "Anki Miner Android audio track probe payload",
+  "$comment": "Payload-only request/result schema. Track count is capped at 128 by the runtime probe.",
+  "oneOf": [
+    {"$ref": "#/$defs/request"},
+    {"$ref": "#/$defs/result"}
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["videoPath", "nativeLibraryDir"],
+      "properties": {
+        "videoPath": {"type": "string", "minLength": 1},
+        "nativeLibraryDir": {"type": "string", "minLength": 1}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["videoPath", "autoAudioIndex", "tracks"],
+      "properties": {
+        "videoPath": {"type": "string", "minLength": 1},
+        "autoAudioIndex": {"type": ["integer", "null"]},
+        "tracks": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["audioIndex", "globalIndex", "languageTag", "title", "codec", "channels", "isDefault"],
+            "properties": {
+              "audioIndex": {"type": "integer", "minimum": 0},
+              "globalIndex": {"type": "integer", "minimum": 0},
+              "languageTag": {"type": ["string", "null"]},
+              "title": {"type": ["string", "null"]},
+              "codec": {"type": ["string", "null"]},
+              "channels": {"type": ["integer", "null"]},
+              "isDefault": {"type": "boolean"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -46,6 +46,7 @@ object BridgeJsonCodec {
     // added stage is not a runtime protocol error.
     private const val MAX_PIPELINE_STAGES = 32L
     private const val MAX_SUBTITLE_CUES = 20_000
+    private const val MAX_AUDIO_TRACKS = 128
     // Mirrors _MAX_LINE_EXPANSION and the curation schema's lineExpansionCount bound.
     private const val MAX_LINE_EXPANSION = 100L
     private val SELECTION_KEYS = setOf("candidateId", "sentenceId", "linesBefore", "linesAfter")
@@ -198,6 +199,15 @@ object BridgeJsonCodec {
             generator.writeStringField("subtitlePath", subtitlePath)
         }
 
+    fun encodeAudioTracksRequest(
+        videoPath: String,
+        nativeLibraryDir: String,
+    ): String =
+        encode("media.audiotracks") { generator ->
+            generator.writeStringField("videoPath", videoPath)
+            generator.writeStringField("nativeLibraryDir", nativeLibraryDir)
+        }
+
     fun encodeCurationResponse(
         request: CurationRequest,
         selection: List<CurationSelection>?,
@@ -298,6 +308,8 @@ object BridgeJsonCodec {
             "dictionary.define.result" -> readDictionaryDefineResult(payload)
             "subtitle.cues" -> readSubtitleCuesRequest(payload)
             "subtitle.cues.result" -> readSubtitleCuesResult(payload)
+            "media.audiotracks" -> readAudioTracksRequest(payload)
+            "media.audiotracks.result" -> readAudioTracksResult(payload)
             "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
             "diagnostics.loglevel.applied" -> BridgeMessage.DiagnosticsLogLevelApplied(logLevel(payload, type))
             "job.cancel" -> BridgeMessage.JobCancel(singleRunId(payload, type))
@@ -731,6 +743,47 @@ object BridgeJsonCodec {
                     startSeconds = start,
                     endSeconds = end,
                     text = text(fields.getValue("text"), "subtitle cue text"),
+                )
+            },
+        )
+    }
+
+    private fun readAudioTracksRequest(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.AudioTracksRequest {
+        requireExact(payload, setOf("videoPath", "nativeLibraryDir"), "media.audiotracks")
+        return BridgeMessage.AudioTracksRequest(
+            absolutePath(payload.getValue("videoPath"), "videoPath"),
+            absolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir"),
+        )
+    }
+
+    private fun readAudioTracksResult(
+        payload: Map<String, BridgeJsonValue>,
+    ): BridgeMessage.AudioTracksResult {
+        requireExact(payload, setOf("videoPath", "autoAudioIndex", "tracks"), "media.audiotracks.result")
+        val tracks = array(payload.getValue("tracks"), "audio tracks")
+        if (tracks.size > MAX_AUDIO_TRACKS) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "audio tracks exceed their track limit")
+        }
+        return BridgeMessage.AudioTracksResult(
+            absolutePath(payload.getValue("videoPath"), "videoPath"),
+            nullableNonNegative(payload.getValue("autoAudioIndex"), "autoAudioIndex"),
+            tracks.map { track ->
+                val fields = objectValue(track, "audio track")
+                requireExact(
+                    fields,
+                    setOf("audioIndex", "globalIndex", "languageTag", "title", "codec", "channels", "isDefault"),
+                    "audio track",
+                )
+                AudioTrackInfo(
+                    audioIndex = nonNegative(fields.getValue("audioIndex"), "audioIndex"),
+                    globalIndex = nonNegative(fields.getValue("globalIndex"), "globalIndex"),
+                    languageTag = nullableText(fields.getValue("languageTag"), "languageTag"),
+                    title = nullableText(fields.getValue("title"), "title"),
+                    codec = nullableText(fields.getValue("codec"), "codec"),
+                    channels = nullableIntegral(fields.getValue("channels"), "channels"),
+                    isDefault = bool(fields.getValue("isDefault"), "isDefault"),
                 )
             },
         )

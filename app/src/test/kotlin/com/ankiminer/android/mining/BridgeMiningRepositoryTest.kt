@@ -1155,6 +1155,54 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun startVideoDispatchesTheAudioTrackOverride() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT.copy(audioTrackOverride = 2)) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(2L, harness.bridge.videoRequest.get()!!.audioTrackOverride)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun startVideoDefaultsTheAudioTrackOverrideToNull() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertNull(harness.bridge.videoRequest.get()!!.audioTrackOverride)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun curationMediaBindingSnapshotsTheRunsAudioTrackOverride() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT.copy(audioTrackOverride = 1)) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1L, curating.media?.audioTrackOverride)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `foreground promotion execution failure keeps its cause and distinct fault`() {
         val (harness, failed) = foregroundFailure(ForegroundStartFailure.EXECUTION)
 

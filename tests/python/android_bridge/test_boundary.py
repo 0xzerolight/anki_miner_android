@@ -367,6 +367,35 @@ def test_dispatch_routes_resource_delete_to_its_owning_module(
     assert seen[1][1]["slotId"] == "fixture"
 
 
+def test_dispatch_routes_media_audiotracks_to_its_owning_module(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pins the routing itself, not merely the ``supported_after_bootstrap`` entry."""
+
+    import android_bridge.media_probe as media_probe
+
+    seen: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        media_probe,
+        "get_audio_tracks",
+        lambda payload: seen.append(dict(payload))
+        or encode_message(
+            "media.audiotracks.result",
+            {"videoPath": payload["videoPath"], "autoAudioIndex": None, "tracks": []},
+        ),
+    )
+
+    boundary.dispatch(
+        encode_message(
+            "media.audiotracks",
+            {"videoPath": "/videos/ep1.mkv", "nativeLibraryDir": "/native"},
+        )
+    )
+
+    assert seen == [{"videoPath": "/videos/ep1.mkv", "nativeLibraryDir": "/native"}]
+
+
 def test_dispatch_refuses_a_unidic_delete(initialized_bridge_home: Path) -> None:
     """UniDic is the tokenizer the whole engine depends on; it has no delete."""
 
