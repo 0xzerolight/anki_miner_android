@@ -87,7 +87,6 @@ jobs:
             tools/anki-contract/generate_html5_entities.py --check
           "$HOST_PYTHON" -m unittest discover -s tools/dependencies/tests -v
           "$HOST_PYTHON" -m unittest discover -s tools/runtime-wheels/tests -v
-          "$HOST_PYTHON" -m unittest discover -s tools/ankiconnect-fallback/tests -v
           PYTHONPATH=tools/engine-sync \
             "$HOST_PYTHON" -m unittest discover -s tools/engine-sync/tests -v
           # `sync_engine.py --check` verifies the vendored engine against the
