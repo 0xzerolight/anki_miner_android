@@ -41,6 +41,7 @@ data class CurationPlayerUiState(
     val cues: List<SubtitleCue>,
     val cuesUnavailable: Boolean,
     val audioOnly: Boolean = false,
+    val audioTrackOverride: Long? = null,
 )
 
 @Immutable

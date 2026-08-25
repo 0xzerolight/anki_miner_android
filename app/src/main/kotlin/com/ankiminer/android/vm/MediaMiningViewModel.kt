@@ -1382,6 +1382,7 @@ class MediaMiningViewModel internal constructor(
                 cues = current?.cues.orEmpty(),
                 cuesUnavailable = current?.unavailable == true,
                 audioOnly = media.audioOnly,
+                audioTrackOverride = media.audioTrackOverride,
             )
         }
 

@@ -302,6 +302,29 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun curationPlayerStateCarriesTheRunsAudioTrackOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media =
+                CurationMediaBinding(
+                    videoPath = "/cache/video.mkv",
+                    subtitlePath = "/cache/subtitle.srt",
+                    audioTrackOverride = 1L,
+                )
+            val repository =
+                RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                )
+
+            runCurrent()
+
+            assertEquals(1L, viewModel.uiState.value.curation?.player?.audioTrackOverride)
+        }
+
+    @Test
     fun failedCueLookupLeavesThePlayerUsableWithoutCues() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()

@@ -550,6 +550,7 @@ private fun CurationPlayerSlot(
         collapsed = collapsed,
         onToggleCollapsed = { collapsed = !collapsed },
         audioOnly = playerState.audioOnly,
+        audioTrackOverride = playerState.audioTrackOverride,
         notice =
             if (playerState.cuesUnavailable) {
                 { CuesUnavailableNotice() }
