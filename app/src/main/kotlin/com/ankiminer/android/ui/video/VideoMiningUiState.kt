@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.video
 
 import androidx.compose.runtime.Immutable
 import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.engine.AudioTrackInfo
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
@@ -28,6 +29,19 @@ enum class TimingPreviewError {
     TOKENIZER_REQUIRED,
     OPEN,
 }
+
+enum class AudioTrackPickerError {
+    BUSY,
+    PROBE,
+}
+
+@Immutable
+data class AudioTrackPickerState(
+    val tracks: List<AudioTrackInfo>,
+    val autoAudioIndex: Long?,
+    /** null = Auto */
+    val selectedAudioIndex: Long?,
+)
 
 data class DocumentSlotState(
     val document: SafDocument? = null,
@@ -87,6 +101,9 @@ data class VideoMiningUiState(
     val runtimeConflict: RuntimeWorkConflict? = null,
     val timingPreviewPending: Boolean = false,
     val timingPreviewError: TimingPreviewError? = null,
+    val audioTrackOverride: Long? = null,
+    val audioTrackProbePending: Boolean = false,
+    val audioTrackPickerError: AudioTrackPickerError? = null,
 ) {
     val canStart: Boolean
         get() =
@@ -98,6 +115,7 @@ data class VideoMiningUiState(
                 !subtitleOffsetDraftInvalid &&
                 !startPending &&
                 !timingPreviewPending &&
+                !audioTrackProbePending &&
                 runtimeConflict == null
 
     val canTestTiming: Boolean
@@ -109,5 +127,16 @@ data class VideoMiningUiState(
                 !subtitle.isResolving &&
                 !subtitleOffsetDraftInvalid &&
                 !startPending &&
+                !timingPreviewPending &&
+                !audioTrackProbePending
+
+    val canPickAudioTracks: Boolean
+        get() =
+            runState == MiningRunState.Idle &&
+                video.document != null &&
+                !video.isResolving &&
+                !startPending &&
+                !resetPending &&
+                !audioTrackProbePending &&
                 !timingPreviewPending
 }

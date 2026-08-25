@@ -14,6 +14,7 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
+import com.ankiminer.android.engine.AudioTrackInfo
 import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafAccessException
@@ -46,6 +47,11 @@ import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.timing.TimingPreviewBusyException
 import com.ankiminer.android.timing.TimingPreviewOpener
 import com.ankiminer.android.timing.TimingPreviewSession
+import com.ankiminer.android.tracks.AudioTrackList
+import com.ankiminer.android.tracks.AudioTrackProbeBusyException
+import com.ankiminer.android.tracks.AudioTrackProbeFailedException
+import com.ankiminer.android.tracks.AudioTrackProbeOpener
+import com.ankiminer.android.ui.video.AudioTrackPickerError
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import com.ankiminer.android.ui.video.TimingPreviewError
 import java.util.concurrent.ConcurrentHashMap
@@ -65,6 +71,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -1517,6 +1524,381 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun applyingAudioTrackPickerFromATwoTrackProbeSetsOverrideAndStartCarriesIt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+            assertNull(viewModel.audioTrackPickerState.value)
+
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(2L, repository.startedInputs.single().audioTrackOverride)
+        }
+
+    @Test
+    fun dismissingAudioTrackPickerLeavesPreviousOverrideUntouched() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+            viewModel.selectAudioTrack(1L)
+            viewModel.dismissAudioTrackPicker()
+            runCurrent()
+
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+            assertNull(viewModel.audioTrackPickerState.value)
+        }
+
+    @Test
+    fun probeResultWithFewerThanTwoTracksNullsOverrideImmediately() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            val singleTrack = AudioTrackList(autoAudioIndex = 0L, tracks = listOf(audioTrack(0L)))
+            opener.complete(Result.success(singleTrack))
+            runCurrent()
+
+            assertEquals(listOf(audioTrack(0L)), viewModel.audioTrackPickerState.value?.tracks)
+            assertNull(viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun staleOverridePreselectsAutoWhenReprobedTracksNoLongerContainIt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            val threeTrack =
+                AudioTrackList(autoAudioIndex = 0L, tracks = listOf(audioTrack(0L), audioTrack(3L)))
+            applyAudioTrackOverride(viewModel, opener, threeTrack, selected = 3L)
+            assertEquals(3L, viewModel.uiState.value.audioTrackOverride)
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+
+            assertNull(viewModel.audioTrackPickerState.value?.selectedAudioIndex)
+            assertEquals(3L, viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun repickingVideoNullsAudioTrackOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+
+            viewModel.onVideoPicked("content://test/video2")
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun clearingVideoNullsAudioTrackOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+
+            viewModel.clearVideo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun runSuccessClearsAudioTrackOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun runFailedKeepsAudioTrackOverrideAndRetryResendsIt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+
+            repository.transitionTo(
+                MiningRunState.Failed(
+                    runId = "run",
+                    failure = MiningFailure(message = "boom", retryable = true),
+                    result = null,
+                ),
+            )
+            runCurrent()
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+
+            viewModel.retry()
+            runCurrent()
+
+            assertEquals(2L, repository.startedInputs.last().audioTrackOverride)
+        }
+
+    @Test
+    fun runCancelledKeepsAudioTrackOverride() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            applyAudioTrackOverride(viewModel, opener, twoTrackList(), selected = 2L)
+
+            repository.transitionTo(MiningRunState.Cancelled(runId = "run", result = null))
+            runCurrent()
+
+            assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
+        }
+
+    @Test
+    fun audioTrackProbeBusyExceptionMapsToBusyError() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            opener.complete(Result.failure(AudioTrackProbeBusyException()))
+            runCurrent()
+
+            assertEquals(AudioTrackPickerError.BUSY, viewModel.uiState.value.audioTrackPickerError)
+            assertNull(viewModel.audioTrackPickerState.value)
+            assertFalse(viewModel.uiState.value.audioTrackProbePending)
+        }
+
+    @Test
+    fun otherAudioTrackProbeFailureMapsToProbeError() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            opener.complete(Result.failure(AudioTrackProbeFailedException()))
+            runCurrent()
+
+            assertEquals(AudioTrackPickerError.PROBE, viewModel.uiState.value.audioTrackPickerError)
+        }
+
+    @Test
+    fun audioTrackPickerResultDroppedWhenRepositoryBecomesActiveWhileProbing() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+
+            // Simulates the repository becoming active through a path outside this ViewModel's
+            // own (now-guarded) start()/retry() calls, e.g. an interrupted-run resume.
+            repository.transitionTo(
+                MiningRunState.Starting("run", MiningProgress(0, 3, "Starting")),
+            )
+            runCurrent()
+
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+
+            assertNull(viewModel.audioTrackPickerState.value)
+            assertFalse(viewModel.uiState.value.audioTrackProbePending)
+        }
+
+    @Test
+    fun startIsRefusedWhileAudioTrackProbeIsPending() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(0, repository.startCalls)
+        }
+
+    @Test
+    fun openAudioTrackPickerIsRefusedWhileTimingPreviewIsPendingOrOpen() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val timingGate = CompletableDeferred<Result<TimingPreviewSession>>()
+            val audioOpener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    timingPreviewOpener = TimingPreviewOpener { timingGate.await() },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                    audioTrackProbeOpener = audioOpener,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openTimingPreview()
+            runCurrent()
+            assertTrue(viewModel.uiState.value.timingPreviewPending)
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            assertTrue(audioOpener.probedVideos.isEmpty())
+            assertFalse(viewModel.uiState.value.audioTrackProbePending)
+
+            timingGate.complete(Result.success(TimingPreviewSession(emptyList()) {}))
+            runCurrent()
+            assertNotNull(viewModel.timingPreviewState.value)
+
+            // Timing preview overlay is now open (no longer merely pending) — still refused.
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            assertTrue(audioOpener.probedVideos.isEmpty())
+        }
+
+    @Test
+    fun openTimingPreviewIsRefusedWhileAudioTrackPickerIsPendingOrOpen() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val openedSubtitles = mutableListOf<SafDocument>()
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    timingPreviewOpener =
+                        TimingPreviewOpener { subtitle ->
+                            openedSubtitles += subtitle
+                            Result.success(TimingPreviewSession(emptyList()) {})
+                        },
+                    timingPreviewCleanupDispatcher = mainDispatcherRule.dispatcher,
+                    audioTrackProbeOpener = opener,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+
+            viewModel.openTimingPreview()
+            runCurrent()
+            assertTrue(openedSubtitles.isEmpty())
+
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+            assertNotNull(viewModel.audioTrackPickerState.value)
+
+            // Picker dialog is now open (probe no longer pending) — still refused.
+            viewModel.openTimingPreview()
+            runCurrent()
+            assertTrue(openedSubtitles.isEmpty())
+        }
+
+    @Test
+    fun repickingAndClearingVideoAreRefusedWhileAudioTrackProbeIsPendingOrPickerIsOpen() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(RecordingRepository(), ImmediateSafBroker(), audioTrackProbeOpener = opener)
+            selectDocuments(viewModel)
+            runCurrent()
+            val originalVideoUri = viewModel.uiState.value.video.document?.uri
+
+            viewModel.openAudioTrackPicker()
+            runCurrent()
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+
+            viewModel.onVideoPicked("content://test/other-video")
+            runCurrent()
+            assertEquals(originalVideoUri, viewModel.uiState.value.video.document?.uri)
+
+            viewModel.clearVideo()
+            runCurrent()
+            assertEquals(originalVideoUri, viewModel.uiState.value.video.document?.uri)
+
+            opener.complete(Result.success(twoTrackList()))
+            runCurrent()
+            assertNotNull(viewModel.audioTrackPickerState.value)
+
+            // Picker dialog is now open (probe no longer pending) — repick/clear still refused.
+            viewModel.onVideoPicked("content://test/other-video")
+            runCurrent()
+            assertEquals(originalVideoUri, viewModel.uiState.value.video.document?.uri)
+
+            viewModel.clearVideo()
+            runCurrent()
+            assertEquals(originalVideoUri, viewModel.uiState.value.video.document?.uri)
+        }
+
+    @Test
     fun curationCommandLogCarriesRunId() =
         runTest(mainDispatcherRule.dispatcher) {
             val recorded = RecordingLogSink()
@@ -2252,6 +2634,7 @@ class MediaMiningViewModelTest {
         audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
         timingPreviewOpener: TimingPreviewOpener? = null,
         timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        audioTrackProbeOpener: AudioTrackProbeOpener? = null,
         lane: MiningLane = MiningLane.VIDEO,
     ): MediaMiningViewModel =
         com.ankiminer.android.vm.MediaMiningViewModel(
@@ -2269,7 +2652,40 @@ class MediaMiningViewModelTest {
             audioPacks = audioPacks,
             timingPreviewOpener = timingPreviewOpener,
             timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
+            audioTrackProbeOpener = audioTrackProbeOpener,
         )
+
+    /** Opens the picker, completes the probe with [tracks], selects, then applies. */
+    private fun TestScope.applyAudioTrackOverride(
+        viewModel: MediaMiningViewModel,
+        opener: FakeAudioTrackProbeOpener,
+        tracks: AudioTrackList,
+        selected: Long?,
+    ) {
+        viewModel.openAudioTrackPicker()
+        runCurrent()
+        opener.complete(Result.success(tracks))
+        runCurrent()
+        viewModel.selectAudioTrack(selected)
+        viewModel.applyAudioTrackPicker()
+        runCurrent()
+    }
+
+    private fun twoTrackList() =
+        AudioTrackList(autoAudioIndex = 1L, tracks = listOf(audioTrack(1L), audioTrack(2L)))
+
+    private fun audioTrack(
+        index: Long,
+        isDefault: Boolean = false,
+    ) = AudioTrackInfo(
+        audioIndex = index,
+        globalIndex = index,
+        languageTag = null,
+        title = null,
+        codec = null,
+        channels = null,
+        isDefault = isDefault,
+    )
 
     private fun usableAudioPack(packId: String = "nhk16") =
         InstalledAudioPack(
@@ -2344,6 +2760,23 @@ class MediaMiningViewModelTest {
             failure: Exception = IllegalStateException("stale"),
         ) {
             requireNotNull(pending.remove(uri)).resumeWithException(failure)
+        }
+    }
+
+    /** Each [probe] call awaits the currently armed deferred, letting a test hold it in flight. */
+    private class FakeAudioTrackProbeOpener : AudioTrackProbeOpener {
+        val probedVideos = mutableListOf<SafDocument>()
+        private var awaiting = CompletableDeferred<Result<AudioTrackList>>()
+
+        fun complete(result: Result<AudioTrackList>) {
+            awaiting.complete(result)
+        }
+
+        override suspend fun probe(video: SafDocument): Result<AudioTrackList> {
+            probedVideos += video
+            val result = awaiting.await()
+            awaiting = CompletableDeferred()
+            return result
         }
     }
 
