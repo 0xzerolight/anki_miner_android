@@ -21,6 +21,8 @@ object ReadingMiningTestTags {
     const val RETRY = "reading_retry_mining"
     const val RESET = "reading_reset_mining"
     const val RESULT = "reading_mining_result"
+    const val UNDO = "reading_undo_mining_run"
+    const val UNDO_CONFIRM = "reading_undo_mining_run_confirm"
 
     fun candidate(candidateId: String): String = "reading_candidate:$candidateId"
 

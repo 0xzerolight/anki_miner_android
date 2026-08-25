@@ -974,6 +974,76 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun removeMinedWordsDedupesChunksAndDispatchesInsideOneOperation() =
+        runTest {
+            val harness = Harness(rootName = "manager-mined-chunk", initialUserCount = 2)
+            val words = (0 until 256).map { "w$it" } + listOf("w0", "w255", "extra")
+
+            val result = harness.manager.removeMinedWords(words)
+
+            assertTrue(result)
+            val requests = harness.bridge.requestsOfType("resource.minedwords.remove")
+            assertEquals(2, requests.size)
+            assertEquals(
+                1,
+                requests.map { stringField(it, "operationId") }.distinct().size,
+            )
+            val dispatchedChunks = requests.map { wordsField(it) }
+            assertEquals(listOf(256, 1), dispatchedChunks.map { it.size })
+            val dispatchedWords = dispatchedChunks.flatten()
+            assertEquals(257, dispatchedWords.size)
+            assertEquals(257, dispatchedWords.distinct().size)
+        }
+
+    @Test
+    fun removeMinedWordsWhileTheRuntimeLeaseIsHeldReturnsFalseWithoutDispatch() =
+        runTest {
+            val coordinator = RuntimeWorkCoordinator()
+            val harness = Harness(rootName = "manager-mined-busy", runtimeWorkCoordinator = coordinator)
+            val lease = requireNotNull(coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.MINING))
+
+            val result = harness.manager.removeMinedWords(listOf("word"))
+
+            assertFalse(result)
+            assertTrue(harness.bridge.requestsOfType("resource.minedwords.remove").isEmpty())
+            assertEquals("resource_busy", harness.manager.state.value.failure?.code)
+            lease.close()
+        }
+
+    @Test
+    fun removeMinedWordsBeforeStartupIsReadyReturnsFalseWithoutDispatch() =
+        runTest {
+            val harness = Harness(rootName = "manager-mined-not-ready", autoRecover = false)
+
+            val result = harness.manager.removeMinedWords(listOf("word"))
+
+            assertFalse(result)
+            assertTrue(harness.bridge.requestsOfType("resource.minedwords.remove").isEmpty())
+        }
+
+    @Test
+    fun failedMinedWordsRemoveRetryReplaysRemoveMined() =
+        runTest {
+            val harness =
+                Harness(
+                    rootName = "manager-mined-retry",
+                    initialUserCount = 2,
+                    failMinedWordsRemoveOnce = true,
+                )
+
+            val result = harness.manager.removeMinedWords(listOf("w0", "w1"))
+
+            assertFalse(result)
+            assertNull(harness.manager.state.value.failure?.knownWordsOperation)
+            assertEquals(ResourceFailureAction.RETRY, harness.manager.state.value.failure?.retry?.action)
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(2, harness.bridge.requestsOfType("resource.minedwords.remove").size)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
     fun rejectedKnownWordMutationCannotReplaceAdmittedOperationsRetryPayload() =
         runTest {
             val executor = PausableExecutor()
@@ -2396,6 +2466,7 @@ class ResourceManagerTest {
         failKnownWordsImportOnce: Boolean = false,
         failKnownWordsRemoveOnce: Boolean = false,
         failKnownWordsResetOnce: Boolean = false,
+        failMinedWordsRemoveOnce: Boolean = false,
         failCancelDelivery: Boolean = false,
         onKnownWordsRemoveDispatch: () -> Unit = {},
         onFirstExportWrite: () -> Unit = {},
@@ -2453,6 +2524,7 @@ class ResourceManagerTest {
                 failKnownWordsImportOnce,
                 failKnownWordsRemoveOnce,
                 failKnownWordsResetOnce,
+                failMinedWordsRemoveOnce,
                 failCancelDelivery,
                 onKnownWordsRemoveDispatch,
                 committedDictionaryDecodeFailure,
@@ -2729,6 +2801,7 @@ class ResourceManagerTest {
         failKnownWordsImportOnce: Boolean,
         failKnownWordsRemoveOnce: Boolean,
         failKnownWordsResetOnce: Boolean,
+        failMinedWordsRemoveOnce: Boolean,
         private val failCancelDelivery: Boolean,
         private val onKnownWordsRemoveDispatch: () -> Unit,
         private val committedDictionaryDecodeFailure: Boolean = false,
@@ -2757,6 +2830,7 @@ class ResourceManagerTest {
         private var knownWordsImportFailures = if (failKnownWordsImportOnce) 1 else 0
         private var knownWordsRemoveFailures = if (failKnownWordsRemoveOnce) 1 else 0
         private var knownWordsResetFailures = if (failKnownWordsResetOnce) 1 else 0
+        private var minedWordsRemoveFailures = if (failMinedWordsRemoveOnce) 1 else 0
         var lastExportFile: File? = null
             private set
         var emptyAudioPackPreflight = false
@@ -2916,6 +2990,15 @@ class ResourceManagerTest {
                     userCount = (userCount - 1).coerceAtLeast(0)
                     armLocalRefreshFailure("resource.knownwords.remove")
                     envelope("resource.knownwords.removed", """{"removedCount":1}""")
+                }
+                "resource.minedwords.remove" -> {
+                    if (minedWordsRemoveFailures > 0) {
+                        minedWordsRemoveFailures -= 1
+                        error("simulated mined-word remove failure")
+                    }
+                    val requestedWords = wordsField(rawRequest)
+                    armLocalRefreshFailure("resource.minedwords.remove")
+                    envelope("resource.minedwords.removed", """{"removedCount":${requestedWords.size}}""")
                 }
                 "resource.knownwords.reset" -> {
                     if (knownWordsResetFailures > 0) {
@@ -3101,6 +3184,14 @@ class ResourceManagerTest {
             checkNotNull(Regex("\"$field\":([0-9]+)").find(raw)?.groupValues?.get(1)) {
                 "$field missing"
             }.toInt()
+
+        private fun wordsField(raw: String): List<String> {
+            val body =
+                checkNotNull(Regex("\"words\":\\[(.*?)\\]").find(raw)?.groupValues?.get(1)) {
+                    "words missing"
+                }
+            return if (body.isEmpty()) emptyList() else body.split(",").map { it.trim().removeSurrounding("\"") }
+        }
 
         private fun frequencyArchiveBytes(revision: String): ByteArray =
             fixtureFrequencyArchiveBytes(revision)

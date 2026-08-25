@@ -157,6 +157,13 @@
     <string name="result_no_items">Tidak ada</string>
     <string name="result_unknown_file">Berkas tidak diketahui</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Batalkan (%1$d catatan)</string>
+    <string name="undo_confirm_title">Batalkan proses mining ini?</string>
+    <string name="undo_confirm_message">Hapus %1$d catatan dari Anki? Tindakan ini tidak dapat dibatalkan.</string>
+    <string name="undo_confirm_delete">Hapus</string>
+    <string name="undo_done">Dibatalkan (%1$d catatan dihapus)</string>
+    <string name="undo_failed">Pembatalan gagal. Tidak ada catatan yang dihapus.</string>
+    <string name="undo_words_failed">Catatan telah dihapus, tetapi pemulihan kata yang dikenal gagal.</string>
     <string name="mining_notice_no_definition">Tidak ada entri kamus untuk %1$d kata: %2$s</string>
     <string name="result_metric_created">Dibuat</string>
     <string name="result_metric_skipped_new">Dilewati / baru</string>
@@ -411,6 +418,7 @@
     <string name="resource_operation_delete_resource">Hapus sumber daya</string>
     <string name="resource_operation_reset_known_words">Setel ulang kata yang dikenal</string>
     <string name="resource_operation_export_known_words">Ekspor kata yang dikenal</string>
+    <string name="resource_operation_revert_mined_words">Batalkan kata yang di-mining</string>
     <string name="resource_operation_dictionary_lookup">Pencarian kamus</string>
     <string name="resource_failure_busy">Selesaikan atau batalkan proses mining aktif sebelum mengubah sumber daya</string>
     <string name="resource_failure_download_cancelled">Operasi sumber daya dibatalkan</string>

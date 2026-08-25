@@ -159,6 +159,13 @@
     <string name="result_no_items">Aucun</string>
     <string name="result_unknown_file">Fichier inconnu</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Annuler (%1$d notes)</string>
+    <string name="undo_confirm_title">Annuler cette extraction ?</string>
+    <string name="undo_confirm_message">Supprimer %1$d notes d\'Anki ? Cette action est irréversible.</string>
+    <string name="undo_confirm_delete">Supprimer</string>
+    <string name="undo_done">Annulé (%1$d notes supprimées)</string>
+    <string name="undo_failed">Échec de l\'annulation. Aucune note n\'a été supprimée.</string>
+    <string name="undo_words_failed">Notes supprimées, mais la restauration des mots connus a échoué.</string>
     <string name="mining_notice_no_definition">Aucune entrée de dictionnaire pour %1$d mot(s) : %2$s</string>
     <string name="result_metric_created">Créées</string>
     <string name="result_metric_skipped_new">Ignorées / nouvelles</string>
@@ -413,6 +420,7 @@
     <string name="resource_operation_delete_resource">Supprimer la ressource</string>
     <string name="resource_operation_reset_known_words">Réinitialiser les mots connus</string>
     <string name="resource_operation_export_known_words">Exporter les mots connus</string>
+    <string name="resource_operation_revert_mined_words">Annuler les mots extraits</string>
     <string name="resource_operation_dictionary_lookup">Recherche dans le dictionnaire</string>
     <string name="resource_failure_busy">Terminez ou annulez l\'extraction active avant de modifier les ressources</string>
     <string name="resource_failure_download_cancelled">L\'opération sur les ressources a été annulée</string>

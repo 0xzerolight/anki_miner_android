@@ -67,6 +67,9 @@ fun VideoMiningRoute(
         onCancel = viewModel::cancel,
         onRetry = viewModel::retry,
         onReset = viewModel::reset,
+        onRequestUndo = viewModel::requestUndo,
+        onConfirmUndo = viewModel::confirmUndo,
+        onDismissUndoConfirmation = viewModel::dismissUndoConfirmation,
         onReturnToActiveRun = onReturnToActiveRun,
         modifier = modifier,
     )

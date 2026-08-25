@@ -1906,6 +1906,21 @@ def remove_known_words(payload: Mapping[str, object]) -> str:
         return encode_message("resource.knownwords.removed", {"removedCount": removed})
 
 
+def remove_mined_words(payload: Mapping[str, object]) -> str:
+    core._exact(payload, {"operationId", "words"}, code="invalid_resource_request")
+    operation_id = core._operation_id(payload["operationId"])
+    words = _known_word_list(payload["words"])
+    home = Path(require_initialized())
+    with core._OPERATIONS.begin(operation_id) as operation:
+        operation.check()
+        database, db_path = _known_words_database(home)
+        operation.check()
+        removed = database.remove_words(set(words), source="mined")
+        _fsync_file(db_path)
+        core._fsync_directory(home)
+        return encode_message("resource.minedwords.removed", {"removedCount": removed})
+
+
 def reset_known_words(payload: Mapping[str, object]) -> str:
     core._exact(payload, {"operationId", "scope"}, code="invalid_resource_request")
     operation_id = core._operation_id(payload["operationId"])

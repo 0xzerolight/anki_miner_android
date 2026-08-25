@@ -159,6 +159,13 @@
     <string name="result_no_items">Ninguno</string>
     <string name="result_unknown_file">Archivo desconocido</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Deshacer (%1$d notas)</string>
+    <string name="undo_confirm_title">¿Deshacer esta ejecución?</string>
+    <string name="undo_confirm_message">¿Eliminar %1$d notas de Anki? Esta acción no se puede deshacer.</string>
+    <string name="undo_confirm_delete">Eliminar</string>
+    <string name="undo_done">Deshecho (%1$d notas eliminadas)</string>
+    <string name="undo_failed">No se pudo deshacer. No se eliminó ninguna nota.</string>
+    <string name="undo_words_failed">Se eliminaron las notas, pero no se pudo revertir las palabras conocidas.</string>
     <string name="mining_notice_no_definition">Sin entrada de diccionario para %1$d palabra(s): %2$s</string>
     <string name="result_metric_created">Creadas</string>
     <string name="result_metric_skipped_new">Omitidas / nuevas</string>
@@ -413,6 +420,7 @@
     <string name="resource_operation_delete_resource">Eliminar recurso</string>
     <string name="resource_operation_reset_known_words">Restablecer palabras conocidas</string>
     <string name="resource_operation_export_known_words">Exportar palabras conocidas</string>
+    <string name="resource_operation_revert_mined_words">Revertir palabras minadas</string>
     <string name="resource_operation_dictionary_lookup">Buscar en el diccionario</string>
     <string name="resource_failure_busy">Finalice o cancele la ejecución de minería activa antes de cambiar recursos</string>
     <string name="resource_failure_download_cancelled">Se canceló la operación de recurso</string>

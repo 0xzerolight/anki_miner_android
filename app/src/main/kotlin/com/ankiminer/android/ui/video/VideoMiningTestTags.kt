@@ -19,6 +19,8 @@ object VideoMiningTestTags {
     const val RETRY = "retry_mining"
     const val RESET = "reset_mining"
     const val RESULT = "mining_result"
+    const val UNDO = "undo_mining_run"
+    const val UNDO_CONFIRM = "undo_mining_run_confirm"
     const val TIMING_PREVIEW = "timing_preview"
     const val TIMING_PREVIEW_CONTENT = "timing_preview_content"
     const val TIMING_PREVIEW_TITLE = "timing_preview_title"

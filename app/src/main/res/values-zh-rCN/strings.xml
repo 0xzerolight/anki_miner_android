@@ -157,6 +157,13 @@
     <string name="result_no_items">无</string>
     <string name="result_unknown_file">未知文件</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">撤销（%1$d 条笔记）</string>
+    <string name="undo_confirm_title">撤销此次挖词？</string>
+    <string name="undo_confirm_message">从 Anki 中删除 %1$d 条笔记？此操作无法撤销。</string>
+    <string name="undo_confirm_delete">删除</string>
+    <string name="undo_done">已撤销（已删除 %1$d 条笔记）</string>
+    <string name="undo_failed">撤销失败。未删除任何笔记。</string>
+    <string name="undo_words_failed">笔记已删除，但已知单词的还原失败。</string>
     <string name="mining_notice_no_definition">%1$d 个单词没有词典条目：%2$s</string>
     <string name="result_metric_created">已创建</string>
     <string name="result_metric_skipped_new">跳过/新增</string>
@@ -411,6 +418,7 @@
     <string name="resource_operation_delete_resource">移除资源</string>
     <string name="resource_operation_reset_known_words">重置已知单词</string>
     <string name="resource_operation_export_known_words">导出已知单词</string>
+    <string name="resource_operation_revert_mined_words">撤销已挖词的单词</string>
     <string name="resource_operation_dictionary_lookup">词典查询</string>
     <string name="resource_failure_busy">更改资源前，请完成或取消当前挖词任务</string>
     <string name="resource_failure_download_cancelled">资源操作已取消</string>

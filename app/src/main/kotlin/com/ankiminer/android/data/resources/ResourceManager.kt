@@ -146,6 +146,16 @@ interface ResourceManager {
 
     suspend fun resetKnownWords(scope: KnownWordsResetScope)
 
+    /**
+     * Revert vocabulary a mining run mined: dedupes, chunks to the wire's per-message bound, and
+     * commits every chunk inside one operation.
+     *
+     * False when the operation could not run at all (busy, not READY, or the whole attempt
+     * failed); true once the mutation is committed. Abstract, not defaulted: a fake that forgets
+     * to implement this must fail to compile, not trap at runtime.
+     */
+    suspend fun removeMinedWords(words: List<String>): Boolean
+
     suspend fun exportKnownWords(uri: String)
 
     suspend fun lookup(
@@ -258,6 +268,8 @@ internal class AndroidResourceManager(
         data class Remove(val words: List<String>) : PendingKnownWordsMutation
 
         data class Reset(val scope: KnownWordsResetScope) : PendingKnownWordsMutation
+
+        data class RemoveMined(val words: List<String>) : PendingKnownWordsMutation
     }
 
     private class ResourceInventoryReconciliationException(cause: Exception) :
@@ -1496,6 +1508,7 @@ internal class AndroidResourceManager(
                 when (val mutation = pendingKnownWordsMutation) {
                     is PendingKnownWordsMutation.Remove -> removeKnownWords(mutation.words)
                     is PendingKnownWordsMutation.Reset -> resetKnownWords(mutation.scope)
+                    is PendingKnownWordsMutation.RemoveMined -> removeMinedWords(mutation.words)
                     null -> Unit
                 }
             }
@@ -1642,6 +1655,24 @@ internal class AndroidResourceManager(
         }
     }
 
+    override suspend fun removeMinedWords(words: List<String>): Boolean {
+        val distinctWords = words.distinct()
+        return runKnownWordsMutation(
+            strings.resolve(R.string.resource_operation_revert_mined_words),
+            ResourceOperationPhase.IMPORTING,
+            PendingKnownWordsMutation.RemoveMined(distinctWords),
+        ) { operation ->
+            distinctWords.chunked(MINED_WORDS_REMOVE_CHUNK_SIZE).forEach { chunk ->
+                ResourceBridgeCodec.decodeMinedWordsRemoved(
+                    bridge.dispatch(
+                        ResourceBridgeCodec.encodeMinedWordsRemoveRequest(operation.id, chunk),
+                        null,
+                    ),
+                )
+            }
+        }
+    }
+
     override suspend fun exportKnownWords(uri: String) {
         runOperation(
             strings.resolve(R.string.resource_operation_export_known_words),
@@ -1751,7 +1782,7 @@ internal class AndroidResourceManager(
         phase: ResourceOperationPhase,
         retryMutation: PendingKnownWordsMutation,
         mutate: (ActiveOperation) -> Unit,
-    ) {
+    ): Boolean =
         runOperation(
             label,
             phase,
@@ -1768,7 +1799,6 @@ internal class AndroidResourceManager(
             mutableState.update { it.copy(knownWordsPage = null) }
             refreshAfterCommittedMutation()
         }
-    }
 
     private fun clearPendingKnownWordsImport() {
         pendingKnownWordsImport?.staged?.file?.delete()
@@ -3079,5 +3109,8 @@ internal class AndroidResourceManager(
         const val KNOWN_WORD_EXPORT_LIMIT = 512L * 1024 * 1024
         const val EXPORT_BUFFER_BYTES = 256 * 1024
         const val KNOWN_WORD_PAGE_SIZE = 100
+
+        /** Matches ResourceBridgeCodec's per-message words bound for a mined-word removal. */
+        const val MINED_WORDS_REMOVE_CHUNK_SIZE = 256
     }
 }

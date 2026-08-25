@@ -37,6 +37,8 @@ enum class ReadingMiningCommandError {
     CURATION,
     CANCEL,
     RESET,
+    UNDO,
+    UNDO_WORDS,
 }
 
 data class ReadingDocumentSlotState(
@@ -84,6 +86,9 @@ data class ReadingMiningUiState(
     val resetPending: Boolean = false,
     val commandError: ReadingMiningCommandError? = null,
     val runtimeConflict: RuntimeWorkConflict? = null,
+    val undoConfirmationNoteCount: Int? = null,
+    val undoneNoteCount: Int? = null,
+    val undoAvailable: Boolean = false,
 ) {
     val acceptsArchive: Boolean
         get() =

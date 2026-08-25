@@ -4179,6 +4179,93 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     importlib.util.find_spec("requests") is None,
     reason="known-word management uses the runtime engine database",
 )
+def test_remove_mined_words_only_removes_the_mined_row_for_a_shared_lemma(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    database = KnownWordDB(home / "known_words.db")
+    database.initialize()
+    database.add_words({"掘る"}, source="user")
+    # ``lemma`` is the known_words PRIMARY KEY, so this is a no-op: the row already
+    # exists as source='user' and add_words() never downgrades it to 'mined'.
+    database.add_words({"掘る"}, source="mined")
+    database.add_words({"食べる"}, source="mined")
+
+    removed = decode_envelope(
+        local_resources.remove_mined_words({"operationId": "mined-remove", "words": ["掘る", "食べる"]}),
+        expected_type="resource.minedwords.removed",
+    )
+    # Only 食べる was ever stored with source='mined'; 掘る has no mined row to
+    # remove, so remove_words(source="mined") deletes one row, not two.
+    assert removed.payload == {"removedCount": 1}
+    assert database.get_words_by_source("user") == {"掘る"}
+    assert database.get_words_by_source("mined") == set()
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
+def test_remove_mined_words_reports_zero_for_an_absent_word(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = _local_home(tmp_path, monkeypatch)
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    database = KnownWordDB(home / "known_words.db")
+    database.initialize()
+
+    removed = decode_envelope(
+        local_resources.remove_mined_words({"operationId": "mined-remove-absent", "words": ["不存在"]}),
+        expected_type="resource.minedwords.removed",
+    )
+    assert removed.payload == {"removedCount": 0}
+
+
+def test_remove_mined_words_rejects_an_extra_payload_key() -> None:
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.remove_mined_words({"operationId": "mined-remove-extra", "words": ["掘る"], "unexpected": True})
+
+    assert failure.value.code == "invalid_resource_request"
+
+
+def test_remove_mined_words_rejects_more_than_256_words() -> None:
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.remove_mined_words(
+            {"operationId": "mined-remove-too-many", "words": [f"word-{index}" for index in range(257)]}
+        )
+
+    assert failure.value.code == "invalid_resource_request"
+
+
+def test_dispatch_routes_mined_words_remove_after_bootstrap(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        local_resources,
+        "remove_mined_words",
+        lambda payload: seen.append(dict(payload))
+        or encode_message("resource.minedwords.removed", {"removedCount": 0}),
+    )
+
+    raw = boundary.dispatch(
+        encode_message("resource.minedwords.remove", {"operationId": "mined-remove-route", "words": ["掘る"]})
+    )
+
+    assert decode_envelope(raw, expected_type="resource.minedwords.removed").payload == {"removedCount": 0}
+    assert seen == [{"operationId": "mined-remove-route", "words": ["掘る"]}]
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="known-word management uses the runtime engine database",
+)
 def test_known_words_export_streams_an_ordered_cursor_without_materializing_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

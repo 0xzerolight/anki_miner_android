@@ -101,6 +101,14 @@ internal data class MiningResultSource(
     val displayName: String?,
 )
 
+internal data class MiningResultUndoAction(
+    val noteCount: Int,
+    val undoneNoteCount: Int?,
+    val enabled: Boolean,
+    val testTag: String,
+    val onUndo: () -> Unit,
+)
+
 internal data class MiningFailureAction(
     val label: String,
     val testTag: String? = null,
@@ -681,6 +689,7 @@ internal fun LazyListScope.miningResultItems(
     testTag: String,
     keyPrefix: String,
     onToggleDetails: () -> Unit,
+    undo: MiningResultUndoAction? = null,
 ) {
     val minedForms = result.minedForms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
     val noteIds = result.cardIds.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
@@ -703,6 +712,7 @@ internal fun LazyListScope.miningResultItems(
                     issues.items.isNotEmpty(),
             onToggleDetails = onToggleDetails,
             testTag = testTag,
+            undo = undo,
         )
     }
     if (!detailsExpanded) return
@@ -757,6 +767,7 @@ private fun MiningResultSummary(
     hasDetails: Boolean,
     onToggleDetails: () -> Unit,
     testTag: String,
+    undo: MiningResultUndoAction? = null,
 ) {
     OutlinedCard(
         modifier =
@@ -785,6 +796,22 @@ private fun MiningResultSummary(
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
+            if (undo != null) {
+                if (undo.undoneNoteCount != null) {
+                    Text(
+                        text = stringResource(R.string.undo_done, undo.undoneNoteCount),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
+                    SecondaryActionButton(
+                        onClick = undo.onUndo,
+                        enabled = undo.enabled,
+                        modifier = Modifier.testTag(undo.testTag),
+                    ) {
+                        Text(stringResource(R.string.undo_mining_run, undo.noteCount))
+                    }
+                }
+            }
             issuePreview.forEach { issue ->
                 ResultIssueRow(message = issue, tone = issueTone)
             }
@@ -802,6 +829,33 @@ private fun MiningResultSummary(
             }
         }
     }
+}
+
+@Composable
+internal fun MiningUndoConfirmationDialog(
+    noteCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+    confirmTestTag: String? = null,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.undo_confirm_title)) },
+        text = { Text(stringResource(R.string.undo_confirm_message, noteCount)) },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                modifier = confirmTestTag?.let { Modifier.testTag(it) } ?: Modifier,
+            ) {
+                Text(stringResource(R.string.undo_confirm_delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable

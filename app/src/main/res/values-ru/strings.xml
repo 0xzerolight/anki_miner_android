@@ -160,6 +160,13 @@
     <string name="result_no_items">Нет</string>
     <string name="result_unknown_file">Неизвестный файл</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Отменить (%1$d заметок)</string>
+    <string name="undo_confirm_title">Отменить этот запуск?</string>
+    <string name="undo_confirm_message">Удалить %1$d заметок из Anki? Это нельзя отменить.</string>
+    <string name="undo_confirm_delete">Удалить</string>
+    <string name="undo_done">Отменено (%1$d заметок удалено)</string>
+    <string name="undo_failed">Не удалось отменить. Ни одна заметка не была удалена.</string>
+    <string name="undo_words_failed">Заметки удалены, но откат известных слов не удался.</string>
     <string name="mining_notice_no_definition">Нет записи в словаре для %1$d слов: %2$s</string>
     <string name="result_metric_created">Создано</string>
     <string name="result_metric_skipped_new">Пропущено / новых</string>
@@ -414,6 +421,7 @@
     <string name="resource_operation_delete_resource">Удалить ресурс</string>
     <string name="resource_operation_reset_known_words">Сбросить известные слова</string>
     <string name="resource_operation_export_known_words">Экспортировать известные слова</string>
+    <string name="resource_operation_revert_mined_words">Отменить намайненные слова</string>
     <string name="resource_operation_dictionary_lookup">Поиск в словаре</string>
     <string name="resource_failure_busy">Завершите или отмените активный запуск майнинга перед изменением ресурсов</string>
     <string name="resource_failure_download_cancelled">Операция с ресурсом отменена</string>

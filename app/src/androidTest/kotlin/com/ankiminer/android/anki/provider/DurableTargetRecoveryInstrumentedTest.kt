@@ -566,10 +566,12 @@ private class FakeAnkiProviderGateway : AnkiProviderGateway {
     var createDeckHandler: (AnkiProviderMutationCommand.CreateDeck) -> String? = { null }
     var insertNoteHandler: (AnkiProviderMutationCommand.InsertNote) -> String? = { null }
     var routeCardHandler: (AnkiProviderMutationCommand.RouteCard) -> Int = { 0 }
+    var deleteNoteHandler: (AnkiProviderMutationCommand.DeleteNote) -> Int = { 0 }
     val queries = mutableListOf<ProviderQuery>()
     val deckCommands = mutableListOf<AnkiProviderMutationCommand.CreateDeck>()
     val noteCommands = mutableListOf<AnkiProviderMutationCommand.InsertNote>()
     val routeCommands = mutableListOf<AnkiProviderMutationCommand.RouteCard>()
+    val noteDeleteCommands = mutableListOf<AnkiProviderMutationCommand.DeleteNote>()
 
     override fun accessStatus(): ProviderAccessStatus =
         ProviderAccessStatus.Available("com.ichi2.anki", 2, 20240000)
@@ -600,6 +602,11 @@ private class FakeAnkiProviderGateway : AnkiProviderGateway {
     override fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int {
         routeCommands += command
         return routeCardHandler(command)
+    }
+
+    override fun deleteNote(command: AnkiProviderMutationCommand.DeleteNote): Int {
+        noteDeleteCommands += command
+        return deleteNoteHandler(command)
     }
 }
 

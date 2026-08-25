@@ -33,6 +33,7 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
+import com.ankiminer.android.data.anki.UndoneRunReceipt
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.engine.AudioTrackInfo
 import com.ankiminer.android.engine.DefinitionEntry
@@ -44,6 +45,7 @@ import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.FakeMiningRunUndoManager
 import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
@@ -61,6 +63,7 @@ import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -1849,6 +1852,87 @@ class VideoMiningScreenTest {
         assertEquals(alternate.sentence, clipboardText())
     }
 
+    @Test
+    fun success_result_undo_button_confirms_through_the_fake_manager() {
+        val runId = "run"
+        val runResult = result()
+        val fakeUndo = FakeMiningRunUndoManager()
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Success(runId, runResult),
+                    undoAvailable = true,
+                ),
+            )
+
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onRequestUndo = {
+                        state = state.copy(undoConfirmationNoteCount = runResult.cardIds.size)
+                    },
+                    onConfirmUndo = {
+                        state = state.copy(undoConfirmationNoteCount = null)
+                        runBlocking {
+                            fakeUndo.undoRun(runId, runResult.cardIds, runResult.minedForms)
+                        }
+                    },
+                    onDismissUndoConfirmation = {
+                        state = state.copy(undoConfirmationNoteCount = null)
+                    },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.UNDO))
+        composeRule.onNodeWithTag(VideoMiningTestTags.UNDO).assertIsEnabled()
+        composeRule.onNodeWithText("Undo (${runResult.cardIds.size} notes)").assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.UNDO).performClick()
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.UNDO_CONFIRM).assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.UNDO_CONFIRM).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1, fakeUndo.calls.size)
+            val call = fakeUndo.calls.single()
+            assertEquals(runId, call.runId)
+            assertEquals(runResult.cardIds, call.noteIds)
+            assertEquals(runResult.minedForms, call.minedForms)
+        }
+    }
+
+    @Test
+    fun already_undone_run_shows_undone_text_and_hides_the_button() {
+        val runId = "run"
+        val runResult = result()
+        val receipt =
+            UndoneRunReceipt(
+                runId = runId,
+                deletedNotes = runResult.cardIds.size,
+                knownWordsReverted = true,
+            )
+        val fakeUndo = FakeMiningRunUndoManager(initialUndoneRuns = mapOf(runId to receipt))
+
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Success(runId, runResult),
+                    undoneNoteCount = fakeUndo.undoneRuns.value.getValue(runId).deletedNotes,
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.RESULT))
+        composeRule
+            .onNodeWithText("Undone (${runResult.cardIds.size} notes deleted)")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.UNDO).assertDoesNotExist()
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
         onPickVideo: () -> Unit = {},
@@ -1919,6 +2003,9 @@ class VideoMiningScreenTest {
         onReset: () -> Unit = {},
         onFocusCandidate: (String?) -> Unit = {},
         onSetCandidateSelected: (String, Boolean) -> Unit = { _, _ -> },
+        onRequestUndo: () -> Unit = {},
+        onConfirmUndo: () -> Unit = {},
+        onDismissUndoConfirmation: () -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
         listState: LazyListState = rememberLazyListState(),
     ) {
@@ -1952,6 +2039,9 @@ class VideoMiningScreenTest {
             onCancel = onCancel,
             onRetry = onRetry,
             onReset = onReset,
+            onRequestUndo = onRequestUndo,
+            onConfirmUndo = onConfirmUndo,
+            onDismissUndoConfirmation = onDismissUndoConfirmation,
             playerFactory = playerFactory,
             modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
             listState = listState,

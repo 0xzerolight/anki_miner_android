@@ -87,6 +87,12 @@ internal sealed interface AnkiProviderMutationCommand {
             }
         }
     }
+
+    data class DeleteNote(val noteId: Long) : AnkiProviderMutationCommand {
+        init {
+            require(noteId > 0L) { "Note delete requires a positive note ID" }
+        }
+    }
 }
 
 internal data class DeckCreateReceipt(

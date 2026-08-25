@@ -10,6 +10,7 @@ import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -203,6 +204,74 @@ class ContentResolverProviderPrimitivesInstrumentedTest {
     }
 
     @Test
+    fun note_delete_removes_the_documented_note_item_uri() {
+        var calls = 0
+        var affected = 0
+        val gateway =
+            ContentResolverAnkiGateway(
+                context = ApplicationProvider.getApplicationContext(),
+                workerThreadGuard = WorkerThreadGuard { },
+                accessStatusOverride = { AVAILABLE },
+                resolverDeleteOverride =
+                    ProviderResolverDelete { uri, selection, selectionArgs ->
+                        calls += 1
+                        assertEquals("content://com.ichi2.anki.flashcards/notes/42", uri.toString())
+                        assertNull(selection)
+                        assertNull(selectionArgs)
+                        affected
+                    },
+            )
+
+        affected = 0
+        assertEquals(0, gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(42L)))
+        affected = 1
+        assertEquals(1, gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(42L)))
+
+        assertEquals(2, calls)
+    }
+
+    @Test
+    fun note_delete_worker_guard_failure_precedes_resolver_entry() {
+        val failure = IllegalStateException("main thread")
+        val gateway =
+            ContentResolverAnkiGateway(
+                context = ApplicationProvider.getApplicationContext(),
+                workerThreadGuard = WorkerThreadGuard { throw failure },
+                accessStatusOverride = { AVAILABLE },
+                resolverDeleteOverride =
+                    ProviderResolverDelete { _, _, _ ->
+                        error("deleteNote must not reach the resolver after a worker guard failure")
+                    },
+            )
+
+        val thrown =
+            assertThrows(IllegalStateException::class.java) {
+                gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(42L))
+            }
+
+        assertSame(failure, thrown)
+    }
+
+    @Test
+    fun note_delete_security_failure_has_stable_permission_taxonomy() {
+        val gateway =
+            ContentResolverAnkiGateway(
+                context = ApplicationProvider.getApplicationContext(),
+                workerThreadGuard = WorkerThreadGuard { },
+                accessStatusOverride = { AVAILABLE },
+                resolverDeleteOverride =
+                    ProviderResolverDelete { _, _, _ -> throw SecurityException("denied") },
+            )
+
+        assertEquals(
+            ProviderFailureKind.PERMISSION_REQUIRED,
+            assertThrows(ProviderGatewayException::class.java) {
+                gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(42L))
+            }.kind,
+        )
+    }
+
+    @Test
     fun every_mutation_rechecks_access_before_resolver_entry() {
         var resolverCalls = 0
         val gateway =
@@ -220,6 +289,11 @@ class ContentResolverProviderPrimitivesInstrumentedTest {
                         resolverCalls += 1
                         0
                     },
+                resolverDeleteOverride =
+                    ProviderResolverDelete { _, _, _ ->
+                        resolverCalls += 1
+                        0
+                    },
             )
         val operations =
             listOf<() -> Unit>(
@@ -231,6 +305,7 @@ class ContentResolverProviderPrimitivesInstrumentedTest {
                 },
                 { gateway.insertNote(AnkiProviderMutationCommand.InsertNote(7L, "word", "tag")) },
                 { gateway.routeCard(AnkiProviderMutationCommand.RouteCard(8L, 9L, 0, 10L)) },
+                { gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(42L)) },
             )
 
         operations.forEach { operation ->
@@ -260,6 +335,14 @@ class ContentResolverProviderPrimitivesInstrumentedTest {
                 resolverUpdateOverride =
                     ProviderResolverUpdate { _, _, _, _ -> throw IllegalStateException("provider rejected write") },
             )
+        val deleteGateway =
+            ContentResolverAnkiGateway(
+                context = ApplicationProvider.getApplicationContext(),
+                workerThreadGuard = WorkerThreadGuard { },
+                accessStatusOverride = { AVAILABLE },
+                resolverDeleteOverride =
+                    ProviderResolverDelete { _, _, _ -> throw IllegalStateException("provider rejected write") },
+            )
 
         assertEquals(
             ProviderFailureKind.MUTATION_FAILED,
@@ -271,6 +354,12 @@ class ContentResolverProviderPrimitivesInstrumentedTest {
             ProviderFailureKind.MUTATION_FAILED,
             assertThrows(ProviderGatewayException::class.java) {
                 updateGateway.routeCard(AnkiProviderMutationCommand.RouteCard(8L, 9L, 0, 10L))
+            }.kind,
+        )
+        assertEquals(
+            ProviderFailureKind.MUTATION_FAILED,
+            assertThrows(ProviderGatewayException::class.java) {
+                deleteGateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(42L))
             }.kind,
         )
 

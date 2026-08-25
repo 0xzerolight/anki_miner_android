@@ -123,6 +123,10 @@ class ProviderMutationContractTest {
                 targetDeckId = 13L,
             ).ordinal,
         )
+        assertEquals(
+            42L,
+            AnkiProviderMutationCommand.DeleteNote(noteId = 42L).noteId,
+        )
 
         listOf<() -> Unit>(
             { AnkiProviderMutationCommand.StoreMedia("file:///tmp/a.mp3", "audio") },
@@ -136,6 +140,8 @@ class ProviderMutationContractTest {
             { AnkiProviderMutationCommand.RouteCard(0L, 1L, 0, 1L) },
             { AnkiProviderMutationCommand.RouteCard(1L, 1L, -1, 1L) },
             { AnkiProviderMutationCommand.RouteCard(1L, 1L, 64, 1L) },
+            { AnkiProviderMutationCommand.DeleteNote(0L) },
+            { AnkiProviderMutationCommand.DeleteNote(-1L) },
         ).forEach { build ->
             assertThrows(IllegalArgumentException::class.java, build)
         }

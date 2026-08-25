@@ -72,6 +72,8 @@ import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
+import com.ankiminer.android.ui.mining.MiningResultUndoAction
+import com.ankiminer.android.ui.mining.MiningUndoConfirmationDialog
 import com.ankiminer.android.ui.mining.ReconcileCurationFocus
 import com.ankiminer.android.ui.mining.ResetCurationScrollOnProjectionChange
 import com.ankiminer.android.ui.mining.MiningSourceItem
@@ -116,6 +118,9 @@ fun ReadingMiningScreen(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onRequestUndo: () -> Unit = {},
+    onConfirmUndo: () -> Unit = {},
+    onDismissUndoConfirmation: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
@@ -167,6 +172,15 @@ fun ReadingMiningScreen(
         filter = filter,
         sort = sort,
     )
+
+    state.undoConfirmationNoteCount?.let { noteCount ->
+        MiningUndoConfirmationDialog(
+            noteCount = noteCount,
+            onConfirm = onConfirmUndo,
+            onDismiss = onDismissUndoConfirmation,
+            confirmTestTag = ReadingMiningTestTags.UNDO_CONFIRM,
+        )
+    }
 
     Scaffold(
         modifier =
@@ -450,6 +464,11 @@ fun ReadingMiningScreen(
                                 busy = targetState.resetPending,
                                 resetError =
                                     targetState.commandError == ReadingMiningCommandError.RESET,
+                                undoAvailable = targetState.undoAvailable,
+                                undoneNoteCount = targetState.undoneNoteCount,
+                                undoError = targetState.commandError == ReadingMiningCommandError.UNDO,
+                                undoWordsError =
+                                    targetState.commandError == ReadingMiningCommandError.UNDO_WORDS,
                                 detailsExpanded = resultDetailsExpanded,
                                 onToggleDetails = {
                                     resultDetailsExpanded = !resultDetailsExpanded
@@ -457,6 +476,7 @@ fun ReadingMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onRetry = onRetry,
                                 onReset = onReset,
+                                onRequestUndo = onRequestUndo,
                             )
                         is MiningRunState.Cancelled ->
                             terminalItems(
@@ -472,6 +492,11 @@ fun ReadingMiningScreen(
                                 busy = targetState.resetPending,
                                 resetError =
                                     targetState.commandError == ReadingMiningCommandError.RESET,
+                                undoAvailable = targetState.undoAvailable,
+                                undoneNoteCount = targetState.undoneNoteCount,
+                                undoError = targetState.commandError == ReadingMiningCommandError.UNDO,
+                                undoWordsError =
+                                    targetState.commandError == ReadingMiningCommandError.UNDO_WORDS,
                                 detailsExpanded = resultDetailsExpanded,
                                 onToggleDetails = {
                                     resultDetailsExpanded = !resultDetailsExpanded
@@ -479,6 +504,7 @@ fun ReadingMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onRetry = onRetry,
                                 onReset = onReset,
+                                onRequestUndo = onRequestUndo,
                             )
                         is MiningRunState.Failed ->
                             terminalItems(
@@ -496,6 +522,11 @@ fun ReadingMiningScreen(
                                 busy = targetState.resetPending || targetState.startPending,
                                 resetError =
                                     targetState.commandError == ReadingMiningCommandError.RESET,
+                                undoAvailable = targetState.undoAvailable,
+                                undoneNoteCount = targetState.undoneNoteCount,
+                                undoError = targetState.commandError == ReadingMiningCommandError.UNDO,
+                                undoWordsError =
+                                    targetState.commandError == ReadingMiningCommandError.UNDO_WORDS,
                                 detailsExpanded = resultDetailsExpanded,
                                 onToggleDetails = {
                                     resultDetailsExpanded = !resultDetailsExpanded
@@ -503,6 +534,7 @@ fun ReadingMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onRetry = onRetry,
                                 onReset = onReset,
+                                onRequestUndo = onRequestUndo,
                             )
                     }
                 }
@@ -996,11 +1028,16 @@ private fun LazyListScope.terminalItems(
     canRetry: Boolean,
     busy: Boolean,
     resetError: Boolean,
+    undoAvailable: Boolean,
+    undoneNoteCount: Int?,
+    undoError: Boolean,
+    undoWordsError: Boolean,
     detailsExpanded: Boolean,
     onToggleDetails: () -> Unit,
     onDismissCommandError: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onRequestUndo: () -> Unit,
 ) {
     item(key = "reading_terminal_header", contentType = "header") {
         PhaseTitle(
@@ -1038,9 +1075,9 @@ private fun LazyListScope.terminalItems(
             )
         }
     }
-    result?.let {
+    result?.let { finalResult ->
         miningResultItems(
-            result = it,
+            result = finalResult,
             sources =
                 buildList {
                     add(MiningResultSource(R.string.result_reading_source, sourceDisplayName))
@@ -1054,7 +1091,34 @@ private fun LazyListScope.terminalItems(
             testTag = ReadingMiningTestTags.RESULT,
             keyPrefix = "reading_terminal_result",
             onToggleDetails = onToggleDetails,
+            undo =
+                finalResult.cardIds.takeIf { it.isNotEmpty() }?.let { cardIds ->
+                    MiningResultUndoAction(
+                        noteCount = cardIds.size,
+                        undoneNoteCount = undoneNoteCount,
+                        enabled = undoAvailable,
+                        testTag = ReadingMiningTestTags.UNDO,
+                        onUndo = onRequestUndo,
+                    )
+                },
         )
+    }
+    if (undoError || undoWordsError) {
+        item(key = "reading_terminal_undo_error", contentType = "error") {
+            MiningFailureCard(
+                message =
+                    if (undoError) {
+                        ReadingMiningCommandError.UNDO.message()
+                    } else {
+                        ReadingMiningCommandError.UNDO_WORDS.message()
+                    },
+                primaryAction =
+                    MiningFailureAction(
+                        label = stringResource(R.string.dismiss_error),
+                        onClick = onDismissCommandError,
+                    ),
+            )
+        }
     }
     if (!failed) {
         item(key = "reading_terminal_actions", contentType = "actions") {
@@ -1198,5 +1262,7 @@ private fun ReadingMiningCommandError.message(): String =
             ReadingMiningCommandError.CURATION -> R.string.curation_error
             ReadingMiningCommandError.CANCEL -> R.string.cancel_error
             ReadingMiningCommandError.RESET -> R.string.reset_error
+            ReadingMiningCommandError.UNDO -> R.string.undo_failed
+            ReadingMiningCommandError.UNDO_WORDS -> R.string.undo_words_failed
         },
     )

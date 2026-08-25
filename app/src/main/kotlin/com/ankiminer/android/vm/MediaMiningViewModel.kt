@@ -7,6 +7,9 @@ import androidx.lifecycle.createSavedStateHandle
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.anki.MiningRunUndoManager
+import com.ankiminer.android.data.anki.UndoRunOutcome
+import com.ankiminer.android.data.anki.UndoneRunReceipt
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
 import com.ankiminer.android.data.settings.EngineDefaults
@@ -28,6 +31,7 @@ import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
+import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.TokenizerConfigurationFailure
 import com.ankiminer.android.mining.VideoMiningInput
@@ -107,6 +111,7 @@ class MediaMiningViewModel internal constructor(
     audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
     private val timingPreviewOpener: TimingPreviewOpener? = null,
     timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    private val undoManager: MiningRunUndoManager? = null,
     private val audioTrackProbeOpener: AudioTrackProbeOpener? = null,
 ) : ViewModel() {
     private val subtitleOffsetDraftKey = "${lane.savedStateKeyPrefix}.subtitleOffsetDraft"
@@ -128,6 +133,19 @@ class MediaMiningViewModel internal constructor(
         val audioTrackOverride: Long? = null,
         val audioTrackProbePending: Boolean = false,
         val audioTrackPickerError: AudioTrackPickerError? = null,
+        val undoConfirmationNoteCount: Int? = null,
+    )
+
+    /**
+     * Everything the undo affordance needs beyond [repository]/[localState]: the raw runtime-work
+     * lease (unlike [VideoMiningUiState.runtimeConflict], not gated to [MiningRunState.Idle]) and
+     * the process-owned undo manager's own bookkeeping, folded into one flow so the top-level
+     * `combine` below stays at five arguments.
+     */
+    private data class AuxState(
+        val activeKind: RuntimeWorkCoordinator.Kind?,
+        val undoneRuns: Map<String, UndoneRunReceipt>,
+        val undoActive: Boolean,
     )
 
     private enum class DocumentKind {
@@ -215,14 +233,21 @@ class MediaMiningViewModel internal constructor(
                 initialValue = repository.state.value.toNavigationWorkflowState(),
             )
 
+    private val auxState: Flow<AuxState> =
+        combine(
+            runtimeWorkState,
+            undoManager?.undoneRuns ?: flowOf(emptyMap()),
+            undoManager?.undoActive ?: flowOf(false),
+        ) { activeKind, undoneRuns, undoActive -> AuxState(activeKind, undoneRuns, undoActive) }
+
     val uiState: StateFlow<VideoMiningUiState> =
         combine(
             repository.state,
             localState,
-            runtimeWorkState,
+            auxState,
             definitionState,
             cueState,
-        ) { runState, local, activeKind, definition, cues ->
+        ) { runState, local, aux, definition, cues ->
             val curating = runState as? MiningRunState.Curating
             val curation =
                 curating?.request?.let { request ->
@@ -237,6 +262,20 @@ class MediaMiningViewModel internal constructor(
                 }
             val repositoryCurationPending =
                 (runState as? MiningRunState.Curating)?.pageSubmissionPending == true
+            // Own-lane in-flight is `local.pending.undo`; `aux.undoActive` catches the sibling
+            // lane's undo (same process-owned manager) plus the narrow handoff gap between the
+            // delete phase releasing its ANKI_SETUP lease and the revert phase acquiring RESOURCE,
+            // during which `aux.activeKind` alone would read null.
+            val undoneReceipt = runState.runId?.let { aux.undoneRuns[it] }
+            val undoAvailable =
+                undoManager != null &&
+                    runState.isTerminal &&
+                    runState.terminalResultOrNull()?.cardIds?.isNotEmpty() == true &&
+                    undoneReceipt == null &&
+                    aux.activeKind == null &&
+                    !aux.undoActive &&
+                    !local.pending.undo &&
+                    !local.pending.reset
             VideoMiningUiState(
                 video = local.video,
                 subtitle = local.subtitle,
@@ -271,7 +310,10 @@ class MediaMiningViewModel internal constructor(
                 audioTrackProbePending = local.audioTrackProbePending,
                 audioTrackPickerError = local.audioTrackPickerError,
                 runtimeConflict =
-                    activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
+                    aux.activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
+                undoConfirmationNoteCount = local.undoConfirmationNoteCount,
+                undoneNoteCount = undoneReceipt?.deletedNotes,
+                undoAvailable = undoAvailable,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -1082,6 +1124,58 @@ class MediaMiningViewModel internal constructor(
         }
     }
 
+    fun requestUndo() {
+        if (!uiState.value.undoAvailable) return
+        val result = repository.state.value.terminalResultOrNull() ?: return
+        localState.update { it.copy(undoConfirmationNoteCount = result.cardIds.size) }
+    }
+
+    fun dismissUndoConfirmation() {
+        localState.update { it.copy(undoConfirmationNoteCount = null) }
+    }
+
+    fun confirmUndo() {
+        val manager = undoManager ?: return
+        val runState = repository.state.value
+        val result =
+            (runState as? MiningRunState.Success)?.result
+                ?: (runState as? MiningRunState.Cancelled)?.result
+                ?: (runState as? MiningRunState.Failed)?.result
+        // `runState.runId` is nullable for Cancelled/Failed (unlike Success); the manager needs a
+        // non-null run to key its receipt, so a null id is treated the same as no result.
+        val runId = runState.runId
+        if (result == null || runId == null || result.cardIds.isEmpty() || localState.value.pending.undo) {
+            return
+        }
+        localState.update {
+            it.copy(
+                pending = it.pending.begin(MiningPendingAction.UNDO),
+                commandError = null,
+                undoConfirmationNoteCount = null,
+            )
+        }
+        viewModelScope.launch(LogContext.asContextElement(runId)) {
+            AppLog.i(LogComponent.UI, "command", "command" to "undo", "outcome" to "ok")
+            try {
+                when (val outcome = manager.undoRun(runId, result.cardIds, result.minedForms)) {
+                    is UndoRunOutcome.Undone ->
+                        if (!outcome.receipt.knownWordsReverted) {
+                            localState.update { it.copy(commandError = MiningCommandError.UNDO_WORDS) }
+                        }
+                    UndoRunOutcome.Busy, UndoRunOutcome.DeleteFailed ->
+                        localState.update { it.copy(commandError = MiningCommandError.UNDO) }
+                }
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: RuntimeException) {
+                AppLog.e(LogComponent.UI, "command", failure, "command" to "undo", "outcome" to "fail")
+                localState.update { it.copy(commandError = MiningCommandError.UNDO) }
+            } finally {
+                localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.UNDO)) }
+            }
+        }
+    }
+
     private fun launchStart(input: VideoMiningInput) {
         viewModelScope.launch {
             AppLog.i(
@@ -1621,6 +1715,15 @@ class MediaMiningViewModel internal constructor(
         )
     }
 
+    /** The result a terminal run carries, regardless of which terminal branch it landed in. */
+    private fun MiningRunState.terminalResultOrNull(): ProcessingResult? =
+        when (this) {
+            is MiningRunState.Success -> result
+            is MiningRunState.Cancelled -> result
+            is MiningRunState.Failed -> result
+            else -> null
+        }
+
     internal class Factory(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
@@ -1638,6 +1741,7 @@ class MediaMiningViewModel internal constructor(
         private val selectionInventory: SafSelectionInventory? = null,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
+        private val undoManager: MiningRunUndoManager? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1660,6 +1764,7 @@ class MediaMiningViewModel internal constructor(
                 audioPacks = audioPacks,
                 timingPreviewOpener = timingPreviewOpener,
                 timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
+                undoManager = undoManager,
                 audioTrackProbeOpener = audioTrackProbeOpener,
             ) as T
         }

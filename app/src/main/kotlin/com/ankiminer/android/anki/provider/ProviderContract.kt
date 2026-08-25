@@ -397,6 +397,12 @@ internal interface AnkiProviderGateway {
     /** Raw routing commit boundary after durable entry; recovery owns the affected count. */
     fun routeCard(command: AnkiProviderMutationCommand.RouteCard): Int
 
+    /**
+     * Raw commit boundary, not a service API. Returns the provider's affected-row count; there
+     * is no receipt URI to validate, unlike the insert operations.
+     */
+    fun deleteNote(command: AnkiProviderMutationCommand.DeleteNote): Int
+
     /** Exact pinned AnkiDroid v2 field-checksum implementation. */
     fun fieldChecksum(firstField: String): Long
 }

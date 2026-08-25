@@ -158,6 +158,13 @@
     <string name="result_no_items">Keine</string>
     <string name="result_unknown_file">Unbekannte Datei</string>
     <string name="result_error_item">• %1$s</string>
+    <string name="undo_mining_run">Rückgängig (%1$d Notizen)</string>
+    <string name="undo_confirm_title">Diesen Durchlauf rückgängig machen?</string>
+    <string name="undo_confirm_message">%1$d Notizen aus Anki löschen? Kann nicht rückgängig gemacht werden.</string>
+    <string name="undo_confirm_delete">Löschen</string>
+    <string name="undo_done">Rückgängig gemacht (%1$d Notizen gelöscht)</string>
+    <string name="undo_failed">Rückgängig machen fehlgeschlagen. Es wurden keine Notizen gelöscht.</string>
+    <string name="undo_words_failed">Notizen gelöscht, aber das Zurücksetzen der bekannten Wörter ist fehlgeschlagen.</string>
     <string name="mining_notice_no_definition">Kein Wörterbucheintrag für %1$d Wort/Wörter: %2$s</string>
     <string name="result_metric_created">Erstellt</string>
     <string name="result_metric_skipped_new">Übersprungen / neu</string>
@@ -412,6 +419,7 @@
     <string name="resource_operation_delete_resource">Ressource entfernen</string>
     <string name="resource_operation_reset_known_words">Bekannte Wörter zurücksetzen</string>
     <string name="resource_operation_export_known_words">Bekannte Wörter exportieren</string>
+    <string name="resource_operation_revert_mined_words">Gesammelte Wörter rückgängig machen</string>
     <string name="resource_operation_dictionary_lookup">Wörterbuchsuche</string>
     <string name="resource_failure_busy">Beenden Sie den aktiven Mining-Durchlauf oder brechen Sie ihn ab, bevor Sie Ressourcen ändern.</string>
     <string name="resource_failure_download_cancelled">Ressourcenvorgang wurde abgebrochen</string>

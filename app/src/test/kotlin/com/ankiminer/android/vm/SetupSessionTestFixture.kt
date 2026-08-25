@@ -137,6 +137,8 @@ internal class SessionResourceManager(
 
     override suspend fun resetKnownWords(scope: KnownWordsResetScope) = Unit
 
+    override suspend fun removeMinedWords(words: List<String>) = false
+
     override suspend fun exportKnownWords(uri: String) = Unit
 
     override suspend fun lookup(slotId: String, term: String) = Unit

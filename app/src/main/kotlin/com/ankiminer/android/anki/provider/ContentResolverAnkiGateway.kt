@@ -56,6 +56,14 @@ internal fun interface ProviderResolverUpdate {
     ): Int
 }
 
+internal fun interface ProviderResolverDelete {
+    fun delete(
+        uri: Uri,
+        selection: String?,
+        selectionArgs: Array<String>?,
+    ): Int
+}
+
 internal object RealProviderDeadlineScheduler : ProviderDeadlineScheduler {
     private val executor =
         ScheduledThreadPoolExecutor(
@@ -99,6 +107,7 @@ internal class ContentResolverAnkiGateway(
     private val resolverQueryOverride: ProviderResolverQuery? = null,
     private val resolverInsertOverride: ProviderResolverInsert? = null,
     private val resolverUpdateOverride: ProviderResolverUpdate? = null,
+    private val resolverDeleteOverride: ProviderResolverDelete? = null,
 ) : AnkiProviderGateway {
     private val context = context.applicationContext
     private val resolver: ContentResolver = this.context.contentResolver
@@ -288,6 +297,25 @@ internal class ContentResolverAnkiGateway(
                 resolverUpdateOverride.update(cardUri, values, null, null)
             } else {
                 resolver.update(cardUri, values, null, null)
+            }
+        } catch (error: Exception) {
+            throw mapMutationFailure(error)
+        }
+    }
+
+    override fun deleteNote(command: AnkiProviderMutationCommand.DeleteNote): Int {
+        workerThreadGuard.checkWorkerThread()
+        requireAvailableAccess()
+        val noteUri =
+            Uri.withAppendedPath(
+                FlashCardsContract.Note.CONTENT_URI,
+                command.noteId.toString(),
+            )
+        return try {
+            if (resolverDeleteOverride != null) {
+                resolverDeleteOverride.delete(noteUri, null, null)
+            } else {
+                resolver.delete(noteUri, null, null)
             }
         } catch (error: Exception) {
             throw mapMutationFailure(error)
