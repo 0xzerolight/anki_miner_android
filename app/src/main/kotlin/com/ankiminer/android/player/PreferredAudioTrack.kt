@@ -36,12 +36,20 @@ private val JAPANESE_LANGUAGE_CODES: Set<String> =
  * rebuilt in renderer order. Sort those IDs before applying the engine rule; retain list order for
  * any non-progressive source whose group IDs have another shape.
  *
- * Language only, with no renderer-support filter. If the Japanese track is a codec this device
+ * [audioTrackOverride] is the engine's `audio_index` for this run: a source-order ordinal that
+ * outranks every other rule, `0` included — it is a real ordinal, not a falsy absence, hence the
+ * explicit `null` check rather than an "if present" one. An invalid or out-of-range value (no
+ * override, or an index the source doesn't have) falls back to the same rule
+ * `_resolve_audio_track_global_index` uses: first Japanese-tagged, else first audio. Deliberately
+ * no language veto on the overridden track — a mislabeled file, where the desired track isn't
+ * tagged Japanese at all, is the reason the override exists.
+ *
+ * Language only, with no renderer-support filter. If the selected track is a codec this device
  * cannot decode, selecting it anyway surfaces [PreviewFailure.AudioTrackUnsupported], which is the
- * honest answer; quietly dropping to the English dub is the behaviour this replaces.
+ * honest answer; quietly dropping to another track is the behaviour this replaces.
  */
 @OptIn(UnstableApi::class)
-fun preferredAudioGroup(tracks: Tracks): Tracks.Group? {
+fun preferredAudioGroup(tracks: Tracks, audioTrackOverride: Long? = null): Tracks.Group? {
     val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
     val sourceIndexes = audioGroups.map { it.mediaTrackGroup.id.toIntOrNull() }
     val sourceOrderedGroups =
@@ -50,6 +58,9 @@ fun preferredAudioGroup(tracks: Tracks): Tracks.Group? {
         } else {
             audioGroups
         }
+    if (audioTrackOverride != null && audioTrackOverride in 0 until sourceOrderedGroups.size.toLong()) {
+        return sourceOrderedGroups[audioTrackOverride.toInt()]
+    }
     return sourceOrderedGroups.firstOrNull { group ->
         JAPANESE_LANGUAGE_CODES.contains(group.getTrackFormat(0).language ?: "")
     } ?: sourceOrderedGroups.firstOrNull()

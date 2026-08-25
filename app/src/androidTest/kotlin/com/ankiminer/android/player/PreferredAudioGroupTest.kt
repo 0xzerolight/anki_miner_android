@@ -83,6 +83,60 @@ class PreferredAudioGroupTest {
         assertSame(sourceFirstDts, preferredAudioGroup(rendererOrderedTracks))
     }
 
+    @Test
+    fun overrideSelectsTheAudioOrdinalInSourceOrderNotRendererOrder() {
+        val sourceFirst = audioGroup("1", "eng")
+        val sourceSecond = audioGroup("2", "eng")
+        val rendererOrderedTracks = Tracks(listOf(sourceSecond, sourceFirst))
+
+        assertSame(sourceSecond, preferredAudioGroup(rendererOrderedTracks, 1L))
+    }
+
+    @Test
+    fun overrideZeroSelectsTheFirstSourceAudioTrack() {
+        val english = audioGroup("1", "eng")
+        val japanese = audioGroup("2", "jpn")
+        val tracks = Tracks(listOf(english, japanese))
+
+        assertSame(english, preferredAudioGroup(tracks, 0L))
+    }
+
+    @Test
+    fun overrideSelectsAMislabeledTrackWithoutLanguageVeto() {
+        val japanese = audioGroup("1", "jpn")
+        val mislabeled = audioGroup("2", "und")
+        val tracks = Tracks(listOf(japanese, mislabeled))
+
+        assertSame(mislabeled, preferredAudioGroup(tracks, 1L))
+    }
+
+    @Test
+    fun outOfRangeOverrideFallsBackToJapaneseAutoDetect() {
+        val english = audioGroup("1", "eng")
+        val japanese = audioGroup("2", "jpn")
+        val tracks = Tracks(listOf(english, japanese))
+
+        assertSame(japanese, preferredAudioGroup(tracks, 5L))
+    }
+
+    @Test
+    fun outOfRangeOverrideWithoutJapaneseFallsBackToFirstAudio() {
+        val first = audioGroup("1", "und")
+        val second = audioGroup("2", "eng")
+        val tracks = Tracks(listOf(first, second))
+
+        assertSame(first, preferredAudioGroup(tracks, 5L))
+    }
+
+    @Test
+    fun overrideIndexesListOrderWhenGroupIdsAreNotNumeric() {
+        val first = audioGroup("a", "eng")
+        val second = audioGroup("b", "eng")
+        val tracks = Tracks(listOf(first, second))
+
+        assertSame(second, preferredAudioGroup(tracks, 1L))
+    }
+
     private fun audioGroup(
         id: String,
         language: String?,
