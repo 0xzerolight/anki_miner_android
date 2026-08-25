@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
             definitionLookup = app.definitionLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
+            undoManager = app.miningRunUndoManager,
         )
     }
 

@@ -6,6 +6,9 @@ import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.anki.MiningRunUndoManager
+import com.ankiminer.android.data.anki.UndoRunOutcome
+import com.ankiminer.android.data.anki.UndoneRunReceipt
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.dictionary.DefinitionResult
@@ -38,6 +41,7 @@ import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
+import com.ankiminer.android.ui.reading.ReadingMiningCommandError
 import com.ankiminer.android.ui.reading.ReadingSourceKindUi
 import com.ankiminer.android.ui.reading.ReadingSourceMode
 import java.util.concurrent.ConcurrentHashMap
@@ -1248,6 +1252,273 @@ class ReadingMiningViewModelTest {
             runCurrent()
             assertTrue(repository.state.value is MiningRunState.Cancelled)
         }
+
+    @Test
+    fun requestUndoDoesNothingWhileTheRunIsNotTerminal() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                RecordingReadingRepository(
+                    initialState = MiningRunState.Running("run", MiningProgress(0, 0, "Running")),
+                )
+            val undoManager = RecordingUndoManager()
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+            assertTrue(undoManager.calls.isEmpty())
+        }
+
+    @Test
+    fun requestUndoDoesNothingWhenTheResultHasNoCardIds() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                RecordingReadingRepository(
+                    initialState = MiningRunState.Success("run", result().copy(cardIds = emptyList())),
+                )
+            val undoManager = RecordingUndoManager()
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+            assertFalse(viewModel.uiState.value.undoAvailable)
+            assertTrue(undoManager.calls.isEmpty())
+        }
+
+    @Test
+    fun requestUndoDoesNothingWhileRuntimeWorkIsActive() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val runtimeWork =
+                MutableStateFlow<RuntimeWorkCoordinator.Kind?>(RuntimeWorkCoordinator.Kind.ANKI_SETUP)
+            val repository = RecordingReadingRepository(initialState = MiningRunState.Success("run", result()))
+            val undoManager = RecordingUndoManager()
+            val viewModel =
+                ReadingMiningViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    runtimeWorkState = runtimeWork,
+                    undoManager = undoManager,
+                )
+            runCurrent()
+
+            viewModel.requestUndo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+            assertFalse(viewModel.uiState.value.undoAvailable)
+            assertTrue(undoManager.calls.isEmpty())
+        }
+
+    @Test
+    fun requestUndoDoesNothingWhenTheRunIsAlreadyUndone() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val receipt = UndoneRunReceipt("run", deletedNotes = 1, knownWordsReverted = true)
+            val undoManager = RecordingUndoManager(initialUndoneRuns = mapOf("run" to receipt))
+            val repository = RecordingReadingRepository(initialState = MiningRunState.Success("run", result()))
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+            assertFalse(viewModel.uiState.value.undoAvailable)
+            assertEquals(1, viewModel.uiState.value.undoneNoteCount)
+            assertTrue(undoManager.calls.isEmpty())
+        }
+
+    @Test
+    fun requestUndoOpensConfirmationAndDismissClearsItWithoutCallingTheManager() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val processingResult = result().copy(cardIds = listOf(1L, 2L))
+            val repository =
+                RecordingReadingRepository(initialState = MiningRunState.Success("run", processingResult))
+            val undoManager = RecordingUndoManager()
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            runCurrent()
+            assertEquals(2, viewModel.uiState.value.undoConfirmationNoteCount)
+
+            viewModel.dismissUndoConfirmation()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+            assertTrue(undoManager.calls.isEmpty())
+        }
+
+    @Test
+    fun confirmUndoPassesTheExactRunIdNoteIdsAndMinedForms() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val processingResult =
+                result().copy(cardIds = listOf(1L, 2L, 3L), minedForms = listOf("食べる", "見る"))
+            val repository =
+                RecordingReadingRepository(initialState = MiningRunState.Success("run-1", processingResult))
+            val undoManager = RecordingUndoManager()
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            val call = undoManager.calls.single()
+            assertEquals("run-1", call.runId)
+            assertEquals(listOf(1L, 2L, 3L), call.noteIds)
+            assertEquals(listOf("食べる", "見る"), call.minedForms)
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+        }
+
+    @Test
+    fun confirmUndoMapsBusyAndDeleteFailedToUndoError() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val processingResult = result().copy(cardIds = listOf(1L))
+            val repository =
+                RecordingReadingRepository(initialState = MiningRunState.Success("run", processingResult))
+            val undoManager = RecordingUndoManager()
+            undoManager.outcome = UndoRunOutcome.Busy
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            assertEquals(ReadingMiningCommandError.UNDO, viewModel.uiState.value.commandError)
+            assertNull(viewModel.uiState.value.undoneNoteCount)
+
+            viewModel.dismissCommandError()
+            undoManager.outcome = UndoRunOutcome.DeleteFailed
+            viewModel.requestUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            assertEquals(ReadingMiningCommandError.UNDO, viewModel.uiState.value.commandError)
+        }
+
+    @Test
+    fun confirmUndoMapsAPartialRevertToUndoWordsErrorAndStillSurfacesTheDeletedCount() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val processingResult = result().copy(cardIds = listOf(1L, 2L, 3L))
+            val repository =
+                RecordingReadingRepository(initialState = MiningRunState.Success("run", processingResult))
+            val undoManager = RecordingUndoManager()
+            undoManager.outcome =
+                UndoRunOutcome.Undone(
+                    UndoneRunReceipt("run", deletedNotes = 3, knownWordsReverted = false),
+                )
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            assertEquals(ReadingMiningCommandError.UNDO_WORDS, viewModel.uiState.value.commandError)
+            assertEquals(3, viewModel.uiState.value.undoneNoteCount)
+        }
+
+    @Test
+    fun confirmUndoSuccessClearsErrorAndSurfacesTheUndoneNoteCount() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val processingResult = result().copy(cardIds = listOf(1L, 2L, 3L))
+            val repository =
+                RecordingReadingRepository(initialState = MiningRunState.Success("run", processingResult))
+            val undoManager = RecordingUndoManager()
+            undoManager.outcome =
+                UndoRunOutcome.Undone(
+                    UndoneRunReceipt("run", deletedNotes = 3, knownWordsReverted = true),
+                )
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+
+            viewModel.requestUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.commandError)
+            assertEquals(3, viewModel.uiState.value.undoneNoteCount)
+            assertFalse(viewModel.uiState.value.undoAvailable)
+        }
+
+    @Test
+    fun confirmUndoIsSingleFlightWhilePendingAndReopensAvailabilityOnceItCompletes() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val gate = CompletableDeferred<Unit>()
+            val undoManager = RecordingUndoManager(gate = gate)
+            undoManager.outcome = UndoRunOutcome.DeleteFailed
+            val processingResult = result().copy(cardIds = listOf(1L))
+            val repository =
+                RecordingReadingRepository(initialState = MiningRunState.Success("run", processingResult))
+            val viewModel =
+                ReadingMiningViewModel(repository, ImmediateSafBroker(), undoManager = undoManager)
+            runCurrent()
+            viewModel.requestUndo()
+
+            viewModel.confirmUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            assertEquals(1, undoManager.calls.size)
+            assertFalse(viewModel.uiState.value.undoAvailable)
+
+            gate.complete(Unit)
+            runCurrent()
+
+            assertEquals(ReadingMiningCommandError.UNDO, viewModel.uiState.value.commandError)
+            assertTrue(viewModel.uiState.value.undoAvailable)
+        }
+
+    private class RecordingUndoManager(
+        initialUndoneRuns: Map<String, UndoneRunReceipt> = emptyMap(),
+        private val gate: CompletableDeferred<Unit>? = null,
+    ) : MiningRunUndoManager {
+        private val mutableUndoneRuns = MutableStateFlow(initialUndoneRuns)
+        override val undoneRuns: StateFlow<Map<String, UndoneRunReceipt>> =
+            mutableUndoneRuns.asStateFlow()
+
+        private val mutableUndoActive = MutableStateFlow(false)
+        override val undoActive: StateFlow<Boolean> = mutableUndoActive.asStateFlow()
+
+        var outcome: UndoRunOutcome =
+            UndoRunOutcome.Undone(
+                UndoneRunReceipt("run", deletedNotes = 1, knownWordsReverted = true),
+            )
+
+        val calls = mutableListOf<UndoCall>()
+
+        data class UndoCall(val runId: String, val noteIds: List<Long>, val minedForms: List<String>)
+
+        override suspend fun undoRun(
+            runId: String,
+            noteIds: List<Long>,
+            minedForms: List<String>,
+        ): UndoRunOutcome {
+            calls += UndoCall(runId, noteIds, minedForms)
+            mutableUndoActive.value = true
+            gate?.await()
+            val result = outcome
+            if (result is UndoRunOutcome.Undone) {
+                mutableUndoneRuns.value = mutableUndoneRuns.value + (result.receipt.runId to result.receipt)
+            }
+            mutableUndoActive.value = false
+            return result
+        }
+    }
 
     private class ImmediateSafBroker : SafBroker {
         val retainedUris = mutableListOf<String>()
