@@ -252,13 +252,33 @@ data class CurationRequest(
         get() = page?.let { it.pageIndex == it.pageCount - 1 } ?: true
 }
 
+/**
+ * "Add previous/next subtitle line" intent for one candidate. A `(0, 0)` entry never exists —
+ * no expansion is the absence of the map entry, so equality and persistence stay canonical.
+ */
+@Immutable
+data class CurationLineExpansion(
+    val linesBefore: Int,
+    val linesAfter: Int,
+) {
+    init {
+        require(linesBefore >= 0)
+        require(linesAfter >= 0)
+        require(linesBefore > 0 || linesAfter > 0)
+    }
+}
+
 data class CurationSelection(
     val candidateId: String,
     val sentenceId: String?,
+    val linesBefore: Int = 0,
+    val linesAfter: Int = 0,
 ) {
     init {
         require(candidateId.isNotBlank())
         require(sentenceId == null || sentenceId.isNotBlank())
+        require(linesBefore >= 0)
+        require(linesAfter >= 0)
     }
 }
 
@@ -277,6 +297,7 @@ data class CurationSessionState(
     val focusedCandidateId: String?,
     val previousPageSelectedCount: Int,
     val knownCandidateIds: Set<String> = emptySet(),
+    val lineExpansions: Map<String, CurationLineExpansion> = emptyMap(),
 ) {
     init {
         require(runId.isNotBlank())
