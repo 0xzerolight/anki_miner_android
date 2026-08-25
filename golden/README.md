@@ -131,7 +131,7 @@ This prevents a developer's editable install or current checkout from silently
 supplying the fixtures.
 
 Run the desktop exporter through the Android-side verifier. `engine-v1.json` is
-frozen at desktop revision `ba3b3cf`, which predates the `23b361ea` recorded in
+frozen at desktop revision `ba3b3cf`, which predates the `2710117d` recorded in
 `tools/engine-sync/engine.lock`. `run_goldens.py` takes its expected revision
 from `--lock` (default: that file), so reproducing v1 means pointing both
 `--engine-root` and `--lock` at `ba3b3cf` — against the current lock the run

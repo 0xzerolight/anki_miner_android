@@ -78,10 +78,13 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            audioPaddingSeconds =
+                app.settingsRepository.settings.map { it.audioPaddingSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
+            audioTrackProbeOpener = app.audioTrackProbeLoader,
         )
     }
     private val audioViewModelFactory by lazy {
@@ -96,10 +99,13 @@ class MainActivity : ComponentActivity() {
             selectionInventory = app.safSelectionInventory,
             effectiveSubtitleOffset =
                 app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
+            audioPaddingSeconds =
+                app.settingsRepository.settings.map { it.audioPaddingSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.resourceManager.state.map { it.audioPacks },
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
+            audioTrackProbeOpener = app.audioTrackProbeLoader,
         )
     }
     private val setupViewModelFactory by lazy {

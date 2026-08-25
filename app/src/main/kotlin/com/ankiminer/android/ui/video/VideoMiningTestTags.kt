@@ -32,6 +32,11 @@ object VideoMiningTestTags {
     const val TIMING_PREVIEW_OFFSET_FIELD = "timing_preview_offset_field"
     const val TIMING_PREVIEW_APPLY = "timing_preview_apply"
     const val TIMING_PREVIEW_CANCEL = "timing_preview_cancel"
+    const val AUDIO_TRACKS = "audio_tracks"
+    const val AUDIO_TRACK_PICKER = "audio_track_picker"
+    const val AUDIO_TRACK_PICKER_APPLY = "audio_track_picker_apply"
+    const val AUDIO_TRACK_PICKER_CANCEL = "audio_track_picker_cancel"
+    const val AUDIO_TRACK_PICKER_CLOSE = "audio_track_picker_close"
 
     fun candidate(candidateId: String): String = "candidate:$candidateId"
 
@@ -46,8 +51,23 @@ object VideoMiningTestTags {
     fun candidateCopySentence(candidateId: String): String =
         "candidate_copy_sentence:$candidateId"
 
+    fun candidateExpandPrev(candidateId: String): String = "candidate_expand_prev:$candidateId"
+
+    fun candidateExpandNext(candidateId: String): String = "candidate_expand_next:$candidateId"
+
+    fun candidateExpandReset(candidateId: String): String = "candidate_expand_reset:$candidateId"
+
+    fun expansionPreview(candidateId: String): String = "expansion_preview:$candidateId"
+
     fun sentence(
         candidateId: String,
         sentenceId: String,
     ): String = "sentence:$candidateId:$sentenceId"
+
+    fun audioTrackRow(audioIndex: Long?): String = "audio_track_row:${audioIndex ?: "auto"}"
+
+    fun chosenSentence(candidateId: String): String = "chosen_sentence:$candidateId"
+
+    fun alternativesToggle(candidateId: String): String =
+        "sentence_alternatives_toggle:$candidateId"
 }

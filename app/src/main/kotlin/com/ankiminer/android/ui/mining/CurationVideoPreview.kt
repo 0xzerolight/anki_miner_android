@@ -72,11 +72,12 @@ fun CurationVideoPreview(
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
     audioOnly: Boolean = false,
+    audioTrackOverride: Long? = null,
     notice: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    LaunchedEffect(player, videoUri) {
-        player.bind(videoUri)
+    LaunchedEffect(player, videoUri, audioTrackOverride) {
+        player.bind(videoUri, audioTrackOverride)
     }
 
     val lifecycle = LocalLifecycleOwner.current.lifecycle

@@ -39,6 +39,19 @@
     <string name="timing_preview_unavailable">Prévia indisponível para esta fonte</string>
     <string name="timing_preview_tokenizer_required">Instale o recurso do tokenizador japonês antes de minerar</string>
     <string name="timing_preview_open_error">Não foi possível abrir a prévia de sincronização da legenda.</string>
+    <string name="audio_tracks_button">Faixas de áudio</string>
+    <string name="audio_tracks_title">Faixa de áudio</string>
+    <string name="audio_tracks_none">Nenhuma faixa de áudio encontrada neste arquivo.</string>
+    <string name="audio_tracks_single">Este arquivo tem apenas uma faixa de áudio.</string>
+    <string name="audio_tracks_auto_detected">Detecção automática (atual: Faixa %1$d — %2$s)</string>
+    <string name="audio_tracks_auto_none">Detecção automática (nenhuma faixa em japonês encontrada — usará a primeira faixa)</string>
+    <string name="audio_tracks_apply">Aplicar</string>
+    <string name="audio_tracks_close">Fechar</string>
+    <string name="audio_tracks_track_label">Faixa %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">mono</string>
+    <string name="audio_tracks_channels_stereo">estéreo</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">Não foi possível ler as faixas de áudio.</string>
     <string name="no_file_selected">Nenhum arquivo selecionado</string>
     <string name="choose_file">Escolher</string>
     <string name="replace_file">Substituir</string>
@@ -84,6 +97,10 @@
     <string name="curation_known_pending">Conhecida · pendente</string>
     <string name="curation_copy_word">Copiar palavra</string>
     <string name="curation_copy_sentence">Copiar frase</string>
+    <string name="curation_expand_previous_line">+ Linha anterior</string>
+    <string name="curation_expand_next_line">+ Próxima linha</string>
+    <string name="curation_expand_reset">Redefinir linhas</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · clipe de %3$.1f s</string>
     <string name="curation_copied_word">Palavra copiada</string>
     <string name="curation_copied_sentence">Frase copiada</string>
     <string name="curation_preview_play_description">Reproduzir vídeo</string>
@@ -114,6 +131,12 @@
     <string name="curation_bulk_action">Selecionar…</string>
     <string name="curation_tools_hide">Ocultar pesquisa e filtros</string>
     <string name="curation_tools_show">Mostrar pesquisa e filtros</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Mostrar %1$d alternativa</item>
+        <item quantity="many">Mostrar %1$d alternativas</item>
+        <item quantity="other">Mostrar %1$d alternativas</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Ocultar alternativas</string>
     <string name="candidate_state_selected">Selecionada</string>
     <string name="candidate_state_excluded">Excluída</string>
     <string name="candidate_part_of_speech_unknown">Classe gramatical desconhecida</string>

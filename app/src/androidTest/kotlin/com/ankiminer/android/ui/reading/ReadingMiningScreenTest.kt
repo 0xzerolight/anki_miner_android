@@ -516,6 +516,128 @@ class ReadingMiningScreenTest {
     }
 
     @Test
+    fun fourAlternativesFoldBehindADisclosureAndPromoteOnSelection() {
+        val base = request(CurationPage(0, 2, 0, 4))
+        val first = base.candidates.first()
+        val alternates =
+            (1..4).map { index ->
+                first.sentences.first().copy(
+                    sentenceId = "sentence-a$index",
+                    sentence = "Sentence number $index",
+                    sentenceFurigana = "Sentence number $index",
+                )
+            }
+        val request =
+            base.copy(
+                candidates =
+                    listOf(
+                        first.copy(sentences = first.sentences + alternates),
+                        base.candidates.last(),
+                    ),
+            )
+        val candidateId = first.candidateId
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidateId),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ReadingMiningScreen(
+                    state = state,
+                    onPickSource = {},
+                    onPickArchive = {},
+                    onClearSource = {},
+                    onClearArchive = {},
+                    onSourceModeChanged = {},
+                    onPastedTextChanged = {},
+                    onClearPastedText = {},
+                    onSeriesNameChanged = {},
+                    onDismissDocumentError = {},
+                    onDismissCommandError = {},
+                    onStart = {},
+                    onFocusCandidate = {},
+                    onSetCandidateSelected = { _, _ -> },
+                    onMarkCandidateKnown = { _, _ -> },
+                    onSetSelectionForVisible = { _, _ -> },
+                    onSetSelectionForPage = {},
+                    onReconcileFocus = { _, _ -> },
+                    onSelectSentence = { id, sentenceId ->
+                        val curation = requireNotNull(state.curation)
+                        state =
+                            state.copy(
+                                curation =
+                                    curation.copy(
+                                        sentenceIds = curation.sentenceIds + (id to sentenceId),
+                                    ),
+                            )
+                    },
+                    onConfirmCuration = {},
+                    onCancel = {},
+                    onRetry = {},
+                    onReset = {},
+                )
+            }
+        }
+        val toggleTag = ReadingMiningTestTags.alternativesToggle(candidateId)
+        val chosenTag = ReadingMiningTestTags.chosenSentence(candidateId)
+
+        // Chosen pinned, disclosure collapsed by default, no alternative rows.
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(chosenTag))
+        composeRule.onNodeWithTag(chosenTag).assert(hasText(first.sentences.first().sentence, substring = true))
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithText("Show 4 alternatives").assertExists()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.sentence(candidateId, "sentence-a1"))
+            .assertDoesNotExist()
+
+        composeRule.onNodeWithTag(toggleTag).performClick()
+
+        // Open: alternatives in source order, chosen excluded.
+        composeRule.onNodeWithText("Hide alternatives").assertExists()
+        alternates.forEach { alternate ->
+            val tag = ReadingMiningTestTags.sentence(candidateId, alternate.sentenceId)
+            composeRule
+                .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertExists()
+        }
+        composeRule
+            .onNodeWithTag(
+                ReadingMiningTestTags.sentence(candidateId, first.sentences.first().sentenceId),
+            ).assertDoesNotExist()
+
+        // Promotion: the tapped alternative owns the pinned slot, the old chosen re-enters.
+        val promotedTag = ReadingMiningTestTags.sentence(candidateId, "sentence-a2")
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(promotedTag))
+        composeRule.onNodeWithTag(promotedTag).performClick()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(chosenTag))
+        composeRule.onNodeWithTag(chosenTag).assert(hasText("Sentence number 2", substring = true))
+        composeRule.onNodeWithTag(promotedTag).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(
+                    ReadingMiningTestTags.sentence(candidateId, first.sentences.first().sentenceId),
+                ),
+            )
+        composeRule
+            .onNodeWithTag(
+                ReadingMiningTestTags.sentence(candidateId, first.sentences.first().sentenceId),
+            ).assertExists()
+    }
+
+    @Test
     fun pendingReadingPageSubmissionKeepsCancelEnabled() {
         val request = request(CurationPage(0, 2, 0, 3))
         setScreen(

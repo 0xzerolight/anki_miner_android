@@ -88,6 +88,16 @@ data class SubtitleCue(
     val text: String,
 )
 
+data class AudioTrackInfo(
+    val audioIndex: Long,
+    val globalIndex: Long,
+    val languageTag: String?,
+    val title: String?,
+    val codec: String?,
+    val channels: Long?,
+    val isDefault: Boolean,
+)
+
 data class TerminalError(
     val code: String,
     val message: String,
@@ -179,6 +189,17 @@ sealed interface BridgeMessage {
         val runId: String?,
         val subtitlePath: String,
         val cues: List<SubtitleCue>,
+    ) : BridgeMessage
+
+    data class AudioTracksRequest(
+        val videoPath: String,
+        val nativeLibraryDir: String,
+    ) : BridgeMessage
+
+    data class AudioTracksResult(
+        val videoPath: String,
+        val autoAudioIndex: Long?,
+        val tracks: List<AudioTrackInfo>,
     ) : BridgeMessage
 
     data class Error(

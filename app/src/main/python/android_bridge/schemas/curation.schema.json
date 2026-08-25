@@ -33,13 +33,16 @@
         "duration": {"type": "number"}
       }
     },
+    "lineExpansionCount": {"type": "integer", "minimum": 1, "maximum": 100},
     "selection": {
       "type": "object",
       "additionalProperties": false,
       "required": ["candidateId"],
       "properties": {
         "candidateId": {"$ref": "#/$defs/candidateId"},
-        "sentenceId": {"$ref": "#/$defs/sentenceId"}
+        "sentenceId": {"$ref": "#/$defs/sentenceId"},
+        "linesBefore": {"$ref": "#/$defs/lineExpansionCount"},
+        "linesAfter": {"$ref": "#/$defs/lineExpansionCount"}
       }
     },
     "candidate": {

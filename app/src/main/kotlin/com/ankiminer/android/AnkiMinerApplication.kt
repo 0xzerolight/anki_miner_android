@@ -83,6 +83,9 @@ import com.ankiminer.android.subtitles.BridgeSubtitleCueLookupService
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.tts.AndroidSentenceAudioSynthesizerFactory
 import com.ankiminer.android.timing.TimingPreviewLoader
+import com.ankiminer.android.tracks.AudioTrackLookupService
+import com.ankiminer.android.tracks.AudioTrackProbeLoader
+import com.ankiminer.android.tracks.BridgeAudioTrackLookupService
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -226,6 +229,15 @@ class AnkiMinerApplication : Application() {
             BridgeSubtitleCueLookupService(pyBridge, resourceExecutor)
         }
 
+    val audioTrackLookupService: AudioTrackLookupService by
+        lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            BridgeAudioTrackLookupService(
+                pyBridge,
+                resourceExecutor,
+                requireNotNull(applicationInfo.nativeLibraryDir),
+            )
+        }
+
     private val resourceControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-resource-control") }
     }
@@ -309,6 +321,16 @@ class AnkiMinerApplication : Application() {
             cueLookup = subtitleCueLookupService,
             io = Dispatchers.IO,
             resourceDispatcher = resourceExecutor.asCoroutineDispatcher(),
+        )
+    }
+    internal val audioTrackProbeLoader: AudioTrackProbeLoader by lazy(
+        LazyThreadSafetyMode.SYNCHRONIZED,
+    ) {
+        AudioTrackProbeLoader(
+            coordinator = runtimeWorkCoordinator,
+            ownerFactory = { cancellation -> SafJobFileOwner(this, cancellation) },
+            lookup = audioTrackLookupService,
+            io = Dispatchers.IO,
         )
     }
     private val readingSourceStaging by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

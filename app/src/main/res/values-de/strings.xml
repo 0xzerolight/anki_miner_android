@@ -39,6 +39,19 @@
     <string name="timing_preview_unavailable">Vorschau für diese Quelle nicht verfügbar</string>
     <string name="timing_preview_tokenizer_required">Installieren Sie vor dem Mining die japanische Tokenizer-Ressource</string>
     <string name="timing_preview_open_error">Die Vorschau des Untertitel-Timings konnte nicht geöffnet werden.</string>
+    <string name="audio_tracks_button">Audiospuren</string>
+    <string name="audio_tracks_title">Audiospur</string>
+    <string name="audio_tracks_none">In dieser Datei wurden keine Audiospuren gefunden.</string>
+    <string name="audio_tracks_single">Diese Datei hat nur eine Audiospur.</string>
+    <string name="audio_tracks_auto_detected">Automatisch erkennen (aktuell: Spur %1$d — %2$s)</string>
+    <string name="audio_tracks_auto_none">Automatisch erkennen (keine japanische Spur gefunden — die erste Spur wird verwendet)</string>
+    <string name="audio_tracks_apply">Anwenden</string>
+    <string name="audio_tracks_close">Schließen</string>
+    <string name="audio_tracks_track_label">Spur %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">Mono</string>
+    <string name="audio_tracks_channels_stereo">Stereo</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">Audiospuren konnten nicht gelesen werden.</string>
     <string name="no_file_selected">Keine Datei ausgewählt</string>
     <string name="choose_file">Auswählen</string>
     <string name="replace_file">Ersetzen</string>
@@ -84,6 +97,10 @@
     <string name="curation_known_pending">Bekannt · ausstehend</string>
     <string name="curation_copy_word">Wort kopieren</string>
     <string name="curation_copy_sentence">Satz kopieren</string>
+    <string name="curation_expand_previous_line">+ Vorherige Zeile</string>
+    <string name="curation_expand_next_line">+ Nächste Zeile</string>
+    <string name="curation_expand_reset">Zeilen zurücksetzen</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · %3$.1f s Clip</string>
     <string name="curation_copied_word">Wort kopiert</string>
     <string name="curation_copied_sentence">Satz kopiert</string>
     <string name="curation_preview_play_description">Video abspielen</string>
@@ -114,6 +131,11 @@
     <string name="curation_bulk_action">Auswählen…</string>
     <string name="curation_tools_hide">Suche und Filter ausblenden</string>
     <string name="curation_tools_show">Suche und Filter anzeigen</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">%1$d Alternative anzeigen</item>
+        <item quantity="other">%1$d Alternativen anzeigen</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Alternativen ausblenden</string>
     <string name="candidate_state_selected">Ausgewählt</string>
     <string name="candidate_state_excluded">Ausgeschlossen</string>
     <string name="candidate_part_of_speech_unknown">Unbekannte Wortart</string>

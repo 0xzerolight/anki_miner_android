@@ -17,8 +17,6 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 | Kotlin and Android runtime dependencies | `third_party/s2-runtime-dependencies/manifest.json` and `NOTICE.md` | Complete locked runtime inventory, predominantly Apache-2.0, with Jackson's bundled notices recorded separately |
 | Unicode data | `tools/anki-contract/unicode/15.1.0/` | Unicode data license in that directory |
 
-`third_party/ankiconnect-fallback/` records a separately downloaded GPL-3.0-only development probe. The fallback APK is not embedded or distributed with Anki Miner.
-
 ## Downloaded language resources
 
 UniDic Lite, the Jitendex and JMdict Yomitan dictionaries, the JPDB v2.2 kana frequency list and the Kanjium pitch accent data are downloaded as data after installation. Their immutable identities and attributions are stored in `app/src/main/python/android_bridge/resource_catalog_v1.json` and presented by the app. Jitendex includes data under CC BY-SA and source-specific terms, including EDRDG/JMdict attribution. Download-on-demand does not remove the need to preserve required notices in the product and store listing.

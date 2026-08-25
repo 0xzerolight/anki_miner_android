@@ -39,6 +39,19 @@
     <string name="timing_preview_unavailable">此來源無法預覽</string>
     <string name="timing_preview_tokenizer_required">採集前請先安裝日文斷詞器資源</string>
     <string name="timing_preview_open_error">無法開啟字幕時間預覽。</string>
+    <string name="audio_tracks_button">音軌</string>
+    <string name="audio_tracks_title">音軌</string>
+    <string name="audio_tracks_none">此檔案中找不到音軌。</string>
+    <string name="audio_tracks_single">此檔案只有一條音軌。</string>
+    <string name="audio_tracks_auto_detected">自動偵測（目前：音軌 %1$d — %2$s）</string>
+    <string name="audio_tracks_auto_none">自動偵測（找不到日語音軌 — 將使用第一條音軌）</string>
+    <string name="audio_tracks_apply">套用</string>
+    <string name="audio_tracks_close">關閉</string>
+    <string name="audio_tracks_track_label">音軌 %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">單聲道</string>
+    <string name="audio_tracks_channels_stereo">立體聲</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">無法讀取音軌。</string>
     <string name="no_file_selected">未選擇檔案</string>
     <string name="choose_file">選擇</string>
     <string name="replace_file">取代</string>
@@ -84,6 +97,10 @@
     <string name="curation_known_pending">已知 · 待處理</string>
     <string name="curation_copy_word">複製單字</string>
     <string name="curation_copy_sentence">複製句子</string>
+    <string name="curation_expand_previous_line">+ 上一行</string>
+    <string name="curation_expand_next_line">+ 下一行</string>
+    <string name="curation_expand_reset">重設行</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f 秒 · 片段 %3$.1f 秒</string>
     <string name="curation_copied_word">已複製單字</string>
     <string name="curation_copied_sentence">已複製句子</string>
     <string name="curation_preview_play_description">播放影片</string>
@@ -114,6 +131,10 @@
     <string name="curation_bulk_action">選取…</string>
     <string name="curation_tools_hide">隱藏搜尋和篩選</string>
     <string name="curation_tools_show">顯示搜尋和篩選</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">顯示 %1$d 個備選例句</item>
+    </plurals>
+    <string name="curation_alternatives_hide">隱藏備選例句</string>
     <string name="candidate_state_selected">已選取</string>
     <string name="candidate_state_excluded">已排除</string>
     <string name="candidate_part_of_speech_unknown">未知詞性</string>

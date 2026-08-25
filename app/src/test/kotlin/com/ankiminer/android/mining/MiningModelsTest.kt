@@ -10,6 +10,62 @@ import org.junit.Test
 
 class MiningModelsTest {
     @Test
+    fun curationLineExpansionRejectsZeroZeroAndNegatives() {
+        assertThrows(IllegalArgumentException::class.java) { CurationLineExpansion(0, 0) }
+        assertThrows(IllegalArgumentException::class.java) { CurationLineExpansion(-1, 1) }
+        assertThrows(IllegalArgumentException::class.java) { CurationLineExpansion(1, -1) }
+        assertEquals(2, CurationLineExpansion(2, 1).linesBefore)
+        assertEquals(1, CurationLineExpansion(2, 1).linesAfter)
+    }
+
+    @Test
+    fun curationSelectionDefaultsToZeroLinesAndAcceptsLinesWithoutSentence() {
+        val plain = CurationSelection("candidate-1", null)
+        assertEquals(0, plain.linesBefore)
+        assertEquals(0, plain.linesAfter)
+
+        val expanded = CurationSelection("candidate-1", null, linesBefore = 1, linesAfter = 2)
+        assertEquals(1, expanded.linesBefore)
+        assertEquals(2, expanded.linesAfter)
+
+        assertThrows(IllegalArgumentException::class.java) {
+            CurationSelection("candidate-1", null, linesBefore = -1)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            CurationSelection("candidate-1", null, linesAfter = -1)
+        }
+    }
+
+    @Test
+    fun curationSessionStateCarriesLineExpansions() {
+        val state =
+            CurationSessionState(
+                runId = "run-1",
+                requestId = "request-1",
+                pageIndex = null,
+                selectedCandidateIds = setOf("candidate-1"),
+                sentenceIds = emptyMap(),
+                focusedCandidateId = null,
+                previousPageSelectedCount = 0,
+                lineExpansions = mapOf("candidate-1" to CurationLineExpansion(1, 0)),
+            )
+
+        assertEquals(CurationLineExpansion(1, 0), state.lineExpansions["candidate-1"])
+        assertEquals(
+            emptyMap<String, CurationLineExpansion>(),
+            CurationSessionState(
+                runId = "run-1",
+                requestId = "request-1",
+                pageIndex = null,
+                selectedCandidateIds = emptySet(),
+                sentenceIds = emptyMap(),
+                focusedCandidateId = null,
+                previousPageSelectedCount = 0,
+            ).lineExpansions,
+        )
+    }
+
+    @Test
     fun processingResultRetainsEveryDesktopFieldWithoutNarrowingCounts() {
         val result =
             ProcessingResult(

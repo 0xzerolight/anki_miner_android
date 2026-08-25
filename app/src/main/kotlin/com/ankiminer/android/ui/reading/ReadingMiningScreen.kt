@@ -55,6 +55,7 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
@@ -62,6 +63,7 @@ import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationFilter
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
+import com.ankiminer.android.ui.mining.curationSentenceLayout
 import com.ankiminer.android.ui.mining.CurationSort
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
@@ -140,6 +142,10 @@ fun ReadingMiningScreen(
         }
     var resultDetailsExpanded by
         rememberSaveable(state.scrollTransitionKey()) {
+            mutableStateOf(false)
+        }
+    var alternativesOpen by
+        rememberSaveable(curation?.requestId, curation?.focusedCandidateId) {
             mutableStateOf(false)
         }
     val filter =
@@ -420,6 +426,8 @@ fun ReadingMiningScreen(
                                 includeWordTemplate = includeWordTemplate,
                                 excludeWordTemplate = excludeWordTemplate,
                                 expandedCandidateId = expandedCandidateId,
+                                alternativesOpen = alternativesOpen,
+                                onToggleAlternatives = { alternativesOpen = !alternativesOpen },
                                 onFocusCandidate = onFocusCandidate,
                                 onSetCandidateSelected = onSetCandidateSelected,
                                 onMarkCandidateKnown = onMarkCandidateKnown,
@@ -795,6 +803,8 @@ private fun LazyListScope.curationItems(
     includeWordTemplate: String,
     excludeWordTemplate: String,
     expandedCandidateId: String?,
+    alternativesOpen: Boolean,
+    onToggleAlternatives: () -> Unit,
     onFocusCandidate: (String?) -> Unit,
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
@@ -892,36 +902,114 @@ private fun LazyListScope.curationItems(
                     )
                 }
             }
-            candidate.sentences.forEachIndexed { index, sentence ->
-                val sentenceTestTag =
-                    ReadingMiningTestTags.sentence(
-                        candidate.candidateId,
-                        sentence.sentenceId,
-                    )
-                val onClick = {
-                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
+            val layout =
+                curationSentenceLayout(
+                    candidate = candidate,
+                    selectedSentenceId = curation.sentenceIds[candidate.candidateId],
+                )
+            if (!layout.disclose) {
+                candidate.sentences.forEachIndexed { index, sentence ->
+                    val sentenceTestTag =
+                        ReadingMiningTestTags.sentence(
+                            candidate.candidateId,
+                            sentence.sentenceId,
+                        )
+                    val onClick = {
+                        onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                    }
+                    item(
+                        key = "reading_sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                        contentType = "sentence",
+                    ) {
+                        CurationSentenceChoice(
+                            candidate = candidate,
+                            sentence = sentence,
+                            containerColor =
+                                curationRowContainerColor(selected, animateSelection),
+                            selected =
+                                sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
+                            enabled = enabled,
+                            isLast = index == candidate.sentences.lastIndex,
+                            testTag = sentenceTestTag,
+                            onClick = onClick,
+                            modifier =
+                                Modifier.padding(
+                                    bottom =
+                                        curationGroupGap(last = index == candidate.sentences.lastIndex),
+                                ),
+                        )
+                    }
                 }
+            } else {
                 item(
-                    key = "reading_sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                    key = "reading_chosen:${candidate.candidateId}",
                     contentType = "sentence",
                 ) {
                     CurationSentenceChoice(
                         candidate = candidate,
-                        sentence = sentence,
+                        sentence = layout.chosen,
                         containerColor =
                             curationRowContainerColor(selected, animateSelection),
-                        selected =
-                            sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
+                        selected = true,
                         enabled = enabled,
-                        isLast = index == candidate.sentences.lastIndex,
-                        testTag = sentenceTestTag,
-                        onClick = onClick,
+                        isLast = false,
+                        testTag = ReadingMiningTestTags.chosenSentence(candidate.candidateId),
+                        onClick = {
+                            onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
+                        },
+                    )
+                }
+                item(
+                    key = "reading_alts:${candidate.candidateId}",
+                    contentType = "alternatives_toggle",
+                ) {
+                    CurationAlternativesToggle(
+                        alternativeCount = layout.alternatives.size,
+                        expanded = alternativesOpen,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
+                        enabled = enabled,
+                        isLast = !alternativesOpen,
+                        testTag = ReadingMiningTestTags.alternativesToggle(candidate.candidateId),
+                        onToggle = onToggleAlternatives,
                         modifier =
                             Modifier.padding(
-                                bottom =
-                                    curationGroupGap(last = index == candidate.sentences.lastIndex),
+                                bottom = curationGroupGap(last = !alternativesOpen),
                             ),
                     )
+                }
+                if (alternativesOpen) {
+                    layout.alternatives.forEachIndexed { index, sentence ->
+                        item(
+                            key = "reading_sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                            contentType = "sentence",
+                        ) {
+                            CurationSentenceChoice(
+                                candidate = candidate,
+                                sentence = sentence,
+                                containerColor =
+                                    curationRowContainerColor(selected, animateSelection),
+                                selected = false,
+                                enabled = enabled,
+                                isLast = index == layout.alternatives.lastIndex,
+                                testTag =
+                                    ReadingMiningTestTags.sentence(
+                                        candidate.candidateId,
+                                        sentence.sentenceId,
+                                    ),
+                                onClick = {
+                                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                                },
+                                modifier =
+                                    Modifier.padding(
+                                        bottom =
+                                            curationGroupGap(
+                                                last = index == layout.alternatives.lastIndex,
+                                            ),
+                                    ),
+                            )
+                        }
+                    }
                 }
             }
         }

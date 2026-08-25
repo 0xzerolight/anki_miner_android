@@ -19,6 +19,7 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
     override val failure: StateFlow<PreviewFailure?> = mutableFailure.asStateFlow()
 
     val boundUris = mutableListOf<Uri>()
+    val boundOverrides = mutableListOf<Long?>()
     val seekToCalls = mutableListOf<Double>()
     val seekAndPlayCalls = mutableListOf<Double>()
     val events = mutableListOf<String>()
@@ -40,10 +41,11 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
 
     override fun tick() = Unit
 
-    override fun bind(uri: Uri) {
+    override fun bind(uri: Uri, audioTrackOverride: Long?) {
         if (boundUri == uri) return
         boundUri = uri
         boundUris += uri
+        boundOverrides += audioTrackOverride
         events += "bind:$uri"
         mutableFailure.value = failureOnBind
     }

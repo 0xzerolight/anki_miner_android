@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.mining
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSessionState
@@ -36,6 +37,7 @@ internal data class SharedCurationDraft(
     val sentenceIds: Map<String, String>,
     val focusedCandidateId: String?,
     val knownCandidateIds: Set<String> = emptySet(),
+    val lineExpansions: Map<String, CurationLineExpansion> = emptyMap(),
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size
@@ -154,7 +156,47 @@ internal data class SharedCurationDraft(
                 ?: return null
         if (candidate.sentences.none { it.sentenceId == sentenceId }) return null
         val current = forRequest(request)
-        return current.copy(sentenceIds = current.sentenceIds + (candidateId to sentenceId))
+        // A different base sentence invalidates the merged window; the same pick keeps it.
+        val expansions =
+            if (current.sentenceIds[candidateId] == sentenceId) {
+                current.lineExpansions
+            } else {
+                current.lineExpansions - candidateId
+            }
+        return current.copy(
+            sentenceIds = current.sentenceIds + (candidateId to sentenceId),
+            lineExpansions = expansions,
+        )
+    }
+
+    /** Widens the candidate's window by the deltas. Returns null for an unknown candidate. */
+    fun expandSentence(
+        request: CurationRequest,
+        candidateId: String,
+        deltaBefore: Int,
+        deltaAfter: Int,
+    ): SharedCurationDraft? {
+        if (request.candidates.none { it.candidateId == candidateId }) return null
+        val current = forRequest(request)
+        val existing = current.lineExpansions[candidateId]
+        val before = (existing?.linesBefore ?: 0) + deltaBefore
+        val after = (existing?.linesAfter ?: 0) + deltaAfter
+        val expansions =
+            if (before == 0 && after == 0) {
+                current.lineExpansions - candidateId
+            } else {
+                current.lineExpansions + (candidateId to CurationLineExpansion(before, after))
+            }
+        return current.copy(lineExpansions = expansions)
+    }
+
+    /** Drops the candidate back to its unexpanded sentence. */
+    fun resetExpansion(
+        request: CurationRequest,
+        candidateId: String,
+    ): SharedCurationDraft {
+        val current = forRequest(request)
+        return current.copy(lineExpansions = current.lineExpansions - candidateId)
     }
 
     fun selections(request: CurationRequest): List<CurationSelection> {
@@ -166,9 +208,12 @@ internal data class SharedCurationDraft(
             ) {
                 return@mapNotNull null
             }
+            val expansion = current.lineExpansions[candidate.candidateId]
             CurationSelection(
                 candidateId = candidate.candidateId,
                 sentenceId = current.sentenceIds.getValue(candidate.candidateId),
+                linesBefore = expansion?.linesBefore ?: 0,
+                linesAfter = expansion?.linesAfter ?: 0,
             )
         }
     }
@@ -212,7 +257,8 @@ internal fun CurationSessionState.draftFor(
         sentenceIds.any { (candidateId, sentenceId) ->
             sentenceId !in validSentenceIds.getValue(candidateId)
         } ||
-        (focusedCandidateId != null && focusedCandidateId !in candidateIds)
+        (focusedCandidateId != null && focusedCandidateId !in candidateIds) ||
+        !candidateIds.containsAll(lineExpansions.keys)
     ) {
         return null
     }
@@ -224,6 +270,7 @@ internal fun CurationSessionState.draftFor(
         sentenceIds = sentenceIds.toMap(),
         focusedCandidateId = focusedCandidateId,
         knownCandidateIds = knownCandidateIds.toSet(),
+        lineExpansions = lineExpansions.toMap(),
     )
 }
 
@@ -239,6 +286,7 @@ internal fun SharedCurationDraft.toCurationSessionState(
         focusedCandidateId = focusedCandidateId,
         previousPageSelectedCount = previousPageSelectedCount,
         knownCandidateIds = knownCandidateIds.toSet(),
+        lineExpansions = lineExpansions.toMap(),
     )
 
 internal enum class CurationFilter {

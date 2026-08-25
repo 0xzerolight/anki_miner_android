@@ -35,11 +35,13 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.data.anki.UndoneRunReceipt
 import com.ankiminer.android.dictionary.CurationDefinition
+import com.ankiminer.android.engine.AudioTrackInfo
 import com.ankiminer.android.engine.DefinitionEntry
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
@@ -51,6 +53,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.CurationPlayerTestTags
+import com.ankiminer.android.ui.mining.ExpansionPreview
 import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
@@ -163,6 +166,74 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun audioTracksButtonVisibleButDisabledWithoutVideo() {
+        setScreen(state = VideoMiningUiState())
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
+    }
+
+    @Test
+    fun audioTrackProbePendingDisablesTracksButtonAndStart() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    audioTrackProbePending = true,
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
+        composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun audioTrackPickerStateRendersDialogWithPickerTag() {
+        val tracks =
+            listOf(
+                audioTrack(audioIndex = 0, languageTag = "jpn"),
+                audioTrack(audioIndex = 1, languageTag = "eng"),
+            )
+        setScreen(
+            state = VideoMiningUiState(),
+            audioTrackPicker =
+                AudioTrackPickerState(tracks = tracks, autoAudioIndex = 0, selectedAudioIndex = null),
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACK_PICKER).assertIsDisplayed()
+    }
+
+    @Test
+    fun audioTrackPickerErrorCardDismissFiresCallback() {
+        var dismissed = false
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    audioTrackPickerError = AudioTrackPickerError.PROBE,
+                ),
+            onDismissAudioTrackPickerError = { dismissed = true },
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(MINING_FAILURE_TEST_TAG))
+        composeRule.onNodeWithText("Audio tracks could not be read.").assertIsDisplayed()
+        composeRule.onNodeWithText("Dismiss error").performClick()
+
+        composeRule.runOnIdle { assertTrue(dismissed) }
+    }
+
+    @Test
     fun resolvingVideoShowsSafeValidatedFilename() {
         setScreen(
             state =
@@ -252,6 +323,135 @@ class VideoMiningScreenTest {
             )
             assertTrue(confirmed)
         }
+    }
+
+    @Test
+    fun expansionControlsRenderAndFireForFocusedCandidateWithPlayer() {
+        val request = request()
+        val pressed = mutableListOf<String>()
+        val state =
+            VideoMiningUiState(
+                runState = MiningRunState.Curating(request),
+                curation =
+                    curationState(request).copy(
+                        player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                        expansionPreview =
+                            ExpansionPreview(
+                                sentence = "魚を食べる。",
+                                startTime = 0.0,
+                                endTime = 1.0,
+                                duration = 1.0,
+                                canExpandPrev = true,
+                                canExpandNext = true,
+                            ),
+                    ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onExpandSentencePrev = { pressed += "prev:$it" },
+                    onExpandSentenceNext = { pressed += "next:$it" },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandPrev("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandPrev("candidate-1")).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandNext("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandNext("candidate-1")).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(listOf("prev:candidate-1", "next:candidate-1"), pressed)
+        }
+    }
+
+    @Test
+    fun expansionControlsAbsentWithoutPlayer() {
+        val request = request()
+        val state =
+            VideoMiningUiState(
+                runState = MiningRunState.Curating(request),
+                curation = curationState(request),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(state = state)
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateKnown("candidate-1")))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateExpandPrev("candidate-1"))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun expansionResetGatingAndPreviewText() {
+        val request = request()
+        val preview =
+            ExpansionPreview(
+                sentence = "前の文 魚を食べる。",
+                startTime = 0.0,
+                endTime = 2.0,
+                duration = 2.0,
+                canExpandPrev = true,
+                canExpandNext = true,
+            )
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                            lineExpansions = mapOf("candidate-1" to CurationLineExpansion(1, 0)),
+                            expansionPreview = preview,
+                        ),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(state = state)
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.expansionPreview("candidate-1")))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("前の文 魚を食べる。").assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandReset("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertIsEnabled()
+
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    curation =
+                        requireNotNull(state.curation).copy(
+                            lineExpansions = emptyMap(),
+                            expansionPreview = preview.copy(sentence = "魚を食べる。"),
+                        ),
+                )
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandReset("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertIsNotEnabled()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
+            .assertDoesNotExist()
     }
 
     @Test
@@ -664,8 +864,13 @@ class VideoMiningScreenTest {
             },
         )
         val tailTag = VideoMiningTestTags.sentence(candidateId, sentences.last().sentenceId)
+        val toggleTag = VideoMiningTestTags.alternativesToggle(candidateId)
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithTag(toggleTag).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(tailTag))
@@ -675,6 +880,160 @@ class VideoMiningScreenTest {
         composeRule.runOnIdle {
             assertEquals(candidateId to sentences.last().sentenceId, selection)
         }
+    }
+
+    @Test
+    fun exactlyThreeAlternativesRenderInlineWithoutDisclosure() {
+        val candidateId = "candidate-inline"
+        val sentences = (0 until 4).map { sentence("sentence-$it", "Sentence number $it") }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate(candidateId, "食べる", sentences)),
+            )
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidateId),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.alternativesToggle(candidateId))
+            .assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.chosenSentence(candidateId))
+            .assertDoesNotExist()
+        sentences.forEach { sentence ->
+            val tag = VideoMiningTestTags.sentence(candidateId, sentence.sentenceId)
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertExists()
+        }
+    }
+
+    @Test
+    fun fourAlternativesFoldBehindACollapsedDisclosureWithTheChosenSentencePinnedFirst() {
+        val candidateId = "candidate-folded"
+        val sentences = (0 until 5).map { sentence("sentence-$it", "Sentence number $it") }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate(candidateId, "食べる", sentences)),
+            )
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(
+                            request,
+                            sentenceIds = mapOf(candidateId to "sentence-2"),
+                            focusedCandidateId = candidateId,
+                        ),
+                ),
+        )
+        val toggleTag = VideoMiningTestTags.alternativesToggle(candidateId)
+
+        // The mined sentence is never hidden: it is pinned right below the actions.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.chosenSentence(candidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.chosenSentence(candidateId))
+            .assert(hasText("Sentence number 2", substring = true))
+        // Collapsed by default: no alternative rows, only the disclosure.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithText("Show 4 alternatives").assertExists()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(candidateId, "sentence-0"))
+            .assertDoesNotExist()
+
+        composeRule.onNodeWithTag(toggleTag).performClick()
+
+        // Open: alternatives in source order, chosen excluded.
+        composeRule.onNodeWithText("Hide alternatives").assertExists()
+        listOf("sentence-0", "sentence-1", "sentence-3", "sentence-4").forEach { id ->
+            val tag = VideoMiningTestTags.sentence(candidateId, id)
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(tag))
+            composeRule.onNodeWithTag(tag).assertExists()
+        }
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(candidateId, "sentence-2"))
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun tappingAnAlternativePromotesItToThePinnedChosenSlot() {
+        val candidateId = "candidate-promote"
+        val sentences = (0 until 5).map { sentence("sentence-$it", "Sentence number $it") }
+        val request =
+            CurationRequest(
+                runId = "run",
+                requestId = "request",
+                candidates = listOf(candidate(candidateId, "食べる", sentences)),
+            )
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidateId),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onSelectSentence = { id, sentenceId ->
+                        val curation = requireNotNull(state.curation)
+                        state =
+                            state.copy(
+                                curation =
+                                    curation.copy(
+                                        sentenceIds = curation.sentenceIds + (id to sentenceId),
+                                    ),
+                            )
+                    },
+                )
+            }
+        }
+        val toggleTag = VideoMiningTestTags.alternativesToggle(candidateId)
+        val promotedTag = VideoMiningTestTags.sentence(candidateId, "sentence-3")
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(toggleTag))
+        composeRule.onNodeWithTag(toggleTag).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(promotedTag))
+        composeRule.onNodeWithTag(promotedTag).performClick()
+
+        // The tapped sentence owns the pinned slot; the disclosure stays open (neither requestId
+        // nor focusedCandidateId changed); the previous chosen re-enters the alternatives.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.chosenSentence(candidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.chosenSentence(candidateId))
+            .assert(hasText("Sentence number 3", substring = true))
+        composeRule.onNodeWithTag(promotedTag).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(
+                hasTestTag(VideoMiningTestTags.sentence(candidateId, "sentence-0")),
+            )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.sentence(candidateId, "sentence-0"))
+            .assertExists()
     }
 
     @Test
@@ -1580,6 +1939,12 @@ class VideoMiningScreenTest {
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
         onTestTiming: () -> Unit = {},
+        audioTrackPicker: AudioTrackPickerState? = null,
+        onAudioTracks: () -> Unit = {},
+        onSelectAudioTrack: (Long?) -> Unit = {},
+        onApplyAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPickerError: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
@@ -1595,6 +1960,12 @@ class VideoMiningScreenTest {
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
                     onTestTiming = onTestTiming,
+                    audioTrackPicker = audioTrackPicker,
+                    onAudioTracks = onAudioTracks,
+                    onSelectAudioTrack = onSelectAudioTrack,
+                    onApplyAudioTrackPicker = onApplyAudioTrackPicker,
+                    onDismissAudioTrackPicker = onDismissAudioTrackPicker,
+                    onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
                     onMarkCandidateKnown = onMarkCandidateKnown,
                     onSetSelectionForVisible = onSetSelectionForVisible,
                     onSelectSentence = onSelectSentence,
@@ -1614,9 +1985,18 @@ class VideoMiningScreenTest {
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
         onTestTiming: () -> Unit = {},
+        audioTrackPicker: AudioTrackPickerState? = null,
+        onAudioTracks: () -> Unit = {},
+        onSelectAudioTrack: (Long?) -> Unit = {},
+        onApplyAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPicker: () -> Unit = {},
+        onDismissAudioTrackPickerError: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
         onSetSelectionForVisible: (List<String>, Boolean) -> Unit = { _, _ -> },
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
+        onExpandSentencePrev: (String) -> Unit = {},
+        onExpandSentenceNext: (String) -> Unit = {},
+        onResetSentenceExpansion: (String) -> Unit = {},
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
@@ -1639,6 +2019,12 @@ class VideoMiningScreenTest {
             onDismissCommandError = {},
             onStart = onStart,
             onTestTiming = onTestTiming,
+            audioTrackPicker = audioTrackPicker,
+            onAudioTracks = onAudioTracks,
+            onSelectAudioTrack = onSelectAudioTrack,
+            onApplyAudioTrackPicker = onApplyAudioTrackPicker,
+            onDismissAudioTrackPicker = onDismissAudioTrackPicker,
+            onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
             onFocusCandidate = onFocusCandidate,
             onSetCandidateSelected = onSetCandidateSelected,
             onMarkCandidateKnown = onMarkCandidateKnown,
@@ -1646,6 +2032,9 @@ class VideoMiningScreenTest {
             onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
             onSelectSentence = onSelectSentence,
+            onExpandSentencePrev = onExpandSentencePrev,
+            onExpandSentenceNext = onExpandSentenceNext,
+            onResetSentenceExpansion = onResetSentenceExpansion,
             onConfirmCuration = onConfirmCuration,
             onCancel = onCancel,
             onRetry = onRetry,
@@ -1754,6 +2143,20 @@ class VideoMiningScreenTest {
             displayName = displayName,
             mimeType = null,
             sizeBytes = null,
+        )
+
+    private fun audioTrack(
+        audioIndex: Long,
+        languageTag: String?,
+    ): AudioTrackInfo =
+        AudioTrackInfo(
+            audioIndex = audioIndex,
+            globalIndex = audioIndex,
+            languageTag = languageTag,
+            title = null,
+            codec = "aac",
+            channels = 2,
+            isDefault = false,
         )
 
     private fun result(): ProcessingResult =

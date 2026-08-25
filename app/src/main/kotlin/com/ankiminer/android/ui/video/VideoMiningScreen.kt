@@ -56,13 +56,16 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.ExoCurationPreviewPlayer
+import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
+import com.ankiminer.android.ui.mining.CurationExpansionControls
 import com.ankiminer.android.ui.mining.CurationFilter
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
+import com.ankiminer.android.ui.mining.curationSentenceLayout
 import com.ankiminer.android.ui.mining.CurationSort
 import com.ankiminer.android.ui.mining.CurationVideoPreview
 import com.ankiminer.android.ui.mining.DocumentReadKind
@@ -116,6 +119,9 @@ fun VideoMiningScreen(
     onSetSelectionForPage: (Boolean) -> Unit,
     onReconcileFocus: (List<String>, List<String>) -> Unit,
     onSelectSentence: (String, String) -> Unit,
+    onExpandSentencePrev: (String) -> Unit = {},
+    onExpandSentenceNext: (String) -> Unit = {},
+    onResetSentenceExpansion: (String) -> Unit = {},
     onConfirmCuration: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -125,6 +131,12 @@ fun VideoMiningScreen(
     onDismissUndoConfirmation: () -> Unit = {},
     onSubtitleOffsetDraftChange: (String) -> Unit = {},
     onTestTiming: () -> Unit = {},
+    audioTrackPicker: AudioTrackPickerState? = null,
+    onAudioTracks: () -> Unit = {},
+    onSelectAudioTrack: (Long?) -> Unit = {},
+    onApplyAudioTrackPicker: () -> Unit = {},
+    onDismissAudioTrackPicker: () -> Unit = {},
+    onDismissAudioTrackPickerError: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
     labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
     playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
@@ -148,6 +160,10 @@ fun VideoMiningScreen(
         }
     var resultDetailsExpanded by
         rememberSaveable(state.scrollTransitionKey()) {
+            mutableStateOf(false)
+        }
+    var alternativesOpen by
+        rememberSaveable(curation?.requestId, curation?.focusedCandidateId) {
             mutableStateOf(false)
         }
     val filter =
@@ -404,6 +420,8 @@ fun VideoMiningScreen(
                                 onDismissTimingPreviewError = onDismissTimingPreviewError,
                                 onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
                                 onTestTiming = onTestTiming,
+                                onAudioTracks = onAudioTracks,
+                                onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
                                 onStart = onStart,
                                 onReturnToActiveRun = onReturnToActiveRun,
                             )
@@ -429,10 +447,15 @@ fun VideoMiningScreen(
                                 includeWordTemplate = includeWordTemplate,
                                 excludeWordTemplate = excludeWordTemplate,
                                 expandedCandidateId = expandedCandidateId,
+                                alternativesOpen = alternativesOpen,
+                                onToggleAlternatives = { alternativesOpen = !alternativesOpen },
                                 onFocusCandidate = onFocusCandidate,
                                 onSetCandidateSelected = onSetCandidateSelected,
                                 onMarkCandidateKnown = onMarkCandidateKnown,
                                 onSelectSentence = onSelectSentence,
+                                onExpandSentencePrev = onExpandSentencePrev,
+                                onExpandSentenceNext = onExpandSentenceNext,
+                                onResetSentenceExpansion = onResetSentenceExpansion,
                                 copy = copy,
                                 wordLabel = wordLabel,
                                 sentenceLabel = sentenceLabel,
@@ -542,6 +565,10 @@ fun VideoMiningScreen(
             }
         }
     }
+
+    audioTrackPicker?.let {
+        AudioTrackPickerDialog(it, onSelectAudioTrack, onApplyAudioTrackPicker, onDismissAudioTrackPicker)
+    }
 }
 
 @Composable
@@ -582,6 +609,7 @@ private fun CurationPlayerSlot(
         collapsed = collapsed,
         onToggleCollapsed = { collapsed = !collapsed },
         audioOnly = playerState.audioOnly,
+        audioTrackOverride = playerState.audioTrackOverride,
         notice =
             if (playerState.cuesUnavailable) {
                 { CuesUnavailableNotice() }
@@ -591,10 +619,12 @@ private fun CurationPlayerSlot(
         modifier = modifier,
     )
 
-    LaunchedEffect(curation.focusedCandidateId, selectedSentenceId) {
-        val sentence = selectedSentence ?: return@LaunchedEffect
+    // Line expansion widens the window: "+ Previous line"/reset move the start and snap the
+    // preview there; "+ Next line" leaves the start (and so the key) unchanged - no reseek.
+    val seekTarget = curation.expansionPreview?.startTime ?: selectedSentence?.startTime
+    LaunchedEffect(curation.focusedCandidateId, selectedSentenceId, seekTarget) {
         delay(CURATION_SEEK_DEBOUNCE_MS)
-        player.seekTo(sentence.startTime)
+        player.seekTo(seekTarget ?: return@LaunchedEffect)
     }
 }
 
@@ -628,6 +658,8 @@ private fun LazyListScope.setupItems(
     onDismissTimingPreviewError: () -> Unit,
     onSubtitleOffsetDraftChange: (String) -> Unit,
     onTestTiming: () -> Unit,
+    onAudioTracks: () -> Unit,
+    onDismissAudioTrackPickerError: () -> Unit,
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
@@ -742,6 +774,26 @@ private fun LazyListScope.setupItems(
             ) {
                 Text(stringResource(R.string.timing_preview_test_action))
             }
+            SecondaryActionButton(
+                onClick = onAudioTracks,
+                enabled = state.canPickAudioTracks,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(VideoMiningTestTags.AUDIO_TRACKS),
+            ) {
+                if (state.audioTrackProbePending) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Text(stringResource(R.string.audio_tracks_button))
+                    }
+                } else {
+                    Text(stringResource(R.string.audio_tracks_button))
+                }
+            }
             if (state.audioFieldUnmapped) {
                 MiningFailureCard(
                     message = stringResource(R.string.audio_field_unmapped_warning),
@@ -784,6 +836,16 @@ private fun LazyListScope.setupItems(
                         MiningFailureAction(
                             label = stringResource(R.string.dismiss_error),
                             onClick = onDismissTimingPreviewError,
+                        ),
+                )
+            }
+            state.audioTrackPickerError?.let { error ->
+                MiningFailureCard(
+                    message = stringResource(error.messageResource()),
+                    primaryAction =
+                        MiningFailureAction(
+                            label = stringResource(R.string.dismiss_error),
+                            onClick = onDismissAudioTrackPickerError,
                         ),
                 )
             }
@@ -841,10 +903,15 @@ private fun LazyListScope.curationItems(
     includeWordTemplate: String,
     excludeWordTemplate: String,
     expandedCandidateId: String?,
+    alternativesOpen: Boolean,
+    onToggleAlternatives: () -> Unit,
     onFocusCandidate: (String?) -> Unit,
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
     onSelectSentence: (String, String) -> Unit,
+    onExpandSentencePrev: (String) -> Unit,
+    onExpandSentenceNext: (String) -> Unit,
+    onResetSentenceExpansion: (String) -> Unit,
     copy: (String, String, String?) -> Unit,
     wordLabel: String,
     sentenceLabel: String,
@@ -920,6 +987,29 @@ private fun LazyListScope.curationItems(
                     },
                 )
             }
+            if (curation.player != null) {
+                item(
+                    key = "expansion:${candidate.candidateId}",
+                    contentType = "expansion",
+                ) {
+                    val expansion = curation.lineExpansions[candidate.candidateId]
+                    CurationExpansionControls(
+                        containerColor = curationRowContainerColor(selected, animateSelection),
+                        linesBefore = expansion?.linesBefore ?: 0,
+                        linesAfter = expansion?.linesAfter ?: 0,
+                        preview = curation.expansionPreview,
+                        surface = candidate.surface,
+                        enabled = enabled,
+                        expandPrevTestTag = VideoMiningTestTags.candidateExpandPrev(candidate.candidateId),
+                        expandNextTestTag = VideoMiningTestTags.candidateExpandNext(candidate.candidateId),
+                        resetTestTag = VideoMiningTestTags.candidateExpandReset(candidate.candidateId),
+                        previewTestTag = VideoMiningTestTags.expansionPreview(candidate.candidateId),
+                        onExpandPrev = { onExpandSentencePrev(candidate.candidateId) },
+                        onExpandNext = { onExpandSentenceNext(candidate.candidateId) },
+                        onReset = { onResetSentenceExpansion(candidate.candidateId) },
+                    )
+                }
+            }
             curation.definition?.let { definition ->
                 item(
                     key = "definition:${candidate.candidateId}",
@@ -934,36 +1024,114 @@ private fun LazyListScope.curationItems(
                     )
                 }
             }
-            candidate.sentences.forEachIndexed { index, sentence ->
-                val sentenceTestTag =
-                    VideoMiningTestTags.sentence(
-                        candidate.candidateId,
-                        sentence.sentenceId,
-                    )
-                val onClick = {
-                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
+            val layout =
+                curationSentenceLayout(
+                    candidate = candidate,
+                    selectedSentenceId = curation.sentenceIds[candidate.candidateId],
+                )
+            if (!layout.disclose) {
+                candidate.sentences.forEachIndexed { index, sentence ->
+                    val sentenceTestTag =
+                        VideoMiningTestTags.sentence(
+                            candidate.candidateId,
+                            sentence.sentenceId,
+                        )
+                    val onClick = {
+                        onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                    }
+                    item(
+                        key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                        contentType = "sentence",
+                    ) {
+                        CurationSentenceChoice(
+                            candidate = candidate,
+                            sentence = sentence,
+                            containerColor =
+                                curationRowContainerColor(selected, animateSelection),
+                            selected =
+                                sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
+                            enabled = enabled,
+                            isLast = index == candidate.sentences.lastIndex,
+                            testTag = sentenceTestTag,
+                            onClick = onClick,
+                            modifier =
+                                Modifier.padding(
+                                    bottom =
+                                        curationGroupGap(last = index == candidate.sentences.lastIndex),
+                                ),
+                        )
+                    }
                 }
+            } else {
                 item(
-                    key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                    key = "chosen:${candidate.candidateId}",
                     contentType = "sentence",
                 ) {
                     CurationSentenceChoice(
                         candidate = candidate,
-                        sentence = sentence,
+                        sentence = layout.chosen,
                         containerColor =
                             curationRowContainerColor(selected, animateSelection),
-                        selected =
-                            sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
+                        selected = true,
                         enabled = enabled,
-                        isLast = index == candidate.sentences.lastIndex,
-                        testTag = sentenceTestTag,
-                        onClick = onClick,
+                        isLast = false,
+                        testTag = VideoMiningTestTags.chosenSentence(candidate.candidateId),
+                        onClick = {
+                            onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
+                        },
+                    )
+                }
+                item(
+                    key = "alts:${candidate.candidateId}",
+                    contentType = "alternatives_toggle",
+                ) {
+                    CurationAlternativesToggle(
+                        alternativeCount = layout.alternatives.size,
+                        expanded = alternativesOpen,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
+                        enabled = enabled,
+                        isLast = !alternativesOpen,
+                        testTag = VideoMiningTestTags.alternativesToggle(candidate.candidateId),
+                        onToggle = onToggleAlternatives,
                         modifier =
                             Modifier.padding(
-                                bottom =
-                                    curationGroupGap(last = index == candidate.sentences.lastIndex),
+                                bottom = curationGroupGap(last = !alternativesOpen),
                             ),
                     )
+                }
+                if (alternativesOpen) {
+                    layout.alternatives.forEachIndexed { index, sentence ->
+                        item(
+                            key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                            contentType = "sentence",
+                        ) {
+                            CurationSentenceChoice(
+                                candidate = candidate,
+                                sentence = sentence,
+                                containerColor =
+                                    curationRowContainerColor(selected, animateSelection),
+                                selected = false,
+                                enabled = enabled,
+                                isLast = index == layout.alternatives.lastIndex,
+                                testTag =
+                                    VideoMiningTestTags.sentence(
+                                        candidate.candidateId,
+                                        sentence.sentenceId,
+                                    ),
+                                onClick = {
+                                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                                },
+                                modifier =
+                                    Modifier.padding(
+                                        bottom =
+                                            curationGroupGap(
+                                                last = index == layout.alternatives.lastIndex,
+                                            ),
+                                    ),
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -1207,4 +1375,12 @@ private fun TimingPreviewError.messageResource(): Int =
         TimingPreviewError.BUSY -> R.string.timing_preview_busy
         TimingPreviewError.TOKENIZER_REQUIRED -> R.string.timing_preview_tokenizer_required
         TimingPreviewError.OPEN -> R.string.timing_preview_open_error
+    }
+
+@StringRes
+private fun AudioTrackPickerError.messageResource(): Int =
+    when (this) {
+        // Same string as TimingPreviewError.BUSY: both surface the exclusive-runtime-lease refusal.
+        AudioTrackPickerError.BUSY -> R.string.timing_preview_busy
+        AudioTrackPickerError.PROBE -> R.string.audio_tracks_probe_error
     }

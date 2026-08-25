@@ -39,6 +39,19 @@
     <string name="timing_preview_unavailable">Vista previa no disponible para esta fuente</string>
     <string name="timing_preview_tokenizer_required">Instale el recurso del tokenizador japonés antes de minar</string>
     <string name="timing_preview_open_error">No se pudo abrir la vista previa de la sincronización de subtítulos.</string>
+    <string name="audio_tracks_button">Pistas de audio</string>
+    <string name="audio_tracks_title">Pista de audio</string>
+    <string name="audio_tracks_none">No se encontraron pistas de audio en este archivo.</string>
+    <string name="audio_tracks_single">Este archivo tiene una sola pista de audio.</string>
+    <string name="audio_tracks_auto_detected">Detección automática (actualmente: Pista %1$d — %2$s)</string>
+    <string name="audio_tracks_auto_none">Detección automática (no se encontró pista en japonés — se usará la primera pista)</string>
+    <string name="audio_tracks_apply">Aplicar</string>
+    <string name="audio_tracks_close">Cerrar</string>
+    <string name="audio_tracks_track_label">Pista %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">mono</string>
+    <string name="audio_tracks_channels_stereo">estéreo</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">No se pudieron leer las pistas de audio.</string>
     <string name="no_file_selected">Ningún archivo seleccionado</string>
     <string name="choose_file">Elegir</string>
     <string name="replace_file">Reemplazar</string>
@@ -84,6 +97,10 @@
     <string name="curation_known_pending">Conocidas · pendiente</string>
     <string name="curation_copy_word">Copiar palabra</string>
     <string name="curation_copy_sentence">Copiar frase</string>
+    <string name="curation_expand_previous_line">+ Línea anterior</string>
+    <string name="curation_expand_next_line">+ Línea siguiente</string>
+    <string name="curation_expand_reset">Restablecer líneas</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · clip de %3$.1f s</string>
     <string name="curation_copied_word">Palabra copiada</string>
     <string name="curation_copied_sentence">Frase copiada</string>
     <string name="curation_preview_play_description">Reproducir vídeo</string>
@@ -114,6 +131,12 @@
     <string name="curation_bulk_action">Seleccionar…</string>
     <string name="curation_tools_hide">Ocultar búsqueda y filtros</string>
     <string name="curation_tools_show">Mostrar búsqueda y filtros</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Mostrar %1$d alternativa</item>
+        <item quantity="many">Mostrar %1$d alternativas</item>
+        <item quantity="other">Mostrar %1$d alternativas</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Ocultar alternativas</string>
     <string name="candidate_state_selected">Seleccionado</string>
     <string name="candidate_state_excluded">Excluido</string>
     <string name="candidate_part_of_speech_unknown">Categoría gramatical desconocida</string>

@@ -46,6 +46,19 @@
     <string name="timing_preview_unavailable">Preview unavailable for this source</string>
     <string name="timing_preview_tokenizer_required">Install the Japanese tokenizer resource before mining</string>
     <string name="timing_preview_open_error">Subtitle timing preview could not be opened.</string>
+    <string name="audio_tracks_button">Audio tracks</string>
+    <string name="audio_tracks_title">Audio track</string>
+    <string name="audio_tracks_none">No audio tracks found in this file.</string>
+    <string name="audio_tracks_single">This file has only one audio track.</string>
+    <string name="audio_tracks_auto_detected">Auto-detect (currently: Track %1$d — %2$s)</string>
+    <string name="audio_tracks_auto_none">Auto-detect (no Japanese track found — will use the first track)</string>
+    <string name="audio_tracks_apply">Apply</string>
+    <string name="audio_tracks_close">Close</string>
+    <string name="audio_tracks_track_label">Track %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">mono</string>
+    <string name="audio_tracks_channels_stereo">stereo</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">Audio tracks could not be read.</string>
     <string name="no_file_selected">No file selected</string>
     <string name="choose_file">Choose</string>
     <string name="replace_file">Replace</string>
@@ -91,6 +104,10 @@
     <string name="curation_known_pending">Known · pending</string>
     <string name="curation_copy_word">Copy word</string>
     <string name="curation_copy_sentence">Copy sentence</string>
+    <string name="curation_expand_previous_line">+ Previous line</string>
+    <string name="curation_expand_next_line">+ Next line</string>
+    <string name="curation_expand_reset">Reset lines</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · %3$.1f s clip</string>
     <string name="curation_copied_word">Copied word</string>
     <string name="curation_copied_sentence">Copied sentence</string>
     <string name="curation_preview_play_description">Play video</string>
@@ -121,6 +138,11 @@
     <string name="curation_bulk_action">Select…</string>
     <string name="curation_tools_hide">Hide search and filters</string>
     <string name="curation_tools_show">Show search and filters</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Show %1$d alternative</item>
+        <item quantity="other">Show %1$d alternatives</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Hide alternatives</string>
     <string name="candidate_state_selected">Selected</string>
     <string name="candidate_state_excluded">Excluded</string>
     <string name="candidate_part_of_speech_unknown">Unknown part of speech</string>

@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.mining
 
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -361,6 +362,76 @@ class SharedMiningContractsTest {
             DocumentReadProgress(DocumentReadCopy.VIDEO, null),
             documentReadProgress(DocumentReadKind.VIDEO, null),
         )
+    }
+
+    @Test
+    fun expansionAccumulatesAcrossPressesAndResetClears() {
+        val request = curationRequest()
+        var draft = request.defaultCurationDraft()
+
+        draft = draft.expandSentence(request, "candidate-1", 1, 0)!!
+        draft = draft.expandSentence(request, "candidate-1", 1, 0)!!
+        draft = draft.expandSentence(request, "candidate-1", 0, 1)!!
+        assertEquals(CurationLineExpansion(2, 1), draft.lineExpansions["candidate-1"])
+
+        assertNull(draft.expandSentence(request, "candidate-unknown", 1, 0))
+
+        val reset = draft.resetExpansion(request, "candidate-1")
+        assertEquals(emptyMap<String, CurationLineExpansion>(), reset.lineExpansions)
+    }
+
+    @Test
+    fun selectingADifferentSentenceClearsExpansionButSameKeepsIt() {
+        val candidate =
+            candidate("candidate-1", "猫", frequency = 1, occurrences = 1).let {
+                it.copy(sentences = it.sentences + it.sentences.single().copy(sentenceId = "sentence-alt"))
+            }
+        val request = curationRequest(candidates = listOf(candidate))
+        var draft = request.defaultCurationDraft().expandSentence(request, "candidate-1", 1, 0)!!
+
+        val samePick = draft.selectSentence(request, "candidate-1", candidate.defaultSentenceId)!!
+        assertEquals(CurationLineExpansion(1, 0), samePick.lineExpansions["candidate-1"])
+
+        val differentPick = samePick.selectSentence(request, "candidate-1", "sentence-alt")!!
+        assertEquals(emptyMap<String, CurationLineExpansion>(), differentPick.lineExpansions)
+    }
+
+    @Test
+    fun selectionsCarryExpansionCountsAndDefaultToZero() {
+        val request = curationRequest()
+        val expanded = request.defaultCurationDraft().expandSentence(request, "candidate-1", 2, 1)!!
+
+        val selection = expanded.selections(request).single()
+        assertEquals(2, selection.linesBefore)
+        assertEquals(1, selection.linesAfter)
+
+        val plain = request.defaultCurationDraft().selections(request).single()
+        assertEquals(0, plain.linesBefore)
+        assertEquals(0, plain.linesAfter)
+    }
+
+    @Test
+    fun sessionStateRoundTripsExpansionsAndRejectsUnknownKeys() {
+        val request = curationRequest()
+        val draft = request.defaultCurationDraft().expandSentence(request, "candidate-1", 1, 2)!!
+
+        val restored = draft.toCurationSessionState(previousPageSelectedCount = 0).draftFor(request)!!
+        assertEquals(CurationLineExpansion(1, 2), restored.lineExpansions["candidate-1"])
+
+        val corrupted =
+            draft.toCurationSessionState(previousPageSelectedCount = 0).copy(
+                lineExpansions = mapOf("candidate-unknown" to CurationLineExpansion(1, 0)),
+            )
+        assertNull(corrupted.draftFor(request))
+    }
+
+    @Test
+    fun freshRequestDropsExpansions() {
+        val first = curationRequest(page = CurationPage(0, 2, 0, 2))
+        val second = first.copy(page = CurationPage(1, 2, 1, 2))
+        val expanded = first.defaultCurationDraft().expandSentence(first, "candidate-1", 1, 0)!!
+
+        assertEquals(emptyMap<String, CurationLineExpansion>(), expanded.forRequest(second).lineExpansions)
     }
 
     private fun curationRequest(

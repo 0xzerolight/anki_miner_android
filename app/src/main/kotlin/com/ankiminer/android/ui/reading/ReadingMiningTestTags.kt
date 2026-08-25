@@ -42,4 +42,9 @@ object ReadingMiningTestTags {
         candidateId: String,
         sentenceId: String,
     ): String = "reading_sentence:$candidateId:$sentenceId"
+
+    fun chosenSentence(candidateId: String): String = "reading_chosen_sentence:$candidateId"
+
+    fun alternativesToggle(candidateId: String): String =
+        "reading_sentence_alternatives_toggle:$candidateId"
 }

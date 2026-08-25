@@ -1259,7 +1259,9 @@ def run_video(
 
     owner = job_registry or registry()
     handle = owner.begin()
-    adapters = CallbackAdapters(callbacks, owner, handle)
+    # Only process_episode materializes line expansions; the reading lane keeps
+    # the default and rejects expansion selections at the gate.
+    adapters = CallbackAdapters(callbacks, owner, handle, supports_line_expansion=True)
     try:
         adapters.register_job()
         try:

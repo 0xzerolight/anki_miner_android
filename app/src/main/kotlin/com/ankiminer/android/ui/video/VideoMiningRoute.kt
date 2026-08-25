@@ -25,6 +25,7 @@ fun VideoMiningRoute(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val audioTrackPicker by viewModel.audioTrackPickerState.collectAsStateWithLifecycle()
     val videoPicker =
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { viewModel.onVideoPicked(it.toString()) }
@@ -45,6 +46,12 @@ fun VideoMiningRoute(
         onDismissTimingPreviewError = viewModel::dismissTimingPreviewError,
         onSubtitleOffsetDraftChange = viewModel::setSubtitleOffsetDraft,
         onTestTiming = viewModel::openTimingPreview,
+        audioTrackPicker = audioTrackPicker,
+        onAudioTracks = viewModel::openAudioTrackPicker,
+        onSelectAudioTrack = viewModel::selectAudioTrack,
+        onApplyAudioTrackPicker = viewModel::applyAudioTrackPicker,
+        onDismissAudioTrackPicker = viewModel::dismissAudioTrackPicker,
+        onDismissAudioTrackPickerError = viewModel::dismissAudioTrackPickerError,
         onStart = viewModel::start,
         onFocusCandidate = viewModel::focusCandidate,
         onSetCandidateSelected = viewModel::setCandidateSelected,
@@ -53,6 +60,9 @@ fun VideoMiningRoute(
         onSetSelectionForPage = viewModel::setSelectionForPage,
         onReconcileFocus = viewModel::reconcileCurationFocus,
         onSelectSentence = viewModel::selectSentence,
+        onExpandSentencePrev = viewModel::expandSentencePrev,
+        onExpandSentenceNext = viewModel::expandSentenceNext,
+        onResetSentenceExpansion = viewModel::resetSentenceExpansion,
         onConfirmCuration = viewModel::confirmCuration,
         onCancel = viewModel::cancel,
         onRetry = viewModel::retry,

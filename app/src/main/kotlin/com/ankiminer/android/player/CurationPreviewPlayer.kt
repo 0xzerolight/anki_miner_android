@@ -40,7 +40,7 @@ interface CurationPreviewPlayer {
 
     fun tick()
 
-    fun bind(uri: Uri)
+    fun bind(uri: Uri, audioTrackOverride: Long? = null)
 
     fun seekTo(seconds: Double)
 
@@ -75,6 +75,7 @@ class ExoCurationPreviewPlayer(
         get() = exo
 
     private var boundUri: Uri? = null
+    private var audioTrackOverride: Long? = null
     private val mutableIsPlaying = MutableStateFlow(false)
     private val mutablePositionSeconds = MutableStateFlow(0.0)
     private val mutableFailure = MutableStateFlow<PreviewFailure?>(null)
@@ -92,7 +93,7 @@ class ExoCurationPreviewPlayer(
 
                 override fun onTracksChanged(tracks: Tracks) {
                     selectPreferredAudio(tracks)
-                    val failure = previewFailureFor(tracks)
+                    val failure = previewFailureFor(tracks, audioTrackOverride)
                     if (failure != null) {
                         val format = firstFormatOfType(tracks, C.TRACK_TYPE_VIDEO)
                             ?: firstFormatOfType(tracks, C.TRACK_TYPE_AUDIO)
@@ -130,9 +131,10 @@ class ExoCurationPreviewPlayer(
         mutablePositionSeconds.value = exo.currentPosition / MILLIS_PER_SECOND
     }
 
-    override fun bind(uri: Uri) {
-        if (boundUri == uri) return
+    override fun bind(uri: Uri, audioTrackOverride: Long?) {
+        if (boundUri == uri && this.audioTrackOverride == audioTrackOverride) return
         boundUri = uri
+        this.audioTrackOverride = audioTrackOverride
         mutableFailure.value = null
         // Overrides are keyed by the previous item's TrackGroup; drop them so the new item
         // starts from defaults and picks its own track in onTracksChanged.
@@ -160,7 +162,7 @@ class ExoCurationPreviewPlayer(
      * can decode (there `isTrackSelected` would stay false forever).
      */
     private fun selectPreferredAudio(tracks: Tracks) {
-        val desired = preferredAudioGroup(tracks) ?: return
+        val desired = preferredAudioGroup(tracks, audioTrackOverride) ?: return
         val override = TrackSelectionOverride(desired.mediaTrackGroup, 0)
         if (exo.trackSelectionParameters.overrides[desired.mediaTrackGroup] == override) return
 
@@ -168,6 +170,7 @@ class ExoCurationPreviewPlayer(
             LogComponent.MEDIA,
             "curation_preview_audio_track_selected",
             "outcome" to "ok",
+            "override" to audioTrackOverride,
             "language" to desired.getTrackFormat(0).language,
             "audioGroups" to tracks.groups.count { it.type == C.TRACK_TYPE_AUDIO },
         )
@@ -249,13 +252,13 @@ private fun firstFormatOfType(
  * engine-preferred group, so a supported dub cannot mask an unsupported Japanese track.
  */
 @OptIn(UnstableApi::class)
-fun previewFailureFor(tracks: Tracks): PreviewFailure? {
+fun previewFailureFor(tracks: Tracks, audioTrackOverride: Long? = null): PreviewFailure? {
     if (!tracks.isTypeSupportedOrEmpty(C.TRACK_TYPE_VIDEO)) {
         return PreviewFailure.VideoTrackUnsupported(
             codecLabel(firstFormatOfType(tracks, C.TRACK_TYPE_VIDEO)),
         )
     }
-    val preferredAudio = preferredAudioGroup(tracks)
+    val preferredAudio = preferredAudioGroup(tracks, audioTrackOverride)
     if (preferredAudio != null && !preferredAudio.isTrackSupported(0)) {
         return PreviewFailure.AudioTrackUnsupported(
             codecLabel(preferredAudio.getTrackFormat(0)),

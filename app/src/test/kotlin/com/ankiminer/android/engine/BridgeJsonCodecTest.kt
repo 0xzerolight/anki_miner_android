@@ -287,6 +287,72 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `line expansion counts ride the selection wire and round-trip`() {
+        val request = curationRequest()
+        val candidate = request.candidates.single()
+
+        val both =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(candidate.candidateId, candidate.defaultSentenceId, linesBefore = 2, linesAfter = 1)),
+            )
+        assertTrue(both.contains("\"linesBefore\":2"))
+        assertTrue(both.contains("\"linesAfter\":1"))
+        val decoded = (BridgeJsonCodec.decode(both) as BridgeMessage.CurationResponse).selection!!.single()
+        assertEquals(2, decoded.linesBefore)
+        assertEquals(1, decoded.linesAfter)
+
+        val onlyBefore =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(candidate.candidateId, null, linesBefore = 1)),
+            )
+        assertTrue(onlyBefore.contains("\"linesBefore\":1"))
+        assertFalse(onlyBefore.contains("linesAfter"))
+        val decodedBefore = (BridgeJsonCodec.decode(onlyBefore) as BridgeMessage.CurationResponse).selection!!.single()
+        assertEquals(1, decodedBefore.linesBefore)
+        assertEquals(0, decodedBefore.linesAfter)
+    }
+
+    @Test
+    fun `zero line counts never reach the wire`() {
+        val request = curationRequest()
+        val raw =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(request.candidates.single().candidateId, null)),
+            )
+
+        assertFalse(raw.contains("linesBefore"))
+        assertFalse(raw.contains("linesAfter"))
+    }
+
+    @Test
+    fun `expansion without a sentence id round-trips`() {
+        val request = curationRequest()
+        val raw =
+            BridgeJsonCodec.encodeCurationResponse(
+                request,
+                listOf(CurationSelection(request.candidates.single().candidateId, null, linesAfter = 3)),
+            )
+
+        val decoded = (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationResponse).selection!!.single()
+        assertEquals(null, decoded.sentenceId)
+        assertEquals(3, decoded.linesAfter)
+    }
+
+    @Test
+    fun `decode rejects out-of-range line expansion counts`() {
+        val request = curationRequest()
+        val candidateId = request.candidates.single().candidateId
+        for (expansion in listOf("\"linesBefore\":0", "\"linesBefore\":-1", "\"linesAfter\":101", "\"linesAfter\":1.5")) {
+            val raw =
+                """{"schemaVersion":1,"type":"curation.response","payload":{"runId":"${request.runId}","requestId":"${request.requestId}","selection":[{"candidateId":"$candidateId",$expansion}]}}"""
+            assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+        }
+    }
+
+    @Test
     fun `encodes known candidate ids`() {
         val request = curationRequest()
         val candidateId = request.candidates.single().candidateId
@@ -797,6 +863,76 @@ class BridgeJsonCodecTest {
         val raw =
             """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","cues":[{"start":2.5,"end":1.25,"text":"猫だ。"}]}}"""
         assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `encodes an audio tracks request with an exact JSON pin`() {
+        val raw = BridgeJsonCodec.encodeAudioTracksRequest("/cache/v.mkv", "/native")
+        assertEquals(
+            """{"schemaVersion":1,"type":"media.audiotracks","payload":{"videoPath":"/cache/v.mkv","nativeLibraryDir":"/native"}}""",
+            raw,
+        )
+        assertEquals(
+            BridgeMessage.AudioTracksRequest("/cache/v.mkv", "/native"),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `decodes an audio tracks result with a full track and an all null metadata track`() {
+        val raw =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":0,"tracks":[""" +
+                """{"audioIndex":0,"globalIndex":1,"languageTag":"jpn","title":"Japanese","codec":"aac","channels":2,"isDefault":true},""" +
+                """{"audioIndex":1,"globalIndex":2,"languageTag":null,"title":null,"codec":null,"channels":null,"isDefault":false}""" +
+                """]}}"""
+        assertEquals(
+            BridgeMessage.AudioTracksResult(
+                videoPath = "/cache/v.mkv",
+                autoAudioIndex = 0,
+                tracks =
+                    listOf(
+                        AudioTrackInfo(0, 1, "jpn", "Japanese", "aac", 2, true),
+                        AudioTrackInfo(1, 2, null, null, null, null, false),
+                    ),
+            ),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
+    fun `rejects an audio tracks result exceeding its track limit`() {
+        val track =
+            """{"audioIndex":0,"globalIndex":0,"languageTag":null,"title":null,"codec":null,"channels":null,"isDefault":false}"""
+        val tracks = (0 until 129).joinToString(",") { track }
+        val raw =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":null,"tracks":[$tracks]}}"""
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+        )
+    }
+
+    @Test
+    fun `rejects an audio tracks result with missing or unknown payload fields`() {
+        val missingField =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","tracks":[]}}"""
+        val extraField =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":null,"tracks":[],"extra":1}}"""
+        listOf(missingField, extraField).forEach { raw ->
+            assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+        }
+    }
+
+    @Test
+    fun `rejects an audio tracks result with a negative audio index`() {
+        val raw =
+            """{"schemaVersion":1,"type":"media.audiotracks.result","payload":{"videoPath":"/cache/v.mkv","autoAudioIndex":null,"tracks":[""" +
+                """{"audioIndex":-1,"globalIndex":0,"languageTag":null,"title":null,"codec":null,"channels":null,"isDefault":false}""" +
+                """]}}"""
+        assertEquals(
+            BridgeProtocolCategory.INVALID_VALUE,
+            protocolFailure { BridgeJsonCodec.decode(raw) }.category,
+        )
     }
 
     @Test

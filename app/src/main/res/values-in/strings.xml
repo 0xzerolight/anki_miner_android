@@ -39,6 +39,19 @@
     <string name="timing_preview_unavailable">Pratinjau tidak tersedia untuk sumber ini</string>
     <string name="timing_preview_tokenizer_required">Instal sumber daya tokenizer bahasa Jepang sebelum mining</string>
     <string name="timing_preview_open_error">Pratinjau waktu subtitel tidak dapat dibuka.</string>
+    <string name="audio_tracks_button">Trek audio</string>
+    <string name="audio_tracks_title">Trek Audio</string>
+    <string name="audio_tracks_none">Tidak ada trek audio yang ditemukan dalam berkas ini.</string>
+    <string name="audio_tracks_single">Berkas ini hanya memiliki satu trek audio.</string>
+    <string name="audio_tracks_auto_detected">Deteksi otomatis (saat ini: Trek %1$d — %2$s)</string>
+    <string name="audio_tracks_auto_none">Deteksi otomatis (tidak ada trek Jepang — akan menggunakan trek pertama)</string>
+    <string name="audio_tracks_apply">Terapkan</string>
+    <string name="audio_tracks_close">Tutup</string>
+    <string name="audio_tracks_track_label">Trek %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">mono</string>
+    <string name="audio_tracks_channels_stereo">stereo</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">Trek audio tidak dapat dibaca.</string>
     <string name="no_file_selected">Tidak ada berkas yang dipilih</string>
     <string name="choose_file">Pilih</string>
     <string name="replace_file">Ganti</string>
@@ -84,6 +97,10 @@
     <string name="curation_known_pending">Dikenal · tertunda</string>
     <string name="curation_copy_word">Salin kata</string>
     <string name="curation_copy_sentence">Salin kalimat</string>
+    <string name="curation_expand_previous_line">+ Baris sebelumnya</string>
+    <string name="curation_expand_next_line">+ Baris berikutnya</string>
+    <string name="curation_expand_reset">Atur ulang baris</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f s · klip %3$.1f s</string>
     <string name="curation_copied_word">Kata disalin</string>
     <string name="curation_copied_sentence">Kalimat disalin</string>
     <string name="curation_preview_play_description">Putar video</string>
@@ -114,6 +131,10 @@
     <string name="curation_bulk_action">Pilih…</string>
     <string name="curation_tools_hide">Sembunyikan pencarian dan filter</string>
     <string name="curation_tools_show">Tampilkan pencarian dan filter</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">Tampilkan %1$d alternatif</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Sembunyikan alternatif</string>
     <string name="candidate_state_selected">Dipilih</string>
     <string name="candidate_state_excluded">Dikecualikan</string>
     <string name="candidate_part_of_speech_unknown">Jenis kata tidak diketahui</string>

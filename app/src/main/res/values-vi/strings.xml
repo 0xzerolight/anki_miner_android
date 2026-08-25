@@ -39,6 +39,19 @@
     <string name="timing_preview_unavailable">Không thể xem trước nguồn này</string>
     <string name="timing_preview_tokenizer_required">Cài đặt tài nguyên bộ tách từ tiếng Nhật trước khi khai thác</string>
     <string name="timing_preview_open_error">Không thể mở phần xem trước thời gian phụ đề.</string>
+    <string name="audio_tracks_button">Bản âm thanh</string>
+    <string name="audio_tracks_title">Bản âm thanh</string>
+    <string name="audio_tracks_none">Không tìm thấy bản âm thanh nào trong tệp này.</string>
+    <string name="audio_tracks_single">Tệp này chỉ có một bản âm thanh.</string>
+    <string name="audio_tracks_auto_detected">Tự động phát hiện (hiện tại: Bản %1$d — %2$s)</string>
+    <string name="audio_tracks_auto_none">Tự động phát hiện (không tìm thấy bản tiếng Nhật — sẽ dùng bản đầu tiên)</string>
+    <string name="audio_tracks_apply">Áp dụng</string>
+    <string name="audio_tracks_close">Đóng</string>
+    <string name="audio_tracks_track_label">Bản %1$d — %2$s · %3$s</string>
+    <string name="audio_tracks_channels_mono">mono</string>
+    <string name="audio_tracks_channels_stereo">stereo</string>
+    <string name="audio_tracks_channels_n">%1$dch</string>
+    <string name="audio_tracks_probe_error">Không thể đọc các bản âm thanh.</string>
     <string name="no_file_selected">Chưa chọn tệp</string>
     <string name="choose_file">Chọn</string>
     <string name="replace_file">Thay thế</string>
@@ -84,6 +97,10 @@
     <string name="curation_known_pending">Đã biết · chờ xử lý</string>
     <string name="curation_copy_word">Sao chép từ</string>
     <string name="curation_copy_sentence">Sao chép câu</string>
+    <string name="curation_expand_previous_line">+ Dòng trước</string>
+    <string name="curation_expand_next_line">+ Dòng sau</string>
+    <string name="curation_expand_reset">Đặt lại dòng</string>
+    <string name="curation_expansion_window">%1$.1f–%2$.1f giây · đoạn %3$.1f giây</string>
     <string name="curation_copied_word">Đã sao chép từ</string>
     <string name="curation_copied_sentence">Đã sao chép câu</string>
     <string name="curation_preview_play_description">Phát video</string>
@@ -114,6 +131,10 @@
     <string name="curation_bulk_action">Chọn…</string>
     <string name="curation_tools_hide">Ẩn tìm kiếm và bộ lọc</string>
     <string name="curation_tools_show">Hiện tìm kiếm và bộ lọc</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">Hiện %1$d câu thay thế</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Ẩn câu thay thế</string>
     <string name="candidate_state_selected">Đã chọn</string>
     <string name="candidate_state_excluded">Đã loại trừ</string>
     <string name="candidate_part_of_speech_unknown">Không rõ từ loại</string>
