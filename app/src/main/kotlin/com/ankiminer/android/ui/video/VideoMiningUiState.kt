@@ -21,6 +21,8 @@ enum class MiningCommandError {
     CURATION,
     CANCEL,
     RESET,
+    UNDO,
+    UNDO_WORDS,
 }
 
 enum class TimingPreviewError {
@@ -86,6 +88,9 @@ data class VideoMiningUiState(
     val runtimeConflict: RuntimeWorkConflict? = null,
     val timingPreviewPending: Boolean = false,
     val timingPreviewError: TimingPreviewError? = null,
+    val undoConfirmationNoteCount: Int? = null,
+    val undoneNoteCount: Int? = null,
+    val undoAvailable: Boolean = false,
 ) {
     val canStart: Boolean
         get() =

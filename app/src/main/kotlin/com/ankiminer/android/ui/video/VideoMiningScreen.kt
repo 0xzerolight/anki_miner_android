@@ -73,7 +73,9 @@ import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
+import com.ankiminer.android.ui.mining.MiningResultUndoAction
 import com.ankiminer.android.ui.mining.MiningSourceItem
+import com.ankiminer.android.ui.mining.MiningUndoConfirmationDialog
 import com.ankiminer.android.ui.mining.ReconcileCurationFocus
 import com.ankiminer.android.ui.mining.ResetCurationScrollOnProjectionChange
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
@@ -118,6 +120,9 @@ fun VideoMiningScreen(
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onRequestUndo: () -> Unit = {},
+    onConfirmUndo: () -> Unit = {},
+    onDismissUndoConfirmation: () -> Unit = {},
     onSubtitleOffsetDraftChange: (String) -> Unit = {},
     onTestTiming: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
@@ -169,6 +174,15 @@ fun VideoMiningScreen(
         filter = filter,
         sort = sort,
     )
+
+    state.undoConfirmationNoteCount?.let { noteCount ->
+        MiningUndoConfirmationDialog(
+            noteCount = noteCount,
+            onConfirm = onConfirmUndo,
+            onDismiss = onDismissUndoConfirmation,
+            confirmTestTag = VideoMiningTestTags.UNDO_CONFIRM,
+        )
+    }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -450,6 +464,11 @@ fun VideoMiningScreen(
                                 canRetry = false,
                                 busy = targetState.resetPending,
                                 resetError = targetState.commandError == MiningCommandError.RESET,
+                                undoAvailable = targetState.undoAvailable,
+                                undoneNoteCount = targetState.undoneNoteCount,
+                                undoError = targetState.commandError == MiningCommandError.UNDO,
+                                undoWordsError =
+                                    targetState.commandError == MiningCommandError.UNDO_WORDS,
                                 detailsExpanded = resultDetailsExpanded,
                                 onToggleDetails = {
                                     resultDetailsExpanded = !resultDetailsExpanded
@@ -457,6 +476,7 @@ fun VideoMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onRetry = onRetry,
                                 onReset = onReset,
+                                onRequestUndo = onRequestUndo,
                             )
                         is MiningRunState.Cancelled ->
                             terminalItems(
@@ -472,6 +492,11 @@ fun VideoMiningScreen(
                                 canRetry = false,
                                 busy = targetState.resetPending,
                                 resetError = targetState.commandError == MiningCommandError.RESET,
+                                undoAvailable = targetState.undoAvailable,
+                                undoneNoteCount = targetState.undoneNoteCount,
+                                undoError = targetState.commandError == MiningCommandError.UNDO,
+                                undoWordsError =
+                                    targetState.commandError == MiningCommandError.UNDO_WORDS,
                                 detailsExpanded = resultDetailsExpanded,
                                 onToggleDetails = {
                                     resultDetailsExpanded = !resultDetailsExpanded
@@ -479,6 +504,7 @@ fun VideoMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onRetry = onRetry,
                                 onReset = onReset,
+                                onRequestUndo = onRequestUndo,
                             )
                         is MiningRunState.Failed ->
                             terminalItems(
@@ -497,6 +523,11 @@ fun VideoMiningScreen(
                                         targetState.subtitle.document != null,
                                 busy = targetState.resetPending || targetState.startPending,
                                 resetError = targetState.commandError == MiningCommandError.RESET,
+                                undoAvailable = targetState.undoAvailable,
+                                undoneNoteCount = targetState.undoneNoteCount,
+                                undoError = targetState.commandError == MiningCommandError.UNDO,
+                                undoWordsError =
+                                    targetState.commandError == MiningCommandError.UNDO_WORDS,
                                 detailsExpanded = resultDetailsExpanded,
                                 onToggleDetails = {
                                     resultDetailsExpanded = !resultDetailsExpanded
@@ -504,6 +535,7 @@ fun VideoMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onRetry = onRetry,
                                 onReset = onReset,
+                                onRequestUndo = onRequestUndo,
                             )
                     }
                 }
@@ -951,11 +983,16 @@ private fun LazyListScope.terminalItems(
     canRetry: Boolean,
     busy: Boolean,
     resetError: Boolean,
+    undoAvailable: Boolean,
+    undoneNoteCount: Int?,
+    undoError: Boolean,
+    undoWordsError: Boolean,
     detailsExpanded: Boolean,
     onToggleDetails: () -> Unit,
     onDismissCommandError: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
+    onRequestUndo: () -> Unit,
 ) {
     item(key = "terminal_header", contentType = "header") {
         PhaseTitle(
@@ -993,9 +1030,9 @@ private fun LazyListScope.terminalItems(
             )
         }
     }
-    result?.let {
+    result?.let { finalResult ->
         miningResultItems(
-            result = it,
+            result = finalResult,
             sources =
                 listOf(
                     MiningResultSource(labels.resultSource, videoDisplayName),
@@ -1007,7 +1044,34 @@ private fun LazyListScope.terminalItems(
             testTag = VideoMiningTestTags.RESULT,
             keyPrefix = "terminal_result",
             onToggleDetails = onToggleDetails,
+            undo =
+                finalResult.cardIds.takeIf { it.isNotEmpty() }?.let { cardIds ->
+                    MiningResultUndoAction(
+                        noteCount = cardIds.size,
+                        undoneNoteCount = undoneNoteCount,
+                        enabled = undoAvailable,
+                        testTag = VideoMiningTestTags.UNDO,
+                        onUndo = onRequestUndo,
+                    )
+                },
         )
+    }
+    if (undoError || undoWordsError) {
+        item(key = "terminal_undo_error", contentType = "error") {
+            MiningFailureCard(
+                message =
+                    if (undoError) {
+                        MiningCommandError.UNDO.message()
+                    } else {
+                        MiningCommandError.UNDO_WORDS.message()
+                    },
+                primaryAction =
+                    MiningFailureAction(
+                        label = stringResource(R.string.dismiss_error),
+                        onClick = onDismissCommandError,
+                    ),
+            )
+        }
     }
     if (!failed) {
         item(key = "terminal_actions", contentType = "actions") {
@@ -1132,6 +1196,8 @@ private fun MiningCommandError.message(): String =
             MiningCommandError.CURATION -> R.string.curation_error
             MiningCommandError.CANCEL -> R.string.cancel_error
             MiningCommandError.RESET -> R.string.reset_error
+            MiningCommandError.UNDO -> R.string.undo_failed
+            MiningCommandError.UNDO_WORDS -> R.string.undo_words_failed
         },
     )
 

@@ -836,13 +836,17 @@ internal fun MiningUndoConfirmationDialog(
     noteCount: Int,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
+    confirmTestTag: String? = null,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.undo_confirm_title)) },
         text = { Text(stringResource(R.string.undo_confirm_message, noteCount)) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(
+                onClick = onConfirm,
+                modifier = confirmTestTag?.let { Modifier.testTag(it) } ?: Modifier,
+            ) {
                 Text(stringResource(R.string.undo_confirm_delete))
             }
         },
