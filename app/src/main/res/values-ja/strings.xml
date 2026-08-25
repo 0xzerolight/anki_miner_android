@@ -96,6 +96,10 @@
     <string name="curation_preview_audio_unsupported">この音声はこの端末でデコードできません（%1$s）</string>
     <string name="curation_preview_playback_failed">プレビューを再生できませんでした（%1$s）</string>
     <string name="curation_preview_retry">再試行</string>
+    <string name="curation_page_image_missing">この単語のページ画像がありません</string>
+    <string name="curation_page_image_error">ページ画像を読み込めませんでした</string>
+    <string name="curation_page_collapse_description">ページ画像を折りたたむ</string>
+    <string name="curation_page_expand_description">ページ画像を展開</string>
     <string name="definition_loading">検索中…</string>
     <string name="definition_missing">オフライン辞書に項目がありません</string>
     <string name="definition_unavailable">辞書検索を利用できません</string>

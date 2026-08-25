@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -42,6 +43,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -55,11 +57,13 @@ import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.reading.CurationPageImageDecoder
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationFilter
+import com.ankiminer.android.ui.mining.CurationPageImagePane
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
 import com.ankiminer.android.ui.mining.CurationSort
@@ -302,6 +306,19 @@ fun ReadingMiningScreen(
                         .consumeWindowInsets(scaffoldPadding)
                         .semantics { paneTitle = phaseTitle },
             ) {
+                if (targetState.runState is MiningRunState.Curating && targetCuration?.pageImage != null) {
+                    key(targetCuration.runId) {
+                        CurationPageImageSlot(
+                            curation = targetCuration,
+                            modifier =
+                                Modifier.padding(
+                                    start = AnkiMinerTokens.Space.content,
+                                    top = AnkiMinerTokens.Space.content,
+                                    end = AnkiMinerTokens.Space.content,
+                                ),
+                        )
+                    }
+                }
                 if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
                     CurationChrome(
                         title = phaseTitle,
@@ -501,6 +518,39 @@ fun ReadingMiningScreen(
             }
         }
     }
+}
+
+@Composable
+private fun CurationPageImageSlot(
+    curation: ReadingCurationUiState,
+    modifier: Modifier = Modifier,
+) {
+    val pageImage = curation.pageImage ?: return
+    val decoder = remember { CurationPageImageDecoder() }
+    // The page pane and the curation controls are both pinned, so at large font scales they
+    // compete for a viewport that cannot hold either in full — same rationale as
+    // VideoMiningScreen's CurationPlayerSlot. Start folded and let the user open it; the toggle
+    // below still persists whatever they choose.
+    val startCollapsed = LocalDensity.current.fontScale >= 1.3f
+    var collapsed by rememberSaveable(curation.runId) { mutableStateOf(startCollapsed) }
+
+    val focusedCandidate =
+        curation.candidates.firstOrNull { it.candidateId == curation.focusedCandidateId }
+    val selectedSentenceId =
+        focusedCandidate?.let { candidate ->
+            curation.sentenceIds[candidate.candidateId] ?: candidate.defaultSentenceId
+        }
+    val selectedSentence =
+        focusedCandidate?.sentences?.firstOrNull { it.sentenceId == selectedSentenceId }
+
+    CurationPageImagePane(
+        archivePath = pageImage.archivePath,
+        pageContext = selectedSentence?.pageContext,
+        collapsed = collapsed,
+        onToggleCollapsed = { collapsed = !collapsed },
+        decoder = decoder,
+        modifier = modifier,
+    )
 }
 
 private fun LazyListScope.setupItems(
