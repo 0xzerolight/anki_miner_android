@@ -114,6 +114,10 @@
     <string name="curation_bulk_action">選択…</string>
     <string name="curation_tools_hide">検索とフィルターを隠す</string>
     <string name="curation_tools_show">検索とフィルターを表示</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">%1$d 件の代替文を表示</item>
+    </plurals>
+    <string name="curation_alternatives_hide">代替文を隠す</string>
     <string name="candidate_state_selected">選択済み</string>
     <string name="candidate_state_excluded">除外済み</string>
     <string name="candidate_part_of_speech_unknown">品詞不明</string>

@@ -114,6 +114,13 @@
     <string name="curation_bulk_action">Выбрать…</string>
     <string name="curation_tools_hide">Скрыть поиск и фильтры</string>
     <string name="curation_tools_show">Показать поиск и фильтры</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="one">Показать %1$d альтернативу</item>
+        <item quantity="few">Показать %1$d альтернативы</item>
+        <item quantity="many">Показать %1$d альтернатив</item>
+        <item quantity="other">Показать %1$d альтернативы</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Скрыть альтернативы</string>
     <string name="candidate_state_selected">Выбрано</string>
     <string name="candidate_state_excluded">Исключено</string>
     <string name="candidate_part_of_speech_unknown">Неизвестная часть речи</string>

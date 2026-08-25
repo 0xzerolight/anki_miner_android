@@ -114,6 +114,10 @@
     <string name="curation_bulk_action">Pilih…</string>
     <string name="curation_tools_hide">Sembunyikan pencarian dan filter</string>
     <string name="curation_tools_show">Tampilkan pencarian dan filter</string>
+    <plurals name="curation_alternatives_show">
+        <item quantity="other">Tampilkan %1$d alternatif</item>
+    </plurals>
+    <string name="curation_alternatives_hide">Sembunyikan alternatif</string>
     <string name="candidate_state_selected">Dipilih</string>
     <string name="candidate_state_excluded">Dikecualikan</string>
     <string name="candidate_part_of_speech_unknown">Jenis kata tidak diketahui</string>
