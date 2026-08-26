@@ -148,7 +148,6 @@ android {
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
         buildConfigField("String", "PYTHON_TARGET_VERSION", "\"$pythonTargetVersion\"")
         buildConfigField("String", "RUNTIME_WHEEL_BUILD_KEY", "\"$runtimeWheelBuildKey\"")
-        buildConfigField("boolean", "S1A_SPIKE_ENABLED", "true")
         buildConfigField("boolean", "S1A_PUBLICATION_VERIFIED", "true")
         buildConfigField("boolean", "S1A_ARM64_ACCEPTED", "false")
         buildConfigField("String", "SOURCE_COMMIT", "\"$ankiMinerSourceCommit\"")

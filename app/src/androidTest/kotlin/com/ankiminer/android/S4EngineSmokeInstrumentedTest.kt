@@ -38,10 +38,6 @@ class S4EngineSmokeInstrumentedTest {
             "S4 runs only through its fresh-process selector",
             arguments.getString(RUN_S4_ARGUMENT) == "true",
         )
-        assertTrue(
-            "S1a wheels are required for the selected S4 tokenizer",
-            BuildConfig.S1A_SPIKE_ENABLED,
-        )
 
         val fixtureJson = fixture()
         val fixture = JSONObject(fixtureJson)
