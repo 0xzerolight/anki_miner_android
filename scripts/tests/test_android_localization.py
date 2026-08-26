@@ -58,20 +58,21 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             encoding="utf-8",
         )
 
-    def test_repository_catalogs_are_format_safe_and_report_translation_backlog(self) -> None:
+    def test_repository_catalogs_are_format_safe_and_fully_translated(self) -> None:
         result = self._run_audit(REPO_ROOT / "app/src/main/res")
 
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("locale catalog(s) verified", result.stdout)
         self.assertIn("values-ja/strings.xml", result.stdout)
-        self.assertIn("catalog(s) with untranslated keys", result.stdout)
+        self.assertNotIn("untranslated key(s)", result.stdout)
 
-    def test_untranslated_keys_are_advisory_and_never_fail(self) -> None:
-        """Android resolves an absent key from ``values/``, so an incomplete locale still ships.
+    def test_untranslated_keys_fail_with_exact_catalog_evidence(self) -> None:
+        """A base string absent from a locale catalog fails the audit.
 
-        This mirrors the desktop repository, where ``scripts/i18n.py`` writes
-        ``type="unfinished"`` entries and only ``i18n_payload_check.py`` -- a regression gate --
-        can fail. Completeness is a backlog, not a merge blocker.
+        Android resolves the key from ``values/``, so the app still renders -- which is
+        exactly why this drifted unnoticed: eleven keys covering a whole onboarding card
+        shipped as silent English in all eleven locales. A shipped locale that quietly
+        falls back is a defect, not a backlog.
         """
         with tempfile.TemporaryDirectory() as temporary:
             resource_root = Path(temporary)
@@ -84,12 +85,11 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
 
             result = self._run_audit(resource_root)
 
-            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertNotEqual(0, result.returncode)
             self.assertIn(
-                "advisory: values-fr/strings.xml: 1 untranslated key(s), English is used: beta",
-                result.stdout,
+                "values-fr/strings.xml: 1 untranslated key(s), English is used: beta",
+                result.stderr,
             )
-            self.assertIn("1 catalog(s) with untranslated keys", result.stdout)
 
     def test_orphan_keys_fail_with_exact_catalog_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -127,8 +127,8 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             self._write_catalog(
                 resource_root,
                 "values",
-                # `spare` is untranslated below: an advisory must not stop the audit before it
-                # reaches the placeholder check on the key that IS translated.
+                # `spare` is untranslated below: the untranslated-key failure must not stop the
+                # audit before it reaches the placeholder check on the key that IS translated.
                 '<string name="progress">%1$d of %2$d (%3$s)</string><string name="spare">Spare</string>',
             )
             self._write_catalog(
