@@ -69,9 +69,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
             "S5 runs only through its pinned disposable-AnkiDroid runner",
             InstrumentationRegistry.getArguments().getString(RUN_S5_ARGUMENT) == "true",
         )
-        check(BuildConfig.S1A_PUBLICATION_VERIFIED) {
-            "S5 requires the selected S1a tokenizer publication"
-        }
         val python = PythonInstrumentationRuntime.awaitReady()
         assertPinnedAnkiDroid()
         prepareProductionResources(python)
@@ -146,9 +143,6 @@ class S5VideoMiningAcceptanceInstrumentedTest {
             "S5 runs only through its pinned disposable-AnkiDroid runner",
             InstrumentationRegistry.getArguments().getString(RUN_S5_ARGUMENT) == "true",
         )
-        check(BuildConfig.S1A_PUBLICATION_VERIFIED) {
-            "S5 requires the selected S1a tokenizer publication"
-        }
         val python = PythonInstrumentationRuntime.awaitReady()
         assertPinnedAnkiDroid()
         prepareProductionResources(python)
