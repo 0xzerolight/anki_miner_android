@@ -319,7 +319,7 @@
     <string name="settings_update_skip">跳过此版本</string>
     <string name="settings_update_up_to_date">这是最新版本。</string>
     <string name="settings_update_failed">无法连接到 GitHub 进行检查。</string>
-    <string name="settings_tester_diagnostics">测试者诊断信息</string>
+    <string name="settings_diagnostics_bundle">诊断包</string>
     <string name="settings_version_identity">版本：%1$s</string>
     <string name="settings_source_identity">来源：%1$s</string>
     <string name="settings_diagnostics_bundle_privacy">本应用自身日志的脱敏包，不含其他应用的日志。</string>

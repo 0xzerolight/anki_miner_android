@@ -321,7 +321,7 @@
     <string name="settings_update_skip">Ignorar esta versão</string>
     <string name="settings_update_up_to_date">Esta é a versão mais recente.</string>
     <string name="settings_update_failed">A verificação não conseguiu acessar o GitHub.</string>
-    <string name="settings_tester_diagnostics">Diagnósticos de teste</string>
+    <string name="settings_diagnostics_bundle">Pacote de diagnóstico</string>
     <string name="settings_version_identity">Versão: %1$s</string>
     <string name="settings_source_identity">Origem: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Um pacote com dados ocultados dos próprios registros deste app. Registros de outros apps não são incluídos.</string>

@@ -321,7 +321,7 @@
     <string name="settings_update_skip">Salta questa versione</string>
     <string name="settings_update_up_to_date">Questa è la release più recente.</string>
     <string name="settings_update_failed">Il controllo non ha potuto raggiungere GitHub.</string>
-    <string name="settings_tester_diagnostics">Diagnostica del tester</string>
+    <string name="settings_diagnostics_bundle">Pacchetto diagnostico</string>
     <string name="settings_version_identity">Versione: %1$s</string>
     <string name="settings_source_identity">Sorgente: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Un pacchetto con i soli registri oscurati di questa app. Nessun registro di altre app è incluso.</string>

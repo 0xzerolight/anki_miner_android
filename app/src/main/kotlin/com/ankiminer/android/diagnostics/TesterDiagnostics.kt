@@ -76,7 +76,7 @@ internal object TesterDiagnosticsBuilder {
             firstFailedMiningRun(video.runState, audio.runState, reading.runState)
         val report =
             buildString {
-                appendLine("Anki Miner tester diagnostics v1")
+                appendLine("Anki Miner diagnostics v1")
                 line("app.id", safeBuildValue(build.applicationId))
                 line("app.version_name", versionName)
                 line("app.version_code", build.versionCode.coerceAtLeast(0L).toString())

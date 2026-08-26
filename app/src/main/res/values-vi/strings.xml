@@ -319,7 +319,7 @@
     <string name="settings_update_skip">Bỏ qua phiên bản này</string>
     <string name="settings_update_up_to_date">Đây là bản phát hành mới nhất.</string>
     <string name="settings_update_failed">Không thể kết nối GitHub để kiểm tra.</string>
-    <string name="settings_tester_diagnostics">Chẩn đoán cho người thử nghiệm</string>
+    <string name="settings_diagnostics_bundle">Gói chẩn đoán</string>
     <string name="settings_version_identity">Phiên bản: %1$s</string>
     <string name="settings_source_identity">Nguồn: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Gói nhật ký đã che dữ liệu của riêng ứng dụng này. Không gồm nhật ký của ứng dụng khác.</string>

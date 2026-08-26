@@ -322,7 +322,7 @@
     <string name="settings_update_skip">Пропустить эту версию</string>
     <string name="settings_update_up_to_date">Это последний релиз.</string>
     <string name="settings_update_failed">Не удалось подключиться к GitHub для проверки.</string>
-    <string name="settings_tester_diagnostics">Диагностика для тестировщика</string>
+    <string name="settings_diagnostics_bundle">Пакет диагностики</string>
     <string name="settings_version_identity">Версия: %1$s</string>
     <string name="settings_source_identity">Источник: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Обезличенный пакет журналов этого приложения. Журналы других приложений не включаются.</string>

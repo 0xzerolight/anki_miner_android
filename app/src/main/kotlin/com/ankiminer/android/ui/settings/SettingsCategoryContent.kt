@@ -1188,7 +1188,7 @@ private fun LazyListScope.diagnosticsSettings(
         }
     }
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "tester-diagnostics") {
-        SettingsSection(stringResource(R.string.settings_tester_diagnostics)) {
+        SettingsSection(stringResource(R.string.settings_diagnostics_bundle)) {
             Text(
                 stringResource(
                     R.string.settings_version_identity,

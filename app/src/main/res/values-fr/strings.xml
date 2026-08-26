@@ -321,7 +321,7 @@
     <string name="settings_update_skip">Ignorer cette version</string>
     <string name="settings_update_up_to_date">C\'est la dernière version.</string>
     <string name="settings_update_failed">Impossible de joindre GitHub lors de la vérification.</string>
-    <string name="settings_tester_diagnostics">Diagnostics du testeur</string>
+    <string name="settings_diagnostics_bundle">Ensemble de diagnostic</string>
     <string name="settings_version_identity">Version : %1$s</string>
     <string name="settings_source_identity">Source : %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Un lot expurgé des journaux propres à cette application. Aucun journal d\'une autre application n\'est inclus.</string>

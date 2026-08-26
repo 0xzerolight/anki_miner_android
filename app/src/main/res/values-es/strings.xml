@@ -321,7 +321,7 @@
     <string name="settings_update_skip">Omitir esta versión</string>
     <string name="settings_update_up_to_date">Esta es la versión más reciente.</string>
     <string name="settings_update_failed">La comprobación no pudo conectar con GitHub.</string>
-    <string name="settings_tester_diagnostics">Diagnóstico para pruebas</string>
+    <string name="settings_diagnostics_bundle">Paquete de diagnóstico</string>
     <string name="settings_version_identity">Versión: %1$s</string>
     <string name="settings_source_identity">Fuente: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Paquete depurado con los registros propios de esta aplicación. No incluye registros de otras aplicaciones.</string>

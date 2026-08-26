@@ -320,7 +320,7 @@
     <string name="settings_update_skip">Diese Version überspringen</string>
     <string name="settings_update_up_to_date">Dies ist die neueste Version.</string>
     <string name="settings_update_failed">GitHub konnte nicht erreicht werden.</string>
-    <string name="settings_tester_diagnostics">Tester-Diagnose</string>
+    <string name="settings_diagnostics_bundle">Diagnosepaket</string>
     <string name="settings_version_identity">Version: %1$s</string>
     <string name="settings_source_identity">Quelle: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Ein bereinigtes Paket der eigenen Protokolle dieser App. Protokolle anderer Apps sind nicht enthalten.</string>

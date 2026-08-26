@@ -104,7 +104,7 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 | Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
 | Word audio missing on cards | Import an audio pack or android.db under Settings -> Audio, and map the expression audio field. |
 | Subtitles out of sync | Use the subtitle offset control on the mining screen. |
-| Reporting a bug | Settings -> Tester diagnostics can share a redacted log bundle. Check it before attaching it to an issue. |
+| Reporting a bug | Settings -> Diagnostics bundle can share a redacted log bundle. Check it before attaching it to an issue. |
 
 ## Contributing
 

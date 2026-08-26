@@ -319,7 +319,7 @@
     <string name="settings_update_skip">Lewati versi ini</string>
     <string name="settings_update_up_to_date">Ini rilis terbaru.</string>
     <string name="settings_update_failed">Pemeriksaan tidak dapat menghubungi GitHub.</string>
-    <string name="settings_tester_diagnostics">Diagnostik penguji</string>
+    <string name="settings_diagnostics_bundle">Paket diagnostik</string>
     <string name="settings_version_identity">Versi: %1$s</string>
     <string name="settings_source_identity">Sumber: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Bundel log tersensor milik aplikasi ini. Log aplikasi lain tidak disertakan.</string>

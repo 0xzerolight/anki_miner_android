@@ -320,7 +320,7 @@
     <string name="settings_update_skip">このバージョンをスキップ</string>
     <string name="settings_update_up_to_date">これが最新のリリースです。</string>
     <string name="settings_update_failed">GitHub に接続できませんでした。</string>
-    <string name="settings_tester_diagnostics">テスター診断情報</string>
+    <string name="settings_diagnostics_bundle">診断バンドル</string>
     <string name="settings_version_identity">バージョン: %1$s</string>
     <string name="settings_source_identity">ソース: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">このアプリ自身のログをマスキングしたバンドルです。他のアプリのログは含まれません。</string>
