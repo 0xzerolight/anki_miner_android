@@ -482,7 +482,7 @@
     <string name="resource_failure_dictionary_invalid">使用中の辞書スロットが破損または古くなっています。採掘前に明示的に置き換えてください</string>
     <string name="unidic_resource_title">日本語形態素解析器 — 必須</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · ダウンロード約45 MiB、インストール後249 MiB</string>
-    <string name="jitendex_resource_title">Jitendex辞書 — 推奨</string>
+    <string name="jitendex_resource_title">Jitendex辞書</string>
     <string name="recommended_resources_title">推奨リソース</string>
     <string name="recommended_resources_description">JMdict辞書、JPDBかな頻度リスト、Kanjiumピッチアクセント · ダウンロード約24 MiB、インポート中最大163 MiB</string>
     <string name="recommended_resources_download">ダウンロードしてインストール</string>

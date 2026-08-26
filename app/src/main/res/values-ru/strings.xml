@@ -483,7 +483,7 @@
     <string name="resource_failure_dictionary_invalid">Занятый слот словаря повреждён или устарел; явно замените его перед майнингом</string>
     <string name="unidic_resource_title">Японский токенизатор — требуется</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · загрузка около 45 MiB, установлено 249 MiB</string>
-    <string name="jitendex_resource_title">Словарь Jitendex — рекомендуется</string>
+    <string name="jitendex_resource_title">Словарь Jitendex</string>
     <string name="recommended_resources_title">Рекомендуемые ресурсы</string>
     <string name="recommended_resources_description">Словарь JMdict, список частотности каны JPDB и тональные ударения Kanjium · загрузка около 24 MiB, до 163 MiB при импорте</string>
     <string name="recommended_resources_download">Загрузить и установить</string>

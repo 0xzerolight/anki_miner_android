@@ -480,7 +480,7 @@
     <string name="resource_failure_dictionary_invalid">已占用的字典槽位已損毀或過時；請在採集前明確取代</string>
     <string name="unidic_resource_title">日文斷詞器 — 必要</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · 下載約 45 MiB，安裝後 249 MiB</string>
-    <string name="jitendex_resource_title">Jitendex 字典 — 建議</string>
+    <string name="jitendex_resource_title">Jitendex 字典</string>
     <string name="recommended_resources_title">建議資源</string>
     <string name="recommended_resources_description">JMdict 字典、JPDB 假名頻率表與 Kanjium 高低音調 · 下載約 24 MiB，匯入時最多 163 MiB</string>
     <string name="recommended_resources_download">下載並安裝</string>

@@ -482,7 +482,7 @@
     <string name="resource_failure_dictionary_invalid">Un espacio de diccionario ocupado está dañado u obsoleto; reemplácelo explícitamente antes de minar</string>
     <string name="unidic_resource_title">Tokenizador japonés — obligatorio</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · descarga de unos 45 MiB y 249 MiB instalado</string>
-    <string name="jitendex_resource_title">Diccionario Jitendex — recomendado</string>
+    <string name="jitendex_resource_title">Diccionario Jitendex</string>
     <string name="recommended_resources_title">Recursos recomendados</string>
     <string name="recommended_resources_description">Diccionario JMdict, lista de frecuencia kana de JPDB y acentos tonales de Kanjium · descarga de unos 24 MiB y hasta 163 MiB durante la importación</string>
     <string name="recommended_resources_download">Descargar e instalar</string>

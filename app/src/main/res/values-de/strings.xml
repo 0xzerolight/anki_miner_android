@@ -481,7 +481,7 @@
     <string name="resource_failure_dictionary_invalid">Ein belegter Wörterbuchplatz ist beschädigt oder veraltet; ersetzen Sie ihn ausdrücklich vor dem Mining</string>
     <string name="unidic_resource_title">Japanischer Tokenizer — erforderlich</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · etwa 45 MiB Download und 249 MiB installiert</string>
-    <string name="jitendex_resource_title">Jitendex-Wörterbuch — empfohlen</string>
+    <string name="jitendex_resource_title">Jitendex-Wörterbuch</string>
     <string name="recommended_resources_title">Empfohlene Ressourcen</string>
     <string name="recommended_resources_description">JMdict-Wörterbuch, JPDB-Kana-Häufigkeitsliste und Kanjium-Tonhöhenakzente · etwa 24 MiB Download und bis zu 163 MiB beim Import</string>
     <string name="recommended_resources_download">Herunterladen und installieren</string>
