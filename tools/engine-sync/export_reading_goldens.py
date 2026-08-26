@@ -158,6 +158,7 @@ class _DefinitionService:
     def __init__(self) -> None:
         self.lookup_pairs: list[tuple[str, str | None]] = []
         self.fallback_context: dict[str, tuple[str, str | None]] = {}
+        self.run_cache_clears = 0
         self.closed = False
 
     def get_definitions_batch(
@@ -183,6 +184,10 @@ class _DefinitionService:
         freezes; the real service resolves JMdict identities.
         """
         return {}
+
+    def clear_run_cache(self) -> None:
+        """Per-run attest-quality cache reset; the engine calls it in ``finally``."""
+        self.run_cache_clears += 1
 
     def close(self) -> None:
         self.closed = True

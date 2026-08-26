@@ -55,7 +55,7 @@ def _scrub_surrogates(value: str | None) -> str | None:
         return _SURROGATE_RE.sub("�", value)
 
 
-_SCHEMA_SQL = """
+_TABLES_SQL = """
 CREATE TABLE IF NOT EXISTS entries (
     id        INTEGER PRIMARY KEY,
     term      TEXT NOT NULL,
@@ -66,8 +66,6 @@ CREATE TABLE IF NOT EXISTS entries (
     score     INTEGER DEFAULT 0,
     sequence  INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_term    ON entries(term);
-CREATE INDEX IF NOT EXISTS idx_reading ON entries(reading);
 
 CREATE TABLE IF NOT EXISTS tags (
     name     TEXT PRIMARY KEY,
@@ -83,6 +81,20 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 """
 
+# The lookup indexes every reader needs. Split out of the table DDL so an
+# importer can populate first and build them once, instead of maintaining the
+# B-trees across every one of a million inserts. ``idx_sequence`` serves the
+# redirect-row resolution (_fetch_rows_for_sequences); pre-existing indexes
+# without it are still correct — the resolution query just falls back to a
+# table scan, so no schema bump / forced reimport.
+_LOOKUP_INDEXES_SQL = """
+CREATE INDEX IF NOT EXISTS idx_term     ON entries(term);
+CREATE INDEX IF NOT EXISTS idx_reading  ON entries(reading);
+CREATE INDEX IF NOT EXISTS idx_sequence ON entries(sequence);
+"""
+
+_SCHEMA_SQL = _TABLES_SQL + _LOOKUP_INDEXES_SQL
+
 # Candidate-pool size fetched per word BEFORE the provider runs content-dedup,
 # sequence grouping, and the display cap (indexed_provider._DISPLAY_LIMIT). Raised
 # from the old flat 5 so duplicate-content rows (OVH-026) and lower-ranked
@@ -92,9 +104,13 @@ CREATE TABLE IF NOT EXISTS meta (
 #
 # The pool cap is applied in PYTHON (``[:_LOOKUP_LIMIT]``) AFTER the render-path
 # homograph scope (Rule A/B, U2) filters rows, in both ``lookup`` and
-# ``lookup_many``. Capping in SQL (``LIMIT``) would truncate before scoping and
-# could hide a survivor ranked past the cap — breaking the lookup↔lookup_many
-# parity property (both fetch the full ordered candidate set, scope, THEN cap).
+# ``lookup_many``. Neither one caps rows in SQL: capping there would truncate
+# before scoping and could hide a survivor ranked past the cap, so
+# ``lookup_many`` is row-for-row identical to ``lookup`` on every input, not
+# merely on inputs below some threshold. A hyper-common kana reading attesting
+# thousands of full-content rows is paid for in memory instead; the chunk size
+# (``_LOOKUP_MANY_CHUNK``) is what bounds how many such words can land in one
+# fetchall().
 _LOOKUP_LIMIT = 20
 
 # Reading-boost ranking. Ported from Yomitan
@@ -228,13 +244,13 @@ def _fold_reading(reading: str | None) -> str | None:
     return katakana_to_hiragana(unicodedata.normalize("NFC", reading)) if reading is not None else None
 
 
-def _homograph_keep_mask(word: str, rows: list[tuple[str, str]]) -> list[bool]:
+def _homograph_keep_mask(word: str, rows: list[tuple[str, str]], lemma: str | None = None) -> list[bool]:
     """Render-path homograph scope (U2): a keep-mask aligned to ``rows``.
 
     ``rows`` are ``(term, content)`` pairs for the rows a lookup fetched for
     ``word`` (each already matched ``term = word`` OR the folded reading), so a
     row is *term-exact* iff its term equals ``word`` and *reading-only* otherwise.
-    Two rules drop wrong-homograph reading matches from the RENDERED definition
+    Three rules drop wrong-homograph reading matches from the RENDERED definition
     (existence/attestation probes bypass this — see ``lookup_many``'s
     ``scope_homographs`` flag):
 
@@ -247,10 +263,20 @@ def _homograph_keep_mask(word: str, rows: list[tuple[str, str]]) -> list[bool]:
       both rows' tags on a kana query — that reading-only row is the SAME gloss,
       not a wrong homograph. Monotone-safe: term-exact rows always survive, so a
       word with one can never be emptied.
-    * **Rule B** — kana-only query with NO term-exact row ⇒ keep only reading
-      matches whose term carries at least one kanji (しゃべる keeps 喋る, drops the
-      kana-term シャベル). May legitimately empty a junk kana front (accepted).
-      Same-script kanji-vs-kanji ordering (汁 vs 知る) is out of scope.
+    * **Rule A′** — no term-exact row, but the caller supplied the token's
+      lemma and at least one row's term equals it ⇒ keep the lemma-exact rows
+      (plus same-content duplicates, the Rule A carve-out). This is the
+      kana-front fix: mined_form ゆう (lemma 言う) resolves purely through the
+      folded-reading scan where every ゆう-reading homograph qualifies and
+      score ranking buries 言う under 有/夕/結う — the tokenizer already chose
+      the lexeme, so its lemma names the right rows. Kanji fronts can't reach
+      this rule: a kanji query fetches no reading matches, so it either has
+      term-exact rows (Rule A) or zero rows (miss → 5.2 fallback).
+    * **Rule B** — kana-only query with NO term-exact (or lemma-exact) row ⇒
+      keep only reading matches whose term carries at least one kanji (しゃべる
+      keeps 喋る, drops the kana-term シャベル). May legitimately empty a junk
+      kana front (accepted). Same-script kanji-vs-kanji ordering (汁 vs 知る)
+      is out of scope.
 
     Any other case (kanji query with no term-exact row — reading matches against a
     kanji query are impossible) leaves the set intact.
@@ -259,20 +285,84 @@ def _homograph_keep_mask(word: str, rows: list[tuple[str, str]]) -> list[bool]:
     if any(term_exact):
         exact_contents = {content for (_, content), ex in zip(rows, term_exact, strict=True) if ex}
         return [ex or content in exact_contents for (_, content), ex in zip(rows, term_exact, strict=True)]
+    if lemma and lemma != word:
+        lemma_exact = [term == lemma for term, _ in rows]
+        if any(lemma_exact):
+            lemma_contents = {content for (_, content), ex in zip(rows, lemma_exact, strict=True) if ex}
+            return [ex or content in lemma_contents for (_, content), ex in zip(rows, lemma_exact, strict=True)]
     if _is_kana_only(word):
         return [any(_is_kanji(c) for c in term) for term, _ in rows]
     return [True] * len(rows)
 
 
-def create_index(db_path: Path) -> None:
-    """Create a fresh dictionary index at db_path. Idempotent (uses IF NOT EXISTS)."""
+def _connect_for_bulk_write(db_path: Path) -> sqlite3.Connection:
+    """Open *db_path* tuned for a one-shot bulk load.
+
+    Importers write into a staging database that is renamed into place only
+    after the whole import succeeds, so durability during the load buys nothing:
+    a crash leaves staging bytes that are discarded, never a promoted index. The
+    defaults (rollback journal, ``synchronous=FULL``) cost an fsync per batch
+    and a journal write per page for exactly that discarded state.
+    """
+    conn = sqlite3.connect(db_path, timeout=5.0)
+    conn.execute("PRAGMA journal_mode=OFF")
+    conn.execute("PRAGMA synchronous=OFF")
+    conn.execute("PRAGMA temp_store=MEMORY")
+    conn.execute("PRAGMA cache_size=-16000")
+    return conn
+
+
+def create_index(db_path: Path, *, with_lookup_indexes: bool = True) -> None:
+    """Create a fresh dictionary index at db_path. Idempotent (uses IF NOT EXISTS).
+
+    ``with_lookup_indexes=False`` creates the tables only, leaving ``idx_term``
+    and ``idx_reading`` to :func:`create_lookup_indexes` after the rows land.
+    Importers use it; every other caller gets the fully indexed database the
+    default has always produced.
+    """
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=5.0)
     try:
-        conn.executescript(_SCHEMA_SQL)
+        conn.executescript(_SCHEMA_SQL if with_lookup_indexes else _TABLES_SQL)
         conn.commit()
     finally:
         conn.close()
+
+
+def create_lookup_indexes(db_path: Path) -> None:
+    """Build the ``entries`` lookup indexes. Idempotent (uses IF NOT EXISTS).
+
+    Building once over a populated table is markedly cheaper than maintaining
+    the same two B-trees across every insert, so importers defer to this.
+    """
+    conn = _connect_for_bulk_write(db_path)
+    try:
+        conn.executescript(_LOOKUP_INDEXES_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def ensure_sequence_index(db_path: Path) -> None:
+    """Create any missing lookup index (notably ``idx_sequence``) on an
+    existing index file. v6 indexes imported before redirect resolution lack
+    ``idx_sequence`` and pay a full table scan per redirect batch; this
+    backfills it once, without a schema bump (the data is correct). Refreshes
+    the ``meta.json`` sidecar mtime so the fast path is not invalidated by the
+    write.
+
+    Raises on failure (read-only filesystem, locked DB) — this function does
+    NOT swallow; the caller (``IndexedDictProvider.load()``) catches and logs
+    so the scan fallback stays correct instead of failing the whole load."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.executescript(_LOOKUP_INDEXES_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+    sidecar = db_path.parent / "meta.json"
+    if sidecar.is_file():
+        sidecar.touch()
 
 
 def bulk_insert(
@@ -294,7 +384,7 @@ def bulk_insert(
     across the importer's staging-dir cleanup (matters on Windows).
     """
     total = 0
-    conn = sqlite3.connect(db_path)
+    conn = _connect_for_bulk_write(db_path)
     try:
         batch: list[tuple] = []
 
@@ -347,7 +437,7 @@ def write_tags(db_path: Path, tags: Iterable[TagMeta]) -> int:
     write seam (Issue #67).
     """
     total = 0
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=5.0)
     try:
         conn.executemany(
             "INSERT OR REPLACE INTO tags (name, category, ord, notes, score) VALUES (?, ?, ?, ?, ?)",
@@ -407,13 +497,118 @@ def read_meta_cached(db_path: Path) -> dict[str, str]:
     return _sqlite_index.read_meta_cached(db_path, read_meta)
 
 
-def lookup(conn: sqlite3.Connection, word: str, reading: str | None = None) -> list[tuple[str, str, int | None]]:
+# ---------------------------------------------------------------------------
+# Redirect ("pointer") rows — the yomidevs / Jitendex JMdict-family exports.
+#
+# Those dictionaries emit JMdict search-only spellings (sK/sk keys, e.g.
+# お互いさま) as dedicated pointer rows whose whole glossary is "⟶ お互い様"
+# (Jitendex 4.7 "redirections"). Their convention, verified exact on both
+# catalog dicts (Jitendex 2026-06-06: 136,905/432,643 rows; JMdict 2026-06-28:
+# 19,796/523,745): a redirect row's ``sequence`` is the NEGATION of the
+# canonical entry's sequence, its content carries the U+27F6 arrow, and no
+# real row has either marker. An arrow rendered into a card's definition field
+# is junk (nothing to click on a card), so the read paths below splice each
+# surviving redirect row's canonical rows in at the redirect's own rank.
+# One hop only — targets are positive and a positive row is never a redirect.
+# A redirect whose target is absent contributes nothing, so a fully-redirect
+# result collapses to a miss and the provider chain (other dicts, deinflection
+# fallback, Jisho) gets its shot.
+#
+# Both predicate halves are required: a foreign dictionary using negative
+# sequences for real content (no arrow) must pass through untouched.
+_REDIRECT_ARROW = "⟶"  # ⟶
+
+
+def _is_redirect_row(content: str, sequence: int | None) -> bool:
+    return sequence is not None and sequence < 0 and _REDIRECT_ARROW in content
+
+
+def _fetch_rows_for_sequences(
+    conn: sqlite3.Connection, sequences: list[int]
+) -> dict[int, list[tuple[str, str, int | None, str]]]:
+    """(content, tags, sequence, rules) rows per requested sequence, each list
+    in ``score DESC, sequence, id`` order so a resolved stand-in keeps the
+    canonical entry's own internal ranking. Pre-``idx_sequence`` indexes serve
+    this with a table scan — batched by the callers and only paid when a
+    redirect row actually survived scoping."""
+    grouped: dict[int, list[tuple[tuple[int, int], tuple[int, int], int, str, str, int | None, str]]] = {}
+    for start in range(0, len(sequences), _EXIST_CHUNK):
+        chunk = sequences[start : start + _EXIST_CHUNK]
+        placeholders = ", ".join("?" for _ in chunk)
+        rows = conn.execute(
+            f"SELECT id, content, tags, rules, score, sequence FROM entries WHERE sequence IN ({placeholders})",
+            chunk,
+        ).fetchall()
+        for row_id, content, tags, rules, score, sequence in rows:
+            grouped.setdefault(sequence, []).append(
+                (
+                    _score_key(score),
+                    _seq_key(sequence),
+                    row_id,
+                    content,
+                    tags if tags is not None else "",
+                    sequence,
+                    rules if rules is not None else "",
+                )
+            )
+    return {
+        seq: [(content, tags, sequence, rules) for _s, _q, _i, content, tags, sequence, rules in sorted(entries)]
+        for seq, entries in grouped.items()
+    }
+
+
+def _substitute_redirect_rows(
+    conn: sqlite3.Connection,
+    rows: list[tuple[str, str, int | None]] | list[tuple[str, str, int | None, str]],
+    resolved_by_seq: dict[int, list[tuple[str, str, int | None, str]]] | None = None,
+    *,
+    with_rules: bool = False,
+) -> list[tuple[str, str, int | None]] | list[tuple[str, str, int | None, str]]:
+    """Splice each redirect row's canonical rows in at the redirect's own rank.
+
+    ``rows`` are one word's projected, scoped, sorted result tuples —
+    ``(content, tags, sequence)`` or, with ``with_rules``,
+    ``(content, tags, sequence, rules)`` — BEFORE the ``_LOOKUP_LIMIT`` cap.
+    Non-redirect rows keep their positions; a target already spliced for this
+    word is not spliced twice. No redirect rows ⇒ input returned as-is, so the
+    hot path pays no query. ``resolved_by_seq`` lets ``lookup_many`` share one
+    batch-wide fetch; ``None`` fetches for just these rows."""
+    targets = list(dict.fromkeys(-row[2] for row in rows if row[2] is not None and _is_redirect_row(row[0], row[2])))
+    if not targets:
+        return rows
+    if resolved_by_seq is None:
+        resolved_by_seq = _fetch_rows_for_sequences(conn, targets)
+    out: list[tuple[str, str, int | None]] | list[tuple[str, str, int | None, str]] = []
+    spliced: set[int] = {
+        row[2] for row in rows if row[2] is not None and row[2] > 0 and not _is_redirect_row(row[0], row[2])
+    }
+    for row in rows:
+        if row[2] is None or not _is_redirect_row(row[0], row[2]):
+            out.append(row)  # type: ignore[arg-type]
+            continue
+        target = -row[2]
+        if target in spliced:
+            continue
+        spliced.add(target)
+        for content, tags, sequence, rules in resolved_by_seq.get(target, []):
+            out.append((content, tags, sequence, rules) if with_rules else (content, tags, sequence))  # type: ignore[arg-type]
+    return out
+
+
+def lookup(
+    conn: sqlite3.Connection, word: str, reading: str | None = None, lemma: str | None = None
+) -> list[tuple[str, str, int | None]]:
     """Return up to ``_LOOKUP_LIMIT`` (content, tags, sequence) triples matching
     word (term or folded reading), reading-boosted then ranked.
 
     ``reading`` is the token's contextual kana reading (e.g. ``w.lemma_reading``)
     and acts as a ranking BOOST only: rows whose stored reading equals it sort
     first, the rest survive below. ``None`` = wildcard (no boost) = 4.6 behavior.
+
+    ``lemma`` is the token's UniDic lemma; it feeds the Rule A′ homograph scope
+    (see :func:`_homograph_keep_mask`) so a kana front (ゆう, lemma 言う) keeps
+    its own lexeme's rows instead of every same-reading homograph. ``None``
+    keeps pre-A′ behavior.
 
     Readings are stored hiragana-folded, so the reading-match WHERE clause binds
     the folded query word and the boost binds the folded contextual reading,
@@ -424,13 +619,19 @@ def lookup(conn: sqlite3.Connection, word: str, reading: str | None = None) -> l
     word = unicodedata.normalize("NFC", word)
     folded_word = katakana_to_hiragana(word)
     folded_boost = _fold_reading(reading)
+    normalized_lemma = unicodedata.normalize("NFC", lemma) if lemma else None
     rows = conn.execute(_LOOKUP_SQL, (word, folded_word, word, folded_boost)).fetchall()
-    # rows: (content, tags, sequence, term). Scope homographs (Rule A/B) over the
-    # ORDER BY-sorted candidate set, THEN apply the pool cap — matching the
-    # filter-before-cap order ``lookup_many`` uses so both stay row-for-row equal.
-    keep = _homograph_keep_mask(word, [(row[3], row[0]) for row in rows])
+    # rows: (content, tags, sequence, term). Scope homographs (Rule A/A′/B) over
+    # the ORDER BY-sorted candidate set, THEN apply the pool cap — matching the
+    # filter-before-cap order ``lookup_many`` uses. Row-for-row equal to
+    # ``lookup_many`` on every input: neither fetch caps rows in SQL (see the
+    # ``_LOOKUP_LIMIT`` comment above).
+    keep = _homograph_keep_mask(word, [(row[3], row[0]) for row in rows], normalized_lemma)
     kept = [row for row, k in zip(rows, keep, strict=True) if k]
-    return [(row[0], row[1], row[2]) for row in kept[:_LOOKUP_LIMIT]]
+    # Redirect substitution BEFORE the pool cap (matching lookup_many) so a
+    # resolved canonical entry can't be truncated by its own pointer row.
+    projected = _substitute_redirect_rows(conn, [(row[0], row[1], row[2]) for row in kept])
+    return projected[:_LOOKUP_LIMIT]  # type: ignore[return-value]
 
 
 def lookup_with_rules(conn: sqlite3.Connection, word: str) -> list[tuple[str, str, int | None, str]]:
@@ -450,26 +651,60 @@ def lookup_with_rules(conn: sqlite3.Connection, word: str) -> list[tuple[str, st
     # homographs (Rule A/B) then apply the pool cap, mirroring ``lookup``.
     keep = _homograph_keep_mask(word, [(row[4], row[0]) for row in rows])
     kept = [row for row, k in zip(rows, keep, strict=True) if k]
-    return [(row[0], row[1], row[2], row[3] if row[3] is not None else "") for row in kept[:_LOOKUP_LIMIT]]
+    projected = _substitute_redirect_rows(
+        conn,
+        [(row[0], row[1], row[2], row[3] if row[3] is not None else "") for row in kept],
+        with_rules=True,
+    )
+    return projected[:_LOOKUP_LIMIT]  # type: ignore[return-value]
 
 
-# sqlite's default SQLITE_MAX_VARIABLE_NUMBER is 999. lookup_many binds each
-# word twice (term IN + reading IN), so a single chunk may use at most
-# 2 * _BIND_CHUNK variables. Keep the product comfortably under the cap.
+# sqlite's default SQLITE_MAX_VARIABLE_NUMBER is 999. attest_detail's
+# term-only arm (include_readings=False) binds each word ONCE (a single
+# ``term IN (...)`` clause), so a chunk of _BIND_CHUNK words stays
+# comfortably under the cap even with room to spare. The reading-inclusive
+# arm binds each word twice (term IN + reading IN) and uses the smaller
+# _ATTEST_READING_CHUNK instead — see that constant.
 _BIND_CHUNK = 450
+
+# lookup_many binds 3 placeholders per word (req_idx, term, folded term) into
+# ONE UNION ALL statement, so the 999-variable cap is not the binding
+# constraint here. The chunk stays deliberately small because each word's
+# subquery is UNBOUNDED (see lookup_many): fewer words per round trip is what
+# bounds how many hyper-common-reading collisions can compound into one
+# fetchall() of full-content rows.
+_LOOKUP_MANY_CHUNK = 150
+
+# attest_detail must see EVERY attesting row per word (commonness/quality
+# verdicts need completeness, unlike lookup_many's _LOOKUP_LIMIT display
+# pool). Batching fewer words per round trip bounds how many separate
+# common-reading collisions can compound into one fetchall() — the term-only
+# arm keeps _BIND_CHUNK since an exact headword repeating at that scale is far
+# rarer.
+_ATTEST_READING_CHUNK = 100
 
 
 def lookup_many(
-    conn: sqlite3.Connection, pairs: list[tuple[str, str | None]], scope_homographs: bool = True
+    conn: sqlite3.Connection,
+    pairs: list[tuple[str, str | None]],
+    scope_homographs: bool = True,
+    lemmas: dict[str, str] | None = None,
 ) -> dict[str, list[tuple[str, str, int | None]]]:
     """Batch variant of :func:`lookup`.
 
     ``pairs`` is a list of ``(word, reading | None)`` — each word's contextual
     reading boosts *that word's own bucket* (``None`` = wildcard, no boost).
-    Runs ONE query per chunk (``WHERE term IN (...) OR reading IN (...)``)
-    instead of one query per word, then reproduces ``_LOOKUP_SQL``'s reading
-    boost, ordering, and pool cap in Python so each per-word result is
-    byte-identical, row-for-row, to ``lookup(conn, word, reading)``.
+    Runs ONE query per chunk — a ``UNION ALL`` of one ``_LOOKUP_SQL``-shaped
+    subquery per word — instead of one query per word, then reproduces
+    ``_LOOKUP_SQL``'s ordering and the pool cap in Python so each per-word
+    result is byte-identical, row-for-row, to ``lookup(conn, word, reading)``
+    on every input. The per-word fetch is unbounded on purpose: see the
+    ``_LOOKUP_LIMIT`` comment for why a SQL row cap cannot preserve that
+    parity.
+
+    ``lemmas`` optionally maps a requested word to its token's UniDic lemma,
+    threaded into the Rule A′ homograph scope per word (see
+    :func:`_homograph_keep_mask`); inert when ``scope_homographs`` is False.
 
     ``scope_homographs`` (default ``True``) applies the render-path Rule A/B
     homograph scope (:func:`_homograph_keep_mask`) per word before the sort/cap,
@@ -503,22 +738,37 @@ def lookup_many(
     boost_by_word: dict[str, str | None] = {w: _fold_reading(r) for w, r in unique_pairs}
     unique_words = [w for w, _ in unique_pairs]
 
-    for start in range(0, len(unique_words), _BIND_CHUNK):
-        chunk = unique_words[start : start + _BIND_CHUNK]
-        normalized_chunk = [normalized_by_word[w] for w in chunk]
-        # Readings are stored hiragana-folded, so the ``reading IN`` clause must
-        # bind the folded query words (touch point b) — a katakana requested
-        # word still fetches the row whose folded reading it matches.
-        folded_chunk = [katakana_to_hiragana(w) for w in normalized_chunk]
-        placeholders = ", ".join("?" for _ in chunk)
-        sql = (
-            "SELECT id, term, reading, content, tags, score, sequence FROM entries "
-            f"WHERE term IN ({placeholders}) OR reading IN ({placeholders})"
-        )
-        rows = conn.execute(sql, (*normalized_chunk, *folded_chunk)).fetchall()
+    for start in range(0, len(unique_words), _LOOKUP_MANY_CHUNK):
+        chunk = unique_words[start : start + _LOOKUP_MANY_CHUNK]
 
-        # Bucket each fetched row to every requested word it can satisfy. A row
-        # may match one word by term and a different word by reading. Each entry
+        # One _LOOKUP_SQL-shaped subquery per word, tagged with its position in
+        # ``chunk`` (req_idx) so each fetched row can be routed back to its own
+        # word without any reverse-mapping: a row satisfies exactly the
+        # subquery that fetched it, term match or reading match, collapsed to
+        # one row per word by SQL's own ``OR`` (matching _LOOKUP_SQL's
+        # "term=? OR reading=?" semantics — a dual-match row still appears
+        # once). The fetch is deliberately unbounded, exactly as ``lookup``'s
+        # is: a SQL row cap would truncate BEFORE homograph scoping and could
+        # hide a survivor ranked past it. Ordering is reproduced in Python
+        # below, so no ORDER BY is needed here either.
+        subqueries: list[str] = []
+        params: list[object] = []
+        for idx, w in enumerate(chunk):
+            normalized = normalized_by_word[w]
+            # Readings are stored hiragana-folded, so the reading-match bind
+            # must be the folded query word (touch point b) — a katakana
+            # requested word still fetches the row whose folded reading it
+            # matches.
+            folded_term = katakana_to_hiragana(normalized)
+            subqueries.append(
+                "SELECT ? AS req_idx, id, term, reading, content, tags, score, sequence FROM entries "
+                "WHERE term = ? OR reading = ?"
+            )
+            params.extend([idx, normalized, folded_term])
+        sql = " UNION ALL ".join(subqueries)
+        rows = conn.execute(sql, params).fetchall()
+
+        # Bucket each fetched row under its own req_idx-tagged word. Each entry
         # carries the sort keys that reproduce _LOOKUP_SQL's
         # "ORDER BY (term=?) DESC, (reading=?) DESC, score DESC, sequence", plus a
         # final ``id`` tiebreak:
@@ -532,60 +782,56 @@ def lookup_many(
         #   * row_id: SQLite resolves equal (priority, score, sequence) ties by
         #     rowid ascending under the single-word query's MULTI-INDEX OR plan;
         #     replaying it here keeps lookup_many byte-identical to lookup.
-        term_reverse: dict[str, list[str]] = {}
-        for requested, normalized in zip(chunk, normalized_chunk, strict=True):
-            term_reverse.setdefault(normalized, []).append(requested)
-        # Hiragana-keyed reverse map (touch point c): folded requested word →
-        # the requested word(s) that fold to it. A reading-only hit is assigned
-        # back through this map so a katakana requested word (whose raw form no
-        # longer equals the folded stored reading) is not silently dropped —
-        # the divergence that would break the lookup_many == lookup invariant.
-        reading_reverse: dict[str, list[str]] = {}
-        for w, wf in zip(chunk, folded_chunk, strict=True):
-            reading_reverse.setdefault(wf, []).append(w)
-        # ``term`` (index 5) is carried on each entry so the U2 homograph scope
-        # can classify term-exact vs reading-only per word before the cap; the
-        # sort key stays the first five fields and the result unpack still takes
-        # the trailing (content, tags, sequence).
         buckets: dict[str, list[tuple[int, int, tuple[int, int], tuple[int, int], int, str, str, str, int | None]]] = {
             w: [] for w in chunk
         }
-        for row_id, term, reading, content, tags, score, sequence in rows:
+        for req_idx, row_id, term, reading, content, tags, score, sequence in rows:
+            w = chunk[req_idx]
             tags_val = tags if tags is not None else ""
             folded_reading = katakana_to_hiragana(reading) if reading is not None else None
             seq_key = _seq_key(sequence)
             score_key = _score_key(score)
-            # A row satisfies a word via term OR reading. _LOOKUP_SQL's
-            # ``term=? OR reading=?`` returns each row ONCE per word even when
-            # both columns match, so collapse to one entry per requested word,
-            # letting the term match (priority 0) win over a reading-only one.
-            matched: dict[str, int] = {}
-            for w in term_reverse.get(term, ()):
-                matched[w] = 0
-            if folded_reading is not None:
-                for w in reading_reverse.get(folded_reading, ()):
-                    matched.setdefault(w, 1)
-            for w, term_priority in matched.items():
-                reading_priority = _reading_priority(folded_reading, boost_by_word[w])
-                buckets[w].append(
-                    (term_priority, reading_priority, score_key, seq_key, row_id, term, content, tags_val, sequence)
-                )
+            term_priority = 0 if term == normalized_by_word[w] else 1
+            reading_priority = _reading_priority(folded_reading, boost_by_word[w])
+            buckets[w].append(
+                (term_priority, reading_priority, score_key, seq_key, row_id, term, content, tags_val, sequence)
+            )
 
+        pending: dict[str, list[tuple[str, str, int | None]]] = {}
         for w, entries in buckets.items():
             if scope_homographs:
                 # Filter BEFORE sort/cap: order-independent per-row predicate, so
                 # scoping then sorting equals ``lookup``'s scope-the-sorted-set.
                 # e[5]=term, e[6]=content (see the entry tuple above).
-                keep = _homograph_keep_mask(normalized_by_word[w], [(e[5], e[6]) for e in entries])
+                raw_lemma = (lemmas or {}).get(w)
+                normalized_lemma = unicodedata.normalize("NFC", raw_lemma) if raw_lemma else None
+                keep = _homograph_keep_mask(normalized_by_word[w], [(e[5], e[6]) for e in entries], normalized_lemma)
                 entries = [e for e, k in zip(entries, keep, strict=True) if k]
             entries.sort(key=lambda e: (e[0], e[1], e[2], e[3], e[4]))
-            result[w] = [(content, tags, seq) for *_keys, content, tags, seq in entries[:_LOOKUP_LIMIT]]
+            pending[w] = [(content, tags, seq) for *_keys, content, tags, seq in entries]
+
+        # Redirect substitution BEFORE the pool cap, sharing ONE target fetch
+        # across the whole chunk (a table scan on pre-idx_sequence indexes must
+        # not repeat per word). Per-word splice order matches ``lookup``'s, so
+        # the lookup == lookup_many parity invariant survives.
+        chunk_targets = list(
+            dict.fromkeys(
+                -row[2]
+                for rows3 in pending.values()
+                for row in rows3
+                if row[2] is not None and _is_redirect_row(row[0], row[2])
+            )
+        )
+        resolved_by_seq = _fetch_rows_for_sequences(conn, chunk_targets) if chunk_targets else {}
+        for w, rows3 in pending.items():
+            substituted = _substitute_redirect_rows(conn, rows3, resolved_by_seq)
+            result[w] = substituted[:_LOOKUP_LIMIT]  # type: ignore[assignment]
 
     return result
 
 
 # terms_exist binds each term ONCE (single-column IN), so the chunk can be
-# larger than lookup_many's _BIND_CHUNK while staying under sqlite's default
+# larger than _BIND_CHUNK while staying under sqlite's default
 # SQLITE_MAX_VARIABLE_NUMBER of 999.
 _EXIST_CHUNK = 900
 
@@ -662,6 +908,15 @@ def exact_term_sequences(
     lexemes, so a query for ``いでる`` must not inherit ``出でる``'s sequence.
     Rows without a sequence cannot provide stable dictionary identity and are
     omitted.
+
+    A redirect row (negative sequence AND the ``⟶`` arrow, see
+    ``_is_redirect_row``) is folded to its canonical (positive) sequence: a kana
+    redirect that carries a reading (e.g. あかーん) must share identity with the
+    entry it points at, or the orthographic-alias dedup would treat ``-seq`` and
+    ``+seq`` as two lexemes. A foreign dictionary's own negative-sequence rows
+    (no arrow) are real content and pass through untouched, so ``-N`` and ``+N``
+    stay distinct identities for those. Both sides of every identity comparison
+    flow through this probe, so the fold is consistent.
     """
     normalized_pairs: list[tuple[str, str]] = []
     for term, reading in pairs:
@@ -679,18 +934,19 @@ def exact_term_sequences(
         chunk = terms[start : start + _EXIST_CHUNK]
         placeholders = ", ".join("?" for _ in chunk)
         rows = conn.execute(
-            "SELECT DISTINCT term, reading, sequence FROM entries "
+            "SELECT DISTINCT term, reading, sequence, content FROM entries "
             f"WHERE term IN ({placeholders}) AND reading IS NOT NULL "
             "AND reading != '' AND sequence IS NOT NULL",
             chunk,
         ).fetchall()
-        for term, reading, sequence in rows:
+        for term, reading, sequence, content in rows:
             folded_reading = _fold_reading(reading)
             if folded_reading is None:
                 continue
             key = (term, folded_reading)
             if key in requested:
-                found.setdefault(key, set()).add(sequence)
+                seq = -sequence if _is_redirect_row(content, sequence) else sequence
+                found.setdefault(key, set()).add(seq)
 
     return found
 
@@ -720,8 +976,12 @@ def attest_detail(conn: sqlite3.Connection, words: list[str], include_readings: 
 
     normalized_by_word = {word: unicodedata.normalize("NFC", word) for word in unique}
 
-    for start in range(0, len(unique), _BIND_CHUNK):
-        chunk = unique[start : start + _BIND_CHUNK]
+    # The reading arm batches fewer words per round trip (see _ATTEST_READING_CHUNK):
+    # a common kana reading can attest thousands of rows, and every word sharing
+    # a chunk adds its own attesting rows to the SAME fetchall().
+    chunk_size = _ATTEST_READING_CHUNK if include_readings else _BIND_CHUNK
+    for start in range(0, len(unique), chunk_size):
+        chunk = unique[start : start + chunk_size]
         normalized_chunk = [normalized_by_word[word] for word in chunk]
         term_reverse: dict[str, list[str]] = {}
         for requested, normalized in zip(chunk, normalized_chunk, strict=True):

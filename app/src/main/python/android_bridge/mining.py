@@ -192,12 +192,19 @@ class _ExpressionAudioSourceChain:
         diagnostic_callback: Callable[[str], None] | None = None,
         cache_lifetime: object | None = None,
         unavailable_pack_ids: Sequence[str] = (),
+        pack_registry: object | None = None,
     ) -> None:
         self._fetchers = tuple(fetchers)
         self._diagnostic_callback = diagnostic_callback
         self._diagnostic_reported = False
         self._cache_lifetime = cache_lifetime
         self._unavailable_pack_ids = tuple(unavailable_pack_ids)
+        # The registry this chain was built from, carried so _build_processor can
+        # hand the same scanned handle to EpisodeProcessor's staleness gate — the
+        # gate reads per-pack schema_ok off the registry, and the chain above has
+        # already dropped every stale pack. Exposed here rather than rescanned
+        # because the scan must stay behind the kind validation that runs first.
+        self.pack_registry = pack_registry
 
     def _diagnostic_summary(self) -> str | None:
         details: list[str] = []
@@ -506,6 +513,7 @@ def _build_expression_audio_source_chain(
         diagnostic_callback=diagnostic_callback,
         cache_lifetime=cache_lifetime,
         unavailable_pack_ids=unavailable_pack_ids,
+        pack_registry=pack_registry,
     )
 
 
@@ -913,6 +921,13 @@ def _build_processor(
             config,
             diagnostic_callback=adapters.presenter.show_warning,
         )
+        # Same staleness-gate reason as pitch_registry below, one step removed:
+        # the chain builder owns the scan (it must stay behind the kind
+        # validation), so the handle comes back off the chain. None whenever no
+        # pack is in play — the chain's own gate and the desktop factory's
+        # _load_audio_pack_registry share that predicate — which is exactly when
+        # audio packs must not be gated.
+        audio_pack_registry = getattr(expression_audio_fetcher, "pack_registry", None)
 
         pitch_accent_service = None
         # Constructed outside the try and kept past it: the staleness gate reads
@@ -1044,6 +1059,7 @@ def _build_processor(
             dictionary_registry=dictionary_registry,
             frequency_registry=frequency_registry,
             pitch_registry=pitch_registry,
+            audio_pack_registry=audio_pack_registry,
             sentence_audio_fetcher=sentence_audio_fetcher,
         )
     except BaseException:

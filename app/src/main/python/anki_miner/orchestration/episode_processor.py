@@ -41,7 +41,6 @@ from anki_miner.services import (
     WordFilterService,
 )
 from anki_miner.services.anki_service import is_transient_anki_transport_error
-from anki_miner.services.definition_service import collect_dictionary_css_entries
 from anki_miner.services.dictionary.card_style_block import attach_card_style_block
 from anki_miner.services.frequency.multi_frequency_service import harmonic_rank, min_rank
 from anki_miner.services.frequency.render import render_frequency_html
@@ -71,6 +70,7 @@ if TYPE_CHECKING:
     from anki_miner.interfaces.sentence_audio import SentenceAudioFetcher
     from anki_miner.models import LineLemmas
     from anki_miner.models.reading import ImageRef, ReadingDocument
+    from anki_miner.services.audio_packs.registry import AudioPackRegistry
     from anki_miner.services.dictionary.registry import DictionaryRegistry
     from anki_miner.services.frequency.multi_frequency_service import MultiFrequencyService
     from anki_miner.services.frequency.registry import FrequencySourceRegistry
@@ -127,6 +127,25 @@ def sanitize_source_label(label: str) -> str:
     """Remove *arr release metadata (e.g. ``[WEBRip-1080p][JA]-Trix``) from a
     source label, leaving the human-readable title."""
     return _ARR_METADATA_RE.sub("", label).strip()
+
+
+def _build_lemma_context(words: list[TokenizedWord]) -> dict[str, str]:
+    """Map each word's ``mined_form`` to its UniDic lemma for the definition /
+    glossary batches' Rule A′ homograph scope.
+
+    A kana front (mined_form ゆう, lemma 言う) resolves only through the
+    dictionary's folded-reading scan, where score ranking prefers the wrong
+    same-reading homograph (有/夕/結う over 言う); the lemma names the lexeme
+    the tokenizer actually chose. Identity pairs carry no signal and an empty
+    lemma (fully-OOV shapes) has nothing to point at, so both are skipped.
+    First-seen wins for duplicate mined_forms, mirroring the batches' own
+    first-reading-wins dedup.
+    """
+    context: dict[str, str] = {}
+    for w in words:
+        if w.lemma and w.lemma != w.mined_form:
+            context.setdefault(w.mined_form, w.lemma)
+    return context
 
 
 @dataclass
@@ -210,6 +229,7 @@ class EpisodeProcessor:
         dictionary_registry: DictionaryRegistry | None = None,
         frequency_registry: FrequencySourceRegistry | None = None,
         pitch_registry: PitchSourceRegistry | None = None,
+        audio_pack_registry: AudioPackRegistry | None = None,
         sentence_audio_fetcher: SentenceAudioFetcher | None = None,
         owns_lookup_services: bool = True,
     ):
@@ -246,6 +266,9 @@ class EpisodeProcessor:
                 must not be gated.
             pitch_registry: Optional loaded pitch registry, same role and same
                 inactive-means-ungated rule.
+            audio_pack_registry: Optional loaded audio pack registry, same role.
+                ``None`` whenever the expression_audio field is unmapped or no
+                pack entry is enabled — the same inactive-means-ungated rule.
             sentence_audio_fetcher: Optional sentence-TTS fetcher. Consulted
                 ONLY by ``process_reading`` phase 3' (reading sources have no
                 source audio); video/YouTube/audiobook paths never touch it.
@@ -280,6 +303,7 @@ class EpisodeProcessor:
         self._dictionary_registry = dictionary_registry
         self._frequency_registry = frequency_registry
         self._pitch_registry = pitch_registry
+        self._audio_pack_registry = audio_pack_registry
         self.owns_lookup_services = owns_lookup_services
         self._cancelled = False
         # Per-run external cancel source (e.g. a worker's threading.Event
@@ -374,10 +398,22 @@ class EpisodeProcessor:
         The per-run frequency sources hold their own ``index.sqlite`` handles,
         so they are released here too (idempotent; safe when absent).
 
-        Skipped entirely when the lookup services are worker-owned
-        (``owns_lookup_services=False``): only the owner closes shared handles,
-        in its end-of-run ``finally``.
+        The expression-audio fetcher chain is closed unconditionally, even
+        when the lookup services are worker-owned: ``SharedLookupServices``
+        never holds an audio fetcher, so this processor is always the sole
+        owner of its persistent audio-pack handles (PB3) — Settings → Audio
+        panel's pack-removal ``rmtree`` needs them released regardless of
+        ``owns_lookup_services``.
+
+        The definition/frequency handles below are skipped when the lookup
+        services are worker-owned (``owns_lookup_services=False``): only the
+        owner closes those shared handles, in its end-of-run ``finally``.
         """
+        if self.expression_audio_fetcher is not None:
+            close = getattr(self.expression_audio_fetcher, "close", None)
+            if callable(close):
+                with contextlib.suppress(Exception):
+                    close()
         if not self.owns_lookup_services:
             return
         self.definition_service.close()
@@ -542,6 +578,7 @@ class EpisodeProcessor:
         subtitle_file: Path,
         progress_callback: ProgressCallback | None = None,
         want_line_index: bool = False,
+        subtitle_offset: float | None = None,
     ) -> tuple[list[TokenizedWord], list[LineLemmas] | None]:
         """Phase 1: parse subtitles into tokenized words (and optionally a line index).
 
@@ -549,6 +586,9 @@ class EpisodeProcessor:
         line index is built when the i+1 filter needs it OR when a caller asks
         via ``want_line_index`` (interactive curation uses it to offer
         alternative example sentences per word).
+
+        ``subtitle_offset`` is this run's offset; ``None`` leaves the parser on
+        its own ``config.subtitle_offset``.
         """
         self._announce_stage(
             progress_callback,
@@ -560,15 +600,15 @@ class EpisodeProcessor:
         )
         line_index: list[LineLemmas] | None = None
         if self.config.use_i_plus_one_filter or want_line_index:
-            all_words, line_index = self.subtitle_parser.parse_subtitle_file_with_index(subtitle_file)
+            all_words, line_index = self.subtitle_parser.parse_subtitle_file_with_index(subtitle_file, subtitle_offset)
         else:
-            all_words = self.subtitle_parser.parse_subtitle_file(subtitle_file)
+            all_words = self.subtitle_parser.parse_subtitle_file(subtitle_file, subtitle_offset)
         self._report_ambiguous_readings()
         self.presenter.show_success(
             QCoreApplication.translate("EpisodeProcessor", "Found %n unique word(s)", "", len(all_words))
         )
         ctx.total_words_found = len(all_words)
-        represented_lines = len(self.subtitle_parser.parse_raw_entries(subtitle_file))
+        represented_lines = len(self.subtitle_parser.parse_raw_entries(subtitle_file, subtitle_offset))
         produced_tokens = sum(self.subtitle_parser.count_lemmas(subtitle_file).values())
         log_summary(
             logger,
@@ -1315,11 +1355,19 @@ class EpisodeProcessor:
             if alternate != w.mined_form and not _differs_by_okurigana_only(w.mined_form, alternate):
                 alternate = ""
             fallback_context.setdefault(w.mined_form, (alternate, None))
+        # Rule A′ lemma scope: a kana front's lemma names its lexeme so the
+        # lookup keeps 言う's rows for ゆう instead of the highest-scored
+        # same-reading homograph (有/夕/結う). Passed only when non-empty —
+        # the same legacy-call-shape convention the service applies toward
+        # providers, so kanji-only runs keep the pre-A′ call signature.
+        lemma_context = _build_lemma_context(words_with_media)
+        lemma_kwargs: dict[str, dict[str, str]] = {"lemma_context": lemma_context} if lemma_context else {}
         definitions = self.definition_service.get_definitions_batch(
             lookup_pairs,
             progress_callback,
             fallback_context,
             is_cancelled=lambda: self.cancelled,
+            **lemma_kwargs,
         )
         self.presenter.show_success(
             QCoreApplication.translate(
@@ -1336,6 +1384,7 @@ class EpisodeProcessor:
                 lookup_pairs,
                 progress_callback,
                 is_cancelled=lambda: self.cancelled,
+                **lemma_kwargs,
             )
             # get_glossaries_batch has no miss-fallback mechanism, so a miss may
             # retry once under a same-kanji, okurigana-only lemma alternate.
@@ -1456,11 +1505,12 @@ class EpisodeProcessor:
             QCoreApplication.translate("EpisodeProcessor", "Creating Anki cards"),
         )
         card_data: list[CardPayload] = []
-        # Self-contained PER-FIELD glossary styling: collect the dictionary CSS
-        # entries ONCE per episode (collect_dictionary_css_entries does registry
-        # + per-dict SQLite I/O) but attach a <style> block to EVERY mapped
-        # styled field inside the loop — tree-shaken against that field's own
-        # HTML and filtered to the dictionaries present in it (Issue #93;
+        # Self-contained PER-FIELD glossary styling: read the dictionary CSS
+        # entries ONCE per episode off the already-loaded provider chain
+        # (DefinitionService.css_entries — no registry rescan, no per-dict
+        # SQLite I/O; PB1) but attach a <style> block to EVERY mapped styled
+        # field inside the loop — tree-shaken against that field's own HTML
+        # and filtered to the dictionaries present in it (Issue #93;
         # witness/variant scans are cheap cached string work; freshly rendered
         # bodies are born stamped, so witnesses are already post-stamp). Each
         # field must carry its own TRAILING block: JS-driven note types (Kiku)
@@ -1468,12 +1518,12 @@ class EpisodeProcessor:
         # through DOMParser→body.innerHTML, so a <style> in another field never
         # applies and a field-LEADING <style> is hoisted to <head> and dropped
         # (attach_card_style_block enforces both — the old single-carrier
-        # "card-wide <style>" model broke every Kiku page). Skipping the collect
-        # when neither field is mapped keeps the no-styling path I/O-free.
+        # "card-wide <style>" model broke every Kiku page). Skipping the read
+        # when neither field is mapped keeps the no-styling path work-free.
         glossary_mapped = bool(self.config.anki_fields.get("glossary"))
         definition_mapped = bool(self.config.anki_fields.get("definition"))
         styling_on = glossary_mapped or definition_mapped
-        episode_dict_css_entries = collect_dictionary_css_entries(self.config) if styling_on else []
+        episode_dict_css_entries = self.definition_service.css_entries() if styling_on else []
         for (word, media), definition, glossary, (pitch_position, pitch_category) in zip(
             media_results, definitions, glossaries, pitch_data, strict=True
         ):
@@ -1518,15 +1568,17 @@ class EpisodeProcessor:
             if word.frequency_sources:
                 extra_fields["frequency"] = render_frequency_html(word.frequency_sources)
             # Numeric sort column: the harmonic mean of the per-source ranks
-            # (Yomitan getFrequencyHarmonic), with the 9999999 sentinel for
-            # words no source ranks so they sort *last* rather than before rank 1
-            # (an omitted field reads as empty string in Anki's browser). Gated on
-            # the field being mapped so the default config's notes stay byte-for-
-            # byte identical; the sentinel is emitted only when a user opts in.
-            if self.config.anki_fields.get("frequency_sort"):
-                extra_fields["frequency_sort"] = (
-                    str(word.frequency_harmonic_rank) if word.frequency_harmonic_rank is not None else "9999999"
-                )
+            # (Yomitan getFrequencyHarmonic). A word no source ranks gets NOTHING
+            # written — the field must never claim a rank the word does not have.
+            # v2.7.8-v2.11.0 wrote a 9999999 "missing" sentinel here so unranked
+            # words sorted last; it read as a real (absurd) rank on the card, and
+            # because the write was gated only on the mapping, a user with a
+            # preset-mapped FreqSort and no frequency source got it on EVERY card.
+            # `frequency_harmonic_rank` is set only inside the source-gated block
+            # in _phase2_filter, so a None here covers all three misses: no source
+            # loaded, source loaded but no row, and categorical-only attestation.
+            if self.config.anki_fields.get("frequency_sort") and word.frequency_harmonic_rank is not None:
+                extra_fields["frequency_sort"] = str(word.frequency_harmonic_rank)
             if glossary:
                 extra_fields["glossary"] = (
                     attach_card_style_block(glossary, dict_css_entries=episode_dict_css_entries)
@@ -1674,16 +1726,24 @@ class EpisodeProcessor:
 
         Owns ONLY the machinery both entry points share verbatim: the pre-flight
         gates (staleness backstop, card-target verify, then offline dictionary),
-        all *outside* the try so a ``SetupError`` propagates instead of collapsing into a
-        "completed" result and *before* temp allocation so no dir leaks on
-        failure), the per-run temp folder, the partial-IDs reset, the per-run
-        ``_external_cancel`` bridge, and the try/except/finally tail (partial-card
-        harvest on failure; bridge drop + temp cleanup in ``finally``). ``body``
-        receives the allocated ``run_temp_folder`` and returns this run's
-        ``ProcessingResult``; it may early-return at phase boundaries and may
-        raise (caught here). Everything path-specific — identity/ctx construction,
-        the video-only audio-stream-cache invalidation, the reading occurrence
-        floor — lives in the caller's ``body`` closure.
+        all *outside* the main try so a ``SetupError``/``AnkiConnectionError``
+        propagates instead of collapsing into a "completed" result and *before*
+        temp allocation so no dir leaks on failure), the per-run temp folder, the
+        partial-IDs reset, the per-run ``_external_cancel`` bridge, and the
+        try/except/finally tail (partial-card harvest on failure; bridge drop +
+        definition-service run-cache clear + temp cleanup in ``finally``). A
+        narrower try wraps only the two pre-flight
+        steps that touch the network/filesystem (card-target verify, temp-folder
+        allocation): any ``AnkiMinerException`` they raise still propagates raw
+        (unchanged contract), but a genuinely unexpected exception (e.g. an
+        ``OSError`` from ``mkdtemp``) is converted to a structured
+        ``ProcessingResult`` via :meth:`_unexpected_exception_result` instead of
+        escaping with no result at all (Task 15 / SM7). ``body`` receives the
+        allocated ``run_temp_folder`` and returns this run's ``ProcessingResult``;
+        it may early-return at phase boundaries and may raise (caught here).
+        Everything path-specific — identity/ctx construction, the video-only
+        audio-stream-cache invalidation, the reading occurrence floor — lives in
+        the caller's ``body`` closure.
         """
         # Reset the run-scoped Anki accumulators FIRST — before the pre-flight
         # gates, which can raise SetupError straight out of this method. A
@@ -1701,9 +1761,25 @@ class EpisodeProcessor:
         self._reset_run_write_state()
 
         self.check_resource_staleness()
-        self._preflight_card_target()
-        self.check_offline_dictionary()
-        run_temp_folder = self._allocate_run_temp_folder()
+        try:
+            self._preflight_card_target()
+            self.check_offline_dictionary()
+            run_temp_folder = self._allocate_run_temp_folder()
+        except AnkiMinerException:
+            # SetupError (bad note type/field mapping, no offline dictionary) and
+            # AnkiConnectionError (AnkiConnect unreachable) are the documented,
+            # test-pinned contract above: they propagate raw out of
+            # _run_pipeline instead of collapsing into a ProcessingResult.
+            raise
+        except MemoryError:
+            raise
+        except Exception as e:
+            # _preflight_card_target reaches AnkiConnect and
+            # _allocate_run_temp_folder does mkdtemp — an OSError or other bug
+            # here used to escape as a raw exception with no ProcessingResult,
+            # bypassing MiningOutcome classification entirely (Task 15 / SM7).
+            # Reuse the same conversion the pipeline body's catch-all uses below.
+            return self._unexpected_exception_result(ctx, e)
         keep_temp = bool(os.environ.get("ANKI_MINER_KEEP_TEMP"))
 
         # Bridge the caller's cancel_event into this run's cancellation
@@ -1728,16 +1804,16 @@ class EpisodeProcessor:
         except MemoryError:
             raise
         except Exception as e:
-            logger.exception("EpisodeProcessor unhandled exception")
-            ctx.errors.append(f"Unexpected error: {e}")
-            partial_ids = list(self.anki_service.last_created_note_ids)
-            self.presenter.show_error(
-                tr_format(QCoreApplication.translate("EpisodeProcessor", "Unexpected error: %1"), str(e))
-            )
-            return self._stamp_write_provenance(self._partial_failure_result(ctx, partial_ids), failure=e)
+            return self._unexpected_exception_result(ctx, e)
         finally:
             if cancel_event is not None:
                 self._external_cancel = None
+            # Bound DefinitionService's per-run attest-quality cache to this
+            # item: a shared processor (SharedLookupServices) keeps one
+            # DefinitionService alive across a whole multi-item batch, so
+            # without this the cache would grow across every item instead of
+            # just the one that just finished.
+            self.definition_service.clear_run_cache()
             if keep_temp:
                 logger.info(
                     "ANKI_MINER_KEEP_TEMP set; leaving run temp folder at %s",
@@ -1799,19 +1875,25 @@ class EpisodeProcessor:
             )
         return curated
 
-    def _materialize_line_expansions(self, words: list[TokenizedWord], subtitle_file: Path) -> list[TokenizedWord]:
+    def _materialize_line_expansions(
+        self,
+        words: list[TokenizedWord],
+        subtitle_file: Path,
+        subtitle_offset: float | None = None,
+    ) -> list[TokenizedWord]:
         """Rebuild curator-expanded words against the episode's full cue list (Issue #120).
 
         Runs between curation and phase 3 so the merged sentence/timings feed
         media extraction, lookups and card creation alike. ``parse_raw_entries``
         is the neighbor source — it is the complete ordered list (``line_index``
-        drops zero-lemma lines) and applies the same ``subtitle_offset`` the
-        words carry, so both sides share one timeline. The all-zero fast path
-        skips the re-parse entirely (every run without an expansion).
+        drops zero-lemma lines) and must be re-parsed at the SAME
+        ``subtitle_offset`` the words carry, or the two sides land on different
+        timelines. The all-zero fast path skips the re-parse entirely (every run
+        without an expansion).
         """
         if all(word.line_expansion == (0, 0) for word in words):
             return words
-        entries = self.subtitle_parser.parse_raw_entries(subtitle_file)
+        entries = self.subtitle_parser.parse_raw_entries(subtitle_file, subtitle_offset)
         return [
             self.word_filter.expand_word_lines(word, entries) if word.line_expansion != (0, 0) else word
             for word in words
@@ -1829,6 +1911,7 @@ class EpisodeProcessor:
         source_label_override: str | None = None,
         audio_only: bool = False,
         cancel_event: threading.Event | None = None,
+        subtitle_offset: float | None = None,
     ) -> ProcessingResult:
         """Process a single episode and create Anki cards.
 
@@ -1872,6 +1955,12 @@ class EpisodeProcessor:
                 (via :attr:`cancelled`) for the duration of this call only —
                 workers must use this instead of the sticky :meth:`cancel`,
                 which poisons shared processors across runs (see __init__).
+            subtitle_offset: Seconds to shift subtitle timings by for THIS call
+                only. ``None`` (default) leaves the parser on its own
+                ``config.subtitle_offset``. The batch queue runs one processor
+                over items with different offsets and passes each item's here,
+                so a per-item config copy (and the per-item service rebuild it
+                forced) is no longer needed.
 
         Returns:
             ProcessingResult with statistics.
@@ -1906,7 +1995,11 @@ class EpisodeProcessor:
             want_line_index = curation_callback is not None
             with timed_phase("parse", logger):
                 all_words, line_index = self._phase1_parse(
-                    ctx, subtitle_file, progress_callback, want_line_index=want_line_index
+                    ctx,
+                    subtitle_file,
+                    progress_callback,
+                    want_line_index=want_line_index,
+                    subtitle_offset=subtitle_offset,
                 )
             if self.cancelled:
                 return self._cancelled_result_from_ctx(ctx)
@@ -1935,7 +2028,7 @@ class EpisodeProcessor:
                 )
                 if isinstance(outcome, ProcessingResult):
                     return outcome
-                unknown_words = self._materialize_line_expansions(outcome, subtitle_file)
+                unknown_words = self._materialize_line_expansions(outcome, subtitle_file, subtitle_offset)
 
             with timed_phase("extract", logger):
                 media_results = self._phase3_extract(
@@ -2000,6 +2093,28 @@ class EpisodeProcessor:
         result.anki_write_state = state if isinstance(state, AnkiWriteState) else AnkiWriteState.NOTE_WRITE_UNCERTAIN
         result.failure_is_transient = failure is not None and is_transient_anki_transport_error(failure)
         return result
+
+    def _unexpected_exception_result(self, ctx: _EpisodeContext, e: Exception) -> ProcessingResult:
+        """Convert a non-``AnkiMinerException`` failure into a structured ``ProcessingResult``.
+
+        Shared by :meth:`_run_pipeline`'s own catch-all and its pre-flight wrapper
+        (``_preflight_card_target`` / ``_allocate_run_temp_folder``, Task 15 / SM7)
+        so both routes produce the identical failure shape instead of one of them
+        letting the exception escape raw with no ``ProcessingResult`` at all.
+        """
+        # logger.error(..., exc_info=e), not logger.exception()/exc_info=True:
+        # this helper is called from more than one except block, and ruff's
+        # LOG004/LOG014 rules flag both of those forms as lexically outside a
+        # handler even though the traceback is genuinely live here. Passing
+        # the caught exception object itself sidesteps both checks while
+        # logging the identical traceback.
+        logger.error("EpisodeProcessor unhandled exception", exc_info=e)
+        ctx.errors.append(f"Unexpected error: {e}")
+        partial_ids = list(self.anki_service.last_created_note_ids)
+        self.presenter.show_error(
+            tr_format(QCoreApplication.translate("EpisodeProcessor", "Unexpected error: %1"), str(e))
+        )
+        return self._stamp_write_provenance(self._partial_failure_result(ctx, partial_ids), failure=e)
 
     def _partial_failure_result(self, ctx: _EpisodeContext, partial_ids: list[int]) -> ProcessingResult:
         """Shared except-handler tail: note any partial cards and build the failure result."""
@@ -2077,6 +2192,10 @@ class EpisodeProcessor:
         ref_cache: dict[ImageRef, Path] = {}
         failed_archives: set[Path] = set()
         failed_refs: set[ImageRef] = set()
+        # One open ZipFile per archive for the whole phase (a manga volume's
+        # refs share a handful of archives across hundreds of pages) instead of
+        # re-parsing the central directory on every prepare_card_image call.
+        archive_handles: dict[Path, zipfile.ZipFile] = {}
 
         media_results: list[tuple[TokenizedWord, MediaData]] = []
 
@@ -2088,67 +2207,39 @@ class EpisodeProcessor:
                 len(unknown_words),
                 image_stage_desc,
             )
-        for i, word in enumerate(unknown_words):
-            # Honor cancel WITHIN the loop (mirrors AudioStage._run_stage): a
-            # large mokuro volume can hold hundreds of pages, and without this a
-            # cancel would only take effect after every page is materialized. Break
-            # and return the partial results — the audio fetchers below and the
-            # phase-boundary check in process_reading each re-check cancelled.
-            if self.cancelled:
-                break
-            media = MediaData()
-            unit = units_by_index.get(int(word.start_time))
-            ref = unit.image_ref if unit is not None else None
-            if picture_mapped and ref is not None and ref.source not in failed_archives and ref not in failed_refs:
-                image_path = ref_cache.get(ref)
-                if image_path is None:
-                    try:
-                        image_path = prepare_card_image(ref, images_dir)
-                    except SetupError:
-                        # Appending to document.warnings here would be lost (the
-                        # up-front drain already ran) — surface directly, once
-                        # per archive.
-                        failed_archives.add(ref.source)
-                        self.presenter.show_warning(
-                            tr_format(
-                                QCoreApplication.translate(
-                                    "EpisodeProcessor",
-                                    "Skipped unsafe image archive %1 — its cards have no page image",
-                                ),
-                                ref.source.name,
+        try:
+            for i, word in enumerate(unknown_words):
+                # Honor cancel WITHIN the loop (mirrors AudioStage._run_stage): a
+                # large mokuro volume can hold hundreds of pages, and without this a
+                # cancel would only take effect after every page is materialized. Break
+                # and return the partial results — the audio fetchers below and the
+                # phase-boundary check in process_reading each re-check cancelled.
+                if self.cancelled:
+                    break
+                media = MediaData()
+                unit = units_by_index.get(int(word.start_time))
+                ref = unit.image_ref if unit is not None else None
+                if picture_mapped and ref is not None and ref.source not in failed_archives and ref not in failed_refs:
+                    image_path = ref_cache.get(ref)
+                    if image_path is None:
+                        try:
+                            image_path = prepare_card_image(ref, images_dir, archive_handles)
+                        except SetupError:
+                            # Appending to document.warnings here would be lost (the
+                            # up-front drain already ran) — surface directly, once
+                            # per archive.
+                            failed_archives.add(ref.source)
+                            self.presenter.show_warning(
+                                tr_format(
+                                    QCoreApplication.translate(
+                                        "EpisodeProcessor",
+                                        "Skipped unsafe image archive %1 — its cards have no page image",
+                                    ),
+                                    ref.source.name,
+                                )
                             )
-                        )
-                        image_path = None
-                    except ReadingImageArchiveError:
-                        failed_archives.add(ref.source)
-                        self.presenter.show_warning(
-                            tr_format(
-                                QCoreApplication.translate(
-                                    "EpisodeProcessor",
-                                    "Skipped corrupt image archive %1 — its cards have no page image",
-                                ),
-                                ref.source.name,
-                            )
-                        )
-                        image_path = None
-                    except (
-                        ReadingImageMemberError,
-                        OSError,
-                        ValueError,
-                        zipfile.BadZipFile,
-                        RuntimeError,
-                        NotImplementedError,
-                        EOFError,
-                    ) as exc:
-                        # An image failure must never abort the volume (the plan's
-                        # degradation policy: keep mining imageless). A BadZipFile
-                        # (NOT an OSError subclass) means the whole archive is
-                        # corrupt → skip its remaining refs, warn once, like the
-                        # unsafe-archive gate. A PIL UnidentifiedImageError / bare
-                        # OSError (undecodable page, missing codec in a frozen
-                        # bundle) is per-ref → warn once naming the page, drop this
-                        # word's image, leave the rest of the archive readable.
-                        if ref.entry is not None and isinstance(exc, zipfile.BadZipFile):
+                            image_path = None
+                        except ReadingImageArchiveError:
                             failed_archives.add(ref.source)
                             self.presenter.show_warning(
                                 tr_format(
@@ -2159,29 +2250,64 @@ class EpisodeProcessor:
                                     ref.source.name,
                                 )
                             )
-                        else:
-                            failed_refs.add(ref)
-                            self.presenter.show_warning(
-                                tr_format(
-                                    QCoreApplication.translate(
-                                        "EpisodeProcessor",
-                                        "Skipped unreadable page image %1 — its card has no picture",
-                                    ),
-                                    ref.entry if ref.entry is not None else ref.source.name,
+                            image_path = None
+                        except (
+                            ReadingImageMemberError,
+                            OSError,
+                            ValueError,
+                            zipfile.BadZipFile,
+                            RuntimeError,
+                            NotImplementedError,
+                            EOFError,
+                        ) as exc:
+                            # An image failure must never abort the volume (the plan's
+                            # degradation policy: keep mining imageless). A BadZipFile
+                            # (NOT an OSError subclass) means the whole archive is
+                            # corrupt → skip its remaining refs, warn once, like the
+                            # unsafe-archive gate. A PIL UnidentifiedImageError / bare
+                            # OSError (undecodable page, missing codec in a frozen
+                            # bundle) is per-ref → warn once naming the page, drop this
+                            # word's image, leave the rest of the archive readable.
+                            if ref.entry is not None and isinstance(exc, zipfile.BadZipFile):
+                                failed_archives.add(ref.source)
+                                self.presenter.show_warning(
+                                    tr_format(
+                                        QCoreApplication.translate(
+                                            "EpisodeProcessor",
+                                            "Skipped corrupt image archive %1 — its cards have no page image",
+                                        ),
+                                        ref.source.name,
+                                    )
                                 )
-                            )
-                        image_path = None
-                    else:
-                        ref_cache[ref] = image_path
-                if image_path is not None:
-                    media.screenshot_path = image_path
-                    media.screenshot_filename = image_path.name
-            media_results.append((word, media))
-            if progress_callback is not None:
-                progress_callback.on_progress(
-                    i + 1,
-                    tr_format(image_item_template, word.mined_form),
-                )
+                            else:
+                                failed_refs.add(ref)
+                                self.presenter.show_warning(
+                                    tr_format(
+                                        QCoreApplication.translate(
+                                            "EpisodeProcessor",
+                                            "Skipped unreadable page image %1 — its card has no picture",
+                                        ),
+                                        ref.entry if ref.entry is not None else ref.source.name,
+                                    )
+                                )
+                            image_path = None
+                        else:
+                            ref_cache[ref] = image_path
+                    if image_path is not None:
+                        media.screenshot_path = image_path
+                        media.screenshot_filename = image_path.name
+                media_results.append((word, media))
+                if progress_callback is not None:
+                    progress_callback.on_progress(
+                        i + 1,
+                        tr_format(image_item_template, word.mined_form),
+                    )
+        finally:
+            for zf in archive_handles.values():
+                # Isolate each close(): one archive's OSError must not skip
+                # closing the rest of the still-open handles.
+                with contextlib.suppress(OSError):
+                    zf.close()
         if progress_callback is not None:
             progress_callback.on_complete()
 
@@ -2322,6 +2448,13 @@ class EpisodeProcessor:
                 if isinstance(outcome, ProcessingResult):
                     return outcome
                 unknown_words = outcome
+                dropped = sum(1 for w in unknown_words if w.line_expansion != (0, 0))
+                if dropped:
+                    # Reading curation has no subtitle timeline to materialize
+                    # against; the dialog never builds expansion buttons here.
+                    # A nonzero count means a wiring change made them reachable
+                    # without adding materialization — fail loud, not silent.
+                    logger.warning("reading curation: dropping line expansion on %d word(s)", dropped)
 
             with timed_phase("reading-media", logger):
                 media_results = self._phase3_reading_media(
@@ -2409,31 +2542,34 @@ class EpisodeProcessor:
         """Raise SetupError if any enabled indexed slot needs reimport (4.0).
 
         The single-episode backstop for the schema-bump migration gate, across
-        all three indexed families: consults each injected registry's per-slot
+        all four indexed families: consults each injected registry's per-slot
         ``schema_ok`` (NOT the built chains, which silently drop stale slots) so
         a user who upgraded and mines before reimporting gets one actionable
         error instead of a silent zero-card run, an unfiltered flood of rare
-        words, or a blank pitch field.
+        words, a blank pitch field, or cards quietly falling back to the online
+        audio sources.
 
         Queue workers front-run this with their own pre-loop check so a batch
         aborts once rather than per item; this covers the direct single-episode
         callers (episode / manual-pair / deck-builder).
 
-        A family whose registry was not injected is skipped — for frequency and
-        pitch that is the normal state when the user has not configured them,
-        and it is what keeps both optional.
+        A family whose registry was not injected is skipped — for frequency,
+        pitch and audio packs that is the normal state when the user has not
+        configured them, and it is what keeps all three optional.
         """
         message = stale_resource_reimport_error(
             self.config,
             dictionary_registry=self._dictionary_registry,
             frequency_registry=self._frequency_registry,
             pitch_registry=self._pitch_registry,
+            audio_registry=self._audio_pack_registry,
             families=frozenset(
                 kind
                 for kind, registry in (
                     ("dictionary", self._dictionary_registry),
                     ("frequency", self._frequency_registry),
                     ("pitch", self._pitch_registry),
+                    ("audio", self._audio_pack_registry),
                 )
                 if registry is not None
             ),
@@ -2472,8 +2608,10 @@ class EpisodeProcessor:
                 write file names with (the worker takes it from probe_metadata).
             workspace: Pre-created, caller-owned directory that yt-dlp writes
                 the video and subtitle files into.
-            sub_mode: "manual_only" or "auto_only" — chosen by the user based
-                on what probe_metadata reported as available.
+            sub_mode: "manual_only", "auto_only" or "auto_dub" — resolved from
+                what probe_metadata reported as available ("auto_dub" pairs the
+                machine-translated ja captions with the Japanese auto-dub audio
+                track).
             fallback_allowed: Forwarded to the fetcher. When True (the worker
                 passes ``VideoInfo.has_auto_ja_subs``), a ``manual_only`` fetch may
                 fall back to the video's *native* auto-captions if the listed manual

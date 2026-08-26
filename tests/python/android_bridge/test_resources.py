@@ -1031,13 +1031,20 @@ def test_dictionary_import_forwards_engine_progress_and_finalizes_before_publish
 
     importing = [(e["current"], e["total"]) for e in envelopes if e["phase"] == "importing"]
     assert importing, "expected at least one forwarded importing envelope"
-    # The pinned engine reports insert progress determinately against the
-    # term-bank count -- (files_done, total_term_files) -- and fires a terminal
-    # (total, total) once bulk_insert returns, so nothing forwarded from the
-    # insert stage is indeterminate any more.
+    # The pinned engine reports insert progress determinately, in SCALED BANK
+    # UNITS rather than raw bank counts: (files_done * 1000 + the within-bank
+    # fraction), clamped to total_term_files * 1000. A bank this fixture's size
+    # is consumed in a single bulk_insert chunk, so each fire lands on the
+    # clamp. Asserted by shape, not by the scale constant, which is the
+    # engine's to change.
     assert all(total > 0 for _current, total in importing)
-    assert (3, 3) in importing
-    # The importer's closing "Done" call counts entries, not banks.
+    insert_stage = importing[:-1]
+    assert insert_stage, "expected forwarded insert-stage envelopes"
+    assert len({total for _current, total in insert_stage}) == 1
+    assert all(current <= total for current, total in insert_stage)
+    currents = [current for current, _total in insert_stage]
+    assert currents == sorted(currents), "insert progress must be monotonic"
+    # The importer's closing "Done" call counts entries, not bank units.
     assert importing[-1] == (6, 6)
 
     assert envelopes[-1] == {
@@ -4118,11 +4125,19 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
     home = _local_home(tmp_path, monkeypatch)
     from anki_miner.services.known_word_db import KnownWordDB
 
-    database = KnownWordDB(home / "known_words.db")
+    db_path = home / "known_words.db"
+    database = KnownWordDB(db_path)
     database.initialize()
     database.add_words({"犬", "猫", "食べる"}, source="user")
     database.add_words({"既知"}, source="anki")
     database.add_words({"掘る"}, source="mined")
+
+    # Every read below opens its own handle. KnownWordDB memoizes get_known_words
+    # /get_words_by_source for its own lifetime and only invalidates on its OWN
+    # writes, so a handle held across a bridge call -- which mutates through a
+    # handle of its own -- would answer from a stale memo.
+    def stored() -> KnownWordDB:
+        return KnownWordDB(db_path)
 
     first = decode_envelope(
         local_resources.list_known_words({"operationId": "known-list-one", "query": "", "offset": 0, "limit": 2}),
@@ -4148,8 +4163,8 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
         expected_type="resource.knownwords.removed",
     )
     assert removed.payload == {"removedCount": 1}
-    assert database.get_words_by_source("user") == {"犬", "食べる"}
-    assert database.get_words_by_source("anki") == {"既知"}
+    assert stored().get_words_by_source("user") == {"犬", "食べる"}
+    assert stored().get_words_by_source("anki") == {"既知"}
 
     exported = decode_envelope(
         local_resources.export_known_words({"operationId": "known-export"}),
@@ -4165,14 +4180,14 @@ def test_known_words_list_search_remove_export_and_scoped_resets(
         expected_type="resource.knownwords.reset",
     )
     assert rebuilt.payload == {"scope": "cache", "removedCount": 2}
-    assert database.get_known_words() == {"犬", "食べる"}
+    assert stored().get_known_words() == {"犬", "食べる"}
 
     reset = decode_envelope(
         local_resources.reset_known_words({"operationId": "known-reset-user", "scope": "user"}),
         expected_type="resource.knownwords.reset",
     )
     assert reset.payload == {"scope": "user", "removedCount": 2}
-    assert database.get_known_words() == set()
+    assert stored().get_known_words() == set()
 
 
 @pytest.mark.skipif(

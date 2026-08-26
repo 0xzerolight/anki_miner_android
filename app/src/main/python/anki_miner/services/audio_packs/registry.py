@@ -144,6 +144,25 @@ class AudioPackRegistry:
             key=lambda meta: meta.pack_id,
         )
 
+    def stale_enabled(self, config: AnkiMinerConfig) -> list[AudioPackMeta]:
+        """Enabled chain packs present on disk but schema-mismatched.
+
+        Mirrors ``FrequencySourceRegistry.stale_enabled``. Online entries
+        (jpod101/googletts/custom) carry no index and cannot be stale; a pack
+        absent from disk is NOT reported, because there is nothing left to
+        rebuild from.
+
+        Does NOT call load(); callers control when the scan happens.
+        """
+        stale: list[AudioPackMeta] = []
+        for entry in config.expression_audio_chain:
+            if entry.kind != "pack" or not entry.enabled or not entry.pack_id:
+                continue
+            meta = self._packs.get(entry.pack_id)
+            if meta is not None and not meta.schema_ok:
+                stale.append(meta)
+        return sorted(stale, key=lambda meta: meta.pack_id)
+
     # ------------------------------------------------------------------
     # Chain assembly
     # ------------------------------------------------------------------
@@ -213,3 +232,24 @@ class AudioPackRegistry:
                 )
             )
         return chain
+
+
+def stale_enabled_audio_packs(config: AnkiMinerConfig) -> list[AudioPackMeta]:
+    """Build+scan a fresh registry and return enabled packs needing reimport.
+
+    Convenience wrapper for the startup migration prompt and the pre-run gate,
+    matching ``stale_enabled_freq_sources``. ``load()`` swallows scan OSErrors,
+    so this never raises for a missing / unreadable audio_packs folder.
+
+    This IS wired into ``services.resource_staleness``, reversing an earlier
+    call to leave it out on the grounds that a stale pack costs only expression
+    audio. Cost is not the test the other three families are held to: frequency
+    and pitch are optional too, and they gate. What the gate exists to prevent
+    is a *silent* wrong result, and this is one — ``build_fetcher_chain`` drops
+    the stale pack, so the run reports success while cards quietly fall back to
+    the online sources or get no audio at all. Ungated, the only notice a user
+    ever gets is a warning line in the log.
+    """
+    registry = AudioPackRegistry(config.audio_packs_root)
+    registry.load()
+    return registry.stale_enabled(config)

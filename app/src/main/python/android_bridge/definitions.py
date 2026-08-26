@@ -121,7 +121,13 @@ def define_word(payload: Mapping[str, object]) -> str:
     service = _build_service(config)
     try:
         matched = term
-        hits = service.lookup_all_offline(term)
+        # ``fallback`` is passed twice over, in two distinct roles. Here it is the
+        # Rule A' homograph scope: the card path builds the same lemma context
+        # inside the processor, so without it the pane and the card beside it can
+        # name different lexemes for a kana front (ゆう, lemma 言う). The caller
+        # already sends None when the lemma is blank or equals the mined form,
+        # which is exactly when the engine skips the probe and stays pre-A'.
+        hits = service.lookup_all_offline(term, fallback)
         # Miss-only. A hit on the mined form always wins: unidic's canonical
         # lemma collapses kanji variants (殺る → 遣る), so a lemma entry painted
         # over a word that has its own would be the wrong homograph.

@@ -63,7 +63,7 @@ overlay_allowlist = [
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/models/reading.py" = "555544cfcef5c71dff21e3f94ecfc24fca2c45c3", "anki_miner/services/__init__.py" = "989c5ae4bd09ed16613ea54fa6a9abb78540594a", "anki_miner/services/known_words_import.py" = "a6f17e0a969c95ea77f6a20047e74b68265d02b6", "anki_miner/services/media_extractor.py" = "8f79442566cfd380684d73c41b781d16e1342c83", "anki_miner/services/reading/sentence_splitter.py" = "203a4397d38d5603b48a2426212e9a4f263dbab0", "anki_miner/services/tagger.py" = "567eb191e3f5100401bdad1678be9dbe189dfe45", "anki_miner/utils/audio_track_detector.py" = "cb71ffadad2ce7bb8005d47261d7a6a28bc506f4" }
+overlay_base_blobs = { "anki_miner/models/reading.py" = "735603c6246030878d52cf1ad5d5b97bc09b1580", "anki_miner/services/__init__.py" = "6496235f6296d670b905e78cc5284524bc88432c", "anki_miner/services/known_words_import.py" = "a6f17e0a969c95ea77f6a20047e74b68265d02b6", "anki_miner/services/media_extractor.py" = "1e1bb58c3cf714eea2f41bcf76b5813c7083f6f1", "anki_miner/services/reading/sentence_splitter.py" = "203a4397d38d5603b48a2426212e9a4f263dbab0", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "6f2d08cfb425eb3f0465a8072cc17acd7e3b7802" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.

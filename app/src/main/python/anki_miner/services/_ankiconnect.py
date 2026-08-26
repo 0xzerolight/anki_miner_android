@@ -7,9 +7,20 @@ services. White-box unit tests import it directly and patch
 ``tests/unit/test_anki_service.py``) to drive the HTTP layer without a live Anki. The
 underscore therefore stays and the module path is a deliberately stable test surface;
 do not rename it or reroute those patch targets.
+
+In production, ``post_action``/``post_multi`` send through one shared, lazily
+created ``requests.Session`` (see ``_post``) so the 20-200 calls a typical run
+makes reuse a keep-alive TCP connection instead of paying a fresh
+socket+TLS-free handshake per call. This is invisible to the patch seam above:
+``_post`` compares the live ``requests.post`` against the original captured at
+import time, and if a test has replaced it, routes the call through the patched
+callable instead of the session. Do not call ``requests.post`` directly from new
+code in this module - go through ``_post`` so both the keep-alive path and the
+patch seam keep working.
 """
 
 import logging
+import threading
 from typing import Any
 
 import requests
@@ -17,6 +28,79 @@ import requests
 from anki_miner.exceptions import AnkiConnectionError
 
 logger = logging.getLogger(__name__)
+
+# Stashed at import time so `_post` can detect a test having patched
+# `requests.post` on this module (see module docstring) and honour it instead
+# of the shared session below.
+_ORIGINAL_POST = requests.post
+
+# Lazily created, reused across calls to keep the AnkiConnect TCP connection
+# alive instead of opening a fresh one per action. Guarded by _SESSION_LOCK
+# (double-checked lock, mirroring tagger.py's get_shared_tagger()) since
+# validation/episode/backfill/deck-filter/batch workers can all reach this
+# from their own QThreads concurrently.
+_SESSION_LOCK = threading.Lock()
+_session: requests.Session | None = None
+
+
+def _get_session() -> requests.Session:
+    """Return the shared keep-alive session, building it once (double-checked lock)."""
+    global _session
+    if _session is None:
+        with _SESSION_LOCK:
+            if _session is None:
+                _session = requests.Session()
+    return _session
+
+
+def _post(url: str, **kwargs: Any) -> requests.Response:
+    """POST to AnkiConnect, reusing one session - unless a test has patched ``requests.post``.
+
+    See the module docstring for the patch-seam contract this preserves.
+    """
+    if requests.post is not _ORIGINAL_POST:
+        return requests.post(url, **kwargs)
+    return _get_session().post(url, **kwargs)
+
+
+# Cap the fully-buffered response body before JSON-decoding it. AnkiConnect can
+# legitimately return a multi-hundred-MB payload (e.g. notesInfo over a large
+# collection), so this stays generous - it exists only to fail closed on a
+# pathological or wrong-service body (Anki hung mid-response, a proxy error
+# page, another service answering on this port) instead of parsing one.
+_MAX_RESPONSE_BYTES = 256 * 1024 * 1024  # 256 MiB
+
+
+def _check_response_size(response: requests.Response, action: str) -> None:
+    """Raise :class:`AnkiConnectionError` before an oversized body is parsed or acted on.
+
+    ``requests`` has already buffered the full body into ``response.content``
+    by the time this runs -- the check gates what happens next (JSON-decoding
+    and using the result), not the buffering itself.
+    """
+    size = len(response.content)
+    if size > _MAX_RESPONSE_BYTES:
+        raise AnkiConnectionError(
+            f"AnkiConnect '{action}' response is {size:,} bytes, exceeding the {_MAX_RESPONSE_BYTES:,}-byte cap"
+        )
+
+
+def _timeout_message(action: str, timeout: int) -> str:
+    """User-facing copy for a read timeout: connected, but Anki never answered.
+
+    AnkiConnect accepts the TCP connection regardless of what Anki is doing (the
+    kernel completes the handshake), but the action itself runs on Anki's main
+    thread against the collection. A sync in progress, an open dialog, or a
+    database check therefore holds the response past the deadline while every
+    quick "is Anki connected?" probe still looks green — so the message must
+    name the busy state, not the network.
+    """
+    return (
+        f"AnkiConnect call '{action}' timed out after {timeout}s. "
+        "Anki accepted the connection but did not respond - it is likely busy "
+        "(syncing, showing a dialog, or checking the database). "
+        "Wait for Anki to finish and try again."
+    )
 
 
 def post_action(
@@ -48,12 +132,13 @@ def post_action(
         timeout,
     )
     try:
-        response = requests.post(
+        response = _post(
             ankiconnect_url,
             json={"action": action, "version": 6, "params": params or {}},
             timeout=timeout,
         )
         response.raise_for_status()
+        _check_response_size(response, action)
         result = response.json()
     except requests.exceptions.ConnectionError as e:
         logger.debug(
@@ -63,6 +148,15 @@ def post_action(
             type(e).__name__,
         )
         raise AnkiConnectionError("Cannot connect to AnkiConnect. Is Anki running?") from e
+    except requests.exceptions.Timeout as e:
+        # Only read timeouts reach here: ConnectTimeout is also a
+        # ConnectionError, so the branch above already claimed it.
+        logger.warning(
+            "AnkiConnect request timed out: action=%s timeout=%d",
+            action,
+            timeout,
+        )
+        raise AnkiConnectionError(_timeout_message(action, timeout)) from e
     except (requests.RequestException, ValueError) as e:
         logger.warning(
             "AnkiConnect request failed: action=%s status=%s exc=%s",
@@ -122,12 +216,13 @@ def post_multi(
         timeout,
     )
     try:
-        response = requests.post(
+        response = _post(
             ankiconnect_url,
             json={"action": "multi", "version": 6, "params": {"actions": actions}},
             timeout=timeout,
         )
         response.raise_for_status()
+        _check_response_size(response, "multi")
         result = response.json()
     except requests.exceptions.ConnectionError as e:
         logger.debug(
@@ -136,6 +231,14 @@ def post_multi(
             type(e).__name__,
         )
         raise AnkiConnectionError("Cannot connect to AnkiConnect. Is Anki running?") from e
+    except requests.exceptions.Timeout as e:
+        # Only read timeouts reach here: ConnectTimeout is also a
+        # ConnectionError, so the branch above already claimed it.
+        logger.warning(
+            "AnkiConnect request timed out: action=multi timeout=%d",
+            timeout,
+        )
+        raise AnkiConnectionError(_timeout_message("multi", timeout)) from e
     except (requests.RequestException, ValueError) as e:
         logger.warning(
             "AnkiConnect request failed: action=multi status=%s exc=%s",

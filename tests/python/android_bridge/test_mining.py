@@ -1371,6 +1371,43 @@ def test_expression_audio_builder_returns_none_when_field_unmapped() -> None:
     assert mining._build_expression_audio_source_chain(config) is None
 
 
+def test_expression_audio_builder_carries_the_scanned_registry(
+    monkeypatch: pytest.MonkeyPatch,
+    initialized_bridge_home: Path,
+) -> None:
+    # _build_processor hands this handle to EpisodeProcessor, whose staleness
+    # gate reads per-pack schema_ok off the registry. The built chain has
+    # already dropped every stale pack, so a chain-only handoff would leave the
+    # audio family ungated on every run.
+    pytest.importorskip("requests", reason="runtime dependency lane")
+
+    class FakeRegistry:
+        def __init__(self, root: object) -> None:
+            self.root = root
+
+        def load(self) -> None:
+            return None
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            return []
+
+    monkeypatch.setattr(
+        "anki_miner.services.audio_packs.registry.AudioPackRegistry",
+        FakeRegistry,
+    )
+    config = SimpleNamespace(
+        expression_audio_chain=(SimpleNamespace(kind="pack", pack_id="my-pack", url=None, enabled=True),),
+        anki_fields={"expression_audio": "Audio"},
+        audio_packs_root=initialized_bridge_home / "audio_packs",
+    )
+    chain = mining._build_expression_audio_source_chain(config)
+    assert chain is not None
+    try:
+        assert isinstance(chain.pack_registry, FakeRegistry)
+    finally:
+        chain.close()
+
+
 def test_expression_audio_builder_orders_packs_by_config_order(
     monkeypatch: pytest.MonkeyPatch,
     initialized_bridge_home: Path,

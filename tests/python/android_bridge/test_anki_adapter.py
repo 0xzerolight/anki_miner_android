@@ -5877,6 +5877,9 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     # processor has no reason to own.
     processor.check_offline_dictionary = lambda: None
     processor._preflight_card_target = lambda: None
+    # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
+    # item; the partial processor owns no definition service, so stand one in.
+    processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
     run_temp = tmp_path / "partial-run"
 
     def allocate_temp() -> Path:
@@ -5949,6 +5952,9 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     # processor has no reason to own.
     processor.check_offline_dictionary = lambda: None
     processor._preflight_card_target = lambda: None
+    # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
+    # item; the partial processor owns no definition service, so stand one in.
+    processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
     run_temp = tmp_path / "cancelled-run"
 
     def allocate_temp() -> Path:

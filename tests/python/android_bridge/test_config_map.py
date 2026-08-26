@@ -67,7 +67,7 @@ def test_strip_subtitle_annotations_is_no_longer_exposed() -> None:
     assert not hasattr(AnkiMinerConfig(), "strip_subtitle_annotations")
 
 
-def test_empty_snapshot_preserves_all_109_desktop_defaults_except_targeted_android_overrides(
+def test_empty_snapshot_preserves_all_113_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig
@@ -87,7 +87,7 @@ def test_empty_snapshot_preserves_all_109_desktop_defaults_except_targeted_andro
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 109
+    assert len(desktop_fields) == 113
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }

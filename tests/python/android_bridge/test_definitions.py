@@ -15,9 +15,11 @@ class _FakeService:
         self._hits = hits
         self.closed = False
         self.queried: list[str] = []
+        self.lemmas: list[str | None] = []
 
-    def lookup_all_offline(self, word: str) -> list[tuple[str, str]]:
+    def lookup_all_offline(self, word: str, lemma: str | None = None) -> list[tuple[str, str]]:
         self.queried.append(word)
+        self.lemmas.append(lemma)
         return self._hits.get(word, [])
 
     def close(self) -> None:
@@ -66,6 +68,26 @@ def test_the_fallback_never_overrides_a_hit_on_the_mined_form(monkeypatch) -> No
     assert service.queried == ["やる"]
 
 
+def test_the_lemma_scopes_the_mined_form_lookup(monkeypatch) -> None:
+    # Rule A': the same token lemma the card path scopes by is passed through as
+    # the pane's homograph scope, so both name the same lexeme for a kana front.
+    service = _FakeService({"ゆう": [("Jitendex", "<div>iu</div>")]})
+    monkeypatch.setattr(definitions, "_build_service", lambda config: service)
+    definitions.register_run_dictionaries(RUN_A, object())
+    payload = json.loads(definitions.define_word(_request(RUN_A, "ゆう", "言う")))["payload"]
+    assert payload["matchedTerm"] == "ゆう"
+    assert service.queried == ["ゆう"]
+    assert service.lemmas == ["言う"]
+
+
+def test_no_lemma_leaves_the_lookup_unscoped(monkeypatch) -> None:
+    service = _FakeService({"猫": [("Jitendex", "<div>cat</div>")]})
+    monkeypatch.setattr(definitions, "_build_service", lambda config: service)
+    definitions.register_run_dictionaries(RUN_A, object())
+    json.loads(definitions.define_word(_request(RUN_A, "猫")))
+    assert service.lemmas == [None]
+
+
 def test_the_fallback_fires_only_on_a_total_miss(monkeypatch) -> None:
     service = _FakeService({"遣る": [("Jitendex", "<div>lemma</div>")]})
     monkeypatch.setattr(definitions, "_build_service", lambda config: service)
@@ -96,7 +118,7 @@ def test_define_word_bounds_the_response(monkeypatch) -> None:
 
 def test_a_closed_provider_chain_is_released_even_when_lookup_raises(monkeypatch) -> None:
     class _Boom(_FakeService):
-        def lookup_all_offline(self, word: str) -> list[tuple[str, str]]:
+        def lookup_all_offline(self, word: str, lemma: str | None = None) -> list[tuple[str, str]]:
             raise RuntimeError("index unreadable")
 
     service = _Boom({})

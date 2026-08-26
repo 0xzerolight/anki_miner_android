@@ -63,6 +63,13 @@ _WHATWG_LABELS = {
     "utf-16": "utf-16le",
 }
 
+#: Bound on the head sniffed by :func:`detect_subtitle_encoding`. Real subtitle
+#: files (even a heavily-styled multi-hour .ass) run tens to a few hundred KB;
+#: 1 MiB comfortably covers those whole, so detection is unaffected. It only
+#: matters for a mis-picked huge file (a video, an archive) — this caps that
+#: case to one bounded read instead of decoding the whole thing twice over.
+_MAX_SNIFF_BYTES = 1024 * 1024
+
 
 def load_with_fallback_encoding(path: str | Path, original_error: UnicodeDecodeError) -> pysubs2.SSAFile:
     """Retry loading *path* from its BOM, cp932, EUC-JP, then detection (D10).
@@ -87,9 +94,14 @@ def load_with_fallback_encoding(path: str | Path, original_error: UnicodeDecodeE
         return pysubs2.load(str(path), encoding="cp932")
     except UnicodeDecodeError:
         pass
-    if _is_japanese_euc_jp(path):
+    try:
+        with path.open("rb") as f:
+            head = f.read(_MAX_SNIFF_BYTES)
+    except OSError:
+        head = b""
+    if _is_japanese_euc_jp_bytes(head):
         return pysubs2.load(str(path), encoding="euc_jp")
-    encoding = _detect_encoding(path)
+    encoding = _detect_encoding(head)
     if encoding:
         try:
             return pysubs2.load(str(path), encoding=encoding)
@@ -110,10 +122,15 @@ def detect_subtitle_encoding(path: str | Path) -> str | None:
     declaration rather than guess, because naming the wrong encoding is worse
     than letting the consumer detect. A detected encoding outside
     :data:`_WHATWG_LABELS` also yields None for the same reason.
+
+    Only sniffs the first ``_MAX_SNIFF_BYTES`` of *path* — every real subtitle
+    file fits inside that whole, so detection is unaffected; it just stops a
+    mis-picked huge file from being read (and decoded, twice over) in full.
     """
     path = Path(path)
     try:
-        head = path.read_bytes()
+        with path.open("rb") as f:
+            head = f.read(_MAX_SNIFF_BYTES)
     except OSError:
         return None
 
@@ -128,32 +145,44 @@ def detect_subtitle_encoding(path: str | Path) -> str | None:
     for candidate in ("utf-8", "cp932"):
         try:
             head.decode(candidate)
-        except UnicodeDecodeError:
-            continue
+        except UnicodeDecodeError as exc:
+            if exc.end != len(head):
+                continue  # a genuine invalid byte, not a truncation artifact
+            # The bounded read can cut mid multi-byte sequence right at the
+            # tail; that's an artifact of the bound, not proof this candidate
+            # is wrong. Retry without the truncated tail before giving up on it.
+            try:
+                head[: exc.start].decode(candidate)
+            except UnicodeDecodeError:
+                continue
         return _WHATWG_LABELS[candidate]
 
     if _is_japanese_euc_jp_bytes(head):
         return "euc-jp"
 
-    detected = _detect_encoding(path)
+    detected = _detect_encoding(head)
     if detected is None:
         return None
     return _WHATWG_LABELS.get(detected.lower().replace(" ", ""))
 
 
-def _is_japanese_euc_jp(path: Path) -> bool:
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return False
-    return _is_japanese_euc_jp_bytes(data)
-
-
 def _is_japanese_euc_jp_bytes(data: bytes) -> bool:
+    """True iff *data* decodes as EUC-JP and contains real Japanese script.
+
+    *data* is a caller-owned, already-bounded head (never a full file read —
+    both callers hold one already). EUC-JP is mostly double-byte, so a
+    bounded head can cut mid-character right at the tail; same truncation
+    tolerance as the utf-8/cp932 checks in :func:`detect_subtitle_encoding`.
+    """
     try:
         text = data.decode("euc_jp")
-    except UnicodeDecodeError:
-        return False
+    except UnicodeDecodeError as exc:
+        if exc.end != len(data):
+            return False  # a genuine invalid byte, not a truncation artifact
+        try:
+            text = data[: exc.start].decode("euc_jp")
+        except UnicodeDecodeError:
+            return False
     return any(
         0x3040 <= ord(char) <= 0x30FF
         or 0xFF66 <= ord(char) <= 0xFF9F
@@ -163,16 +192,20 @@ def _is_japanese_euc_jp_bytes(data: bytes) -> bool:
     )
 
 
-def _detect_encoding(path: Path) -> str | None:
-    """Best-guess encoding for *path* via charset-normalizer, or None.
+def _detect_encoding(data: bytes) -> str | None:
+    """Best-guess encoding for *data* via charset-normalizer, or None.
+
+    Takes bytes, never a path: both callers already hold a bounded
+    ``_MAX_SNIFF_BYTES`` head, and ``from_path`` would read the whole file
+    regardless of that bound — exactly the case the bound exists to avoid.
 
     charset-normalizer is soft-imported so its absence simply means the
     detector leg of :func:`load_with_fallback_encoding` is skipped (for
     BOM-free input, the cp932 attempt there runs first and independently).
     """
     try:
-        from charset_normalizer import from_path
+        from charset_normalizer import from_bytes
     except ImportError:
         return None
-    match = from_path(str(path)).best()
+    match = from_bytes(data).best()
     return match.encoding if match is not None else None

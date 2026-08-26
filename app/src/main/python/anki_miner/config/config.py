@@ -163,6 +163,19 @@ class AnkiMinerConfig:
     condenser_write_subtitles: bool = False  # Also write condensed .srt + .lrc sidecars
     condenser_tag_outputs: bool = False  # Show the pre-run metadata editor and tag outputs (Issue #113)
 
+    # Media Downloader settings (Utilities → Download). Persisted defaults for
+    # the Download tab's inline run options, seeded/written back the same way as
+    # condenser_* via config_changed → MainWindow.update_config. All plain
+    # scalars (auto-persist; no __post_init__ coercion). The destination folder
+    # is deliberately NOT config — it is session state (ui_state.ini), like the
+    # other tool tabs' output folders.
+    downloader_format_preset: str = "best"  # key into services.media_downloader.FORMAT_PRESETS
+    downloader_custom_format: str = ""  # raw yt-dlp -f string; non-empty overrides the preset
+    downloader_write_subtitles: bool = False  # --write-subs/--write-auto-subs (manual preferred)
+    downloader_subtitle_langs: str = "ja"  # --sub-langs value
+    downloader_embed_thumbnail: bool = False  # --embed-thumbnail
+    downloader_embed_metadata: bool = False  # --embed-metadata
+
     # Animated screenshot settings (opt-in; static JPEG remains default)
     screenshot_animated: bool = False
     screenshot_animated_format: str = "avif"  # "avif" | "webp"
@@ -447,6 +460,12 @@ class AnkiMinerConfig:
     # host-allowlisted, SHA-256 verified against the release manifest, atomically
     # installed, and receipt-gated before the resolver will select it.
     auto_update_ytdlp: bool = True
+    # Install yt-dlp *nightly* builds (repo yt-dlp/yt-dlp-nightly-builds) instead
+    # of stable when updating. Opt-in: nightlies are what fix YouTube breakage in
+    # the days before a stable release (e.g. the 2026-08 android_vr kill,
+    # yt-dlp#17456). Off does NOT uninstall an installed nightly — the managed
+    # copy stays until a newer stable supersedes it (packaging.Version ordering).
+    ytdlp_prerelease: bool = False
 
     # --- Bundled media tooling ---
     # Optional explicit overrides for the ffmpeg/ffprobe executables. When unset,
@@ -458,21 +477,13 @@ class AnkiMinerConfig:
     # subtitle retiming falls back to alass on PATH.
     alass_location: Path | None = None
 
-    # --- Subtitle retiming (alass alignment knobs) ---
-    # These live in Settings rather than on the Retime screen: the defaults are
-    # right for the overwhelming majority of runs, and they are preferences that
-    # should survive a restart, not per-run choices. `retime_split_penalty` is
-    # alass `--split-penalty` (useful range 1-20; clamped to 0-1000 below).
-    # `retime_correct_framerate` is the INVERSE of `--disable-fps-guessing`:
-    # default off, because FPS guessing stretches an already-correct subtitle
-    # and only helps when the sub came from a different-framerate release.
-    # `retime_single_offset` is `--no-split` (one global shift, never segments):
-    # default ON, diverging from alass's own default, because Japanese media
-    # generally has no ad-break cuts — splitting mostly invents spurious cut
-    # points on a merely-offset subtitle. Uncheck to allow segmented alignment.
-    retime_split_penalty: float = 7.0
-    retime_correct_framerate: bool = False
-    retime_single_offset: bool = True
+    # NOTE: the three alass alignment knobs (retime_split_penalty,
+    # retime_correct_framerate, retime_single_offset) were removed when the
+    # retime pipeline became self-tuning (engine chain + validation in
+    # services/subtitle_retimer.py). The old `retime_single_offset=True`
+    # default was the root cause of whole-season retime failures — a single
+    # global shift cannot fix cross-release segmentation differences. Stale
+    # persisted keys are ignored on load by GUIConfigManager.
 
     # ASR (Automatic Speech Recognition) settings. Used by the Local Subtitle
     # Creation feature (offline transcription via faster-whisper). Requires
@@ -670,15 +681,6 @@ class AnkiMinerConfig:
         # pass an unsupported backend name through to the transcriber.
         if self.asr_device not in {"auto", "cuda", "cpu", "vulkan"}:
             object.__setattr__(self, "asr_device", "auto")
-
-        # Clamp the split penalty into alass's accepted 0-1000 range. alass
-        # rejects anything outside it, and a hand-edited or stale config must
-        # not turn every retime into an argument error.
-        try:
-            penalty = float(self.retime_split_penalty)
-        except (TypeError, ValueError):
-            penalty = 7.0
-        object.__setattr__(self, "retime_split_penalty", min(1000.0, max(0.0, penalty)))
 
     @property
     def frequency_active(self) -> bool:

@@ -22,7 +22,17 @@ class BotDetectionError(YouTubeFetchError):
 
 
 class CookieDatabaseLockedError(YouTubeFetchError):
-    """Raised when yt-dlp cannot read a cookies-from-browser database."""
+    """Raised when yt-dlp cannot read a cookies-from-browser database.
+
+    Covers all three ways that source fails, which
+    ``ytdlp_invocation._COOKIE_MARKERS`` tells apart and ``cookie_failure_message``
+    gives distinct remedies for: the database is held open by the running browser
+    (the literal locked case), its contents cannot be decrypted, or no database
+    exists for the configured browser at all. One exception type serves all three
+    because every caller treats them identically — each is deterministic, so each
+    sits in the queue worker's ``_DETERMINISTIC_FETCH_ERRORS`` and none is worth a
+    retry. The remedy the user needs lives in the message, not the type.
+    """
 
     pass
 
@@ -60,6 +70,21 @@ class NoJapaneseSubtitlesError(YouTubeFetchError):
     ``process_youtube_url``, so a sibling would leak past every caller that relies on
     it. Except clauses are matched in order, which is what makes the narrower catch
     work.
+    """
+
+    pass
+
+
+class DubAudioUnavailableError(YouTubeFetchError):
+    """Raised on the ``auto_dub`` route when no format matches the pinned JA-audio selector.
+
+    Deterministic — a retry re-downloads the video and fails identically, since the
+    dub track (or, if the selector's video side is at fault, the video itself) is
+    simply gone from what yt-dlp reports, not a transient server hiccup.
+
+    Deliberately a *subclass* of :class:`YouTubeFetchError` for the same reason as
+    :class:`NoJapaneseSubtitlesError`: it must still satisfy every caller's
+    catch-all while opting out of the queue worker's retry ahead of it.
     """
 
     pass
