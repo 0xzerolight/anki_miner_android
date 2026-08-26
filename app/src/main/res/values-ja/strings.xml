@@ -411,6 +411,8 @@
     <string name="resource_operation_refresh">リソースを更新</string>
     <string name="resource_operation_install_unidic">UniDicをインストール</string>
     <string name="resource_operation_import_catalog_dictionary">カタログ辞書をインポート</string>
+    <string name="resource_operation_recommended_set">推奨リソースをダウンロード</string>
+    <string name="resource_operation_recommended_item">%1$s（%2$d / %3$d）</string>
     <string name="resource_operation_import_custom_dictionary">カスタム辞書をインポート</string>
     <string name="resource_operation_rebuild_dictionary">辞書を再構築</string>
     <string name="resource_operation_import_frequency">頻度ソースをインポート</string>
@@ -455,6 +457,7 @@
     <string name="resource_failure_saf_uri">選択した項目は読み取り可能なドキュメントではありません。ファイルをもう一度選択してください。</string>
     <string name="resource_failure_storage_unavailable">このリソースに利用可能な非公開ストレージが不足しています</string>
     <string name="resource_failure_archive_mismatch">ダウンロードしたアーカイブが固定カタログと一致しませんでした</string>
+    <string name="resource_failure_recommended_incomplete">推奨リソース%2$d件中%1$d件をインストールしました。%3$sをインストールできませんでした：%4$s</string>
     <string name="resource_failure_bridge_archive_too_large">アーカイブがアプリのインポート上限を超えています</string>
     <string name="resource_failure_archive_member_oversized">アーカイブ内の1つのファイルが音声パックに含められる上限より大きいです</string>
     <string name="resource_failure_archive_member_count">アーカイブのファイル数が音声パックに含められる上限を超えています</string>
@@ -480,6 +483,12 @@
     <string name="unidic_resource_title">日本語形態素解析器 — 必須</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · ダウンロード約45 MiB、インストール後249 MiB</string>
     <string name="jitendex_resource_title">Jitendex辞書 — 推奨</string>
+    <string name="recommended_resources_title">推奨リソース</string>
+    <string name="recommended_resources_description">JMdict辞書、JPDBかな頻度リスト、Kanjiumピッチアクセント · ダウンロード約24 MiB、インポート中最大163 MiB</string>
+    <string name="recommended_resources_download">ダウンロードしてインストール</string>
+    <string name="recommended_resources_installed_action">すべてインストール済み</string>
+    <string name="jpdb_frequency_resource_title">JPDB v2.2かな頻度</string>
+    <string name="kanjium_pitch_resource_title">Kanjiumピッチアクセント</string>
     <string name="jmdict_resource_title">JMdict辞書（英語）</string>
     <string name="jmdict_resource_description">英語訳付きオフラインYomitan辞書 · ダウンロード約15 MiB、インポート中最大163 MiB</string>
     <string name="resource_installed">インストール済み</string>
@@ -665,6 +674,7 @@
     <string name="resource_panel_add_audio">音声パックを追加…</string>
     <string name="resource_panel_add_frequency">頻度ソースを追加…</string>
     <string name="resource_panel_import_yomitan_zip">Yomitan ZIPをインポート…</string>
+    <string name="resource_panel_download_recommended">推奨リソースをダウンロード…</string>
     <string name="resource_panel_meta_online">オンライン</string>
     <string name="resource_panel_warning_jisho">レート制限あり、低速</string>
     <string name="resource_panel_warning_missing">見つかりません · 再インポート</string>
@@ -713,6 +723,7 @@
     <string name="attribution_installed_dictionaries">インストール済み辞書</string>
     <string name="attribution_no_installed_dictionaries">オフライン辞書は現在インストールされていません。</string>
     <string name="attribution_installed_catalog_notices">インストール済み辞書データの通知</string>
+    <string name="attribution_installed_data_notices">インストール済み頻度・ピッチアクセントデータの通知</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">インストール済みのインデックスは読み取り可能で互換性があります。</string>
     <string name="attribution_dictionary_invalid">このスロットのインデックスは破損しているか非互換です。</string>

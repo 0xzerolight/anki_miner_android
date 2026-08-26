@@ -409,6 +409,8 @@
     <string name="resource_operation_refresh">重新整理資源</string>
     <string name="resource_operation_install_unidic">安裝 UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">匯入目錄字典</string>
+    <string name="resource_operation_recommended_set">下載建議資源</string>
+    <string name="resource_operation_recommended_item">%1$s（%2$d／%3$d）</string>
     <string name="resource_operation_import_custom_dictionary">匯入自訂字典</string>
     <string name="resource_operation_rebuild_dictionary">重建字典</string>
     <string name="resource_operation_import_frequency">匯入頻率來源</string>
@@ -453,6 +455,7 @@
     <string name="resource_failure_saf_uri">所選項目不是可讀取的文件。請重新選擇檔案。</string>
     <string name="resource_failure_storage_unavailable">此資源沒有足夠的可用私有儲存空間</string>
     <string name="resource_failure_archive_mismatch">下載的封存檔不符合已釘選的目錄</string>
+    <string name="resource_failure_recommended_incomplete">已安裝 %1$d／%2$d 項建議資源。%3$s 無法安裝：%4$s</string>
     <string name="resource_failure_bridge_archive_too_large">封存檔超出應用程式的匯入限制</string>
     <string name="resource_failure_archive_member_oversized">封存檔中的單一檔案大於音訊包可包含的大小</string>
     <string name="resource_failure_archive_member_count">封存檔包含的檔案數量超過音訊包可包含的上限</string>
@@ -478,6 +481,12 @@
     <string name="unidic_resource_title">日文斷詞器 — 必要</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · 下載約 45 MiB，安裝後 249 MiB</string>
     <string name="jitendex_resource_title">Jitendex 字典 — 建議</string>
+    <string name="recommended_resources_title">建議資源</string>
+    <string name="recommended_resources_description">JMdict 字典、JPDB 假名頻率表與 Kanjium 高低音調 · 下載約 24 MiB，匯入時最多 163 MiB</string>
+    <string name="recommended_resources_download">下載並安裝</string>
+    <string name="recommended_resources_installed_action">已全部安裝</string>
+    <string name="jpdb_frequency_resource_title">JPDB v2.2 假名頻率</string>
+    <string name="kanjium_pitch_resource_title">Kanjium 高低音調</string>
     <string name="jmdict_resource_title">JMdict 字典（英文）</string>
     <string name="jmdict_resource_description">含英文釋義的離線 Yomitan 字典 · 下載約 15 MiB，匯入時最多 163 MiB</string>
     <string name="resource_installed">已安裝</string>
@@ -662,6 +671,7 @@
     <string name="resource_panel_add_audio">新增音訊包…</string>
     <string name="resource_panel_add_frequency">新增頻率來源…</string>
     <string name="resource_panel_import_yomitan_zip">匯入 Yomitan ZIP…</string>
+    <string name="resource_panel_download_recommended">下載建議資源…</string>
     <string name="resource_panel_meta_online">線上</string>
     <string name="resource_panel_warning_jisho">有速率限制，較慢</string>
     <string name="resource_panel_warning_missing">缺失 — 請重新匯入</string>
@@ -710,6 +720,7 @@
     <string name="attribution_installed_dictionaries">已安裝的字典</string>
     <string name="attribution_no_installed_dictionaries">目前未安裝離線字典。</string>
     <string name="attribution_installed_catalog_notices">已安裝字典資料聲明</string>
+    <string name="attribution_installed_data_notices">已安裝頻率與音調資料聲明</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">已安裝的索引可讀取且相容。</string>
     <string name="attribution_dictionary_invalid">此位置的索引已毀損或不相容。</string>

@@ -410,6 +410,8 @@
     <string name="resource_operation_refresh">Ressourcen aktualisieren</string>
     <string name="resource_operation_install_unidic">UniDic installieren</string>
     <string name="resource_operation_import_catalog_dictionary">Katalog-Wörterbuch importieren</string>
+    <string name="resource_operation_recommended_set">Empfohlene Ressourcen herunterladen</string>
+    <string name="resource_operation_recommended_item">%1$s (%2$d von %3$d)</string>
     <string name="resource_operation_import_custom_dictionary">Benutzerdefiniertes Wörterbuch importieren</string>
     <string name="resource_operation_rebuild_dictionary">Wörterbuch neu aufbauen</string>
     <string name="resource_operation_import_frequency">Häufigkeitsquelle importieren</string>
@@ -454,6 +456,7 @@
     <string name="resource_failure_saf_uri">Das ausgewählte Element ist kein lesbares Dokument. Wählen Sie die Datei erneut aus.</string>
     <string name="resource_failure_storage_unavailable">Nicht genug privater Speicher für diese Ressource verfügbar</string>
     <string name="resource_failure_archive_mismatch">Das heruntergeladene Archiv entsprach nicht dem im Katalog festgelegten Inhalt.</string>
+    <string name="resource_failure_recommended_incomplete">%1$d von %2$d empfohlenen Ressourcen installiert. Installation von %3$s fehlgeschlagen: %4$s</string>
     <string name="resource_failure_bridge_archive_too_large">Das Archiv überschreitet die Importgrenzen der App</string>
     <string name="resource_failure_archive_member_oversized">Eine einzelne Datei im Archiv ist größer, als ein Audiopaket enthalten darf</string>
     <string name="resource_failure_archive_member_count">Das Archiv enthält mehr Dateien, als ein Audiopaket enthalten darf</string>
@@ -479,6 +482,12 @@
     <string name="unidic_resource_title">Japanischer Tokenizer — erforderlich</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · etwa 45 MiB Download und 249 MiB installiert</string>
     <string name="jitendex_resource_title">Jitendex-Wörterbuch — empfohlen</string>
+    <string name="recommended_resources_title">Empfohlene Ressourcen</string>
+    <string name="recommended_resources_description">JMdict-Wörterbuch, JPDB-Kana-Häufigkeitsliste und Kanjium-Tonhöhenakzente · etwa 24 MiB Download und bis zu 163 MiB beim Import</string>
+    <string name="recommended_resources_download">Herunterladen und installieren</string>
+    <string name="recommended_resources_installed_action">Alle installiert</string>
+    <string name="jpdb_frequency_resource_title">JPDB v2.2 Kana-Häufigkeit</string>
+    <string name="kanjium_pitch_resource_title">Kanjium-Tonhöhenakzente</string>
     <string name="jmdict_resource_title">JMdict-Wörterbuch (Englisch)</string>
     <string name="jmdict_resource_description">Offline-Yomitan-Wörterbuch mit englischen Definitionen · etwa 15 MiB Download und bis zu 163 MiB beim Import</string>
     <string name="resource_installed">Installiert</string>
@@ -663,6 +672,7 @@
     <string name="resource_panel_add_audio">Audiopaket hinzufügen…</string>
     <string name="resource_panel_add_frequency">Häufigkeitsquelle hinzufügen…</string>
     <string name="resource_panel_import_yomitan_zip">Yomitan-ZIP importieren…</string>
+    <string name="resource_panel_download_recommended">Empfohlene Ressourcen herunterladen…</string>
     <string name="resource_panel_meta_online">Online</string>
     <string name="resource_panel_warning_jisho">Ratenbegrenzt, langsamer</string>
     <string name="resource_panel_warning_missing">Fehlt — erneut importieren</string>
@@ -711,6 +721,7 @@
     <string name="attribution_installed_dictionaries">Installierte Wörterbücher</string>
     <string name="attribution_no_installed_dictionaries">Derzeit sind keine Offline-Wörterbücher installiert.</string>
     <string name="attribution_installed_catalog_notices">Hinweise zu installierten Wörterbuchdaten</string>
+    <string name="attribution_installed_data_notices">Hinweise zu installierten Häufigkeits- und Tonhöhenakzentdaten</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">Der installierte Index ist lesbar und kompatibel.</string>
     <string name="attribution_dictionary_invalid">Der Index dieses Platzes ist beschädigt oder inkompatibel.</string>

@@ -412,6 +412,8 @@
     <string name="resource_operation_refresh">Обновить ресурсы</string>
     <string name="resource_operation_install_unidic">Установить UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Импортировать словарь из каталога</string>
+    <string name="resource_operation_recommended_set">Загрузить рекомендуемые ресурсы</string>
+    <string name="resource_operation_recommended_item">%1$s (%2$d из %3$d)</string>
     <string name="resource_operation_import_custom_dictionary">Импортировать пользовательский словарь</string>
     <string name="resource_operation_rebuild_dictionary">Перестроить словарь</string>
     <string name="resource_operation_import_frequency">Импортировать источник частотности</string>
@@ -456,6 +458,7 @@
     <string name="resource_failure_saf_uri">Выбранный элемент не является читаемым документом. Выберите файл заново.</string>
     <string name="resource_failure_storage_unavailable">Для этого ресурса недостаточно доступного закрытого хранилища</string>
     <string name="resource_failure_archive_mismatch">Загруженный архив не соответствует закреплённому каталогу</string>
+    <string name="resource_failure_recommended_incomplete">Установлено %1$d из %2$d рекомендуемых ресурсов. Не удалось установить: %3$s. %4$s</string>
     <string name="resource_failure_bridge_archive_too_large">Архив превышает лимиты импорта приложения</string>
     <string name="resource_failure_archive_member_oversized">Один файл в архиве больше допустимого размера для пакета аудио</string>
     <string name="resource_failure_archive_member_count">В архиве больше файлов, чем может содержать пакет аудио</string>
@@ -481,6 +484,12 @@
     <string name="unidic_resource_title">Японский токенизатор — требуется</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · загрузка около 45 MiB, установлено 249 MiB</string>
     <string name="jitendex_resource_title">Словарь Jitendex — рекомендуется</string>
+    <string name="recommended_resources_title">Рекомендуемые ресурсы</string>
+    <string name="recommended_resources_description">Словарь JMdict, список частотности каны JPDB и тональные ударения Kanjium · загрузка около 24 MiB, до 163 MiB при импорте</string>
+    <string name="recommended_resources_download">Загрузить и установить</string>
+    <string name="recommended_resources_installed_action">Все установлены</string>
+    <string name="jpdb_frequency_resource_title">Частотность каны JPDB v2.2</string>
+    <string name="kanjium_pitch_resource_title">Тональные ударения Kanjium</string>
     <string name="jmdict_resource_title">Словарь JMdict (английский)</string>
     <string name="jmdict_resource_description">Офлайн-словарь Yomitan с английскими глоссами · загрузка около 15 MiB, до 163 MiB при импорте</string>
     <string name="resource_installed">Установлено</string>
@@ -665,6 +674,7 @@
     <string name="resource_panel_add_audio">Добавить пакет аудио…</string>
     <string name="resource_panel_add_frequency">Добавить источник частотности…</string>
     <string name="resource_panel_import_yomitan_zip">Импортировать ZIP Yomitan…</string>
+    <string name="resource_panel_download_recommended">Загрузить рекомендуемые ресурсы…</string>
     <string name="resource_panel_meta_online">Онлайн</string>
     <string name="resource_panel_warning_jisho">С ограничением скорости, медленнее</string>
     <string name="resource_panel_warning_missing">Отсутствует — импортируйте заново</string>
@@ -713,6 +723,7 @@
     <string name="attribution_installed_dictionaries">Установленные словари</string>
     <string name="attribution_no_installed_dictionaries">Офлайн-словари пока не установлены.</string>
     <string name="attribution_installed_catalog_notices">Уведомления о данных установленных словарей</string>
+    <string name="attribution_installed_data_notices">Уведомления об установленных данных частотности и тонального ударения</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">Установленный индекс доступен для чтения и совместим.</string>
     <string name="attribution_dictionary_invalid">Индекс слота повреждён или несовместим.</string>
