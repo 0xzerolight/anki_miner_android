@@ -40,7 +40,6 @@ class DiagnosticsManifestTest {
                 pythonVersion = "3.13.5",
                 runtimeWheelBuildKey = "wheel-key",
                 tokenizerPublicationBuildKey = "tokenizer-key",
-                deviceRuntimeAccepted = true,
             )
 
         assertEquals(
@@ -54,7 +53,6 @@ class DiagnosticsManifestTest {
                 "runtime.python" to "3.13.5",
                 "runtime.wheel" to "wheel-key",
                 "runtime.tokenizer_publication" to "tokenizer-key",
-                "runtime.device_accepted" to "true",
             ),
             DiagnosticsManifest.buildIdentityEntries(identity),
         )

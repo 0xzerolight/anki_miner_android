@@ -41,7 +41,6 @@ class TesterDiagnosticsTest {
                         pythonVersion = "3.11",
                         runtimeWheelBuildKey = "cp311-arm64-release",
                         tokenizerPublicationBuildKey = "sudachipy-arm64-publication",
-                        deviceRuntimeAccepted = true,
                     ),
                 setup =
                     SetupUiState(
@@ -422,7 +421,6 @@ class TesterDiagnosticsTest {
             pythonVersion = "3.11",
             runtimeWheelBuildKey = "cp311-arm64-release",
             tokenizerPublicationBuildKey = "sudachipy-arm64-publication",
-            deviceRuntimeAccepted = true,
         )
 
     private fun privateDocument(displayName: String): SafDocument =

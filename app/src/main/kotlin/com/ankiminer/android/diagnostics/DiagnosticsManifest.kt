@@ -12,7 +12,6 @@ internal object DiagnosticsManifest {
             "runtime.python" to identity.pythonVersion,
             "runtime.wheel" to identity.runtimeWheelBuildKey,
             "runtime.tokenizer_publication" to identity.tokenizerPublicationBuildKey,
-            "runtime.device_accepted" to identity.deviceRuntimeAccepted.toString(),
         )
 
     /**
