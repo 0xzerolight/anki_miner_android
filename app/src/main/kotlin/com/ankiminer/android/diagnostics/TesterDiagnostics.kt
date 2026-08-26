@@ -23,7 +23,6 @@ internal data class TesterBuildIdentity(
     val pythonVersion: String,
     val runtimeWheelBuildKey: String,
     val tokenizerPublicationBuildKey: String,
-    val deviceRuntimeAccepted: Boolean,
 )
 
 internal data class TesterDiagnostics(
@@ -48,7 +47,6 @@ internal fun currentTesterBuildIdentity(): TesterBuildIdentity =
         pythonVersion = BuildConfig.PYTHON_VERSION,
         runtimeWheelBuildKey = BuildConfig.RUNTIME_WHEEL_BUILD_KEY,
         tokenizerPublicationBuildKey = BuildConfig.S1A_PUBLICATION_BUILD_KEY,
-        deviceRuntimeAccepted = BuildConfig.S1A_ARM64_ACCEPTED,
     )
 
 /** Builds a bounded report from build identity, stable error codes, categories, and counts only. */
@@ -78,7 +76,7 @@ internal object TesterDiagnosticsBuilder {
             firstFailedMiningRun(video.runState, audio.runState, reading.runState)
         val report =
             buildString {
-                appendLine("Anki Miner tester diagnostics v1")
+                appendLine("Anki Miner diagnostics v1")
                 line("app.id", safeBuildValue(build.applicationId))
                 line("app.version_name", versionName)
                 line("app.version_code", build.versionCode.coerceAtLeast(0L).toString())
@@ -98,7 +96,6 @@ internal object TesterDiagnosticsBuilder {
                     "runtime.tokenizer_publication",
                     safeBuildValue(build.tokenizerPublicationBuildKey),
                 )
-                line("runtime.device_accepted", build.deviceRuntimeAccepted.toString())
                 line("python.readiness", pythonReadiness(setup.python))
                 line("wizard.seen", setup.wizardSeen.toString())
                 line("setup.mining_ready", setup.isMiningReady.toString())

@@ -319,7 +319,7 @@
     <string name="settings_update_skip">Bỏ qua phiên bản này</string>
     <string name="settings_update_up_to_date">Đây là bản phát hành mới nhất.</string>
     <string name="settings_update_failed">Không thể kết nối GitHub để kiểm tra.</string>
-    <string name="settings_tester_diagnostics">Chẩn đoán cho người thử nghiệm</string>
+    <string name="settings_diagnostics_bundle">Gói chẩn đoán</string>
     <string name="settings_version_identity">Phiên bản: %1$s</string>
     <string name="settings_source_identity">Nguồn: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Gói nhật ký đã che dữ liệu của riêng ứng dụng này. Không gồm nhật ký của ứng dụng khác.</string>
@@ -409,6 +409,8 @@
     <string name="resource_operation_refresh">Làm mới tài nguyên</string>
     <string name="resource_operation_install_unidic">Cài đặt UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Nhập từ điển trong danh mục</string>
+    <string name="resource_operation_recommended_set">Tải xuống tài nguyên được đề xuất</string>
+    <string name="resource_operation_recommended_item">%1$s (%2$d trên %3$d)</string>
     <string name="resource_operation_import_custom_dictionary">Nhập từ điển tùy chỉnh</string>
     <string name="resource_operation_rebuild_dictionary">Xây dựng lại từ điển</string>
     <string name="resource_operation_import_frequency">Nhập nguồn tần suất</string>
@@ -453,6 +455,7 @@
     <string name="resource_failure_saf_uri">Mục đã chọn không phải là tài liệu đọc được. Hãy chọn lại tệp.</string>
     <string name="resource_failure_storage_unavailable">Không đủ bộ nhớ riêng tư cho tài nguyên này</string>
     <string name="resource_failure_archive_mismatch">Tệp lưu trữ đã tải không khớp danh mục đã ghim</string>
+    <string name="resource_failure_recommended_incomplete">Đã cài đặt %1$d trên %2$d tài nguyên được đề xuất. Không thể cài đặt %3$s: %4$s</string>
     <string name="resource_failure_bridge_archive_too_large">Tệp lưu trữ vượt giới hạn nhập của ứng dụng</string>
     <string name="resource_failure_archive_member_oversized">Một tệp trong tệp lưu trữ lớn hơn mức gói âm thanh được phép chứa</string>
     <string name="resource_failure_archive_member_count">Tệp lưu trữ chứa nhiều tệp hơn mức gói âm thanh được phép chứa</string>
@@ -477,7 +480,13 @@
     <string name="resource_failure_dictionary_invalid">Một vị trí từ điển đang dùng bị hỏng hoặc đã cũ; hãy thay thế rõ ràng trước khi khai thác</string>
     <string name="unidic_resource_title">Trình tách từ tiếng Nhật — bắt buộc</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · tải xuống khoảng 45 MiB và cài đặt 249 MiB</string>
-    <string name="jitendex_resource_title">Từ điển Jitendex — được đề xuất</string>
+    <string name="jitendex_resource_title">Từ điển Jitendex</string>
+    <string name="recommended_resources_title">Tài nguyên được đề xuất</string>
+    <string name="recommended_resources_description">Từ điển JMdict, danh sách tần suất kana JPDB và trọng âm cao độ Kanjium · tải xuống khoảng 24 MiB và tối đa 163 MiB khi nhập</string>
+    <string name="recommended_resources_download">Tải xuống và cài đặt</string>
+    <string name="recommended_resources_installed_action">Đã cài đặt tất cả</string>
+    <string name="jpdb_frequency_resource_title">Tần suất kana JPDB v2.2</string>
+    <string name="kanjium_pitch_resource_title">Trọng âm cao độ Kanjium</string>
     <string name="jmdict_resource_title">Từ điển JMdict (tiếng Anh)</string>
     <string name="jmdict_resource_description">Từ điển Yomitan ngoại tuyến có chú giải tiếng Anh · tải xuống khoảng 15 MiB và tối đa 163 MiB khi nhập</string>
     <string name="resource_installed">Đã cài đặt</string>
@@ -662,6 +671,7 @@
     <string name="resource_panel_add_audio">Thêm gói âm thanh…</string>
     <string name="resource_panel_add_frequency">Thêm nguồn tần suất…</string>
     <string name="resource_panel_import_yomitan_zip">Nhập ZIP Yomitan…</string>
+    <string name="resource_panel_download_recommended">Tải xuống tài nguyên được đề xuất…</string>
     <string name="resource_panel_meta_online">Trực tuyến</string>
     <string name="resource_panel_warning_jisho">Giới hạn tốc độ, chậm hơn</string>
     <string name="resource_panel_warning_missing">Thiếu tệp - nhập lại</string>
@@ -710,6 +720,7 @@
     <string name="attribution_installed_dictionaries">Từ điển đã cài đặt</string>
     <string name="attribution_no_installed_dictionaries">Hiện chưa cài từ điển ngoại tuyến nào.</string>
     <string name="attribution_installed_catalog_notices">Thông báo dữ liệu từ điển đã cài đặt</string>
+    <string name="attribution_installed_data_notices">Thông báo dữ liệu tần suất và trọng âm cao độ đã cài đặt</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">Chỉ mục đã cài đặt có thể đọc được và tương thích.</string>
     <string name="attribution_dictionary_invalid">Chỉ mục của vị trí này bị hỏng hoặc không tương thích.</string>

@@ -328,7 +328,7 @@
     <string name="settings_update_skip">Skip this version</string>
     <string name="settings_update_up_to_date">This is the newest release.</string>
     <string name="settings_update_failed">The check could not reach GitHub.</string>
-    <string name="settings_tester_diagnostics">Tester diagnostics</string>
+    <string name="settings_diagnostics_bundle">Diagnostics bundle</string>
     <string name="settings_version_identity">Version: %1$s</string>
     <string name="settings_source_identity">Source: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">A redacted bundle of this app’s own logs. No other app’s logs are included.</string>

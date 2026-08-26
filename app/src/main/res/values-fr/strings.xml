@@ -321,7 +321,7 @@
     <string name="settings_update_skip">Ignorer cette version</string>
     <string name="settings_update_up_to_date">C\'est la dernière version.</string>
     <string name="settings_update_failed">Impossible de joindre GitHub lors de la vérification.</string>
-    <string name="settings_tester_diagnostics">Diagnostics du testeur</string>
+    <string name="settings_diagnostics_bundle">Ensemble de diagnostic</string>
     <string name="settings_version_identity">Version : %1$s</string>
     <string name="settings_source_identity">Source : %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Un lot expurgé des journaux propres à cette application. Aucun journal d\'une autre application n\'est inclus.</string>
@@ -411,6 +411,8 @@
     <string name="resource_operation_refresh">Actualiser les ressources</string>
     <string name="resource_operation_install_unidic">Installer UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Importer le dictionnaire du catalogue</string>
+    <string name="resource_operation_recommended_set">Télécharger les ressources recommandées</string>
+    <string name="resource_operation_recommended_item">%1$s (%2$d sur %3$d)</string>
     <string name="resource_operation_import_custom_dictionary">Importer un dictionnaire personnalisé</string>
     <string name="resource_operation_rebuild_dictionary">Reconstruire le dictionnaire</string>
     <string name="resource_operation_import_frequency">Importer une source de fréquence</string>
@@ -455,6 +457,7 @@
     <string name="resource_failure_saf_uri">L\'élément sélectionné n\'est pas un document lisible. Choisissez à nouveau le fichier.</string>
     <string name="resource_failure_storage_unavailable">Espace de stockage privé insuffisant pour cette ressource</string>
     <string name="resource_failure_archive_mismatch">L\'archive téléchargée ne correspond pas au catalogue épinglé</string>
+    <string name="resource_failure_recommended_incomplete">Installé %1$d sur %2$d ressources recommandées. Échec de l\'installation de %3$s : %4$s</string>
     <string name="resource_failure_bridge_archive_too_large">L\'archive dépasse les limites d\'importation de l\'application</string>
     <string name="resource_failure_archive_member_oversized">Un fichier de l\'archive est plus volumineux que ce qu\'un pack audio peut contenir</string>
     <string name="resource_failure_archive_member_count">L\'archive contient plus de fichiers qu\'un pack audio ne peut en contenir</string>
@@ -479,7 +482,13 @@
     <string name="resource_failure_dictionary_invalid">Un emplacement de dictionnaire occupé est endommagé ou obsolète ; remplacez-le explicitement avant l\'extraction</string>
     <string name="unidic_resource_title">Segmenteur japonais — requis</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · environ 45 MiB à télécharger et 249 MiB installés</string>
-    <string name="jitendex_resource_title">Dictionnaire Jitendex — recommandé</string>
+    <string name="jitendex_resource_title">Dictionnaire Jitendex</string>
+    <string name="recommended_resources_title">Ressources recommandées</string>
+    <string name="recommended_resources_description">Dictionnaire JMdict, liste de fréquence kana JPDB et accents de hauteur Kanjium · environ 24 MiB à télécharger et jusqu\'à 163 MiB lors de l\'importation</string>
+    <string name="recommended_resources_download">Télécharger et installer</string>
+    <string name="recommended_resources_installed_action">Tout installé</string>
+    <string name="jpdb_frequency_resource_title">Fréquence kana JPDB v2.2</string>
+    <string name="kanjium_pitch_resource_title">Accents de hauteur Kanjium</string>
     <string name="jmdict_resource_title">Dictionnaire JMdict (anglais)</string>
     <string name="jmdict_resource_description">Dictionnaire Yomitan hors ligne avec des définitions anglaises · environ 15 MiB à télécharger et jusqu\'à 163 MiB lors de l\'importation</string>
     <string name="resource_installed">Installé</string>
@@ -664,6 +673,7 @@
     <string name="resource_panel_add_audio">Ajouter un pack audio local…</string>
     <string name="resource_panel_add_frequency">Ajouter une source de fréquence…</string>
     <string name="resource_panel_import_yomitan_zip">Importer un ZIP Yomitan…</string>
+    <string name="resource_panel_download_recommended">Télécharger les ressources recommandées…</string>
     <string name="resource_panel_meta_online">En ligne</string>
     <string name="resource_panel_warning_jisho">Limité en débit, plus lent</string>
     <string name="resource_panel_warning_missing">Manquant - à réimporter</string>
@@ -712,6 +722,7 @@
     <string name="attribution_installed_dictionaries">Dictionnaires installés</string>
     <string name="attribution_no_installed_dictionaries">Aucun dictionnaire hors ligne n\'est actuellement installé.</string>
     <string name="attribution_installed_catalog_notices">Avis sur les données des dictionnaires installés</string>
+    <string name="attribution_installed_data_notices">Avis sur les données de fréquence et d\'accent installées</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">L\'index installé est lisible et compatible.</string>
     <string name="attribution_dictionary_invalid">L\'index de l\'emplacement est endommagé ou incompatible.</string>

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Audit Android locale catalogs against the default English string resources.
 
-The gate guards translation *regressions*, not translation *completeness* -- the same
-contract the desktop repository's ``scripts/i18n.py`` and ``scripts/i18n_payload_check.py``
-hold for the Qt catalogs, where an untranslated entry ships as ``type="unfinished"`` and Qt
-renders the source text. Android does the same natively: a key absent from ``values-xx`` is
-resolved from ``values/``, so a partly translated catalog is a working catalog and a locale
-that has fallen behind must not stop a merge.
+The gate guards both translation *regressions* and translation *completeness*. Android
+resolves a key absent from ``values-xx`` out of ``values/``, so an incomplete catalog still
+renders -- which is precisely why incompleteness went unnoticed until eleven keys covering a
+whole onboarding card had shipped as silent English in all eleven locales. A shipped locale
+that quietly falls back to English is a defect, so a missing key fails.
 
-Failures (a broken or lying catalog):
+Failures (a broken, lying or incomplete catalog):
+  * a key in ``values/strings.xml`` that a locale catalog does not translate
   * duplicate keys, or a duplicate plural quantity, inside one catalog
   * a key present in a catalog but absent from ``values/strings.xml`` (an orphan -- it is
     dead weight, it fails ``lint UnusedResources``, and it usually means a rename was only
@@ -16,9 +16,6 @@ Failures (a broken or lying catalog):
   * a resource-kind mismatch between source and translation
   * a printf or xliff placeholder signature mismatch on a translation that IS present --
     the crash-at-runtime case, and the one thing English fallback cannot save
-
-Advisories (reported on stdout, exit code unaffected):
-  * keys a locale catalog does not translate yet
 """
 
 from __future__ import annotations
@@ -69,7 +66,6 @@ class AuditResult:
     source_count: int
     catalogs: list[Path]
     verified_counts: dict[Path, int]
-    advisories: list[str]
 
 
 def _counter_signature(values: list[str]) -> tuple[tuple[str, int], ...]:
@@ -204,7 +200,6 @@ def audit(resource_root: Path) -> AuditResult:
 
     catalogs = locale_catalogs(resource_root)
     failures: list[str] = []
-    advisories: list[str] = []
     verified_counts: dict[Path, int] = {}
     source_keys = set(source)
     for catalog_path in catalogs:
@@ -215,9 +210,7 @@ def audit(resource_root: Path) -> AuditResult:
         extra = sorted(translation_keys - source_keys)
         verified_counts[catalog_path] = len(source_keys) - len(missing)
         if missing:
-            # Android resolves an absent key from values/, so this is work outstanding, not a
-            # defect. Reported so the backlog stays visible; never fatal.
-            advisories.append(f"{relative}: {len(missing)} untranslated key(s), English is used: {', '.join(missing)}")
+            failures.append(f"{relative}: {len(missing)} untranslated key(s), English is used: {', '.join(missing)}")
         if extra:
             failures.append(f"{relative}: extra keys: {', '.join(extra)}")
         for key in sorted(source_keys & translation_keys):
@@ -255,7 +248,6 @@ def audit(resource_root: Path) -> AuditResult:
         source_count=len(source),
         catalogs=catalogs,
         verified_counts=verified_counts,
-        advisories=advisories,
     )
 
 
@@ -282,12 +274,9 @@ def main(argv: list[str] | None = None) -> int:
     for catalog in result.catalogs:
         verified = result.verified_counts[catalog]
         print(f"{catalog.relative_to(resource_root)}: {verified} resources verified")
-    for advisory in result.advisories:
-        print(f"advisory: {advisory}")
     print(
         f"Localization audit passed: {result.source_count} source resources; "
-        f"{len(result.catalogs)} locale catalog(s) verified; "
-        f"{len(result.advisories)} catalog(s) with untranslated keys"
+        f"{len(result.catalogs)} locale catalog(s) verified"
     )
     return 0
 

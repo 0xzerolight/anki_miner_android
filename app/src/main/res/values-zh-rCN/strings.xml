@@ -319,7 +319,7 @@
     <string name="settings_update_skip">跳过此版本</string>
     <string name="settings_update_up_to_date">这是最新版本。</string>
     <string name="settings_update_failed">无法连接到 GitHub 进行检查。</string>
-    <string name="settings_tester_diagnostics">测试者诊断信息</string>
+    <string name="settings_diagnostics_bundle">诊断包</string>
     <string name="settings_version_identity">版本：%1$s</string>
     <string name="settings_source_identity">来源：%1$s</string>
     <string name="settings_diagnostics_bundle_privacy">本应用自身日志的脱敏包，不含其他应用的日志。</string>
@@ -409,6 +409,8 @@
     <string name="resource_operation_refresh">刷新资源</string>
     <string name="resource_operation_install_unidic">安装 UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">导入目录词典</string>
+    <string name="resource_operation_recommended_set">下载推荐资源</string>
+    <string name="resource_operation_recommended_item">%1$s（%2$d/%3$d）</string>
     <string name="resource_operation_import_custom_dictionary">导入自定义词典</string>
     <string name="resource_operation_rebuild_dictionary">重建词典</string>
     <string name="resource_operation_import_frequency">导入词频来源</string>
@@ -453,6 +455,7 @@
     <string name="resource_failure_saf_uri">所选项目不是可读取的文档。请重新选择文件。</string>
     <string name="resource_failure_storage_unavailable">此资源的可用私有存储空间不足</string>
     <string name="resource_failure_archive_mismatch">下载的压缩包与固定目录不匹配</string>
+    <string name="resource_failure_recommended_incomplete">已安装 %1$d/%2$d 个推荐资源。%3$s 无法安装：%4$s</string>
     <string name="resource_failure_bridge_archive_too_large">压缩包超出应用的导入限制</string>
     <string name="resource_failure_archive_member_oversized">压缩包内的单个文件超过音频包允许的大小</string>
     <string name="resource_failure_archive_member_count">压缩包中的文件数超过音频包允许的数量</string>
@@ -477,7 +480,13 @@
     <string name="resource_failure_dictionary_invalid">已占用的词典槽位已损坏或过时；请在挖词前明确替换</string>
     <string name="unidic_resource_title">日语分词器 — 必需</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · 下载约 45 MiB，安装后 249 MiB</string>
-    <string name="jitendex_resource_title">Jitendex 词典 — 推荐</string>
+    <string name="jitendex_resource_title">Jitendex 词典</string>
+    <string name="recommended_resources_title">推荐资源</string>
+    <string name="recommended_resources_description">JMdict 词典、JPDB 假名词频表和 Kanjium 音调 · 下载约 24 MiB，导入时最多 163 MiB</string>
+    <string name="recommended_resources_download">下载并安装</string>
+    <string name="recommended_resources_installed_action">全部已安装</string>
+    <string name="jpdb_frequency_resource_title">JPDB v2.2 假名词频</string>
+    <string name="kanjium_pitch_resource_title">Kanjium 音调</string>
     <string name="jmdict_resource_title">JMdict 词典（英语）</string>
     <string name="jmdict_resource_description">含英语释义的离线 Yomitan 词典 · 下载约 15 MiB，导入时最多 163 MiB</string>
     <string name="resource_installed">已安装</string>
@@ -662,6 +671,7 @@
     <string name="resource_panel_add_audio">添加音频包…</string>
     <string name="resource_panel_add_frequency">添加词频来源…</string>
     <string name="resource_panel_import_yomitan_zip">导入 Yomitan ZIP…</string>
+    <string name="resource_panel_download_recommended">下载推荐资源…</string>
     <string name="resource_panel_meta_online">在线</string>
     <string name="resource_panel_warning_jisho">限速，速度较慢</string>
     <string name="resource_panel_warning_missing">缺失，需重新导入</string>
@@ -710,6 +720,7 @@
     <string name="attribution_installed_dictionaries">已安装的词典</string>
     <string name="attribution_no_installed_dictionaries">当前未安装离线词典。</string>
     <string name="attribution_installed_catalog_notices">已安装词典数据声明</string>
+    <string name="attribution_installed_data_notices">已安装词频与音调数据声明</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">已安装的索引可读取且兼容。</string>
     <string name="attribution_dictionary_invalid">此位置的索引已损坏或不兼容。</string>

@@ -319,7 +319,7 @@
     <string name="settings_update_skip">Lewati versi ini</string>
     <string name="settings_update_up_to_date">Ini rilis terbaru.</string>
     <string name="settings_update_failed">Pemeriksaan tidak dapat menghubungi GitHub.</string>
-    <string name="settings_tester_diagnostics">Diagnostik penguji</string>
+    <string name="settings_diagnostics_bundle">Paket diagnostik</string>
     <string name="settings_version_identity">Versi: %1$s</string>
     <string name="settings_source_identity">Sumber: %1$s</string>
     <string name="settings_diagnostics_bundle_privacy">Bundel log tersensor milik aplikasi ini. Log aplikasi lain tidak disertakan.</string>
@@ -409,6 +409,8 @@
     <string name="resource_operation_refresh">Segarkan sumber daya</string>
     <string name="resource_operation_install_unidic">Instal UniDic</string>
     <string name="resource_operation_import_catalog_dictionary">Impor kamus katalog</string>
+    <string name="resource_operation_recommended_set">Unduh sumber daya yang direkomendasikan</string>
+    <string name="resource_operation_recommended_item">%1$s (%2$d dari %3$d)</string>
     <string name="resource_operation_import_custom_dictionary">Impor kamus kustom</string>
     <string name="resource_operation_rebuild_dictionary">Bangun ulang kamus</string>
     <string name="resource_operation_import_frequency">Impor sumber frekuensi</string>
@@ -453,6 +455,7 @@
     <string name="resource_failure_saf_uri">Item yang dipilih bukan dokumen yang dapat dibaca. Pilih berkas lagi.</string>
     <string name="resource_failure_storage_unavailable">Penyimpanan privat yang tersedia tidak cukup untuk sumber daya ini</string>
     <string name="resource_failure_archive_mismatch">Arsip yang diunduh tidak sesuai dengan katalog yang disematkan</string>
+    <string name="resource_failure_recommended_incomplete">Terpasang %1$d dari %2$d sumber daya yang direkomendasikan. %3$s tidak dapat dipasang: %4$s</string>
     <string name="resource_failure_bridge_archive_too_large">Arsip melebihi batas impor aplikasi</string>
     <string name="resource_failure_archive_member_oversized">Satu berkas di dalam arsip lebih besar daripada yang dapat dimuat paket audio</string>
     <string name="resource_failure_archive_member_count">Arsip memuat lebih banyak berkas daripada yang dapat dimuat paket audio</string>
@@ -477,7 +480,13 @@
     <string name="resource_failure_dictionary_invalid">Slot kamus yang terisi rusak atau usang; ganti secara eksplisit sebelum mining</string>
     <string name="unidic_resource_title">Tokenizer bahasa Jepang — wajib</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · sekitar 45 MiB unduhan dan 249 MiB terpasang</string>
-    <string name="jitendex_resource_title">Kamus Jitendex — direkomendasikan</string>
+    <string name="jitendex_resource_title">Kamus Jitendex</string>
+    <string name="recommended_resources_title">Sumber daya yang direkomendasikan</string>
+    <string name="recommended_resources_description">Kamus JMdict, daftar frekuensi kana JPDB, dan aksen nada Kanjium · sekitar 24 MiB unduhan dan hingga 163 MiB saat mengimpor</string>
+    <string name="recommended_resources_download">Unduh dan instal</string>
+    <string name="recommended_resources_installed_action">Semua terpasang</string>
+    <string name="jpdb_frequency_resource_title">Frekuensi kana JPDB v2.2</string>
+    <string name="kanjium_pitch_resource_title">Aksen nada Kanjium</string>
     <string name="jmdict_resource_title">Kamus JMdict (Inggris)</string>
     <string name="jmdict_resource_description">Kamus Yomitan luring dengan definisi bahasa Inggris · sekitar 15 MiB unduhan dan hingga 163 MiB saat mengimpor</string>
     <string name="resource_installed">Terpasang</string>
@@ -662,6 +671,7 @@
     <string name="resource_panel_add_audio">Tambah paket audio…</string>
     <string name="resource_panel_add_frequency">Tambah sumber frekuensi…</string>
     <string name="resource_panel_import_yomitan_zip">Impor ZIP Yomitan…</string>
+    <string name="resource_panel_download_recommended">Unduh sumber daya yang direkomendasikan…</string>
     <string name="resource_panel_meta_online">Daring</string>
     <string name="resource_panel_warning_jisho">Dibatasi laju, lebih lambat</string>
     <string name="resource_panel_warning_missing">Hilang - impor ulang</string>
@@ -710,6 +720,7 @@
     <string name="attribution_installed_dictionaries">Kamus terpasang</string>
     <string name="attribution_no_installed_dictionaries">Saat ini tidak ada kamus luring yang terpasang.</string>
     <string name="attribution_installed_catalog_notices">Pemberitahuan data kamus terpasang</string>
+    <string name="attribution_installed_data_notices">Pemberitahuan data frekuensi dan nada terpasang</string>
     <string name="attribution_dictionary_title">%1$s [%2$s]</string>
     <string name="attribution_dictionary_valid">Indeks yang terpasang dapat dibaca dan kompatibel.</string>
     <string name="attribution_dictionary_invalid">Indeks slot ini rusak atau tidak kompatibel.</string>

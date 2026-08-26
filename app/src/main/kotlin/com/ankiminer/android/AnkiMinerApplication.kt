@@ -542,7 +542,6 @@ class AnkiMinerApplication : Application() {
             "pythonVersion" to buildIdentity.pythonVersion,
             "runtimeWheelBuildKey" to buildIdentity.runtimeWheelBuildKey,
             "tokenizerPublicationBuildKey" to buildIdentity.tokenizerPublicationBuildKey,
-            "deviceRuntimeAccepted" to buildIdentity.deviceRuntimeAccepted,
         )
         // Load-bearing ordering: this is the first task submitted to the process Python executor.
         // It starts Chaquopy and establishes ANKI_MINER_HOME before any engine import.

@@ -9,7 +9,6 @@ import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -43,7 +42,6 @@ class TokenizerS1aInstrumentedTest {
 
     @Test
     fun externalUniDicMatchesDesktopGoldens() {
-        assumeTrue("S1a wheels are not enabled", BuildConfig.S1A_SPIKE_ENABLED)
         val goldenJson = golden()
         val golden = JSONObject(goldenJson)
         val expectedHash =

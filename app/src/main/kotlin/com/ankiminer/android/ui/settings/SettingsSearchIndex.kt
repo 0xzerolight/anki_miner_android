@@ -350,7 +350,7 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "diagnostics.diagnostics_bundle",
             SettingsCategory.DIAGNOSTICS,
             "tester-diagnostics",
-            R.string.settings_share_diagnostics_bundle,
+            R.string.settings_diagnostics_bundle,
             R.string.settings_diagnostics_bundle_privacy,
         ),
         entry(
