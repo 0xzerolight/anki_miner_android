@@ -68,6 +68,24 @@ _MAX_KNOWN_WORD_PAGE = 200
 _MAX_KNOWN_WORD_MUTATION = 256
 _KNOWN_WORD_EXPORT_LIMIT = 512 * 1024 * 1024
 _KNOWN_WORD_LINE_SEPARATORS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
+# The parser already classifies why a file yielded nothing, and desktop shows a
+# different message for each class, so the class has to survive this boundary.
+# "limit_exceeded" is deliberately absent: an oversized file is a retryable size
+# problem, not a "pick a different file" format problem.
+_KNOWN_WORD_IMPORT_FAILURE_CODES = {
+    "unreadable": (
+        "known_words_unreadable",
+        "The selected known-word file could not be read",
+    ),
+    "unrecognized": (
+        "known_words_unrecognized",
+        "The selected file is not a supported known-word export",
+    ),
+    "no_known_words": (
+        "known_words_none_known",
+        "The selected file has no entries that qualify as known",
+    ),
+}
 _ANDROID_SIDECAR = "android-resource.json"
 _LEGACY_PITCH_SOURCE_ID = "legacy-pitch"
 _LEGACY_PITCH_SOURCE_NAME = "Pitch Accent"
@@ -1697,10 +1715,14 @@ def _parse_known_words_copy(
         )
     except KnownWordsImportError as exc:
         operation.check()
-        raise _fail(
-            "known_words_import_failed",
-            "The selected file contains no supported known-word export",
-        ) from exc
+        code, message = _KNOWN_WORD_IMPORT_FAILURE_CODES.get(
+            exc.reason,
+            (
+                "known_words_import_failed",
+                "The selected file contains no supported known-word export",
+            ),
+        )
+        raise _fail(code, message) from exc
     from anki_miner.utils.ja_normalize import (
         normalize_for_tokenization,
         standardize_kanji_variants,
