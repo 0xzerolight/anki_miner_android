@@ -485,6 +485,9 @@
     <string name="resource_failure_audio_pack_index_malformed">The pack\'s index file could not be read.</string>
     <string name="resource_failure_audio_pack_reserved">The pack ID “jpod101” is reserved. Rename the root folder or ZIP.</string>
     <string name="resource_failure_known_words_import">The selected file contains no supported known words</string>
+    <string name="resource_failure_known_words_unreadable">The known-words file could not be read. It may use a text encoding the importer does not support.</string>
+    <string name="resource_failure_known_words_unrecognized">Not a recognised known-words file. Supported: jpdb review export (JSON), Migaku word export (JSON or CSV), AnkiMorphs known morphs (CSV), or a plain word list with one word per line.</string>
+    <string name="resource_failure_known_words_none_known">The file was recognised, but no entries in it qualify as known.</string>
     <string name="resource_failure_inventory_unsafe">A local resource is damaged or unsafe and needs attention</string>
     <string name="resource_failure_dictionary_schema">This dictionary must be replaced because its index schema is stale</string>
     <string name="resource_failure_dictionary_invalid">An occupied dictionary slot is damaged or stale; explicitly replace it before mining</string>

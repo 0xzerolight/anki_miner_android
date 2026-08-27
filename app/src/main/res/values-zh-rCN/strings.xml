@@ -475,6 +475,9 @@
     <string name="resource_failure_audio_pack_index_malformed">无法读取该音频包的索引文件。</string>
     <string name="resource_failure_audio_pack_reserved">包 ID“jpod101”为保留项。请重命名根文件夹或 ZIP 文件。</string>
     <string name="resource_failure_known_words_import">所选文件不含受支持的已知单词</string>
+    <string name="resource_failure_known_words_unreadable">无法读取已知单词文件。它可能使用了导入器不支持的文本编码。</string>
+    <string name="resource_failure_known_words_unrecognized">无法识别为已知单词文件。支持：jpdb 复习导出 (JSON)、Migaku 单词导出 (JSON 或 CSV)、AnkiMorphs 已知词素 (CSV)，或每行一个单词的纯文本词表。</string>
+    <string name="resource_failure_known_words_none_known">已识别该文件，但其中没有条目算作已知。</string>
     <string name="resource_failure_inventory_unsafe">本地资源已损坏或不安全，需要处理</string>
     <string name="resource_failure_dictionary_schema">此词典的索引架构已过时，必须替换</string>
     <string name="resource_failure_dictionary_invalid">已占用的词典槽位已损坏或过时；请在挖词前明确替换</string>

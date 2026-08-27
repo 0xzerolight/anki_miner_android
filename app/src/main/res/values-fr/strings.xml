@@ -477,6 +477,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Impossible de lire le fichier d\'index du pack.</string>
     <string name="resource_failure_audio_pack_reserved">L\'ID de pack « jpod101 » est réservé. Renommez le dossier racine ou le fichier ZIP.</string>
     <string name="resource_failure_known_words_import">Le fichier sélectionné ne contient aucun mot connu pris en charge</string>
+    <string name="resource_failure_known_words_unreadable">Le fichier de mots connus n\'a pas pu être lu. Il utilise peut-être un encodage de texte que l\'importateur ne prend pas en charge.</string>
+    <string name="resource_failure_known_words_unrecognized">Fichier de mots connus non reconnu. Pris en charge : export de révisions jpdb (JSON), export de mots Migaku (JSON ou CSV), morphèmes connus AnkiMorphs (CSV) ou une liste simple avec un mot par ligne.</string>
+    <string name="resource_failure_known_words_none_known">Le fichier a été reconnu, mais aucune de ses entrées ne compte comme connue.</string>
     <string name="resource_failure_inventory_unsafe">Une ressource locale est endommagée ou non sûre et nécessite une intervention</string>
     <string name="resource_failure_dictionary_schema">Ce dictionnaire doit être remplacé car son schéma d\'index est obsolète</string>
     <string name="resource_failure_dictionary_invalid">Un emplacement de dictionnaire occupé est endommagé ou obsolète ; remplacez-le explicitement avant l\'extraction</string>

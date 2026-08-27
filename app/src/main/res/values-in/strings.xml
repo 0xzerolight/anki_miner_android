@@ -475,6 +475,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Berkas indeks paket tidak dapat dibaca.</string>
     <string name="resource_failure_audio_pack_reserved">ID paket “jpod101” dicadangkan. Ganti nama folder akar atau ZIP-nya.</string>
     <string name="resource_failure_known_words_import">Berkas yang dipilih tidak memuat kata yang dikenal yang didukung</string>
+    <string name="resource_failure_known_words_unreadable">Berkas kata yang dikenal tidak dapat dibaca. Mungkin memakai pengodean teks yang tidak didukung pengimpor.</string>
+    <string name="resource_failure_known_words_unrecognized">Bukan berkas kata yang dikenal yang dikenali. Didukung: ekspor ulasan jpdb (JSON), ekspor kata Migaku (JSON atau CSV), morfem dikenal AnkiMorphs (CSV), atau daftar kata biasa satu kata per baris.</string>
+    <string name="resource_failure_known_words_none_known">Berkas dikenali, tetapi tidak ada entri di dalamnya yang memenuhi syarat sebagai dikenal.</string>
     <string name="resource_failure_inventory_unsafe">Sumber daya lokal rusak atau tidak aman dan perlu diperhatikan</string>
     <string name="resource_failure_dictionary_schema">Kamus ini harus diganti karena skema indeksnya sudah usang</string>
     <string name="resource_failure_dictionary_invalid">Slot kamus yang terisi rusak atau usang; ganti secara eksplisit sebelum mining</string>

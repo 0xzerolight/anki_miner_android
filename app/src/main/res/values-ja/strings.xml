@@ -477,6 +477,9 @@
     <string name="resource_failure_audio_pack_index_malformed">パックのインデックスファイルを読み込めませんでした。</string>
     <string name="resource_failure_audio_pack_reserved">パックID「jpod101」は予約されています。ルートフォルダーまたはZIPの名前を変更してください。</string>
     <string name="resource_failure_known_words_import">選択したファイルに対応する既知単語が含まれていません</string>
+    <string name="resource_failure_known_words_unreadable">既知単語ファイルを読み込めませんでした。インポーターが対応していない文字コードの可能性があります。</string>
+    <string name="resource_failure_known_words_unrecognized">既知単語ファイルとして認識できません。対応形式: jpdb の復習エクスポート (JSON)、Migaku の単語エクスポート (JSON または CSV)、AnkiMorphs の既知形態素 (CSV)、1 行 1 単語のプレーンな単語リスト。</string>
+    <string name="resource_failure_known_words_none_known">ファイルは認識できましたが、既知と見なせる項目がありません。</string>
     <string name="resource_failure_inventory_unsafe">ローカルリソースが破損または安全でなく、対応が必要です</string>
     <string name="resource_failure_dictionary_schema">インデックススキーマが古いため、この辞書を置き換える必要があります</string>
     <string name="resource_failure_dictionary_invalid">使用中の辞書スロットが破損または古くなっています。採掘前に明示的に置き換えてください</string>

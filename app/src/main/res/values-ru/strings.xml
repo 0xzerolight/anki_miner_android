@@ -478,6 +478,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Не удалось прочитать индексный файл пакета.</string>
     <string name="resource_failure_audio_pack_reserved">ID пакета «jpod101» зарезервирован. Переименуйте корневую папку или ZIP-файл.</string>
     <string name="resource_failure_known_words_import">Выбранный файл не содержит поддерживаемых известных слов</string>
+    <string name="resource_failure_known_words_unreadable">Не удалось прочитать файл известных слов. Возможно, он использует кодировку текста, которую импорт не поддерживает.</string>
+    <string name="resource_failure_known_words_unrecognized">Файл известных слов не распознан. Поддерживаются: экспорт повторений jpdb (JSON), экспорт слов Migaku (JSON или CSV), известные морфемы AnkiMorphs (CSV) или простой список по одному слову в строке.</string>
+    <string name="resource_failure_known_words_none_known">Файл распознан, но ни одна запись в нём не считается известной.</string>
     <string name="resource_failure_inventory_unsafe">Локальный ресурс повреждён или небезопасен и требует внимания</string>
     <string name="resource_failure_dictionary_schema">Этот словарь нужно заменить, так как схема его индекса устарела</string>
     <string name="resource_failure_dictionary_invalid">Занятый слот словаря повреждён или устарел; явно замените его перед майнингом</string>

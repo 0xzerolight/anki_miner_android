@@ -475,6 +475,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Không thể đọc tệp chỉ mục của gói.</string>
     <string name="resource_failure_audio_pack_reserved">ID gói “jpod101” dành riêng. Đổi tên thư mục gốc hoặc tệp ZIP.</string>
     <string name="resource_failure_known_words_import">Tệp đã chọn không chứa từ đã biết được hỗ trợ</string>
+    <string name="resource_failure_known_words_unreadable">Không thể đọc tệp từ đã biết. Tệp có thể dùng bảng mã văn bản mà trình nhập không hỗ trợ.</string>
+    <string name="resource_failure_known_words_unrecognized">Không phải tệp từ đã biết được nhận dạng. Hỗ trợ: bản xuất ôn tập jpdb (JSON), bản xuất từ Migaku (JSON hoặc CSV), hình vị đã biết AnkiMorphs (CSV), hoặc danh sách từ thuần mỗi dòng một từ.</string>
+    <string name="resource_failure_known_words_none_known">Đã nhận dạng tệp, nhưng không mục nào trong đó được tính là đã biết.</string>
     <string name="resource_failure_inventory_unsafe">Tài nguyên cục bộ bị hỏng hoặc không an toàn cần được chú ý</string>
     <string name="resource_failure_dictionary_schema">Phải thay thế từ điển này vì lược đồ chỉ mục đã cũ</string>
     <string name="resource_failure_dictionary_invalid">Một vị trí từ điển đang dùng bị hỏng hoặc đã cũ; hãy thay thế rõ ràng trước khi khai thác</string>

@@ -2031,6 +2031,42 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun knownWordImportRejectionsNameTheFailureClass() =
+        runTest {
+            // The parser distinguishes an undecodable file from an unrecognized one from a
+            // recognized export with nothing marked known. One message for all three leaves
+            // the user guessing which of the three they hit.
+            val expectations =
+                mapOf(
+                    "known_words_unreadable" to
+                        R.string.resource_failure_known_words_unreadable,
+                    "known_words_unrecognized" to
+                        R.string.resource_failure_known_words_unrecognized,
+                    "known_words_none_known" to
+                        R.string.resource_failure_known_words_none_known,
+                )
+            for ((code, resourceId) in expectations) {
+                val harness =
+                    Harness(
+                        rootName = "manager-$code",
+                        knownWordsPreviewFailureCode = code,
+                    )
+
+                harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+
+                val failure = requireNotNull(harness.manager.state.value.failure)
+                assertEquals(code, failure.code)
+                assertEquals("resource:$resourceId", failure.message)
+                assertEquals(ResourceFailureOrigin.KNOWN_WORDS, failure.origin)
+                assertEquals(KnownWordsFailureOperation.PREVIEW, failure.knownWordsOperation)
+                // Re-parsing the same rejected file cannot succeed, so the banner offers the
+                // picker rather than a retry.
+                assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+                assertFalse(failure.retryable)
+            }
+        }
+
+    @Test
     fun deletingAPitchSourceRefreshesInventoryAndDropsTheSlot() =
         runTest {
             val harness = Harness(rootName = "manager-delete-pitch", installedPitchSourceId = "kanjium")
@@ -2464,6 +2500,7 @@ class ResourceManagerTest {
         wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
         resourceDirectorySync: (File) -> Unit = {},
         failKnownWordsImportOnce: Boolean = false,
+        knownWordsPreviewFailureCode: String? = null,
         failKnownWordsRemoveOnce: Boolean = false,
         failKnownWordsResetOnce: Boolean = false,
         failMinedWordsRemoveOnce: Boolean = false,
@@ -2522,6 +2559,7 @@ class ResourceManagerTest {
                 failRefreshAfterDictionaryImport,
                 failRefreshAfterMutation,
                 failKnownWordsImportOnce,
+                knownWordsPreviewFailureCode,
                 failKnownWordsRemoveOnce,
                 failKnownWordsResetOnce,
                 failMinedWordsRemoveOnce,
@@ -2799,6 +2837,7 @@ class ResourceManagerTest {
         private val failRefreshAfterDictionaryImport: Boolean,
         private val failRefreshAfterMutation: String?,
         failKnownWordsImportOnce: Boolean,
+        private val knownWordsPreviewFailureCode: String?,
         failKnownWordsRemoveOnce: Boolean,
         failKnownWordsResetOnce: Boolean,
         failMinedWordsRemoveOnce: Boolean,
@@ -2945,11 +2984,15 @@ class ResourceManagerTest {
                         )
                     }
                 }
-                "resource.knownwords.preview" ->
+                "resource.knownwords.preview" -> {
+                    knownWordsPreviewFailureCode?.let {
+                        throw ResourceBridgeException(it, "simulated known-word parse rejection")
+                    }
                     envelope(
                         "resource.knownwords.previewed",
                         """{"format":"migaku_json","importedCount":2,"totalEntries":3,"isGeneric":false,"sampleWords":["犬","猫"]}""",
                     )
+                }
                 "resource.knownwords.import" -> {
                     if (knownWordsImportFailures > 0) {
                         knownWordsImportFailures -= 1

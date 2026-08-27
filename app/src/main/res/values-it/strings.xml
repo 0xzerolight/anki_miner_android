@@ -477,6 +477,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Impossibile leggere il file indice del pacchetto.</string>
     <string name="resource_failure_audio_pack_reserved">L\'ID pacchetto “jpod101” è riservato. Rinomina la cartella radice o lo ZIP.</string>
     <string name="resource_failure_known_words_import">Il file selezionato non contiene parole conosciute supportate</string>
+    <string name="resource_failure_known_words_unreadable">Impossibile leggere il file di parole conosciute. Potrebbe usare una codifica di testo non supportata dall\'importazione.</string>
+    <string name="resource_failure_known_words_unrecognized">File di parole conosciute non riconosciuto. Supportati: esportazione ripassi jpdb (JSON), esportazione parole Migaku (JSON o CSV), morfemi conosciuti AnkiMorphs (CSV) o un elenco semplice con una parola per riga.</string>
+    <string name="resource_failure_known_words_none_known">Il file è stato riconosciuto, ma nessuna voce al suo interno risulta conosciuta.</string>
     <string name="resource_failure_inventory_unsafe">Una risorsa locale è danneggiata o non sicura e richiede attenzione</string>
     <string name="resource_failure_dictionary_schema">Questo dizionario deve essere sostituito perché lo schema dell\'indice non è aggiornato</string>
     <string name="resource_failure_dictionary_invalid">Uno slot del dizionario occupato è danneggiato o obsoleto; sostituiscilo esplicitamente prima del mining</string>
