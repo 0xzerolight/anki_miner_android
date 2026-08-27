@@ -22,7 +22,6 @@ readonly s5_definition_lookup_test="com.ankiminer.android.mining.S5VideoMiningAc
 # a note against; hosted runners carry no AnkiDroid app, so it stays UNEXECUTED like S2.
 readonly note_delete_removes_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_note_removes_created_note"
 readonly note_delete_missing_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_missing_note_still_reports_request_count"
-readonly note_delete_invalid_id_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_note_rejects_invalid_id_before_provider"
 readonly ui_audit_tests=(
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop"
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#settingsFullScrollsDownThenUp"
@@ -46,14 +45,13 @@ readonly unexecuted_tests=(
     "$s5_definition_lookup_test"
     "$note_delete_removes_test"
     "$note_delete_missing_test"
-    "$note_delete_invalid_id_test"
     "${ui_audit_tests[@]}"
 )
 readonly expected_executed_test_count=336
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
 # The lane runs everything the runner discovers except the allowlist above. The result contract is
-# pinned at 336 executed tests: 357 source @Test methods minus the 21 explicit UNEXECUTED identities
+# pinned at 336 executed tests: 356 source @Test methods minus the 20 explicit UNEXECUTED identities
 # above. The host script test re-derives that count from source, so additions, removals, and renamed
 # annotations require an intentional count update. The terminal contract also rejects failures,
 # crashes, skips, assumption violations, and duplicate or missing terminal codes.
