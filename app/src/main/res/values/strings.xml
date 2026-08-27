@@ -536,7 +536,8 @@
     <string name="known_words_search">Search user words</string>
     <string name="known_words_search_action">Search</string>
     <string name="known_words_load_more">Load more</string>
-    <string name="known_words_remove">Remove</string>
+    <string name="known_words_remove_selected">Remove selected (%1$d)</string>
+    <string name="known_words_select_word">Select %1$s</string>
     <string name="known_words_export">Export user list</string>
     <string name="known_words_reset_user">Reset user list</string>
     <string name="known_words_rebuild_cache">Rebuild cached words</string>

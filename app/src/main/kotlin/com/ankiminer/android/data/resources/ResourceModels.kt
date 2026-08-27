@@ -421,6 +421,14 @@ data class KnownWordsPage(
     val hasMore: Boolean,
 )
 
+/**
+ * Words one `resource.knownwords.*` mutation may carry.
+ *
+ * Mirrors `_MAX_KNOWN_WORD_MUTATION` in `android_bridge/local_resources.py`: the bridge rejects a
+ * larger batch outright, so a selection UI must not offer one.
+ */
+const val MAX_KNOWN_WORDS_MUTATION = 256
+
 enum class KnownWordsResetScope(val wireValue: String) {
     USER("user"),
     CACHE("cache"),

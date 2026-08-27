@@ -528,7 +528,8 @@
     <string name="known_words_search">ユーザー単語を検索</string>
     <string name="known_words_search_action">検索</string>
     <string name="known_words_load_more">さらに読み込む</string>
-    <string name="known_words_remove">削除</string>
+    <string name="known_words_remove_selected">選択した単語を削除 (%1$d)</string>
+    <string name="known_words_select_word">%1$s を選択</string>
     <string name="known_words_export">ユーザーリストをエクスポート</string>
     <string name="known_words_reset_user">ユーザーリストをリセット</string>
     <string name="known_words_rebuild_cache">キャッシュ単語を再構築</string>

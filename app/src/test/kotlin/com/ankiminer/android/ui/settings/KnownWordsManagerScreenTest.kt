@@ -43,6 +43,28 @@ class KnownWordsManagerScreenTest {
         assertFalse(presentation.showLoadMore)
     }
 
+    @Test
+    fun togglingAddsAndRemovesAWord() {
+        val once = toggleKnownWordSelection(emptySet(), "食べる")
+
+        assertEquals(setOf("食べる"), once)
+        assertEquals(emptySet<String>(), toggleKnownWordSelection(once, "食べる"))
+    }
+
+    @Test
+    fun selectionStopsAtTheBatchLimit() {
+        val full = (1..4).map { "word$it" }.toSet()
+
+        assertEquals(full, toggleKnownWordSelection(full, "word5", limit = 4))
+    }
+
+    @Test
+    fun deselectingIsAllowedAtTheLimit() {
+        val full = (1..4).map { "word$it" }.toSet()
+
+        assertEquals(full - "word2", toggleKnownWordSelection(full, "word2", limit = 4))
+    }
+
     private fun page(
         words: List<String>,
         hasMore: Boolean,

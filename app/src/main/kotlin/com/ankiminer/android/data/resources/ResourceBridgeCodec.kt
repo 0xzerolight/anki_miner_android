@@ -241,7 +241,7 @@ object ResourceBridgeCodec {
 
     fun encodeKnownWordsRemoveRequest(operation: String, words: List<String>): String {
         requireOperationId(operation)
-        require(words.size in 1..256 && words.distinct().size == words.size)
+        require(words.size in 1..MAX_KNOWN_WORDS_MUTATION && words.distinct().size == words.size)
         require(
             words.all {
                 it.isNotEmpty() &&
@@ -260,7 +260,7 @@ object ResourceBridgeCodec {
     /** Mirrors encodeKnownWordsRemoveRequest: same bounds, distinct wire type and payload. */
     fun encodeMinedWordsRemoveRequest(operation: String, words: List<String>): String {
         requireOperationId(operation)
-        require(words.size in 1..256 && words.distinct().size == words.size)
+        require(words.size in 1..MAX_KNOWN_WORDS_MUTATION && words.distinct().size == words.size)
         require(
             words.all {
                 it.isNotEmpty() &&
