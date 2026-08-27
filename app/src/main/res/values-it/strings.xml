@@ -536,6 +536,7 @@
     <string name="known_words_rebuild_cache_confirmation">Cancellare le righe della cache Anki e delle parole estratte? Il tuo elenco utente resta; la prossima esecuzione ricostruisce la cache.</string>
     <string name="known_words_preview_title">Importare parole conosciute?</string>
     <string name="known_words_preview_summary">Rilevato %1$s: %2$d voci su %3$d risultano conosciute.</string>
+    <string name="known_words_preview_generic_warning">Un elenco semplice di parole non porta uno stato conosciuto o in apprendimento, quindi verranno importate tutte le %1$d voci.</string>
     <string name="known_words_preview_samples">Esempio: %1$s</string>
     <string name="known_words_format_jpdb">esportazione ripassi jpdb</string>
     <string name="known_words_format_migaku_json">esportazione parole Migaku</string>

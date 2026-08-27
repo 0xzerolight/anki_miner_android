@@ -544,6 +544,7 @@
     <string name="known_words_rebuild_cache_confirmation">Clear Anki and mined cache rows? Your user list is kept; the next run rebuilds the cache.</string>
     <string name="known_words_preview_title">Import known words?</string>
     <string name="known_words_preview_summary">Detected %1$s: %2$d of %3$d entries qualify as known.</string>
+    <string name="known_words_preview_generic_warning">A plain word list carries no known or learning status, so all %1$d entries will be imported.</string>
     <string name="known_words_preview_samples">Sample: %1$s</string>
     <string name="known_words_format_jpdb">jpdb review export</string>
     <string name="known_words_format_migaku_json">Migaku word export</string>

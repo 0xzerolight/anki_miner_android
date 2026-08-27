@@ -536,6 +536,7 @@
     <string name="known_words_rebuild_cache_confirmation">¿Borrar las filas de caché de Anki y minadas? Se conserva su lista de usuario; la próxima ejecución reconstruye la caché.</string>
     <string name="known_words_preview_title">¿Importar palabras conocidas?</string>
     <string name="known_words_preview_summary">Detectado %1$s: %2$d de %3$d entradas se consideran conocidas.</string>
+    <string name="known_words_preview_generic_warning">Una lista simple de palabras no lleva estado de conocida ni en aprendizaje, así que se importarán las %1$d entradas.</string>
     <string name="known_words_preview_samples">Muestra: %1$s</string>
     <string name="known_words_format_jpdb">exportación de repasos de jpdb</string>
     <string name="known_words_format_migaku_json">exportación de palabras de Migaku</string>

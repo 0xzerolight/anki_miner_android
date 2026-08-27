@@ -536,6 +536,7 @@
     <string name="known_words_rebuild_cache_confirmation">Effacer les lignes de cache Anki et d\'extraction ? Votre liste utilisateur est conservée ; la prochaine extraction reconstruit le cache.</string>
     <string name="known_words_preview_title">Importer des mots connus ?</string>
     <string name="known_words_preview_summary">Détecté %1$s : %2$d entrées sur %3$d sont considérées comme connues.</string>
+    <string name="known_words_preview_generic_warning">Une liste simple de mots ne porte aucun statut connu ou en apprentissage : les %1$d entrées seront donc toutes importées.</string>
     <string name="known_words_preview_samples">Exemple : %1$s</string>
     <string name="known_words_format_jpdb">export de révisions jpdb</string>
     <string name="known_words_format_migaku_json">export de mots Migaku</string>

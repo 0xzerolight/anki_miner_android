@@ -535,6 +535,7 @@
     <string name="known_words_rebuild_cache_confirmation">Anki- und Mining-Cache-Zeilen leeren? Ihre Benutzerliste bleibt erhalten; der nächste Durchlauf baut den Cache neu.</string>
     <string name="known_words_preview_title">Bekannte Wörter importieren?</string>
     <string name="known_words_preview_summary">Erkannt: %1$s: %2$d von %3$d Einträgen gelten als bekannt.</string>
+    <string name="known_words_preview_generic_warning">Eine einfache Wortliste enthält keinen Status „bekannt“ oder „lernend“, daher werden alle %1$d Einträge importiert.</string>
     <string name="known_words_preview_samples">Beispiel: %1$s</string>
     <string name="known_words_format_jpdb">jpdb-Review-Export</string>
     <string name="known_words_format_migaku_json">Migaku-Wortexport</string>

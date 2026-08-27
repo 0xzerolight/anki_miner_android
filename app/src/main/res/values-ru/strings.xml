@@ -537,6 +537,7 @@
     <string name="known_words_rebuild_cache_confirmation">Очистить строки кэша Anki и майнинга? Ваш список пользователя сохранится; следующий запуск перестроит кэш.</string>
     <string name="known_words_preview_title">Импортировать известные слова?</string>
     <string name="known_words_preview_summary">Обнаружено %1$s: известными признано %2$d из %3$d записей.</string>
+    <string name="known_words_preview_generic_warning">В простом списке слов нет статуса «известно» или «изучается», поэтому будут импортированы все %1$d записей.</string>
     <string name="known_words_preview_samples">Пример: %1$s</string>
     <string name="known_words_format_jpdb">экспорт повторений jpdb</string>
     <string name="known_words_format_migaku_json">экспорт слов Migaku</string>

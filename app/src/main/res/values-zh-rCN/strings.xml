@@ -534,6 +534,7 @@
     <string name="known_words_rebuild_cache_confirmation">清除 Anki 和已挖词缓存行？用户列表保留，下次运行会重建缓存。</string>
     <string name="known_words_preview_title">导入已知单词？</string>
     <string name="known_words_preview_summary">检测到 %1$s：共 %3$d 个条目，其中 %2$d 个符合已知单词条件。</string>
+    <string name="known_words_preview_generic_warning">纯文本词表不带已知或学习中的状态，因此将导入全部 %1$d 个条目。</string>
     <string name="known_words_preview_samples">示例：%1$s</string>
     <string name="known_words_format_jpdb">jpdb 复习导出</string>
     <string name="known_words_format_migaku_json">Migaku 单词导出</string>

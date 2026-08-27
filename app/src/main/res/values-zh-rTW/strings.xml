@@ -534,6 +534,7 @@
     <string name="known_words_rebuild_cache_confirmation">要清除 Anki 與已採集的快取列嗎？使用者清單會保留，下次工作會重建快取。</string>
     <string name="known_words_preview_title">要匯入已知單字嗎？</string>
     <string name="known_words_preview_summary">偵測到 %1$s：%3$d 個項目中有 %2$d 個符合已知單字條件。</string>
+    <string name="known_words_preview_generic_warning">純文字字表不帶已知或學習中的狀態，因此將匯入全部 %1$d 個項目。</string>
     <string name="known_words_preview_samples">範例：%1$s</string>
     <string name="known_words_format_jpdb">jpdb 複習匯出</string>
     <string name="known_words_format_migaku_json">Migaku 單字匯出</string>
