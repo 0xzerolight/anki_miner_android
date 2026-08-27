@@ -1,0 +1,53 @@
+name: Auto-merge bot PRs
+
+# Turns on GitHub's native auto-merge for the two bots that open dependency
+# PRs here: Dependabot (github-actions bumps, see .github/dependabot.yml) and
+# pre-commit.ci (quarterly hook autoupdate). GitHub does the waiting: the merge
+# only lands once every status check the main branch ruleset requires is green.
+#
+# pull_request_target, not pull_request, because a GITHUB_TOKEN handed to a
+# workflow triggered by Dependabot is read-only whatever `permissions` asks
+# for. Nothing here checks out or runs the pull request's code.
+
+on:
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: anki-miner-android-auto-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  auto-merge:
+    name: Enable auto-merge
+    if: >-
+      github.event.pull_request.draft == false
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && (github.event.pull_request.user.login == 'dependabot[bot]'
+          || github.event.pull_request.user.login == 'pre-commit-ci[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Enable auto-merge
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          if [[ -n "$(gh pr view "$PR" --json autoMergeRequest --jq '.autoMergeRequest.enabledAt // ""')" ]]; then
+            echo "auto-merge is already enabled on #$PR"
+            exit 0
+          fi
+          # A pull request that is already mergeable cannot have auto-merge
+          # enabled ("clean status"), so merge it outright instead. The ruleset
+          # still gates that call: github-actions[bot] holds no bypass, so a
+          # missing or failing required check refuses the merge.
+          if ! gh pr merge --auto --squash --delete-branch "$PR"; then
+            echo "::notice::auto-merge unavailable on #$PR; attempting a gated merge"
+            gh pr merge --squash --delete-branch "$PR"
+          fi
