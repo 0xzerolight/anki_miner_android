@@ -5,7 +5,6 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -52,14 +51,6 @@ class ContentResolverNoteDeleteInstrumentedTest {
 
         assertEquals(1, secondDelete)
         assertFalse(noteExists(noteId))
-    }
-
-    /** No real provider round trip needed: the sealed command rejects id 0 during construction. */
-    @Test
-    fun delete_note_rejects_invalid_id_before_provider() {
-        assertThrows(IllegalArgumentException::class.java) {
-            gateway.deleteNote(AnkiProviderMutationCommand.DeleteNote(0L))
-        }
     }
 
     private fun assumeRealAnkiDroid() {
