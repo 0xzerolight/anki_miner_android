@@ -535,6 +535,13 @@
     <string name="known_words_preview_title">要匯入已知單字嗎？</string>
     <string name="known_words_preview_summary">偵測到 %1$s：%3$d 個項目中有 %2$d 個符合已知單字條件。</string>
     <string name="known_words_preview_samples">範例：%1$s</string>
+    <string name="known_words_format_jpdb">jpdb 複習匯出</string>
+    <string name="known_words_format_migaku_json">Migaku 單字匯出</string>
+    <string name="known_words_format_migaku_legacy">Migaku 舊外掛備份</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs 已知詞素</string>
+    <string name="known_words_format_migaku_csv">Migaku 單字匯出 (CSV)</string>
+    <string name="known_words_format_generic">純文字字表</string>
+    <string name="known_words_format_unknown">無法辨識的格式</string>
     <string name="known_words_import_confirm">匯入</string>
     <string name="known_words_inventory">總計 %1$d · 已匯入 %2$d · Anki 快取 %3$d · 已採集 %4$d</string>
     <string name="known_words_inventory_invalid">已知單字儲存空間無效。請重新開啟設定以重試復原。</string>

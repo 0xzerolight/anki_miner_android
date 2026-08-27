@@ -207,6 +207,18 @@ private fun WordListRow(
     )
 }
 
+/**
+ * The translated name of a parser format, falling back for a wire key this build does not know.
+ *
+ * The fallback is unreachable while the mirror test is green; it exists so a future engine format
+ * degrades to a phrase rather than leaking a raw token into the dialog.
+ */
+@Composable
+internal fun knownWordsFormatLabel(format: String): String =
+    stringResource(
+        KnownWordsImportFormat.forWireValue(format)?.labelRes ?: R.string.known_words_format_unknown,
+    )
+
 @Composable
 internal fun KnownWordsImportCard(
     state: SetupUiState,
@@ -225,7 +237,7 @@ internal fun KnownWordsImportCard(
                     Text(
                         stringResource(
                             R.string.known_words_preview_summary,
-                            preview.format,
+                            knownWordsFormatLabel(preview.format),
                             preview.importedCount,
                             preview.totalEntries,
                         ),

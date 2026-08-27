@@ -535,6 +535,13 @@
     <string name="known_words_preview_title">导入已知单词？</string>
     <string name="known_words_preview_summary">检测到 %1$s：共 %3$d 个条目，其中 %2$d 个符合已知单词条件。</string>
     <string name="known_words_preview_samples">示例：%1$s</string>
+    <string name="known_words_format_jpdb">jpdb 复习导出</string>
+    <string name="known_words_format_migaku_json">Migaku 单词导出</string>
+    <string name="known_words_format_migaku_legacy">Migaku 旧插件备份</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs 已知词素</string>
+    <string name="known_words_format_migaku_csv">Migaku 单词导出 (CSV)</string>
+    <string name="known_words_format_generic">纯文本词表</string>
+    <string name="known_words_format_unknown">无法识别的格式</string>
     <string name="known_words_import_confirm">导入</string>
     <string name="known_words_inventory">总计 %1$d · 已导入 %2$d · Anki 缓存 %3$d · 已挖词 %4$d</string>
     <string name="known_words_inventory_invalid">已知单词存储无效。重新打开设置以重试恢复。</string>

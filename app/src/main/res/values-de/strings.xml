@@ -536,6 +536,13 @@
     <string name="known_words_preview_title">Bekannte Wörter importieren?</string>
     <string name="known_words_preview_summary">Erkannt: %1$s: %2$d von %3$d Einträgen gelten als bekannt.</string>
     <string name="known_words_preview_samples">Beispiel: %1$s</string>
+    <string name="known_words_format_jpdb">jpdb-Review-Export</string>
+    <string name="known_words_format_migaku_json">Migaku-Wortexport</string>
+    <string name="known_words_format_migaku_legacy">Migaku-Backup des alten Add-ons</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs bekannte Morpheme</string>
+    <string name="known_words_format_migaku_csv">Migaku-Wortexport (CSV)</string>
+    <string name="known_words_format_generic">einfache Wortliste</string>
+    <string name="known_words_format_unknown">unbekanntes Format</string>
     <string name="known_words_import_confirm">Importieren</string>
     <string name="known_words_inventory">Gesamt %1$d · importiert %2$d · Anki-Cache %3$d · gesammelt %4$d</string>
     <string name="known_words_inventory_invalid">Speicher für Bekannte Wörter ist ungültig. Öffnen Sie Einstellungen erneut, um die Wiederherstellung zu versuchen.</string>

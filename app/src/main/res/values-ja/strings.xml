@@ -537,6 +537,13 @@
     <string name="known_words_preview_title">既知単語をインポートしますか？</string>
     <string name="known_words_preview_summary">%1$sを検出: エントリ%3$d件中%2$d件が既知単語に該当。</string>
     <string name="known_words_preview_samples">サンプル: %1$s</string>
+    <string name="known_words_format_jpdb">jpdb の復習エクスポート</string>
+    <string name="known_words_format_migaku_json">Migaku の単語エクスポート</string>
+    <string name="known_words_format_migaku_legacy">Migaku 旧アドオンのバックアップ</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs の既知形態素</string>
+    <string name="known_words_format_migaku_csv">Migaku の単語エクスポート (CSV)</string>
+    <string name="known_words_format_generic">プレーンな単語リスト</string>
+    <string name="known_words_format_unknown">認識できない形式</string>
     <string name="known_words_import_confirm">インポート</string>
     <string name="known_words_inventory">合計%1$d · インポート%2$d · Ankiキャッシュ%3$d · 採掘済み%4$d</string>
     <string name="known_words_inventory_invalid">既知単語のストレージが無効です。設定を開き直すと復旧を再試行します。</string>

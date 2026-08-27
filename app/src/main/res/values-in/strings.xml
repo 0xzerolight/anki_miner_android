@@ -535,6 +535,13 @@
     <string name="known_words_preview_title">Impor kata yang dikenal?</string>
     <string name="known_words_preview_summary">Terdeteksi %1$s: %2$d dari %3$d entri memenuhi syarat sebagai kata yang dikenal.</string>
     <string name="known_words_preview_samples">Contoh: %1$s</string>
+    <string name="known_words_format_jpdb">ekspor ulasan jpdb</string>
+    <string name="known_words_format_migaku_json">ekspor kata Migaku</string>
+    <string name="known_words_format_migaku_legacy">cadangan pengaya lama Migaku</string>
+    <string name="known_words_format_ankimorphs">morfem dikenal AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">ekspor kata Migaku (CSV)</string>
+    <string name="known_words_format_generic">daftar kata biasa</string>
+    <string name="known_words_format_unknown">format tidak dikenali</string>
     <string name="known_words_import_confirm">Impor</string>
     <string name="known_words_inventory">Total %1$d · diimpor %2$d · cache Anki %3$d · di-mining %4$d</string>
     <string name="known_words_inventory_invalid">Penyimpanan kata yang dikenal tidak valid. Buka kembali Pengaturan untuk mencoba pemulihan lagi.</string>

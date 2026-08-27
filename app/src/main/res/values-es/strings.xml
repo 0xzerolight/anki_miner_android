@@ -537,6 +537,13 @@
     <string name="known_words_preview_title">¿Importar palabras conocidas?</string>
     <string name="known_words_preview_summary">Detectado %1$s: %2$d de %3$d entradas se consideran conocidas.</string>
     <string name="known_words_preview_samples">Muestra: %1$s</string>
+    <string name="known_words_format_jpdb">exportación de repasos de jpdb</string>
+    <string name="known_words_format_migaku_json">exportación de palabras de Migaku</string>
+    <string name="known_words_format_migaku_legacy">copia del complemento antiguo de Migaku</string>
+    <string name="known_words_format_ankimorphs">morfemas conocidos de AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">exportación de palabras de Migaku (CSV)</string>
+    <string name="known_words_format_generic">lista simple de palabras</string>
+    <string name="known_words_format_unknown">formato no reconocido</string>
     <string name="known_words_import_confirm">Importar</string>
     <string name="known_words_inventory">Total: %1$d · importadas: %2$d · caché de Anki: %3$d · minadas: %4$d</string>
     <string name="known_words_inventory_invalid">El almacenamiento de palabras conocidas no es válido. Vuelva a abrir Ajustes para reintentar la recuperación.</string>

@@ -537,6 +537,13 @@
     <string name="known_words_preview_title">Importer des mots connus ?</string>
     <string name="known_words_preview_summary">Détecté %1$s : %2$d entrées sur %3$d sont considérées comme connues.</string>
     <string name="known_words_preview_samples">Exemple : %1$s</string>
+    <string name="known_words_format_jpdb">export de révisions jpdb</string>
+    <string name="known_words_format_migaku_json">export de mots Migaku</string>
+    <string name="known_words_format_migaku_legacy">sauvegarde de l\'ancien module Migaku</string>
+    <string name="known_words_format_ankimorphs">morphèmes connus AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">export de mots Migaku (CSV)</string>
+    <string name="known_words_format_generic">liste simple de mots</string>
+    <string name="known_words_format_unknown">format non reconnu</string>
     <string name="known_words_import_confirm">Importer</string>
     <string name="known_words_inventory">Total %1$d · importés %2$d · cache Anki %3$d · extraits %4$d</string>
     <string name="known_words_inventory_invalid">Le stockage des mots connus est invalide. Rouvrez les paramètres pour réessayer la récupération.</string>

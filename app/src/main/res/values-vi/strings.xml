@@ -535,6 +535,13 @@
     <string name="known_words_preview_title">Nhập từ đã biết?</string>
     <string name="known_words_preview_summary">Đã phát hiện %1$s: %2$d trong số %3$d mục đủ điều kiện là từ đã biết.</string>
     <string name="known_words_preview_samples">Mẫu: %1$s</string>
+    <string name="known_words_format_jpdb">bản xuất ôn tập jpdb</string>
+    <string name="known_words_format_migaku_json">bản xuất từ Migaku</string>
+    <string name="known_words_format_migaku_legacy">bản sao lưu tiện ích Migaku cũ</string>
+    <string name="known_words_format_ankimorphs">hình vị đã biết AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">bản xuất từ Migaku (CSV)</string>
+    <string name="known_words_format_generic">danh sách từ thuần</string>
+    <string name="known_words_format_unknown">định dạng không nhận dạng được</string>
     <string name="known_words_import_confirm">Nhập</string>
     <string name="known_words_inventory">Tổng %1$d · đã nhập %2$d · bộ nhớ đệm Anki %3$d · đã khai thác %4$d</string>
     <string name="known_words_inventory_invalid">Kho lưu trữ từ đã biết không hợp lệ. Mở lại Cài đặt để thử khôi phục.</string>
