@@ -298,11 +298,38 @@ data class CurationLineExpansion(
     }
 }
 
+/** Shortest clip the trim control will produce; matches the engine's own MIN_CLIP_SECONDS. */
+const val MIN_CLIP_SECONDS = 0.2
+
+/** Mirrors the desktop curator's clip ceiling; the engine itself applies no cap. */
+const val MAX_CLIP_SECONDS = 30.0
+
+/**
+ * A user-trimmed audio window, in absolute seconds on the source timeline.
+ *
+ * The engine consumes this verbatim - `resolve_audio_window` adds no padding on top of an
+ * override - so whatever padding the window should carry is already inside these two numbers.
+ */
+@Immutable
+data class CurationClipWindow(
+    val startSeconds: Double,
+    val endSeconds: Double,
+) {
+    init {
+        require(startSeconds.isFinite() && endSeconds.isFinite())
+        require(startSeconds >= 0.0)
+        require(endSeconds - startSeconds in MIN_CLIP_SECONDS..MAX_CLIP_SECONDS)
+    }
+
+    val lengthSeconds: Double get() = endSeconds - startSeconds
+}
+
 data class CurationSelection(
     val candidateId: String,
     val sentenceId: String?,
     val linesBefore: Int = 0,
     val linesAfter: Int = 0,
+    val clip: CurationClipWindow? = null,
 ) {
     init {
         require(candidateId.isNotBlank())
@@ -328,6 +355,7 @@ data class CurationSessionState(
     val previousPageSelectedCount: Int,
     val knownCandidateIds: Set<String> = emptySet(),
     val lineExpansions: Map<String, CurationLineExpansion> = emptyMap(),
+    val clipOverrides: Map<String, CurationClipWindow> = emptyMap(),
 ) {
     init {
         require(runId.isNotBlank())
