@@ -1384,6 +1384,103 @@ def test_reading_curation_rejects_line_expansion_and_survives_clean_resend(
     assert terminal.payload["outcome"] == "success"
 
 
+def test_reading_curation_rejects_clip_override_and_survives_clean_resend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
+    monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
+    emitted = threading.Event()
+    returned_from_curation = threading.Event()
+    curation_requests: list[str] = []
+    selections: list[list[object] | None] = []
+    candidate = SimpleNamespace(
+        surface="猫",
+        lemma="猫",
+        reading="ネコ",
+        expression_reading="ねこ",
+        pos="名詞",
+        frequency_rank=100,
+        occurrence_count=2,
+        sentence="猫だ。",
+        sentence_furigana="猫[ねこ]だ。",
+        sentence_reading="ねこだ。",
+        start_time=1.0,
+        end_time=2.0,
+        duration=1.0,
+        sentence_candidates=[],
+        mined_form="猫",
+    )
+
+    class CurationCallbacks(RecordingCallbacks):
+        def onCurationNeeded(self, raw: str) -> None:
+            curation_requests.append(raw)
+            emitted.set()
+
+    callbacks = CurationCallbacks(registry=registry)
+
+    def process(_: object, __: object, adapters: object) -> FakeResult:
+        selections.append(adapters.curate([candidate]))
+        returned_from_curation.set()
+        return FakeResult(cards_created=0, card_ids=[], mined_forms=[])
+
+    monkeypatch.setattr(reading_mining, "_process_reading", process)
+    terminal_results: list[str] = []
+    raised: list[BaseException] = []
+
+    def worker() -> None:
+        try:
+            terminal_results.append(reading_mining.run_reading(_request(), callbacks))
+        except BaseException as error:
+            raised.append(error)
+
+    thread = threading.Thread(target=worker, daemon=True)
+    thread.start()
+    try:
+        assert emitted.wait(5), "curation request was not emitted"
+        request = decode_envelope(curation_requests[0], expected_type="curation.request")
+        candidate_id = request.payload["candidates"][0]["candidateId"]
+
+        with pytest.raises(BridgeProtocolError) as rejected:
+            jobs_module.submit_curation(
+                encode_message(
+                    "curation.response",
+                    {
+                        "runId": request.payload["runId"],
+                        "requestId": request.payload["requestId"],
+                        "selection": [{"candidateId": candidate_id, "clipStart": 1.0, "clipEnd": 5.0}],
+                    },
+                )
+            )
+        assert rejected.value.code == "clip_override_unsupported"
+        assert not returned_from_curation.wait(0.05), "gate must stay answerable"
+
+        jobs_module.submit_curation(
+            encode_message(
+                "curation.response",
+                {
+                    "runId": request.payload["runId"],
+                    "requestId": request.payload["requestId"],
+                    "selection": [],
+                },
+            )
+        )
+        assert returned_from_curation.wait(5)
+        thread.join(5)
+        assert not thread.is_alive()
+    finally:
+        if thread.is_alive() and registry.active_run_id is not None:
+            registry.cancel(registry.active_run_id)
+        thread.join(5)
+
+    assert raised == []
+    assert selections == [[]]
+    terminal = decode_envelope(terminal_results[0], expected_type="mining.terminal")
+    assert terminal.payload["outcome"] == "success"
+
+
 def _run_reading_and_capture_curation_request(
     monkeypatch: pytest.MonkeyPatch,
     document: object,

@@ -447,11 +447,13 @@ class CallbackAdapters:
         handle: JobHandle,
         *,
         supports_line_expansion: bool = False,
+        supports_clip_override: bool = False,
     ) -> None:
         self._callbacks = callbacks
         self._registry = registry
         self._handle = handle
         self._supports_line_expansion = supports_line_expansion
+        self._supports_clip_override = supports_clip_override
         self.progress = AndroidProgressCallback(callbacks, handle.run_id)
         self.presenter = AndroidPresenter(callbacks, handle.run_id)
         self.anki = AndroidAnkiCallbacks(callbacks, handle.run_id)
@@ -504,6 +506,7 @@ class CallbackAdapters:
             lambda message: _invoke(self._callbacks, "onCurationNeeded", message),
             self.cancellation_requested,
             allow_line_expansion=self._supports_line_expansion,
+            allow_clip_override=self._supports_clip_override,
             sentence_context=self.sentence_context,
         )
 

@@ -8,6 +8,7 @@ import threading
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from math import isfinite
 from pathlib import Path
 from typing import Any, cast
 
@@ -27,6 +28,10 @@ CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
 _MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
 _MAX_LINE_EXPANSION = 100
+# Both ends of the desktop curator's clip contract: media_extractor's own
+# MIN_CLIP_SECONDS floor, and the ceiling the trim strip will not exceed.
+_MIN_CLIP_SECONDS = 0.2
+_MAX_CLIP_SECONDS = 30.0
 _CURATION_CANCELLATION_POLL_SECONDS = 0.05
 logger = logging.getLogger(__name__)
 
@@ -102,6 +107,7 @@ class _CurationGate:
     selected: list[object] = field(default_factory=list)
     known_forms: set[str] = field(default_factory=set)
     allow_line_expansion: bool = False
+    allow_clip_override: bool = False
     sentence_context: Callable[[object], SentencePageContext | None] | None = None
 
     @property
@@ -458,15 +464,17 @@ class JobRegistry:
         cancellation_requested: Callable[[], bool] | None = None,
         *,
         allow_line_expansion: bool = False,
+        allow_clip_override: bool = False,
         sentence_context: Callable[[object], SentencePageContext | None] | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
         The returned objects are the exact original candidate or sentence
         variant instances held by the engine, except that a selection carrying
-        line-expansion counts returns a ``dataclasses.replace`` copy with
-        ``line_expansion`` stamped; the engine-owned original stays ``(0, 0)``.
-        No model is reconstructed from JSON.
+        line-expansion counts and/or a clip window returns a
+        ``dataclasses.replace`` copy with ``line_expansion`` and/or
+        ``clip_override`` stamped; the engine-owned original is untouched. No
+        model is reconstructed from JSON.
         """
 
         if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes, bytearray)):
@@ -536,6 +544,7 @@ class JobRegistry:
                 request_json=request_json,
                 pages=pages,
                 allow_line_expansion=allow_line_expansion,
+                allow_clip_override=allow_clip_override,
                 sentence_context=sentence_context,
             )
             state.curation = gate
@@ -782,7 +791,7 @@ class JobRegistry:
         seen_candidates: set[str] = set()
         for item in selection:
             if not isinstance(item, dict) or not set(item).issubset(
-                {"candidateId", "sentenceId", "linesBefore", "linesAfter"}
+                {"candidateId", "sentenceId", "linesBefore", "linesAfter", "clipStart", "clipEnd"}
             ):
                 raise _reject(
                     "invalid_curation_response",
@@ -813,6 +822,35 @@ class JobRegistry:
                     )
                 expansion.append(raw_count)
             lines_before, lines_after = expansion
+            has_clip = "clipStart" in item or "clipEnd" in item
+            clip: tuple[float, float] | None = None
+            if has_clip:
+                if "clipStart" not in item or "clipEnd" not in item:
+                    raise _reject(
+                        "invalid_curation_response",
+                        "clipStart and clipEnd must be sent together",
+                    )
+                bounds: list[float] = []
+                for clip_key in ("clipStart", "clipEnd"):
+                    raw_clip = item[clip_key]
+                    # bool is an int subclass; a JSON true must not read as 1.0.
+                    if isinstance(raw_clip, bool) or not isinstance(raw_clip, (int, float)):
+                        raise _reject("invalid_curation_response", f"{clip_key} must be a number")
+                    value = float(raw_clip)
+                    if not isfinite(value) or value < 0.0:
+                        raise _reject(
+                            "invalid_curation_response",
+                            f"{clip_key} must be a finite, non-negative number of seconds",
+                        )
+                    bounds.append(value)
+                clip_start, clip_end = bounds
+                length = clip_end - clip_start
+                if not _MIN_CLIP_SECONDS <= length <= _MAX_CLIP_SECONDS:
+                    raise _reject(
+                        "invalid_curation_response",
+                        f"The clip must run between {_MIN_CLIP_SECONDS} and {_MAX_CLIP_SECONDS} seconds",
+                    )
+                clip = (clip_start, clip_end)
             if candidate_id in seen_candidates:
                 raise _reject("duplicate_candidate", "A candidate may only be selected once")
             candidate = gate.candidates.get(candidate_id)
@@ -822,15 +860,25 @@ class JobRegistry:
             chosen = candidate.sentences.get(chosen_sentence_id)
             if chosen is None:
                 raise _reject("unknown_sentence", "The sentence does not belong to this candidate")
+            stamped: dict[str, Any] = {}
             if (lines_before, lines_after) != (0, 0):
                 if not gate.allow_line_expansion:
                     raise _reject(
                         "line_expansion_unsupported",
                         "Line expansion is not available on this run",
                     )
+                stamped["line_expansion"] = (lines_before, lines_after)
+            if clip is not None:
+                if not gate.allow_clip_override:
+                    raise _reject(
+                        "clip_override_unsupported",
+                        "Clip trimming is not available on this run",
+                    )
+                stamped["clip_override"] = clip
+            if stamped:
                 # Stamp intent on a copy, desktop get_selected_words style; the
-                # engine-owned original keeps (0, 0).
-                chosen = replace(cast(Any, chosen), line_expansion=(lines_before, lines_after))
+                # engine-owned original keeps its defaults.
+                chosen = replace(cast(Any, chosen), **stamped)
             seen_candidates.add(candidate_id)
             resolved.append(chosen)
         return resolved

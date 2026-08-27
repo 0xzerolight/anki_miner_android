@@ -199,6 +199,7 @@ def test_curate_forwards_sentence_context_to_await_curation(
         cancellation_requested: object = None,
         *,
         allow_line_expansion: bool = False,
+        allow_clip_override: bool = False,
         sentence_context: object = None,
     ) -> list[object] | None:
         captured["sentence_context"] = sentence_context
