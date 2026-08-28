@@ -75,10 +75,16 @@ class MiningModelsTest {
 
     @Test
     fun clipWindowAcceptsTheInclusiveLengthBoundaries() {
-        // Start from 0.0 so the subtraction that recovers the length introduces no rounding of
-        // its own - the boundary values themselves must be what construction sees.
-        assertEquals(MIN_CLIP_SECONDS, CurationClipWindow(0.0, MIN_CLIP_SECONDS).lengthSeconds, 1e-9)
-        assertEquals(MAX_CLIP_SECONDS, CurationClipWindow(0.0, MAX_CLIP_SECONDS).lengthSeconds, 1e-9)
+        // A start of 0.0 makes the raw subtraction exact, which would hide the bug this test
+        // exists to catch - a tick-quantized start does not. 1.2 - 1.0 == 0.19999999999999996
+        // in IEEE 754 double arithmetic, just under the 0.2s floor, so these must still
+        // construct: the check has to compare on the 0.1s tick grid, not the raw subtraction.
+        CurationClipWindow(1.0, 1.2)
+        CurationClipWindow(0.5, 0.7)
+
+        // 32.2 - 2.2 == 30.000000000000004, just over the 30.0s ceiling by raw subtraction but
+        // exactly 300 ticks on the grid.
+        CurationClipWindow(2.2, 32.2)
     }
 
     @Test

@@ -304,6 +304,14 @@ const val MIN_CLIP_SECONDS = 0.2
 /** Mirrors the desktop curator's clip ceiling; the engine itself applies no cap. */
 const val MAX_CLIP_SECONDS = 30.0
 
+// A trim control quantises its output onto a 0.1s tick grid (ticks / 10.0), and the raw
+// double subtraction of two such values cannot express an inclusive 0.2s floor - e.g.
+// 1.2 - 1.0 == 0.19999999999999996. The bounds check below rounds to the tick grid instead
+// of comparing the raw subtraction, so tick counts are derived from the named bounds rather
+// than re-stated as literals.
+private val MIN_CLIP_TICKS = Math.round(MIN_CLIP_SECONDS * 10.0)
+private val MAX_CLIP_TICKS = Math.round(MAX_CLIP_SECONDS * 10.0)
+
 /**
  * A user-trimmed audio window, in absolute seconds on the source timeline.
  *
@@ -318,7 +326,8 @@ data class CurationClipWindow(
     init {
         require(startSeconds.isFinite() && endSeconds.isFinite())
         require(startSeconds >= 0.0)
-        require(endSeconds - startSeconds in MIN_CLIP_SECONDS..MAX_CLIP_SECONDS)
+        val lengthTicks = Math.round((endSeconds - startSeconds) * 10.0)
+        require(lengthTicks in MIN_CLIP_TICKS..MAX_CLIP_TICKS)
     }
 
     val lengthSeconds: Double get() = endSeconds - startSeconds

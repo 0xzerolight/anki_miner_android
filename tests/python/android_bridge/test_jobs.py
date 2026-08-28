@@ -619,6 +619,31 @@ def test_clip_window_and_line_expansion_ride_the_same_copy() -> None:
     assert original.clip_override is None
 
 
+def test_clip_window_at_a_nonzero_start_the_raw_subtraction_falls_short_of() -> None:
+    # 1.2 - 1.0 == 0.19999999999999996 in IEEE 754 double arithmetic, just under the 0.2s
+    # floor. A tick-quantised trim control produces exactly this shape of window, so the
+    # length must be judged on the 0.1s tick grid, not the raw subtraction.
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word], allow_clip_override=True)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [{"candidateId": candidate_id, "clipStart": 1.0, "clipEnd": 1.2}],
+        )
+    )
+    thread.join(1)
+
+    assert not thread.is_alive()
+    (chosen,) = returned[0]
+    assert chosen.clip_override == (1.0, 1.2)
+
+
 def test_duplicate_and_stale_responses_are_rejected() -> None:
     registry = JobRegistry()
     word = FakeWord("猫", "猫", "猫だ", 1, 2, 1)

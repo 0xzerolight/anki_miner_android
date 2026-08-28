@@ -32,6 +32,12 @@ _MAX_LINE_EXPANSION = 100
 # MIN_CLIP_SECONDS floor, and the ceiling the trim strip will not exceed.
 _MIN_CLIP_SECONDS = 0.2
 _MAX_CLIP_SECONDS = 30.0
+# The trim control quantises its output onto a 0.1s tick grid (ticks / 10.0), and the raw
+# subtraction of two such doubles cannot express an inclusive 0.2s floor - e.g.
+# 1.2 - 1.0 == 0.19999999999999996. The length check below compares the rounded tick count
+# instead of the raw subtraction.
+_MIN_CLIP_TICKS = round(_MIN_CLIP_SECONDS * 10)
+_MAX_CLIP_TICKS = round(_MAX_CLIP_SECONDS * 10)
 _CURATION_CANCELLATION_POLL_SECONDS = 0.05
 logger = logging.getLogger(__name__)
 
@@ -844,8 +850,8 @@ class JobRegistry:
                         )
                     bounds.append(value)
                 clip_start, clip_end = bounds
-                length = clip_end - clip_start
-                if not _MIN_CLIP_SECONDS <= length <= _MAX_CLIP_SECONDS:
+                length_ticks = round((clip_end - clip_start) * 10)
+                if not _MIN_CLIP_TICKS <= length_ticks <= _MAX_CLIP_TICKS:
                     raise _reject(
                         "invalid_curation_response",
                         f"The clip must run between {_MIN_CLIP_SECONDS} and {_MAX_CLIP_SECONDS} seconds",
