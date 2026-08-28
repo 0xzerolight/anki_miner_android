@@ -59,6 +59,14 @@ object VideoMiningTestTags {
 
     fun expansionPreview(candidateId: String): String = "expansion_preview:$candidateId"
 
+    fun candidateClipSlider(candidateId: String): String = "candidate_clip_slider:$candidateId"
+
+    fun candidateClipPlay(candidateId: String): String = "candidate_clip_play:$candidateId"
+
+    fun candidateClipReset(candidateId: String): String = "candidate_clip_reset:$candidateId"
+
+    fun candidateClipReadout(candidateId: String): String = "candidate_clip_readout:$candidateId"
+
     fun sentence(
         candidateId: String,
         sentenceId: String,

@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -30,6 +31,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
@@ -41,6 +43,7 @@ import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -52,6 +55,8 @@ import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
+import com.ankiminer.android.ui.mining.ClipWindowSeconds
+import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.CurationPlayerTestTags
 import com.ankiminer.android.ui.mining.ExpansionPreview
 import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
@@ -66,6 +71,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -452,6 +458,180 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
             .assertDoesNotExist()
+    }
+
+    private fun clipWindowState(
+        startSeconds: Double = 1.0,
+        endSeconds: Double = 3.0,
+        travelStartSeconds: Double = 0.0,
+        travelEndSeconds: Double = 6.0,
+        overridden: Boolean = false,
+    ): ClipWindowUiState =
+        ClipWindowUiState(
+            window = ClipWindowSeconds(startSeconds, endSeconds),
+            travelStartSeconds = travelStartSeconds,
+            travelEndSeconds = travelEndSeconds,
+            overridden = overridden,
+        )
+
+    private fun clipReadoutText(candidateId: String): String =
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateClipReadout(candidateId))
+            .fetchSemanticsNode()
+            .config[SemanticsProperties.Text]
+            .first()
+            .text
+
+    @Test
+    fun theClipRowShowsTheWindowTheCardWouldCutForTheFocusedCandidate() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                            clipWindow = clipWindowState(),
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipReadout("candidate-1")))
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        assertEquals(
+            context.getString(R.string.curation_clip_window, 1.0, 3.0, 2.0),
+            clipReadoutText("candidate-1"),
+        )
+    }
+
+    @Test
+    fun draggingAClipHandleUpdatesTheReadoutAndEnablesReset() {
+        val request = request()
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                            clipWindow = clipWindowState(),
+                        ),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onSetClipWindow = { candidateId, window ->
+                        val curation = requireNotNull(state.curation)
+                        val current = requireNotNull(curation.clipWindow)
+                        state =
+                            state.copy(
+                                curation =
+                                    curation.copy(
+                                        clipWindow =
+                                            current.copy(
+                                                window =
+                                                    ClipWindowSeconds(
+                                                        window.startSeconds,
+                                                        window.endSeconds,
+                                                    ),
+                                                overridden = true,
+                                            ),
+                                    ),
+                            )
+                        assertEquals("candidate-1", candidateId)
+                    },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipSlider("candidate-1")))
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val initialText = context.getString(R.string.curation_clip_window, 1.0, 3.0, 2.0)
+        assertEquals(initialText, clipReadoutText("candidate-1"))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsNotEnabled()
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipSlider("candidate-1")).performTouchInput {
+            down(Offset(right - 4f, centerY))
+            moveBy(Offset(-60f, 0f))
+            up()
+        }
+
+        composeRule.waitForIdle()
+        assertNotEquals(initialText, clipReadoutText("candidate-1"))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsEnabled()
+    }
+
+    @Test
+    fun resetIsDisabledUntilTheWindowIsEdited() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                            clipWindow = clipWindowState(),
+                        ),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipReset("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsNotEnabled()
+    }
+
+    @Test
+    fun theClipRowIsAbsentWhenTheLaneHasNoPlayer() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request).copy(clipWindow = clipWindowState()),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateKnown("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipSlider("candidate-1")).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReadout("candidate-1")).assertDoesNotExist()
+    }
+
+    @Test
+    fun theClipPlayButtonPlaysExactlyTheTrimmedWindow() {
+        val request = request()
+        val fake = FakeCurationPreviewPlayer()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request).copy(
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                            clipWindow = clipWindowState(),
+                        ),
+                ),
+            playerFactory = { fake },
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipPlay("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipPlay("candidate-1")).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1.0 to 3.0, fake.lastRange)
+        }
     }
 
     @Test
@@ -1950,6 +2130,8 @@ class VideoMiningScreenTest {
         onSelectSentence: (String, String) -> Unit = { _, _ -> },
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
+        onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
+        onResetClipWindow: (String) -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
     ) {
         composeRule.setContent {
@@ -1971,6 +2153,8 @@ class VideoMiningScreenTest {
                     onSelectSentence = onSelectSentence,
                     onConfirmCuration = onConfirmCuration,
                     onCancel = onCancel,
+                    onSetClipWindow = onSetClipWindow,
+                    onResetClipWindow = onResetClipWindow,
                     playerFactory = playerFactory,
                 )
             }
@@ -1997,6 +2181,8 @@ class VideoMiningScreenTest {
         onExpandSentencePrev: (String) -> Unit = {},
         onExpandSentenceNext: (String) -> Unit = {},
         onResetSentenceExpansion: (String) -> Unit = {},
+        onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
+        onResetClipWindow: (String) -> Unit = {},
         onConfirmCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
@@ -2035,6 +2221,8 @@ class VideoMiningScreenTest {
             onExpandSentencePrev = onExpandSentencePrev,
             onExpandSentenceNext = onExpandSentenceNext,
             onResetSentenceExpansion = onResetSentenceExpansion,
+            onSetClipWindow = onSetClipWindow,
+            onResetClipWindow = onResetClipWindow,
             onConfirmCuration = onConfirmCuration,
             onCancel = onCancel,
             onRetry = onRetry,

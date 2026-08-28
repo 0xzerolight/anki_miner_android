@@ -49,6 +49,7 @@ import com.ankiminer.android.ui.mining.CurationPageImageTestTags
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import com.ankiminer.android.ui.video.VideoMiningTestTags
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipEntry
@@ -449,6 +450,34 @@ class ReadingMiningScreenTest {
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.candidateToggle(firstCandidateId))
             .assertIsNotEnabled()
+    }
+
+    /**
+     * The reading lane has no timeline - there is no player to trim a clip against, and
+     * [ReadingCurationUiState] carries no `clipWindow` field at all. This guards the video-only
+     * trim row from ever leaking into reading curation.
+     */
+    @Test
+    fun theReadingLaneNeverShowsAClipRow() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        val firstCandidateId = request.candidates.first().candidateId
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.candidateKnown(firstCandidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateClipSlider(firstCandidateId))
+            .assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateClipReadout(firstCandidateId))
+            .assertDoesNotExist()
     }
 
     @Test
