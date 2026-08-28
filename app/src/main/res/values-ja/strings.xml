@@ -482,6 +482,9 @@
     <string name="resource_failure_audio_pack_index_malformed">パックのインデックスファイルを読み込めませんでした。</string>
     <string name="resource_failure_audio_pack_reserved">パックID「jpod101」は予約されています。ルートフォルダーまたはZIPの名前を変更してください。</string>
     <string name="resource_failure_known_words_import">選択したファイルに対応する既知単語が含まれていません</string>
+    <string name="resource_failure_known_words_unreadable">既知単語ファイルを読み込めませんでした。インポーターが対応していない文字コードの可能性があります。</string>
+    <string name="resource_failure_known_words_unrecognized">既知単語ファイルとして認識できません。対応形式: jpdb の復習エクスポート (JSON)、Migaku の単語エクスポート (JSON または CSV)、AnkiMorphs の既知形態素 (CSV)、1 行 1 単語のプレーンな単語リスト。</string>
+    <string name="resource_failure_known_words_none_known">ファイルは認識できましたが、既知と見なせる項目がありません。</string>
     <string name="resource_failure_inventory_unsafe">ローカルリソースが破損または安全でなく、対応が必要です</string>
     <string name="resource_failure_dictionary_schema">インデックススキーマが古いため、この辞書を置き換える必要があります</string>
     <string name="resource_failure_dictionary_invalid">使用中の辞書スロットが破損または古くなっています。採掘前に明示的に置き換えてください</string>
@@ -530,7 +533,8 @@
     <string name="known_words_search">ユーザー単語を検索</string>
     <string name="known_words_search_action">検索</string>
     <string name="known_words_load_more">さらに読み込む</string>
-    <string name="known_words_remove">削除</string>
+    <string name="known_words_remove_selected">選択した単語を削除 (%1$d)</string>
+    <string name="known_words_select_word">%1$s を選択</string>
     <string name="known_words_export">ユーザーリストをエクスポート</string>
     <string name="known_words_reset_user">ユーザーリストをリセット</string>
     <string name="known_words_rebuild_cache">キャッシュ単語を再構築</string>
@@ -538,7 +542,15 @@
     <string name="known_words_rebuild_cache_confirmation">Ankiおよび採掘済みキャッシュ行を消去しますか？ユーザーリストは維持され、次回の実行でキャッシュが再構築されます。</string>
     <string name="known_words_preview_title">既知単語をインポートしますか？</string>
     <string name="known_words_preview_summary">%1$sを検出: エントリ%3$d件中%2$d件が既知単語に該当。</string>
+    <string name="known_words_preview_generic_warning">プレーンな単語リストには既知・学習中の状態がないため、%1$d 件すべてをインポートします。</string>
     <string name="known_words_preview_samples">サンプル: %1$s</string>
+    <string name="known_words_format_jpdb">jpdb の復習エクスポート</string>
+    <string name="known_words_format_migaku_json">Migaku の単語エクスポート</string>
+    <string name="known_words_format_migaku_legacy">Migaku 旧アドオンのバックアップ</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs の既知形態素</string>
+    <string name="known_words_format_migaku_csv">Migaku の単語エクスポート (CSV)</string>
+    <string name="known_words_format_generic">プレーンな単語リスト</string>
+    <string name="known_words_format_unknown">認識できない形式</string>
     <string name="known_words_import_confirm">インポート</string>
     <string name="known_words_inventory">合計%1$d · インポート%2$d · Ankiキャッシュ%3$d · 採掘済み%4$d</string>
     <string name="known_words_inventory_invalid">既知単語のストレージが無効です。設定を開き直すと復旧を再試行します。</string>

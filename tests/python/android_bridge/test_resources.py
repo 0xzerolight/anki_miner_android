@@ -4050,6 +4050,71 @@ def test_known_words_import_rejects_embedded_line_separators(
     importlib.util.find_spec("requests") is None,
     reason="local-resource importers require the runtime engine dependency set",
 )
+@pytest.mark.parametrize(
+    ("suffix", "content", "expected_code"),
+    (
+        # Valid JSON matching no known signature never falls through to the line reader.
+        (".json", '{"unrelated": [1, 2, 3]}', "known_words_unrecognized"),
+        # A recognized Migaku export, but nothing in it qualifies as known.
+        (
+            ".json",
+            '{"words": [{"word": "食べる", "status": "LEARNING"}]}',
+            "known_words_none_known",
+        ),
+    ),
+)
+def test_known_words_import_reports_the_parser_failure_class(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    suffix: str,
+    content: str,
+    expected_code: str,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / f"classified{suffix}"
+    source.write_text(content, encoding="utf-8")
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.preview_known_words(
+            {
+                "operationId": "known-words-classified",
+                "sourcePath": str(source),
+                "sourceFormat": "json",
+            }
+        )
+
+    assert failure.value.code == expected_code
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
+def test_known_words_import_reports_undecodable_bytes_as_unreadable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _local_home(tmp_path, monkeypatch)
+    source = tmp_path / "undecodable.txt"
+    # Decodes as neither utf-8-sig nor cp932.
+    source.write_bytes(b"\xff\xfe\x00\x81\x00\x82")
+
+    with pytest.raises(BridgeProtocolError) as failure:
+        local_resources.preview_known_words(
+            {
+                "operationId": "known-words-undecodable",
+                "sourcePath": str(source),
+                "sourceFormat": "txt",
+            }
+        )
+
+    assert failure.value.code == "known_words_unreadable"
+
+
+@pytest.mark.skipif(
+    importlib.util.find_spec("requests") is None,
+    reason="local-resource importers require the runtime engine dependency set",
+)
 def test_known_words_import_accepts_cp932_generic_lists(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

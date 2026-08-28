@@ -912,7 +912,7 @@ class SetupViewModelTest {
             advanceUntilIdle()
             viewModel.searchKnownWords()
             viewModel.loadMoreKnownWords()
-            viewModel.removeKnownWord("犬")
+            viewModel.removeKnownWords(listOf("犬"))
             viewModel.resetKnownWords(KnownWordsResetScope.USER)
             viewModel.exportKnownWords("content://export")
             viewModel.dismissKnownWordsImportPreview()

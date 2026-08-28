@@ -2944,6 +2944,12 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_audio_pack_reserved)
             "known_words_import_failed" ->
                 strings.resolve(R.string.resource_failure_known_words_import)
+            "known_words_unreadable" ->
+                strings.resolve(R.string.resource_failure_known_words_unreadable)
+            "known_words_unrecognized" ->
+                strings.resolve(R.string.resource_failure_known_words_unrecognized)
+            "known_words_none_known" ->
+                strings.resolve(R.string.resource_failure_known_words_none_known)
             "known_words_database_unsafe", "resource_inventory_failed" ->
                 strings.resolve(R.string.resource_failure_inventory_unsafe)
             "dictionary_schema_mismatch" ->

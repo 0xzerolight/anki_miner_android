@@ -4,6 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -32,7 +34,7 @@ class KnownWordsManagerScreenTest {
     @Test
     fun thousandWordsRemainLazyAndTailWordCanBeRemoved() {
         val words = List(1_000) { index -> "word-$index" }
-        var removed: String? = null
+        var removed: List<String>? = null
         composeRule.setContent {
             AnkiMinerTheme {
                 KnownWordsManagerScreen(
@@ -74,9 +76,59 @@ class KnownWordsManagerScreenTest {
             .performScrollToNode(hasText("word-999"))
         composeRule.onNodeWithText("word-999").assertIsDisplayed()
         composeRule
-            .onNodeWithTag(KnownWordsManagerTestTags.remove("word-999"))
+            .onNodeWithTag(KnownWordsManagerTestTags.select("word-999"))
             .performClick()
-        composeRule.runOnIdle { assertEquals("word-999", removed) }
+        composeRule
+            .onNodeWithTag(KnownWordsManagerTestTags.REMOVE_SELECTED)
+            .performClick()
+        composeRule.runOnIdle { assertEquals(listOf("word-999"), removed) }
+    }
+
+    @Test
+    fun selectionSurvivesRecreationAndRemovesAsOneBatch() {
+        val removed = mutableListOf<List<String>>()
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            AnkiMinerTheme {
+                KnownWordsManagerScreen(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            knownWords =
+                                KnownWordsInventory(
+                                    totalCount = 3,
+                                    userCount = 3,
+                                    ankiCount = 0,
+                                    minedCount = 0,
+                                    schemaOk = true,
+                                ),
+                            knownWordsPage =
+                                KnownWordsPage(
+                                    query = "",
+                                    offset = 0,
+                                    totalCount = 3,
+                                    words = listOf("食べる", "飲む", "走る"),
+                                    hasMore = false,
+                                ),
+                        ),
+                    callbacks = KnownWordsManagerCallbacks(onRemove = { removed += it }),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.select("食べる")).performClick()
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.select("走る")).performClick()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.select("食べる")).assertIsOn()
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.select("飲む")).assertIsOff()
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.REMOVE_SELECTED).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals(1, removed.size)
+            assertEquals(setOf("食べる", "走る"), removed.single().toSet())
+        }
     }
 
     @Test

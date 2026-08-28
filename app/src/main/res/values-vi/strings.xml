@@ -480,6 +480,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Không thể đọc tệp chỉ mục của gói.</string>
     <string name="resource_failure_audio_pack_reserved">ID gói “jpod101” dành riêng. Đổi tên thư mục gốc hoặc tệp ZIP.</string>
     <string name="resource_failure_known_words_import">Tệp đã chọn không chứa từ đã biết được hỗ trợ</string>
+    <string name="resource_failure_known_words_unreadable">Không thể đọc tệp từ đã biết. Tệp có thể dùng bảng mã văn bản mà trình nhập không hỗ trợ.</string>
+    <string name="resource_failure_known_words_unrecognized">Không phải tệp từ đã biết được nhận dạng. Hỗ trợ: bản xuất ôn tập jpdb (JSON), bản xuất từ Migaku (JSON hoặc CSV), hình vị đã biết AnkiMorphs (CSV), hoặc danh sách từ thuần mỗi dòng một từ.</string>
+    <string name="resource_failure_known_words_none_known">Đã nhận dạng tệp, nhưng không mục nào trong đó được tính là đã biết.</string>
     <string name="resource_failure_inventory_unsafe">Tài nguyên cục bộ bị hỏng hoặc không an toàn cần được chú ý</string>
     <string name="resource_failure_dictionary_schema">Phải thay thế từ điển này vì lược đồ chỉ mục đã cũ</string>
     <string name="resource_failure_dictionary_invalid">Một vị trí từ điển đang dùng bị hỏng hoặc đã cũ; hãy thay thế rõ ràng trước khi khai thác</string>
@@ -528,7 +531,8 @@
     <string name="known_words_search">Tìm từ của người dùng</string>
     <string name="known_words_search_action">Tìm kiếm</string>
     <string name="known_words_load_more">Tải thêm</string>
-    <string name="known_words_remove">Xóa</string>
+    <string name="known_words_remove_selected">Xoá mục đã chọn (%1$d)</string>
+    <string name="known_words_select_word">Chọn %1$s</string>
     <string name="known_words_export">Xuất danh sách người dùng</string>
     <string name="known_words_reset_user">Đặt lại danh sách người dùng</string>
     <string name="known_words_rebuild_cache">Xây dựng lại các từ trong bộ nhớ đệm</string>
@@ -536,7 +540,15 @@
     <string name="known_words_rebuild_cache_confirmation">Xóa các hàng bộ nhớ đệm Anki và từ đã khai thác? Danh sách người dùng được giữ lại; lượt khai thác tiếp theo sẽ xây dựng lại bộ nhớ đệm.</string>
     <string name="known_words_preview_title">Nhập từ đã biết?</string>
     <string name="known_words_preview_summary">Đã phát hiện %1$s: %2$d trong số %3$d mục đủ điều kiện là từ đã biết.</string>
+    <string name="known_words_preview_generic_warning">Danh sách từ thuần không mang trạng thái đã biết hay đang học, nên toàn bộ %1$d mục sẽ được nhập.</string>
     <string name="known_words_preview_samples">Mẫu: %1$s</string>
+    <string name="known_words_format_jpdb">bản xuất ôn tập jpdb</string>
+    <string name="known_words_format_migaku_json">bản xuất từ Migaku</string>
+    <string name="known_words_format_migaku_legacy">bản sao lưu tiện ích Migaku cũ</string>
+    <string name="known_words_format_ankimorphs">hình vị đã biết AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">bản xuất từ Migaku (CSV)</string>
+    <string name="known_words_format_generic">danh sách từ thuần</string>
+    <string name="known_words_format_unknown">định dạng không nhận dạng được</string>
     <string name="known_words_import_confirm">Nhập</string>
     <string name="known_words_inventory">Tổng %1$d · đã nhập %2$d · bộ nhớ đệm Anki %3$d · đã khai thác %4$d</string>
     <string name="known_words_inventory_invalid">Kho lưu trữ từ đã biết không hợp lệ. Mở lại Cài đặt để thử khôi phục.</string>

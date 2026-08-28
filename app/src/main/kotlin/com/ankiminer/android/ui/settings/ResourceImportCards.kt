@@ -20,6 +20,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
@@ -207,6 +208,27 @@ private fun WordListRow(
     )
 }
 
+/**
+ * The translated name of a parser format, falling back for a wire key this build does not know.
+ *
+ * The fallback is unreachable while the mirror test is green; it exists so a future engine format
+ * degrades to a phrase rather than leaking a raw token into the dialog.
+ */
+@Composable
+internal fun knownWordsFormatLabel(format: String): String =
+    stringResource(
+        KnownWordsImportFormat.forWireValue(format)?.labelRes ?: R.string.known_words_format_unknown,
+    )
+
+/**
+ * Whether the confirmation must say the file carries no known/learning status.
+ *
+ * A jpdb or Migaku export names which of its entries are known; a plain word list does not, so
+ * every line becomes a known word. The merge is additive and has no undo, which is why desktop
+ * makes that explicit before the write rather than after it.
+ */
+internal fun knownWordsPreviewWarnsWholesale(preview: KnownWordsImportPreview): Boolean = preview.isGeneric
+
 @Composable
 internal fun KnownWordsImportCard(
     state: SetupUiState,
@@ -225,11 +247,20 @@ internal fun KnownWordsImportCard(
                     Text(
                         stringResource(
                             R.string.known_words_preview_summary,
-                            preview.format,
+                            knownWordsFormatLabel(preview.format),
                             preview.importedCount,
                             preview.totalEntries,
                         ),
                     )
+                    if (knownWordsPreviewWarnsWholesale(preview)) {
+                        Text(
+                            stringResource(
+                                R.string.known_words_preview_generic_warning,
+                                preview.importedCount,
+                            ),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
                     if (preview.sampleWords.isNotEmpty()) {
                         Text(stringResource(R.string.known_words_preview_samples, preview.sampleWords.joinToString()))
                     }

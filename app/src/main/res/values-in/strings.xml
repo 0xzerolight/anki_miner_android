@@ -480,6 +480,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Berkas indeks paket tidak dapat dibaca.</string>
     <string name="resource_failure_audio_pack_reserved">ID paket “jpod101” dicadangkan. Ganti nama folder akar atau ZIP-nya.</string>
     <string name="resource_failure_known_words_import">Berkas yang dipilih tidak memuat kata yang dikenal yang didukung</string>
+    <string name="resource_failure_known_words_unreadable">Berkas kata yang dikenal tidak dapat dibaca. Mungkin memakai pengodean teks yang tidak didukung pengimpor.</string>
+    <string name="resource_failure_known_words_unrecognized">Bukan berkas kata yang dikenal yang dikenali. Didukung: ekspor ulasan jpdb (JSON), ekspor kata Migaku (JSON atau CSV), morfem dikenal AnkiMorphs (CSV), atau daftar kata biasa satu kata per baris.</string>
+    <string name="resource_failure_known_words_none_known">Berkas dikenali, tetapi tidak ada entri di dalamnya yang memenuhi syarat sebagai dikenal.</string>
     <string name="resource_failure_inventory_unsafe">Sumber daya lokal rusak atau tidak aman dan perlu diperhatikan</string>
     <string name="resource_failure_dictionary_schema">Kamus ini harus diganti karena skema indeksnya sudah usang</string>
     <string name="resource_failure_dictionary_invalid">Slot kamus yang terisi rusak atau usang; ganti secara eksplisit sebelum mining</string>
@@ -528,7 +531,8 @@
     <string name="known_words_search">Cari kata pengguna</string>
     <string name="known_words_search_action">Cari</string>
     <string name="known_words_load_more">Muat lebih banyak</string>
-    <string name="known_words_remove">Hapus</string>
+    <string name="known_words_remove_selected">Hapus yang dipilih (%1$d)</string>
+    <string name="known_words_select_word">Pilih %1$s</string>
     <string name="known_words_export">Ekspor daftar pengguna</string>
     <string name="known_words_reset_user">Setel ulang daftar pengguna</string>
     <string name="known_words_rebuild_cache">Bangun ulang kata dalam cache</string>
@@ -536,7 +540,15 @@
     <string name="known_words_rebuild_cache_confirmation">Hapus baris cache Anki dan hasil mining? Daftar pengguna Anda tetap disimpan; proses berikutnya membangun ulang cache.</string>
     <string name="known_words_preview_title">Impor kata yang dikenal?</string>
     <string name="known_words_preview_summary">Terdeteksi %1$s: %2$d dari %3$d entri memenuhi syarat sebagai kata yang dikenal.</string>
+    <string name="known_words_preview_generic_warning">Daftar kata biasa tidak memuat status dikenal atau sedang dipelajari, jadi seluruh %1$d entri akan diimpor.</string>
     <string name="known_words_preview_samples">Contoh: %1$s</string>
+    <string name="known_words_format_jpdb">ekspor ulasan jpdb</string>
+    <string name="known_words_format_migaku_json">ekspor kata Migaku</string>
+    <string name="known_words_format_migaku_legacy">cadangan pengaya lama Migaku</string>
+    <string name="known_words_format_ankimorphs">morfem dikenal AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">ekspor kata Migaku (CSV)</string>
+    <string name="known_words_format_generic">daftar kata biasa</string>
+    <string name="known_words_format_unknown">format tidak dikenali</string>
     <string name="known_words_import_confirm">Impor</string>
     <string name="known_words_inventory">Total %1$d · diimpor %2$d · cache Anki %3$d · di-mining %4$d</string>
     <string name="known_words_inventory_invalid">Penyimpanan kata yang dikenal tidak valid. Buka kembali Pengaturan untuk mencoba pemulihan lagi.</string>

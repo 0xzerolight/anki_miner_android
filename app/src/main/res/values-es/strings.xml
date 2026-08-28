@@ -482,6 +482,9 @@
     <string name="resource_failure_audio_pack_index_malformed">No se pudo leer el archivo de índice del paquete.</string>
     <string name="resource_failure_audio_pack_reserved">El ID de paquete “jpod101” está reservado. Cambie el nombre de la carpeta raíz o del ZIP.</string>
     <string name="resource_failure_known_words_import">El archivo seleccionado no contiene palabras conocidas compatibles</string>
+    <string name="resource_failure_known_words_unreadable">No se pudo leer el archivo de palabras conocidas. Puede que use una codificación de texto que el importador no admite.</string>
+    <string name="resource_failure_known_words_unrecognized">No es un archivo de palabras conocidas reconocido. Admitidos: exportación de repasos de jpdb (JSON), exportación de palabras de Migaku (JSON o CSV), morfemas conocidos de AnkiMorphs (CSV) o una lista simple con una palabra por línea.</string>
+    <string name="resource_failure_known_words_none_known">El archivo se reconoció, pero ninguna de sus entradas cuenta como conocida.</string>
     <string name="resource_failure_inventory_unsafe">Un recurso local está dañado o no es seguro y necesita atención</string>
     <string name="resource_failure_dictionary_schema">Este diccionario debe reemplazarse porque su esquema de índice está obsoleto</string>
     <string name="resource_failure_dictionary_invalid">Un espacio de diccionario ocupado está dañado u obsoleto; reemplácelo explícitamente antes de minar</string>
@@ -530,7 +533,8 @@
     <string name="known_words_search">Buscar palabras del usuario</string>
     <string name="known_words_search_action">Buscar</string>
     <string name="known_words_load_more">Cargar más</string>
-    <string name="known_words_remove">Quitar</string>
+    <string name="known_words_remove_selected">Quitar seleccionadas (%1$d)</string>
+    <string name="known_words_select_word">Seleccionar %1$s</string>
     <string name="known_words_export">Exportar lista de usuario</string>
     <string name="known_words_reset_user">Restablecer lista de usuario</string>
     <string name="known_words_rebuild_cache">Reconstruir palabras en caché</string>
@@ -538,7 +542,15 @@
     <string name="known_words_rebuild_cache_confirmation">¿Borrar las filas de caché de Anki y minadas? Se conserva su lista de usuario; la próxima ejecución reconstruye la caché.</string>
     <string name="known_words_preview_title">¿Importar palabras conocidas?</string>
     <string name="known_words_preview_summary">Detectado %1$s: %2$d de %3$d entradas se consideran conocidas.</string>
+    <string name="known_words_preview_generic_warning">Una lista simple de palabras no lleva estado de conocida ni en aprendizaje, así que se importarán las %1$d entradas.</string>
     <string name="known_words_preview_samples">Muestra: %1$s</string>
+    <string name="known_words_format_jpdb">exportación de repasos de jpdb</string>
+    <string name="known_words_format_migaku_json">exportación de palabras de Migaku</string>
+    <string name="known_words_format_migaku_legacy">copia del complemento antiguo de Migaku</string>
+    <string name="known_words_format_ankimorphs">morfemas conocidos de AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">exportación de palabras de Migaku (CSV)</string>
+    <string name="known_words_format_generic">lista simple de palabras</string>
+    <string name="known_words_format_unknown">formato no reconocido</string>
     <string name="known_words_import_confirm">Importar</string>
     <string name="known_words_inventory">Total: %1$d · importadas: %2$d · caché de Anki: %3$d · minadas: %4$d</string>
     <string name="known_words_inventory_invalid">El almacenamiento de palabras conocidas no es válido. Vuelva a abrir Ajustes para reintentar la recuperación.</string>

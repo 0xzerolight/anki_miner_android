@@ -483,6 +483,9 @@
     <string name="resource_failure_audio_pack_index_malformed">Не удалось прочитать индексный файл пакета.</string>
     <string name="resource_failure_audio_pack_reserved">ID пакета «jpod101» зарезервирован. Переименуйте корневую папку или ZIP-файл.</string>
     <string name="resource_failure_known_words_import">Выбранный файл не содержит поддерживаемых известных слов</string>
+    <string name="resource_failure_known_words_unreadable">Не удалось прочитать файл известных слов. Возможно, он использует кодировку текста, которую импорт не поддерживает.</string>
+    <string name="resource_failure_known_words_unrecognized">Файл известных слов не распознан. Поддерживаются: экспорт повторений jpdb (JSON), экспорт слов Migaku (JSON или CSV), известные морфемы AnkiMorphs (CSV) или простой список по одному слову в строке.</string>
+    <string name="resource_failure_known_words_none_known">Файл распознан, но ни одна запись в нём не считается известной.</string>
     <string name="resource_failure_inventory_unsafe">Локальный ресурс повреждён или небезопасен и требует внимания</string>
     <string name="resource_failure_dictionary_schema">Этот словарь нужно заменить, так как схема его индекса устарела</string>
     <string name="resource_failure_dictionary_invalid">Занятый слот словаря повреждён или устарел; явно замените его перед майнингом</string>
@@ -531,7 +534,8 @@
     <string name="known_words_search">Искать слова пользователя</string>
     <string name="known_words_search_action">Искать</string>
     <string name="known_words_load_more">Показать ещё</string>
-    <string name="known_words_remove">Удалить</string>
+    <string name="known_words_remove_selected">Удалить выбранные (%1$d)</string>
+    <string name="known_words_select_word">Выбрать %1$s</string>
     <string name="known_words_export">Экспортировать список пользователя</string>
     <string name="known_words_reset_user">Сбросить список пользователя</string>
     <string name="known_words_rebuild_cache">Перестроить кэшированные слова</string>
@@ -539,7 +543,15 @@
     <string name="known_words_rebuild_cache_confirmation">Очистить строки кэша Anki и майнинга? Ваш список пользователя сохранится; следующий запуск перестроит кэш.</string>
     <string name="known_words_preview_title">Импортировать известные слова?</string>
     <string name="known_words_preview_summary">Обнаружено %1$s: известными признано %2$d из %3$d записей.</string>
+    <string name="known_words_preview_generic_warning">В простом списке слов нет статуса «известно» или «изучается», поэтому будут импортированы все %1$d записей.</string>
     <string name="known_words_preview_samples">Пример: %1$s</string>
+    <string name="known_words_format_jpdb">экспорт повторений jpdb</string>
+    <string name="known_words_format_migaku_json">экспорт слов Migaku</string>
+    <string name="known_words_format_migaku_legacy">резервная копия старого дополнения Migaku</string>
+    <string name="known_words_format_ankimorphs">известные морфемы AnkiMorphs</string>
+    <string name="known_words_format_migaku_csv">экспорт слов Migaku (CSV)</string>
+    <string name="known_words_format_generic">простой список слов</string>
+    <string name="known_words_format_unknown">нераспознанный формат</string>
     <string name="known_words_import_confirm">Импортировать</string>
     <string name="known_words_inventory">Всего %1$d · импортировано %2$d · кэш Anki %3$d · намайнено %4$d</string>
     <string name="known_words_inventory_invalid">Хранилище известных слов повреждено. Откройте настройки снова, чтобы повторить восстановление.</string>

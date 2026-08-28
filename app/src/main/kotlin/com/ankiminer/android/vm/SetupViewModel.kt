@@ -17,6 +17,7 @@ import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.InstalledResourceKind
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsResetScope
+import com.ankiminer.android.data.resources.MAX_KNOWN_WORDS_MUTATION
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
@@ -1463,8 +1464,12 @@ internal class SetupViewModel(
         }
     }
 
-    fun removeKnownWord(word: String) {
-        if (!currentState().busy) viewModelScope.launch { resources.removeKnownWords(listOf(word)) }
+    fun removeKnownWords(words: List<String>) {
+        val distinct = words.distinct()
+        // The codec rejects an empty or over-sized batch with an IllegalArgumentException, which
+        // would take the process down rather than surface as a resource failure.
+        if (distinct.isEmpty() || distinct.size > MAX_KNOWN_WORDS_MUTATION) return
+        if (!currentState().busy) viewModelScope.launch { resources.removeKnownWords(distinct) }
     }
 
     fun resetKnownWords(scope: KnownWordsResetScope) {

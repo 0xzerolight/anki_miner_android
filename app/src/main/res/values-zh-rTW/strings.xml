@@ -480,6 +480,9 @@
     <string name="resource_failure_audio_pack_index_malformed">無法讀取此音訊包的索引檔。</string>
     <string name="resource_failure_audio_pack_reserved">音訊包 ID「jpod101」為保留字。請重新命名根資料夾或 ZIP 檔案。</string>
     <string name="resource_failure_known_words_import">選取的檔案不含支援的已知單字</string>
+    <string name="resource_failure_known_words_unreadable">無法讀取已知單字檔案。可能使用了匯入器不支援的文字編碼。</string>
+    <string name="resource_failure_known_words_unrecognized">無法辨識為已知單字檔案。支援：jpdb 複習匯出 (JSON)、Migaku 單字匯出 (JSON 或 CSV)、AnkiMorphs 已知詞素 (CSV)，或每行一個單字的純文字字表。</string>
+    <string name="resource_failure_known_words_none_known">已辨識該檔案，但其中沒有項目算作已知。</string>
     <string name="resource_failure_inventory_unsafe">本機資源已損毀或不安全，需要處理</string>
     <string name="resource_failure_dictionary_schema">此字典的索引結構已過時，必須取代</string>
     <string name="resource_failure_dictionary_invalid">已占用的字典槽位已損毀或過時；請在採集前明確取代</string>
@@ -528,7 +531,8 @@
     <string name="known_words_search">搜尋使用者單字</string>
     <string name="known_words_search_action">搜尋</string>
     <string name="known_words_load_more">載入更多</string>
-    <string name="known_words_remove">移除</string>
+    <string name="known_words_remove_selected">刪除所選 (%1$d)</string>
+    <string name="known_words_select_word">選取 %1$s</string>
     <string name="known_words_export">匯出使用者清單</string>
     <string name="known_words_reset_user">重設使用者清單</string>
     <string name="known_words_rebuild_cache">重建快取單字</string>
@@ -536,7 +540,15 @@
     <string name="known_words_rebuild_cache_confirmation">要清除 Anki 與已採集的快取列嗎？使用者清單會保留，下次工作會重建快取。</string>
     <string name="known_words_preview_title">要匯入已知單字嗎？</string>
     <string name="known_words_preview_summary">偵測到 %1$s：%3$d 個項目中有 %2$d 個符合已知單字條件。</string>
+    <string name="known_words_preview_generic_warning">純文字字表不帶已知或學習中的狀態，因此將匯入全部 %1$d 個項目。</string>
     <string name="known_words_preview_samples">範例：%1$s</string>
+    <string name="known_words_format_jpdb">jpdb 複習匯出</string>
+    <string name="known_words_format_migaku_json">Migaku 單字匯出</string>
+    <string name="known_words_format_migaku_legacy">Migaku 舊外掛備份</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs 已知詞素</string>
+    <string name="known_words_format_migaku_csv">Migaku 單字匯出 (CSV)</string>
+    <string name="known_words_format_generic">純文字字表</string>
+    <string name="known_words_format_unknown">無法辨識的格式</string>
     <string name="known_words_import_confirm">匯入</string>
     <string name="known_words_inventory">總計 %1$d · 已匯入 %2$d · Anki 快取 %3$d · 已採集 %4$d</string>
     <string name="known_words_inventory_invalid">已知單字儲存空間無效。請重新開啟設定以重試復原。</string>

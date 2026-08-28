@@ -480,6 +480,9 @@
     <string name="resource_failure_audio_pack_index_malformed">无法读取该音频包的索引文件。</string>
     <string name="resource_failure_audio_pack_reserved">包 ID“jpod101”为保留项。请重命名根文件夹或 ZIP 文件。</string>
     <string name="resource_failure_known_words_import">所选文件不含受支持的已知单词</string>
+    <string name="resource_failure_known_words_unreadable">无法读取已知单词文件。它可能使用了导入器不支持的文本编码。</string>
+    <string name="resource_failure_known_words_unrecognized">无法识别为已知单词文件。支持：jpdb 复习导出 (JSON)、Migaku 单词导出 (JSON 或 CSV)、AnkiMorphs 已知词素 (CSV)，或每行一个单词的纯文本词表。</string>
+    <string name="resource_failure_known_words_none_known">已识别该文件，但其中没有条目算作已知。</string>
     <string name="resource_failure_inventory_unsafe">本地资源已损坏或不安全，需要处理</string>
     <string name="resource_failure_dictionary_schema">此词典的索引架构已过时，必须替换</string>
     <string name="resource_failure_dictionary_invalid">已占用的词典槽位已损坏或过时；请在挖词前明确替换</string>
@@ -528,7 +531,8 @@
     <string name="known_words_search">搜索用户单词</string>
     <string name="known_words_search_action">搜索</string>
     <string name="known_words_load_more">加载更多</string>
-    <string name="known_words_remove">移除</string>
+    <string name="known_words_remove_selected">删除所选 (%1$d)</string>
+    <string name="known_words_select_word">选择 %1$s</string>
     <string name="known_words_export">导出用户列表</string>
     <string name="known_words_reset_user">重置用户列表</string>
     <string name="known_words_rebuild_cache">重建缓存单词</string>
@@ -536,7 +540,15 @@
     <string name="known_words_rebuild_cache_confirmation">清除 Anki 和已挖词缓存行？用户列表保留，下次运行会重建缓存。</string>
     <string name="known_words_preview_title">导入已知单词？</string>
     <string name="known_words_preview_summary">检测到 %1$s：共 %3$d 个条目，其中 %2$d 个符合已知单词条件。</string>
+    <string name="known_words_preview_generic_warning">纯文本词表不带已知或学习中的状态，因此将导入全部 %1$d 个条目。</string>
     <string name="known_words_preview_samples">示例：%1$s</string>
+    <string name="known_words_format_jpdb">jpdb 复习导出</string>
+    <string name="known_words_format_migaku_json">Migaku 单词导出</string>
+    <string name="known_words_format_migaku_legacy">Migaku 旧插件备份</string>
+    <string name="known_words_format_ankimorphs">AnkiMorphs 已知词素</string>
+    <string name="known_words_format_migaku_csv">Migaku 单词导出 (CSV)</string>
+    <string name="known_words_format_generic">纯文本词表</string>
+    <string name="known_words_format_unknown">无法识别的格式</string>
     <string name="known_words_import_confirm">导入</string>
     <string name="known_words_inventory">总计 %1$d · 已导入 %2$d · Anki 缓存 %3$d · 已挖词 %4$d</string>
     <string name="known_words_inventory_invalid">已知单词存储无效。重新打开设置以重试恢复。</string>

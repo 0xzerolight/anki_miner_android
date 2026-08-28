@@ -12,9 +12,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,38 +21,42 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.KnownWordsResetScope
+import com.ankiminer.android.data.resources.MAX_KNOWN_WORDS_MUTATION
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
-import com.ankiminer.android.ui.theme.actionBorder
-import com.ankiminer.android.ui.theme.exitActionButtonColors
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
 internal object KnownWordsManagerTestTags {
     const val LIST = "known-words-manager-list"
+    const val REMOVE_SELECTED = "known-words-remove-selected"
 
-    fun remove(word: String): String = "known-words-remove:$word"
+    fun select(word: String): String = "known-words-select:$word"
 }
 
 internal data class KnownWordsManagerCallbacks(
     val onSearchChanged: (String) -> Unit = {},
     val onSearch: () -> Unit = {},
     val onLoadMore: () -> Unit = {},
-    val onRemove: (String) -> Unit = {},
+    val onRemove: (List<String>) -> Unit = {},
     val onImport: () -> Unit = {},
     val onExport: () -> Unit = {},
     val onReset: (KnownWordsResetScope) -> Unit = {},
@@ -101,6 +104,26 @@ internal fun knownWordsListPresentation(
     )
 }
 
+/**
+ * The selection after tapping [word].
+ *
+ * Deselection always succeeds; selection stops at [limit] because the bridge rejects a larger
+ * batch outright, and a refused tap beats a mutation that fails on dispatch.
+ */
+internal fun toggleKnownWordSelection(
+    selected: Set<String>,
+    word: String,
+    limit: Int = MAX_KNOWN_WORDS_MUTATION,
+): Set<String> =
+    when {
+        word in selected -> selected - word
+        selected.size >= limit -> selected
+        else -> selected + word
+    }
+
+private val knownWordSelectionSaver: Saver<Set<String>, ArrayList<String>> =
+    Saver(save = { ArrayList(it) }, restore = { it.toSet() })
+
 @Composable
 internal fun KnownWordsManagerRoute(
     setupViewModel: SetupViewModel,
@@ -125,7 +148,7 @@ internal fun KnownWordsManagerRoute(
                 onSearchChanged = setupViewModel::setKnownWordsSearch,
                 onSearch = setupViewModel::searchKnownWords,
                 onLoadMore = setupViewModel::loadMoreKnownWords,
-                onRemove = setupViewModel::removeKnownWord,
+                onRemove = setupViewModel::removeKnownWords,
                 onImport = {
                     if (setupViewModel.beginKnownWordsPicker()) {
                         importPicker.launch(KNOWN_WORDS_MIME_TYPES)
@@ -148,6 +171,12 @@ internal fun KnownWordsManagerScreen(
     modifier: Modifier = Modifier,
 ) {
     var pendingResetName by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedWords by
+        rememberSaveable(stateSaver = knownWordSelectionSaver) { mutableStateOf(emptySet<String>()) }
+    val pageWords = state.knownWordsPage?.words.orEmpty()
+    // A word the current page no longer lists can be neither shown nor removed, so it must not
+    // linger in the selection across a search, a removal, or a reset.
+    LaunchedEffect(pageWords) { selectedWords = selectedWords intersect pageWords.toSet() }
     val pendingReset =
         pendingResetName?.let { saved ->
             KnownWordsResetScope.entries.firstOrNull { it.name == saved }
@@ -289,21 +318,24 @@ internal fun KnownWordsManagerScreen(
                         key = { word -> word },
                         contentType = { "word" },
                     ) { word ->
+                        val selectWordLabel = stringResource(R.string.known_words_select_word, word)
                         Row(
                             Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(word, Modifier.weight(1f))
-                            OutlinedButton(
-                                onClick = { callbacks.onRemove(word) },
+                            Checkbox(
+                                checked = word in selectedWords,
+                                onCheckedChange = {
+                                    selectedWords = toggleKnownWordSelection(selectedWords, word)
+                                },
                                 enabled = !state.busy,
-                                modifier = Modifier.testTag(KnownWordsManagerTestTags.remove(word)),
-                                colors = exitActionButtonColors(isError = true),
-                                border = actionBorder(enabled = !state.busy),
-                                shape = MaterialTheme.shapes.small,
-                            ) {
-                                Text(stringResource(R.string.known_words_remove))
-                            }
+                                modifier =
+                                    Modifier
+                                        .testTag(KnownWordsManagerTestTags.select(word))
+                                        .semantics { contentDescription = selectWordLabel },
+                            )
                         }
                     }
                     if (presentation.showProgress) {
@@ -328,6 +360,20 @@ internal fun KnownWordsManagerScreen(
             Modifier.padding(AnkiMinerTokens.Space.content),
             verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
+            SecondaryActionButton(
+                onClick = {
+                    val batch = selectedWords.toList()
+                    selectedWords = emptySet()
+                    callbacks.onRemove(batch)
+                },
+                enabled = !state.busy && selectedWords.isNotEmpty(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(KnownWordsManagerTestTags.REMOVE_SELECTED),
+            ) {
+                Text(stringResource(R.string.known_words_remove_selected, selectedWords.size))
+            }
             AdaptiveActionGroup(
                 primary = { actionModifier ->
                     SecondaryActionButton(
