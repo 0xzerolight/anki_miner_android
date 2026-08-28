@@ -51,7 +51,7 @@ object BridgeJsonCodec {
     private const val MAX_AUDIO_TRACKS = 128
     // Mirrors _MAX_LINE_EXPANSION and the curation schema's lineExpansionCount bound.
     private const val MAX_LINE_EXPANSION = 100L
-    private val SELECTION_KEYS = setOf("candidateId", "sentenceId", "linesBefore", "linesAfter")
+    private val SELECTION_KEYS = setOf("candidateId", "sentenceId", "linesBefore", "linesAfter", "clipStart", "clipEnd")
     private const val MAX_JSON_DEPTH = 128
     private const val MAX_JSON_TOKENS = 1_000_000L
     private const val MAX_JSON_NUMBER_CHARS = 1000
@@ -233,6 +233,10 @@ object BridgeJsonCodec {
                     chosen.sentenceId?.let { generator.writeStringField("sentenceId", it) }
                     if (chosen.linesBefore > 0) generator.writeNumberField("linesBefore", chosen.linesBefore)
                     if (chosen.linesAfter > 0) generator.writeNumberField("linesAfter", chosen.linesAfter)
+                    chosen.clip?.let { clip ->
+                        generator.writeNumberField("clipStart", clip.startSeconds)
+                        generator.writeNumberField("clipEnd", clip.endSeconds)
+                    }
                     generator.writeEndObject()
                 }
                 generator.writeEndArray()

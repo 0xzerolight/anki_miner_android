@@ -63,6 +63,8 @@ fun VideoMiningRoute(
         onExpandSentencePrev = viewModel::expandSentencePrev,
         onExpandSentenceNext = viewModel::expandSentenceNext,
         onResetSentenceExpansion = viewModel::resetSentenceExpansion,
+        onSetClipWindow = viewModel::setClipWindow,
+        onResetClipWindow = viewModel::resetClipWindow,
         onConfirmCuration = viewModel::confirmCuration,
         onCancel = viewModel::cancel,
         onRetry = viewModel::retry,

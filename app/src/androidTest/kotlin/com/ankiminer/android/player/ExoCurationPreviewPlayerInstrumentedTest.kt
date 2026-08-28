@@ -1,5 +1,6 @@
 package com.ankiminer.android.player
 
+import android.app.Instrumentation
 import android.content.Context
 import android.net.Uri
 import androidx.media3.common.C
@@ -21,6 +22,7 @@ import io.github.anilbeesetti.nextlib.media3ext.ffdecoder.FfmpegVideoRenderer
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -231,6 +233,126 @@ class ExoCurationPreviewPlayerInstrumentedTest {
         }
     }
 
+    @Test
+    fun playRangeStopsAtTheOutPointAndASeekCancelsAPendingStop() {
+        val fixture = createFixture()
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val playbackError = AtomicReference<PlaybackException?>()
+        val listener =
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) ready.countDown()
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    playbackError.set(error)
+                }
+            }
+        lateinit var player: ExoCurationPreviewPlayer
+
+        instrumentation.runOnMainSync { player = ExoCurationPreviewPlayer(context) }
+        try {
+            instrumentation.runOnMainSync {
+                player.media3Player.addListener(listener)
+                player.bind(Uri.fromFile(fixture))
+            }
+            assertTrue(
+                "Player did not reach STATE_READY for the range-playback fixture",
+                ready.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+
+            // Play a short window in the middle of the 1.5s fixture and let it stop itself.
+            instrumentation.runOnMainSync { player.playRange(RANGE_START_SECONDS, RANGE_END_SECONDS) }
+            assertTrue(
+                "Ranged playback never started",
+                awaitIsPlaying(player, expected = true, timeoutSeconds = PLAYING_TIMEOUT_SECONDS),
+            )
+            assertTrue(
+                "Ranged playback did not stop itself at the out point",
+                awaitIsPlaying(player, expected = false, timeoutSeconds = PLAYING_TIMEOUT_SECONDS),
+            )
+            assertNull(
+                "Ranged playback raised an error: ${playbackError.get()}",
+                playbackError.get(),
+            )
+
+            val outPointMillis = (RANGE_END_SECONDS * MILLIS_PER_SECOND).toLong()
+            val stoppedAtMillis = mainThreadPositionMillis(instrumentation, player)
+            assertTrue(
+                "Playback stopped short of its out point: ${stoppedAtMillis}ms < ${outPointMillis}ms",
+                stoppedAtMillis >= outPointMillis - RANGE_POSITION_TOLERANCE_MILLIS,
+            )
+            assertTrue(
+                "Playback ran past its out point instead of stopping: ${stoppedAtMillis}ms",
+                stoppedAtMillis < FIXTURE_DURATION_MILLIS,
+            )
+
+            // A second range re-arms a stop at the same out point. Seeking elsewhere while that
+            // range is still mid-flight must cancel it, so it never fires once playback resumes
+            // and later crosses the same absolute position again.
+            instrumentation.runOnMainSync { player.playRange(RANGE_START_SECONDS, RANGE_END_SECONDS) }
+            assertTrue(
+                "Second ranged playback never started",
+                awaitIsPlaying(player, expected = true, timeoutSeconds = PLAYING_TIMEOUT_SECONDS),
+            )
+            instrumentation.runOnMainSync { player.seekTo(SEEK_ELSEWHERE_SECONDS) }
+            // Resume through the raw media3 Player, not the wrapper: every wrapper method
+            // that can resume playback (seekAndPlay, togglePlayPause, ...) cancels a pending
+            // range stop itself, which would mask a seekTo that failed to cancel one. Going
+            // around the wrapper isolates seekTo's own cancellation as the only thing tested.
+            instrumentation.runOnMainSync { player.media3Player.play() }
+
+            assertTrue(
+                "Playback did not resume after the cancelling seek",
+                awaitIsPlaying(player, expected = true, timeoutSeconds = PLAYING_TIMEOUT_SECONDS),
+            )
+            assertTrue(
+                "Playback never stopped after resuming past the stale out point",
+                awaitIsPlaying(player, expected = false, timeoutSeconds = FULL_PLAYBACK_TIMEOUT_SECONDS),
+            )
+            assertNull(
+                "Playback failed after the cancelling seek: ${playbackError.get()}",
+                playbackError.get(),
+            )
+
+            val finalPositionMillis = mainThreadPositionMillis(instrumentation, player)
+            assertTrue(
+                "Stale range-stop message fired at the old out point after a cancelling seek: " +
+                    "${finalPositionMillis}ms",
+                finalPositionMillis >= outPointMillis + RANGE_POSITION_TOLERANCE_MILLIS,
+            )
+        } finally {
+            instrumentation.runOnMainSync {
+                player.media3Player.removeListener(listener)
+                player.release()
+            }
+        }
+    }
+
+    private fun awaitIsPlaying(
+        player: ExoCurationPreviewPlayer,
+        expected: Boolean,
+        timeoutSeconds: Long,
+    ): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds)
+        while (System.nanoTime() < deadline) {
+            if (player.isPlaying.value == expected) return true
+            Thread.sleep(POLL_INTERVAL_MILLIS)
+        }
+        return player.isPlaying.value == expected
+    }
+
+    private fun mainThreadPositionMillis(
+        instrumentation: Instrumentation,
+        player: ExoCurationPreviewPlayer,
+    ): Long {
+        val position = AtomicLong()
+        instrumentation.runOnMainSync { position.set(player.media3Player.currentPosition) }
+        return position.get()
+    }
+
     private fun assertAv1ModeTwoSignature(uri: Uri) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val ready = CountDownLatch(1)
@@ -420,5 +542,16 @@ class ExoCurationPreviewPlayerInstrumentedTest {
         const val PLAYING_TIMEOUT_SECONDS = 10L
         const val ALLOWED_JOINING_TIME_MS = 0L
         const val MAX_DROPPED_FRAMES = 50
+
+        // create_fixture() renders a 1.5s clip; the range window sits in the middle so there is
+        // slack both before its start and after its out point to the fixture's actual end.
+        const val FIXTURE_DURATION_MILLIS = 1500L
+        const val RANGE_START_SECONDS = 0.1
+        const val RANGE_END_SECONDS = 0.6
+        const val SEEK_ELSEWHERE_SECONDS = 0.05
+        const val RANGE_POSITION_TOLERANCE_MILLIS = 200L
+        const val MILLIS_PER_SECOND = 1_000.0
+        const val POLL_INTERVAL_MILLIS = 20L
+        const val FULL_PLAYBACK_TIMEOUT_SECONDS = 15L
     }
 }

@@ -101,6 +101,11 @@
     <string name="curation_expand_next_line">+ 次の行</string>
     <string name="curation_expand_reset">行をリセット</string>
     <string name="curation_expansion_window">%1$.1f–%2$.1f 秒 · クリップ %3$.1f 秒</string>
+    <string name="curation_clip_window">%1$.1f–%2$.1f 秒 · クリップ %3$.1f 秒</string>
+    <string name="curation_clip_range_description">この単語の音声クリップをトリミング</string>
+    <string name="curation_clip_play">このクリップだけを再生</string>
+    <string name="curation_clip_stop">クリップのプレビューを停止</string>
+    <string name="curation_clip_reset">クリップをリセット</string>
     <string name="curation_copied_word">単語をコピーしました</string>
     <string name="curation_copied_sentence">例文をコピーしました</string>
     <string name="curation_preview_play_description">動画を再生</string>

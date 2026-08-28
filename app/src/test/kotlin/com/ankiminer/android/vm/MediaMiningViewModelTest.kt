@@ -31,6 +31,7 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.TransientSafSelectionInventory
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationPage
@@ -83,6 +84,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -485,6 +487,181 @@ class MediaMiningViewModelTest {
                 emptyMap<String, CurationLineExpansion>(),
                 viewModel.uiState.value.curation?.lineExpansions,
             )
+        }
+
+    @Test
+    fun clipWindowSeedsFromTheChosenSentenceAndConfiguredPadding() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            runCurrent()
+
+            // Sentence is 0.0..1.0; default padding is 0.3s each side, floored at zero.
+            val clip = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertEquals(0.0, clip.window.startSeconds, 0.0)
+            assertEquals(1.3, clip.window.endSeconds, 0.0)
+            assertFalse(clip.overridden)
+        }
+
+    @Test
+    fun clipWindowSeedsFromTheMergedWindowWhenTheLineIsExpanded() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.success(
+                                listOf(
+                                    // endSeconds (1.2) deliberately differs from the sentence's own
+                                    // endTime (1.0, see curationRequest()) - findCueIndex matches on
+                                    // text and startTime, not end, so an unexpanded merge (prevCount
+                                    // = nextCount = 0) would still hit this cue and its 1.2 end. If
+                                    // the unexpanded case is not itself guarded off the merged
+                                    // window, this fixture is what catches it: the merged-but-
+                                    // unexpanded padded end would be 1.5, not the sentence-seeded 1.3.
+                                    SubtitleCue(0.0, 1.2, "魚を食べる。"),
+                                    SubtitleCue(1.5, 2.5, "次の文"),
+                                ),
+                            )
+                        },
+                )
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            runCurrent()
+            val unexpanded = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertEquals(1.3, unexpanded.window.endSeconds, 0.0)
+            assertNotEquals(1.5, unexpanded.window.endSeconds, 0.0)
+
+            viewModel.expandSentenceNext("candidate")
+            runCurrent()
+
+            // The merged window is 0.0..2.5 (expansionPreview.startTime/endTime); padded, 0.0..2.8.
+            // That wins over the sentence's own 0.0..1.0 - a coincidence would still be 1.3.
+            val expanded = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertEquals(0.0, expanded.window.startSeconds, 0.0)
+            assertEquals(2.8, expanded.window.endSeconds, 0.0)
+            assertFalse(expanded.overridden)
+        }
+
+    @Test
+    fun clipWindowSeedsFromTheSentenceWhenCuesFailedButTheLineIsExpanded() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.failure(IllegalStateException("unavailable"))
+                        },
+                )
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            // expandSentenceNext only edits the draft's lineExpansions map - it does not need a
+            // cue list, so this succeeds even though the cue lookup above failed.
+            viewModel.expandSentenceNext("candidate")
+            runCurrent()
+
+            // expansionPreviewFor needs cues and returns null; clipWindowFor still needs only
+            // timings and a player, so the candidate keeps a trim row seeded from its own sentence.
+            val clip = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertEquals(0.0, clip.window.startSeconds, 0.0)
+            assertEquals(1.3, clip.window.endSeconds, 0.0)
+            assertFalse(clip.overridden)
+        }
+
+    @Test
+    fun clipWindowIsNullWhenTheLaneHasNoPlayer() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.curation?.player)
+            assertNull(viewModel.uiState.value.curation?.clipWindow)
+        }
+
+    @Test
+    fun settingAClipWindowSurvivesASessionSaveAndRestore() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val first = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+            first.focusCandidate("candidate")
+            first.setClipWindow("candidate", CurationClipWindow(0.5, 1.5))
+            runCurrent()
+
+            val recreated = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            val clip = requireNotNull(recreated.uiState.value.curation?.clipWindow)
+            assertEquals(0.5, clip.window.startSeconds, 0.0)
+            assertEquals(1.5, clip.window.endSeconds, 0.0)
+            assertTrue(clip.overridden)
+        }
+
+    @Test
+    fun clipHandlersAreInertWhileASubmissionIsPending() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+            viewModel.focusCandidate("candidate")
+            runCurrent()
+            val before = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertFalse(before.overridden)
+
+            repository.transitionTo(
+                MiningRunState.Curating(request, media = media, pageSubmissionPending = true),
+            )
+            viewModel.setClipWindow("candidate", CurationClipWindow(0.5, 1.5))
+            runCurrent()
+
+            val after = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertFalse(after.overridden)
+            assertEquals(before.window, after.window)
+        }
+
+    @Test
+    fun resettingTheClipWindowClearsItFromTheConfirmedSelection() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            viewModel.setClipWindow("candidate", CurationClipWindow(0.5, 1.5))
+            viewModel.resetClipWindow("candidate")
+            viewModel.confirmCuration()
+            runCurrent()
+
+            val selection = requireNotNull(repository.confirmedSelection).single()
+            assertNull(selection.clip)
         }
 
     @Test

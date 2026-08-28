@@ -18,6 +18,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasNoClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -49,6 +50,7 @@ import com.ankiminer.android.ui.mining.CurationPageImageTestTags
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
+import com.ankiminer.android.ui.video.VideoMiningTestTags
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipEntry
@@ -451,6 +453,34 @@ class ReadingMiningScreenTest {
             .assertIsNotEnabled()
     }
 
+    /**
+     * The reading lane has no timeline - there is no player to trim a clip against, and
+     * [ReadingCurationUiState] carries no `clipWindow` field at all. This guards the video-only
+     * trim row from ever leaking into reading curation.
+     */
+    @Test
+    fun theReadingLaneNeverShowsAClipRow() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        val firstCandidateId = request.candidates.first().candidateId
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.candidateKnown(firstCandidateId)))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateClipSlider(firstCandidateId))
+            .assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateClipReadout(firstCandidateId))
+            .assertDoesNotExist()
+    }
+
     @Test
     fun knownActionReportsTheMark() {
         val request = request(CurationPage(0, 2, 0, 4))
@@ -645,6 +675,31 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(
                 ReadingMiningTestTags.sentence(candidateId, first.sentences.first().sentenceId),
             ).assertExists()
+    }
+
+    @Test
+    fun aCandidateWithOneSentenceShowsNoRadioButton() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        // Every candidate from the fixture has exactly one sentence.
+        val candidate = request.candidates.first()
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidate.candidateId),
+                ),
+        )
+        val sentenceTag =
+            ReadingMiningTestTags.sentence(candidate.candidateId, candidate.defaultSentenceId)
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(sentenceTag))
+        composeRule
+            .onNodeWithTag(sentenceTag)
+            .assert(hasText(candidate.sentences.single().sentence, substring = true))
+            .assert(hasNoClickAction())
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
     }
 
     @Test

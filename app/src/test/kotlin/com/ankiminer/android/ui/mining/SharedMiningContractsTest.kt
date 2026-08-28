@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.mining
 
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
@@ -432,6 +433,129 @@ class SharedMiningContractsTest {
         val expanded = first.defaultCurationDraft().expandSentence(first, "candidate-1", 1, 0)!!
 
         assertEquals(emptyMap<String, CurationLineExpansion>(), expanded.forRequest(second).lineExpansions)
+    }
+
+    @Test
+    fun selectionCarriesClipWindowForItsCandidate() {
+        val request = curationRequest()
+        val draft =
+            request.defaultCurationDraft()
+                .setClipWindow(request, "candidate-1", CurationClipWindow(12.4, 15.0))!!
+
+        val selection = draft.selections(request).single { it.candidateId == "candidate-1" }
+        assertEquals(CurationClipWindow(12.4, 15.0), selection.clip)
+    }
+
+    @Test
+    fun selectionWithNoClipWindowSendsNoClip() {
+        val request = curationRequest()
+
+        assertNull(request.defaultCurationDraft().selections(request).first().clip)
+    }
+
+    @Test
+    fun pickingADifferentSentenceDropsTheClipWindow() {
+        val candidate = candidateWithAlternateSentence()
+        val request = curationRequest(candidates = listOf(candidate))
+        val draft =
+            request.defaultCurationDraft()
+                .setClipWindow(request, "candidate-1", CurationClipWindow(12.4, 15.0))!!
+                .selectSentence(request, "candidate-1", "sentence-alt")!!
+
+        assertTrue(draft.clipOverrides.isEmpty())
+    }
+
+    @Test
+    fun rePickingTheSameSentenceKeepsTheClipWindow() {
+        val candidate = candidateWithAlternateSentence()
+        val request = curationRequest(candidates = listOf(candidate))
+        val window = CurationClipWindow(12.4, 15.0)
+        val draft =
+            request.defaultCurationDraft()
+                .setClipWindow(request, "candidate-1", window)!!
+                .selectSentence(request, "candidate-1", candidate.defaultSentenceId)!!
+
+        assertEquals(window, draft.clipOverrides["candidate-1"])
+    }
+
+    @Test
+    fun expandingALineDropsTheClipWindow() {
+        val request = curationRequest()
+        val draft =
+            request.defaultCurationDraft()
+                .setClipWindow(request, "candidate-1", CurationClipWindow(12.4, 15.0))!!
+                .expandSentence(request, "candidate-1", 1, 0)!!
+
+        assertTrue(draft.clipOverrides.isEmpty())
+    }
+
+    @Test
+    fun resettingTheExpansionDropsTheClipWindow() {
+        val request = curationRequest()
+        val draft =
+            request.defaultCurationDraft()
+                .expandSentence(request, "candidate-1", 1, 0)!!
+                .setClipWindow(request, "candidate-1", CurationClipWindow(12.4, 15.0))!!
+                .resetExpansion(request, "candidate-1")
+
+        assertTrue(draft.clipOverrides.isEmpty())
+    }
+
+    @Test
+    fun resettingTheClipWindowLeavesTheSentenceAndTheExpansionAlone() {
+        val request = curationRequest()
+        val draft =
+            request.defaultCurationDraft()
+                .expandSentence(request, "candidate-1", 1, 0)!!
+                .setClipWindow(request, "candidate-1", CurationClipWindow(12.4, 15.0))!!
+
+        val reset = draft.resetClipWindow(request, "candidate-1")
+
+        assertTrue(reset.clipOverrides.isEmpty())
+        assertEquals(CurationLineExpansion(1, 0), reset.lineExpansions["candidate-1"])
+        assertEquals(draft.sentenceIds, reset.sentenceIds)
+    }
+
+    @Test
+    fun settingAClipWindowOnAnUnknownCandidateReturnsNull() {
+        val request = curationRequest()
+
+        assertNull(
+            request.defaultCurationDraft()
+                .setClipWindow(request, "candidate-unknown", CurationClipWindow(12.4, 15.0)),
+        )
+    }
+
+    @Test
+    fun aPersistedClipWindowNamingAStaleCandidateRejectsTheWholeSession() {
+        val request = curationRequest()
+        val state =
+            request.defaultCurationDraft()
+                .toCurationSessionState(previousPageSelectedCount = 0)
+                .copy(
+                    clipOverrides =
+                        mapOf("candidate_${"f".repeat(32)}" to CurationClipWindow(12.4, 15.0)),
+                )
+
+        assertNull(state.draftFor(request))
+    }
+
+    @Test
+    fun aPersistedClipWindowRoundTripsThroughTheSessionState() {
+        val request = curationRequest()
+        val window = CurationClipWindow(12.4, 15.0)
+        val draft = request.defaultCurationDraft().setClipWindow(request, "candidate-1", window)!!
+
+        val restored = draft.toCurationSessionState(previousPageSelectedCount = 0).draftFor(request)!!
+
+        assertEquals(window, restored.clipOverrides["candidate-1"])
+    }
+
+    private fun candidateWithAlternateSentence(): CurationCandidate {
+        val base = candidate("candidate-1", "猫", frequency = 1, occurrences = 1)
+        return base.copy(
+            sentences = base.sentences + base.sentences.single().copy(sentenceId = "sentence-alt"),
+        )
     }
 
     private fun curationRequest(

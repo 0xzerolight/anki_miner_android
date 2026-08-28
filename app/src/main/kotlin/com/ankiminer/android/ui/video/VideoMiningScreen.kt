@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -50,16 +51,19 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.ExoCurationPreviewPlayer
+import com.ankiminer.android.ui.mining.ClipWindowSeconds
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
+import com.ankiminer.android.ui.mining.CurationClipControls
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationExpansionControls
 import com.ankiminer.android.ui.mining.CurationFilter
@@ -122,6 +126,8 @@ fun VideoMiningScreen(
     onExpandSentencePrev: (String) -> Unit = {},
     onExpandSentenceNext: (String) -> Unit = {},
     onResetSentenceExpansion: (String) -> Unit = {},
+    onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
+    onResetClipWindow: (String) -> Unit = {},
     onConfirmCuration: () -> Unit,
     onCancel: () -> Unit,
     onRetry: () -> Unit,
@@ -317,6 +323,27 @@ fun VideoMiningScreen(
                 headingFocusRequester.requestFocus()
             }
 
+            // Hoisted so the trim row's play button (mounted separately, inside curationItems)
+            // can reach the same player instance the preview surface below is bound to. The
+            // DisposableEffect that releases it stays keyed on runId, so release still happens
+            // exactly once per instance - only the call site moved, not the lifecycle.
+            val player: CurationPreviewPlayer? =
+                if (targetState.runState is MiningRunState.Curating && targetCuration?.player != null) {
+                    key(targetCuration.runId) {
+                        val context = LocalContext.current
+                        val hoisted = remember(targetCuration.runId) { playerFactory(context) }
+                        DisposableEffect(targetCuration.runId) { onDispose { hoisted.release() } }
+                        hoisted
+                    }
+                } else {
+                    null
+                }
+            val clipPlaying = if (player != null) player.isPlaying.collectAsState().value else false
+            val onPlayClipRange: (ClipWindowSeconds) -> Unit = { window ->
+                player?.playRange(window.startSeconds, window.endSeconds)
+            }
+            val onStopClipRange: () -> Unit = { player?.pause() }
+
             Column(
                 modifier =
                     Modifier
@@ -325,14 +352,11 @@ fun VideoMiningScreen(
                         .consumeWindowInsets(scaffoldPadding)
                         .semantics { paneTitle = phaseTitle },
             ) {
-                if (
-                    targetState.runState is MiningRunState.Curating &&
-                    targetCuration?.player != null
-                ) {
+                if (player != null && targetCuration != null) {
                     key(targetCuration.runId) {
                         CurationPlayerSlot(
                             curation = targetCuration,
-                            playerFactory = playerFactory,
+                            player = player,
                             modifier =
                                 Modifier.padding(
                                     start = AnkiMinerTokens.Space.content,
@@ -456,6 +480,11 @@ fun VideoMiningScreen(
                                 onExpandSentencePrev = onExpandSentencePrev,
                                 onExpandSentenceNext = onExpandSentenceNext,
                                 onResetSentenceExpansion = onResetSentenceExpansion,
+                                clipPlaying = clipPlaying,
+                                onSetClipWindow = onSetClipWindow,
+                                onResetClipWindow = onResetClipWindow,
+                                onPlayClipRange = onPlayClipRange,
+                                onStopClipRange = onStopClipRange,
                                 copy = copy,
                                 wordLabel = wordLabel,
                                 sentenceLabel = sentenceLabel,
@@ -574,12 +603,10 @@ fun VideoMiningScreen(
 @Composable
 private fun CurationPlayerSlot(
     curation: CurationUiState,
-    playerFactory: (Context) -> CurationPreviewPlayer,
+    player: CurationPreviewPlayer,
     modifier: Modifier = Modifier,
 ) {
     val playerState = curation.player ?: return
-    val context = LocalContext.current
-    val player = remember(curation.runId) { playerFactory(context) }
     val videoUri = remember(playerState.videoPath) { Uri.fromFile(File(playerState.videoPath)) }
     // The player and the curation controls are both pinned, so at large font scales they compete
     // for a viewport that cannot hold either in full — and the controls are the ones that get
@@ -587,10 +614,6 @@ private fun CurationPlayerSlot(
     // open it; the toggle below still persists whatever they choose.
     val startCollapsed = LocalDensity.current.fontScale >= 1.3f
     var collapsed by rememberSaveable(curation.runId) { mutableStateOf(startCollapsed) }
-
-    DisposableEffect(curation.runId) {
-        onDispose { player.release() }
-    }
 
     val focusedCandidate =
         curation.candidates.firstOrNull { it.candidateId == curation.focusedCandidateId }
@@ -912,6 +935,11 @@ private fun LazyListScope.curationItems(
     onExpandSentencePrev: (String) -> Unit,
     onExpandSentenceNext: (String) -> Unit,
     onResetSentenceExpansion: (String) -> Unit,
+    clipPlaying: Boolean,
+    onSetClipWindow: (String, CurationClipWindow) -> Unit,
+    onResetClipWindow: (String) -> Unit,
+    onPlayClipRange: (ClipWindowSeconds) -> Unit,
+    onStopClipRange: () -> Unit,
     copy: (String, String, String?) -> Unit,
     wordLabel: String,
     sentenceLabel: String,
@@ -1010,6 +1038,28 @@ private fun LazyListScope.curationItems(
                     )
                 }
             }
+            // Trim row needs player for its play button. This is the render site's own
+            // precondition — ViewModel upholding it separately (clipWindowFor) is not a
+            // reason to drop it here; screen-constructed states (tests) can set
+            // clipWindow without player.
+            curation.clipWindow?.takeIf { curation.player != null }?.let { clipWindow ->
+                item(key = "clip:${candidate.candidateId}", contentType = "clip") {
+                    CurationClipControls(
+                        containerColor = curationRowContainerColor(selected, animateSelection),
+                        state = clipWindow,
+                        enabled = enabled,
+                        playing = clipPlaying,
+                        sliderTestTag = VideoMiningTestTags.candidateClipSlider(candidate.candidateId),
+                        playTestTag = VideoMiningTestTags.candidateClipPlay(candidate.candidateId),
+                        resetTestTag = VideoMiningTestTags.candidateClipReset(candidate.candidateId),
+                        readoutTestTag = VideoMiningTestTags.candidateClipReadout(candidate.candidateId),
+                        onWindowChange = { onSetClipWindow(candidate.candidateId, it) },
+                        onReset = { onResetClipWindow(candidate.candidateId) },
+                        onPlay = onPlayClipRange,
+                        onStop = onStopClipRange,
+                    )
+                }
+            }
             curation.definition?.let { definition ->
                 item(
                     key = "definition:${candidate.candidateId}",
@@ -1059,6 +1109,7 @@ private fun LazyListScope.curationItems(
                                     bottom =
                                         curationGroupGap(last = index == candidate.sentences.lastIndex),
                                 ),
+                            selectable = layout.selectable,
                         )
                     }
                 }

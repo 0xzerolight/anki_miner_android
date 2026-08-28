@@ -1001,6 +1001,7 @@ private fun LazyListScope.curationItems(
                                     bottom =
                                         curationGroupGap(last = index == candidate.sentences.lastIndex),
                                 ),
+                            selectable = layout.selectable,
                         )
                     }
                 }

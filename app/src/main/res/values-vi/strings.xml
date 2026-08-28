@@ -101,6 +101,11 @@
     <string name="curation_expand_next_line">+ Dòng sau</string>
     <string name="curation_expand_reset">Đặt lại dòng</string>
     <string name="curation_expansion_window">%1$.1f–%2$.1f giây · đoạn %3$.1f giây</string>
+    <string name="curation_clip_window">%1$.1f–%2$.1f giây · đoạn %3$.1f giây</string>
+    <string name="curation_clip_range_description">Cắt đoạn âm thanh của từ này</string>
+    <string name="curation_clip_play">Chỉ phát đoạn này</string>
+    <string name="curation_clip_stop">Dừng xem trước đoạn</string>
+    <string name="curation_clip_reset">Đặt lại đoạn</string>
     <string name="curation_copied_word">Đã sao chép từ</string>
     <string name="curation_copied_sentence">Đã sao chép câu</string>
     <string name="curation_preview_play_description">Phát video</string>

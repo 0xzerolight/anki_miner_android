@@ -66,6 +66,70 @@ class MiningModelsTest {
     }
 
     @Test
+    fun clipWindowRejectsALengthOutsideTheEngineContract() {
+        assertThrows(IllegalArgumentException::class.java) { CurationClipWindow(1.0, 1.1) }
+        assertThrows(IllegalArgumentException::class.java) { CurationClipWindow(1.0, 32.0) }
+        assertThrows(IllegalArgumentException::class.java) { CurationClipWindow(-0.1, 2.0) }
+        assertThrows(IllegalArgumentException::class.java) { CurationClipWindow(Double.NaN, 2.0) }
+    }
+
+    @Test
+    fun clipWindowAcceptsTheInclusiveLengthBoundaries() {
+        // A start of 0.0 makes the raw subtraction exact, which would hide the bug this test
+        // exists to catch - a tick-quantized start does not. 1.2 - 1.0 == 0.19999999999999996
+        // in IEEE 754 double arithmetic, just under the 0.2s floor, so these must still
+        // construct: the check has to compare on the 0.1s tick grid, not the raw subtraction.
+        CurationClipWindow(1.0, 1.2)
+        CurationClipWindow(0.5, 0.7)
+
+        // 32.2 - 2.2 == 30.000000000000004, just over the 30.0s ceiling by raw subtraction but
+        // exactly 300 ticks on the grid.
+        CurationClipWindow(2.2, 32.2)
+    }
+
+    @Test
+    fun clipWindowReportsItsOwnLength() {
+        assertEquals(2.6, CurationClipWindow(12.4, 15.0).lengthSeconds, 1e-9)
+    }
+
+    @Test
+    fun curationSelectionDefaultsClipToNull() {
+        assertNull(CurationSelection("candidate-1", null).clip)
+
+        val withClip = CurationSelection("candidate-1", null, clip = CurationClipWindow(1.0, 3.0))
+        assertEquals(CurationClipWindow(1.0, 3.0), withClip.clip)
+    }
+
+    @Test
+    fun curationSessionStateCarriesClipOverrides() {
+        val state =
+            CurationSessionState(
+                runId = "run-1",
+                requestId = "request-1",
+                pageIndex = null,
+                selectedCandidateIds = setOf("candidate-1"),
+                sentenceIds = emptyMap(),
+                focusedCandidateId = null,
+                previousPageSelectedCount = 0,
+                clipOverrides = mapOf("candidate-1" to CurationClipWindow(1.0, 3.0)),
+            )
+
+        assertEquals(CurationClipWindow(1.0, 3.0), state.clipOverrides["candidate-1"])
+        assertEquals(
+            emptyMap<String, CurationClipWindow>(),
+            CurationSessionState(
+                runId = "run-1",
+                requestId = "request-1",
+                pageIndex = null,
+                selectedCandidateIds = emptySet(),
+                sentenceIds = emptyMap(),
+                focusedCandidateId = null,
+                previousPageSelectedCount = 0,
+            ).clipOverrides,
+        )
+    }
+
+    @Test
     fun processingResultRetainsEveryDesktopFieldWithoutNarrowingCounts() {
         val result =
             ProcessingResult(

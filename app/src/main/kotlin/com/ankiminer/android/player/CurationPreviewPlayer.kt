@@ -3,6 +3,7 @@ package com.ankiminer.android.player
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Looper
 import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.Format
@@ -14,6 +15,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.PlayerMessage
 import androidx.media3.exoplayer.SeekParameters
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
@@ -46,6 +48,9 @@ interface CurationPreviewPlayer {
 
     fun seekAndPlay(seconds: Double)
 
+    /** Plays exactly [startSeconds, endSeconds], stopping itself at the out point. */
+    fun playRange(startSeconds: Double, endSeconds: Double)
+
     fun togglePlayPause()
 
     fun pause()
@@ -76,6 +81,7 @@ class ExoCurationPreviewPlayer(
 
     private var boundUri: Uri? = null
     private var audioTrackOverride: Long? = null
+    private var pendingRangeStop: PlayerMessage? = null
     private val mutableIsPlaying = MutableStateFlow(false)
     private val mutablePositionSeconds = MutableStateFlow(0.0)
     private val mutableFailure = MutableStateFlow<PreviewFailure?>(null)
@@ -132,6 +138,7 @@ class ExoCurationPreviewPlayer(
     }
 
     override fun bind(uri: Uri, audioTrackOverride: Long?) {
+        cancelRangeStop()
         if (boundUri == uri && this.audioTrackOverride == audioTrackOverride) return
         boundUri = uri
         this.audioTrackOverride = audioTrackOverride
@@ -182,28 +189,58 @@ class ExoCurationPreviewPlayer(
     }
 
     override fun seekTo(seconds: Double) {
+        cancelRangeStop()
         exo.playWhenReady = false
         exo.seekTo(millis(seconds))
         tick()
     }
 
     override fun seekAndPlay(seconds: Double) {
+        cancelRangeStop()
         exo.seekTo(millis(seconds))
         exo.playWhenReady = true
         tick()
     }
 
+    /**
+     * Plays just the clip window, deliberately separate from the scene transport below the video:
+     * that one plays the scene, this one plays the card's audio.
+     *
+     * The stop rides a [PlayerMessage] rather than the composable's 100 ms position tick, so it
+     * fires on the playback clock and does not depend on the preview pane still being composed.
+     */
+    override fun playRange(startSeconds: Double, endSeconds: Double) {
+        cancelRangeStop()
+        exo.seekTo(millis(startSeconds))
+        pendingRangeStop =
+            exo.createMessage { _, _ -> exo.playWhenReady = false }
+                .setLooper(Looper.getMainLooper())
+                .setPosition(millis(endSeconds))
+                .setDeleteAfterDelivery(true)
+                .send()
+        exo.playWhenReady = true
+        tick()
+    }
+
+    private fun cancelRangeStop() {
+        pendingRangeStop?.cancel()
+        pendingRangeStop = null
+    }
+
     override fun togglePlayPause() {
+        cancelRangeStop()
         // isPlaying stays false while buffering, so use playWhenReady to let a second tap cancel
         // pending playback.
         exo.playWhenReady = !exo.playWhenReady
     }
 
     override fun pause() {
+        cancelRangeStop()
         exo.playWhenReady = false
     }
 
     override fun release() {
+        cancelRangeStop()
         exo.release()
     }
 
@@ -214,6 +251,7 @@ class ExoCurationPreviewPlayer(
      * force a real re-prepare while their honest failure stays visible.
      */
     override fun retry() {
+        cancelRangeStop()
         when (mutableFailure.value) {
             is PreviewFailure.PlaybackFailed -> {
                 boundUri = null

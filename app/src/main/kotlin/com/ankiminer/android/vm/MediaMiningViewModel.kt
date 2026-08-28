@@ -23,6 +23,7 @@ import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
 import com.ankiminer.android.media.hasSupportedSubtitleExtension
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationMediaBinding
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -46,9 +47,11 @@ import com.ankiminer.android.timing.TimingPreviewSession
 import com.ankiminer.android.tracks.AudioTrackList
 import com.ankiminer.android.tracks.AudioTrackProbeBusyException
 import com.ankiminer.android.tracks.AudioTrackProbeOpener
+import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.ExpansionPreview
+import com.ankiminer.android.ui.mining.clipWindowUiState
 import com.ankiminer.android.ui.mining.expansionPreview
 import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
@@ -872,20 +875,36 @@ class MediaMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
-    fun expandSentencePrev(candidateId: String) = changeExpansion(candidateId) { draft, request ->
-        draft.expandSentence(request, candidateId, 1, 0)
-    }
+    fun expandSentencePrev(candidateId: String) =
+        changeCurationTarget(candidateId, target = "expansion") { draft, request ->
+            draft.expandSentence(request, candidateId, 1, 0)
+        }
 
-    fun expandSentenceNext(candidateId: String) = changeExpansion(candidateId) { draft, request ->
-        draft.expandSentence(request, candidateId, 0, 1)
-    }
+    fun expandSentenceNext(candidateId: String) =
+        changeCurationTarget(candidateId, target = "expansion") { draft, request ->
+            draft.expandSentence(request, candidateId, 0, 1)
+        }
 
-    fun resetSentenceExpansion(candidateId: String) = changeExpansion(candidateId) { draft, request ->
-        draft.resetExpansion(request, candidateId)
-    }
+    fun resetSentenceExpansion(candidateId: String) =
+        changeCurationTarget(candidateId, target = "expansion") { draft, request ->
+            draft.resetExpansion(request, candidateId)
+        }
 
-    private fun changeExpansion(
+    fun setClipWindow(
         candidateId: String,
+        window: CurationClipWindow,
+    ) = changeCurationTarget(candidateId, target = "clip") { draft, request ->
+        draft.setClipWindow(request, candidateId, window)
+    }
+
+    fun resetClipWindow(candidateId: String) =
+        changeCurationTarget(candidateId, target = "clip") { draft, request ->
+            draft.resetClipWindow(request, candidateId)
+        }
+
+    private fun changeCurationTarget(
+        candidateId: String,
+        target: String,
         transform: (SharedCurationDraft, CurationRequest) -> SharedCurationDraft?,
     ) {
         val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
@@ -896,7 +915,7 @@ class MediaMiningViewModel internal constructor(
                 LogComponent.UI,
                 "command",
                 "command" to "target_change",
-                "target" to "expansion",
+                "target" to target,
                 "outcome" to "ok",
             )
         }
@@ -1690,6 +1709,31 @@ class MediaMiningViewModel internal constructor(
             player = player,
             lineExpansions = current.lineExpansions,
             expansionPreview = expansionPreviewFor(current, player, audioPaddingSeconds),
+            clipWindow = clipWindowFor(current, player, audioPaddingSeconds),
+        )
+    }
+
+    /**
+     * Clip window for the focused candidate, seeded from whatever the card would actually cut:
+     * the merged window when the line is expanded, the chosen sentence's own timings otherwise.
+     */
+    private fun CurationRequest.clipWindowFor(
+        draft: SharedCurationDraft,
+        player: CurationPlayerUiState?,
+        audioPaddingSeconds: Double,
+    ): ClipWindowUiState? {
+        if (player == null) return null
+        val focused = draft.focusedCandidateId ?: return null
+        val candidate = candidates.firstOrNull { it.candidateId == focused } ?: return null
+        val sentenceId = draft.sentenceIds[focused] ?: candidate.defaultSentenceId
+        val sentence = candidate.sentences.firstOrNull { it.sentenceId == sentenceId } ?: return null
+        val merged = expansionPreviewFor(draft, player, audioPaddingSeconds)
+            ?.takeIf { draft.lineExpansions[focused] != null }
+        return clipWindowUiState(
+            startTime = merged?.startTime ?: sentence.startTime,
+            endTime = merged?.endTime ?: sentence.endTime,
+            audioPaddingSeconds = audioPaddingSeconds,
+            override = draft.clipOverrides[focused],
         )
     }
 

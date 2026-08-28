@@ -2,6 +2,7 @@ package com.ankiminer.android.engine
 
 import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
@@ -398,6 +399,89 @@ class BridgeJsonCodecTest {
         val decodedBefore = (BridgeJsonCodec.decode(onlyBefore) as BridgeMessage.CurationResponse).selection!!.single()
         assertEquals(1, decodedBefore.linesBefore)
         assertEquals(0, decodedBefore.linesAfter)
+    }
+
+    @Test
+    fun `selection carries the clip window when one is set`() {
+        val request = curationRequest()
+        val candidate = request.candidates.single()
+
+        val json =
+            BridgeJsonCodec.encodeCurationResponse(
+                request = request,
+                selection =
+                    listOf(
+                        CurationSelection(
+                            candidateId = candidate.candidateId,
+                            sentenceId = candidate.defaultSentenceId,
+                            clip = CurationClipWindow(12.4, 15.0),
+                        ),
+                    ),
+                knownCandidateIds = emptyList(),
+            )
+
+        assertEquals(12.4, jsonDoubleField(json, "clipStart"), 1e-9)
+        assertEquals(15.0, jsonDoubleField(json, "clipEnd"), 1e-9)
+    }
+
+    @Test
+    fun `selection omits both clip keys when no window is set`() {
+        val request = curationRequest()
+        val candidate = request.candidates.single()
+
+        val json =
+            BridgeJsonCodec.encodeCurationResponse(
+                request = request,
+                selection = listOf(CurationSelection(candidateId = candidate.candidateId, sentenceId = candidate.defaultSentenceId)),
+                knownCandidateIds = emptyList(),
+            )
+
+        // Never null, never a sentinel: the schema forbids the keys unless both are present.
+        assertFalse(json.contains("clipStart"))
+        assertFalse(json.contains("clipEnd"))
+    }
+
+    @Test
+    fun `paged selection carries the clip window when one is set`() {
+        val base = curationRequest()
+        val page = CurationPage(pageIndex = 1, pageCount = 2, candidateStart = 1, totalCandidates = 2)
+        val request = base.copy(page = page)
+        val candidate = request.candidates.single()
+
+        val json =
+            BridgeJsonCodec.encodeCurationResponse(
+                request = request,
+                selection =
+                    listOf(
+                        CurationSelection(
+                            candidateId = candidate.candidateId,
+                            sentenceId = candidate.defaultSentenceId,
+                            clip = CurationClipWindow(12.4, 15.0),
+                        ),
+                    ),
+            )
+
+        assertTrue(json.contains("\"type\":\"curation.page.response\""))
+        assertEquals(12.4, jsonDoubleField(json, "clipStart"), 1e-9)
+        assertEquals(15.0, jsonDoubleField(json, "clipEnd"), 1e-9)
+    }
+
+    @Test
+    fun `paged selection omits both clip keys when no window is set`() {
+        val base = curationRequest()
+        val page = CurationPage(pageIndex = 1, pageCount = 2, candidateStart = 1, totalCandidates = 2)
+        val request = base.copy(page = page)
+        val candidate = request.candidates.single()
+
+        val json =
+            BridgeJsonCodec.encodeCurationResponse(
+                request = request,
+                selection = listOf(CurationSelection(candidateId = candidate.candidateId, sentenceId = candidate.defaultSentenceId)),
+            )
+
+        assertTrue(json.contains("\"type\":\"curation.page.response\""))
+        assertFalse(json.contains("clipStart"))
+        assertFalse(json.contains("clipEnd"))
     }
 
     @Test
@@ -1066,6 +1150,22 @@ class BridgeJsonCodecTest {
                 ),
             ),
         )
+    }
+
+    /** Reads the first field named [field] anywhere in a raw envelope, without an org.json dependency. */
+    private fun jsonDoubleField(
+        raw: String,
+        field: String,
+    ): Double {
+        JsonFactory().createParser(raw).use { parser ->
+            while (parser.nextToken() != null) {
+                if (parser.currentToken() == JsonToken.FIELD_NAME && parser.currentName() == field) {
+                    parser.nextToken()
+                    return parser.doubleValue
+                }
+            }
+        }
+        throw AssertionError("field \"$field\" not found in: $raw")
     }
 
     /** [curationRequest]'s single sentence, re-encoded with [sentenceFields] appended to its JSON object. */

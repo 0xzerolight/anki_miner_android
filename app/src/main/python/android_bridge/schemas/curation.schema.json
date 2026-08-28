@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://anki-miner.app/schemas/android-bridge/v1/curation.json",
   "title": "Anki Miner Android curation request or response payload",
-  "$comment": "Small curation keeps the legacy request/response shapes. Runtime paging uses at most 100 candidates and at most 524288 UTF-8 bytes per request envelope; candidates are never truncated. Known-word marks travel as opaque candidate IDs, accumulate across pages, and are written once when the final page resolves.",
+  "$comment": "Small curation keeps the legacy request/response shapes. Runtime paging uses at most 100 candidates and at most 524288 UTF-8 bytes per request envelope; candidates are never truncated. Known-word marks travel as opaque candidate IDs, accumulate across pages, and are written once when the final page resolves. clipStart/clipEnd are absolute seconds on the source timeline; their cross-field length bounds (minimum and maximum clip length) are runtime-only, like the paging invariants noted below.",
   "oneOf": [
     {"$ref": "#/$defs/request"},
     {"$ref": "#/$defs/response"},
@@ -46,11 +46,17 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["candidateId"],
+      "dependentRequired": {
+        "clipStart": ["clipEnd"],
+        "clipEnd": ["clipStart"]
+      },
       "properties": {
         "candidateId": {"$ref": "#/$defs/candidateId"},
         "sentenceId": {"$ref": "#/$defs/sentenceId"},
         "linesBefore": {"$ref": "#/$defs/lineExpansionCount"},
-        "linesAfter": {"$ref": "#/$defs/lineExpansionCount"}
+        "linesAfter": {"$ref": "#/$defs/lineExpansionCount"},
+        "clipStart": {"type": "number", "minimum": 0},
+        "clipEnd": {"type": "number", "minimum": 0}
       }
     },
     "candidate": {

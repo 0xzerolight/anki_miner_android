@@ -829,7 +829,10 @@ internal data class CurationSentenceLayout(
     val chosen: CurationSentence,
     val alternatives: List<CurationSentence>,
     val disclose: Boolean,
-)
+) {
+    /** False when the candidate has no alternatives: there is nothing to pick between. */
+    val selectable: Boolean get() = alternatives.isNotEmpty()
+}
 
 /**
  * Splits a candidate's sentences into the sentence that will be mined and the rest.
@@ -864,9 +867,15 @@ internal fun CurationSentenceChoice(
     testTag: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    selectable: Boolean = true,
 ) {
     val sentenceDescription =
-        stringResource(R.string.sentence_selection_description, sentence.sentence)
+        if (selectable) {
+            stringResource(R.string.sentence_selection_description, sentence.sentence)
+        } else {
+            // Nothing to instruct with a single sentence: the row is not a control.
+            sentence.sentence
+        }
     val sentenceText =
         remember(sentence.sentence, candidate.surface) {
             highlightMinedForm(sentence.sentence, candidate.surface)
@@ -888,22 +897,30 @@ internal fun CurationSentenceChoice(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .selectable(
-                            selected = selected,
-                            enabled = enabled,
-                            role = Role.RadioButton,
-                            onClick = onClick,
+                        .then(
+                            if (selectable) {
+                                Modifier.selectable(
+                                    selected = selected,
+                                    enabled = enabled,
+                                    role = Role.RadioButton,
+                                    onClick = onClick,
+                                )
+                            } else {
+                                Modifier
+                            },
                         ).testTag(testTag)
-                        .semantics { contentDescription = sentenceDescription }
+                        .semantics(mergeDescendants = true) { contentDescription = sentenceDescription }
                         .padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.group),
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
-                RadioButton(
-                    selected = selected,
-                    onClick = null,
-                    enabled = enabled,
-                )
+                if (selectable) {
+                    RadioButton(
+                        selected = selected,
+                        onClick = null,
+                        enabled = enabled,
+                    )
+                }
                 Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro)) {
                     Text(text = sentenceText, style = MaterialTheme.typography.bodyMedium)
                     if (

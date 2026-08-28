@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.mining
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
@@ -38,6 +39,7 @@ internal data class SharedCurationDraft(
     val focusedCandidateId: String?,
     val knownCandidateIds: Set<String> = emptySet(),
     val lineExpansions: Map<String, CurationLineExpansion> = emptyMap(),
+    val clipOverrides: Map<String, CurationClipWindow> = emptyMap(),
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size
@@ -156,20 +158,20 @@ internal data class SharedCurationDraft(
                 ?: return null
         if (candidate.sentences.none { it.sentenceId == sentenceId }) return null
         val current = forRequest(request)
-        // A different base sentence invalidates the merged window; the same pick keeps it.
-        val expansions =
-            if (current.sentenceIds[candidateId] == sentenceId) {
-                current.lineExpansions
-            } else {
-                current.lineExpansions - candidateId
-            }
+        val changed = current.sentenceIds[candidateId] != sentenceId
+        // A different base sentence invalidates the merged window and the trimmed clip alike; the
+        // same pick keeps both.
         return current.copy(
             sentenceIds = current.sentenceIds + (candidateId to sentenceId),
-            lineExpansions = expansions,
+            lineExpansions = if (changed) current.lineExpansions - candidateId else current.lineExpansions,
+            clipOverrides = if (changed) current.clipOverrides - candidateId else current.clipOverrides,
         )
     }
 
-    /** Widens the candidate's window by the deltas. Returns null for an unknown candidate. */
+    /**
+     * Widens the candidate's window by the deltas, clearing any clip trim (drawn against the old
+     * window). Returns null for an unknown candidate.
+     */
     fun expandSentence(
         request: CurationRequest,
         candidateId: String,
@@ -187,16 +189,42 @@ internal data class SharedCurationDraft(
             } else {
                 current.lineExpansions + (candidateId to CurationLineExpansion(before, after))
             }
-        return current.copy(lineExpansions = expansions)
+        return current.copy(
+            lineExpansions = expansions,
+            clipOverrides = current.clipOverrides - candidateId,
+        )
     }
 
-    /** Drops the candidate back to its unexpanded sentence. */
+    /** Drops the candidate back to its unexpanded sentence, clearing any clip trim with it. */
     fun resetExpansion(
         request: CurationRequest,
         candidateId: String,
     ): SharedCurationDraft {
         val current = forRequest(request)
-        return current.copy(lineExpansions = current.lineExpansions - candidateId)
+        return current.copy(
+            lineExpansions = current.lineExpansions - candidateId,
+            clipOverrides = current.clipOverrides - candidateId,
+        )
+    }
+
+    /** Trims this candidate's audio clip. Returns null for an unknown candidate. */
+    fun setClipWindow(
+        request: CurationRequest,
+        candidateId: String,
+        window: CurationClipWindow,
+    ): SharedCurationDraft? {
+        if (request.candidates.none { it.candidateId == candidateId }) return null
+        val current = forRequest(request)
+        return current.copy(clipOverrides = current.clipOverrides + (candidateId to window))
+    }
+
+    /** Drops the candidate back to the window its line and padding produce. */
+    fun resetClipWindow(
+        request: CurationRequest,
+        candidateId: String,
+    ): SharedCurationDraft {
+        val current = forRequest(request)
+        return current.copy(clipOverrides = current.clipOverrides - candidateId)
     }
 
     fun selections(request: CurationRequest): List<CurationSelection> {
@@ -214,6 +242,7 @@ internal data class SharedCurationDraft(
                 sentenceId = current.sentenceIds.getValue(candidate.candidateId),
                 linesBefore = expansion?.linesBefore ?: 0,
                 linesAfter = expansion?.linesAfter ?: 0,
+                clip = current.clipOverrides[candidate.candidateId],
             )
         }
     }
@@ -258,7 +287,8 @@ internal fun CurationSessionState.draftFor(
             sentenceId !in validSentenceIds.getValue(candidateId)
         } ||
         (focusedCandidateId != null && focusedCandidateId !in candidateIds) ||
-        !candidateIds.containsAll(lineExpansions.keys)
+        !candidateIds.containsAll(lineExpansions.keys) ||
+        !candidateIds.containsAll(clipOverrides.keys)
     ) {
         return null
     }
@@ -271,6 +301,7 @@ internal fun CurationSessionState.draftFor(
         focusedCandidateId = focusedCandidateId,
         knownCandidateIds = knownCandidateIds.toSet(),
         lineExpansions = lineExpansions.toMap(),
+        clipOverrides = clipOverrides.toMap(),
     )
 }
 
@@ -287,6 +318,7 @@ internal fun SharedCurationDraft.toCurationSessionState(
         previousPageSelectedCount = previousPageSelectedCount,
         knownCandidateIds = knownCandidateIds.toSet(),
         lineExpansions = lineExpansions.toMap(),
+        clipOverrides = clipOverrides.toMap(),
     )
 
 internal enum class CurationFilter {

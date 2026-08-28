@@ -41,6 +41,7 @@ class FakeWord:
     occurrence_count: int = 1
     sentence_candidates: list[FakeWord] = field(default_factory=list)
     line_expansion: tuple[int, int] = (0, 0)
+    clip_override: tuple[float, float] | None = None
 
     @property
     def mined_form(self) -> str:
@@ -63,6 +64,7 @@ def _start_wait(
     candidates: list[object],
     *,
     allow_line_expansion: bool = True,
+    allow_clip_override: bool = False,
 ) -> tuple[str, dict[str, object], list[object], threading.Thread]:
     handle = registry.begin()
     request, returned, thread = _start_wait_for_run(
@@ -70,6 +72,7 @@ def _start_wait(
         handle.run_id,
         candidates,
         allow_line_expansion=allow_line_expansion,
+        allow_clip_override=allow_clip_override,
     )
     return handle.run_id, request, returned, thread
 
@@ -80,6 +83,7 @@ def _start_wait_for_run(
     candidates: list[object],
     *,
     allow_line_expansion: bool = True,
+    allow_clip_override: bool = False,
 ) -> tuple[dict[str, object], list[object], threading.Thread]:
     emitted = threading.Event()
     request: dict[str, object] = {}
@@ -96,6 +100,7 @@ def _start_wait_for_run(
                 candidates,
                 emit,
                 allow_line_expansion=allow_line_expansion,
+                allow_clip_override=allow_clip_override,
             )
         )
 
@@ -432,6 +437,211 @@ def test_expansion_counts_are_strictly_validated(key: str, value: object) -> Non
 
     registry.cancel(run_id)
     thread.join(1)
+
+
+def test_clip_window_stamps_a_copy_and_leaves_the_engine_object_alone() -> None:
+    original = _fake("見る")
+    registry = JobRegistry()
+    run_id, request, returned, thread = _start_wait(registry, [original], allow_clip_override=True)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [{"candidateId": candidate_id, "clipStart": 12.4, "clipEnd": 15.0}],
+        )
+    )
+    thread.join(1)
+
+    assert not thread.is_alive()
+    (chosen,) = returned[0]
+    assert chosen is not original
+    assert chosen.clip_override == (12.4, 15.0)
+    assert original.clip_override is None
+
+
+def test_clip_window_requires_both_ends() -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word], allow_clip_override=True)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    for lopsided in ({"clipStart": 1.0}, {"clipEnd": 5.0}):
+        with pytest.raises(BridgeProtocolError) as rejected:
+            registry.resolve_curation(
+                _response(
+                    run_id,
+                    payload["requestId"],
+                    [{"candidateId": candidate_id, **lopsided}],
+                )
+            )
+        assert rejected.value.code == "invalid_curation_response"
+
+    # The gate survived both rejections; a clean resend still completes the run.
+    registry.resolve_curation(_response(run_id, payload["requestId"], [{"candidateId": candidate_id}]))
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned[0][0] is word
+
+
+@pytest.mark.parametrize(
+    ("clip_start", "clip_end"),
+    [
+        (1.0, 1.1),  # length 0.1s, below the 0.2s floor
+        (0.0, 30.1),  # length 30.1s, above the 30.0s ceiling
+        (-1.0, 5.0),  # negative clipStart
+        (True, 5.0),  # bool is an int subclass; must not read as 1.0
+        (1.0, False),  # same, on clipEnd
+    ],
+)
+def test_clip_window_rejects_out_of_range_lengths(clip_start: object, clip_end: object) -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, _, thread = _start_wait(registry, [word], allow_clip_override=True)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        registry.resolve_curation(
+            _response(
+                run_id,
+                payload["requestId"],
+                [{"candidateId": candidate_id, "clipStart": clip_start, "clipEnd": clip_end}],
+            )
+        )
+    assert rejected.value.code == "invalid_curation_response"
+
+    registry.cancel(run_id)
+    thread.join(1)
+
+
+@pytest.mark.parametrize("non_finite", [float("inf"), float("-inf"), float("nan")])
+def test_clip_window_rejects_non_finite_bounds(non_finite: float) -> None:
+    # decode_envelope's own JSON parsing (parse_float/parse_constant) already
+    # forbids non-finite numbers anywhere in a wire message, so a value this
+    # shape can never survive the trip from resolve_curation's raw JSON string
+    # down to _resolve_selection. That does not make the isfinite check inside
+    # _resolve_selection decoration: it is _resolve_selection's own contract,
+    # and the only way to prove it holds is to call the method directly with a
+    # value the wire itself cannot deliver.
+    candidate_id = "candidate_" + "1" * 32
+    sentence_id = "sentence_" + "1" * 32
+    word = _fake("猫")
+    gate = jobs._CurationGate(
+        request_id="curation_" + "1" * 32,
+        candidates={
+            candidate_id: jobs._CandidateRef(
+                original=word,
+                default_sentence_id=sentence_id,
+                sentences={sentence_id: word},
+            )
+        },
+        request_json=None,
+        pages=(),
+        allow_clip_override=True,
+    )
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        JobRegistry._resolve_selection(
+            gate,
+            [{"candidateId": candidate_id, "clipStart": non_finite, "clipEnd": 5.0}],
+            {candidate_id},
+        )
+    assert rejected.value.code == "invalid_curation_response"
+
+
+def test_clip_window_rejected_when_the_run_does_not_support_it() -> None:
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word], allow_clip_override=False)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    with pytest.raises(BridgeProtocolError) as rejected:
+        registry.resolve_curation(
+            _response(
+                run_id,
+                payload["requestId"],
+                [{"candidateId": candidate_id, "clipStart": 1.0, "clipEnd": 5.0}],
+            )
+        )
+    assert rejected.value.code == "clip_override_unsupported"
+
+    # The gate survived the rejection; a clean resend still completes the run.
+    registry.resolve_curation(_response(run_id, payload["requestId"], [{"candidateId": candidate_id}]))
+    thread.join(1)
+
+    assert not thread.is_alive()
+    assert returned[0][0] is word
+
+
+def test_clip_window_and_line_expansion_ride_the_same_copy() -> None:
+    original = _fake("猫")
+    registry = JobRegistry()
+    run_id, request, returned, thread = _start_wait(
+        registry, [original], allow_line_expansion=True, allow_clip_override=True
+    )
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [
+                {
+                    "candidateId": candidate_id,
+                    "linesBefore": 2,
+                    "linesAfter": 1,
+                    "clipStart": 1.0,
+                    "clipEnd": 5.0,
+                }
+            ],
+        )
+    )
+    thread.join(1)
+
+    assert not thread.is_alive()
+    (chosen,) = returned[0]
+    assert chosen is not original
+    assert chosen.line_expansion == (2, 1)
+    assert chosen.clip_override == (1.0, 5.0)
+    assert original.line_expansion == (0, 0)
+    assert original.clip_override is None
+
+
+def test_clip_window_at_a_nonzero_start_the_raw_subtraction_falls_short_of() -> None:
+    # 1.2 - 1.0 == 0.19999999999999996 in IEEE 754 double arithmetic, just under the 0.2s
+    # floor. A tick-quantised trim control produces exactly this shape of window, so the
+    # length must be judged on the 0.1s tick grid, not the raw subtraction.
+    registry = JobRegistry()
+    word = _fake("猫")
+    run_id, request, returned, thread = _start_wait(registry, [word], allow_clip_override=True)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate_id = payload["candidates"][0]["candidateId"]
+
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [{"candidateId": candidate_id, "clipStart": 1.0, "clipEnd": 1.2}],
+        )
+    )
+    thread.join(1)
+
+    assert not thread.is_alive()
+    (chosen,) = returned[0]
+    assert chosen.clip_override == (1.0, 1.2)
 
 
 def test_duplicate_and_stale_responses_are_rejected() -> None:

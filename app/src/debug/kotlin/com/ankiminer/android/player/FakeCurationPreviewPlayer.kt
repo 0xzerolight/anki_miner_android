@@ -23,6 +23,8 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
     val seekToCalls = mutableListOf<Double>()
     val seekAndPlayCalls = mutableListOf<Double>()
     val events = mutableListOf<String>()
+    var lastRange: Pair<Double, Double>? = null
+        private set
     var togglePlayPauseCount = 0
         private set
     var pauseCount = 0
@@ -61,6 +63,13 @@ class FakeCurationPreviewPlayer : CurationPreviewPlayer {
         seekAndPlayCalls += seconds
         events += "seekAndPlay:$seconds"
         mutablePositionSeconds.value = seconds.coerceAtLeast(0.0)
+        mutableIsPlaying.value = true
+    }
+
+    override fun playRange(startSeconds: Double, endSeconds: Double) {
+        lastRange = startSeconds to endSeconds
+        events += "playRange:$startSeconds-$endSeconds"
+        mutablePositionSeconds.value = startSeconds.coerceAtLeast(0.0)
         mutableIsPlaying.value = true
     }
 

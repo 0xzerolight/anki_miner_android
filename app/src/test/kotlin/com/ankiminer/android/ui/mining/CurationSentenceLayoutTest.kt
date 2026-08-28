@@ -41,6 +41,17 @@ class CurationSentenceLayoutTest {
         assertFalse(layout.disclose)
     }
 
+    @Test
+    fun aCandidateWithOneSentenceIsNotSelectable() {
+        assertFalse(curationSentenceLayout(candidate(sentenceCount = 1), null).selectable)
+    }
+
+    @Test
+    fun aCandidateWithAlternativesStaysSelectable() {
+        assertTrue(curationSentenceLayout(candidate(sentenceCount = 2), null).selectable)
+        assertTrue(curationSentenceLayout(candidate(sentenceCount = 5), null).selectable)
+    }
+
     private fun candidate(sentenceCount: Int): CurationCandidate =
         CurationCandidate(
             candidateId = "candidate",

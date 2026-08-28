@@ -101,6 +101,11 @@
     <string name="curation_expand_next_line">+ Baris berikutnya</string>
     <string name="curation_expand_reset">Atur ulang baris</string>
     <string name="curation_expansion_window">%1$.1f–%2$.1f s · klip %3$.1f s</string>
+    <string name="curation_clip_window">%1$.1f–%2$.1f s · klip %3$.1f s</string>
+    <string name="curation_clip_range_description">Potong klip audio kata ini</string>
+    <string name="curation_clip_play">Putar klip ini saja</string>
+    <string name="curation_clip_stop">Hentikan pratinjau klip</string>
+    <string name="curation_clip_reset">Atur ulang klip</string>
     <string name="curation_copied_word">Kata disalin</string>
     <string name="curation_copied_sentence">Kalimat disalin</string>
     <string name="curation_preview_play_description">Putar video</string>

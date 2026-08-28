@@ -101,6 +101,11 @@
     <string name="curation_expand_next_line">+ Próxima linha</string>
     <string name="curation_expand_reset">Redefinir linhas</string>
     <string name="curation_expansion_window">%1$.1f–%2$.1f s · clipe de %3$.1f s</string>
+    <string name="curation_clip_window">%1$.1f–%2$.1f s · clipe de %3$.1f s</string>
+    <string name="curation_clip_range_description">Cortar o clipe de áudio desta palavra</string>
+    <string name="curation_clip_play">Reproduzir somente este clipe</string>
+    <string name="curation_clip_stop">Parar a prévia do clipe</string>
+    <string name="curation_clip_reset">Redefinir clipe</string>
     <string name="curation_copied_word">Palavra copiada</string>
     <string name="curation_copied_sentence">Frase copiada</string>
     <string name="curation_preview_play_description">Reproduzir vídeo</string>

@@ -3,12 +3,10 @@ package com.ankiminer.android.ui.mining
 import androidx.compose.runtime.Immutable
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.MAX_CLIP_SECONDS
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
-
-/** Mirrors the desktop curator's clip ceiling; the engine itself applies no cap. */
-const val MAX_CLIP_SECONDS = 30.0
 
 /** Matches the engine materializer's cue-match tolerance, not the desktop dialog's looser 0.05. */
 private const val CUE_MATCH_TOLERANCE_SECONDS = 1e-3

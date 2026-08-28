@@ -101,6 +101,11 @@
     <string name="curation_expand_next_line">+ Следующая строка</string>
     <string name="curation_expand_reset">Сбросить строки</string>
     <string name="curation_expansion_window">%1$.1f–%2$.1f с · клип %3$.1f с</string>
+    <string name="curation_clip_window">%1$.1f–%2$.1f с · клип %3$.1f с</string>
+    <string name="curation_clip_range_description">Обрезать аудиоклип этого слова</string>
+    <string name="curation_clip_play">Воспроизвести только этот клип</string>
+    <string name="curation_clip_stop">Остановить предпросмотр клипа</string>
+    <string name="curation_clip_reset">Сбросить клип</string>
     <string name="curation_copied_word">Слово скопировано</string>
     <string name="curation_copied_sentence">Предложение скопировано</string>
     <string name="curation_preview_play_description">Воспроизвести видео</string>

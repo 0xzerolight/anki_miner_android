@@ -1805,6 +1805,58 @@ def test_selection_line_expansion_out_of_bounds_is_schema_invalid(
         Draft202012Validator(schemas["curation"]).validate(payload)
 
 
+def test_selection_clip_window_with_both_keys_validates(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "selection": [
+            {
+                "candidateId": "candidate_" + "c" * 32,
+                "clipStart": 12.4,
+                "clipEnd": 15.0,
+            }
+        ],
+    }
+
+    Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize("clip", [{"clipStart": 12.4}, {"clipEnd": 15.0}])
+def test_selection_clip_window_requires_both_keys(
+    schemas: dict[str, dict[str, Any]],
+    clip: dict[str, Any],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "selection": [{"candidateId": "candidate_" + "c" * 32, **clip}],
+    }
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+def test_selection_clip_window_non_number_is_schema_invalid(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = {
+        "runId": "run_" + "a" * 32,
+        "requestId": "curation_" + "b" * 32,
+        "selection": [
+            {
+                "candidateId": "candidate_" + "c" * 32,
+                "clipStart": "12.4",
+                "clipEnd": 15.0,
+            }
+        ],
+    }
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
 @pytest.mark.parametrize(
     "payload",
     [
