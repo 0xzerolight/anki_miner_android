@@ -168,7 +168,10 @@ internal data class SharedCurationDraft(
         )
     }
 
-    /** Widens the candidate's window by the deltas. Returns null for an unknown candidate. */
+    /**
+     * Widens the candidate's window by the deltas, clearing any clip trim (drawn against the old
+     * window). Returns null for an unknown candidate.
+     */
     fun expandSentence(
         request: CurationRequest,
         candidateId: String,
@@ -192,7 +195,7 @@ internal data class SharedCurationDraft(
         )
     }
 
-    /** Drops the candidate back to its unexpanded sentence. */
+    /** Drops the candidate back to its unexpanded sentence, clearing any clip trim with it. */
     fun resetExpansion(
         request: CurationRequest,
         candidateId: String,

@@ -179,6 +179,25 @@ def test_sentence_context_defaults_to_none() -> None:
     assert adapters.sentence_context is None
 
 
+def _capturing_await_curation(captured: dict[str, object]) -> object:
+    def fake_await_curation(
+        run_id: str,
+        candidates: list[object],
+        emit_request: object,
+        cancellation_requested: object = None,
+        *,
+        allow_line_expansion: bool = False,
+        allow_clip_override: bool = False,
+        sentence_context: object = None,
+    ) -> list[object] | None:
+        captured["allow_line_expansion"] = allow_line_expansion
+        captured["allow_clip_override"] = allow_clip_override
+        captured["sentence_context"] = sentence_context
+        return None
+
+    return fake_await_curation
+
+
 def test_curate_forwards_sentence_context_to_await_curation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -191,25 +210,64 @@ def test_curate_forwards_sentence_context_to_await_curation(
 
     adapters.sentence_context = lookup
     captured: dict[str, object] = {}
-
-    def fake_await_curation(
-        run_id: str,
-        candidates: list[object],
-        emit_request: object,
-        cancellation_requested: object = None,
-        *,
-        allow_line_expansion: bool = False,
-        allow_clip_override: bool = False,
-        sentence_context: object = None,
-    ) -> list[object] | None:
-        captured["sentence_context"] = sentence_context
-        return None
-
-    monkeypatch.setattr(registry, "await_curation", fake_await_curation)
+    monkeypatch.setattr(registry, "await_curation", _capturing_await_curation(captured))
 
     adapters.curate([])
 
     assert captured["sentence_context"] is lookup
+
+
+def test_curate_withholds_line_expansion_and_clip_override_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Neither optional selection kind reaches the engine unless the caller opts in.
+
+    The reading lane relies on this default (``CallbackAdapters(...)`` with
+    neither flag set) to make ``_resolve_selection`` reject a clip window and
+    a line expansion the same way; this is the positive-side mirror of that
+    contract, proven directly against ``CallbackAdapters.curate`` rather than
+    through a full reading run.
+    """
+
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(registry, "await_curation", _capturing_await_curation(captured))
+
+    adapters.curate([])
+
+    assert captured["allow_line_expansion"] is False
+    assert captured["allow_clip_override"] is False
+
+
+def test_curate_forwards_line_expansion_and_clip_override_when_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The video lane's opt-in flags must actually reach ``await_curation``.
+
+    ``CallbackAdapters(..., supports_line_expansion=True, supports_clip_override=True)``
+    is exactly what ``mining.run_video`` constructs; without this forwarding
+    ``_resolve_selection`` would reject every trim and every expanded
+    selection the user makes, even though the video lane opted in.
+    """
+
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(
+        RecordingCallbacks(),
+        registry,
+        handle,
+        supports_line_expansion=True,
+        supports_clip_override=True,
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(registry, "await_curation", _capturing_await_curation(captured))
+
+    adapters.curate([])
+
+    assert captured["allow_line_expansion"] is True
+    assert captured["allow_clip_override"] is True
 
 
 def test_job_registration_is_synchronous_strict_and_correlated() -> None:

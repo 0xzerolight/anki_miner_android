@@ -235,6 +235,35 @@ def test_none_return_is_failed_result_not_an_exception_terminal(
     assert callbacks.terminals == [("error", returned)]
 
 
+def test_run_video_constructs_adapters_with_line_expansion_and_clip_override_supported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only ``process_episode`` may materialize line expansions and clip overrides.
+
+    ``run_video`` is the sole caller that must construct ``CallbackAdapters``
+    with both opt-in flags set; the reading lane deliberately leaves them
+    unset. Without this, ``_resolve_selection`` would silently reject every
+    clip trim and every expanded selection the video curator sends.
+    """
+
+    registry = JobRegistry()
+    callbacks = RecordingCallbacks(registry=registry)
+    _stub_execution(monkeypatch, FakeResult())
+    captured: dict[str, object] = {}
+    real_callback_adapters = mining.CallbackAdapters
+
+    def capturing_callback_adapters(*args: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return real_callback_adapters(*args, **kwargs)
+
+    monkeypatch.setattr(mining, "CallbackAdapters", capturing_callback_adapters)
+
+    mining.run_video(_request(), callbacks, job_registry=registry)
+
+    assert captured["supports_line_expansion"] is True
+    assert captured["supports_clip_override"] is True
+
+
 def test_registration_failure_releases_python_job_without_composition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

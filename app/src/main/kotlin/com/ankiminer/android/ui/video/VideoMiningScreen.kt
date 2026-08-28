@@ -1038,7 +1038,7 @@ private fun LazyListScope.curationItems(
                     )
                 }
             }
-            curation.clipWindow?.takeIf { curation.player != null }?.let { clipWindow ->
+            curation.clipWindow?.let { clipWindow ->
                 item(key = "clip:${candidate.candidateId}", contentType = "clip") {
                     CurationClipControls(
                         containerColor = curationRowContainerColor(selected, animateSelection),
