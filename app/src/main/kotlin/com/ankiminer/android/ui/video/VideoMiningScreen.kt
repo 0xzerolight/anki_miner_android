@@ -1038,7 +1038,11 @@ private fun LazyListScope.curationItems(
                     )
                 }
             }
-            curation.clipWindow?.let { clipWindow ->
+            // Trim row needs player for its play button. This is the render site's own
+            // precondition — ViewModel upholding it separately (clipWindowFor) is not a
+            // reason to drop it here; screen-constructed states (tests) can set
+            // clipWindow without player.
+            curation.clipWindow?.takeIf { curation.player != null }?.let { clipWindow ->
                 item(key = "clip:${candidate.candidateId}", contentType = "clip") {
                     CurationClipControls(
                         containerColor = curationRowContainerColor(selected, animateSelection),
