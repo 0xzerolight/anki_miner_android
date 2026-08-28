@@ -85,4 +85,25 @@ class CurationClipTest {
         // so seeding applies no MIN/MAX - only coercion does.
         assertNotNull(clipWindowUiState(0.0, 45.0, 0.3, override = null))
     }
+
+    @Test
+    fun `an override the recomputed travel no longer contains is dropped, and one it still contains survives`() {
+        // Legal when audio_padding is 5.0s: default (7.7, 20.0), travel (4.7, 23.0) comfortably
+        // contains the stored override.
+        val stale = CurationClipWindow(5.0, 6.0)
+        val wide = clipWindowUiState(12.7, 15.0, 5.0, override = stale)!!
+        assertEquals(5.0, wide.window.startSeconds, 1e-9)
+        assertEquals(6.0, wide.window.endSeconds, 1e-9)
+        assertTrue(wide.overridden)
+
+        // The user opens Settings and lowers padding to 0.1s, which pulls travel up to
+        // (9.6, 18.1) - past the same stored override. The default reseeds instead of
+        // returning a window outside its own travel.
+        val narrow = clipWindowUiState(12.7, 15.0, 0.1, override = stale)!!
+        assertEquals(12.6, narrow.window.startSeconds, 1e-9)
+        assertEquals(15.1, narrow.window.endSeconds, 1e-9)
+        assertTrue(narrow.window.startSeconds >= narrow.travelStartSeconds)
+        assertTrue(narrow.window.endSeconds <= narrow.travelEndSeconds)
+        assertFalse(narrow.overridden)
+    }
 }

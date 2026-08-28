@@ -49,9 +49,11 @@ data class ClipWindowSeconds(
  *
  * Travel is derived from the *default* window rather than the current one - unlike the desktop
  * strip, which re-seats travel around whatever is showing. Travel that moves while the user is
- * dragging moves the target under their finger; a fixed travel holds still and always contains
- * the live window, since every path that could push an override outside these bounds (picking
- * another sentence, changing the expansion) clears the override first.
+ * dragging moves the target under their finger; a fixed travel holds still. [window] is always
+ * within `[travelStartSeconds, travelEndSeconds]` - [clipWindowUiState] enforces this itself by
+ * dropping a stored override the recomputed travel no longer contains (audio padding can change
+ * under a stored override, since it is a Settings value, not a per-run one), so nothing here
+ * depends on callers clearing the override on every path that could move travel.
  */
 @Immutable
 data class ClipWindowUiState(
@@ -77,7 +79,15 @@ fun defaultClipWindow(
         endSeconds = toSeconds(toTicks(endTime + audioPaddingSeconds)),
     )
 
-/** Null when the line's own timings are not finite (corrupt subtitle timing). */
+/**
+ * Null when the line's own timings are not finite (corrupt subtitle timing).
+ *
+ * A stored [override] that no longer fits inside the recomputed travel - e.g. `audio_padding`
+ * changed in Settings since the override was made, shifting both the default window and the
+ * travel underneath it - is dropped; the default seeds instead, same as if the user had never
+ * trimmed. Anything else would return a `window` outside its own travel, which in the slider
+ * means handles that do not match the numbers beside them.
+ */
 fun clipWindowUiState(
     startTime: Double,
     endTime: Double,
@@ -86,14 +96,19 @@ fun clipWindowUiState(
 ): ClipWindowUiState? {
     if (!startTime.isFinite() || !endTime.isFinite() || !audioPaddingSeconds.isFinite()) return null
     val default = defaultClipWindow(startTime, endTime, audioPaddingSeconds)
-    val travelStart = toSeconds(max(0L, toTicks(default.startSeconds) - MARGIN_TICKS))
-    val travelEnd = toSeconds(toTicks(default.endSeconds) + MARGIN_TICKS)
+    val travelLoTicks = max(0L, toTicks(default.startSeconds) - MARGIN_TICKS)
+    val travelHiTicks = toTicks(default.endSeconds) + MARGIN_TICKS
     val overrideWindow = override?.let { ClipWindowSeconds(it.startSeconds, it.endSeconds) }
+    val overrideInTravel =
+        overrideWindow != null &&
+            toTicks(overrideWindow.startSeconds) >= travelLoTicks &&
+            toTicks(overrideWindow.endSeconds) <= travelHiTicks
+    val effectiveOverride = overrideWindow.takeIf { overrideInTravel }
     return ClipWindowUiState(
-        window = overrideWindow ?: default,
-        travelStartSeconds = travelStart,
-        travelEndSeconds = travelEnd,
-        overridden = overrideWindow != null && overrideWindow != default,
+        window = effectiveOverride ?: default,
+        travelStartSeconds = toSeconds(travelLoTicks),
+        travelEndSeconds = toSeconds(travelHiTicks),
+        overridden = effectiveOverride != null && effectiveOverride != default,
     )
 }
 
@@ -119,13 +134,14 @@ fun coerceClipWindow(
         inTicks = max(lo, min(inTicks, hi - MIN_CLIP_TICKS))
         outTicks = min(hi, max(outTicks, inTicks + MIN_CLIP_TICKS))
         outTicks = min(outTicks, inTicks + MAX_CLIP_TICKS)
-        // The hi clamp may have shortened the push below MAX; pull the start back in.
-        inTicks = max(inTicks, outTicks - MAX_CLIP_TICKS)
+        // outTicks is now within [inTicks + MIN_CLIP_TICKS, inTicks + MAX_CLIP_TICKS], so the
+        // window is already legal - no further clamp on inTicks can change it.
     } else {
         outTicks = min(hi, max(outTicks, lo + MIN_CLIP_TICKS))
         inTicks = max(lo, min(inTicks, outTicks - MIN_CLIP_TICKS))
         inTicks = max(inTicks, outTicks - MAX_CLIP_TICKS)
-        outTicks = min(outTicks, inTicks + MAX_CLIP_TICKS)
+        // inTicks is now within [outTicks - MAX_CLIP_TICKS, outTicks - MIN_CLIP_TICKS], so the
+        // window is already legal - no further clamp on outTicks can change it.
     }
     return ClipWindowSeconds(toSeconds(inTicks), toSeconds(outTicks))
 }
