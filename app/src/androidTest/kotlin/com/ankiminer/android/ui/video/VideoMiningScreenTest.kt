@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasNoClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -1025,6 +1026,35 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.candidate(candidate.candidateId)).performClick()
         composeRule.onNodeWithTag(sentenceTag).assertDoesNotExist()
         composeRule.onNodeWithText("1 of 2 selected").assertExists()
+    }
+
+    @Test
+    fun aCandidateWithOneSentenceShowsNoRadioButton() {
+        val request = request()
+        // candidate-2 has a single sentence, unlike candidate-1's two.
+        val singleSentenceCandidate = request.candidates.single { it.sentences.size == 1 }
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation =
+                        curationState(request, focusedCandidateId = singleSentenceCandidate.candidateId),
+                ),
+        )
+        val sentenceTag =
+            VideoMiningTestTags.sentence(
+                singleSentenceCandidate.candidateId,
+                singleSentenceCandidate.defaultSentenceId,
+            )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(sentenceTag))
+        composeRule
+            .onNodeWithTag(sentenceTag)
+            .assert(hasText(singleSentenceCandidate.sentences.single().sentence, substring = true))
+            .assert(hasNoClickAction())
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
     }
 
     @Test

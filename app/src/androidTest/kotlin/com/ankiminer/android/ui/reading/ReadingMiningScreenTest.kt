@@ -18,6 +18,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.hasNoClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -674,6 +675,31 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(
                 ReadingMiningTestTags.sentence(candidateId, first.sentences.first().sentenceId),
             ).assertExists()
+    }
+
+    @Test
+    fun aCandidateWithOneSentenceShowsNoRadioButton() {
+        val request = request(CurationPage(0, 2, 0, 4))
+        // Every candidate from the fixture has exactly one sentence.
+        val candidate = request.candidates.first()
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = candidate.candidateId),
+                ),
+        )
+        val sentenceTag =
+            ReadingMiningTestTags.sentence(candidate.candidateId, candidate.defaultSentenceId)
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(sentenceTag))
+        composeRule
+            .onNodeWithTag(sentenceTag)
+            .assert(hasText(candidate.sentences.single().sentence, substring = true))
+            .assert(hasNoClickAction())
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
     }
 
     @Test
