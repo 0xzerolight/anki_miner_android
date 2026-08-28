@@ -101,6 +101,11 @@
     <string name="curation_expand_next_line">+ 下一行</string>
     <string name="curation_expand_reset">重置行</string>
     <string name="curation_expansion_window">%1$.1f–%2$.1f 秒 · 片段 %3$.1f 秒</string>
+    <string name="curation_clip_window">%1$.1f–%2$.1f 秒 · 片段 %3$.1f 秒</string>
+    <string name="curation_clip_range_description">裁剪此单词的音频片段</string>
+    <string name="curation_clip_play">仅播放此片段</string>
+    <string name="curation_clip_stop">停止片段预览</string>
+    <string name="curation_clip_reset">重置片段</string>
     <string name="curation_copied_word">已复制单词</string>
     <string name="curation_copied_sentence">已复制句子</string>
     <string name="curation_preview_play_description">播放视频</string>
