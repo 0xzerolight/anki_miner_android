@@ -84,6 +84,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -521,7 +522,14 @@ class MediaMiningViewModelTest {
                         SubtitleCueLookupService { _, _ ->
                             Result.success(
                                 listOf(
-                                    SubtitleCue(0.0, 1.0, "魚を食べる。"),
+                                    // endSeconds (1.2) deliberately differs from the sentence's own
+                                    // endTime (1.0, see curationRequest()) - findCueIndex matches on
+                                    // text and startTime, not end, so an unexpanded merge (prevCount
+                                    // = nextCount = 0) would still hit this cue and its 1.2 end. If
+                                    // the unexpanded case is not itself guarded off the merged
+                                    // window, this fixture is what catches it: the merged-but-
+                                    // unexpanded padded end would be 1.5, not the sentence-seeded 1.3.
+                                    SubtitleCue(0.0, 1.2, "魚を食べる。"),
                                     SubtitleCue(1.5, 2.5, "次の文"),
                                 ),
                             )
@@ -533,6 +541,7 @@ class MediaMiningViewModelTest {
             runCurrent()
             val unexpanded = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
             assertEquals(1.3, unexpanded.window.endSeconds, 0.0)
+            assertNotEquals(1.5, unexpanded.window.endSeconds, 0.0)
 
             viewModel.expandSentenceNext("candidate")
             runCurrent()
@@ -543,6 +552,37 @@ class MediaMiningViewModelTest {
             assertEquals(0.0, expanded.window.startSeconds, 0.0)
             assertEquals(2.8, expanded.window.endSeconds, 0.0)
             assertFalse(expanded.overridden)
+        }
+
+    @Test
+    fun clipWindowSeedsFromTheSentenceWhenCuesFailedButTheLineIsExpanded() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.failure(IllegalStateException("unavailable"))
+                        },
+                )
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            // expandSentenceNext only edits the draft's lineExpansions map - it does not need a
+            // cue list, so this succeeds even though the cue lookup above failed.
+            viewModel.expandSentenceNext("candidate")
+            runCurrent()
+
+            // expansionPreviewFor needs cues and returns null; clipWindowFor still needs only
+            // timings and a player, so the candidate keeps a trim row seeded from its own sentence.
+            val clip = requireNotNull(viewModel.uiState.value.curation?.clipWindow)
+            assertEquals(0.0, clip.window.startSeconds, 0.0)
+            assertEquals(1.3, clip.window.endSeconds, 0.0)
+            assertFalse(clip.overridden)
         }
 
     @Test
