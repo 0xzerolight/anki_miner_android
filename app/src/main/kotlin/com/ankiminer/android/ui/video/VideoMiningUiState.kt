@@ -11,6 +11,7 @@ import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.ExpansionPreview
 
 enum class DocumentSelectionError {
@@ -78,6 +79,8 @@ data class CurationUiState(
     val lineExpansions: Map<String, CurationLineExpansion> = emptyMap(),
     /** Merged-window preview for the focused candidate's chosen sentence; null hides the controls. */
     val expansionPreview: ExpansionPreview? = null,
+    /** Clip trim state for the focused candidate; null hides the trim row. */
+    val clipWindow: ClipWindowUiState? = null,
 ) {
     val selectedCount: Int
         get() = selectedCandidateIds.size
