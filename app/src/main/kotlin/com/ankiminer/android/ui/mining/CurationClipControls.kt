@@ -29,6 +29,7 @@ import androidx.compose.ui.semantics.semantics
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import kotlin.math.abs
 
 /**
  * The per-word audio trim row: a continuous range slider over the clip's travel, a play/stop
@@ -90,19 +91,36 @@ internal fun CurationClipControls(
                     onValueChange = { range ->
                         // Which handle moved is read against the window this composable last
                         // wrote, not against the slider: the slider has already moved itself by
-                        // the time it reports.
-                        val movedStart = range.start.toDouble() != live.startSeconds
+                        // the time it reports. RangeSliderState.onDrag recomputes BOTH ends
+                        // through a pixel round-trip on every callback, so an exact-inequality
+                        // check on one end is noise near MIN/MAX and travel boundaries - the
+                        // unmoved end rarely comes back bit-identical. Compare which end moved
+                        // further instead; a tie favours the start handle.
+                        val newStart = range.start.toDouble()
+                        val newEnd = range.endInclusive.toDouble()
+                        val movedStart =
+                            abs(newStart - live.startSeconds) >= abs(newEnd - live.endSeconds)
                         live =
                             coerceClipWindow(
-                                start = range.start.toDouble(),
-                                end = range.endInclusive.toDouble(),
+                                start = newStart,
+                                end = newEnd,
                                 travelStart = state.travelStartSeconds,
                                 travelEnd = state.travelEndSeconds,
                                 movedStart = movedStart,
                             )
                     },
                     onValueChangeFinished = {
-                        onWindowChange(CurationClipWindow(live.startSeconds, live.endSeconds))
+                        // A tap that lands on (or very near) the current thumb position drags
+                        // through no net scaled change: RangeSliderState.onDrag then skips
+                        // onValueChange, but gestureEndAction still fires onValueChangeFinished
+                        // unconditionally right after. Without this guard `live` would still be
+                        // the raw seed from state.window - which desktop's own seeding rule
+                        // treats as never edited, and which can be legitimately longer than
+                        // CurationClipWindow's 30s ceiling (an over-long subtitle line), so
+                        // committing it here would throw. Only an actual coerced edit commits.
+                        if (live != state.window) {
+                            onWindowChange(CurationClipWindow(live.startSeconds, live.endSeconds))
+                        }
                     },
                     valueRange = state.travelStartSeconds.toFloat()..state.travelEndSeconds.toFloat(),
                     enabled = enabled,
