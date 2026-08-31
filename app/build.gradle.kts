@@ -1,4 +1,5 @@
 import com.android.build.api.variant.BuildConfigField
+import com.android.build.api.variant.impl.VariantOutputImpl
 import org.gradle.api.tasks.Exec
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
@@ -68,6 +69,10 @@ val keystoreProps =
             keystorePropsFile.inputStream().use { load(it) }
         }
     }
+val hasReleaseSigning = keystorePropsFile.exists() || System.getenv("ANKI_MINER_KEYSTORE") != null
+
+// Single source for the shipped version: defaultConfig and the published asset name below.
+val appVersionName = "1.0.0"
 
 // Release builds inject the immutable build commit via -PankiMinerSourceCommit=<sha>
 // (or the ANKI_MINER_SOURCE_COMMIT env var); dev builds keep "development".
@@ -142,7 +147,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 26
-        versionName = "1.0.0"
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "PYTHON_VERSION", "\"$pythonVersion\"")
@@ -205,7 +210,7 @@ android {
                 "proguard-rules.pro",
             )
             // Sign only when a local keystore is configured (present for release builds).
-            if (keystorePropsFile.exists() || System.getenv("ANKI_MINER_KEYSTORE") != null) {
+            if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
         }
@@ -274,6 +279,24 @@ androidComponents {
             "ankiMinerSourceCommit",
             validatedReleaseSourceCommit,
         )
+    }
+
+    // The published GitHub Release asset name comes from the build, not from whoever uploads
+    // it. Scoped to the signed device variant: CI has no keystore and keeps
+    // app-device-release-unsigned.apk, which the workflow and host tests pin by name.
+    if (hasReleaseSigning) {
+        onVariants(
+            selector().withBuildType("release").withFlavor("runtimeAbi", "device"),
+        ) { variant ->
+            variant.outputs.forEach { output ->
+                val named =
+                    output as? VariantOutputImpl
+                        ?: throw GradleException(
+                            "AGP no longer exposes outputFileName; re-wire the release asset name",
+                        )
+                named.outputFileName.set("anki-miner-android-$appVersionName-arm64-v8a.apk")
+            }
+        }
     }
 }
 
