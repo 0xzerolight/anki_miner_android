@@ -29,7 +29,6 @@ import androidx.compose.ui.semantics.semantics
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import kotlin.math.abs
 
 /**
  * The per-word audio trim row: a continuous range slider over the clip's travel, a play/stop
@@ -89,24 +88,16 @@ internal fun CurationClipControls(
                 RangeSlider(
                     value = live.startSeconds.toFloat()..live.endSeconds.toFloat(),
                     onValueChange = { range ->
-                        // Which handle moved is read against the window this composable last
-                        // wrote, not against the slider: the slider has already moved itself by
-                        // the time it reports. RangeSliderState.onDrag recomputes BOTH ends
-                        // through a pixel round-trip on every callback, so an exact-inequality
-                        // check on one end is noise near MIN/MAX and travel boundaries - the
-                        // unmoved end rarely comes back bit-identical. Compare which end moved
-                        // further instead; a tie favours the start handle.
-                        val newStart = range.start.toDouble()
-                        val newEnd = range.endInclusive.toDouble()
-                        val movedStart =
-                            abs(newStart - live.startSeconds) >= abs(newEnd - live.endSeconds)
                         live =
-                            coerceClipWindow(
-                                start = newStart,
-                                end = newEnd,
+                            nextClipWindow(
+                                live = live,
+                                reported =
+                                    ClipWindowSeconds(
+                                        range.start.toDouble(),
+                                        range.endInclusive.toDouble(),
+                                    ),
                                 travelStart = state.travelStartSeconds,
                                 travelEnd = state.travelEndSeconds,
-                                movedStart = movedStart,
                             )
                     },
                     onValueChangeFinished = {
