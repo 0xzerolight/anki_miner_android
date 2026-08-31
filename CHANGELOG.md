@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **The signed release APK is built under the name it is published as.** v0.10.2 and v1.0.0 shipped their asset as `app-device-release.apk` while `README.md` told users to download `anki-miner-android-<version>-arm64-v8a.apk`. Nothing ever produced that name: it lived in prose in `README.md` and `scripts/README.md` and was applied by hand at upload time, and `gh release create path#label` sets an asset's display label rather than its name, so the rename has to happen on disk. `assembleDeviceRelease` now names the output `anki-miner-android-$appVersionName-arm64-v8a.apk` whenever a release keystore is configured, so the correct name is already at the path the release procedure uploads from, and the version in the filename also catches a stale APK left in the output directory by the previous release. Scoped to the signed device variant: CI has no keystore and keeps `app-device-release-unsigned.apk`, which the workflow, the S1b tokenizer script and the host test pin by name. `versionName` and the asset name now come from one `appVersionName` value, and a new case in `test_release_build_integrity.py` fails if the wiring, that single source, or the documented filename drifts.
+
 ## [1.0.0] - 2026-08-31
 
 ### Added

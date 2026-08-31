@@ -21,7 +21,9 @@ source_commit="$(git rev-parse HEAD)"
 ./gradlew -PankiMinerSourceCommit="$source_commit" :app:assembleDeviceRelease
 ```
 
-The signed APK lands in `app/build/outputs/apk/device/release/`. The Python
+The signed APK lands in
+`app/build/outputs/apk/device/release/anki-miner-android-<version>-arm64-v8a.apk`,
+which is the name it is published under. The Python
 tokenizer/runtime wheels (`app/wheels/`) and ffmpeg/ffprobe
 (`app/src/main/jniLibs/`) are vendored, so a normal Gradle build produces a
 working APK.

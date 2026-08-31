@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 import tempfile
@@ -200,6 +201,34 @@ class ReleaseBuildIntegrityTests(unittest.TestCase):
         self.assertIn("check_runtime_artifact.py", health)
         self.assertIn('--vendored-manifest "$REPO_ROOT/app/wheels/manifest.json"', health)
         self.assertIn("--allow-abi x86_64", health)
+
+    def test_signed_device_release_apk_carries_the_published_asset_name(self) -> None:
+        # The GitHub Release asset name is the basename of the uploaded file, and
+        # `gh release create path#label` only sets a display label. Two releases
+        # shipped as app-device-release.apk because the name lived in prose and was
+        # applied by hand, so the build owns it now.
+        build_script = BUILD_SCRIPT.read_text(encoding="utf-8")
+
+        self.assertIn(
+            'named.outputFileName.set("anki-miner-android-$appVersionName-arm64-v8a.apk")',
+            build_script,
+        )
+        self.assertIn('selector().withBuildType("release").withFlavor("runtimeAbi", "device")', build_script)
+        self.assertIn("if (hasReleaseSigning) {", build_script)
+        # Derived from the version, never a second literal that a bump could miss.
+        self.assertIn(f'val appVersionName = "{self._declared_version_name()}"', build_script)
+        self.assertIn("versionName = appVersionName", build_script)
+
+        documented = "anki-miner-android-<version>-arm64-v8a.apk"
+        self.assertIn(documented, (REPO_ROOT / "README.md").read_text(encoding="utf-8"))
+        self.assertIn(documented, (REPO_ROOT / "scripts/README.md").read_text(encoding="utf-8"))
+
+    def _declared_version_name(self) -> str:
+        build_script = BUILD_SCRIPT.read_text(encoding="utf-8")
+        match = re.search(r'^val appVersionName = "([^"]+)"$', build_script, re.MULTILINE)
+        self.assertIsNotNone(match, "app/build.gradle.kts must declare appVersionName")
+        assert match is not None
+        return match.group(1)
 
     def test_release_callers_pass_current_source_commit(self) -> None:
         tokenizer = (REPO_ROOT / "tools/tokenizer/build-s1b-android.sh").read_text(

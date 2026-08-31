@@ -199,10 +199,13 @@ source_commit="$(git rev-parse HEAD)"
 ./gradlew -PankiMinerSourceCommit="$source_commit" :app:assembleEmulatorRelease
 ```
 
-The signed APK is at `app/build/outputs/apk/device/release/`. Publish it on a
-GitHub Release as the single asset `anki-miner-android-<version>-arm64-v8a.apk`.
-Release variants fail before compilation unless `ankiMinerSourceCommit` is a
-full lowercase Git SHA. Debug variants may use `development`.
+The signed APK is at
+`app/build/outputs/apk/device/release/anki-miner-android-<version>-arm64-v8a.apk`;
+that is the published name, so upload the file as built and it is the single
+release asset. Unsigned builds (CI, no keystore) keep the Gradle default
+`app-device-release-unsigned.apk`. Release variants fail before compilation
+unless `ankiMinerSourceCommit` is a full lowercase Git SHA. Debug variants may
+use `development`.
 
 Retain `app/build/outputs/mapping/deviceRelease/mapping.txt` under the released
 version before the next build overwrites it. To symbolicate a Java/Kotlin stack
