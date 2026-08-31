@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.MAX_CLIP_SECONDS
 import com.ankiminer.android.mining.MIN_CLIP_SECONDS
+import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToLong
@@ -144,4 +145,51 @@ fun coerceClipWindow(
         // window is already legal - no further clamp on outTicks can change it.
     }
     return ClipWindowSeconds(toSeconds(inTicks), toSeconds(outTicks))
+}
+
+/**
+ * True when [reported] is the slider echoing back a handle already pressed against its neighbour.
+ *
+ * `RangeSliderState` clamps the dragged handle's pixel offset to the other handle, so a drag held
+ * past that neighbour reports both ends on the same tick, once per pointer event, for as long as
+ * the finger stays there. The first such report is real - it is how a collapse arrives - but once
+ * [coerceClipWindow] has answered it by pushing the other handle out to [MIN_CLIP_SECONDS], the
+ * repeats carry nothing new: they sit on a window that is already as short as it can be, at one of
+ * its own ends. Treating them as fresh movement walks the window one tick further along the
+ * timeline per event, at a rate set by pointer-event pacing rather than by where the finger is.
+ */
+private fun isCollapsedEcho(live: ClipWindowSeconds, reported: ClipWindowSeconds): Boolean {
+    val reportedTicks = toTicks(reported.startSeconds)
+    if (reportedTicks != toTicks(reported.endSeconds)) return false
+    val liveIn = toTicks(live.startSeconds)
+    val liveOut = toTicks(live.endSeconds)
+    if (liveOut - liveIn > MIN_CLIP_TICKS) return false
+    return reportedTicks == liveIn || reportedTicks == liveOut
+}
+
+/**
+ * The window after one `RangeSlider` value callback, given the window [live] on screen.
+ *
+ * Which handle moved is read against [live] rather than against the slider: the slider has already
+ * moved itself by the time it reports, and `RangeSliderState.onDrag` recomputes BOTH ends through
+ * a pixel round-trip on every callback, so an exact-inequality check on one end is noise near the
+ * MIN/MAX and travel boundaries - the unmoved end rarely comes back bit-identical. Compare which
+ * end moved further instead; a tie favours the start handle.
+ */
+fun nextClipWindow(
+    live: ClipWindowSeconds,
+    reported: ClipWindowSeconds,
+    travelStart: Double,
+    travelEnd: Double,
+): ClipWindowSeconds {
+    if (isCollapsedEcho(live, reported)) return live
+    return coerceClipWindow(
+        start = reported.startSeconds,
+        end = reported.endSeconds,
+        travelStart = travelStart,
+        travelEnd = travelEnd,
+        movedStart =
+            abs(reported.startSeconds - live.startSeconds) >=
+                abs(reported.endSeconds - live.endSeconds),
+    )
 }

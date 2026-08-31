@@ -106,4 +106,47 @@ class CurationClipTest {
         assertTrue(narrow.window.endSeconds <= narrow.travelEndSeconds)
         assertFalse(narrow.overridden)
     }
+
+    @Test
+    fun `an end drag held past the start handle settles instead of walking the window down`() {
+        // RangeSliderState clamps the dragged end to the start thumb, so a drag held past it
+        // reports (start, start) once per event - against a start the previous callback just
+        // lowered. Ten events must leave the window where the first one put it.
+        var live = ClipWindowSeconds(5.3, 7.1)
+        repeat(10) {
+            live = nextClipWindow(live, ClipWindowSeconds(live.startSeconds, live.startSeconds), 0.0, 20.0)
+        }
+        assertEquals(5.1, live.startSeconds, 1e-9)
+        assertEquals(5.3, live.endSeconds, 1e-9)
+    }
+
+    @Test
+    fun `a start drag held past the end handle settles the same way`() {
+        // The mirror case: the start clamps up to the end, and the moved handle keeping its
+        // position pushes the end one tick out. It must not keep pushing.
+        var live = ClipWindowSeconds(5.3, 7.1)
+        repeat(10) {
+            live = nextClipWindow(live, ClipWindowSeconds(live.endSeconds, live.endSeconds), 0.0, 20.0)
+        }
+        assertEquals(7.1, live.startSeconds, 1e-9)
+        assertEquals(7.3, live.endSeconds, 1e-9)
+    }
+
+    @Test
+    fun `an ordinary drag still moves the handle the pointer carried`() {
+        val live = ClipWindowSeconds(1.0, 3.0)
+        val next = nextClipWindow(live, ClipWindowSeconds(1.0, 2.4), 0.0, 6.0)
+        assertEquals(1.0, next.startSeconds, 1e-9)
+        assertEquals(2.4, next.endSeconds, 1e-9)
+    }
+
+    @Test
+    fun `a minimum-length window still follows a press somewhere else on the track`() {
+        // Only the echo of this window's own collapsed handles is ignored. A degenerate report
+        // anywhere else is a real press and still moves the window there.
+        val live = ClipWindowSeconds(5.1, 5.3)
+        val next = nextClipWindow(live, ClipWindowSeconds(9.0, 9.0), 0.0, 20.0)
+        assertEquals(9.0, next.startSeconds, 1e-9)
+        assertEquals(9.2, next.endSeconds, 1e-9)
+    }
 }
