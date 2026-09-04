@@ -420,7 +420,6 @@ fun ReadingMiningScreen(
                         MiningRunState.Idle ->
                             setupItems(
                                 state = targetState,
-                                headingModifier = headingModifier,
                                 onPickSource = onPickSource,
                                 onPickArchive = onPickArchive,
                                 onClearSource = onClearSource,
@@ -609,7 +608,6 @@ private fun CurationPageImageSlot(
 
 private fun LazyListScope.setupItems(
     state: ReadingMiningUiState,
-    headingModifier: Modifier,
     onPickSource: () -> Unit,
     onPickArchive: () -> Unit,
     onClearSource: () -> Unit,
@@ -623,21 +621,13 @@ private fun LazyListScope.setupItems(
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
-    item(key = "reading_setup_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            PhaseTitle(
-                text = stringResource(R.string.reading_phase_setup_title),
-                modifier = headingModifier,
+    state.runtimeConflict?.let { conflict ->
+        item(key = "reading_setup_conflict", contentType = "header") {
+            RuntimeConflictNotice(
+                text = stringResource(readingRuntimeConflictMessage(conflict)),
+                onReturnToActiveRun =
+                    onReturnToActiveRun.takeIf { conflict == RuntimeWorkConflict.MINING },
             )
-            state.runtimeConflict?.let { conflict ->
-                RuntimeConflictNotice(
-                    text = stringResource(readingRuntimeConflictMessage(conflict)),
-                    onReturnToActiveRun =
-                        onReturnToActiveRun.takeIf {
-                            conflict == RuntimeWorkConflict.MINING
-                        },
-                )
-            }
         }
     }
     item(key = "reading_source_mode", contentType = "actions") {

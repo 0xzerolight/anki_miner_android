@@ -434,7 +434,6 @@ fun VideoMiningScreen(
                             setupItems(
                                 state = targetState,
                                 labels = labels,
-                                headingModifier = headingModifier,
                                 onPickVideo = onPickVideo,
                                 onPickSubtitle = onPickSubtitle,
                                 onClearVideo = onClearVideo,
@@ -671,7 +670,6 @@ private fun CuesUnavailableNotice() {
 private fun LazyListScope.setupItems(
     state: VideoMiningUiState,
     labels: MediaMiningLabels,
-    headingModifier: Modifier,
     onPickVideo: () -> Unit,
     onPickSubtitle: () -> Unit,
     onClearVideo: () -> Unit,
@@ -686,21 +684,13 @@ private fun LazyListScope.setupItems(
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
-    item(key = "setup_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            PhaseTitle(
-                text = stringResource(labels.setupTitle),
-                modifier = headingModifier,
+    state.runtimeConflict?.let { conflict ->
+        item(key = "setup_conflict", contentType = "header") {
+            RuntimeConflictNotice(
+                text = stringResource(runtimeConflictMessage(conflict)),
+                onReturnToActiveRun =
+                    onReturnToActiveRun.takeIf { conflict == RuntimeWorkConflict.MINING },
             )
-            state.runtimeConflict?.let { conflict ->
-                RuntimeConflictNotice(
-                    text = stringResource(runtimeConflictMessage(conflict)),
-                    onReturnToActiveRun =
-                        onReturnToActiveRun.takeIf {
-                            conflict == RuntimeWorkConflict.MINING
-                        },
-                )
-            }
         }
     }
     item(key = "sources", contentType = "candidate") {
