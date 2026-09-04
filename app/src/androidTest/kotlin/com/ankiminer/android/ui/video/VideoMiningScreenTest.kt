@@ -1890,7 +1890,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun pageAndFailureTransitionsResetDeepScrollToTheHeading() {
+    fun pageAndFailureTransitionsResetDeepScrollToTheTopOfTheList() {
         val candidates =
             (0 until 100).map { index ->
                 candidate(
@@ -1937,7 +1937,9 @@ class VideoMiningScreenTest {
         }
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
-        composeRule.onNodeWithText("Word Curation").assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate(candidates.first().candidateId))
+            .assertIsDisplayed()
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)

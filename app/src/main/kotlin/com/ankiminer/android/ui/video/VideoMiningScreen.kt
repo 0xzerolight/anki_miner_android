@@ -368,8 +368,6 @@ fun VideoMiningScreen(
                 }
                 if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
                     CurationChrome(
-                        title = phaseTitle,
-                        headingModifier = headingModifier,
                         selectedCount = targetCuration.selectedCount,
                         candidateCount = targetCuration.candidates.size,
                         page = targetCuration.page,
