@@ -19,9 +19,7 @@ class SettingsScreenModelTest {
             listOf(
                 SettingsCategory.ANKI,
                 SettingsCategory.MEDIA,
-                SettingsCategory.DICTIONARIES,
-                SettingsCategory.AUDIO,
-                SettingsCategory.FREQUENCY,
+                SettingsCategory.RESOURCES,
                 SettingsCategory.FILTERING,
                 SettingsCategory.UI,
                 SettingsCategory.DIAGNOSTICS,
@@ -35,28 +33,28 @@ class SettingsScreenModelTest {
         assertEquals(SettingsCategory.DIAGNOSTICS, settingsCategoryFor(ResourceFailureOrigin.SETUP))
         assertEquals(SettingsCategory.DIAGNOSTICS, settingsCategoryFor(ResourceFailureOrigin.UNIDIC))
         assertEquals(
-            SettingsCategory.DICTIONARIES,
+            SettingsCategory.RESOURCES,
             settingsCategoryFor(ResourceFailureOrigin.CATALOG_DICTIONARY),
         )
         assertEquals(
-            SettingsCategory.DICTIONARIES,
+            SettingsCategory.RESOURCES,
             settingsCategoryFor(ResourceFailureOrigin.CUSTOM_DICTIONARY),
         )
         assertEquals(
-            SettingsCategory.DICTIONARIES,
+            SettingsCategory.RESOURCES,
             settingsCategoryFor(ResourceFailureOrigin.RECOMMENDED_SET),
         )
         assertEquals(
-            SettingsCategory.DICTIONARIES,
+            SettingsCategory.RESOURCES,
             settingsCategoryFor(ResourceFailureOrigin.PITCH),
         )
         assertEquals(
-            SettingsCategory.DICTIONARIES,
+            SettingsCategory.RESOURCES,
             settingsCategoryFor(ResourceFailureOrigin.DICTIONARY_LOOKUP),
         )
-        assertEquals(SettingsCategory.AUDIO, settingsCategoryFor(ResourceFailureOrigin.AUDIO))
+        assertEquals(SettingsCategory.RESOURCES, settingsCategoryFor(ResourceFailureOrigin.AUDIO))
         assertEquals(
-            SettingsCategory.FREQUENCY,
+            SettingsCategory.RESOURCES,
             settingsCategoryFor(ResourceFailureOrigin.FREQUENCY),
         )
         assertEquals(
@@ -70,21 +68,20 @@ class SettingsScreenModelTest {
         assertEquals(SettingsCategory.ANKI, settingsCategoryFor(AnkiSetupFailureOrigin.TARGET))
         // These are constants only because every conditional card is emitted after the last
         // deep-link target in its category. dictionary-lookup is the only conditional card in
-        // Dictionaries and it is emitted last, so nothing behind it can shift.
+        // Resources and it is emitted last, so nothing behind it can shift.
         // SETUP has no owning card; it renders in the shared header, which is lazy item 0.
         assertEquals(0, settingsCardIndexFor(ResourceFailureOrigin.SETUP))
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.UNIDIC))
-        // Dictionaries: dictionary-sources(2) owns both dictionary origins, pitch-sources(3),
-        // dictionary-lookup(4).
+        // Resources: dictionary-sources(2) owns all three dictionary origins, pitch-sources(3),
+        // audio-sources(4), frequency-sources(5), dictionary-lookup(6).
         assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CATALOG_DICTIONARY))
         assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.CUSTOM_DICTIONARY))
         assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.RECOMMENDED_SET))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.PITCH))
-        assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
-        // Audio and Frequency are one panel card each.
-        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.AUDIO))
-        assertEquals(2, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
+        assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.AUDIO))
+        assertEquals(5, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
+        assertEquals(6, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.KNOWN_WORDS))
         // Filtering: word-lists sits after known-words-import, ahead of the conditional
         // filtering-import-result card.

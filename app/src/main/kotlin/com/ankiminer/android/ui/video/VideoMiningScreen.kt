@@ -8,7 +8,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,8 +38,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -75,7 +72,6 @@ import com.ankiminer.android.ui.mining.CurationVideoPreview
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
-import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
@@ -313,16 +309,6 @@ fun VideoMiningScreen(
                 selectableVisibleCandidateIds.isNotEmpty() &&
                     selectedCandidateIds.containsAll(selectableVisibleCandidateIds)
             val phaseTitle = stringResource(targetState.phaseTitle(labels))
-            val headingFocusRequester = remember(target.key) { FocusRequester() }
-            val headingModifier =
-                Modifier
-                    .focusRequester(headingFocusRequester)
-                    .focusable()
-                    .testTag(MINING_PHASE_HEADING_TEST_TAG)
-            LaunchedEffect(target.key) {
-                headingFocusRequester.requestFocus()
-            }
-
             // Hoisted so the trim row's play button (mounted separately, inside curationItems)
             // can reach the same player instance the preview surface below is bound to. The
             // DisposableEffect that releases it stays keyed on runId, so release still happens
@@ -368,8 +354,6 @@ fun VideoMiningScreen(
                 }
                 if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
                     CurationChrome(
-                        title = phaseTitle,
-                        headingModifier = headingModifier,
                         selectedCount = targetCuration.selectedCount,
                         candidateCount = targetCuration.candidates.size,
                         page = targetCuration.page,
@@ -434,7 +418,6 @@ fun VideoMiningScreen(
                             setupItems(
                                 state = targetState,
                                 labels = labels,
-                                headingModifier = headingModifier,
                                 onPickVideo = onPickVideo,
                                 onPickSubtitle = onPickSubtitle,
                                 onClearVideo = onClearVideo,
@@ -452,8 +435,6 @@ fun VideoMiningScreen(
                         is MiningRunState.Starting ->
                             progressItems(
                                 progress = runState.progress,
-                                title = R.string.starting_title,
-                                headingModifier = headingModifier,
                                 canCancel =
                                     runState.cancellationToken != null || runState.runId != null,
                                 cancelPending = targetState.cancelPending,
@@ -494,8 +475,6 @@ fun VideoMiningScreen(
                         is MiningRunState.Running ->
                             progressItems(
                                 progress = runState.progress,
-                                title = R.string.running_title,
-                                headingModifier = headingModifier,
                                 canCancel = true,
                                 cancelPending = targetState.cancelPending,
                                 cancelError = targetState.commandError == MiningCommandError.CANCEL,
@@ -506,7 +485,6 @@ fun VideoMiningScreen(
                             terminalItems(
                                 title = R.string.success_title,
                                 labels = labels,
-                                headingModifier = headingModifier,
                                 result = runState.result,
                                 videoDisplayName = targetState.video.document?.displayName,
                                 subtitleDisplayName = targetState.subtitle.document?.displayName,
@@ -534,7 +512,6 @@ fun VideoMiningScreen(
                             terminalItems(
                                 title = R.string.cancelled_title,
                                 labels = labels,
-                                headingModifier = headingModifier,
                                 result = runState.result,
                                 videoDisplayName = targetState.video.document?.displayName,
                                 subtitleDisplayName = targetState.subtitle.document?.displayName,
@@ -562,7 +539,6 @@ fun VideoMiningScreen(
                             terminalItems(
                                 title = R.string.failed_title,
                                 labels = labels,
-                                headingModifier = headingModifier,
                                 result = runState.result,
                                 videoDisplayName = targetState.video.document?.displayName,
                                 subtitleDisplayName = targetState.subtitle.document?.displayName,
@@ -671,7 +647,6 @@ private fun CuesUnavailableNotice() {
 private fun LazyListScope.setupItems(
     state: VideoMiningUiState,
     labels: MediaMiningLabels,
-    headingModifier: Modifier,
     onPickVideo: () -> Unit,
     onPickSubtitle: () -> Unit,
     onClearVideo: () -> Unit,
@@ -686,21 +661,13 @@ private fun LazyListScope.setupItems(
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
-    item(key = "setup_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            PhaseTitle(
-                text = stringResource(labels.setupTitle),
-                modifier = headingModifier,
+    state.runtimeConflict?.let { conflict ->
+        item(key = "setup_conflict", contentType = "header") {
+            RuntimeConflictNotice(
+                text = stringResource(runtimeConflictMessage(conflict)),
+                onReturnToActiveRun =
+                    onReturnToActiveRun.takeIf { conflict == RuntimeWorkConflict.MINING },
             )
-            state.runtimeConflict?.let { conflict ->
-                RuntimeConflictNotice(
-                    text = stringResource(runtimeConflictMessage(conflict)),
-                    onReturnToActiveRun =
-                        onReturnToActiveRun.takeIf {
-                            conflict == RuntimeWorkConflict.MINING
-                        },
-                )
-            }
         }
     }
     item(key = "sources", contentType = "candidate") {
@@ -878,8 +845,6 @@ private fun LazyListScope.setupItems(
 
 private fun LazyListScope.progressItems(
     progress: MiningProgress?,
-    @StringRes title: Int,
-    headingModifier: Modifier,
     canCancel: Boolean,
     cancelPending: Boolean,
     cancelError: Boolean,
@@ -890,8 +855,6 @@ private fun LazyListScope.progressItems(
         MiningProgressPanel(
             progress = progress,
             testTag = VideoMiningTestTags.PROGRESS,
-            headingModifier = headingModifier,
-            title = title,
         )
     }
     if (canCancel) {
@@ -1192,7 +1155,6 @@ private fun LazyListScope.curationItems(
 private fun LazyListScope.terminalItems(
     title: Int,
     labels: MediaMiningLabels,
-    headingModifier: Modifier,
     result: ProcessingResult?,
     videoDisplayName: String?,
     subtitleDisplayName: String?,
@@ -1214,10 +1176,7 @@ private fun LazyListScope.terminalItems(
     onRequestUndo: () -> Unit,
 ) {
     item(key = "terminal_header", contentType = "header") {
-        PhaseTitle(
-            text = stringResource(title),
-            modifier = headingModifier,
-        )
+        PhaseTitle(text = stringResource(title))
     }
     if (failed) {
         item(key = "terminal_failure", contentType = "header") {

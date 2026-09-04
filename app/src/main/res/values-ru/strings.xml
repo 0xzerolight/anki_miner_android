@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">Выберите аудиофайл (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Поле «Аудио» не сопоставлено: при майнинге аудио сохраняются только слова, чей файл содержит встроенную обложку.</string>
     <string name="expression_audio_field_unmapped_warning">Ни одно поле не сопоставлено с озвучкой слова. Сопоставьте поле «WordAudio», иначе карточки останутся без произношения.</string>
-    <string name="audio_pack_unusable_warning">Непригодный аудиопакет пропущен. Импортируйте заново в разделе Настройки → Аудио.</string>
+    <string name="audio_pack_unusable_warning">Непригодный аудиопакет пропущен. Импортируйте заново в разделе Настройки → Ресурсы.</string>
     <string name="subtitle_file_error">Доступ потерян. Выберите снова.</string>
     <string name="dismiss_error">Скрыть ошибку</string>
     <string name="start_mining">Майнить</string>
@@ -773,7 +773,7 @@
     <string name="notices_documents_heading">Включённые документы уведомлений</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Медиа</string>
-    <string name="b3_settings_category_dictionaries">Словари</string>
+    <string name="b3_settings_category_resources">Ресурсы</string>
     <string name="b3_settings_category_audio">Аудио</string>
     <string name="b3_settings_category_frequency">Частотность</string>
     <string name="b3_settings_category_filtering">Фильтрация</string>

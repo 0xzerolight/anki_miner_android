@@ -1,6 +1,9 @@
 package com.ankiminer.android.ui.settings
 
 import androidx.compose.material3.Text
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.assertIsDisplayed
@@ -12,6 +15,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -77,6 +81,52 @@ class CollapsibleSettingGroupTest {
 
         composeRule.onNodeWithText("Deck row").assertIsDisplayed()
         composeRule.onNodeWithText(summary).assertIsNotEnabled()
+        assertEquals(expandedLabel, stateDescriptionOfHeader())
+    }
+
+    @Test
+    fun hoistedStateDrivesVisibilityInsteadOfTheGroupsOwnState() {
+        var expanded by mutableStateOf(false)
+        composeRule.setContent {
+            AnkiMinerTheme {
+                CollapsibleSettingGroup(
+                    title = "Decks",
+                    selectedCount = 2,
+                    totalCount = 7,
+                    expanded = expanded,
+                    onExpandedChange = { expanded = it },
+                ) {
+                    Text("Deck row")
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Deck row").assertDoesNotExist()
+
+        composeRule.onNodeWithText(summary).performClick()
+        composeRule.waitForIdle()
+
+        assertTrue(expanded)
+        composeRule.onNodeWithText("Deck row").assertIsDisplayed()
+    }
+
+    @Test
+    fun hoistedStateOpensTheGroupWithoutAClick() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                CollapsibleSettingGroup(
+                    title = "Decks",
+                    selectedCount = 2,
+                    totalCount = 7,
+                    expanded = true,
+                    onExpandedChange = {},
+                ) {
+                    Text("Deck row")
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Deck row").assertIsDisplayed()
         assertEquals(expandedLabel, stateDescriptionOfHeader())
     }
 }

@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">Choisissez un fichier audio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Champ Audio non mappé : une extraction audio ne conserve que les mots dont le fichier contient une illustration intégrée.</string>
     <string name="expression_audio_field_unmapped_warning">Aucun champ n\'est mappé pour l\'audio du mot. Mappez « WordAudio », sinon les cartes n\'ont pas de prononciation.</string>
-    <string name="audio_pack_unusable_warning">Pack audio inutilisable ignoré. Réimportez-le dans Paramètres → Audio.</string>
+    <string name="audio_pack_unusable_warning">Pack audio inutilisable ignoré. Réimportez-le dans Paramètres → Ressources.</string>
     <string name="subtitle_file_error">Accès perdu. Choisissez de nouveau.</string>
     <string name="dismiss_error">Fermer l\'erreur</string>
     <string name="start_mining">Extraire</string>
@@ -772,7 +772,7 @@
     <string name="notices_documents_heading">Documents d\'avis inclus</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Média</string>
-    <string name="b3_settings_category_dictionaries">Dictionnaires</string>
+    <string name="b3_settings_category_resources">Ressources</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Fréquence</string>
     <string name="b3_settings_category_filtering">Filtrage</string>

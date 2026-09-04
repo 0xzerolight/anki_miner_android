@@ -46,7 +46,7 @@ class SettingsSearchIndexTest {
 
     @Test
     fun `custom dictionary search has no removed slot-picker detail`() {
-        val custom = SETTINGS_SEARCH_INDEX.single { it.id == "dictionaries.custom" }
+        val custom = SETTINGS_SEARCH_INDEX.single { it.id == "resources.dictionary_import" }
 
         assertEquals(null, custom.detail)
     }
@@ -82,7 +82,7 @@ class SettingsSearchIndexTest {
             ).map(SettingsSearchEntry::id)
 
         assertFalse("diagnostics.unidic" in unavailable)
-        assertFalse("dictionaries.lookup_test" in unavailable)
+        assertFalse("resources.lookup_test" in unavailable)
         assertFalse("ui.dynamic_color" in unavailable)
 
         val available =
@@ -97,7 +97,7 @@ class SettingsSearchIndexTest {
             ).map(SettingsSearchEntry::id)
 
         assertTrue("diagnostics.unidic" in available)
-        assertTrue("dictionaries.lookup_test" in available)
+        assertTrue("resources.lookup_test" in available)
         assertTrue("ui.dynamic_color" in available)
     }
 

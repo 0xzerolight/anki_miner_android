@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">请选择音频文件（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="audio_field_unmapped_warning">未映射音频字段：音频挖词只保留文件含内嵌封面的单词。</string>
     <string name="expression_audio_field_unmapped_warning">未映射单词音频字段。请映射“WordAudio”，否则卡片没有发音。</string>
-    <string name="audio_pack_unusable_warning">不可用的音频包已跳过。请在 设置 → 音频 中重新导入。</string>
+    <string name="audio_pack_unusable_warning">不可用的音频包已跳过。请在 设置 → 资源 中重新导入。</string>
     <string name="subtitle_file_error">访问已丢失。请重新选择。</string>
     <string name="dismiss_error">关闭错误</string>
     <string name="start_mining">挖词</string>
@@ -770,7 +770,7 @@
     <string name="notices_documents_heading">随附的声明文档</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">媒体</string>
-    <string name="b3_settings_category_dictionaries">词典</string>
+    <string name="b3_settings_category_resources">资源</string>
     <string name="b3_settings_category_audio">音频</string>
     <string name="b3_settings_category_frequency">词频</string>
     <string name="b3_settings_category_filtering">过滤</string>

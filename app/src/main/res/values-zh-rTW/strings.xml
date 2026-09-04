@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">選擇音訊檔案（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="audio_field_unmapped_warning">音訊欄位未對應：音訊採集僅保留檔案含內嵌封面圖片的單字。</string>
     <string name="expression_audio_field_unmapped_warning">未對應單字音訊欄位。請對應「WordAudio」，否則卡片沒有發音。</string>
-    <string name="audio_pack_unusable_warning">已略過無法使用的音訊包。請於 設定 → 音訊 重新匯入。</string>
+    <string name="audio_pack_unusable_warning">已略過無法使用的音訊包。請於 設定 → 資源 重新匯入。</string>
     <string name="subtitle_file_error">存取遺失。請重新選擇。</string>
     <string name="dismiss_error">關閉錯誤</string>
     <string name="start_mining">採集</string>
@@ -770,7 +770,7 @@
     <string name="notices_documents_heading">內含的聲明文件</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">媒體</string>
-    <string name="b3_settings_category_dictionaries">字典</string>
+    <string name="b3_settings_category_resources">資源</string>
     <string name="b3_settings_category_audio">音訊</string>
     <string name="b3_settings_category_frequency">頻率</string>
     <string name="b3_settings_category_filtering">篩選器</string>

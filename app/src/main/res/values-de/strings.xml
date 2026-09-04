@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">Wählen Sie eine Audiodatei (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Audiofeld nicht zugeordnet: Ein Audio-Durchlauf behält nur Wörter, deren Datei eingebettetes Coverbild enthält.</string>
     <string name="expression_audio_field_unmapped_warning">Kein Feld für Wort-Audio zugeordnet. Ordnen Sie „WordAudio“ zu, sonst erhalten Karten keine Aussprache.</string>
-    <string name="audio_pack_unusable_warning">Unbrauchbares Audiopaket übersprungen. Erneut importieren unter Einstellungen → Audio.</string>
+    <string name="audio_pack_unusable_warning">Unbrauchbares Audiopaket übersprungen. Erneut importieren unter Einstellungen → Ressourcen.</string>
     <string name="subtitle_file_error">Zugriff verloren. Erneut auswählen.</string>
     <string name="dismiss_error">Fehler schließen</string>
     <string name="start_mining">Sammeln</string>
@@ -771,7 +771,7 @@
     <string name="notices_documents_heading">Mitgelieferte Hinweis-Dokumente</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Medien</string>
-    <string name="b3_settings_category_dictionaries">Wörterbücher</string>
+    <string name="b3_settings_category_resources">Ressourcen</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Häufigkeit</string>
     <string name="b3_settings_category_filtering">Filterung</string>
