@@ -761,6 +761,8 @@
     <string name="source_notices_title">Quell- und Drittanbieterhinweise</string>
     <string name="source_open_notices">Drittanbieterhinweise anzeigen</string>
     <string name="source_open_repository">Quellcode-Repository öffnen</string>
+    <string name="community_star_project">⭐ Stern - unterstützen Sie das Projekt</string>
+    <string name="community_join_discord">Discord beitreten</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid ist nicht verfügbar. Lokale Wiederherstellungsdatensätze werden unten weiterhin aufgeführt.</string>
     <string name="anki_setup_runtime_busy">Schließen Sie den aktiven Mining- oder Ressourcenvorgang ab oder brechen Sie ihn ab, bevor Sie die Anki-Einrichtung ändern</string>
     <string name="anki_setup_failed">Die Anki-Einrichtung wurde nicht abgeschlossen. Prüfen Sie den Status und versuchen Sie es erneut.</string>

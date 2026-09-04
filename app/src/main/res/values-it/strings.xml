@@ -762,6 +762,8 @@
     <string name="source_notices_title">Note sul codice sorgente e su terze parti</string>
     <string name="source_open_notices">Visualizza note su terze parti</string>
     <string name="source_open_repository">Apri repository del codice sorgente</string>
+    <string name="community_star_project">⭐ Stella - aiuta il progetto</string>
+    <string name="community_join_discord">Unisciti a Discord</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid non è disponibile. I record locali di recupero restano elencati qui sotto.</string>
     <string name="anki_setup_runtime_busy">Termina o annulla il mining attivo o l\'operazione sulle risorse prima di modificare la configurazione di Anki</string>
     <string name="anki_setup_failed">La configurazione di Anki non è stata completata. Controlla lo stato e riprova.</string>

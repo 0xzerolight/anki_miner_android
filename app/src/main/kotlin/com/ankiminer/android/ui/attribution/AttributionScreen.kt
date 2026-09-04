@@ -26,6 +26,7 @@ import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.ResourceAttribution
+import com.ankiminer.android.ui.links.AppLinks
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SectionTitle
 
@@ -147,7 +148,7 @@ internal fun AttributionScreen(
                     Text(stringResource(R.string.privacy_local_processing))
                     Text(stringResource(R.string.privacy_network_processing))
                     Text(stringResource(R.string.privacy_retention))
-                    TextButton(onClick = { uriHandler.openUri(PRIVACY_POLICY_URL) }) {
+                    TextButton(onClick = { uriHandler.openUri(AppLinks.PRIVACY_POLICY) }) {
                         Text(stringResource(R.string.privacy_open_policy))
                     }
                 }
@@ -161,7 +162,7 @@ internal fun AttributionScreen(
                     TextButton(onClick = onOpenNotices) {
                         Text(stringResource(R.string.source_open_notices))
                     }
-                    TextButton(onClick = { uriHandler.openUri(SOURCE_URL) }) {
+                    TextButton(onClick = { uriHandler.openUri(AppLinks.REPOSITORY) }) {
                         Text(stringResource(R.string.source_open_repository))
                     }
                 }
@@ -321,5 +322,3 @@ private fun CardHeading(text: String) {
 }
 
 private const val SHIPPORI_URL = "https://fonts.google.com/specimen/Shippori+Mincho+B1"
-private const val SOURCE_URL = "https://github.com/0xzerolight/anki_miner_android"
-private const val PRIVACY_POLICY_URL = "$SOURCE_URL/blob/main/PRIVACY.md"

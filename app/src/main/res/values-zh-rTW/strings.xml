@@ -760,6 +760,8 @@
     <string name="source_notices_title">原始碼與第三方聲明</string>
     <string name="source_open_notices">檢視第三方聲明</string>
     <string name="source_open_repository">開啟原始碼儲存庫</string>
+    <string name="community_star_project">⭐ 加星——支持這個專案</string>
+    <string name="community_join_discord">加入 Discord</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid 無法使用。本機復原記錄仍列於下方。</string>
     <string name="anki_setup_runtime_busy">變更 Anki 設定前，請先完成或取消進行中的採集或資源作業</string>
     <string name="anki_setup_failed">Anki 設定未完成。請檢查狀態後再試一次。</string>

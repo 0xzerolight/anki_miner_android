@@ -763,6 +763,8 @@
     <string name="source_notices_title">ソースおよびサードパーティ通知</string>
     <string name="source_open_notices">サードパーティ通知を表示</string>
     <string name="source_open_repository">ソースリポジトリを開く</string>
+    <string name="community_star_project">⭐ スター - プロジェクトを応援</string>
+    <string name="community_join_discord">Discord に参加</string>
     <string name="anki_setup_provider_unavailable">AnkiDroidを利用できません。ローカルのリカバリ記録は以下に表示されています。</string>
     <string name="anki_setup_runtime_busy">Ankiのセットアップを変更する前に、実行中のマイニングまたはリソース操作を完了またはキャンセルしてください</string>
     <string name="anki_setup_failed">Ankiのセットアップが完了しませんでした。状態を確認してから再試行してください。</string>
