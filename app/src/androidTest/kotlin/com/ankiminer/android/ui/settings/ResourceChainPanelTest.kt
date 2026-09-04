@@ -1,11 +1,15 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredWidth
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -13,6 +17,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -206,7 +212,7 @@ class ResourceChainPanelTest {
         selectRow("alpha")
 
         composeRule.onNodeWithTag(ResourcePanelTestTags.toggle("alpha")).assertIsNotEnabled()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.quietAction("alpha")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.QUIET_ACTION).assertIsNotEnabled()
         composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("alpha")).assertIsNotEnabled()
         composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("beta")).assertIsNotEnabled()
         composeRule.onNodeWithTag(ResourcePanelTestTags.ADD).assertIsNotEnabled()
@@ -214,7 +220,7 @@ class ResourceChainPanelTest {
     }
 
     @Test
-    fun quietActionRendersAndFires() {
+    fun quietActionRendersInTheToolbarOnlyForTheSelectedRow() {
         var repaired = 0
         setPanel(
             listOf(
@@ -227,9 +233,38 @@ class ResourceChainPanelTest {
             ),
         )
 
-        composeRule.onNodeWithTag(ResourcePanelTestTags.quietAction("alpha")).performClick()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.QUIET_ACTION).assertDoesNotExist()
+
+        selectRow("alpha")
+        composeRule.onNodeWithTag(ResourcePanelTestTags.QUIET_ACTION).performClick()
 
         assertEquals(1, repaired)
+    }
+
+    /**
+     * The reason the action sits in the toolbar. On the CI emulator's 320dp screen a button beside
+     * the title left it around 40dp - three characters before the ellipsis - because the title
+     * column is the row's only flexible child.
+     */
+    @Test
+    fun theSelectedRowKeepsItsTitleWidthOnANarrowScreen() {
+        val title = "A dictionary whose name is far too long for a phone row"
+        setPanel(
+            listOf(
+                resourceRow(
+                    id = "alpha",
+                    title = title,
+                    quietAction = ResourcePanelAction("Replace\u2026") {},
+                ),
+            ),
+            width = 320.dp,
+        )
+
+        selectRow("alpha")
+
+        composeRule
+            .onNodeWithText(title, useUnmergedTree = true)
+            .assertWidthIsAtLeast(100.dp)
     }
 
     /**
@@ -264,26 +299,30 @@ class ResourceChainPanelTest {
         quietAction = quietAction,
     )
 
+    /** [width] pins the surface; null lets the panel take whatever the test device offers. */
     private fun setPanel(
         rows: List<ResourceRowSpec>,
         addMenu: List<ResourcePanelAction> = emptyList(),
         onMove: (String, Int) -> Unit = { _, _ -> },
         onRemove: (String) -> Unit = {},
         busy: Boolean = false,
+        width: Dp? = null,
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
-                ResourceChainPanel(
-                    heading = "Dictionary priority",
-                    explanation = "Higher sources win when several define the same word.",
-                    rows = rows,
-                    emptyMessage = "No sources are installed.",
-                    onMove = onMove,
-                    onRemove = onRemove,
-                    addPrimary = ResourcePanelAction("Add") {},
-                    addMenu = addMenu,
-                    busy = busy,
-                )
+                Box(if (width == null) Modifier else Modifier.requiredWidth(width)) {
+                    ResourceChainPanel(
+                        heading = "Dictionary priority",
+                        explanation = "Higher sources win when several define the same word.",
+                        rows = rows,
+                        emptyMessage = "No sources are installed.",
+                        onMove = onMove,
+                        onRemove = onRemove,
+                        addPrimary = ResourcePanelAction("Add") {},
+                        addMenu = addMenu,
+                        busy = busy,
+                    )
+                }
             }
         }
     }
