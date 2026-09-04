@@ -771,6 +771,8 @@
     <string name="source_notices_title">Source and third-party notices</string>
     <string name="source_open_notices">View third-party notices</string>
     <string name="source_open_repository">Open source repository</string>
+    <string name="community_star_project">⭐ Star - help the project</string>
+    <string name="community_join_discord">Join Discord</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid is unavailable. Local recovery records remain listed below.</string>
     <string name="anki_setup_runtime_busy">Finish or cancel the active mining or resource operation before changing Anki setup</string>
     <string name="anki_setup_failed">Anki setup did not complete. Review the status and try again.</string>

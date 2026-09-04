@@ -760,6 +760,8 @@
     <string name="source_notices_title">Thông báo nguồn và bên thứ ba</string>
     <string name="source_open_notices">Xem thông báo bên thứ ba</string>
     <string name="source_open_repository">Mở kho mã nguồn</string>
+    <string name="community_star_project">⭐ Gắn sao - hỗ trợ dự án</string>
+    <string name="community_join_discord">Tham gia Discord</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid không khả dụng. Các bản ghi khôi phục cục bộ vẫn được liệt kê bên dưới.</string>
     <string name="anki_setup_runtime_busy">Hoàn tất hoặc hủy thao tác khai thác hoặc tài nguyên đang hoạt động trước khi thay đổi thiết lập Anki</string>
     <string name="anki_setup_failed">Thiết lập Anki chưa hoàn tất. Hãy xem trạng thái và thử lại.</string>

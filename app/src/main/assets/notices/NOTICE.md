@@ -16,6 +16,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 | Fugashi/libmecab tokenizer wheels | `tools/wheels/sources.lock` and verified publication manifest | Publication verifier records and checks the packaged license files |
 | Kotlin and Android runtime dependencies | `third_party/s2-runtime-dependencies/manifest.json` and `NOTICE.md` | Complete locked runtime inventory, predominantly Apache-2.0, with Jackson's bundled notices recorded separately |
 | Unicode data | `tools/anki-contract/unicode/15.1.0/` | Unicode data license in that directory |
+| Discord mark | `app/src/main/res/drawable/ic_discord.xml` | Simple Icons geometry, CC0-1.0; "Discord" and the Discord logo are trademarks of Discord Inc., bundled solely to link to the community server |
 
 ## Downloaded language resources
 
