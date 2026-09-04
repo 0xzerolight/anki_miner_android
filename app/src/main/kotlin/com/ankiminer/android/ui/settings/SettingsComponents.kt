@@ -119,7 +119,9 @@ internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
  * (issue #9). The header carries the selected/total counts so the group still says what it holds
  * while closed.
  *
- * The state lives here rather than in the caller because every caller wants the same thing.
+ * The state lives here rather than in the caller unless [expanded] is passed: the resource panels
+ * hoist it, because a failure deep link and a settings-search hit both have to open the card they
+ * scroll to, and a group that owns its state cannot be told to open.
  * [forceOpen] is for the one case that must not hide — an empty or invalid list whose only
  * explanation is inside [content] — and it locks the header open, matching the field mapper.
  */
@@ -130,14 +132,20 @@ internal fun CollapsibleSettingGroup(
     totalCount: Int,
     forceOpen: Boolean = false,
     titleStyle: TextStyle = MaterialTheme.typography.titleSmall,
+    expanded: Boolean? = null,
+    onExpandedChange: (Boolean) -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     val expandedLabel = stringResource(R.string.disclosure_expanded)
     val collapsedLabel = stringResource(R.string.disclosure_collapsed)
-    var expanded by rememberSaveable { mutableStateOf(false) }
-    val showContent = expanded || forceOpen
+    var ownExpanded by rememberSaveable { mutableStateOf(false) }
+    val isExpanded = expanded ?: ownExpanded
+    val showContent = isExpanded || forceOpen
     TextButton(
-        onClick = { expanded = !expanded },
+        onClick = {
+            val next = !isExpanded
+            if (expanded == null) ownExpanded = next else onExpandedChange(next)
+        },
         enabled = !forceOpen,
         modifier =
             Modifier

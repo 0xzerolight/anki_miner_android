@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">音声ファイルを選択してください（m4b、mp3、m4a、aac、ogg、opus、flac、wav）。</string>
     <string name="audio_field_unmapped_warning">音声フィールド未対応付け:音声実行では、埋め込みカバーアートのあるファイルの単語のみ保持されます。</string>
     <string name="expression_audio_field_unmapped_warning">単語音声用のフィールドが対応付けられていません。「WordAudio」を対応付けないとカードに発音が付きません。</string>
-    <string name="audio_pack_unusable_warning">使用できない音声パックをスキップしました。設定 → 音声 から再インポートしてください。</string>
+    <string name="audio_pack_unusable_warning">使用できない音声パックをスキップしました。設定 → リソース から再インポートしてください。</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
     <string name="dismiss_error">エラーを閉じる</string>
     <string name="start_mining">マイニング</string>
@@ -773,7 +773,7 @@
     <!-- Batch 3: Settings and wizard -->
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">メディア</string>
-    <string name="b3_settings_category_dictionaries">辞書</string>
+    <string name="b3_settings_category_resources">リソース</string>
     <string name="b3_settings_category_audio">音声</string>
     <string name="b3_settings_category_frequency">頻度</string>
     <string name="b3_settings_category_filtering">フィルター</string>

@@ -116,7 +116,7 @@ internal data class ResourcePanelAction(
  */
 @Composable
 internal fun ResourceChainPanel(
-    heading: String,
+    heading: String?,
     explanation: String,
     rows: List<ResourceRowSpec>,
     emptyMessage: String,
@@ -146,11 +146,14 @@ internal fun ResourceChainPanel(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
-        Text(
-            text = heading,
-            modifier = Modifier.semantics { heading() },
-            style = MaterialTheme.typography.titleMedium,
-        )
+        // Null when a disclosure header above the panel already carries the title and the counts.
+        if (heading != null) {
+            Text(
+                text = heading,
+                modifier = Modifier.semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+            )
+        }
         Text(
             text = explanation,
             style = MaterialTheme.typography.bodySmall,

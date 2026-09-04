@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">Pilih berkas audio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Bidang audio tidak dipetakan: proses audio hanya mempertahankan kata yang berkasnya memiliki sampul tertanam.</string>
     <string name="expression_audio_field_unmapped_warning">Tidak ada bidang yang dipetakan untuk audio kata. Petakan “WordAudio” atau kartu tidak mendapat pelafalan.</string>
-    <string name="audio_pack_unusable_warning">Paket audio yang tidak dapat digunakan dilewati. Impor ulang di Pengaturan → Audio.</string>
+    <string name="audio_pack_unusable_warning">Paket audio yang tidak dapat digunakan dilewati. Impor ulang di Pengaturan → Sumber daya.</string>
     <string name="subtitle_file_error">Akses hilang. Pilih lagi.</string>
     <string name="dismiss_error">Tutup kesalahan</string>
     <string name="start_mining">Mining</string>
@@ -768,7 +768,7 @@
     <string name="notices_documents_heading">Dokumen pemberitahuan yang dibundel</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Media</string>
-    <string name="b3_settings_category_dictionaries">Kamus</string>
+    <string name="b3_settings_category_resources">Sumber daya</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frekuensi</string>
     <string name="b3_settings_category_filtering">Pemfilteran</string>

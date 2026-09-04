@@ -84,11 +84,11 @@ private fun externalSettingsTargetCardKey(
 ): String? =
     when (category to itemIndex) {
         SettingsCategory.ANKI to 3 -> "anki-target"
-        SettingsCategory.DICTIONARIES to 2 -> "dictionary-sources"
-        SettingsCategory.DICTIONARIES to 3 -> "pitch-sources"
-        SettingsCategory.DICTIONARIES to 4 -> "dictionary-lookup"
-        SettingsCategory.AUDIO to 2 -> "audio-sources"
-        SettingsCategory.FREQUENCY to 2 -> "frequency-sources"
+        SettingsCategory.RESOURCES to 2 -> "dictionary-sources"
+        SettingsCategory.RESOURCES to 3 -> "pitch-sources"
+        SettingsCategory.RESOURCES to 4 -> "audio-sources"
+        SettingsCategory.RESOURCES to 5 -> "frequency-sources"
+        SettingsCategory.RESOURCES to 6 -> "dictionary-lookup"
         SettingsCategory.FILTERING to 3 -> "known-words-import"
         SettingsCategory.FILTERING to 4 -> "word-lists"
         SettingsCategory.DIAGNOSTICS to 3 -> "unidic"
@@ -447,6 +447,7 @@ private fun SettingsScreen(
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
     val listStates = rememberSettingsCategoryListStates()
     val cardIndexRecorder = remember { SettingsCardIndexRecorder() }
+    val panelExpansion = rememberSettingsPanelExpansion()
     val breadcrumbs = SettingsCategory.entries.associateWith { stringResource(it.label) }
     val resolvedEntries =
         availableSettingsSearchEntries(
@@ -485,6 +486,9 @@ private fun SettingsScreen(
         // destination card only after the query-cleared layout replaces the search results.
         cardIndexRecorder.begin(jump.category)
         selectedCategory = jump.category
+        // Open the destination before scrolling: the resource panels are closed by default, and a
+        // deep link that lands on a closed card has taken the user nowhere.
+        jump.targetCardKey?.let(panelExpansion::expand)
         searchQuery = jump.searchQuery
         val recordedTargetIndex =
             jump.targetCardKey?.let { cardKey ->
@@ -569,6 +573,7 @@ private fun SettingsScreen(
             listStates = listStates,
             onSelectedCategory = { selectedCategory = it },
             onClearQuery = { searchQuery = "" },
+            onExpandCard = panelExpansion::expand,
         ) { onResultChosen ->
             SettingsCategoryLayout(
                 selectedCategory = selectedCategory,
@@ -612,7 +617,10 @@ private fun SettingsScreen(
                                     selectedCategory = SettingsCategory.ANKI
                                 },
                                 onImportDictionary = {
-                                    selectedCategory = SettingsCategory.DICTIONARIES
+                                    selectedCategory = SettingsCategory.RESOURCES
+                                    // Straight to the panel that holds the importer; the tab
+                                    // otherwise opens on four closed rows.
+                                    panelExpansion.expand("dictionary-sources")
                                 },
                                 inlineFailure = {},
                             )
@@ -674,6 +682,7 @@ private fun SettingsScreen(
                     diagnostics = diagnostics,
                     diagnosticsExport = diagnosticsExport,
                     recorder = cardIndexRecorder,
+                    expansion = panelExpansion,
                     callbacks = callbacks,
                 )
             }
@@ -688,6 +697,7 @@ internal fun SettingsSearchJumpHandler(
     listStates: Map<SettingsCategory, LazyListState>,
     onSelectedCategory: (SettingsCategory) -> Unit,
     onClearQuery: () -> Unit,
+    onExpandCard: (String) -> Unit = {},
     onJumpIndexResolved: (Int?) -> Unit = {},
     content: @Composable ((ResolvedSettingsEntry) -> Unit) -> Unit,
 ) {
@@ -704,6 +714,8 @@ internal fun SettingsSearchJumpHandler(
         // flow below can only resume from the destination's new layout pass.
         recorder.begin(entry.category)
         onSelectedCategory(entry.category)
+        // A search hit on a closed resource panel has to open it, not just scroll to its header.
+        onExpandCard(entry.cardKey)
         onClearQuery()
         // The lazy content lambda runs during layout, which can be after this effect starts, so
         // wait for the index rather than reading it once and giving up.

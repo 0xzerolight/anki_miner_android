@@ -19,10 +19,14 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
         SettingsCategory.ANKI to
             setOf("anki-deck-options", "anki-target", "anki-operation"),
         SettingsCategory.MEDIA to setOf("media-options", "subtitle-text"),
-        SettingsCategory.DICTIONARIES to
-            setOf("dictionary-sources", "pitch-sources", "dictionary-lookup"),
-        SettingsCategory.AUDIO to setOf("audio-sources"),
-        SettingsCategory.FREQUENCY to setOf("frequency-sources"),
+        SettingsCategory.RESOURCES to
+            setOf(
+                "dictionary-sources",
+                "pitch-sources",
+                "audio-sources",
+                "frequency-sources",
+                "dictionary-lookup",
+            ),
         SettingsCategory.FILTERING to
             setOf(
                 "filtering-options",
@@ -141,84 +145,84 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         // The recommended set is installed from the panel's Add menu, so searching for it has to
         // land on that panel rather than on a card of its own.
         entry(
-            "dictionaries.recommended",
-            SettingsCategory.DICTIONARIES,
+            "resources.recommended",
+            SettingsCategory.RESOURCES,
             "dictionary-sources",
             R.string.recommended_resources_title,
             R.string.recommended_resources_description,
         ),
         entry(
-            "dictionaries.jmdict",
-            SettingsCategory.DICTIONARIES,
+            "resources.jmdict",
+            SettingsCategory.RESOURCES,
             "dictionary-sources",
             R.string.jmdict_resource_title,
             R.string.jmdict_resource_description,
         ),
         entry(
-            "dictionaries.custom",
-            SettingsCategory.DICTIONARIES,
+            "resources.dictionary_import",
+            SettingsCategory.RESOURCES,
             "dictionary-sources",
             R.string.resource_panel_import_yomitan_zip,
         ),
         entry(
-            "dictionaries.pitch_import",
-            SettingsCategory.DICTIONARIES,
+            "resources.pitch_import",
+            SettingsCategory.RESOURCES,
             "pitch-sources",
             R.string.resource_panel_add_pitch,
         ),
         entry(
-            "dictionaries.chain",
-            SettingsCategory.DICTIONARIES,
+            "resources.dictionary_chain",
+            SettingsCategory.RESOURCES,
             "dictionary-sources",
             R.string.resource_panel_dictionaries_heading,
         ),
         entry(
-            "dictionaries.jisho",
-            SettingsCategory.DICTIONARIES,
+            "resources.jisho",
+            SettingsCategory.RESOURCES,
             "dictionary-sources",
             R.string.settings_jisho,
             R.string.settings_jisho_disclosure,
         ),
         entry(
-            "dictionaries.pitch_chain",
-            SettingsCategory.DICTIONARIES,
+            "resources.pitch_chain",
+            SettingsCategory.RESOURCES,
             "pitch-sources",
             R.string.resource_panel_pitch_heading,
         ),
         entry(
-            "dictionaries.pitch_format",
-            SettingsCategory.DICTIONARIES,
+            "resources.pitch_format",
+            SettingsCategory.RESOURCES,
             "pitch-sources",
             R.string.settings_pitch_format,
         ),
         entry(
-            "dictionaries.lookup_test",
-            SettingsCategory.DICTIONARIES,
+            "resources.lookup_test",
+            SettingsCategory.RESOURCES,
             "dictionary-lookup",
             R.string.dictionary_test_title,
         ),
 
-        // Audio
-        entry("audio.pack_chain", SettingsCategory.AUDIO, "audio-sources", R.string.resource_panel_audio_heading),
-        entry("audio.pack_import", SettingsCategory.AUDIO, "audio-sources", R.string.resource_panel_add_audio),
+        // Audio packs
+        entry("resources.audio_chain", SettingsCategory.RESOURCES, "audio-sources", R.string.resource_panel_audio_heading),
+        entry("resources.audio_import", SettingsCategory.RESOURCES, "audio-sources", R.string.resource_panel_add_audio),
         entry(
-            "audio.reading_tts",
-            SettingsCategory.AUDIO,
+            "resources.reading_tts",
+            SettingsCategory.RESOURCES,
             "audio-sources",
             R.string.settings_reading_tts,
             R.string.settings_reading_audio,
         ),
 
-        // Frequency
+        // Frequency lists
         entry(
-            "frequency.chain",
-            SettingsCategory.FREQUENCY,
+            "resources.frequency_chain",
+            SettingsCategory.RESOURCES,
             "frequency-sources",
             R.string.resource_panel_frequency_heading,
         ),
         entry(
-            "frequency.import",
-            SettingsCategory.FREQUENCY,
+            "resources.frequency_import",
+            SettingsCategory.RESOURCES,
             "frequency-sources",
             R.string.resource_panel_add_frequency,
         ),
@@ -368,7 +372,7 @@ internal fun availableSettingsSearchEntries(
 ): List<SettingsSearchEntry> =
     entries.filter { entry ->
         when (entry.id) {
-            "dictionaries.lookup_test" -> setup.dictionaries.any { it.isUsable }
+            "resources.lookup_test" -> setup.dictionaries.any { it.isUsable }
             "diagnostics.unidic" ->
                 !setup.uniDicInstalled ||
                     setup.failure?.origin == ResourceFailureOrigin.UNIDIC

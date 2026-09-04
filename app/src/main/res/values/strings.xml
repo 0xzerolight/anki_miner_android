@@ -76,7 +76,7 @@
     <string name="audio_selection_error_type">Pick an audio file (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Audio field not mapped: an audio run keeps only words whose file has embedded cover art.</string>
     <string name="expression_audio_field_unmapped_warning">No field is mapped for word audio. Map “WordAudio” or cards get no pronunciation.</string>
-    <string name="audio_pack_unusable_warning">Unusable audio pack skipped. Re-import under Settings → Audio.</string>
+    <string name="audio_pack_unusable_warning">Unusable audio pack skipped. Re-import under Settings → Resources.</string>
     <string name="subtitle_file_error">Access lost. Choose again.</string>
     <string name="dismiss_error">Dismiss error</string>
     <string name="start_mining">Mine</string>
@@ -781,7 +781,7 @@
     <!-- Batch 3: Settings and wizard -->
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Media</string>
-    <string name="b3_settings_category_dictionaries">Dictionaries</string>
+    <string name="b3_settings_category_resources">Resources</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frequency</string>
     <string name="b3_settings_category_filtering">Filtering</string>

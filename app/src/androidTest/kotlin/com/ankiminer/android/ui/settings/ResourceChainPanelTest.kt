@@ -277,6 +277,18 @@ class ResourceChainPanelTest {
         }
     }
 
+    @Test
+    fun aNullHeadingLeavesTheRestOfThePanelIntact() {
+        setPanel(chain, heading = null)
+
+        composeRule.onNodeWithText("Dictionary priority").assertDoesNotExist()
+        composeRule
+            .onNodeWithText("Higher sources win when several define the same word.")
+            .assertIsDisplayed()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.row("alpha")).assertIsDisplayed()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.ADD).assertIsEnabled()
+    }
+
     private fun resourceRow(
         id: String,
         title: String,
@@ -306,13 +318,14 @@ class ResourceChainPanelTest {
         onMove: (String, Int) -> Unit = { _, _ -> },
         onRemove: (String) -> Unit = {},
         busy: Boolean = false,
+        heading: String? = "Dictionary priority",
         width: Dp? = null,
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
                 Box(if (width == null) Modifier else Modifier.requiredWidth(width)) {
                     ResourceChainPanel(
-                        heading = "Dictionary priority",
+                        heading = heading,
                         explanation = "Higher sources win when several define the same word.",
                         rows = rows,
                         emptyMessage = "No sources are installed.",
