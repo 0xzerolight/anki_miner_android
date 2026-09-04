@@ -305,7 +305,7 @@ internal fun AnkiMinerAppShell(
             modifier = if (overlay == null) Modifier else Modifier.inertBehindOverlay(),
             topBar = {
                 // Tab destinations carry no bar: its title only repeated the highlighted tab,
-                // and every mining phase keeps its own focused heading as the TalkBack anchor.
+                // and each mining phase announces itself through its own paneTitle.
                 currentDestination
                     ?.takeUnless { it.showsBottomBar }
                     ?.let { destination ->

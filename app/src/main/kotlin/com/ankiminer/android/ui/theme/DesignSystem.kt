@@ -176,9 +176,8 @@ internal fun ScreenTitle(
 }
 
 /**
- * Heading for a mining phase. Replaces six copies of `headlineMedium` overridden inline to Bold,
- * which both fought the type scale and set the phase above the app bar that already names the
- * screen.
+ * Heading for a run's outcome. The only remaining phase heading: setup, progress and curation all
+ * name themselves through their own content, and `paneTitle` carries the phase for TalkBack.
  */
 @Composable
 internal fun PhaseTitle(

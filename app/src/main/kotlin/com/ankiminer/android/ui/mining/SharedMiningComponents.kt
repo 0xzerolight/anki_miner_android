@@ -84,7 +84,6 @@ import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.launch
 
 internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
-internal const val MINING_PHASE_HEADING_TEST_TAG = "mining_phase_heading"
 
 /**
  * Referential animation target. Same-phase state changes update live content without making the
