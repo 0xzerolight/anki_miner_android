@@ -68,7 +68,6 @@ import com.ankiminer.android.ui.settings.DictionaryHtml
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ChevronGlyph
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
-import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.selectedRowContainer
 
@@ -94,17 +93,14 @@ private fun CurationSort.label(): Int =
     }
 
 /**
- * Fixed chrome above the candidate list: what phase this is, how much is selected, and every
- * control that acts on the projection.
+ * Fixed chrome above the candidate list: how much is selected, and every control that acts on the
+ * projection.
  *
  * It is pinned rather than scrolled because all of it stays relevant for the whole page. As list
- * items, the heading and the search field left the screen after two flicks, and the focused
- * heading — the accessibility anchor for the phase — was disposed along with them.
+ * items, the count and the search field left the screen after two flicks.
  */
 @Composable
 internal fun CurationChrome(
-    title: String,
-    headingModifier: Modifier,
     selectedCount: Int,
     candidateCount: Int,
     page: CurationPage?,
@@ -134,7 +130,6 @@ internal fun CurationChrome(
             horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PhaseTitle(title, headingModifier.weight(1f))
             Text(
                 text =
                     stringResource(
@@ -146,7 +141,10 @@ internal fun CurationChrome(
                         selectedCount,
                         candidateCount,
                     ),
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.labelLarge,
             )
             val toggleDescription =

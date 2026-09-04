@@ -18,7 +18,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasNoClickAction
@@ -68,7 +67,6 @@ import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
-import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -1843,11 +1841,19 @@ class VideoMiningScreenTest {
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion),
             ).assertCountEquals(1)
         composeRule.onNodeWithText("47 of 100 · 47%").assertExists()
-        composeRule.onNodeWithText("Mining in progress").assertExists()
+        composeRule.onNodeWithText("Mining in progress").assertDoesNotExist()
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.PaneTitle,
+                    "Mining in progress",
+                ),
+                useUnmergedTree = true,
+            ).assertCountEquals(1)
     }
 
     @Test
-    fun curationExposesPaneFocusedHeadingAndOneSelectionAnnouncement() {
+    fun curationExposesPaneTitleAndOneSelectionAnnouncement() {
         val request = request()
         setScreen(
             state =
@@ -1865,12 +1871,7 @@ class VideoMiningScreenTest {
                 ),
                 useUnmergedTree = true,
             ).assertCountEquals(1)
-        composeRule
-            .onNodeWithTag(MINING_PHASE_HEADING_TEST_TAG, useUnmergedTree = true)
-            .assertIsFocused()
-            .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
-            )
+        composeRule.onNodeWithText("Word Curation").assertDoesNotExist()
         composeRule
             .onAllNodes(
                 SemanticsMatcher.expectValue(
@@ -1882,7 +1883,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun pageAndFailureTransitionsResetDeepScrollToTheHeading() {
+    fun pageAndFailureTransitionsResetDeepScrollToTheTopOfTheList() {
         val candidates =
             (0 until 100).map { index ->
                 candidate(
@@ -1929,7 +1930,9 @@ class VideoMiningScreenTest {
         }
         composeRule.waitForIdle()
         composeRule.runOnIdle { assertEquals(0, listState.firstVisibleItemIndex) }
-        composeRule.onNodeWithText("Word Curation").assertIsDisplayed()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidate(candidates.first().candidateId))
+            .assertIsDisplayed()
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)

@@ -15,7 +15,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasNoClickAction
@@ -48,7 +47,6 @@ import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.CurationPageImageTestTags
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
-import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import java.io.ByteArrayOutputStream
@@ -808,7 +806,7 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun readingCurationExposesPaneFocusedHeadingAndOneSelectionAnnouncement() {
+    fun readingCurationExposesPaneTitleAndOneSelectionAnnouncement() {
         val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
@@ -826,12 +824,7 @@ class ReadingMiningScreenTest {
                 ),
                 useUnmergedTree = true,
             ).assertCountEquals(1)
-        composeRule
-            .onNodeWithTag(MINING_PHASE_HEADING_TEST_TAG, useUnmergedTree = true)
-            .assertIsFocused()
-            .assert(
-                SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
-            )
+        composeRule.onNodeWithText("Word Curation").assertDoesNotExist()
         composeRule
             .onAllNodes(
                 SemanticsMatcher.expectValue(

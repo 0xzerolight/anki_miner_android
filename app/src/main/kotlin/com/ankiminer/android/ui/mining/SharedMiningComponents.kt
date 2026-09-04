@@ -76,7 +76,6 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.MetricTile
-import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.actionBorder
@@ -85,7 +84,6 @@ import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.launch
 
 internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
-internal const val MINING_PHASE_HEADING_TEST_TAG = "mining_phase_heading"
 
 /**
  * Referential animation target. Same-phase state changes update live content without making the
@@ -167,8 +165,6 @@ internal fun MiningProgressPanel(
     progress: MiningProgress?,
     testTag: String,
     modifier: Modifier = Modifier,
-    headingModifier: Modifier = Modifier,
-    @StringRes title: Int = R.string.running_title,
 ) {
     val fraction = progress?.fraction?.coerceIn(0f, 1f)
     val animatedFraction by
@@ -197,10 +193,6 @@ internal fun MiningProgressPanel(
                 .testTag(testTag),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
     ) {
-        PhaseTitle(
-            text = stringResource(title),
-            modifier = headingModifier,
-        )
         Text(
             text = stage,
             modifier =
