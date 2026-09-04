@@ -84,6 +84,7 @@ import com.ankiminer.android.ui.settings.SettingTextField
 import com.ankiminer.android.ui.settings.SettingsCardIndexRecorder
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsCategoryLayout
+import com.ankiminer.android.ui.settings.SettingsPanelExpansion
 import com.ankiminer.android.ui.settings.SettingsScreenCallbacks
 import com.ankiminer.android.ui.settings.SettingsSection
 import com.ankiminer.android.ui.settings.dictionaryPanelRows
@@ -554,7 +555,7 @@ internal fun UiAuditSettingsFixture(
             SettingsAuditState.ANKI -> SettingsCategory.ANKI
             SettingsAuditState.RESOURCES,
             SettingsAuditState.ERROR_SNACKBAR,
-            -> SettingsCategory.DICTIONARIES
+            -> SettingsCategory.RESOURCES
             SettingsAuditState.MEDIA -> SettingsCategory.MEDIA
         }
     val recorder = remember { SettingsCardIndexRecorder() }
@@ -583,7 +584,7 @@ internal fun UiAuditSettingsFixture(
                 }
             SettingsCategory.ANKI ->
                 settingsCard(selected, recorder, "audit-anki") { SettingsAnkiFixture(setup) }
-            SettingsCategory.DICTIONARIES ->
+            SettingsCategory.RESOURCES ->
                 settingsCard(selected, recorder, "audit-resources") {
                     SettingsResourcesFixture(setup)
                 }
@@ -682,6 +683,17 @@ internal fun UiAuditFullSettingsFixture(
             onCheckForUpdates = {},
             onSkipUpdate = {},
         )
+    val auditPanelExpansion =
+        remember {
+            SettingsPanelExpansion(
+                listOf(
+                    "dictionary-sources",
+                    "pitch-sources",
+                    "audio-sources",
+                    "frequency-sources",
+                ),
+            )
+        }
     SettingsCategoryLayout(
         selectedCategory = selectedCategory,
         onSelectedCategory = {},
@@ -703,6 +715,9 @@ internal fun UiAuditFullSettingsFixture(
                 ),
             diagnosticsExport = DiagnosticsExportState.Idle,
             recorder = recorder,
+            // Open, not closed: the jank flow and the screenshot matrix exist to measure these
+            // panels, and a fixture that arrives collapsed would stop exercising them.
+            expansion = auditPanelExpansion,
             callbacks = callbacks,
         )
     }

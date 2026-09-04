@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">Chọn tệp âm thanh (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Trường Audio chưa được ánh xạ: khai thác âm thanh chỉ giữ từ có tệp chứa ảnh bìa nhúng.</string>
     <string name="expression_audio_field_unmapped_warning">Chưa có trường nào được gán cho âm thanh của từ. Gán trường “WordAudio” nếu không thẻ sẽ không có phát âm.</string>
-    <string name="audio_pack_unusable_warning">Gói âm thanh không dùng được, đã bỏ qua. Nhập lại trong Cài đặt → Âm thanh.</string>
+    <string name="audio_pack_unusable_warning">Gói âm thanh không dùng được, đã bỏ qua. Nhập lại trong Cài đặt → Tài nguyên.</string>
     <string name="subtitle_file_error">Mất quyền truy cập. Hãy chọn lại.</string>
     <string name="dismiss_error">Đóng</string>
     <string name="start_mining">Khai thác</string>
@@ -768,7 +768,7 @@
     <string name="notices_documents_heading">Tài liệu thông báo đi kèm</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Phương tiện</string>
-    <string name="b3_settings_category_dictionaries">Từ điển</string>
+    <string name="b3_settings_category_resources">Tài nguyên</string>
     <string name="b3_settings_category_audio">Âm thanh</string>
     <string name="b3_settings_category_frequency">Tần suất</string>
     <string name="b3_settings_category_filtering">Bộ lọc</string>

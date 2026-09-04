@@ -69,7 +69,7 @@
     <string name="audio_selection_error_type">Scegli un file audio (m4b, mp3, m4a, aac, ogg, opus, flac, wav).</string>
     <string name="audio_field_unmapped_warning">Campo Audio non mappato: un\'esecuzione audio conserva solo le parole il cui file ha una copertina incorporata.</string>
     <string name="expression_audio_field_unmapped_warning">Nessun campo è associato all\'audio della parola. Associa un campo “WordAudio” o le carte non avranno pronuncia.</string>
-    <string name="audio_pack_unusable_warning">Pacchetto audio inutilizzabile saltato. Reimportalo in Impostazioni → Audio.</string>
+    <string name="audio_pack_unusable_warning">Pacchetto audio inutilizzabile saltato. Reimportalo in Impostazioni → Risorse.</string>
     <string name="subtitle_file_error">Accesso perso. Scegli di nuovo.</string>
     <string name="dismiss_error">Ignora errore</string>
     <string name="start_mining">Estrai</string>
@@ -770,7 +770,7 @@
     <string name="notices_documents_heading">Documenti delle note inclusi</string>
     <string name="b3_settings_category_anki">Anki</string>
     <string name="b3_settings_category_media">Contenuti multimediali</string>
-    <string name="b3_settings_category_dictionaries">Dizionari</string>
+    <string name="b3_settings_category_resources">Risorse</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frequenza</string>
     <string name="b3_settings_category_filtering">Filtri</string>

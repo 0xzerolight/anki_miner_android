@@ -79,14 +79,14 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 
 | Type | Resource | Download | Add via |
 |------|----------|----------|---------|
-| Dictionary | [JMdict](https://github.com/yomidevs/jmdict-yomitan) | [Yomitan zip](https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/JMdict_english.zip) | Onboarding wizard, or Settings -> Dictionaries |
-| Dictionary | [Jitendex](https://jitendex.org/) | [Yomitan zip](https://github.com/stephenmk/stephenmk.github.io/releases/latest/download/jitendex-yomitan.zip) | Onboarding wizard, or Settings -> Dictionaries |
-| Dictionary | [Bee's Character Dictionary](https://characterdictionary.tokyo/) | Generated on site | Settings -> Dictionaries |
-| Pitch | [Kanjium](https://github.com/mifunetoshiro/kanjium) | [TSV](https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt) | Settings -> Dictionaries -> Pitch Accent File |
-| Pitch | [アクセント辞典v2](https://learnjapanese.moe/yomichan/#dictionaries) | [Drive](https://drive.google.com/drive/folders/1tTdLppnqMfVC5otPlX_cs4ixlIgjv_lH) | Settings -> Dictionaries -> Pitch Accent File |
-| Frequency | [JPDB v2.2 Kana](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip) | Settings -> Filtering -> Frequency List File |
-| Frequency | [BCCWJ SUW+LUW](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/BCCWJ_SUW_LUW_combined.zip) | Settings -> Filtering -> Frequency List File |
-| Word audio | [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) | Collection torrent or generated `android.db` | Settings -> Audio |
+| Dictionary | [JMdict](https://github.com/yomidevs/jmdict-yomitan) | [Yomitan zip](https://github.com/yomidevs/jmdict-yomitan/releases/latest/download/JMdict_english.zip) | Onboarding wizard, or Settings -> Resources |
+| Dictionary | [Jitendex](https://jitendex.org/) | [Yomitan zip](https://github.com/stephenmk/stephenmk.github.io/releases/latest/download/jitendex-yomitan.zip) | Onboarding wizard, or Settings -> Resources |
+| Dictionary | [Bee's Character Dictionary](https://characterdictionary.tokyo/) | Generated on site | Settings -> Resources |
+| Pitch | [Kanjium](https://github.com/mifunetoshiro/kanjium) | [TSV](https://raw.githubusercontent.com/mifunetoshiro/kanjium/master/data/source_files/raw/accents.txt) | Settings -> Resources |
+| Pitch | [アクセント辞典v2](https://learnjapanese.moe/yomichan/#dictionaries) | [Drive](https://drive.google.com/drive/folders/1tTdLppnqMfVC5otPlX_cs4ixlIgjv_lH) | Settings -> Resources |
+| Frequency | [JPDB v2.2 Kana](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip) | Settings -> Resources |
+| Frequency | [BCCWJ SUW+LUW](https://github.com/Kuuuube/yomitan-dictionaries) | [Yomitan zip](https://github.com/Kuuuube/yomitan-dictionaries/raw/main/dictionaries/BCCWJ_SUW_LUW_combined.zip) | Settings -> Resources |
+| Word audio | [local-audio-yomichan](https://github.com/yomidevs/local-audio-yomichan) | Collection torrent or generated `android.db` | Settings -> Resources |
 
 <details> 
 <summary><strong>JMnedict License</strong></summary>
@@ -99,10 +99,10 @@ Please leave a ⭐ star if Anki Miner helped you - it helps others find it :).
 |-------|----------|
 | Cards not reaching Anki | Install AnkiDroid and grant Anki Miner permission when prompted. |
 | APK won't install | Enable install-from-unknown-sources for your browser/file manager; the device must be `arm64-v8a` on Android 8.0+. |
-| No definitions found | Add a dictionary in Settings -> Dictionaries, or enable the Jisho fallback (slower, rate-limited). |
+| No definitions found | Add a dictionary in Settings -> Resources, or enable the Jisho fallback (slower, rate-limited). |
 | Setup notice on a mining tab | Open Settings and finish the flagged step (tokenizer, dictionary, or AnkiDroid). |
 | Sentence audio missing or wrong | Install a Japanese text-to-speech voice in your Android system settings. |
-| Word audio missing on cards | Import an audio pack or android.db under Settings -> Audio, and map the expression audio field. |
+| Word audio missing on cards | Import an audio pack or android.db under Settings -> Resources, and map the expression audio field. |
 | Subtitles out of sync | Use the subtitle offset control on the mining screen. |
 | Reporting a bug | Settings -> Diagnostics bundle can share a redacted log bundle. Check it before attaching it to an issue. |
 

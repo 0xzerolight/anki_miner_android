@@ -47,9 +47,7 @@ internal enum class SettingsCategory(
 ) {
     ANKI(R.string.b3_settings_category_anki),
     MEDIA(R.string.b3_settings_category_media),
-    DICTIONARIES(R.string.b3_settings_category_dictionaries),
-    AUDIO(R.string.b3_settings_category_audio),
-    FREQUENCY(R.string.b3_settings_category_frequency),
+    RESOURCES(R.string.b3_settings_category_resources),
     FILTERING(R.string.b3_settings_category_filtering),
     UI(R.string.b3_settings_category_ui),
     DIAGNOSTICS(R.string.b3_settings_category_diagnostics),
@@ -77,9 +75,9 @@ internal fun settingsCategoryFor(origin: ResourceFailureOrigin): SettingsCategor
         ResourceFailureOrigin.RECOMMENDED_SET,
         ResourceFailureOrigin.PITCH,
         ResourceFailureOrigin.DICTIONARY_LOOKUP,
-        -> SettingsCategory.DICTIONARIES
-        ResourceFailureOrigin.AUDIO -> SettingsCategory.AUDIO
-        ResourceFailureOrigin.FREQUENCY -> SettingsCategory.FREQUENCY
+        ResourceFailureOrigin.AUDIO,
+        ResourceFailureOrigin.FREQUENCY,
+        -> SettingsCategory.RESOURCES
         ResourceFailureOrigin.KNOWN_WORDS,
         ResourceFailureOrigin.WORD_LIST,
         -> SettingsCategory.FILTERING
@@ -95,29 +93,27 @@ internal fun settingsCategoryFor(origin: AnkiSetupFailureOrigin): SettingsCatego
  *
  * These stay constants only because each category emits its conditional cards *after* the last
  * card any failure origin deep-links to. Adding a conditional card ahead of a target, or
- * reordering one behind it, silently sends the deep link to the wrong card.
+ * reordering one behind it, silently sends the deep link to the wrong card. A collapsed panel is
+ * not such a case: the card still emits its own lazy item whether it is open or closed.
  */
 internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
     when (origin) {
         // Rendered in the header, which is item 0.
         ResourceFailureOrigin.SETUP -> 0
-        // Dictionaries: dictionary-sources(2) owns both dictionary origins, pitch-sources(3),
-        // dictionary-lookup(4).
+        // Resources: dictionary-sources(2) owns all three dictionary origins, pitch-sources(3),
+        // audio-sources(4), frequency-sources(5), dictionary-lookup(6).
         ResourceFailureOrigin.CATALOG_DICTIONARY,
         ResourceFailureOrigin.CUSTOM_DICTIONARY,
         ResourceFailureOrigin.RECOMMENDED_SET,
         -> 2
+        ResourceFailureOrigin.PITCH -> 3
+        ResourceFailureOrigin.AUDIO -> 4
+        ResourceFailureOrigin.FREQUENCY -> 5
+        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 6
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         ResourceFailureOrigin.UNIDIC -> 3
-        ResourceFailureOrigin.PITCH -> 3
-        ResourceFailureOrigin.DICTIONARY_LOOKUP -> 4
-        // Audio and Frequency are one card each; Filtering: filtering-options(2),
-        // known-words-import(3).
-        ResourceFailureOrigin.AUDIO,
-        ResourceFailureOrigin.FREQUENCY,
-        -> 2
-        ResourceFailureOrigin.KNOWN_WORDS -> 3
         // Filtering: filtering-options(2), known-words-import(3), word-lists(4).
+        ResourceFailureOrigin.KNOWN_WORDS -> 3
         ResourceFailureOrigin.WORD_LIST -> 4
     }
 
@@ -218,9 +214,9 @@ internal fun SettingsCategoryLayout(
                     )
                     PrimaryScrollableTabRow(
                         selectedTabIndex = selectedCategory.ordinal,
-                        // Eight word labels are ~1.8 screens wide at 360dp, so the strip still
-                        // scrolls. These fades are the affordance that the rest of it exists;
-                        // shortening the labels would buy ~40dp and cost clarity on the two least
+                        // Six word labels still overrun a 320dp screen, so the strip scrolls.
+                        // These fades are the affordance that the rest of it exists; shortening
+                        // the labels would buy ~40dp and cost clarity on the two least
                         // self-evident tabs.
                         modifier =
                             Modifier.drawWithContent {
