@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.ui.community.CommunityLinks
 import com.ankiminer.android.ui.mining.boundedSaveableQuery
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
@@ -173,8 +175,13 @@ internal fun SettingsCategoryLayout(
         item(key = "settings-header", contentType = "header") {
             Column(
                 Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
             ) {
                 header()
+                // Last, so a setup failure or an active operation keeps the top of the page. This
+                // is the app's only always-reachable outbound surface: the four tabs carry no top
+                // bar and there is no overflow menu to hang the pair on.
+                CommunityLinks()
             }
         }
         stickyHeader(key = "settings-category-tabs", contentType = "tabs") {

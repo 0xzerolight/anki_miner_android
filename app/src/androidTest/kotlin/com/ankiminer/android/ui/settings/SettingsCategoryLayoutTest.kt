@@ -11,6 +11,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextReplacement
+import com.ankiminer.android.ui.community.CommunityLinksTestTags
 import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
@@ -91,5 +92,29 @@ class SettingsCategoryLayoutTest {
         composeRule.runOnIdle {
             assertEquals(oversized.take(MAX_SAVEABLE_QUERY_LENGTH), query)
         }
+    }
+
+    @Test
+    fun communityLinksSitBelowTheHeaderOnEveryCategory() {
+        var selected by mutableStateOf(SettingsCategory.ANKI)
+
+        composeRule.setContent {
+            AnkiMinerTheme {
+                SettingsCategoryLayout(
+                    selectedCategory = selected,
+                    onSelectedCategory = { selected = it },
+                    recorder = SettingsCardIndexRecorder(),
+                    header = { androidx.compose.material3.Text("header slot") },
+                ) { }
+            }
+        }
+
+        composeRule.onNodeWithText("header slot").assertIsDisplayed()
+        composeRule.onNodeWithTag(CommunityLinksTestTags.STAR).assertIsDisplayed()
+        composeRule.onNodeWithTag(CommunityLinksTestTags.DISCORD).assertIsDisplayed()
+
+        // The links belong to the layout, not to one category's content.
+        composeRule.onNodeWithText("Diagnostics").performClick()
+        composeRule.onNodeWithTag(CommunityLinksTestTags.STAR).assertIsDisplayed()
     }
 }
