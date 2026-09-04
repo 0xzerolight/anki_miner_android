@@ -436,8 +436,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Starting ->
                             progressItems(
                                 progress = runState.progress,
-                                title = R.string.starting_title,
-                                headingModifier = headingModifier,
                                 canCancel =
                                     runState.cancellationToken != null || runState.runId != null,
                                 cancelPending = targetState.cancelPending,
@@ -471,8 +469,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Running ->
                             progressItems(
                                 progress = runState.progress,
-                                title = R.string.running_title,
-                                headingModifier = headingModifier,
                                 canCancel = true,
                                 cancelPending = targetState.cancelPending,
                                 cancelError =
@@ -809,8 +805,6 @@ private fun LazyListScope.setupItems(
 
 private fun LazyListScope.progressItems(
     progress: MiningProgress?,
-    @StringRes title: Int,
-    headingModifier: Modifier,
     canCancel: Boolean,
     cancelPending: Boolean,
     cancelError: Boolean,
@@ -821,8 +815,6 @@ private fun LazyListScope.progressItems(
         MiningProgressPanel(
             progress = progress,
             testTag = ReadingMiningTestTags.PROGRESS,
-            headingModifier = headingModifier,
-            title = title,
         )
     }
     if (canCancel) {

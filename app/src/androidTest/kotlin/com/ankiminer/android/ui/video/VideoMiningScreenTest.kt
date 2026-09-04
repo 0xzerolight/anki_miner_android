@@ -1843,7 +1843,15 @@ class VideoMiningScreenTest {
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion),
             ).assertCountEquals(1)
         composeRule.onNodeWithText("47 of 100 · 47%").assertExists()
-        composeRule.onNodeWithText("Mining in progress").assertExists()
+        composeRule.onNodeWithText("Mining in progress").assertDoesNotExist()
+        composeRule
+            .onAllNodes(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.PaneTitle,
+                    "Mining in progress",
+                ),
+                useUnmergedTree = true,
+            ).assertCountEquals(1)
     }
 
     @Test
