@@ -50,7 +50,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.actionBorder
@@ -64,6 +63,9 @@ internal object ResourcePanelTestTags {
     const val LIST = "resource-panel-list"
     const val EMPTY = "resource-panel-empty"
 
+    /** The toolbar's, so it is not row-scoped: one panel shows at most one at a time. */
+    const val QUIET_ACTION = "resource-panel-quiet-action"
+
     fun row(id: String): String = "resource-panel-row:$id"
 
     fun toggle(id: String): String = "resource-panel-toggle:$id"
@@ -71,8 +73,6 @@ internal object ResourcePanelTestTags {
     fun moveUp(id: String): String = "resource-panel-move-up:$id"
 
     fun moveDown(id: String): String = "resource-panel-move-down:$id"
-
-    fun quietAction(id: String): String = "resource-panel-quiet-action:$id"
 }
 
 /**
@@ -91,6 +91,7 @@ internal data class ResourceRowSpec(
     val warning: String? = null,
     val movable: Boolean = true,
     val removable: Boolean = true,
+    /** Rendered by the toolbar while this row is selected, not on the row itself. */
     val quietAction: ResourcePanelAction? = null,
 )
 
@@ -110,8 +111,8 @@ internal data class ResourcePanelAction(
  * already sits inside the settings screen's lazy list, which cannot nest another one.
  *
  * Selection lives here rather than in the caller because it is a view concern with no effect
- * outside the panel: it only decides which row the toolbar's remove action addresses. [onRemove]
- * fires unconfirmed, so callers keep their existing confirmation dialogs.
+ * outside the panel: it only decides which row the toolbar's remove and quiet actions address.
+ * [onRemove] fires unconfirmed, so callers keep their existing confirmation dialogs.
  */
 @Composable
 internal fun ResourceChainPanel(
@@ -202,6 +203,7 @@ internal fun ResourceChainPanel(
             addMenu = addMenu,
             extras = extras,
             busy = busy,
+            quietAction = selectedRow?.quietAction,
             removeEnabled = selectedRow != null && selectedRow.removable && !busy,
             onRemove = { selectedRow?.let { onRemove(it.id) } },
         )
@@ -279,13 +281,6 @@ private fun ResourcePanelRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        row.quietAction?.let { action ->
-            ExitActionButton(
-                onClick = action.onClick,
-                modifier = Modifier.testTag(ResourcePanelTestTags.quietAction(row.id)),
-                enabled = action.enabled && !busy,
-            ) { Text(action.label, maxLines = 1) }
-        }
         Checkbox(
             checked = row.enabled,
             onCheckedChange = row.onToggle,
@@ -322,13 +317,22 @@ private fun ResourcePanelRow(
     }
 }
 
-/** Add, any extra actions, and the remove action the current selection addresses. */
+/**
+ * Add, any extra actions, and the two actions the current selection addresses: its quiet action
+ * and remove.
+ *
+ * The quiet action lives here rather than on the row because the row has exactly one flexible
+ * child - the name - and a button beside it left three characters of a dictionary title on a
+ * 360dp screen. Absent rather than disabled when the selection offers none: it sits left of the
+ * spacer, so neither Add nor remove moves when it appears.
+ */
 @Composable
 private fun ResourcePanelToolbar(
     addPrimary: ResourcePanelAction,
     addMenu: List<ResourcePanelAction>,
     extras: List<ResourcePanelAction>,
     busy: Boolean,
+    quietAction: ResourcePanelAction?,
     removeEnabled: Boolean,
     onRemove: () -> Unit,
 ) {
@@ -364,6 +368,13 @@ private fun ResourcePanelToolbar(
         extras.forEach { action ->
             SecondaryActionButton(
                 onClick = action.onClick,
+                enabled = action.enabled && !busy,
+            ) { Text(action.label, maxLines = 1) }
+        }
+        quietAction?.let { action ->
+            SecondaryActionButton(
+                onClick = action.onClick,
+                modifier = Modifier.testTag(ResourcePanelTestTags.QUIET_ACTION),
                 enabled = action.enabled && !busy,
             ) { Text(action.label, maxLines = 1) }
         }

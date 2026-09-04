@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -41,8 +40,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -72,7 +69,6 @@ import com.ankiminer.android.ui.mining.CurationSort
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
-import com.ankiminer.android.ui.mining.MINING_PHASE_HEADING_TEST_TAG
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
@@ -316,16 +312,6 @@ fun ReadingMiningScreen(
                 targetState.archive.document?.displayName.takeIf {
                     targetState.sourceMode == ReadingSourceMode.FILE
                 }
-            val headingFocusRequester = remember(target.key) { FocusRequester() }
-            val headingModifier =
-                Modifier
-                    .focusRequester(headingFocusRequester)
-                    .focusable()
-                    .testTag(MINING_PHASE_HEADING_TEST_TAG)
-            LaunchedEffect(target.key) {
-                headingFocusRequester.requestFocus()
-            }
-
             // The pane title and insets belong to the whole phase, the CONTENT tag and its scroll
             // semantics only to the list — every performScrollToNode resolves against that node.
             Column(
@@ -355,8 +341,6 @@ fun ReadingMiningScreen(
                 }
                 if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
                     CurationChrome(
-                        title = phaseTitle,
-                        headingModifier = headingModifier,
                         selectedCount = targetCuration.selectedCount,
                         candidateCount = targetCuration.candidates.size,
                         page = targetCuration.page,
@@ -420,7 +404,6 @@ fun ReadingMiningScreen(
                         MiningRunState.Idle ->
                             setupItems(
                                 state = targetState,
-                                headingModifier = headingModifier,
                                 onPickSource = onPickSource,
                                 onPickArchive = onPickArchive,
                                 onClearSource = onClearSource,
@@ -437,8 +420,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Starting ->
                             progressItems(
                                 progress = runState.progress,
-                                title = R.string.starting_title,
-                                headingModifier = headingModifier,
                                 canCancel =
                                     runState.cancellationToken != null || runState.runId != null,
                                 cancelPending = targetState.cancelPending,
@@ -472,8 +453,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Running ->
                             progressItems(
                                 progress = runState.progress,
-                                title = R.string.running_title,
-                                headingModifier = headingModifier,
                                 canCancel = true,
                                 cancelPending = targetState.cancelPending,
                                 cancelError =
@@ -484,7 +463,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Success ->
                             terminalItems(
                                 title = R.string.success_title,
-                                headingModifier = headingModifier,
                                 result = runState.result,
                                 sourceDisplayName = terminalSourceDisplayName,
                                 archiveDisplayName = terminalArchiveDisplayName,
@@ -512,7 +490,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Cancelled ->
                             terminalItems(
                                 title = R.string.cancelled_title,
-                                headingModifier = headingModifier,
                                 result = runState.result,
                                 sourceDisplayName = terminalSourceDisplayName,
                                 archiveDisplayName = terminalArchiveDisplayName,
@@ -540,7 +517,6 @@ fun ReadingMiningScreen(
                         is MiningRunState.Failed ->
                             terminalItems(
                                 title = R.string.failed_title,
-                                headingModifier = headingModifier,
                                 result = runState.result,
                                 sourceDisplayName = terminalSourceDisplayName,
                                 archiveDisplayName = terminalArchiveDisplayName,
@@ -609,7 +585,6 @@ private fun CurationPageImageSlot(
 
 private fun LazyListScope.setupItems(
     state: ReadingMiningUiState,
-    headingModifier: Modifier,
     onPickSource: () -> Unit,
     onPickArchive: () -> Unit,
     onClearSource: () -> Unit,
@@ -623,21 +598,13 @@ private fun LazyListScope.setupItems(
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
 ) {
-    item(key = "reading_setup_header", contentType = "header") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            PhaseTitle(
-                text = stringResource(R.string.reading_phase_setup_title),
-                modifier = headingModifier,
+    state.runtimeConflict?.let { conflict ->
+        item(key = "reading_setup_conflict", contentType = "header") {
+            RuntimeConflictNotice(
+                text = stringResource(readingRuntimeConflictMessage(conflict)),
+                onReturnToActiveRun =
+                    onReturnToActiveRun.takeIf { conflict == RuntimeWorkConflict.MINING },
             )
-            state.runtimeConflict?.let { conflict ->
-                RuntimeConflictNotice(
-                    text = stringResource(readingRuntimeConflictMessage(conflict)),
-                    onReturnToActiveRun =
-                        onReturnToActiveRun.takeIf {
-                            conflict == RuntimeWorkConflict.MINING
-                        },
-                )
-            }
         }
     }
     item(key = "reading_source_mode", contentType = "actions") {
@@ -819,8 +786,6 @@ private fun LazyListScope.setupItems(
 
 private fun LazyListScope.progressItems(
     progress: MiningProgress?,
-    @StringRes title: Int,
-    headingModifier: Modifier,
     canCancel: Boolean,
     cancelPending: Boolean,
     cancelError: Boolean,
@@ -831,8 +796,6 @@ private fun LazyListScope.progressItems(
         MiningProgressPanel(
             progress = progress,
             testTag = ReadingMiningTestTags.PROGRESS,
-            headingModifier = headingModifier,
-            title = title,
         )
     }
     if (canCancel) {
@@ -1083,7 +1046,6 @@ private fun LazyListScope.curationItems(
 
 private fun LazyListScope.terminalItems(
     title: Int,
-    headingModifier: Modifier,
     result: ProcessingResult?,
     sourceDisplayName: String?,
     archiveDisplayName: String?,
@@ -1105,10 +1067,7 @@ private fun LazyListScope.terminalItems(
     onRequestUndo: () -> Unit,
 ) {
     item(key = "reading_terminal_header", contentType = "header") {
-        PhaseTitle(
-            text = stringResource(title),
-            modifier = headingModifier,
-        )
+        PhaseTitle(text = stringResource(title))
     }
     if (failed) {
         item(key = "reading_terminal_failure", contentType = "header") {
