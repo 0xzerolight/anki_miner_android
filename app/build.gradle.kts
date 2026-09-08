@@ -72,7 +72,7 @@ val keystoreProps =
 val hasReleaseSigning = keystorePropsFile.exists() || System.getenv("ANKI_MINER_KEYSTORE") != null
 
 // Single source for the shipped version: defaultConfig and the published asset name below.
-val appVersionName = "1.0.0"
+val appVersionName = "1.1.0"
 
 // Release builds inject the immutable build commit via -PankiMinerSourceCommit=<sha>
 // (or the ANKI_MINER_SOURCE_COMMIT env var); dev builds keep "development".
@@ -146,7 +146,7 @@ android {
         applicationId = "com.ankiminer.android"
         minSdk = 26
         targetSdk = 36
-        versionCode = 26
+        versionCode = 27
         versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
