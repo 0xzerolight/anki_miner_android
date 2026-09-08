@@ -4,6 +4,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-08
+
 ### Added
 
 - **Star and Join Discord buttons (Settings header).** The desktop app has carried the pair in its menu bar since it shipped and Android had no route to either — the repository URL existed only as a private constant behind Settings → About, and there was no community link anywhere. The four tabs carry no top app bar and there is no overflow menu, so the settings header is the app's only always-reachable outbound surface; the pair renders there through `AdaptivePairedActions` as two secondary actions, peers of each other and of nothing else, and last within the header so a setup failure or an active operation keeps the top of the page. `AppLinks` now holds the repository, privacy-policy and Discord invite in one object, because the privacy-policy URL is built from the repository URL and a divergence between the two is invisible until a user taps; `AttributionScreen` drops its own two constants onto it. The Discord mark is drawn with `tint = Color.Unspecified` so the brand blurple survives both themes — tinting it to the button's content colour would turn a recognised mark into a generic glyph — and its `contentDescription` is null because the adjacent label already names the destination. Both strings ship in all twelve catalogues, and the invite is the same one the desktop app and both READMEs carry.
