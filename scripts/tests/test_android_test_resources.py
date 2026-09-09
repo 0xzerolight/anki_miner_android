@@ -8,6 +8,8 @@ import time
 import unittest
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+GRADLE_PROPERTIES = REPO_ROOT / "gradle.properties"
 RESOURCE_SCRIPT = Path(__file__).resolve().parents[1] / "android-test-resources.sh"
 EMULATOR_SCRIPT = Path(__file__).resolve().parents[1] / "emulator.sh"
 EMULATOR_LANES_SCRIPT = Path(__file__).resolve().parents[1] / "emulator-lanes.sh"
@@ -334,7 +336,7 @@ fi
             self.assertEqual(0, result.returncode, result.stderr)
             self.assertTrue((root / "emulator-launched").exists())
 
-    def test_every_gradle_entry_gets_the_explicit_resource_flags(self) -> None:
+    def test_every_gradle_entry_gets_the_verified_resolution_flags(self) -> None:
         temporary, bin_dir, environment = self._fixture()
         with temporary:
             self._script(bin_dir / "adb", "echo 'List of devices attached'\n")
@@ -365,11 +367,26 @@ fi
                 .splitlines()
             )
             self.assertIn("--no-daemon", arguments)
-            self.assertIn("--no-parallel", arguments)
-            self.assertIn("--max-workers=1", arguments)
-            self.assertIn("-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8", arguments)
             self.assertIn("--dependency-verification", arguments)
+            self.assertIn("strict", arguments)
+            # Worker and heap pinning is deliberately absent. The whole-system
+            # OOM kills it existed to prevent ended with the 2026-07-30 swap
+            # change (AGENTS.md), and one worker on a 2 GiB heap is what made
+            # lint and R8 the two slowest things in CI. Gradle's own defaults
+            # scale with whatever host runs them.
+            self.assertNotIn("--no-parallel", arguments)
+            self.assertNotIn("--max-workers=1", arguments)
             self.assertEqual(":app:test", arguments[-1])
+
+    def test_gradle_properties_owns_the_daemon_jvm_settings(self) -> None:
+        # The CLI flags used to override every line of gradle.properties except
+        # org.gradle.caching, which made the file dead config. Heap and encoding
+        # live in exactly one place now, so raising either is a one-line change.
+        properties = GRADLE_PROPERTIES.read_text(encoding="utf-8")
+
+        self.assertIn("-Dfile.encoding=UTF-8", properties)
+        self.assertNotIn("org.gradle.workers.max", properties)
+        self.assertNotIn("org.gradle.parallel", properties)
 
 
 if __name__ == "__main__":

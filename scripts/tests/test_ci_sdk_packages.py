@@ -6,6 +6,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = REPO_ROOT / ".github" / "workflows" / "pull-request.yml"
+# Every Gradle lane installs the SDK through one composite action, so the locked
+# package set lives there rather than being copied into each job.
+TOOLCHAIN_ACTION = REPO_ROOT / ".github" / "actions" / "android-build-toolchain" / "action.yml"
 HEALTH = REPO_ROOT / "scripts" / "health.sh"
 PACKAGES_LOCK = REPO_ROOT / "scripts" / "android-sdk-packages.lock"
 
@@ -25,8 +28,8 @@ def _locked_packages() -> set[str]:
 
 
 def _workflow_sdkmanager_packages() -> set[str]:
-    """Package arguments of the workflow's `sdkmanager --install` invocation."""
-    source = WORKFLOW.read_text(encoding="utf-8")
+    """Package arguments of the toolchain action's `sdkmanager --install` invocation."""
+    source = TOOLCHAIN_ACTION.read_text(encoding="utf-8")
     command_start = source.index('sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --install')
     start = source.index("--install", command_start) + len("--install")
     # One backslash-continued shell command: consume lines until one does not
@@ -58,7 +61,7 @@ class CiSdkPackagesTest(unittest.TestCase):
         )
 
     def test_ci_preflights_and_verifies_locked_sdk_revisions(self) -> None:
-        source = WORKFLOW.read_text(encoding="utf-8")
+        source = TOOLCHAIN_ACTION.read_text(encoding="utf-8")
 
         self.assertIn('sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list', source)
         self.assertIn("scripts/preflight_android_packages.py", source)
@@ -68,6 +71,12 @@ class CiSdkPackagesTest(unittest.TestCase):
         self.assertIn("--installed-list", source)
         self.assertIn("--lock scripts/android-sdk-packages.lock", source)
         self.assertEqual(set(), CI_OMITS_ON_PURPOSE)
+
+        # The action polices nothing if no lane calls it.
+        self.assertIn(
+            "./.github/actions/android-build-toolchain",
+            WORKFLOW.read_text(encoding="utf-8"),
+        )
 
     def test_health_preflights_stable_sdk_revisions(self) -> None:
         source = HEALTH.read_text(encoding="utf-8")
