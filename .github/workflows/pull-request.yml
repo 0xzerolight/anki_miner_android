@@ -151,9 +151,6 @@ jobs:
         run: |
           ./gradlew \
             --no-daemon \
-            --no-parallel \
-            --max-workers=1 \
-            "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" \
             --stacktrace \
             --dependency-verification strict \
             :app:testEmulatorDebugUnitTest \
@@ -220,9 +217,6 @@ jobs:
         run: |
           ./gradlew \
             --no-daemon \
-            --no-parallel \
-            --max-workers=1 \
-            "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" \
             --stacktrace \
             --dependency-verification strict \
             :app:lintEmulatorDebug
@@ -249,9 +243,6 @@ jobs:
           source_commit="$(git rev-parse HEAD)"
           ./gradlew \
             --no-daemon \
-            --no-parallel \
-            --max-workers=1 \
-            "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" \
             --stacktrace \
             --dependency-verification strict \
             -PankiMinerSourceCommit="$source_commit" \

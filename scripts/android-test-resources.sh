@@ -4,11 +4,12 @@
 # One workload lock covers the checked-to-running transition and stays held for
 # the full Gradle or emulator child lifetime.
 
+# --dependency-verification strict is why this array exists: every Gradle entry
+# point in the repo resolves against gradle/verification-metadata.xml. Daemon
+# JVM settings live in gradle.properties, not here, and worker counts are left
+# to Gradle so they track the host.
 ANKI_MINER_GRADLE_ARGS=(
     --no-daemon
-    --no-parallel
-    --max-workers=1
-    "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8"
     --stacktrace
     --dependency-verification
     strict
