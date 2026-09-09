@@ -33,9 +33,11 @@ runs:
         distribution: temurin
         java-version: "17.0.19+10"
         # No `cache: gradle`. Every lane runs `--dependency-verification
-        # strict`, and a partially-restored cache makes verification failures
-        # non-reproducible between runs. The ~2.5 GB NDK download dominates the
-        # job cost anyway, so the Gradle cache buys little here.
+        # strict`, and a partially-restored `modules-2` makes verification
+        # failures non-reproducible between runs. That argument covers the
+        # dependency cache only: `build-cache-1` holds task outputs and has no
+        # checksum semantics to weaken. The NDK is not why this stays off - the
+        # whole SDK install is 92s against a 832s Gradle step.
 
     # The hosted runner image sets ANDROID_HOME and unpacks the command-line
     # tools to cmdline-tools/latest, but never puts that bin dir on PATH.
