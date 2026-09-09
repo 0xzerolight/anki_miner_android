@@ -1,6 +1,5 @@
 package com.ankiminer.android.ui
 
-import java.io.File
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -48,16 +47,6 @@ class TerminologyTest {
             .associate { match ->
                 match.groupValues[1] to match.groupValues[2].replace(Regex("<[^>]+>"), "")
             }
-    }
-
-    private fun locateFromWorkspace(relativePath: String): File {
-        var cursor = File(requireNotNull(System.getProperty("user.dir"))).canonicalFile
-        repeat(8) {
-            val candidate = File(cursor, relativePath)
-            if (candidate.isFile) return candidate
-            cursor = cursor.parentFile ?: return@repeat
-        }
-        error("Could not locate $relativePath from ${System.getProperty("user.dir")}")
     }
 
     private companion object {

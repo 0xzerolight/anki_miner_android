@@ -4,6 +4,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Discord logo in the settings header draws as the Discord logo.** The mark shipped in 1.1.0 is Simple Icons geometry pasted in verbatim, and icon sets ship SVGO-optimised paths, which write an arc's two boolean flags as a single glued token — `0 00-4.8851` rather than `0 0 0 -4.8851`. Compose's path parser honours that form only on the first segment of an `a`/`A` command; an implicitly repeated segment falls back to generic float scanning, so the two flags merge into one value, every parameter after them shifts by one, and a trailing segment left short of seven values is discarded. `ic_discord.xml` parsed to 41 nodes and 14 arcs instead of 44 and 17 — three of the small joining arcs vanished, and the two large head-outline arcs (radius 19.7363 and 12.2986) drew with the wrong sweep flag and the wrong endpoints. Nothing failed loudly: the drawable loaded, it was simply the wrong shape, and only a render catches that. The flags are now written separated and nothing else about the path moves, so the file is still the Simple Icons mark. The platform vector parser is never involved here — the icon is only ever loaded through Compose. A new unit test parses every drawable's `android:pathData` twice, once as written and once with its arc flags separated, and fails when the two disagree, which is exactly the state an icon pasted out of an optimised source arrives in.
+
 ## [1.1.0] - 2026-09-08
 
 ### Added
