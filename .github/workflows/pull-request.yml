@@ -67,7 +67,7 @@ jobs:
       - name: Run secretless tooling and bridge checks
         shell: bash
         env:
-          ANKI_MINER_CHAQUOPY_BUILD_PYTHON: ${{ steps.toolchain.outputs.build-python-path }}
+          ANKI_MINER_CHAQUOPY_BUILD_PYTHON: ${{ steps.build_python.outputs.python-path }}
           HOST_PYTHON: ${{ steps.host_python.outputs.python-path }}
         run: |
           set -euo pipefail
