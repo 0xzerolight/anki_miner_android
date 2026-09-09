@@ -110,10 +110,13 @@ jobs:
           print("immutable engine v2 fixture: OK")
           PY
 
-  android-api-26:
-    name: Android API 26
+  # Lint and the arm64 release were 578s of this leg's 832s Gradle step, and
+  # instrumentation needs neither: run-api26-instrumentation.sh wants only the
+  # two emulatorDebug APKs, and they are built in this same workspace.
+  android-instrumentation:
+    name: Android instrumentation (API 26)
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: Checkout source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -141,12 +144,11 @@ jobs:
         id: toolchain
         uses: ./.github/actions/android-build-toolchain
 
-      - name: Run JVM tests, lint, and assemble audited APKs
+      - name: Run JVM tests and assemble the emulator APKs
         shell: bash
         env:
           ANKI_MINER_CHAQUOPY_BUILD_PYTHON: ${{ steps.toolchain.outputs.build-python-path }}
         run: |
-          source_commit="$(git rev-parse HEAD)"
           ./gradlew \
             --no-daemon \
             --no-parallel \
@@ -155,13 +157,10 @@ jobs:
             --stacktrace \
             --dependency-verification strict \
             :app:testEmulatorDebugUnitTest \
-            :app:lintEmulatorDebug \
             :app:assembleEmulatorDebug \
-            :app:assembleEmulatorDebugAndroidTest \
-            -PankiMinerSourceCommit="$source_commit" \
-            :app:assembleDeviceRelease
+            :app:assembleEmulatorDebugAndroidTest
 
-      - name: Audit packaged emulator and device artifacts
+      - name: Audit the packaged emulator artifact
         shell: bash
         run: |
           "${{ steps.toolchain.outputs.host-python-path }}" \
@@ -181,21 +180,6 @@ jobs:
             --artifact app/build/outputs/apk/emulator/debug/app-emulator-debug.apk \
             --vendored-manifest app/wheels/manifest.json \
             --allow-abi x86_64
-          device_apk="app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
-          [[ -f "$device_apk" ]] || { echo "device release APK was not produced" >&2; exit 1; }
-          scripts/check-native-artifact.sh \
-            --artifact "$device_apk" \
-            --allow-abi arm64-v8a \
-            --require-app-imy \
-            --reject-base-unidic \
-            --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
-            --require-entry lib/arm64-v8a/libffmpeg.so \
-            --require-entry lib/arm64-v8a/libffprobe.so \
-            --require-entry lib/arm64-v8a/libmedia3ext.so
-          "${{ steps.toolchain.outputs.host-python-path }}" scripts/check_runtime_artifact.py \
-            --artifact "$device_apk" \
-            --vendored-manifest app/wheels/manifest.json \
-            --allow-abi arm64-v8a
 
       - name: Execute API 26 instrumentation
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
@@ -214,3 +198,113 @@ jobs:
           disable-animations: true
           disable-linux-hw-accel: false
           script: bash .github/scripts/run-api26-instrumentation.sh
+
+  android-lint:
+    name: Android lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the Android build toolchain
+        id: toolchain
+        uses: ./.github/actions/android-build-toolchain
+
+      - name: Lint the emulator debug variant
+        shell: bash
+        env:
+          ANKI_MINER_CHAQUOPY_BUILD_PYTHON: ${{ steps.toolchain.outputs.build-python-path }}
+        run: |
+          ./gradlew \
+            --no-daemon \
+            --no-parallel \
+            --max-workers=1 \
+            "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" \
+            --stacktrace \
+            --dependency-verification strict \
+            :app:lintEmulatorDebug
+
+  android-device-release:
+    name: Android device release
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up the Android build toolchain
+        id: toolchain
+        uses: ./.github/actions/android-build-toolchain
+
+      - name: Assemble the shipped arm64 release
+        shell: bash
+        env:
+          ANKI_MINER_CHAQUOPY_BUILD_PYTHON: ${{ steps.toolchain.outputs.build-python-path }}
+        run: |
+          source_commit="$(git rev-parse HEAD)"
+          ./gradlew \
+            --no-daemon \
+            --no-parallel \
+            --max-workers=1 \
+            "-Dorg.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8" \
+            --stacktrace \
+            --dependency-verification strict \
+            -PankiMinerSourceCommit="$source_commit" \
+            :app:assembleDeviceRelease
+
+      - name: Audit the packaged device artifact
+        shell: bash
+        run: |
+          "${{ steps.toolchain.outputs.host-python-path }}" \
+            tools/wheels/vendored_wheel_manifest.py check \
+              --wheels-root app/wheels \
+              --manifest app/wheels/manifest.json
+          device_apk="app/build/outputs/apk/device/release/app-device-release-unsigned.apk"
+          [[ -f "$device_apk" ]] || { echo "device release APK was not produced" >&2; exit 1; }
+          scripts/check-native-artifact.sh \
+            --artifact "$device_apk" \
+            --allow-abi arm64-v8a \
+            --require-app-imy \
+            --reject-base-unidic \
+            --require-entry lib/arm64-v8a/libanki_miner_mecab.so \
+            --require-entry lib/arm64-v8a/libffmpeg.so \
+            --require-entry lib/arm64-v8a/libffprobe.so \
+            --require-entry lib/arm64-v8a/libmedia3ext.so
+          "${{ steps.toolchain.outputs.host-python-path }}" scripts/check_runtime_artifact.py \
+            --artifact "$device_apk" \
+            --vendored-manifest app/wheels/manifest.json \
+            --allow-abi arm64-v8a
+
+  # The `main required checks` ruleset requires the context `Android API 26`.
+  # The three lanes above report under their own names, so this job carries the
+  # required context and fails unless every one of them succeeded. A fourth
+  # lane stays advisory until it is added to `needs:`.
+  android-api-26:
+    name: Android API 26
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Without this the job is skipped when a lane fails, and a skipped required
+    # check never reports, so the pull request waits forever instead of failing.
+    if: always()
+    needs:
+      - android-instrumentation
+      - android-lint
+      - android-device-release
+    steps:
+      - name: Require every Android lane to have succeeded
+        shell: bash
+        env:
+          LANE_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "lane results: $LANE_RESULTS"
+          for result in $LANE_RESULTS; do
+            [[ "$result" == "success" ]] || {
+              echo "::error::an Android lane reported $result"
+              exit 1
+            }
+          done
