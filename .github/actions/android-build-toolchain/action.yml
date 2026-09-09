@@ -1,0 +1,84 @@
+name: Android build toolchain
+description: >-
+  Pins the two build interpreters, JDK 17 and the locked Android SDK packages
+  for one Gradle lane, and fabricates the toolchain root the artifact audits
+  resolve `sdk` and `jdk-17` under.
+
+outputs:
+  build-python-path:
+    description: Interpreter Chaquopy builds the Python runtime against.
+    value: ${{ steps.build_python.outputs.python-path }}
+  host-python-path:
+    description: Interpreter the host-side preflight and audit scripts run under.
+    value: ${{ steps.host_python.outputs.python-path }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up exact Chaquopy build Python
+      id: build_python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.12.13"
+
+    - name: Set up host Python 3.13
+      id: host_python
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      with:
+        python-version: "3.13"
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+      with:
+        distribution: temurin
+        java-version: "17.0.19+10"
+        # No `cache: gradle`. Every lane runs `--dependency-verification
+        # strict`, and a partially-restored cache makes verification failures
+        # non-reproducible between runs. The ~2.5 GB NDK download dominates the
+        # job cost anyway, so the Gradle cache buys little here.
+
+    # The hosted runner image sets ANDROID_HOME and unpacks the command-line
+    # tools to cmdline-tools/latest, but never puts that bin dir on PATH.
+    - name: Put Android command-line tools on PATH
+      shell: bash
+      run: |
+        test -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+        echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+
+    - name: Install exact Android build packages
+      shell: bash
+      run: |
+        available_packages="$RUNNER_TEMP/android-sdk-available.txt"
+        installed_packages="$RUNNER_TEMP/android-sdk-installed.txt"
+        sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list >"$available_packages"
+        "${{ steps.host_python.outputs.python-path }}" scripts/preflight_android_packages.py \
+          --lock scripts/android-sdk-packages.lock \
+          --sdkmanager-list "$available_packages"
+        sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --install \
+          "platform-tools" \
+          "emulator" \
+          "platforms;android-36" \
+          "build-tools;36.0.0" \
+          "cmake;3.22.1" \
+          "ndk;28.2.13676358" \
+          "system-images;android-26;google_apis;x86_64" \
+          "system-images;android-36;google_apis;x86_64" \
+          "system-images;android-36;google_apis_ps16k;x86_64"
+        sdkmanager --sdk_root="$ANDROID_HOME" --channel=0 --list_installed >"$installed_packages"
+        "${{ steps.host_python.outputs.python-path }}" scripts/verify_android_toolchain.py \
+          --sdk-root "$ANDROID_HOME" \
+          --installed-list "$installed_packages" \
+          --avd-home "$ANDROID_HOME" \
+          --lock scripts/android-sdk-packages.lock
+
+    # `check-native-artifact.sh` resolves zipalign and apkanalyzer under
+    # $ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/{sdk,jdk-17}; the hosted runner layout
+    # has neither name, so the lane fabricates them once here.
+    - name: Fabricate the artifact-audit toolchain root
+      shell: bash
+      run: |
+        toolchain_root="$RUNNER_TEMP/anki-miner-ci-toolchain"
+        mkdir -p "$toolchain_root"
+        ln -sfn "$ANDROID_HOME" "$toolchain_root/sdk"
+        ln -sfn "$JAVA_HOME" "$toolchain_root/jdk-17"
+        echo "ANKI_MINER_ANDROID_TOOLCHAIN_ROOT=$toolchain_root" >> "$GITHUB_ENV"
