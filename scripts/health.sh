@@ -154,7 +154,7 @@ PYTHONDONTWRITEBYTECODE=1 "$runtime_host_python" \
     "$SCRIPT_DIR/check-python-runtime.py" \
     --python-root "$REPO_ROOT/app/src/main/python" \
     --expected-version 3.12.13
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/app/src/debug/python" \
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$REPO_ROOT/app/src/debug/python:$REPO_ROOT/app/src/main/python" \
     "$runtime_host_python" -c \
     'import runtime_dependencies_probe; runtime_dependencies_probe.snapshot()'
 
