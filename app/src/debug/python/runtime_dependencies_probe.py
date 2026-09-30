@@ -5,7 +5,9 @@ from __future__ import annotations
 from importlib import metadata, util
 from io import BytesIO
 import json
+import os
 import sys
+import time
 
 
 EXPECTED_VERSIONS = {
@@ -38,6 +40,26 @@ def _round_trip_image(format_name: str) -> dict[str, object]:
             "mode": decoded.mode,
             "size": list(decoded.size),
         }
+
+
+def _process_start() -> dict[str, object]:
+    import psutil
+
+    created = psutil.Process(os.getpid()).create_time()
+    # The engine's promotion lock compares this value at microsecond precision.
+    if f"{psutil.Process().create_time():.6f}" != f"{created:.6f}":
+        raise AssertionError("psutil create_time changed between calls")
+    age = time.time() - created
+    if not 0 <= age < 86400:
+        raise AssertionError(f"psutil create_time is implausible: {age!r} s old")
+    try:
+        # Above PID_MAX_LIMIT (2**22), so /proc can never list it.
+        psutil.Process(2**22 + 1).create_time()
+    except psutil.NoSuchProcess:
+        pass
+    else:
+        raise AssertionError("psutil reported a start time for a missing PID")
+    return {"age_seconds": age}
 
 
 def snapshot() -> str:
@@ -100,6 +122,8 @@ def snapshot() -> str:
     if request.method != "GET" or urllib3.util.parse_url(request.url).host is None:
         raise AssertionError("HTTP dependency construction failed")
 
+    process_start = _process_start()
+
     forbidden = {
         package: util.find_spec(package) is not None
         for package in ("gtts", "unidic", "unidic_lite", "yt_dlp")
@@ -113,6 +137,7 @@ def snapshot() -> str:
             "forbidden_present": forbidden,
             "images": images,
             "implementation": sys.implementation.name,
+            "process_start": process_start,
             "python": list(sys.version_info[:3]),
             "versions": versions,
         },
