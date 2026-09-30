@@ -19,7 +19,7 @@ MANIFEST_NAME = ".engine-sync-manifest.json"
 MANIFEST_VERSION = 1
 # Exhaustive destination roots owned by this tool. The previous-manifest guard
 # makes removing a historical root from this declaration an explicit migration.
-MANAGED_ROOTS = frozenset({"PyQt6", "anki_miner"})
+MANAGED_ROOTS = frozenset({"PyQt6", "anki_miner", "psutil"})
 
 
 class EngineSyncError(RuntimeError):
