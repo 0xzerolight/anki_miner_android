@@ -344,34 +344,67 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         self._assert_distinct_non_empty_resources(list(reason_map.values()))
         self.assertIn("status.code.wireName", application)
 
+    def _rewriter_patterns(self) -> tuple[dict[str, str], list[str]]:
+        """The rewriter's named rules and its receipt list, each as its raw-string pattern.
+
+        A pattern wrapped onto a second line drops out of the regex below, which the exact name set
+        and the receipt count catch rather than silently skipping it.
+        """
+        source = self._rewriter_source()
+        receipts_at = source.index("val RECEIPTS")
+        named = dict(re.findall(r'val ([A-Z_]+) =\s*Regex\(\s*"""(.+?)"""', source[:receipts_at]))
+        receipts = re.findall(r'Regex\("""(.+?)"""', source[receipts_at:])
+        return named, receipts
+
     def test_engine_notice_rewriter_still_matches_the_vendored_template(self) -> None:
-        """Pin both halves of the rewrite: the vendored engine literal and the Kotlin regex.
+        """Pin both halves of the rewrite: the vendored engine literals and the Kotlin regex.
 
         ``EngineNoticeRewriter`` restates a warning whose wording is owned by the vendored engine,
         so an ``engine.lock`` re-pin that reworded it would leave the rule matching nothing and the
-        old copy back on screen with no test failing. Rendering the real template through the real
+        old copy back on screen with no test failing. Rendering the real templates through the real
         ``tr_format`` and running the Kotlin pattern over the result fails closed on either drift.
+        The engine raises it from two sites (pre-curation and phase 5), each with its own wording.
         """
-        template = "Skipped %1 words with no definition found: %2%3"
+        templates = (
+            "Skipped %1 words missing from your offline dictionaries: %2%3",
+            "Skipped %1 words with no definition found: %2%3",
+        )
         processor = (REPO_ROOT / "app/src/main/python/anki_miner/orchestration/episode_processor.py").read_text(
             encoding="utf-8"
         )
-        self.assertIn(template, processor)
-
+        named, _receipts = self._rewriter_patterns()
+        self.assertEqual({"NO_DEFINITION", "FREQUENCY_CUTOFF_IGNORED"}, set(named))
         rewriter = self._rewriter_source()
-        pattern_match = re.search(r'Regex\("""(.+?)"""', rewriter)
-        self.assertIsNotNone(pattern_match, "EngineNoticeRewriter no longer declares a raw-string Regex")
-        assert pattern_match is not None
         self.assertIn("mining_notice_no_definition", rewriter)
         self.assertIn("mining_notice_no_definition", self._source_strings())
 
         i18n = self._load_engine_module("app/src/main/python/anki_miner/utils/i18n.py", "_engine_i18n")
 
-        rendered = i18n.tr_format(template, 2, "本好き, 編み", " (+3 more)")
-        matched = re.fullmatch(pattern_match.group(1), rendered, re.DOTALL)
-        self.assertIsNotNone(matched, rendered)
-        assert matched is not None
-        self.assertEqual(("2", "本好き, 編み (+3 more)"), matched.groups())
+        for template in templates:
+            self.assertIn(template, processor)
+            rendered = i18n.tr_format(template, 2, "本好き, 編み", " (+3 more)")
+            matched = re.fullmatch(named["NO_DEFINITION"], rendered, re.DOTALL)
+            self.assertIsNotNone(matched, rendered)
+            assert matched is not None
+            self.assertEqual(("2", "本好き, 編み (+3 more)"), matched.groups())
+
+    def test_frequency_cutoff_notice_is_restated_away_from_the_desktop_menu(self) -> None:
+        """The engine names desktop's "Settings → Frequency"; Android files sources under Resources."""
+        literal = "Frequency cutoff ignored — no ranked frequency source is loaded (Settings → Frequency)."
+        processor = (REPO_ROOT / "app/src/main/python/anki_miner/orchestration/episode_processor.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn(literal, processor)
+
+        qtcore = self._load_engine_module("app/src/main/python/PyQt6/QtCore.py", "_engine_qtcore")
+        rendered = qtcore.QCoreApplication.translate("EpisodeProcessor", literal)
+        named, _receipts = self._rewriter_patterns()
+        self.assertIsNotNone(re.fullmatch(named["FREQUENCY_CUTOFF_IGNORED"], rendered), rendered)
+
+        self.assertIn("mining_notice_frequency_cutoff_ignored", self._rewriter_source())
+        replacement = self._source_strings()["mining_notice_frequency_cutoff_ignored"]
+        self.assertIn("Settings → Resources", replacement)
+        self.assertNotIn("Settings → Frequency", replacement)
 
     def test_engine_receipt_patterns_still_match_the_vendored_literals(self) -> None:
         """Pin every suppression rule against the string the vendored engine actually renders.
@@ -388,9 +421,9 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         mokuro = "app/src/main/python/anki_miner/services/reading/mokuro_source.py"
         epub = "app/src/main/python/anki_miner/services/reading/epub_source.py"
 
-        ambiguous = "Ambiguous reading review required for %1 word(s); current readings kept"
+        ambiguous = "%1 word(s) have more than one reading — the parsed reading was kept."
         duplicates = "Skipped %n word(s) Anki flagged as duplicates (same Expression)"
-        webp = "Using WebP for animated screenshots — this ffmpeg build has no AVIF (libsvtav1) encoder."
+        webp = "Using WebP for animated screenshots — this ffmpeg build has no AVIF encoder."
         text_only = "text-only volume: pages have no paired images"
         # The reading loaders build their warnings as f-strings, so the pin is the source expression.
         page_miss = 'f"page {page_num}: no image matched {img_path!r}"'
@@ -406,13 +439,11 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
             (epub, gaiji, f"Skipped {4} inline image(s) (gaiji) that carried no text."),
         ]
 
-        # Declaration order is the contract: the no-definition restatement pinned by the test above
-        # comes first, the receipts follow in list order. A pattern wrapped onto a second line drops
-        # out of findall, which the count catches rather than silently skipping it.
-        patterns = re.findall(r'Regex\("""(.+?)"""', self._rewriter_source())
-        self.assertEqual(len(receipts) + 1, len(patterns), patterns)
+        # Declaration order is the contract: the receipts follow in list order.
+        _named, patterns = self._rewriter_patterns()
+        self.assertEqual(len(receipts), len(patterns), patterns)
 
-        for (relative, literal, rendered), pattern in zip(receipts, patterns[1:], strict=True):
+        for (relative, literal, rendered), pattern in zip(receipts, patterns, strict=True):
             self.assertIn(literal, (REPO_ROOT / relative).read_text(encoding="utf-8"), relative)
             self.assertIsNotNone(re.fullmatch(pattern, rendered), (pattern, rendered))
 

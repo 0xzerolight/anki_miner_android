@@ -2450,7 +2450,7 @@ class BridgeMiningRepositoryTest {
         const val MAX_RESULT_ERRORS = 256
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
         const val NO_DEFINITION_WARNING = "Skipped 2 words with no definition found: 本好き, 編み"
-        const val RECEIPT_WARNING = "Ambiguous reading review required for 3 word(s); current readings kept"
+        const val RECEIPT_WARNING = "3 word(s) have more than one reading — the parsed reading was kept."
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val FIRST_SELECTION = listOf(CurationSelection(CANDIDATE_ID, SENTENCE_ID))
 

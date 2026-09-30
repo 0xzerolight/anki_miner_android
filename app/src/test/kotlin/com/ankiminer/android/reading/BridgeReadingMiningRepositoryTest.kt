@@ -2479,7 +2479,7 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":2,"description":"Definition found: $MINED_TERM"}}"""
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
         const val NO_DEFINITION_WARNING = "Skipped 2 words with no definition found: 本好き, 編み"
-        const val RECEIPT_WARNING = "Ambiguous reading review required for 3 word(s); current readings kept"
+        const val RECEIPT_WARNING = "3 word(s) have more than one reading — the parsed reading was kept."
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val PRESENTER_WARNING =
             """{"schemaVersion":1,"type":"presenter.event","payload":{"runId":"$RUN_ID","kind":"warning","message":"$PRESENTER_WARNING_PLACEHOLDER"}}"""
