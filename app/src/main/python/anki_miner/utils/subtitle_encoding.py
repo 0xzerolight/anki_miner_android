@@ -1,4 +1,4 @@
-"""Shared pysubs2 encoding fallback (BOM, cp932, validated EUC-JP, detector).
+"""Shared pysubs2 encoding fallback (BOM, caller's ladder, detector).
 
 Japanese subtitle files are frequently cp932/Shift-JIS, but pysubs2 defaults to
 UTF-8 and raises :class:`UnicodeDecodeError` on them. Both the Audio Condenser
@@ -11,14 +11,33 @@ the fallback chain lives in exactly one place.
 :func:`detect_subtitle_encoding` runs that same chain for a caller that needs the
 *name* of the encoding rather than a parsed file — subtitle retiming, which
 declares it to alass via ``--encoding-inc``.
+
+The ladder itself belongs to the caller: a config-bearing site passes
+``encodings=get_profile(config_language(config)).import_encodings``, so a Chinese
+subtitle is tried against gb18030/big5 and a Korean one against cp949. The
+"use the built-in ladder" sentinel is ``None``, never ``()`` — an empty tuple is
+an EMPTY ladder that silently stops every non-UTF-8 subtitle decoding.
 """
 
 from __future__ import annotations
 
 import codecs
+import logging
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any
 
 import pysubs2
+
+from anki_miner.utils.cjk_encoding import decode_tolerating_truncation, prefers_big5
+from anki_miner.utils.logging_ext import log_summary
+
+logger = logging.getLogger(__name__)
+
+#: One-shot latch for the charset-normalizer absence notice. The detector leg is
+#: consulted once per failed decode, so an un-latched notice would repeat for
+#: every subtitle in a batch while saying the same thing about the install.
+_DETECTOR_MISSING_LOGGED = False
 
 #: Python codec name → WHATWG encoding label, for callers that must name an
 #: encoding to a non-Python consumer. alass parses its ``--encoding-*`` values
@@ -49,8 +68,29 @@ _WHATWG_LABELS = {
     "gb18030": "gb18030",
     "big5": "big5",
     "cp950": "big5",
+    "cp1250": "windows-1250",
     "cp1251": "windows-1251",
     "cp1252": "windows-1252",
+    "cp1253": "windows-1253",
+    "cp1254": "windows-1254",
+    "cp1255": "windows-1255",
+    "cp1256": "windows-1256",
+    "cp1257": "windows-1257",
+    "cp1258": "windows-1258",
+    "koi8_r": "koi8-r",
+    "koi8_u": "koi8-u",
+    "iso8859_2": "iso-8859-2",
+    "iso8859_6": "iso-8859-6",
+    "iso8859_7": "iso-8859-7",
+    "iso8859_8": "iso-8859-8",
+    # WHATWG folds ISO-8859-9 into windows-1254 and TIS-620 into windows-874.
+    "iso8859_9": "windows-1254",
+    "iso8859_13": "iso-8859-13",
+    "iso8859_16": "iso-8859-16",
+    "cp874": "windows-874",
+    "tis_620": "windows-874",
+    # WHATWG's big5 decoder is HKSCS-aware.
+    "big5hkscs": "big5",
     "latin_1": "windows-1252",
     "latin-1": "windows-1252",
     "iso8859_1": "windows-1252",
@@ -63,6 +103,24 @@ _WHATWG_LABELS = {
     "utf-16": "utf-16le",
 }
 
+#: Every Big5-family codec a profile ladder may name. The three gb18030 guards
+#: have to recognise the FAMILY, not the literal "big5": yue's ladder names
+#: ``big5hkscs`` (the only one of the three that can encode colloquial
+#: Cantonese -- big5 and cp950 both raise UnicodeEncodeError on 嘅), and a
+#: literal test would leave the guard dead for it, letting gb18030 decode the
+#: file into PUA mojibake. Ordered, so a ladder naming two takes the first.
+_BIG5_FAMILY = ("big5", "cp950", "big5hkscs")
+
+
+def big5_family_codec(ladder: Sequence[str]) -> str | None:
+    """The Big5-family codec ``ladder`` names, or None when it names none.
+
+    Public because ``services/reading/_util.py`` runs the same guard on the
+    Reading path and must not carry a second copy of this rule.
+    """
+    return next((codec for codec in ladder if codec in _BIG5_FAMILY), None)
+
+
 #: Bound on the head sniffed by :func:`detect_subtitle_encoding`. Real subtitle
 #: files (even a heavily-styled multi-hour .ass) run tens to a few hundred KB;
 #: 1 MiB comfortably covers those whole, so detection is unaffected. It only
@@ -70,58 +128,297 @@ _WHATWG_LABELS = {
 #: case to one bounded read instead of decoding the whole thing twice over.
 _MAX_SNIFF_BYTES = 1024 * 1024
 
+#: Ladder used when a caller passes no ``encodings``. UTF-8 is absent from the
+#: load ladder because it is the attempt the caller already made and lost —
+#: that failure is what ``original_error`` holds.
+_DEFAULT_LOAD_LADDER = ("cp932", "euc_jp")
+_DEFAULT_DETECT_LADDER = ("utf-8", "cp932", "euc_jp")
 
-def load_with_fallback_encoding(path: str | Path, original_error: UnicodeDecodeError) -> pysubs2.SSAFile:
-    """Retry loading *path* from its BOM, cp932, EUC-JP, then detection (D10).
+#: Codecs that map every byte to one character. They almost never RAISE — each
+#: leaves only a handful of bytes undefined — so a first-success ladder would let
+#: the first one listed win on nearly any input. A candidate from this set wins
+#: only when its decode holds no U+FFFD, no C1 control and some of the mining
+#: script (spec S11). Compared by ``codecs.lookup`` name so aliases match.
+_SINGLE_BYTE_CODECS = frozenset(
+    codecs.lookup(name).name
+    for name in (
+        "cp1250",
+        "cp1251",
+        "cp1252",
+        "cp1253",
+        "cp1254",
+        "cp1255",
+        "cp1256",
+        "cp1257",
+        "cp1258",
+        "cp874",
+        "tis_620",
+        "koi8_r",
+        "koi8_u",
+        "latin_1",
+        "iso8859_2",
+        "iso8859_5",
+        "iso8859_6",
+        "iso8859_7",
+        "iso8859_8",
+        "iso8859_9",
+        "iso8859_13",
+        "iso8859_15",
+        "iso8859_16",
+    )
+)
 
-    UTF-16/UTF-32 BOMs are authoritative and checked before cp932 because their
-    NUL-interleaved bytes can decode as cp932 without producing usable cues.
-    For BOM-free input, cp932 is tried before the charset-normalizer detector
-    on purpose: the detector confidently mis-detects real cp932 Japanese as
-    ``cp949`` and decodes it *without* raising (silent mojibake), so for the
-    app's dominant non-UTF-8 input the explicit cp932 attempt must win first.
-    Only if cp932 itself raises :class:`UnicodeDecodeError` do we try EUC-JP.
-    That candidate must decode to Japanese text before it can win; otherwise
-    unrestricted detection follows. If that also fails, *original_error* (the
-    UTF-8 error) is raised.
+
+def is_single_byte_codec(codec: str) -> bool:
+    """Whether *codec* maps every byte to one character (see ``_SINGLE_BYTE_CODECS``)."""
+    try:
+        return codecs.lookup(codec).name in _SINGLE_BYTE_CODECS
+    except LookupError:
+        return False
+
+
+def plausible_single_byte_text(text: str, script_check: Callable[[str], bool] | None) -> bool:
+    """Whether a single-byte decode reads as text in the mining script."""
+    if "\ufffd" in text or any("\x80" <= ch <= "\x9f" for ch in text):
+        return False
+    return script_check is None or script_check(text)
+
+
+def is_utf8_codec(codec: str) -> bool:
+    """Whether *codec* is UTF-8, BOM-stripping or not (aliases match)."""
+    try:
+        return codecs.lookup(codec).name in ("utf-8", "utf-8-sig")
+    except LookupError:
+        return False
+
+
+#: Valid multi-byte UTF-8 sequences a file must hold per invalid byte to still
+#: count as UTF-8. Real text in every legacy codec a ladder names, read as
+#: UTF-8, forms a valid sequence only by accident: at most 0.3 per invalid byte
+#: over a whole file (Thai cp874, Chinese gb18030 highest; cp1252 Nordic text
+#: 0.0) and 2.5 on one short line. A UTF-8 file with one stray byte scores its
+#: whole count of accented letters.
+_UTF8_VALID_PER_INVALID = 10
+
+
+def mostly_utf8(data: bytes) -> bool:
+    """Whether *data* is UTF-8 with a few stray bytes rather than a legacy encoding.
+
+    One byte from another encoding (a line fixed in a cp1252 editor, two files
+    joined) fails a strict UTF-8 decode, and a single-byte ladder leg then
+    reads the whole file as mojibake ('m\u00c3\u00a5r' on every line). Decoding such a
+    file as UTF-8 with ``errors="replace"`` loses only the stray bytes.
+    """
+    text = data.decode("utf-8", errors="replace")
+    invalid = text.count("\ufffd")
+    valid = len(text) - len(text.encode("ascii", errors="ignore")) - invalid
+    return valid >= _UTF8_VALID_PER_INVALID * invalid
+
+
+def _single_byte_leg_fails(data: bytes, codec: str, script_check: Callable[[str], bool] | None) -> bool:
+    """True when *codec* is single-byte and its decode of *data* is not plausible text."""
+    if not is_single_byte_codec(codec):
+        return False
+    try:
+        return not plausible_single_byte_text(data.decode(codec), script_check)
+    except (UnicodeDecodeError, LookupError):
+        return True
+
+
+def script_check_kwarg(encodings: tuple[str, ...] | None, script: Any) -> dict[str, Callable[[str], bool]]:
+    """``{"script_check": ...}`` for a ladder holding a single-byte codec, else nothing.
+
+    ja/ko/zh ladders hold none, so their decode calls keep their exact shape —
+    the test doubles that mirror those signatures included. ``script`` is the
+    profile's ``ScriptSupport`` (duck-typed: utils never imports languages).
+    """
+    if encodings and any(is_single_byte_codec(name) for name in encodings):
+        return {"script_check": script.contains_target_script}
+    return {}
+
+
+def _read_head(path: Path) -> bytes:
+    """The bounded head the load path sniffs; ``b""`` when *path* is unreadable.
+
+    :func:`detect_subtitle_encoding` reads its own head instead of calling this:
+    there an unreadable file must come back *unnameable* (None), not empty.
+    """
+    try:
+        with path.open("rb") as f:
+            return f.read(_MAX_SNIFF_BYTES)
+    except OSError:
+        return b""
+
+
+def _error_byte(error: UnicodeDecodeError) -> str:
+    """The offending byte of *error* as ``0xNN``, or ``-`` when out of reach."""
+    data = error.object
+    if 0 <= error.start < len(data):
+        return f"0x{data[error.start]:02x}"
+    return "-"
+
+
+def _log_decode(
+    path: Path,
+    *,
+    bom: str,
+    ladder: tuple[str, ...] | list[str],
+    tried: tuple[str, ...] | list[str],
+    chosen: str | None,
+    detector: str | None = None,
+    level: int = logging.INFO,
+    **extra: object,
+) -> None:
+    """One receipt per decode, naming what won and what was walked to get there.
+
+    Mojibake reports arrive as "the text is wrong", never as an encoding name,
+    so the line has to carry the ladder, the subset actually attempted, and the
+    winner: a Chinese subtitle that lost its big5 leg and a Japanese one that
+    the detector mis-named as cp949 are indistinguishable from the text alone.
+    """
+    log_summary(
+        logger,
+        "Subtitle decode",
+        level=level,
+        file=path,
+        bom=bom,
+        ladder=tuple(ladder),
+        tried=tuple(tried),
+        chosen=chosen,
+        detector=detector,
+        **extra,
+    )
+
+
+def load_with_fallback_encoding(
+    path: str | Path,
+    original_error: UnicodeDecodeError,
+    *,
+    encodings: tuple[str, ...] | None = None,
+    script_check: Callable[[str], bool] | None = None,
+) -> pysubs2.SSAFile:
+    """Retry loading *path* from its BOM, the *encodings* ladder, then detection (D10).
+
+    UTF-16/UTF-32 BOMs are authoritative and checked before the ladder because
+    their NUL-interleaved bytes can decode as cp932 without producing usable
+    cues. A file that is UTF-8 but for a few stray bytes (:func:`mostly_utf8`)
+    then loads as UTF-8, losing only those bytes. For other BOM-free input each
+    ladder entry is tried in order, before the
+    charset-normalizer detector on purpose: the detector confidently
+    mis-detects real cp932 Japanese as ``cp949`` and decodes it *without*
+    raising (silent mojibake), so for the app's dominant non-UTF-8 input the
+    explicit cp932 attempt must win first. An ``euc_jp`` entry is special-cased:
+    that candidate must decode to Japanese text before it can win. If the whole
+    ladder and the detector fail, *original_error* (the UTF-8 error) is raised.
+
+    *encodings* is the caller's ladder — ``get_profile(...).import_encodings``
+    at a config-bearing site. ``None`` (never ``()``) means the built-in
+    Japanese ladder: cp932, then validated EUC-JP, then the detector.
+
+    *script_check* is the mining script's ``contains_target_script``: a
+    single-byte ladder leg wins only when its decode of the head passes
+    :func:`plausible_single_byte_text` (see :func:`script_check_kwarg`).
     """
     path = Path(path)
     if original_error.object.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
-        return pysubs2.load(str(path), encoding="utf_32")
+        subs = pysubs2.load(str(path), encoding="utf_32")
+        _log_decode(path, bom="utf-32", ladder=(), tried=(), chosen="utf_32")
+        return subs
     if original_error.object.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
-        return pysubs2.load(str(path), encoding="utf_16")
-    try:
-        return pysubs2.load(str(path), encoding="cp932")
-    except UnicodeDecodeError:
-        pass
-    try:
-        with path.open("rb") as f:
-            head = f.read(_MAX_SNIFF_BYTES)
-    except OSError:
-        head = b""
-    if _is_japanese_euc_jp_bytes(head):
-        return pysubs2.load(str(path), encoding="euc_jp")
+        subs = pysubs2.load(str(path), encoding="utf_16")
+        _log_decode(path, bom="utf-16", ladder=(), tried=(), chosen="utf_16")
+        return subs
+
+    ladder = _DEFAULT_LOAD_LADDER if encodings is None else encodings
+    head = _read_head(path)
+    # The caller's strict UTF-8 attempt is this ladder's first leg; a file
+    # that is UTF-8 but for a few stray bytes stays UTF-8 (see mostly_utf8).
+    if mostly_utf8(head):
+        subs = pysubs2.load(str(path), encoding="utf-8", errors="replace")
+        _log_decode(path, bom="-", ladder=ladder, tried=("utf-8",), chosen="utf-8", errors="replace")
+        return subs
+    # Every candidate actually attempted, in order. It is deliberately not the
+    # ladder: the euc_jp and gb18030 gates step over candidates, and which of
+    # the two lists a mojibake report shows is the whole diagnosis.
+    tried: list[str] = []
+    for candidate in ladder:
+        if candidate == "euc_jp":
+            # EUC-JP only wins when it produces real Japanese: gb18030 bytes
+            # decode as EUC-JP into plausible-looking kanji, so an ungated
+            # attempt steals Chinese subtitles.
+            if not _is_japanese_euc_jp_bytes(head):
+                continue
+            # The guard has already decoded these bytes as Japanese EUC-JP, so
+            # this leg is committed: a failure past the sniffed head propagates
+            # instead of falling through to the detector. Pre-ladder behaviour,
+            # kept exactly.
+            tried.append(candidate)
+            subs = pysubs2.load(str(path), encoding=candidate)
+            _log_decode(path, bom="-", ladder=ladder, tried=tried, chosen=candidate)
+            return subs
+        # gb18030 accepts every valid Big5 sequence and decodes it into PUA
+        # garbage without raising, so first-success could never reach the Big5
+        # leg. Step over gb18030 only when its own result carries that
+        # signature; a real GB18030 file scores zero and is unaffected.
+        if (
+            candidate == "gb18030"
+            and (big5_codec := big5_family_codec(ladder)) is not None
+            and prefers_big5(head, big5_codec)
+        ):
+            continue
+        tried.append(candidate)
+        if is_single_byte_codec(candidate) and _single_byte_leg_fails(head, candidate, script_check):
+            continue
+        try:
+            subs = pysubs2.load(str(path), encoding=candidate)
+        except (UnicodeDecodeError, LookupError):
+            continue
+        _log_decode(path, bom="-", ladder=ladder, tried=tried, chosen=candidate)
+        return subs
+
     encoding = _detect_encoding(head)
     if encoding:
         try:
-            return pysubs2.load(str(path), encoding=encoding)
+            subs = pysubs2.load(str(path), encoding=encoding)
         except (UnicodeDecodeError, LookupError):
             pass
+        else:
+            _log_decode(path, bom="-", ladder=ladder, tried=tried, chosen=encoding, detector=encoding)
+            return subs
+    _log_decode(
+        path,
+        bom="-",
+        ladder=ladder,
+        tried=tried,
+        chosen=None,
+        detector=encoding,
+        level=logging.WARNING,
+        error_pos=original_error.start,
+        error_byte=_error_byte(original_error),
+    )
     raise original_error
 
 
-def detect_subtitle_encoding(path: str | Path) -> str | None:
+def detect_subtitle_encoding(
+    path: str | Path,
+    *,
+    encodings: tuple[str, ...] | None = None,
+    script_check: Callable[[str], bool] | None = None,
+) -> str | None:
     """Return the WHATWG encoding label for *path*, or None when unsure.
 
-    Runs the same precedence as :func:`load_with_fallback_encoding` — UTF-8,
-    then BOM, then cp932, then validated EUC-JP, then the charset-normalizer
-    detector — but reports the encoding's *name* instead of a parsed file, for
-    callers that must declare it to an external tool.
+    Runs the same precedence as :func:`load_with_fallback_encoding` — BOM, then
+    the *encodings* ladder (whose UTF-8 leg keeps a :func:`mostly_utf8` file),
+    then the charset-normalizer detector — but reports
+    the encoding's *name* instead of a parsed file, for callers that must
+    declare it to an external tool. ``None`` (never ``()``) means the built-in
+    Japanese ladder: UTF-8, cp932, validated EUC-JP. *script_check* validates a
+    single-byte leg exactly as :func:`load_with_fallback_encoding` does.
 
     None means "could not name it confidently"; callers must then omit the
     declaration rather than guess, because naming the wrong encoding is worse
-    than letting the consumer detect. A detected encoding outside
-    :data:`_WHATWG_LABELS` also yields None for the same reason.
+    than letting the consumer detect. A ladder entry or a detected encoding
+    outside :data:`_WHATWG_LABELS` also yields None for the same reason.
 
     Only sniffs the first ``_MAX_SNIFF_BYTES`` of *path* — every real subtitle
     file fits inside that whole, so detection is unaffected; it just stops a
@@ -142,23 +439,33 @@ def detect_subtitle_encoding(path: str | Path) -> str | None:
     if head.startswith(codecs.BOM_UTF16_BE):
         return "utf-16be"
 
-    for candidate in ("utf-8", "cp932"):
-        try:
-            head.decode(candidate)
-        except UnicodeDecodeError as exc:
-            if exc.end != len(head):
-                continue  # a genuine invalid byte, not a truncation artifact
-            # The bounded read can cut mid multi-byte sequence right at the
-            # tail; that's an artifact of the bound, not proof this candidate
-            # is wrong. Retry without the truncated tail before giving up on it.
-            try:
-                head[: exc.start].decode(candidate)
-            except UnicodeDecodeError:
+    ladder = _DEFAULT_DETECT_LADDER if encodings is None else encodings
+    for candidate in ladder:
+        if candidate == "euc_jp":
+            if not _is_japanese_euc_jp_bytes(head):
                 continue
-        return _WHATWG_LABELS[candidate]
-
-    if _is_japanese_euc_jp_bytes(head):
-        return "euc-jp"
+            return _WHATWG_LABELS.get(candidate)
+        # Same guard as the load path: gb18030 names itself for Big5 bytes
+        # unless its own decode is PUA mojibake and the ladder's Big5 codec's
+        # is clean.
+        if candidate == "gb18030":
+            big5_codec = big5_family_codec(ladder)
+            if big5_codec is not None and prefers_big5(head, big5_codec):
+                continue
+        if _single_byte_leg_fails(head, candidate, script_check):
+            continue
+        # decode_tolerating_truncation compares against exc.object, never head:
+        # a BOM-stripping codec (utf_8_sig, the first leg of every profile
+        # ladder) hands the delegate the bytes AFTER the BOM, so offsets keyed
+        # on head can never reach len(head) when a BOM is present. Keying on
+        # head made this whole retry unreachable, and a BOM'd UTF-8 subtitle
+        # with a cut tail got named cp932/windows-1251. A UTF-8 leg also keeps
+        # a file with a few stray bytes, as the load path does (mostly_utf8).
+        if decode_tolerating_truncation(head, candidate) is None and not (
+            is_utf8_codec(candidate) and mostly_utf8(head)
+        ):
+            continue
+        return _WHATWG_LABELS.get(candidate)
 
     detected = _detect_encoding(head)
     if detected is None:
@@ -170,19 +477,13 @@ def _is_japanese_euc_jp_bytes(data: bytes) -> bool:
     """True iff *data* decodes as EUC-JP and contains real Japanese script.
 
     *data* is a caller-owned, already-bounded head (never a full file read —
-    both callers hold one already). EUC-JP is mostly double-byte, so a
-    bounded head can cut mid-character right at the tail; same truncation
-    tolerance as the utf-8/cp932 checks in :func:`detect_subtitle_encoding`.
+    both callers hold one already). Truncation tolerance is shared with
+    :func:`detect_subtitle_encoding`'s ladder via
+    :func:`anki_miner.utils.cjk_encoding.decode_tolerating_truncation`.
     """
-    try:
-        text = data.decode("euc_jp")
-    except UnicodeDecodeError as exc:
-        if exc.end != len(data):
-            return False  # a genuine invalid byte, not a truncation artifact
-        try:
-            text = data[: exc.start].decode("euc_jp")
-        except UnicodeDecodeError:
-            return False
+    text = decode_tolerating_truncation(data, "euc_jp")
+    if text is None:
+        return False
     return any(
         0x3040 <= ord(char) <= 0x30FF
         or 0xFF66 <= ord(char) <= 0xFF9F
@@ -203,9 +504,13 @@ def _detect_encoding(data: bytes) -> str | None:
     detector leg of :func:`load_with_fallback_encoding` is skipped (for
     BOM-free input, the cp932 attempt there runs first and independently).
     """
+    global _DETECTOR_MISSING_LOGGED
     try:
         from charset_normalizer import from_bytes
     except ImportError:
+        if not _DETECTOR_MISSING_LOGGED:
+            _DETECTOR_MISSING_LOGGED = True
+            logger.debug("Subtitle decode detector unavailable: charset-normalizer is not importable")
         return None
     match = from_bytes(data).best()
     return match.encoding if match is not None else None

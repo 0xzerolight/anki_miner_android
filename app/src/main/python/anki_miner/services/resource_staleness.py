@@ -36,10 +36,10 @@ if TYPE_CHECKING:
 #: Family key -> (plural noun, singular noun, Settings path). The Settings path
 #: is the one-click fix each family's message points at.
 _FAMILY_LABELS: dict[str, tuple[str, str, str]] = {
-    "dictionary": ("Dictionaries", "Dictionary", "Settings → Dictionaries → Reimport All"),
-    "frequency": ("Frequency sources", "Frequency source", "Settings → Frequency → Reimport All"),
-    "pitch": ("Pitch sources", "Pitch source", "Settings → Pitch Accent → Reimport All"),
-    "audio": ("Audio packs", "Audio pack", "Settings → Audio → Reimport All"),
+    "dictionary": ("Dictionaries", "Dictionary", "Settings → Dictionaries → More → Reimport All"),
+    "frequency": ("Frequency sources", "Frequency source", "Settings → Frequency → More → Reimport All"),
+    "pitch": ("Pitch sources", "Pitch source", "Settings → Pitch Accent → More → Reimport All"),
+    "audio": ("Audio packs", "Audio pack", "Settings → Word Audio → More → Reimport All"),
 }
 
 
@@ -49,7 +49,7 @@ def format_stale_family_message(family: str, names: list[str]) -> str:
     joined = ", ".join(f"'{name}'" for name in names)
     verb = "need" if len(names) != 1 else "needs"
     noun = plural if len(names) != 1 else singular
-    return f"{noun} {joined} {verb} reimport (schema upgrade) — {fix}"
+    return f"{noun} {joined} {verb} reimport after the app upgrade — {fix}"
 
 
 def stale_resource_reimport_error(

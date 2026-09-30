@@ -3,14 +3,20 @@
 import json
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from anki_miner.utils.android_fd import inherited_fd_command
+from anki_miner.utils.subprocess_log import log_command, log_command_result, tail_for_log
 from anki_miner.utils.subprocess_utils import no_window_kwargs
 
 logger = logging.getLogger(__name__)
+
+# A probe that returns something other than JSON returned an error page, a
+# usage banner or a shell wrapper's complaint; the head of it names which.
+_MALFORMED_STDOUT_CHARS = 200
 
 JAPANESE_LANGUAGE_CODES = frozenset({"jpn", "ja", "japanese", "jp"})
 
@@ -78,16 +84,31 @@ class SubtitleStream:
     is_default: bool = False
 
 
-def is_japanese_language_tag(language_tag: str | None) -> bool:
-    """Return whether *language_tag* identifies Japanese.
+def matches_language_tag(language_tag: str | None, codes: frozenset[str]) -> bool:
+    """Whether *language_tag* names one of *codes*.
 
-    Alongside the legacy aliases, accept BCP 47 tags whose primary language
-    subtag is ``ja`` (for example, ``ja-JP``).
+    Accepts the exact tag and a BCP 47 regional variant whose primary subtag
+    is in *codes* (``ja-JP`` -> ``ja``, ``ko-KR`` -> ``ko``). A code that is
+    merely a prefix (``jav``) never matches: the variant must be
+    dash-separated.
     """
     if language_tag is None:
         return False
     normalized = language_tag.lower()
-    return normalized in JAPANESE_LANGUAGE_CODES or normalized.startswith("ja-")
+    if normalized in codes:
+        return True
+    primary, sep, _ = normalized.partition("-")
+    return bool(sep) and primary in codes
+
+
+def is_japanese_language_tag(language_tag: str | None) -> bool:
+    """Return whether *language_tag* identifies Japanese.
+
+    Android keeps this name for ``android_bridge/media_probe.py``; it shares
+    :func:`matches_language_tag` so the audio-track picker agrees with the
+    engine's own auto-detect.
+    """
+    return matches_language_tag(language_tag, JAPANESE_LANGUAGE_CODES)
 
 
 def _run_ffprobe_json(
@@ -126,6 +147,8 @@ def _run_ffprobe_json(
 
     if proc_registry is not None and proc_registry.cancelled:
         return None
+    log_command(logger, "ffprobe", cmd, timeout_s=30)
+    started_at = time.monotonic()
     try:
         with inherited_fd_command(cmd) as (child_cmd, pass_fds):
             proc = subprocess.Popen(
@@ -140,7 +163,9 @@ def _run_ffprobe_json(
                 **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
             )
     except (subprocess.SubprocessError, OSError, ValueError) as e:
-        logger.warning("Error probing %s (select=%s): %s", video_path, select_streams, e)
+        # Nothing ran, so there is no stderr: the argv is the whole diagnosis.
+        log_command(logger, "ffprobe", cmd, timeout_s=30, level=logging.WARNING)
+        logger.warning("Error probing %s (select=%s): %s: %s", video_path, select_streams, type(e).__name__, e)
         return None
 
     if proc_registry is not None and not proc_registry.register(proc):
@@ -162,27 +187,63 @@ def _run_ffprobe_json(
                 _kill_quietly(proc)
                 proc.communicate()
                 logger.warning("ffprobe timed out for %s", video_path)
+                log_command_result(
+                    logger,
+                    "ffprobe",
+                    cmd,
+                    returncode=proc.returncode,
+                    state="timed_out",
+                    elapsed_s=time.monotonic() - started_at,
+                    level=logging.WARNING,
+                )
                 return None
             except (subprocess.SubprocessError, OSError, ValueError) as e:
                 _kill_quietly(proc)
-                logger.warning("Error probing %s (select=%s): %s", video_path, select_streams, e)
+                logger.warning("Error probing %s (select=%s): %s: %s", video_path, select_streams, type(e).__name__, e)
+                log_command_result(
+                    logger,
+                    "ffprobe",
+                    cmd,
+                    returncode=proc.returncode,
+                    state="communicate_failed",
+                    elapsed_s=time.monotonic() - started_at,
+                    level=logging.WARNING,
+                )
                 return None
     finally:
         if proc_registry is not None:
             proc_registry.unregister(proc)
 
+    elapsed_s = time.monotonic() - started_at
     if proc.returncode != 0:
         if proc_registry is not None and proc_registry.cancelled:
             logger.debug("ffprobe cancelled for %s", video_path)
             return None
-        logger.warning("ffprobe failed for %s: %s", video_path, stderr)
+        log_command_result(
+            logger,
+            "ffprobe",
+            cmd,
+            returncode=proc.returncode,
+            stderr_tail=tail_for_log(stderr or ""),
+            elapsed_s=elapsed_s,
+            level=logging.WARNING,
+        )
         return None
 
     try:
         data: dict = json.loads(stdout)
     except json.JSONDecodeError as e:
-        logger.warning("ffprobe returned malformed JSON for %s: %s", video_path, e)
+        # ffprobe exited 0 and still produced non-JSON: log the head of what it
+        # did produce, which names the wrapper or error page that answered.
+        logger.warning(
+            "ffprobe returned malformed JSON for %s: %s: stdout[:%d]=%r",
+            video_path,
+            e,
+            _MALFORMED_STDOUT_CHARS,
+            (stdout or "")[:_MALFORMED_STDOUT_CHARS],
+        )
         return None
+    log_command_result(logger, "ffprobe", cmd, returncode=0, elapsed_s=elapsed_s)
     return data
 
 
@@ -319,23 +380,29 @@ def find_japanese_audio_stream(
     video_file: Path,
     ffprobe_cmd: str = "ffprobe",
     *,
+    codes: frozenset[str] | None = None,
     proc_registry: ProcessRegistry | None = None,
 ) -> AudioStream | None:
-    """Probe a video file with ffprobe and return its Japanese audio stream.
+    """Probe a video file with ffprobe and return its mining-language audio stream.
 
     Returns None if ffprobe fails, returns malformed JSON, or no audio stream
-    has a Japanese language tag.
+    carries a matching language tag.
 
     ``ffprobe_cmd`` is forwarded to :func:`list_audio_streams`; defaults to the
     bare ``"ffprobe"`` literal so direct callers are unaffected.
+
+    ``codes`` is the mining language's ``LanguageProfile.audio_track_codes``;
+    it is keyword-only so the pre-existing positional ``ffprobe_cmd`` callers
+    stay untouched, and ``None`` means :data:`JAPANESE_LANGUAGE_CODES`.
     """
+    wanted = JAPANESE_LANGUAGE_CODES if codes is None else codes
     streams = list_audio_streams(
         video_file,
         ffprobe_cmd=ffprobe_cmd,
         proc_registry=proc_registry,
     )
 
-    japanese_streams = [stream for stream in streams if is_japanese_language_tag(stream.language_tag)]
+    japanese_streams = [stream for stream in streams if matches_language_tag(stream.language_tag, wanted)]
     if japanese_streams:
         stream = next((candidate for candidate in japanese_streams if candidate.is_default), japanese_streams[0])
         logger.info(

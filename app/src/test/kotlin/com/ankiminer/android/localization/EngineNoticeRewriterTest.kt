@@ -1,5 +1,6 @@
 package com.ankiminer.android.localization
 
+import com.ankiminer.android.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -15,6 +16,28 @@ class EngineNoticeRewriterTest {
             "No dictionary entry for 2 word(s): 本好き, 編み",
             rewritten,
         )
+    }
+
+    /** The pre-curation site words the same miss differently; one restatement covers both. */
+    @Test
+    fun preCurationDefinitionMissIsRestatedTheSameWay() {
+        val rewritten = rewriter.rewrite("Skipped 2 words missing from your offline dictionaries: 本好き, 編み")
+
+        assertEquals(
+            "No dictionary entry for 2 word(s): 本好き, 編み",
+            rewritten,
+        )
+    }
+
+    /** The engine points at desktop's "Settings → Frequency"; Android restates it in its own words. */
+    @Test
+    fun frequencyCutoffNoticeIsRestatedAwayFromTheDesktopMenu() {
+        val rewritten =
+            rewriter.rewrite(
+                "Frequency cutoff ignored — no ranked frequency source is loaded (Settings → Frequency).",
+            )
+
+        assertEquals("resource:${R.string.mining_notice_frequency_cutoff_ignored}", rewritten)
     }
 
     /** The engine appends the overflow tail inside its own %3 slot, so it rides along in group 2. */
@@ -47,9 +70,9 @@ class EngineNoticeRewriterTest {
     @Test
     fun receiptsAreDropped() {
         listOf(
-            "Ambiguous reading review required for 3 word(s); current readings kept",
+            "3 word(s) have more than one reading — the parsed reading was kept.",
             "Skipped 3 word(s) Anki flagged as duplicates (same Expression)",
-            "Using WebP for animated screenshots — this ffmpeg build has no AVIF (libsvtav1) encoder.",
+            "Using WebP for animated screenshots — this ffmpeg build has no AVIF encoder.",
             "text-only volume: pages have no paired images",
             "page 12: no image matched 'volume01/012.jpg'",
             "Skipped 4 inline image(s) (gaiji) that carried no text.",
@@ -74,11 +97,12 @@ class EngineNoticeRewriterTest {
     @Test
     fun neighboursOfReceiptsSurvive() {
         listOf(
-            "Animated screenshots unavailable — this ffmpeg build has no AVIF or WebP encoder; " +
-                "switch to static screenshots in Settings.",
+            "Animated screenshots unavailable — this ffmpeg build has no AVIF or WebP encoder " +
+                "(Settings → Card Media).",
             "Skipped 4 malformed Mokuro record(s).",
             "Skipped unreadable page image 012.jpg — its card has no picture",
-            "Ambiguous reading review required for 3 word(s); current readings kept, and then some",
+            "3 word(s) have more than one reading — the parsed reading was kept. And then some",
+            "Frequency cutoff ignored — no ranked frequency source is loaded (Settings → Frequency). Twice",
         ).forEach { notice ->
             assertEquals(notice, rewriter.rewrite(notice))
         }

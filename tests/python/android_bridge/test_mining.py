@@ -1901,6 +1901,42 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
 
 
+def test_stale_resource_error_points_at_android_resources() -> None:
+    """The staleness gate ends each family's line with a desktop Settings path.
+
+    Built with the engine's own formatter, so a re-worded family label or fix
+    path falls back to the verbatim text here instead of being half-rewritten.
+    """
+    pytest.importorskip("requests")
+    from anki_miner.exceptions import SetupError
+    from anki_miner.services.resource_staleness import format_stale_family_message
+
+    message = "\n".join(
+        [
+            format_stale_family_message("dictionary", ["JMdict"]),
+            format_stale_family_message("audio", ["Forvo", "JPod"]),
+        ]
+    )
+    _outcome, terminal = mining._exception_terminal(
+        "run_" + "c" * 32,
+        SetupError(message),
+        cancelled=False,
+        log=mining.logger,
+    )
+    error = json.loads(terminal)["payload"]["error"]
+
+    assert error["code"] == "setup_incomplete"
+    assert error["message"] == (
+        "Dictionary 'JMdict' needs reimport after the app upgrade — reimport in Settings, under Resources.\n"
+        "Audio packs 'Forvo', 'JPod' need reimport after the app upgrade — reimport in Settings, under Resources."
+    )
+    assert "→" not in error["message"]
+
+    # A message that only shares the shape keeps its own text.
+    unrelated = "Dictionary 'JMdict' needs reimport after the app upgrade — somewhere else"
+    assert mining._android_engine_message(unrelated) == unrelated
+
+
 def test_setup_errors_are_not_retryable_while_other_engine_failures_are(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2032,7 +2068,7 @@ def test_engine_composition_seams_still_have_the_parameters_the_bridge_passes() 
     parser_params = _vendored_method_params(
         "anki_miner/services/subtitle_parser.py", "SubtitleParserService", "__init__"
     )
-    assert {"name_lookup", "term_rules_lookup"} <= parser_params
+    assert {"name_lookup", "term_rules_lookup", "form_lookup"} <= parser_params
 
     episode_params = _vendored_method_params(
         "anki_miner/orchestration/episode_processor.py", "EpisodeProcessor", "process_episode"
@@ -2071,13 +2107,39 @@ def test_bridge_passes_every_new_engine_seam() -> None:
     dictionaries. None of the three raises, and none shows up in a run report.
     """
     parser_kwargs = _bridge_call_keywords("_build_processor", "SubtitleParserService")
-    assert {"name_lookup", "term_rules_lookup"} <= parser_kwargs
+    assert {"name_lookup", "term_rules_lookup", "form_lookup"} <= parser_kwargs
 
+    # Every registry EpisodeProcessor.check_resource_staleness folds into its
+    # ``families=frozenset(...)``: one left out is a family never gated.
     processor_kwargs = _bridge_call_keywords("_build_processor", "EpisodeProcessor")
-    assert {"frequency_registry", "pitch_registry"} <= processor_kwargs
+    assert {"dictionary_registry", "frequency_registry", "pitch_registry", "audio_pack_registry"} <= processor_kwargs
 
     episode_kwargs = _bridge_call_keywords("_process_episode", "process_episode")
     assert "cross_episode_counts" not in episode_kwargs
+
+
+def test_bridge_passes_every_registry_the_staleness_gate_reads() -> None:
+    """A registry the engine adds to the gate is a new family the bridge must inject.
+
+    ``check_resource_staleness`` builds ``families`` from the registries that are
+    not None, so a registry the bridge never passes leaves its whole family
+    ungated with no error: a stale index then mines silently without it.
+    """
+    source = (PROJECT_ROOT / "app/src/main/python/anki_miner/orchestration/episode_processor.py").read_text(
+        encoding="utf-8"
+    )
+    gated: set[str] = set()
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name == "check_resource_staleness":
+            for keyword in (kw for call in ast.walk(node) if isinstance(call, ast.Call) for kw in call.keywords):
+                if keyword.arg == "families":
+                    gated = {
+                        attribute.attr.removeprefix("_")
+                        for attribute in ast.walk(keyword.value)
+                        if isinstance(attribute, ast.Attribute) and attribute.attr.endswith("_registry")
+                    }
+    assert gated == {"dictionary_registry", "frequency_registry", "pitch_registry", "audio_pack_registry"}
+    assert gated <= _bridge_call_keywords("_build_processor", "EpisodeProcessor")
 
 
 def test_runtime_composition_injects_only_android_video_services(
@@ -2113,6 +2175,7 @@ def test_runtime_composition_injects_only_android_video_services(
     expected_kana_attest_lookup = object()
     expected_term_common_lookup = object()
     expected_term_rules_lookup = object()
+    expected_form_lookup = object()
 
     class Registry:
         def __init__(self, root: Path) -> None:
@@ -2136,6 +2199,7 @@ def test_runtime_composition_injects_only_android_video_services(
             self.has_offline_definitions = expected_kana_attest_lookup
             self.offline_term_commonness = expected_term_common_lookup
             self.offline_deinflection_terms_exist = expected_term_rules_lookup
+            self.offline_term_rows = expected_form_lookup
 
         def ensure_loaded(self) -> None:
             events.append("definition-load")
@@ -2154,12 +2218,14 @@ def test_runtime_composition_injects_only_android_video_services(
             kana_attest_lookup: object,
             term_common_lookup: object,
             term_rules_lookup: object,
+            form_lookup: object,
         ) -> None:
             assert term_lookup is expected_term_lookup
             assert reading_lookup is expected_reading_lookup
             assert kana_attest_lookup is expected_kana_attest_lookup
             assert term_common_lookup is expected_term_common_lookup
             assert term_rules_lookup is expected_term_rules_lookup
+            assert form_lookup is expected_form_lookup
             # No excluded_wordsets in this config, so there is no wordset
             # service to source name spans from.
             assert name_lookup is None

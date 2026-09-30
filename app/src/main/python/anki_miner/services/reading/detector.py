@@ -21,19 +21,24 @@ import logging
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.models.reading import ReadingDocument, ReadingSourceRef
+from anki_miner.utils.file_utils import is_junk_path
 from anki_miner.utils.logging_ext import log_summary
 
 from ._util import (
     MAX_MOKURO_JSON_BYTES,
-    is_junk_path,
     natural_sort_key,
     read_text_capped,
     read_zip_member_text_capped,
 )
+
+if TYPE_CHECKING:
+    from anki_miner.languages.profile import SentenceRules
+
+    from .anki_deck_source import DeckNoteReader
 
 logger = logging.getLogger(__name__)
 
@@ -54,8 +59,8 @@ _ARCHIVE_EXTS: tuple[str, ...] = (".cbz", ".zip")
 
 # Subtitle-file extensions mined as text (Reading → Subtitle Files sub-tab). No
 # MicroDVD ``.sub``: frame-based, pysubs2 needs a media-derived fps we don't
-# have without the video.
-_SUBTITLE_EXTS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt")
+# have without the video. SAMI ``.smi`` is the Korean fansub format.
+_SUBTITLE_EXTS: tuple[str, ...] = (".srt", ".ass", ".ssa", ".vtt", ".smi")
 
 # Book-file extensions (Reading → Novels sub-tab); matched case-insensitively.
 _BOOK_EXTS: tuple[str, ...] = (".epub", ".txt")
@@ -77,7 +82,7 @@ def detect(
        archives (title dir), else the sibling ``<name>.mokuro`` (user
        dropped the image dir itself), else error.
     4. ``.epub``/``.txt`` → one book (metadata deferred to the loader).
-    5. ``.srt``/``.ass``/``.ssa``/``.vtt`` → one subtitle document (metadata
+    5. ``.srt``/``.ass``/``.ssa``/``.vtt``/``.smi`` → one subtitle document (metadata
        deferred to the loader).
 
     ``diagnostics`` receives ``(archive_path, reason)`` entries for malformed
@@ -137,7 +142,7 @@ def detect(
         raise SetupError(
             f"'{path.name}' is not a recognized reading source. Supported: .mokuro, "
             ".cbz/.zip (with a matching .mokuro beside or inside it), .epub, .txt, "
-            "subtitle files (.srt/.ass/.ssa/.vtt), or a folder of .mokuro volumes."
+            "subtitle files (.srt/.ass/.ssa/.vtt/.smi), or a folder of .mokuro volumes."
         )
     except SetupError:
         log_summary(
@@ -164,6 +169,12 @@ def load(
     ref: ReadingSourceRef,
     *,
     cancel_check: Callable[[], bool] | None = None,
+    encodings: tuple[str, ...] | None = None,
+    rules: SentenceRules | None = None,
+    script_check: Callable[[str], bool] | None = None,
+    normalize: Callable[[str], str] | None = None,
+    has_target_script: Callable[[str], bool] | None = None,
+    anki: DeckNoteReader | None = None,
 ) -> ReadingDocument:
     """Dispatch a ref to its source loader and return the loaded document.
 
@@ -171,31 +182,71 @@ def load(
     module stays cheap and a broken/absent loader can't fail unrelated kinds.
     ``kind="text"`` refs are pathless (built by the Text sub-tab, never by
     :func:`detect`) and carry their content in ``ref.text``.
+
+    ``encodings`` is the mining language's decode ladder, and reaches only the
+    two loaders that guess an encoding — the novel and subtitle ones. mokuro
+    reads a UTF-8 JSON sidecar, EPUB takes its encoding from the archive's own
+    XML declaration, and a ``text`` ref is already a decoded string, so none of
+    the other three accepts the keyword at all.
+
+    ``rules`` is that language's sentence-splitting policy, and reaches the four
+    loaders that call ``split_sentences``. ``subtitle`` is the odd one out the
+    other way round: it splits nothing, so it takes the ladder but not the
+    rules.
+
+    ``normalize`` and ``has_target_script`` reach the subtitle and Anki-deck
+    loaders only — the other kinds are normalised per unit by the parser, and a
+    cue (or a deck card's subtitle line) is the one unit that can carry two
+    languages on two physical lines.
+
+    ``anki`` reaches the Anki-deck loader only (``kind="deck"`` refs are
+    pathless, built by the Anki Deck sub-tab, and read through AnkiConnect).
+
+    Each optional argument is built as its own fragment and omitted when
+    ``None``, so a call that supplies none is the pre-transition
+    ``loader.load(ref)`` verbatim and no branch is handed a keyword its loader
+    does not accept.
     """
     if cancel_check is not None and cancel_check():
         raise OperationCancelled("Reading load cancelled")
+    common: dict[str, Any] = {} if cancel_check is None else {"cancel_check": cancel_check}
+    sniffing: dict[str, Any] = {} if encodings is None else {"encodings": encodings}
+    if script_check is not None:
+        # Validates a single-byte leg of that same ladder (spec S11).
+        sniffing["script_check"] = script_check
+    splitting: dict[str, Any] = {} if rules is None else {"rules": rules}
     if ref.kind == "mokuro":
         from . import mokuro_source
 
-        return mokuro_source.load(ref) if cancel_check is None else mokuro_source.load(ref, cancel_check=cancel_check)
+        return mokuro_source.load(ref, **common, **splitting)
     if ref.kind == "epub":
         from . import epub_source
 
-        return epub_source.load(ref) if cancel_check is None else epub_source.load(ref, cancel_check=cancel_check)
+        return epub_source.load(ref, **common, **splitting)
     if ref.kind == "txt":
         from . import aozora_source
 
-        return aozora_source.load(ref) if cancel_check is None else aozora_source.load(ref, cancel_check=cancel_check)
+        return aozora_source.load(ref, **common, **sniffing, **splitting)
     if ref.kind == "subtitle":
         from . import subtitle_source
 
-        return (
-            subtitle_source.load(ref) if cancel_check is None else subtitle_source.load(ref, cancel_check=cancel_check)
-        )
+        cleaning: dict[str, Any] = {} if normalize is None else {"normalize": normalize}
+        if has_target_script is not None:
+            cleaning["has_target_script"] = has_target_script
+        return subtitle_source.load(ref, **common, **sniffing, **cleaning)
     if ref.kind == "text":
         from . import text_source
 
-        return text_source.load(ref) if cancel_check is None else text_source.load(ref, cancel_check=cancel_check)
+        return text_source.load(ref, **common, **splitting)
+    if ref.kind == "deck":
+        from . import anki_deck_source
+
+        if anki is None:
+            raise SetupError("Mining an Anki deck needs a connection to Anki.")
+        deck_cleaning: dict[str, Any] = {} if normalize is None else {"normalize": normalize}
+        if has_target_script is not None:
+            deck_cleaning["has_target_script"] = has_target_script
+        return anki_deck_source.load(ref, anki, **common, **deck_cleaning)
 
     raise SetupError(f"Unknown reading source kind: {ref.kind!r}")
 
@@ -246,9 +297,7 @@ def detect_book_folder(directory: Path) -> list[ReadingSourceRef]:
             input=directory,
             found=found_extensions,
         )
-        raise SetupError(
-            f"No .epub or .txt books found in '{directory.name}'. Manga folders are mined in the Manga tab."
-        )
+        raise SetupError(f"No .epub or .txt books found in '{directory.name}'.")
     refs = [_book_ref(child, "epub" if child.suffix.lower() == ".epub" else "txt") for child in books]
     _log_detected(
         directory,

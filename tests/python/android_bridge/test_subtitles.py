@@ -399,8 +399,18 @@ def test_cue_preflight_preserves_decode_failure_when_fallbacks_fail(
 
     sub = tmp_path / "ep.srt"
     sub.write_bytes(b"\x81")
+    sniffed: list[object] = []
+
+    def detect(data: object) -> None:
+        # The engine detector takes the sniffed bytes; a path makes
+        # charset-normalizer raise TypeError instead of naming nothing.
+        assert isinstance(data, bytes)
+        sniffed.append(data)
+        return None
+
     subtitle_encoding = ModuleType("anki_miner.utils.subtitle_encoding")
-    subtitle_encoding.__dict__["_detect_encoding"] = lambda _path: None
+    subtitle_encoding.__dict__["_detect_encoding"] = detect
+    subtitle_encoding.__dict__["_read_head"] = lambda path: path.read_bytes()
     monkeypatch.setitem(
         sys.modules,
         "anki_miner.utils.subtitle_encoding",
@@ -409,6 +419,24 @@ def test_cue_preflight_preserves_decode_failure_when_fallbacks_fail(
 
     with pytest.raises(UnicodeDecodeError):
         subtitles._preflight_cue_budgets(sub)
+    assert sniffed == [b"\x81"]
+
+
+def test_cue_preflight_names_a_utf16_subtitle_through_the_engine_detector(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    pytest.importorskip("charset_normalizer", reason="runtime dependency lane")
+    del initialized_bridge_home
+    from android_bridge import subtitles
+
+    sub = tmp_path / "ep.srt"
+    sub.write_bytes(SRT.encode("utf-16"))
+
+    encoding = subtitles._preflight_cue_budgets(sub)
+
+    assert sub.read_bytes().decode(encoding).lstrip("\ufeff") == SRT
 
 
 def test_cues_oversized_text_too_large(

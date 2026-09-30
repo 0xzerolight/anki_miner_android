@@ -45,6 +45,12 @@ def _common_stubs() -> dict[str, types.ModuleType]:
         "anki_miner.utils.android_fd": _module(
             "anki_miner.utils.android_fd", inherited_fd_command=_inherited
         ),
+        "anki_miner.utils.subprocess_log": _module(
+            "anki_miner.utils.subprocess_log",
+            log_command=lambda *_args, **_kwargs: None,
+            log_command_result=lambda *_args, **_kwargs: None,
+            tail_for_log=lambda *_args, **_kwargs: [],
+        ),
         "anki_miner.utils.subprocess_utils": _module(
             "anki_miner.utils.subprocess_utils", no_window_kwargs=lambda: {}
         ),
@@ -168,6 +174,7 @@ def _load_media_extractor():
             "anki_miner.utils.audio_track_detector": _module(
                 "anki_miner.utils.audio_track_detector",
                 JAPANESE_LANGUAGE_CODES=frozenset({"jpn"}),
+                matches_language_tag=lambda _tag, _codes: False,
             ),
             "anki_miner.utils.ffmpeg_resolver": _module(
                 "anki_miner.utils.ffmpeg_resolver",
@@ -266,6 +273,7 @@ class MediaProcessCancellationTests(unittest.TestCase):
         service._cache_lock = threading.Lock()
         service._audio_stream_cache = {}
         service._audio_stream_list_cache = {}
+        service._audio_codes = lambda: frozenset({"jpn"})
         registry = media._FfmpegProcRegistry()
         calls: list[object] = []
         release = threading.Event()
@@ -443,7 +451,10 @@ class MediaProcessCancellationTests(unittest.TestCase):
             def on_complete(self) -> None:
                 raise AssertionError("cancelled extraction must not report completion")
 
-        words = [SimpleNamespace(lemma=value) for value in ("one", "two", "three")]
+        words = [
+            SimpleNamespace(lemma=value, mined_form=value)
+            for value in ("one", "two", "three")
+        ]
         service.extract_media = extract
 
         with self.assertLogs(media.logger, level=logging.INFO) as captured:

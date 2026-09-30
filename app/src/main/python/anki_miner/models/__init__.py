@@ -10,17 +10,18 @@ from .processing import (
     TerminalOutcome,
     ValidationIssue,
     ValidationResult,
+    WhitelistCoverage,
     classify_result,
     classify_terminal_outcome,
     result_error_text,
 )
 from .stats import DifficultyEntry, Milestone, MilestoneKind, MiningSession, OverallStats
-from .word import LineLemmas, TokenizedWord, WordData
+from .word import LineLemmas, SentenceEdit, TokenizedWord
 
 __all__ = [
     "TokenizedWord",
+    "SentenceEdit",
     "LineLemmas",
-    "WordData",
     "MediaData",
     "CardPayload",
     "ProcessingResult",
@@ -33,6 +34,7 @@ __all__ = [
     "CANCELLED_ERROR",
     "ValidationResult",
     "ValidationIssue",
+    "WhitelistCoverage",
     "MiningSession",
     "OverallStats",
     "DifficultyEntry",

@@ -2,11 +2,74 @@
 
 import tempfile
 import types
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Literal, Mapping
+from typing import Literal, Mapping, Sequence
 
 from .paths import ANKI_MINER_HOME
+
+# Deliberate duplicate of anki_miner.languages.AVAILABLE_LANGUAGES: config must
+# not import that package. A sync-assertion test pins the two identical.
+_LANGUAGE_CODES: tuple[str, ...] = (
+    "ja",
+    "ko",
+    "zh",
+    "en",
+    "ca",
+    "de",
+    "pt",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "nb",
+    "ro",
+    "el",
+    "fi",
+    "hu",
+    "hr",
+    "sv",
+    "pl",
+    "lt",
+    "da",
+    "tr",
+    "id",
+    "ru",
+    "ar",
+    "th",
+    "fa",
+    "sl",
+    "uk",
+    "vi",
+    "yue",
+    "he",
+)
+
+# Deliberate duplicate of anki_miner.languages.SCRIPT_VARIANT_IDS, for the same
+# reason as _LANGUAGE_CODES; test_stage_s_contract.py pins the two identical.
+_SCRIPT_VARIANT_IDS: tuple[str, ...] = ("", "simplified", "traditional", "br", "pt")
+
+# Enumerated fields __post_init__ resets to a default, in the order it checks
+# them: field -> (accepted values, default). An unrecognised value is reset
+# rather than carried into a combo lookup, which would silently leave the widget
+# on whatever index it happened to hold.
+_ENUM_RESETS: dict[str, tuple[frozenset[str], str]] = {
+    "deck_builder_mode": (frozenset({"all", "top_n", "coverage_pct"}), "all"),
+    "youtube_subtitle_source": (frozenset({"auto", "transcribe", "captions"}), "auto"),
+    # A stale or hand-edited config must never pass an unsupported model name to
+    # faster-whisper. The authoritative set lives in services/asr/model_manager.py;
+    # duplicated here to keep config self-contained and import-free.
+    "asr_model": (frozenset({"large-v3", "small"}), "large-v3"),
+    # Nor an unsupported backend name through to the transcriber.
+    "asr_device": (frozenset({"auto", "cuda", "cpu", "vulkan"}), "auto"),
+}
+
+# Discrete whole-UI zoom presets (whole percents) offered in the Zoom dropdown
+# (gui/widgets/panels/ui_settings_panel.py) and used to snap a folded legacy
+# ui_font_scale value onto the nearest preset (GUIConfigManager._fold_removed_fields).
+# All values sit inside the [0.5, 2.0] ui_zoom clamp range. Qt-free so the config
+# manager can import it without pulling in a widget module.
+ZOOM_PRESETS: tuple[int, ...] = (75, 100, 125, 150, 175, 200)
 
 
 @dataclass(frozen=True)
@@ -62,7 +125,11 @@ class AudioSourceEntry:
     ~/.anki_miner/audio_packs/<pack_id>/.
     JPod101 entries are the always-available online fallback; pack_id is None.
     GoogleTTS entries are a synthetic Google Translate TTS online fallback;
-    pack_id is None (like jpod101).
+    pack_id is None (like jpod101). ``edgetts`` entries are the synthetic
+    Microsoft Edge read-aloud fallback (services/edge_tts_audio_fetcher.py);
+    pack_id is None. The voice is the active profile's
+    ``AudioDefaults.edge_voice``, so an entry for a language with no Edge
+    voice builds nothing.
 
     ``custom`` / ``custom_json`` entries are user-configured URL-template sources
     (the local-audio-yomichan integration contract). ``url`` holds the template
@@ -78,10 +145,31 @@ class AudioSourceEntry:
         "googletts",
         "custom",
         "custom_json",
+        "edgetts",
     ]
     pack_id: str | None = None
     url: str | None = None
     enabled: bool = True
+
+
+def insert_above_first_enabled_jpod101(
+    chain: Sequence[AudioSourceEntry],
+    new_entries: Sequence[AudioSourceEntry],
+) -> tuple[AudioSourceEntry, ...]:
+    """Splice *new_entries* above the first enabled jpod101 entry (else append).
+
+    The chain is first-hit-wins, so anything the user adds — a pack or a custom
+    URL source — must outrank the always-available jpod101 fallback or it is
+    never consulted for any word jpod101 can serve. A disabled jpod101 is not
+    an anchor: nothing needs to outrank it.
+    """
+    out = list(chain)
+    insert_at = next(
+        (index for index, entry in enumerate(out) if entry.kind == "jpod101" and entry.enabled),
+        len(out),
+    )
+    out[insert_at:insert_at] = new_entries
+    return tuple(out)
 
 
 @dataclass(frozen=True)
@@ -117,6 +205,9 @@ class AnkiMinerConfig:
             "frequency_sort": "",
             "source": "",
             "expression_audio": "",
+            # Secondary-language subtitle line for the sentence (F7). "" = off;
+            # the mapped name is the switch, like sentence_reading.
+            "sentence_translation": "",
         }
     )
     # JP Mining Note-style card-type marker. When card_type is non-empty, an "x"
@@ -162,6 +253,7 @@ class AnkiMinerConfig:
     condenser_filtered_chars: str = "♪♫♬♩〜～"  # Cues consisting only of these are dropped
     condenser_write_subtitles: bool = False  # Also write condensed .srt + .lrc sidecars
     condenser_tag_outputs: bool = False  # Show the pre-run metadata editor and tag outputs (Issue #113)
+    condenser_merge_output: bool = False  # Folder mode: join the whole run into one file (F5)
 
     # Media Downloader settings (Utilities → Download). Persisted defaults for
     # the Download tab's inline run options, seeded/written back the same way as
@@ -169,12 +261,35 @@ class AnkiMinerConfig:
     # scalars (auto-persist; no __post_init__ coercion). The destination folder
     # is deliberately NOT config — it is session state (ui_state.ini), like the
     # other tool tabs' output folders.
-    downloader_format_preset: str = "best"  # key into services.media_downloader.FORMAT_PRESETS
+    downloader_format_preset: str = "best"  # key into media_downloader's FORMAT_PRESETS or SUBTITLES_ONLY_PRESET
     downloader_custom_format: str = ""  # raw yt-dlp -f string; non-empty overrides the preset
     downloader_write_subtitles: bool = False  # --write-subs/--write-auto-subs (manual preferred)
     downloader_subtitle_langs: str = "ja"  # --sub-langs value
+    downloader_audio_lang: str = ""  # preferred audio-track language; "" = best available
     downloader_embed_thumbnail: bool = False  # --embed-thumbnail
     downloader_embed_metadata: bool = False  # --embed-metadata
+
+    # --- Manga OCR (Utilities → Manga OCR) ---
+    # Persisted run option; unticked passes --force_cpu to mokuro. The tab's
+    # "Redo already-processed volumes" box is deliberately NOT a field here
+    # (overwrite-class options stay transient — test_overwrite_is_never_persisted).
+    mokuro_use_gpu: bool = True
+
+    # --- Inline run options remembered between launches --------------------
+    # Set on a workflow screen rather than in Settings, and persisted the same
+    # way condenser_*/downloader_* are: the screen folds its edit into a fresh
+    # config and emits run_options_changed, which MainWindow.update_config
+    # saves. Global, not language-scoped: each is the same decision in ja/zh/ko.
+    review_words_before_mining: bool = False  # The word curator popup, all 7 mining screens
+    youtube_align_captions: bool = False  # Align downloaded captions to the audio
+    youtube_subtitle_source: str = "auto"  # "auto" | "transcribe" | "captions"
+    deck_builder_mode: str = "all"  # DeckSelectionMode value: "all" | "top_n" | "coverage_pct"
+    deck_builder_top_n: int = 1000
+    deck_builder_coverage_pct: float = 90.0
+    deck_builder_skip_known: bool = True  # "Skip words already in my Anki collection"
+    # Ticked backfill group keys: card_backfiller.FIELD_GROUPS plus one per
+    # profile-declared card field (measure_word, expression_pinyin, hanja, …).
+    backfill_field_groups: tuple[str, ...] = ()
 
     # Animated screenshot settings (opt-in; static JPEG remains default)
     screenshot_animated: bool = False
@@ -187,6 +302,15 @@ class AnkiMinerConfig:
     screenshot_animated_height: int = 720  # scale-to-height, aspect preserved
     screenshot_animated_quality: int = 30  # 0-100 user scale, mapped per codec
     subtitle_offset: float = 0.0  # Seconds to shift subtitles (+ later, - earlier)
+
+    # Secondary-language subtitle track (Video -> Single, F7). Off by default
+    # and global (not language-scoped): the second file picker and its offset
+    # appear on the tab only while this is on, so nothing new is on screen for
+    # anyone who never asked. The track's offset is per run, never persisted
+    # here -- like the subtitle offset spinbox, it is dialled per episode and
+    # remembered with the recent file pair. Whether the translation reaches a
+    # card is a separate switch: the "sentence_translation" anki_fields key.
+    secondary_subtitle_enabled: bool = False
 
     # Word filtering settings
     allowed_pos: tuple[str, ...] = field(default_factory=lambda: ("名詞", "動詞", "形容詞", "副詞", "形状詞", "代名詞"))
@@ -329,20 +453,24 @@ class AnkiMinerConfig:
     # (殺る→遣る, Issue #19/#5) keep the exact mined_form match.
     known_words_match_kana_variants: bool = True
     # When True, the known-words subtraction in Phase 2 is skipped so ALL
-    # mineable words are mined regardless of Anki collection state. Used by
-    # the Deck Builder's "include everything" mode. Default False preserves
-    # the standard filter-against-known-vocab behaviour.
+    # mineable words are mined regardless of Anki collection state. Set by
+    # the e2e harness's no-Anki/deterministic mode (tests/e2e/app_config.py).
+    # Default False preserves the standard filter-against-known-vocab
+    # behaviour.
     include_known_words: bool = False
-    # Deck Builder "complete deck" mode. When True, the per-episode reduction
-    # filters (frequency rank, word lists, sentence dedup, cross-episode,
-    # i+1, sentence length) are skipped so the build matches the corpus
-    # preview exactly. Known-words subtraction is unaffected (see
-    # include_known_words). Default False preserves normal mining.
+    # When True, the per-episode reduction filters (frequency rank, word
+    # lists, sentence dedup, cross-episode, i+1, sentence length) are
+    # skipped. Known-words subtraction is unaffected (see
+    # include_known_words). Set by the Android golden-contract fixtures
+    # (scripts/engine_golden_contract_v2.py). Default False preserves normal
+    # mining.
     bypass_optional_filters: bool = False
     # When True, notes are posted to AnkiConnect with
     # options={"allowDuplicate": True, "duplicateScope": "deck"} so words
-    # already present elsewhere in the collection are still carded. Used by
-    # the Deck Builder. Default False preserves the standard dedup behaviour.
+    # already present elsewhere in the collection are still carded. Set by
+    # both the Android golden-contract fixtures and the e2e harness's
+    # no-Anki/deterministic mode. Default False preserves the standard
+    # dedup behaviour.
     allow_duplicate_cards: bool = False
 
     # Script-type filters (Issue #57). When set, words whose card form
@@ -352,6 +480,13 @@ class AnkiMinerConfig:
     # bypass_optional_filters like the other optional reduction filters.
     exclude_hiragana_only_words: bool = False
     exclude_katakana_only_words: bool = False
+
+    # Language-scoped display/content preferences (multi-language transition).
+    # Deliberately generic rather than zh-prefixed: they are carried per
+    # language by LANGUAGE_SCOPED_FIELDS, so ja/ko keep "" / False and zh gets
+    # "simplified" / True from its profile's scoped_defaults.
+    script_variant: str = ""  # "" | "simplified" | "traditional" | "br" | "pt"
+    reading_tone_color: bool = False
 
     # Word list settings
     blacklist_path: Path | None = None
@@ -385,8 +520,20 @@ class AnkiMinerConfig:
     # (`EpisodeProcessor._phase5_create` → `build_card_style_block`). anki_miner
     # never writes to the note type's card styling.
 
-    # Deduplication settings
-    deduplicate_sentences: bool = True
+    # Card creation order. When True, the words handed to phase 3 are re-sorted
+    # into the order they first appear in the media, so the notes AnkiConnect
+    # receives — and therefore Anki's new-card positions — form a clean series.
+    # Off by default because the sort deliberately overrides three upstream
+    # orderings: the whitelist force-include prepend, the Word Curator's
+    # clicked column sort, and the season-mode merged pool order.
+    strict_card_order: bool = False
+
+    # Deduplication settings. Keeps one card per example sentence: the FIRST
+    # mineable word of a line wins and its sentence-mates are dropped. Off by
+    # default because that keeper is positional, not pedagogical — a language
+    # with an obligatory overt subject opens nearly every line on a pronoun, so
+    # the line's real vocabulary is what gets traded away.
+    deduplicate_sentences: bool = False
 
     # i+1 sentence filtering. When True, only mine words that have at least
     # one example sentence containing exactly one unknown lemma.
@@ -394,14 +541,30 @@ class AnkiMinerConfig:
     use_i_plus_one_filter: bool = False
 
     # Sentence length filter (Issue #33). Caps the example sentence by audio
-    # duration and/or character count. ``use_sentence_length_filter`` is the
-    # master toggle; each cap of ``0`` (or ``0.0``) means "no limit" for that
-    # dimension when the toggle is on. Runs AFTER i+1 because filter_i_plus_one
-    # swaps each word's sentence/duration to its chosen i+1 line — applying the
-    # cap before that swap would be silently bypassed by the swap.
-    use_sentence_length_filter: bool = False
+    # duration and/or character count. Active whenever either cap is above 0
+    # (each ``0``/``0.0`` means "no limit" for that dimension). Runs AFTER i+1
+    # because filter_i_plus_one swaps each word's sentence/duration to its
+    # chosen i+1 line — applying the cap before that swap would be silently
+    # bypassed by the swap.
     max_sentence_duration_seconds: float = 0.0  # 0 = no duration cap
     max_sentence_chars: int = 0  # 0 = no character cap
+
+    # Full-sentence mining (FUTURE_IDEAS 6). When True, a word whose subtitle
+    # cue does not end a sentence is stamped with the neighbouring cues that
+    # finish it, and the card carries the merged sentence, timings and clip
+    # window instead of the fragment. The terminators come from the mining
+    # language's profile (SentenceRules), which is why this is deliberately NOT
+    # in LANGUAGE_SCOPED_FIELDS: the preference is the same decision in every
+    # language, only the punctuation differs. Every subtitle-timed run inherits
+    # it (video, YouTube, batch, audiobook — they all go through
+    # process_episode); the reading sources have no cue timeline and ignore it.
+    # The sentence-length filter above is unaffected and still measures the raw
+    # cue in phase 2, so a merged card can be longer than the cap its fragment
+    # passed; the merged window is bounded instead by the clip strip's own
+    # ceiling (services/cue_merge.py). Sentence dedup, by contrast, IS re-run
+    # over the merged text before curation — two words on adjacent cues would
+    # otherwise both survive on one sentence.
+    merge_incomplete_cues: bool = False
 
     # Reading tab: minimum times a word must occur in a single book/volume to be
     # mined. 1 = no minimum (filter off). Consumed via
@@ -476,6 +639,10 @@ class AnkiMinerConfig:
     # Optional explicit override for the alass executable. When unset,
     # subtitle retiming falls back to alass on PATH.
     alass_location: Path | None = None
+    # Optional explicit override for the mokuro executable. When unset,
+    # anki_miner.utils.mokuro_resolver prefers the in-app uv environment under
+    # uv_root, then mokuro on PATH.
+    mokuro_location: Path | None = None
 
     # NOTE: the three alass alignment knobs (retime_split_penalty,
     # retime_correct_framerate, retime_single_offset) were removed when the
@@ -511,36 +678,66 @@ class AnkiMinerConfig:
     # user-configurable directly.
     bin_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "bin")
 
+    # Root of the in-app uv installs (Utilities → Manga OCR's setup card):
+    # uv_root/python (managed CPython), uv_root/mokuro (the venv). The uv
+    # binary itself lives in bin_root beside alass.
+    uv_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "uv")
+
     # Theme settings (UI state — persisted via gui_config.json).
     # `theme_favorites` is the curated list that drives the top-right combo;
     # the active `theme` does not need to be in favorites.
     theme: str = "light"
     theme_favorites: tuple[str, ...] = ("light", "dark")
     themes_root: Path = field(default_factory=lambda: ANKI_MINER_HOME / "themes")
-    # Global UI font scale factor. Applied to all QSS ${font-size-*} variables.
-    # Clamped to [0.5, 2.0] in __post_init__; values outside the range are silently clamped.
-    ui_font_scale: float = 1.0
-    # Whole-UI zoom factor. Injected as QT_SCALE_FACTOR before QApplication is
-    # constructed (gui/app.py), so it scales everything uniformly — fonts,
-    # spacing, fixed-size widgets, pixmaps — unlike the font-only ui_font_scale.
-    # Restart-to-apply (Qt reads QT_SCALE_FACTOR once at startup). Clamped to
-    # [0.5, 2.0] in __post_init__.
+    # Whole-UI zoom factor — the only interface-size control (a removed
+    # ui_font_scale field used to be a second one; GUIConfigManager folds a
+    # saved value into this on load). Injected as QT_SCALE_FACTOR before
+    # QApplication is constructed (gui/app.py), so it scales everything
+    # uniformly — fonts, spacing, fixed-size widgets, pixmaps. Restart-to-apply
+    # (Qt reads QT_SCALE_FACTOR once at startup). Clamped to [0.5, 2.0] in
+    # __post_init__.
     ui_zoom: float = 1.0
     # UI language code (BCP-47-ish short code, e.g. "en", "fr", "ru"). "en" is
     # the source language: no translator is installed for it. Persisted via
     # gui_config.json; applied at startup (restart-to-apply). Discussion #76.
     ui_language: str = "en"
-    # File pickers use the OS-native dialog by default. Issue #100 froze the
-    # GUI thread inside the native Windows picker, and the first fix forced
-    # Qt's own dialog everywhere — but the hang came from the BLOCKING static
-    # call, not from being native (see gui/utils/file_dialogs). The pickers are
-    # non-blocking now, so native is safe and is what users expect. False
-    # switches to Qt's built-in dialog, which also follows the app's QSS theme.
-    # Consumed via gui/utils/file_dialogs.set_use_native.
-    use_native_file_dialogs: bool = True
+    # Utilities tools the user took off the Utilities tab (Settings -> General),
+    # by stable sub-tab key (gui/capabilities.UTILITY_SUBTABS).
+    # Hidden keys only, so a tool added in a later release shows by default.
+    # Read through capabilities.effective_hidden_utilities: unknown keys are
+    # ignored and a list naming every tool hides none. Global and portable:
+    # not language-scoped, not machine-specific.
+    # D18: a NEW install starts with Deck Filter and Download hidden (the tab
+    # overflowed at 1024 px in five languages). An existing config file that
+    # predates this field keeps every tool: GUIConfigManager's load path seeds
+    # an absent key as empty (keep_legacy_utilities).
+    hidden_utilities: tuple[str, ...] = ("deckfilter", "download")
+
+    # Keyboard shortcut overrides (Settings -> Keyboard): action id ->
+    # QKeySequence PortableText, "" = unbound. Overrides only: an action the
+    # user never touched follows its code default (gui/utils/key_bindings.py),
+    # so a changed default reaches existing users with no migration. Unknown ids
+    # and unreadable sequences are ignored when resolved. Global and portable:
+    # not language-scoped, not machine-specific.
+    key_bindings: Mapping[str, str] = field(default_factory=dict)
 
     # Monotonic identity for committed GUI settings. Not user-editable.
     config_version: int = 0
+
+    # Active MINING language (distinct from `ui_language`, the interface
+    # language). "ja" is the pre-transition behaviour and the value every
+    # existing config produces (absent key -> this default), so no
+    # CONFIG_SCHEMA_VERSION bump is needed. Portable in settings exports (NOT in
+    # machine_specific_fields): the language a user mines is a preference, the
+    # resources backing it are the machine-local part.
+    language: str = "ja"
+    # Parked snapshots of the language-scoped settings for every language that is
+    # NOT active; the active language's values always live in the normal fields.
+    # Written and read only by languages/switching.py (Stage 1), so this stays
+    # {} for single-language users. Deep-wrapped read-only below like anki_fields:
+    # the config is shared across worker threads and a parked snapshot must not be
+    # mutable in place.
+    language_stash: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     def __post_init__(self):
         """Convert string paths to Path objects if needed.
@@ -560,109 +757,63 @@ class AnkiMinerConfig:
         ):
             raise ValueError("max_parallel_workers must be an integer from 1 to 20")
 
-        # Convert paths to Path objects (handles both str and Path inputs)
-        if isinstance(self.media_temp_folder, str):
-            object.__setattr__(self, "media_temp_folder", Path(self.media_temp_folder))
-        if isinstance(self.jmdict_path, str):
-            object.__setattr__(self, "jmdict_path", Path(self.jmdict_path))
-        if isinstance(self.dicts_root, str):
-            object.__setattr__(self, "dicts_root", Path(self.dicts_root))
-        if isinstance(self.audio_packs_root, str):
-            object.__setattr__(self, "audio_packs_root", Path(self.audio_packs_root))
-        if isinstance(self.pitch_accent_path, str):
-            object.__setattr__(self, "pitch_accent_path", Path(self.pitch_accent_path))
-        if isinstance(self.pitch_root, str):
-            object.__setattr__(self, "pitch_root", Path(self.pitch_root))
-        if isinstance(self.freqs_root, str):
-            object.__setattr__(self, "freqs_root", Path(self.freqs_root))
-        if isinstance(self.known_words_db_path, str):
-            object.__setattr__(self, "known_words_db_path", Path(self.known_words_db_path))
-        if isinstance(self.blacklist_path, str):
-            object.__setattr__(self, "blacklist_path", Path(self.blacklist_path) if self.blacklist_path else None)
-        if isinstance(self.whitelist_path, str):
-            object.__setattr__(self, "whitelist_path", Path(self.whitelist_path) if self.whitelist_path else None)
-        if isinstance(self.stats_db_path, str):
-            object.__setattr__(self, "stats_db_path", Path(self.stats_db_path))
-        if isinstance(self.log_path, str):
-            object.__setattr__(self, "log_path", Path(self.log_path))
-        if isinstance(self.youtube_cookies_file, str):
-            object.__setattr__(
-                self,
-                "youtube_cookies_file",
-                Path(self.youtube_cookies_file) if self.youtube_cookies_file else None,
-            )
-        if isinstance(self.youtube_ffmpeg_location, str):
-            object.__setattr__(
-                self,
-                "youtube_ffmpeg_location",
-                Path(self.youtube_ffmpeg_location) if self.youtube_ffmpeg_location else None,
-            )
-        if isinstance(self.ffmpeg_location, str):
-            object.__setattr__(
-                self,
-                "ffmpeg_location",
-                Path(self.ffmpeg_location) if self.ffmpeg_location else None,
-            )
-        if isinstance(self.ffprobe_location, str):
-            object.__setattr__(
-                self,
-                "ffprobe_location",
-                Path(self.ffprobe_location) if self.ffprobe_location else None,
-            )
-        if isinstance(self.alass_location, str):
-            object.__setattr__(
-                self,
-                "alass_location",
-                Path(self.alass_location) if self.alass_location else None,
-            )
-        if isinstance(self.ytdlp_location, str):
-            object.__setattr__(
-                self,
-                "ytdlp_location",
-                Path(self.ytdlp_location) if self.ytdlp_location else None,
-            )
-        if isinstance(self.themes_root, str):
-            object.__setattr__(self, "themes_root", Path(self.themes_root))
-        if isinstance(self.asr_models_root, str):
-            object.__setattr__(self, "asr_models_root", Path(self.asr_models_root))
-        if isinstance(self.cuda_libs_root, str):
-            object.__setattr__(self, "cuda_libs_root", Path(self.cuda_libs_root))
-        if isinstance(self.onnx_pack_root, str):
-            object.__setattr__(self, "onnx_pack_root", Path(self.onnx_pack_root))
-        if isinstance(self.bin_root, str):
-            object.__setattr__(self, "bin_root", Path(self.bin_root))
-        # JSON round-trip yields a list for theme_favorites; coerce to tuple
-        # so the frozen dataclass stays internally immutable.
-        if isinstance(self.theme_favorites, list):
-            object.__setattr__(self, "theme_favorites", tuple(self.theme_favorites))
-        # JSON round-trip yields a list for excluded_decks; coerce to tuple.
-        if isinstance(self.excluded_decks, list):
-            object.__setattr__(self, "excluded_decks", tuple(self.excluded_decks))
-        # JSON round-trip yields a list for excluded_wordsets; coerce to tuple.
-        if isinstance(self.excluded_wordsets, list):
-            object.__setattr__(self, "excluded_wordsets", tuple(self.excluded_wordsets))
-        # JSON round-trip yields a list for allowed_pos / excluded_subtypes;
-        # coerce to tuple so the frozen instance stays internally immutable.
-        if isinstance(self.allowed_pos, list):
-            object.__setattr__(self, "allowed_pos", tuple(self.allowed_pos))
-        if isinstance(self.excluded_subtypes, list):
-            object.__setattr__(self, "excluded_subtypes", tuple(self.excluded_subtypes))
-        # Wrap anki_fields in MappingProxyType so it cannot be mutated in place
-        # on the shared frozen config instance (tuple coercion pattern already
-        # applied to the other collection fields above).
-        if not isinstance(self.anki_fields, types.MappingProxyType):
-            object.__setattr__(self, "anki_fields", types.MappingProxyType(dict(self.anki_fields)))
-        # Same immutability wrap for the card-type marker name map.
-        if not isinstance(self.card_type_marker_fields, types.MappingProxyType):
-            object.__setattr__(
-                self, "card_type_marker_fields", types.MappingProxyType(dict(self.card_type_marker_fields))
-            )
+        if self.script_variant not in _SCRIPT_VARIANT_IDS:
+            raise ValueError("script_variant must be one of " + ", ".join(repr(v) for v in _SCRIPT_VARIANT_IDS))
 
-        # Clamp ui_font_scale to [0.5, 2.0]
-        object.__setattr__(self, "ui_font_scale", max(0.5, min(2.0, float(self.ui_font_scale))))
+        # Coerce by declared type; the four tables sit below the class. A JSON
+        # round-trip yields str for a path and list for a tuple. Mappings are
+        # wrapped read-only so the shared frozen config cannot be mutated in
+        # place.
+        for name in _PATH_FIELDS:
+            value = getattr(self, name)
+            if isinstance(value, str):
+                object.__setattr__(self, name, Path(value))
+        for name in _OPTIONAL_PATH_FIELDS:
+            value = getattr(self, name)
+            if isinstance(value, str):
+                object.__setattr__(self, name, Path(value) if value else None)
+        for name in _TUPLE_FIELDS:
+            value = getattr(self, name)
+            if isinstance(value, list):
+                object.__setattr__(self, name, tuple(value))
+        for name in _MAPPING_FIELDS:
+            value = getattr(self, name)
+            if not isinstance(value, types.MappingProxyType):
+                object.__setattr__(self, name, types.MappingProxyType(dict(value)))
+        if not isinstance(self.language_stash, types.MappingProxyType) or any(
+            not isinstance(value, types.MappingProxyType) for value in self.language_stash.values()
+        ):
+            object.__setattr__(
+                self,
+                "language_stash",
+                types.MappingProxyType(
+                    {
+                        # Keyed the same way `language` is normalized below, so a
+                        # hand-edited " ZH" can still be matched against it.
+                        str(code).strip().lower(): types.MappingProxyType(dict(values))
+                        for code, values in dict(self.language_stash).items()
+                    }
+                ),
+            )
 
         # Clamp ui_zoom to [0.5, 2.0]
         object.__setattr__(self, "ui_zoom", max(0.5, min(2.0, float(self.ui_zoom))))
+
+        # Clamp the Deck Builder run options to their spinbox ranges. A config
+        # value outside them would otherwise be silently re-clamped by the
+        # widget at seed time, so the saved value and the shown value would
+        # disagree.
+        object.__setattr__(self, "deck_builder_top_n", max(1, min(100_000, int(self.deck_builder_top_n))))
+        object.__setattr__(
+            self, "deck_builder_coverage_pct", max(1.0, min(100.0, float(self.deck_builder_coverage_pct)))
+        )
+
+        # Two loops so the ui_language line keeps its place between the
+        # run-option resets and the ASR resets (today's evaluation order).
+        for name in ("deck_builder_mode", "youtube_subtitle_source"):
+            allowed, default = _ENUM_RESETS[name]
+            if getattr(self, name) not in allowed:
+                object.__setattr__(self, name, default)
 
         # Normalize ui_language: lower-case, strip, empty → "en". Lenient (no
         # whitelist) so a contributor's freshly-added language code is accepted
@@ -670,17 +821,16 @@ class AnkiMinerConfig:
         # code with no .qm.
         object.__setattr__(self, "ui_language", str(self.ui_language).strip().lower() or "en")
 
-        # Validate asr_model: reset unknown values to the default so a stale or
-        # hand-edited config never silently passes an unsupported model name to
-        # faster-whisper. The authoritative set lives in services/asr/model_manager.py;
-        # duplicated here to keep config self-contained and import-free.
-        if self.asr_model not in {"large-v3", "small"}:
-            object.__setattr__(self, "asr_model", "large-v3")
+        for name in ("asr_model", "asr_device"):
+            allowed, default = _ENUM_RESETS[name]
+            if getattr(self, name) not in allowed:
+                object.__setattr__(self, name, default)
 
-        # Validate asr_device the same way: a stale/hand-edited config must never
-        # pass an unsupported backend name through to the transcriber.
-        if self.asr_device not in {"auto", "cuda", "cpu", "vulkan"}:
-            object.__setattr__(self, "asr_device", "auto")
+        # Normalize and validate the mining language. An unknown or hand-edited
+        # value resets to "ja" rather than raising, matching asr_model/asr_device:
+        # a config written by a newer build must still load on an older one.
+        code = str(self.language).strip().lower()
+        object.__setattr__(self, "language", code if code in _LANGUAGE_CODES else "ja")
 
     @property
     def frequency_active(self) -> bool:
@@ -709,3 +859,16 @@ class AnkiMinerConfig:
         the boot-time legacy migration back-fills it for existing CSV users.
         """
         return any(e.enabled for e in self.pitch_chain)
+
+
+def _fields_annotated(annotation: object) -> tuple[str, ...]:
+    """Names of the AnkiMinerConfig fields declared exactly ``annotation``, in declaration order."""
+    return tuple(f.name for f in fields(AnkiMinerConfig) if f.type == annotation)
+
+
+# __post_init__'s coercion tables, derived from the annotations so a new field
+# of one of these types is coerced with nothing to register.
+_PATH_FIELDS = _fields_annotated(Path)
+_OPTIONAL_PATH_FIELDS = _fields_annotated(Path | None)
+_TUPLE_FIELDS = _fields_annotated(tuple[str, ...])
+_MAPPING_FIELDS = _fields_annotated(Mapping[str, str])

@@ -175,6 +175,7 @@
     <string name="undo_failed">Hoàn tác thất bại. Không có ghi chú nào bị xóa.</string>
     <string name="undo_words_failed">Đã xóa ghi chú, nhưng khôi phục từ đã biết thất bại.</string>
     <string name="mining_notice_no_definition">Không có mục từ điển cho %1$d từ: %2$s</string>
+    <string name="mining_notice_frequency_cutoff_ignored">Đã bỏ qua ngưỡng tần suất: chưa tải nguồn tần suất có xếp hạng nào. Hãy thêm một nguồn trong Cài đặt → Tài nguyên.</string>
     <string name="result_metric_created">Đã tạo</string>
     <string name="result_metric_skipped_new">Đã bỏ qua / mới</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

@@ -93,8 +93,10 @@ def test_user_note_type_with_partial_field_map_round_trips(tmp_path: Path) -> No
     # desktop default for a key the user left unmapped.
     assert config.anki_fields["glossary"] == ""
     assert config.anki_fields["pitch_text"] == ""
-    # Nothing outside the supplied 18 keys leaks in, and every value round-trips verbatim.
-    assert dict(config.anki_fields) == _USER_FIELD_MAP
+    # Every supplied value round-trips verbatim. The one key beyond the 18 is the engine's own
+    # sentence_translation, whose default is blank, so the overlay adds a field that writes nothing
+    # until Kotlin maps it.
+    assert dict(config.anki_fields) == {**_USER_FIELD_MAP, "sentence_translation": ""}
 
 
 def test_user_note_type_partial_field_map_passes_request_config_validation() -> None:

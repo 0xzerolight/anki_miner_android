@@ -6,6 +6,7 @@ import itertools
 import logging
 import subprocess
 import threading
+import time
 import wave
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
@@ -25,10 +26,11 @@ from anki_miner.utils import (
     safe_filename,
 )
 from anki_miner.utils.android_fd import inherited_fd_command
-from anki_miner.utils.audio_track_detector import JAPANESE_LANGUAGE_CODES
+from anki_miner.utils.audio_track_detector import matches_language_tag
 from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg, resolve_ffprobe
 from anki_miner.utils.i18n import tr_format
 from anki_miner.utils.logging_ext import log_summary
+from anki_miner.utils.subprocess_log import log_command, log_command_result, tail_for_log
 from anki_miner.utils.subprocess_utils import no_window_kwargs
 
 logger = logging.getLogger(__name__)
@@ -67,6 +69,30 @@ def resolve_audio_window(word: TokenizedWord, padding: float) -> tuple[float, fl
     start = max(0.0, padded_start)
     duration = word.duration + (padding * 2) - (start - padded_start)
     return start, duration
+
+
+def resolve_screenshot_time(
+    word: TokenizedWord | None, start_time: float, duration: float, screenshot_offset: float
+) -> float:
+    """Return the absolute second the static screenshot is grabbed at.
+
+    The single place the frame is decided. A word carrying a
+    ``screenshot_override`` (set by the curator's "Use current frame" button)
+    is grabbed at that instant as-is — the user looked at the frame and picked
+    it, so ``screenshot_offset`` is not applied on top. Every other word gets
+    the historical behaviour: the line's start plus the configured offset,
+    capped at half the line so a short cue cannot overshoot its own window.
+
+    Args:
+        word: The word being extracted, or ``None`` for a caller that holds no
+            word and therefore only wants the computed default.
+        start_time: The line's start, in source-video seconds.
+        duration: The line's duration, in seconds.
+        screenshot_offset: ``config.screenshot_offset``.
+    """
+    if word is not None and word.screenshot_override is not None:
+        return max(0.0, word.screenshot_override)
+    return start_time + min(screenshot_offset, duration / 2)
 
 
 #: Concurrent animated-screenshot encodes across the worker pool. libaom on a
@@ -163,8 +189,9 @@ class MediaExtractorService:
         self._animated_encoder_ok: dict[str, bool] = {}
         self._encoder_probe_lock = threading.Lock()
         # Per-extraction discriminator for temp clip filenames. Two words that
-        # share lemma+start_time (kanji-variant collapse, or the Deck Builder's
-        # dedup bypass) would otherwise map to the same {word}_{ms} name and, run
+        # share lemma+start_time (kanji-variant collapse, or an
+        # allow_duplicate_cards run's dedup bypass) would otherwise map to the
+        # same {word}_{ms} name and, run
         # in parallel by extract_media_batch's ThreadPoolExecutor, race two
         # ``ffmpeg -y`` writes to one path → a corrupt clip. next() on
         # itertools.count is atomic under the GIL, so no lock is needed.
@@ -256,6 +283,9 @@ class MediaExtractorService:
         # the audio encode and the animated screenshot, so a clip that is
         # configured to match the audio still matches it after an edit.
         audio_start, audio_duration = resolve_audio_window(word, self.config.audio_padding)
+        # The static frame's instant, resolved once: a frame the user picked in
+        # the curator, or the configured offset from the line's start.
+        screenshot_time = resolve_screenshot_time(word, word.start_time, word.duration, self.config.screenshot_offset)
 
         # Extract screenshot (skipped for audiobooks — no video stream to grab).
         # When animated is configured but no encoder is available (effective_fmt
@@ -270,6 +300,7 @@ class MediaExtractorService:
                 effective_fmt,
                 proc_registry,
                 audio_window=(audio_start, audio_duration),
+                screenshot_time=screenshot_time,
             )
 
         # Extract audio
@@ -343,7 +374,13 @@ class MediaExtractorService:
                 QCoreApplication.translate("MediaExtractorService", "Extracting media"),
             )
 
-        media_data_list: list[tuple[TokenizedWord, MediaData]] = []
+        # Keyed by submission index, not appended: the pool is harvested with
+        # wait(FIRST_COMPLETED) over a set, so append order is ffmpeg-completion
+        # order and varies run to run. Cards are created in this list's order
+        # (phases 4/5 and addNotes are all strictly positional), so the return
+        # must be the caller's input order — matching the sequential reading
+        # path, _phase3_reading_media.
+        kept: dict[int, tuple[TokenizedWord, MediaData]] = {}
         max_workers = self.config.max_parallel_workers
         was_cancelled = False
         attempted = 0
@@ -412,13 +449,13 @@ class MediaExtractorService:
         poll = self._CANCEL_POLL_INTERVAL if cancelled_check else None
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            words_to_submit = iter(words)
+            words_to_submit = iter(enumerate(words))
             future_to_word = {}
             pending = set()
 
             def _submit_next() -> bool:
                 try:
-                    word = next(words_to_submit)
+                    index, word = next(words_to_submit)
                 except StopIteration:
                     return False
                 future = executor.submit(
@@ -433,7 +470,7 @@ class MediaExtractorService:
                     include_audio=include_audio,
                     animated_format=animated_fmt,
                 )
-                future_to_word[future] = word
+                future_to_word[future] = (index, word)
                 pending.add(future)
                 return True
 
@@ -456,7 +493,7 @@ class MediaExtractorService:
                     continue
                 for future in done:
                     pending.discard(future)
-                    word = future_to_word.pop(future)
+                    index, word = future_to_word.pop(future)
                     # Check cancellation between items
                     if cancelled_check and cancelled_check():
                         was_cancelled = True
@@ -495,14 +532,14 @@ class MediaExtractorService:
                             if audio_only and include_screenshot and cover_path is not None:
                                 media.screenshot_path = cover_path
                                 media.screenshot_filename = cover_path.name
-                            media_data_list.append((word, media))
+                            kept[index] = (word, media)
                             succeeded += 1
                             if progress_callback:
                                 progress_callback.on_progress(
                                     attempted,
                                     tr_format(
                                         QCoreApplication.translate("MediaExtractorService", "Extracting media: %1"),
-                                        word.lemma,
+                                        word.mined_form,
                                     ),
                                 )
                             # OVH-044: screenshot succeeded but audio failed (default
@@ -514,7 +551,7 @@ class MediaExtractorService:
                             # the deliberate exception, with include_audio=False.
                             if not audio_only and include_audio and not has_audio and progress_callback:
                                 progress_callback.on_error(
-                                    word.lemma,
+                                    word.mined_form,
                                     QCoreApplication.translate("MediaExtractorService", "audio extraction failed"),
                                 )
                         else:
@@ -526,7 +563,7 @@ class MediaExtractorService:
                                 else QCoreApplication.translate("MediaExtractorService", "No screenshot: %1")
                             )
                             if progress_callback:
-                                progress_callback.on_progress(attempted, tr_format(skip_template, word.lemma))
+                                progress_callback.on_progress(attempted, tr_format(skip_template, word.mined_form))
                             # OVH-043: word dropped because the primary medium
                             # failed (screenshot in default mode, audio in
                             # audio_only mode).  A frame can always be grabbed at a
@@ -536,7 +573,7 @@ class MediaExtractorService:
                             # does not abort the run.
                             if progress_callback:
                                 progress_callback.on_error(
-                                    word.lemma,
+                                    word.mined_form,
                                     QCoreApplication.translate(
                                         "MediaExtractorService",
                                         "media extraction failed — see log",
@@ -553,7 +590,7 @@ class MediaExtractorService:
                             )
                             n_logged += 1
                         if progress_callback:
-                            progress_callback.on_error(word.lemma, str(e))
+                            progress_callback.on_error(word.mined_form, str(e))
                     if not was_cancelled:
                         _submit_next()
 
@@ -584,13 +621,13 @@ class MediaExtractorService:
         # shows the user.
         logger.info(
             "media_extraction_batch outcome=%s attempted=%d ok=%d failed=%d cancelled=%d",
-            "skip" if was_cancelled else ("ok" if len(media_data_list) == attempted else "fail"),
+            "skip" if was_cancelled else ("ok" if len(kept) == attempted else "fail"),
             len(words),
-            len(media_data_list),
-            attempted - len(media_data_list),
+            len(kept),
+            attempted - len(kept),
             len(words) - attempted,
         )
-        return media_data_list
+        return [kept[index] for index in sorted(kept)]
 
     def extract_cover_art(
         self,
@@ -680,6 +717,67 @@ class MediaExtractorService:
             ``True`` on success (ffmpeg exited 0 and *out_wav* exists on disk);
             ``False`` on any failure or cancellation.
         """
+        # Flat 30-minute ceiling. Audio-only decode + 16 kHz resample runs far
+        # faster than realtime, so this comfortably covers multi-hour sources
+        # (the old 300 s could time out a long film on slow I/O). A flat value
+        # avoids an extra ffprobe round-trip; it is a ceiling, not a target.
+        return self._extract_pcm16k(
+            video_file,
+            out_wav,
+            track_override=track_override,
+            cancel_event=cancel_event,
+            seek=None,
+            op_name="Full audio extraction",
+            timeout=1800,
+        )
+
+    def extract_audio_window(
+        self,
+        video_file: Path,
+        out_wav: Path,
+        *,
+        start_s: float,
+        duration_s: float,
+        track_override: int | None = None,
+        cancel_event: "threading.Event | None" = None,
+    ) -> bool:
+        """Extract ``[start_s, start_s + duration_s)`` of the audio as 16 kHz mono pcm_s16le.
+
+        The window form of :meth:`extract_full_audio`, for tracks longer than
+        :data:`anki_miner.services.asr.long_audio.WINDOW_SECONDS`: ``-ss`` is
+        placed BEFORE ``-i`` (input seeking — ffmpeg decodes from the nearest
+        seek point and discards up to the target, so a window near the end of
+        a 7 h book does not decode the 7 h before it) and ``-t`` after the
+        stream map. Same track resolution, cancel wiring and zero-frame guard.
+        Timeout is per window, not per file.
+        """
+        return self._extract_pcm16k(
+            video_file,
+            out_wav,
+            track_override=track_override,
+            cancel_event=cancel_event,
+            seek=(start_s, duration_s),
+            op_name="Audio window extraction",
+            timeout=900,
+        )
+
+    def _extract_pcm16k(
+        self,
+        video_file: Path,
+        out_wav: Path,
+        *,
+        track_override: int | None,
+        cancel_event: "threading.Event | None",
+        seek: tuple[float, float] | None,
+        op_name: str,
+        timeout: int,
+    ) -> bool:
+        """Shared body of :meth:`extract_full_audio` / :meth:`extract_audio_window`.
+
+        ``seek=None`` produces the historical whole-file argv byte for byte;
+        ``seek=(start_s, duration_s)`` adds ``-ss`` before ``-i`` and ``-t``
+        after the stream map.
+        """
         if cancel_event is not None and cancel_event.is_set():
             return False
 
@@ -719,20 +817,20 @@ class MediaExtractorService:
                 done_event.set()
             return False
 
-        cmd = [
-            resolve_ffmpeg(self.config),
-            "-y",
-            "-i",
-            str(video_file),
-        ]
+        cmd = [resolve_ffmpeg(self.config), "-y"]
+        if seek is not None:
+            cmd.extend(["-ss", f"{seek[0]:.3f}"])
+        cmd.extend(["-i", str(video_file)])
 
         if global_index is not None:
             cmd.extend(["-map", f"0:{global_index}"])
-            logger.debug("extract_full_audio: using audio stream %d", global_index)
+            logger.debug("%s: using audio stream %d", op_name, global_index)
         else:
             cmd.extend(["-map", "0:a:0"])
             self._warn_no_japanese_audio_once(video_file)
 
+        if seek is not None:
+            cmd.extend(["-t", f"{seek[1]:.3f}"])
         cmd.extend(
             [
                 "-vn",
@@ -746,15 +844,10 @@ class MediaExtractorService:
             ]
         )
 
-        # Flat 30-minute ceiling. Audio-only decode + 16 kHz resample runs far
-        # faster than realtime, so this comfortably covers multi-hour sources
-        # (the old 300 s could time out a long film on slow I/O). A flat value
-        # avoids an extra ffprobe round-trip; it is a ceiling, not a target.
-        timeout = 1800
-
+        started = time.monotonic()
         success = self._run_ffmpeg(
             cmd,
-            "Full audio extraction",
+            op_name,
             timeout=timeout,
             context=out_wav.name,
             proc_registry=proc_registry,
@@ -773,11 +866,21 @@ class MediaExtractorService:
         try:
             with wave.open(str(out_wav), "rb") as wf:
                 if wf.getnframes() == 0:
-                    logger.warning("extract_full_audio: %s has no audio frames (no audio stream?)", out_wav.name)
+                    logger.warning("%s: %s has no audio frames (no audio stream?)", op_name, out_wav.name)
                     return False
         except (wave.Error, OSError) as exc:
-            logger.warning("extract_full_audio: could not verify %s: %s", out_wav.name, exc)
+            logger.warning("%s: could not verify %s: %s", op_name, out_wav.name, exc)
             return False
+        # The only line this stage leaves on success. Subtitle generation runs
+        # this, then a WAV load, then model construction, before it has a segment
+        # to report; without a receipt here the log cannot tell a stall inside
+        # ffmpeg from one after it.
+        log_summary(
+            logger,
+            f"{op_name} done",
+            file=video_file,
+            seconds=f"{time.monotonic() - started:.1f}",
+        )
         return True
 
     def _extract_screenshot(
@@ -790,6 +893,7 @@ class MediaExtractorService:
         proc_registry: _FfmpegProcRegistry | None = None,
         *,
         audio_window: tuple[float, float] | None = None,
+        screenshot_time: float | None = None,
     ) -> bool:
         """Extract a screenshot, dispatching to the static or animated path.
 
@@ -802,6 +906,11 @@ class MediaExtractorService:
         clip; the animated path uses it when configured to match the audio.
         The static frame never reads it — a trim to fix cut-off dialogue must
         not silently move which frame the card shows.
+
+        ``screenshot_time`` is the resolved instant for the static frame (the
+        curator's chosen frame, or the computed default). The animated path
+        ignores it: its window comes from the clip, which ``clip_override``
+        already edits.
         """
         if animated_fmt is not None:
             return self._extract_animated_screenshot(
@@ -813,7 +922,9 @@ class MediaExtractorService:
                 fmt=animated_fmt,
                 audio_window=audio_window,
             )
-        return self._extract_static_screenshot(video_file, start_time, duration, output_path, proc_registry)
+        return self._extract_static_screenshot(
+            video_file, start_time, duration, output_path, proc_registry, screenshot_time=screenshot_time
+        )
 
     def _run_ffmpeg(
         self,
@@ -836,6 +947,8 @@ class MediaExtractorService:
         suffix = f" for {context}" if context else ""
         if proc_registry is not None and proc_registry.cancelled:
             return False
+        log_command(logger, op_name, cmd, timeout_s=timeout)
+        started_at = time.monotonic()
         try:
             # Decode ffmpeg's stderr as UTF-8 with replacement, not the platform
             # locale codec: ffmpeg echoes the (often non-ASCII Japanese) input
@@ -855,7 +968,11 @@ class MediaExtractorService:
                     **no_window_kwargs(),  # hide the Windows cmd.exe flash (Issue #79)
                 )
         except (subprocess.SubprocessError, OSError) as e:
-            logger.debug("%s error%s: %s", op_name, suffix, e)
+            # Android divergence: upstream re-logs the argv at WARNING here, but
+            # the argv carries the output path (the mined word), and WARNING
+            # records reach the user's diagnostics bundle. The argv was already
+            # logged at debug level above; the unscrubbed error joins it there.
+            logger.debug("%s error%s: %s: %s", op_name, suffix, type(e).__name__, e)
             logger.warning("%s error", op_name, exc_info=True)
             return False
         if proc_registry is not None and not proc_registry.register(proc):
@@ -874,6 +991,14 @@ class MediaExtractorService:
                     _kill_quietly(proc)
                     proc.communicate()  # drain pipes + reap the killed process
                     logger.debug("%s timed out%s after %ss", op_name, suffix, timeout)
+                    log_command_result(
+                        logger,
+                        op_name,
+                        cmd,
+                        returncode=proc.returncode,
+                        state="timed_out",
+                        elapsed_s=time.monotonic() - started_at,
+                    )
                     e.cmd = Path(cmd[0]).name
                     logger.warning("%s timed out after %ss", op_name, timeout, exc_info=True)
                     return False
@@ -882,13 +1007,23 @@ class MediaExtractorService:
                     # decode of non-ASCII ffmpeg stderr (defence-in-depth alongside
                     # errors="replace" on the Popen above).
                     _kill_quietly(proc)
-                    logger.debug("%s error%s: %s", op_name, suffix, e)
+                    logger.debug("%s error%s: %s: %s", op_name, suffix, type(e).__name__, e)
+                    log_command_result(
+                        logger,
+                        op_name,
+                        cmd,
+                        returncode=proc.returncode,
+                        state="communicate_failed",
+                        elapsed_s=time.monotonic() - started_at,
+                    )
                     logger.warning("%s error", op_name, exc_info=True)
                     return False
         finally:
             if proc_registry is not None:
                 proc_registry.unregister(proc)
+        elapsed_s = time.monotonic() - started_at
         if proc.returncode == 0:
+            log_command_result(logger, op_name, cmd, returncode=0, elapsed_s=elapsed_s)
             return True
         if proc_registry is not None and proc_registry.cancelled:
             # Killed by a batch cancel — expected, not an ffmpeg failure.
@@ -896,7 +1031,8 @@ class MediaExtractorService:
             return False
         # Android divergence: the raw stderr carries the mined word and the
         # output path, both of which reach the user's diagnostics bundle. The
-        # warning is scrubbed; the unscrubbed form stays at debug level.
+        # warning is scrubbed; the unscrubbed form, and upstream's argv-plus-tail
+        # failure record, stay at debug level.
         logger.debug(
             "%s failed%s: argv0=%s word=%s stderr=%s",
             op_name,
@@ -904,6 +1040,14 @@ class MediaExtractorService:
             Path(cmd[0]).name,
             Path(context).stem.rsplit("_", 2)[0] if context else "-",
             stderr,
+        )
+        log_command_result(
+            logger,
+            op_name,
+            cmd,
+            returncode=proc.returncode,
+            stderr_tail=tail_for_log(stderr),
+            elapsed_s=elapsed_s,
         )
         logger.warning(
             "%s failed: argv0=%s ffmpeg exit code %s stderr=%s",
@@ -928,10 +1072,15 @@ class MediaExtractorService:
         duration: float,
         output_path: Path,
         proc_registry: _FfmpegProcRegistry | None = None,
+        *,
+        screenshot_time: float | None = None,
     ) -> bool:
         """Extract a single still frame as JPEG."""
-        # Calculate screenshot time (offset from start)
-        screenshot_time = start_time + min(self.config.screenshot_offset, duration / 2)
+        # ``extract_media`` resolves the instant (the curator's chosen frame,
+        # or the computed default). None means the caller held no word, so ask
+        # the resolver for the default rather than restating the formula here.
+        if screenshot_time is None:
+            screenshot_time = resolve_screenshot_time(None, start_time, duration, self.config.screenshot_offset)
 
         cmd = [
             resolve_ffmpeg(self.config),
@@ -1230,6 +1379,12 @@ class MediaExtractorService:
             _ANIMATED_ENCODE_GATE.release()
         return output_path.exists()
 
+    def _audio_codes(self) -> frozenset[str]:
+        """The mining language's audio-track language codes (ja by default)."""
+        from anki_miner.languages.registry import config_language, get_profile
+
+        return get_profile(config_language(self.config)).audio_track_codes
+
     def _get_japanese_audio_stream(
         self,
         video_file: Path,
@@ -1246,6 +1401,7 @@ class MediaExtractorService:
             result = find_japanese_audio_stream(
                 video_file,
                 ffprobe_cmd=resolve_ffprobe(self.config),
+                codes=self._audio_codes(),
                 proc_registry=proc_registry,
             )
             global_index = result.global_index if result is not None else None
@@ -1330,8 +1486,9 @@ class MediaExtractorService:
             len(streams),
         )
         # Reuse the streams list we already probed; don't re-run ffprobe.
+        codes = self._audio_codes()
         for stream in streams:
-            if stream.language_tag in JAPANESE_LANGUAGE_CODES:
+            if matches_language_tag(stream.language_tag, codes):
                 return stream.global_index
         return None
 

@@ -3,8 +3,6 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from anki_miner.models.media import MediaData
-
 # Candidate vowel-elongation tail characters a 名詞 surface can carry over its
 # lemma (手ぇ, 気い, 目ー). Small kana and the long-vowel mark prove elongation in
 # the spelling; a full-size vowel only qualifies when UniDic pronunciation ends
@@ -101,6 +99,26 @@ def select_mined_form(
     return surface
 
 
+@dataclass(frozen=True)
+class SentenceEdit:
+    """The Word Curator's "edit word and sentence" intent.
+
+    ``text`` is the sentence as the user rewrote it (already normalised by the
+    mining parser, because the editor's preview came out of it); ``target_start``
+    / ``target_end`` are the character span, inside ``text``, of the surface of
+    the word the user chose to mine. Stamped by the curator, materialised by
+    ``services.sentence_edit.resolve_sentence_edit`` — the only reader — which
+    re-tokenises ``text`` through the same parser and rebuilds the word from the
+    token at that span. Offsets rather than the word string: two tokens can share
+    a surface on one line, and the parser's own span is the one identity that
+    cannot be misread.
+    """
+
+    text: str
+    target_start: int
+    target_end: int
+
+
 @dataclass
 class TokenizedWord:
     """A word extracted from subtitles with timing information."""
@@ -151,9 +169,34 @@ class TokenizedWord:
     # word, and the card then leaves that field unwritten rather than stamping a
     # placeholder rank.
     frequency_harmonic_rank: int | None = None
-    # Times this word's lemma occurs in the current episode. Display/sort-only,
-    # attached on the interactive curation path (Issue #88); 0 when not computed.
+    # Times this word occurs in the current episode: its own lemma's count plus
+    # every spelling that folds onto it and was mined as no word of its own — a
+    # zh card fronted 头发 counts the text's 頭髮 occurrences too. Display/sort-
+    # only, attached on the interactive curation path (Issue #88); 0 when not
+    # computed.
     occurrence_count: int = 0
+    # Distinct unknown lemmas on this word's own subtitle line — the raw i+1
+    # signal, since a count of 1 IS the i+1 condition. Display/sort-only,
+    # attached on the interactive curation path; 0 means "not computed" (no
+    # line index, or the sentence matched no line), which the curator renders
+    # as "-" sorting last rather than as a better-than-i+1 zero.
+    line_unknown_count: int = 0
+    # Whether the run's expression-audio chain can produce audio for this word,
+    # as far as a zero-network probe of every source's own cache and index
+    # could tell: True = some source already holds it, False = every source
+    # answered definitively no, None = not probed, or not knowable without the
+    # network. Display/sort-only, attached on the interactive curation path
+    # exactly like ``occurrence_count``. The Word Curator's Audio column renders
+    # the three states and its background prefetch resolves the Nones; nothing
+    # on the card path reads it.
+    expression_audio_available: bool | None = None
+    # Where in the source this word was found, spelled exactly as the card's
+    # Source field will spell it: "00:31:07" on a video or YouTube run, the
+    # reading unit's own page/chapter/paragraph label ("p.42", "ch.3", "¶12")
+    # on a reading run. Display/sort-only, stamped by the curation step from
+    # episode_processor._position_label; "" means not computed. ONE reader: the
+    # Word Curator's Position column (Issue #129).
+    position_label: str = ""
     pos: str | None = None  # MeCab pos1 (動詞/形容詞/名詞/...) — used for kifuku/odaka distinction
     # Character offsets of the target morpheme within ``sentence`` (post-filter).
     # -1 sentinel means "not tracked" — card builder falls back to plain escape.
@@ -196,6 +239,49 @@ class TokenizedWord:
     # WordFilterService.expand_word_lines before phase 3 — the dialog stores
     # intent, the processor rebuilds text/spans/furigana.
     line_expansion: tuple[int, int] = (0, 0)
+    # User-chosen screenshot frame: absolute seconds on the source video's own
+    # timeline, stamped by the word curator's "Use current frame" button. None
+    # (the default, and every non-interactive path) means the computed default
+    # — start_time + min(screenshot_offset, duration / 2) — so an untouched
+    # word extracts exactly as it did before this field existed. Consumed by
+    # media_extractor.resolve_screenshot_time, the only place it is read.
+    # Static screenshots only: an animated screenshot's window comes from the
+    # audio clip, which clip_override already edits.
+    screenshot_override: float | None = None
+    # Secondary-language subtitle text for this word's sentence window (F7):
+    # every cue of the second track overlapping [start_time, end_time] by at
+    # least services.secondary_subtitles.DEFAULT_MIN_OVERLAP, joined in time
+    # order. "" on every run without a second track. Attached by
+    # EpisodeProcessor via secondary_subtitles.attach_translations AFTER
+    # curation and line-expansion materialisation, so a sentence pick or a
+    # +line expansion has already moved the window it is matched against.
+    # Read by anki_note_builder.build_note only (the sentence_translation field).
+    sentence_translation: str = ""
+    # Curator "edit word and sentence" intent (a mistranscribed line, a mokuro
+    # OCR slip). None = untouched (every non-interactive path). Stamped by the
+    # Word Curator via get_selected_words, materialised by EpisodeProcessor
+    # through services.sentence_edit.resolve_sentence_edit AFTER line-expansion
+    # materialisation — the edit's text was seeded from the already-merged line,
+    # so it is the last word on the sentence while the merged timing stays the
+    # media window. Absorbed on materialisation (the rebuilt word carries None),
+    # so a second pass cannot double-apply it. The dialog stores intent; the
+    # processor re-tokenises and rebuilds spans/furigana/readings.
+    sentence_edit: SentenceEdit | None = None
+    # The parser's resolved card front, set at the emit site. Non-empty means
+    # "already decided" — the profile's MinedFormPolicy answered, and for a
+    # non-ja token select_mined_form's JA POS table would answer wrongly
+    # (a Korean VV falls through to `return surface`). Empty on every
+    # hand-built TokenizedWord, which keeps the property's JA behaviour.
+    mined_form_override: str = ""
+    # Definition HTML fetched in phase 4, stashed for the non-ja render-hook
+    # pass only (EpisodeProcessor._apply_render_hooks). Always "" on every ja
+    # path — ja renders no hooks, so no ja card, filename or field changes.
+    definition_html: str = ""
+    # Morphological features of the mined token, verbatim from a duck token's
+    # ``morph`` (spaCy ``str(tok.morph)``: ``Gender=Masc|Number=Sing``), read by
+    # render hooks that print gender/aspect/article. "" on every ja path:
+    # fugashi nodes and SyntheticTokens carry no ``morph`` attribute.
+    morph: str = ""
 
     @property
     def bold_end(self) -> int:
@@ -257,7 +343,7 @@ class TokenizedWord:
         ``気い`` → ``気``) folds to the lemma when its spelling or UniDic
         pronunciation proves elongation — see ``select_mined_form`` for the guards.
         """
-        return select_mined_form(
+        return self.mined_form_override or select_mined_form(
             self.pos,
             self.orth_base,
             self.lemma,
@@ -294,30 +380,3 @@ class LineLemmas:
     # line; highlight_end covers the full inflected form (-1 = same as end).
     # Tuple-of-tuples instead of dict to keep the dataclass frozen.
     lemma_spans: tuple[tuple[str, str, int, int, int], ...] = field(default_factory=tuple)
-
-
-@dataclass
-class WordData:
-    """Complete data for a vocabulary word including definition and media."""
-
-    word: TokenizedWord
-    definition: str | None = None
-    screenshot_path: Path | None = None
-    audio_path: Path | None = None
-    media: MediaData | None = None
-    pitch_position: str | None = None
-    pitch_category: str | None = None
-    frequency_rank: int | None = None
-
-    @property
-    def has_media(self) -> bool:
-        """Check if word has any media (screenshot or audio)."""
-        return self.screenshot_path is not None or self.audio_path is not None
-
-    @property
-    def has_definition(self) -> bool:
-        """Check if word has a definition."""
-        return self.definition is not None and len(self.definition) > 0
-
-    def __str__(self) -> str:
-        return f"{self.word.lemma}: {self.definition[:50] if self.definition else 'No definition'}"
