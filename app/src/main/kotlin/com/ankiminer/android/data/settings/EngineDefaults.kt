@@ -48,13 +48,15 @@ internal object EngineDefaults {
     const val EXCLUDE_KATAKANA_ONLY: Boolean = false
     const val BOLD_TARGET_IN_SENTENCE: Boolean = false
 
-    /**
-     * The engine deduplicates by default. Android stores `false` instead — see
-     * [AppSettings.deduplicateSentences] — but this constant states the engine's own value, which
-     * is what an unset field would inherit.
-     */
-    const val DEDUPLICATE_SENTENCES: Boolean = true
+    /** Off in the engine too since it stopped deduplicating by default; Android always stored `false`. */
+    const val DEDUPLICATE_SENTENCES: Boolean = false
     const val USE_I_PLUS_ONE_FILTER: Boolean = false
+
+    /**
+     * Android-local, not an engine mirror: the engine removed `use_sentence_length_filter` and
+     * filters on a non-zero cap alone. The bridge still accepts this toggle and zeroes both caps
+     * unless it is true, so an unset toggle keeps meaning "no length filter".
+     */
     const val USE_SENTENCE_LENGTH_FILTER: Boolean = false
 
     /** Both caps use zero for "no limit". */
