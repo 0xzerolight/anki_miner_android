@@ -914,6 +914,10 @@ def _build_processor(
             # Without this the deinflection resolver fails closed to orth_base
             # and じる/ずる front rewriting silently stops.
             term_rules_lookup=(definition_service.offline_deinflection_terms_exist if has_indexed_dictionary else None),
+            # Read only by a profile's token_post_pass, which ja has none of, so a
+            # ja run is unchanged; passed as desktop passes it so a language that
+            # has one resolves its card fronts.
+            form_lookup=(definition_service.offline_term_rows if has_indexed_dictionary else None),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
