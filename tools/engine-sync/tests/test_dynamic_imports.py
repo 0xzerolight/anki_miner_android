@@ -357,6 +357,27 @@ class DynamicImportCompositionTests(unittest.TestCase):
                 root="from anki_miner.services.asr import transcriber\n",
             )
 
+    def test_module_level_dynamic_site_expands_to_eager_imports(self) -> None:
+        eager_registry = (
+            "import importlib\n"
+            'code = "zh"\n'
+            'MODULE = importlib.import_module(f"anki_miner.languages.{code}")\n'
+        )
+        with self.assertRaisesRegex(
+            EngineSyncError,
+            r"registry.py:3: eager import of deferred-unavailable "
+            r"anki_miner.languages.zh$",
+        ):
+            self._snapshot(
+                extra_keys=(
+                    'languages = ["ja", "zh"]\n'
+                    'deferred_unavailable = ["anki_miner.languages.zh"]\n'
+                ),
+                tables=REGISTRY_DECLARATION,
+                root="from anki_miner.languages import registry\n",
+                files={"anki_miner/languages/registry.py": eager_registry},
+            )
+
     def test_unreached_deferred_unavailable_prefix_is_rejected(self) -> None:
         with self.assertRaisesRegex(
             EngineSyncError,

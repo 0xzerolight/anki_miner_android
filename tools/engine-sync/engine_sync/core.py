@@ -568,9 +568,10 @@ def _iter_imports(
     """Yield *module*'s imports.
 
     ``dynamic_targets`` maps the ``ast.unparse`` of a declared non-literal
-    ``import_module`` argument to the modules it may load; each becomes a
-    deferred ref, and the matched argument is added to ``matched_sites``. Any
-    other non-literal dynamic import is an error.
+    ``import_module`` argument to the modules it may load; each becomes a ref
+    with the site's own deferred/eager state, and the matched argument is
+    added to ``matched_sites``. Any other non-literal dynamic import is an
+    error.
     """
 
     declared_sites = dynamic_targets or {}
@@ -704,11 +705,7 @@ def _iter_imports(
             if matched_sites is not None:
                 matched_sites.add(match)
             for target in targets:
-                self.refs.append(
-                    ImportRef(
-                        module.module, target, node.lineno, self.type_checking, True
-                    )
-                )
+                self._append(target, node.lineno)
 
     collector = Collector()
     collector.visit(tree)

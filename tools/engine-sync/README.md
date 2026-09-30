@@ -48,9 +48,10 @@ three are absent, the output and manifest are unchanged.
   site) and `target` (a format string such as
   `"anki_miner.languages.{code}.tokenizer"`). `{code}` expands over
   `languages` plus `SHARED_PACK_CODES`, and each expanded module that exists is
-  followed as a deferred import. A code without that module is skipped, but the
-  target must exist for at least one known code. An undeclared non-literal site
-  and a declaration that matches no site are both errors.
+  followed as an import from that site, deferred or eager as the site is. A
+  code without that module is skipped, but the target must exist for at least
+  one known code. An undeclared non-literal site and a declaration that matches
+  no site are both errors.
 - `deferred_unavailable = ["anki_miner.gui"]` — module prefixes that are only
   imported inside functions and never vendored. Such imports are recorded
   rather than followed. An eager import of one, a selected module under one, or
