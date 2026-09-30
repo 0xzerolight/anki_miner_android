@@ -1708,6 +1708,7 @@ def test_adapter_carries_the_anki_service_surface_the_engine_now_calls(
 
     assert callable(adapter.set_cancelled_check)
     assert adapter.last_created_mined_forms == []
+    assert adapter.last_created_lemmas == []
 
     # create_cards_batch calls this on itself with allow_degraded=False.
     vocabulary = inspect.signature(type(adapter).get_existing_vocabulary).parameters
@@ -1727,11 +1728,41 @@ def test_created_mined_forms_record_only_notes_anki_confirmed(
     kotlin = FakeKotlinAnki()
     kotlin.duplicate_fields = ["<b>既存</b>"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    cat = _card("猫")
+    cat = replace(cat, word=replace(cat.word, lemma="ネコ"))
 
-    adapter.create_cards_batch([_card("既存"), _card("猫")])
+    adapter.create_cards_batch([_card("既存"), cat])
 
     assert adapter.last_created_note_ids == [1000]
     assert adapter.last_created_mined_forms == ["猫"]
+    # Aligned with the forms, lemma for lemma: the engine zips the two to count
+    # the whitelist entries a run mined, and a misaligned pair counts none.
+    assert adapter.last_created_lemmas == ["ネコ"]
+
+
+def test_note_builder_kwargs_match_desktop_anki_service_for_ja(
+    initialized_bridge_home: Path,
+) -> None:
+    """Desktop's AnkiService derives build_note's language kwargs from the profile.
+
+    The adapter spells ja's out; a re-pin that gives ja an extra card field, a
+    direction or a card language would otherwise write different notes here
+    than desktop writes, with nothing failing.
+    """
+    pytest.importorskip("requests")
+    from anki_miner.config import AnkiMinerConfig
+    from anki_miner.services.anki_service import AnkiService
+
+    service = AnkiService(AnkiMinerConfig())
+
+    desktop = {
+        "extra_optional_keys": service._extra_optional_keys,
+        "extra_raw_html_keys": service._extra_raw_html_keys,
+        "content_direction": service._content_direction,
+        "content_lang": service._content_lang,
+        "card_lang": service._card_lang,
+    }
+    assert desktop == anki_adapter_module._JA_NOTE_BUILDER_KWARGS
 
 
 def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
