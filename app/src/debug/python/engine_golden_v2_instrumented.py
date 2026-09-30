@@ -254,6 +254,9 @@ class _Presenter:
     def show_error(self, message: str) -> None:
         self._append("error", message)
 
+    def show_stage(self, index: int, total: int, name: str) -> None:
+        self._append("stage", f"{index}/{total} {name}")
+
 
 class _AnkiRead:
     def __init__(self, existing: set[str]) -> None:
