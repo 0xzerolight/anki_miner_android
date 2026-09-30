@@ -67,7 +67,7 @@ def test_strip_subtitle_annotations_is_no_longer_exposed() -> None:
     assert not hasattr(AnkiMinerConfig(), "strip_subtitle_annotations")
 
 
-def test_empty_snapshot_preserves_all_113_desktop_defaults_except_targeted_android_overrides(
+def test_empty_snapshot_preserves_all_132_desktop_defaults_except_targeted_android_overrides(
     tmp_path: Path,
 ) -> None:
     from anki_miner.config import AnkiMinerConfig
@@ -87,7 +87,7 @@ def test_empty_snapshot_preserves_all_113_desktop_defaults_except_targeted_andro
     )
 
     desktop_fields = fields(AnkiMinerConfig)
-    assert len(desktop_fields) == 113
+    assert len(desktop_fields) == 132
     assert {field.name: getattr(mapped.engine_config, field.name) for field in desktop_fields} == {
         field.name: getattr(expected, field.name) for field in desktop_fields
     }
@@ -308,6 +308,66 @@ def test_android_tts_composition_has_no_desktop_network_fetcher_imports() -> Non
     assert all(not any(part in module for part in forbidden) for module in imported_modules)
 
 
+def test_pin_era_snapshot_with_caps_and_no_length_toggle_filters_nothing(tmp_path: Path) -> None:
+    """A stored cap under an absent toggle never filtered, so it must not start now.
+
+    The engine dropped ``use_sentence_length_filter``: a non-zero cap alone turns
+    the filter on. Before, filtering needed the toggle as well, so a snapshot
+    carrying caps but no toggle filtered nothing and must keep filtering nothing.
+    """
+    mapped = map_config_settings(
+        {"max_sentence_duration_seconds": 8.5, "max_sentence_chars": 40},
+        _paths(tmp_path),
+    )
+
+    assert mapped.engine_config.max_sentence_duration_seconds == 0.0
+    assert mapped.engine_config.max_sentence_chars == 0
+    assert not hasattr(mapped.engine_config, "use_sentence_length_filter")
+
+
+def test_false_length_toggle_filters_nothing(tmp_path: Path) -> None:
+    mapped = map_config_settings(
+        {
+            "use_sentence_length_filter": False,
+            "max_sentence_duration_seconds": 8.5,
+            "max_sentence_chars": 40,
+        },
+        _paths(tmp_path),
+    )
+
+    assert mapped.engine_config.max_sentence_duration_seconds == 0.0
+    assert mapped.engine_config.max_sentence_chars == 0
+
+
+def test_true_length_toggle_keeps_both_caps(tmp_path: Path) -> None:
+    mapped = map_config_settings(
+        {
+            "use_sentence_length_filter": True,
+            "max_sentence_duration_seconds": 8.5,
+            "max_sentence_chars": 40,
+        },
+        _paths(tmp_path),
+    )
+
+    assert mapped.engine_config.max_sentence_duration_seconds == 8.5
+    assert mapped.engine_config.max_sentence_chars == 40
+    assert not hasattr(mapped.engine_config, "use_sentence_length_filter")
+
+
+def test_length_toggle_must_be_a_boolean(tmp_path: Path) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings({"use_sentence_length_filter": 1}, _paths(tmp_path))
+    assert error.value.code == "invalid_config_field"
+
+
+@pytest.mark.parametrize("stored", [True, False])
+def test_persisted_dedup_value_round_trips_unchanged(stored: bool, tmp_path: Path) -> None:
+    """The engine default flipped to False; a value the snapshot carries is never replaced."""
+    mapped = map_config_settings({"deduplicate_sentences": stored}, _paths(tmp_path))
+
+    assert mapped.engine_config.deduplicate_sentences is stored
+
+
 def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
         map_config_settings(
@@ -467,7 +527,7 @@ def test_checked_in_schema_allowlist_matches_mapper() -> None:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     schema_fields = set(schema["$defs"]["settings"]["properties"])
 
-    assert schema_fields == set(exposed_config_fields()) | {"reading_tts_enabled"}
+    assert schema_fields == set(exposed_config_fields()) | {"reading_tts_enabled", "use_sentence_length_filter"}
 
 
 def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_paths() -> None:

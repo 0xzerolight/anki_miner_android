@@ -169,7 +169,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
     }
-    assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled"}
+    assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled", "use_sentence_length_filter"}
     return {"settings": settings, "androidTtsEnabled": True}
 
 
