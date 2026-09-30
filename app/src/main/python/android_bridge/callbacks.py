@@ -16,6 +16,7 @@ from .protocol import (
     DecodedMessage,
     decode_envelope,
     encode_message,
+    processing_result_to_json,
     to_json_value,
 )
 
@@ -434,7 +435,7 @@ class AndroidPresenter:
         )
 
     def show_processing_result(self, result: object) -> None:
-        self._event("processingResult", result=to_json_value(result))
+        self._event("processingResult", result=processing_result_to_json(result))
 
 
 class CallbackAdapters:

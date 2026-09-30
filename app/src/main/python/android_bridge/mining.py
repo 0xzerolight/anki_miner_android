@@ -35,7 +35,7 @@ from .protocol import (
     decode_message,
     encode_message,
     normalize_integral_json_number,
-    to_json_value,
+    processing_result_to_json,
 )
 from .unicode_contract import (
     has_leading_or_trailing_python_whitespace,
@@ -1147,7 +1147,7 @@ def _result_terminal(run_id: str, result: object) -> tuple[str, str]:
         {
             "runId": run_id,
             "outcome": outcome,
-            "result": to_json_value(result),
+            "result": processing_result_to_json(result),
             "error": terminal_error,
         },
     )
@@ -1243,7 +1243,7 @@ def _cleanup_failure_terminal(run_id: str, result: object) -> tuple[str, str]:
         {
             "runId": run_id,
             "outcome": "failed",
-            "result": to_json_value(result),
+            "result": processing_result_to_json(result),
             "error": {
                 "code": "cleanup_failed",
                 "message": "Mining finished but resource cleanup failed",

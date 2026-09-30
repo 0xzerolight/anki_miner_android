@@ -583,7 +583,7 @@ def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
             "ffprobeOk": True,
         }
     )
-    # The real engine dataclass, not a hand-rolled dict: protocol.to_json_value
+    # The real engine dataclass, not a hand-rolled dict: protocol.processing_result_to_json
     # emits every dataclass field by reflection, so only the real type proves the
     # wire shape still matches the schema after an engine re-pin.
     from anki_miner.models.processing import ProcessingResult
@@ -602,6 +602,56 @@ def test_every_progress_and_presenter_emitter_matches_engine_event_schema(
     assert len(raw_events) == 11
     for raw in raw_events:
         validator.validate(json.loads(raw))
+
+
+def test_whitelist_coverage_never_crosses_the_result_wire(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    """A run with a whitelist in effect still produces a terminal Kotlin can decode.
+
+    The engine stamps ``whitelist_coverage`` (frozensets) on every result while a
+    whitelist is active. Serialised, it would either fail on the frozensets or
+    add a key the exact-key Kotlin decoder rejects; either way the run would read
+    as failed after its cards were written.
+    """
+    from android_bridge import mining
+    from anki_miner.models.processing import ProcessingResult, WhitelistCoverage
+
+    result = ProcessingResult(
+        total_words_found=2,
+        new_words_found=1,
+        cards_created=1,
+        card_ids=[7],
+        mined_forms=["猫"],
+        video_file="/video.mkv",
+        subtitle_file="/subtitle.srt",
+        whitelist_coverage=WhitelistCoverage(
+            entries=frozenset({"猫", "犬"}),
+            mined=frozenset({"猫"}),
+            known=frozenset({"犬"}),
+        ),
+    )
+
+    _outcome, raw_terminal = mining._result_terminal("run_" + "a" * 32, result)
+    terminal = json.loads(raw_terminal)
+    Draft202012Validator(schemas["mining"], registry=_cross_schema_registry(schemas)).validate(terminal)
+    assert "whitelistCoverage" not in terminal["payload"]["result"]
+    assert terminal["payload"]["result"]["cardIds"] == [7]
+
+    raw_events: list[str] = []
+
+    class Callbacks:
+        def onPresenterEvent(self, raw: str) -> None:
+            raw_events.append(raw)
+
+    registry = JobRegistry()
+    adapters = CallbackAdapters(Callbacks(), registry, registry.begin())
+    adapters.presenter.show_processing_result(result)
+
+    assert len(raw_events) == 1
+    event = json.loads(raw_events[0])
+    Draft202012Validator(schemas["engine_events"], registry=_cross_schema_registry(schemas)).validate(event)
+    assert "whitelistCoverage" not in event["payload"]["result"]
 
 
 def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:

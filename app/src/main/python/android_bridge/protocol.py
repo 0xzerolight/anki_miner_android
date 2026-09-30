@@ -192,6 +192,29 @@ def to_json_value(value: Any, *, _seen: set[int] | None = None) -> Any:
     raise BridgeProtocolError("unsupported_value", f"Unsupported bridge value: {type(value).__name__}")
 
 
+# ``ProcessingResult`` fields the Android wire does not carry. ``whitelist_coverage``
+# feeds desktop's whitelist coverage report, which Android does not have: it holds
+# frozensets, which have no JSON form here, and Kotlin decodes a result against an
+# exact key set, so emitting it would fail every run a whitelist is on for.
+_UNWIRED_PROCESSING_RESULT_FIELDS = frozenset({"whitelist_coverage"})
+
+
+def processing_result_to_json(result: Any) -> Any:
+    """``to_json_value`` for an engine ``ProcessingResult``, minus the unwired fields.
+
+    Every other field still crosses by reflection, so a field a re-pin adds keeps
+    failing the schema tests instead of vanishing here.
+    """
+
+    if not dataclasses.is_dataclass(result) or isinstance(result, type):
+        return to_json_value(result)
+    return {
+        _camel_case(field.name): to_json_value(getattr(result, field.name))
+        for field in dataclasses.fields(result)
+        if field.name not in _UNWIRED_PROCESSING_RESULT_FIELDS
+    }
+
+
 def _utf8_size(value: str) -> int:
     return len(value.encode("utf-8"))
 
