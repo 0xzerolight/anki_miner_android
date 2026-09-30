@@ -47,6 +47,7 @@ internal class UpdateCheckCoordinator(
     private val lastCheckFailed = MutableStateFlow(false)
     private val inFlightMutex = Mutex()
     private var inFlightCheck: Deferred<Unit>? = null
+    private val publishLock = Any()
     private val mutableUiState =
         MutableStateFlow(
             toUiState(
@@ -168,13 +169,20 @@ internal class UpdateCheckCoordinator(
         publishUiState()
     }
 
+    /**
+     * The check coroutine and the preference collector publish from different threads. Unlocked,
+     * a publish that read `checking` before the other thread wrote it could land after that
+     * thread's publish and leave the state stale: idle mid-check, or checking after it finished.
+     */
     private fun publishUiState() {
-        mutableUiState.value =
-            toUiState(
-                preferences = preferences.value,
-                checking = checking.value,
-                lastCheckFailed = lastCheckFailed.value,
-            )
+        synchronized(publishLock) {
+            mutableUiState.value =
+                toUiState(
+                    preferences = preferences.value,
+                    checking = checking.value,
+                    lastCheckFailed = lastCheckFailed.value,
+                )
+        }
     }
 
     private fun toUiState(
