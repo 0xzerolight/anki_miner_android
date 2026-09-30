@@ -1158,23 +1158,36 @@ def _result_terminal(run_id: str, result: object) -> tuple[str, str]:
 
 
 def _android_engine_message(message: str) -> str:
-    """Re-word the one engine message that names desktop-only menus.
+    """Re-word the engine messages that name desktop-only menus.
 
-    Engine exception text crosses the bridge verbatim, and the offline-dictionary
-    pre-flight tells the user to "Use Tools → Download Recommended Resources or
-    Settings → Dictionaries" — two surfaces Android does not have. Matched against
-    the engine's own constant rather than a substring, so an upstream re-wording
-    surfaces the desktop text again (visible, and caught by the bridge test) rather
-    than silently mapping the wrong message.
+    Engine exception text crosses the bridge verbatim, and two pre-flight gates
+    point at desktop surfaces Android does not have:
+
+    * the offline-dictionary gate says "Use Tools → Download Recommended
+      Resources or Settings → Dictionaries";
+    * the resource-staleness gate ends each stale family's line with a desktop
+      path such as "Settings → Word Audio → More → Reimport All".
+
+    Both are matched against the engine's own constants rather than a substring,
+    so an upstream re-wording surfaces the desktop text again (visible, and caught
+    by the bridge test) rather than silently mapping the wrong message.
     """
 
     from anki_miner.orchestration.episode_processor import (
         _OFFLINE_DICTIONARY_REQUIRED_MESSAGE,
     )
+    from anki_miner.services.resource_staleness import _FAMILY_LABELS
 
     if message == _OFFLINE_DICTIONARY_REQUIRED_MESSAGE:
         return "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
-    return message
+    desktop_fixes = tuple(f" — {fix}" for _plural, _singular, fix in _FAMILY_LABELS.values())
+    lines: list[str] = []
+    for line in message.split("\n"):
+        fix = next((candidate for candidate in desktop_fixes if line.endswith(candidate)), None)
+        if fix is None:
+            return message
+        lines.append(f"{line[: -len(fix)]} — reimport in Settings, under Resources.")
+    return "\n".join(lines)
 
 
 def _exception_terminal(

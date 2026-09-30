@@ -1901,6 +1901,42 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
 
 
+def test_stale_resource_error_points_at_android_resources() -> None:
+    """The staleness gate ends each family's line with a desktop Settings path.
+
+    Built with the engine's own formatter, so a re-worded family label or fix
+    path falls back to the verbatim text here instead of being half-rewritten.
+    """
+    pytest.importorskip("requests")
+    from anki_miner.exceptions import SetupError
+    from anki_miner.services.resource_staleness import format_stale_family_message
+
+    message = "\n".join(
+        [
+            format_stale_family_message("dictionary", ["JMdict"]),
+            format_stale_family_message("audio", ["Forvo", "JPod"]),
+        ]
+    )
+    _outcome, terminal = mining._exception_terminal(
+        "run_" + "c" * 32,
+        SetupError(message),
+        cancelled=False,
+        log=mining.logger,
+    )
+    error = json.loads(terminal)["payload"]["error"]
+
+    assert error["code"] == "setup_incomplete"
+    assert error["message"] == (
+        "Dictionary 'JMdict' needs reimport after the app upgrade — reimport in Settings, under Resources.\n"
+        "Audio packs 'Forvo', 'JPod' need reimport after the app upgrade — reimport in Settings, under Resources."
+    )
+    assert "→" not in error["message"]
+
+    # A message that only shares the shape keeps its own text.
+    unrelated = "Dictionary 'JMdict' needs reimport after the app upgrade — somewhere else"
+    assert mining._android_engine_message(unrelated) == unrelated
+
+
 def test_setup_errors_are_not_retryable_while_other_engine_failures_are(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
