@@ -4096,8 +4096,9 @@ def test_known_words_import_reports_undecodable_bytes_as_unreadable(
 ) -> None:
     _local_home(tmp_path, monkeypatch)
     source = tmp_path / "undecodable.txt"
-    # Decodes as neither utf-8-sig nor cp932.
-    source.write_bytes(b"\xff\xfe\x00\x81\x00\x82")
+    # Fails every leg of the Japanese decode ladder (utf-8-sig, cp932) and
+    # carries no UTF-16 BOM, which the ladder would honour first.
+    source.write_bytes(b"\x81\xff")
 
     with pytest.raises(BridgeProtocolError) as failure:
         local_resources.preview_known_words(
