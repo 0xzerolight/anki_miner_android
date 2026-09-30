@@ -269,6 +269,18 @@ def test_request_rejects_invalid_kind_paths_labels_and_pairing(
     assert error.value.code == "invalid_reading_mining_request"
 
 
+def test_request_rejects_the_desktop_only_anki_deck_kind() -> None:
+    """The engine's ReadingSourceRef grew kind "deck" (Reading → Anki Deck, read over AnkiConnect).
+
+    The bridge's kind allowlist is its own table, not that Literal, so the new
+    engine kind stays out until Android has a source for it.
+    """
+    assert "deck" not in reading_mining._SOURCE_SUFFIXES
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_mining._parse_request(_request(sourceKind="deck", sourcePath="/cache/reading-job-v1-a/deck.txt"))
+    assert error.value.code == "invalid_reading_mining_request"
+
+
 @pytest.mark.parametrize(
     ("source_kind", "filename"),
     [
