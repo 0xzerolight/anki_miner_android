@@ -5911,6 +5911,10 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
     # item; the partial processor owns no definition service, so stand one in.
     processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
+    # Every result leaving _run_pipeline now passes _stamp_whitelist_coverage,
+    # which asks the config and the word-list service whether a whitelist is on.
+    processor.config = types.SimpleNamespace(use_whitelist=False, bypass_optional_filters=False)
+    processor.word_list_service = None
     run_temp = tmp_path / "partial-run"
 
     def allocate_temp() -> Path:
@@ -5986,6 +5990,10 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
     # item; the partial processor owns no definition service, so stand one in.
     processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
+    # Every result leaving _run_pipeline now passes _stamp_whitelist_coverage,
+    # which asks the config and the word-list service whether a whitelist is on.
+    processor.config = types.SimpleNamespace(use_whitelist=False, bypass_optional_filters=False)
+    processor.word_list_service = None
     run_temp = tmp_path / "cancelled-run"
 
     def allocate_temp() -> Path:

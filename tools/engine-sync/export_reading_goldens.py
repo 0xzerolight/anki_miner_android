@@ -201,6 +201,7 @@ class _AnkiService:
         self.verified = False
         self.card_snapshot: dict[str, Any] | None = None
         self.last_created_mined_forms: list[str] = []
+        self.last_created_lemmas: list[str] = []
 
     def set_cancelled_check(self, cancelled: object) -> None:
         # _phase5 installs its probe before the batch and clears it after.
@@ -249,6 +250,8 @@ class _AnkiService:
         # rather than deriving it from what it submitted, so the sink must
         # report the forms it confirmed.
         self.last_created_mined_forms = [payload.word.mined_form for payload in card_data]
+        # Aligned with the forms: the processor zips the two for whitelist coverage.
+        self.last_created_lemmas = [payload.word.lemma for payload in card_data]
         # The service contract returns the created ids; the processor takes
         # len() of this and stamps them onto the result.
         return [4242]

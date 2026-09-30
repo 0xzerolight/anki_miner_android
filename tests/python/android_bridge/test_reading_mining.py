@@ -67,6 +67,10 @@ def _request(cache_dir: Path | str = "/cache", **overrides: object) -> str:
 def _load_vendored_text_source() -> ModuleType:
     """Load only reading.text_source without importing desktop service deps."""
 
+    # text_source now shares reading._util, whose encoding ladder imports
+    # pysubs2 at module scope, so the loader can no longer run without the
+    # runtime dependencies; the runtime lane carries them.
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
     package_name = "_android_bridge_test_reading"
     reading_root = PROJECT_ROOT / "app/src/main/python/anki_miner/services/reading"
     package = ModuleType(package_name)
