@@ -5,7 +5,6 @@ file), Windows (.lnk), and macOS (informational only). Replaces the previous
 CLI-driven `create-shortcut` command with a pure service the GUI can call.
 """
 
-import contextlib
 import logging
 import os
 import shutil
@@ -16,13 +15,15 @@ from pathlib import Path
 
 from PyQt6.QtCore import QCoreApplication
 
+from anki_miner.utils.logging_ext import suppressed
+from anki_miner.utils.subprocess_log import log_command
 from anki_miner.utils.subprocess_utils import no_window_kwargs
 
 logger = logging.getLogger(__name__)
 
 APP_NAME = "Anki Miner"
 APP_ID = "anki-miner"
-APP_COMMENT = "Japanese vocabulary mining from media"
+APP_COMMENT = "Vocabulary mining from media"
 ICON_FILENAME = "anki_miner.svg"
 
 # These helpers run synchronously on the GUI thread; bound them so a hung
@@ -35,6 +36,10 @@ class ShortcutResult:
     """Structured outcome of a shortcut creation attempt."""
 
     success: bool = False
+    #: The one sentence shown to the user on success. ``messages`` keeps the
+    #: executable/icon/desktop-file paths for the log; a modal made of four
+    #: absolute paths was the whole result screen before.
+    summary: str = ""
     messages: list[str] = field(default_factory=list)
     paths_created: list[Path] = field(default_factory=list)
     error: str | None = None
@@ -153,9 +158,10 @@ class ShortcutService:
             )
         elif sys.platform == "darwin":
             result.success = True
-            result.messages.append(
+            result.summary = (
                 f"Automatic shortcut creation is not supported on macOS. To launch {APP_NAME}, run:\n  {exe_path}"
             )
+            result.messages.append(result.summary)
         else:
             result.error = f"Unsupported platform: {sys.platform}"
 
@@ -195,9 +201,14 @@ StartupWMClass=anki_miner
         result.messages.append(f"Desktop file created: {desktop_file}")
         result.paths_created.append(desktop_file)
 
-        with contextlib.suppress(FileNotFoundError, subprocess.TimeoutExpired):
+        # Best-effort, but not silent: a menu entry that never appears is the
+        # user-visible symptom of this refresh failing, and it used to leave
+        # nothing in the log at all.
+        refresh_argv = ["update-desktop-database", str(desktop_dir)]
+        log_command(logger, "update-desktop-database", refresh_argv, timeout_s=_SUBPROCESS_TIMEOUT_SECONDS)
+        with suppressed(logger, "update-desktop-database"):
             subprocess.run(
-                ["update-desktop-database", str(desktop_dir)],
+                refresh_argv,
                 capture_output=True,
                 check=False,
                 timeout=_SUBPROCESS_TIMEOUT_SECONDS,
@@ -205,6 +216,9 @@ StartupWMClass=anki_miner
             )
 
         result.success = True
+        result.summary = QCoreApplication.translate(
+            "MainWindow", "'Anki Miner' should now appear in your application menu."
+        )
         result.messages.append(f"'{APP_NAME}' should now appear in your application menu.")
 
     @staticmethod
@@ -233,7 +247,7 @@ StartupWMClass=anki_miner
     @classmethod
     def _windows_shortcut_path_script(cls) -> str:
         """Build PowerShell that resolves the real Windows Desktop shortcut path."""
-        resolution_error = QCoreApplication.translate("MainWindow", "Failed to create desktop shortcut.")
+        resolution_error = QCoreApplication.translate("MainWindow", "Windows did not report a Desktop folder.")
         return (
             "$ErrorActionPreference = 'Stop'; "
             "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
@@ -303,6 +317,7 @@ StartupWMClass=anki_miner
                 partial_output = partial_output.decode("utf-8", errors="replace")
             if cls._record_windows_shortcut_output(partial_output, result):
                 result.success = True
+                result.summary = QCoreApplication.translate("MainWindow", "Desktop shortcut created.")
                 logger.warning("Windows shortcut creation timed out after creating a shortcut")
                 return
             result.error = "PowerShell timed out while creating the shortcut."
@@ -314,11 +329,14 @@ StartupWMClass=anki_miner
             return
 
         if not cls._record_windows_shortcut_output(completed.stdout, result):
-            result.error = QCoreApplication.translate("MainWindow", "Failed to create desktop shortcut.")
+            # The banner already says the shortcut could not be created, so
+            # Details carries the diagnostic instead of repeating the sentence.
+            result.error = QCoreApplication.translate("MainWindow", "PowerShell returned no shortcut path.")
             logger.warning("Windows shortcut creation failed: PowerShell returned no shortcut path")
             return
 
         result.success = True
+        result.summary = QCoreApplication.translate("MainWindow", "Desktop shortcut created.")
 
     @staticmethod
     def _record_windows_shortcut_output(output: str, result: ShortcutResult) -> bool:

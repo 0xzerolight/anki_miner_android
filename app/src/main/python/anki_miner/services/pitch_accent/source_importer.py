@@ -25,7 +25,6 @@ legacy single-CSV loader's semantics.
 from __future__ import annotations
 
 import logging
-import os
 import shutil
 import tempfile
 from collections.abc import Callable, Iterable
@@ -35,12 +34,12 @@ from pathlib import Path
 
 from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
-    prove_owned_slot,
+    language_identity,
+    read_slot_language,
     resolve_auto_store_id,
-    resolve_managed_slot,
     write_ownership_marker,
 )
-from anki_miner.services._staging import promote_staged_dir, repair_managed_slot
+from anki_miner.services._staging import claim_managed_slot, promote_staged_dir, repair_managed_slot
 from anki_miner.services.pitch_accent import storage
 from anki_miner.services.pitch_accent.yomitan_pitch_importer import (
     extract_pitch_rows,
@@ -86,6 +85,7 @@ def import_pitch_source(
     cancel_check: Callable[[], bool] | None = None,
     overwrite: bool = False,
     before_promote: Callable[[], None] | None = None,
+    language: str = "ja",
 ) -> PitchSourceImportResult:
     """Import ``input_path`` into ``dest_root/<source_id>/index.sqlite``.
 
@@ -107,6 +107,8 @@ def import_pitch_source(
         overwrite: If true, replace an existing same-id source atomically.
         before_promote: Optional last-moment guard run immediately before the
             staged directory replaces the managed slot.
+        language: Mining language stamped into the index meta. Defaults to
+            ``"ja"``, the pre-transition value for every existing caller.
 
     Raises:
         SetupError: On a missing/unsupported input, or a source that yields zero
@@ -125,6 +127,7 @@ def import_pitch_source(
             cancel_check=cancel_check,
             overwrite=overwrite,
             before_promote=before_promote,
+            language=language,
         )
     if suffix in _CSV_SUFFIXES:
         return _import_csv(
@@ -135,6 +138,7 @@ def import_pitch_source(
             cancel_check=cancel_check,
             overwrite=overwrite,
             before_promote=before_promote,
+            language=language,
         )
     raise SetupError(
         f"Unsupported pitch source '{input_path.name}'. "
@@ -152,6 +156,9 @@ def repair_pitch_source(
     cancel_check: Callable[[], bool] | None = None,
 ) -> PitchSourceImportResult:
     """Explicitly repair ``source_id``, retaining an invalid prior slot as quarantine."""
+    # Read the stamp before the rebuild: repair_managed_slot may quarantine the
+    # slot, and a re-import would otherwise fall back to the "ja" default.
+    language = read_slot_language(dest_root / source_id)
     return repair_managed_slot(
         input_path,
         dest_root,
@@ -165,6 +172,7 @@ def repair_pitch_source(
             progress=progress,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            language=language,
         ),
     )
 
@@ -178,6 +186,7 @@ def _import_zip(
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
     before_promote: Callable[[], None] | None,
+    language: str,
 ) -> PitchSourceImportResult:
     with open_yomitan_meta_banks(zip_path, kind="pitch") as banks:
         entries_out, skipped_display_only = extract_pitch_rows(banks, progress=progress, cancel_check=cancel_check)
@@ -187,7 +196,7 @@ def _import_zip(
             dest_root,
             _derive_source_id(title),
             "pitch",
-            {"source_name": title, "source_revision": revision},
+            {"source_name": title, "source_revision": revision, **language_identity(language)},
         )
 
         if not entries_out:
@@ -219,6 +228,7 @@ def _import_zip(
             cancel_check=cancel_check,
             overwrite=overwrite,
             before_promote=before_promote,
+            language=language,
         )
 
     logger.info(
@@ -242,6 +252,7 @@ def _import_csv(
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
     before_promote: Callable[[], None] | None,
+    language: str,
 ) -> PitchSourceImportResult:
     stem = csv_path.stem
     # Honor an explicit display name (reimport passes the existing meta name);
@@ -252,7 +263,7 @@ def _import_csv(
         dest_root,
         _derive_source_id(stem),
         "pitch",
-        {"source_name": resolved_name, "source_revision": ""},
+        {"source_name": resolved_name, "source_revision": "", **language_identity(language)},
     )
 
     # key = (kanji, reading) -> (pattern, nasal, devoice); first occurrence
@@ -293,6 +304,7 @@ def _import_csv(
         cancel_check=cancel_check,
         overwrite=overwrite,
         before_promote=before_promote,
+        language=language,
     )
     logger.info(
         "Imported %d pitch entries from CSV '%s' as source '%s'",
@@ -318,25 +330,15 @@ def _finalize(
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
     before_promote: Callable[[], None] | None,
+    language: str,
 ) -> PitchSourceImportResult:
     """Build the index under a staging dir, then atomically promote it.
 
     Copies the original input alongside ``index.sqlite`` (``source.zip`` /
     ``source.csv``) for later reimport.
     """
-    try:
-        final_path = resolve_managed_slot(dest_root, source_id)
-    except ValueError as exc:
-        raise SetupError(str(exc)) from exc
+    final_path = claim_managed_slot(dest_root, source_id, "pitch", overwrite=overwrite, noun="Pitch source")
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    if os.path.lexists(final_path):
-        if not overwrite:
-            raise SetupError(f"Pitch source '{source_id}' already exists")
-        if not prove_owned_slot(final_path.parent, source_id, "pitch"):
-            raise SetupError(
-                f"Pitch source '{source_id}' exists but is not an Anki Miner-managed pitch source; "
-                "refusing to overwrite it"
-            )
 
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=final_path.parent))
     try:
@@ -349,6 +351,7 @@ def _finalize(
             "source_revision": source_revision,
             "import_date": datetime.now(UTC).isoformat(),
             "entry_count": str(entry_count),
+            "language": language,
         }
         storage.build_index(db_path, rows, meta)
 

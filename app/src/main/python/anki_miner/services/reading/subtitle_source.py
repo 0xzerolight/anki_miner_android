@@ -26,18 +26,20 @@ from collections.abc import Callable
 
 import pysubs2
 
-from anki_miner.exceptions import OperationCancelled, SetupError
+from anki_miner.exceptions import SetupError, raise_if_cancelled
 from anki_miner.models.reading import (
     ReadingDocument,
     ReadingSourceRef,
     ReadingUnit,
 )
-from anki_miner.services.reading._util import _decode
+from anki_miner.services.reading._util import READING_CANCELLED, _decode
 from anki_miner.utils.logging_ext import log_summary
 from anki_miner.utils.text_utils import clean_subtitle_text
 
 logger = logging.getLogger(__name__)
 
+# The two over-cap SetupErrors below name this in MB ("over 32 MB"); change both
+# if this changes.
 _MAX_TEXT_FILE_BYTES = 32 * 1024 * 1024
 
 
@@ -52,65 +54,66 @@ def _format_cue_time(seconds: float) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def _raise_if_cancelled(cancel_check: Callable[[], bool] | None) -> None:
-    if cancel_check is not None and cancel_check():
-        raise OperationCancelled("Reading load cancelled")
-
-
 def load(
     ref: ReadingSourceRef,
     *,
     cancel_check: Callable[[], bool] | None = None,
+    encodings: tuple[str, ...] | None = None,
+    script_check: Callable[[str], bool] | None = None,
+    normalize: Callable[[str], str] | None = None,
+    has_target_script: Callable[[str], bool] | None = None,
 ) -> ReadingDocument:
     """Load a subtitle file into a per-cue :class:`ReadingDocument`.
 
     Identity mirrors the video path: series = parent folder name,
-    episode = file stem.
+    episode = file stem. ``encodings`` is the mining language's decode ladder;
+    ``None`` keeps the built-in Japanese sniffing path (see ``_util._decode``).
+    ``script_check`` validates a single-byte ladder leg (``_util._decode``).
+    ``normalize`` is the run parser's text normaliser, so each cue is cleaned
+    exactly as the parser cleans a subtitle line (``None`` = the Japanese pair).
+    ``has_target_script`` is that parser's bilingual-cue line gate — a different
+    job from ``script_check``, which judges a decode, not a cue line.
 
     Raises:
         SetupError: unreadable file or unparseable subtitle content.
     """
-    _raise_if_cancelled(cancel_check)
+    raise_if_cancelled(cancel_check, READING_CANCELLED)
     # Per-kind ref contract: file-backed kinds always carry a path.
     assert ref.path is not None
     path = ref.path
     try:
         size = path.stat().st_size
         if size > _MAX_TEXT_FILE_BYTES:
-            raise SetupError(
-                f"subtitle file '{path.name}' is {size:,} bytes (cap {_MAX_TEXT_FILE_BYTES:,}); refusing to load"
-            )
+            raise SetupError(f"'{path.name}' is too large to mine (over 32 MB).")
         with path.open("rb") as f:
             raw = f.read(_MAX_TEXT_FILE_BYTES + 1)
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check, READING_CANCELLED)
         if len(raw) > _MAX_TEXT_FILE_BYTES:
-            raise SetupError(
-                f"subtitle file '{path.name}' exceeds cap {_MAX_TEXT_FILE_BYTES:,} bytes; refusing to load"
-            )
+            raise SetupError(f"'{path.name}' is too large to mine (over 32 MB).")
     except OSError as e:
         logger.debug("Subtitle read failed: file=%s error=%s detail=%s", path, type(e).__name__, e)
         raise SetupError(f"Cannot read subtitle file '{path.name}': {e}") from e
 
-    text = _decode(raw)
+    text = _decode(raw, encodings=encodings, script_check=script_check)
     # detect() matched the lowered suffix but the ref keeps original case;
     # pysubs2's ext→format map is lowercase-keyed (".SRT" would raise).
     try:
         format_ = pysubs2.formats.get_format_identifier(path.suffix.lower())
         subs = pysubs2.SSAFile.from_string(text, format_=format_)
     except Exception as e:  # pysubs2 raises format-specific parse errors
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check, READING_CANCELLED)
         # Parser exceptions can contain cue text; retain type, never message.
         logger.debug("Subtitle parse failed: file=%s error=%s", path, type(e).__name__)
-        raise SetupError(f"Cannot parse subtitle file '{path.name}': {e}") from e
-    _raise_if_cancelled(cancel_check)
+        raise SetupError(f"Cannot parse subtitle file '{path.name}'.") from e
+    raise_if_cancelled(cancel_check, READING_CANCELLED)
 
     units: list[ReadingUnit] = []
     for event in subs:
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check, READING_CANCELLED)
         # Skip ASS/SSA Comment events (same guard as parse_raw_entries).
         if getattr(event, "is_comment", None) is True:
             continue
-        cue_text = clean_subtitle_text(event.text)
+        cue_text = clean_subtitle_text(event.text, normalize=normalize, has_target_script=has_target_script)
         if not cue_text:
             continue
         units.append(
@@ -126,7 +129,7 @@ def load(
     # is almost certainly not a subtitle — fail the item with a reason instead
     # of mining silently to "0 cards".
     if not units:
-        raise SetupError(f"No subtitle cues found in '{path.name}' — is it really a subtitle file?")
+        raise SetupError(f"No subtitle cues found in '{path.name}'.")
 
     doc = ReadingDocument(
         title=path.stem,

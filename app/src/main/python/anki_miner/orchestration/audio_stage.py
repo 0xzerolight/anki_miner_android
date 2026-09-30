@@ -18,17 +18,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from PyQt6.QtCore import QCoreApplication
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.interfaces import PresenterProtocol, ProgressCallback
 from anki_miner.models import MediaData, TokenizedWord
-from anki_miner.services.subtitle_parser import _differs_by_okurigana_only
-from anki_miner.utils import has_katakana, hiragana_to_katakana
+from anki_miner.services.audio_fetch_common import (
+    expression_audio_candidates as _expression_audio_candidates,
+)
+from anki_miner.services.audio_fetch_common import reset_fetch_outcome_rate_limit
 from anki_miner.utils.i18n import tr_format
-from anki_miner.utils.logging_ext import log_summary
+from anki_miner.utils.logging_ext import capped, log_summary
 from anki_miner.utils.timing import timed_phase
 
 if TYPE_CHECKING:
@@ -38,45 +40,99 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _expression_audio_candidates(word: TokenizedWord) -> list[tuple[str, str]]:
-    """Ordered ``(kanji, kana)`` query pairs for the JPod101 audio retry ladder.
+def _candidate_ladder(fetcher: Any, word: TokenizedWord) -> list[tuple[str, str]]:
+    """The fetcher's own ladder, or the Japanese one for a plain duck fetcher.
 
-    Two failure modes the single-shot query missed:
+    The probe is load-bearing, not defensive: several existing suites inject
+    minimal fetcher fakes that satisfy the ExpressionAudioFetcher Protocol and
+    nothing more, and those must keep mining with the ja ladder.
 
-    * **Katakana loanwords.** JPod101 indexes loanword audio under the katakana
-      reading, but ``expression_reading`` is folded to hiragana for card
-      display (チップ→ちっぷ → miss).  Each query whose kanji form contains
-      katakana gets a katakana-reading variant (チップ→チップ → hit).
-    * **Surface-mined fallback.** A same-kanji, okurigana-only UniDic lemma is a
-      safe canonical alternate. Surface-mined words fall back to that lemma with
-      the lemma's OWN reading (探す/さがす, not the surface 探し/さがし).
-
-    hiragana↔katakana is lossless and loanwords are unambiguous, so the katakana
-    variant carries no homograph risk (Issue #73). Different-kanji lemmas are
-    excluded because UniDic canonicalization can name another homograph. Empty
-    readings are dropped and duplicates are collapsed, so a verb whose
-    ``mined_form == lemma`` issues no redundant request.
+    It looks the method up on the fetcher's TYPE rather than the instance
+    because those suites pass a bare ``MagicMock``, on which every instance
+    attribute auto-exists: an instance-level probe would hand the stage a
+    MagicMock in place of the candidate list and silently take the ja path off
+    the ladder. A real fetcher class declaring ``candidates_for`` is still
+    honoured, mock or not.
     """
-    pairs: list[tuple[str, str]] = [(word.mined_form, word.expression_reading)]
-    if word.lemma and word.lemma != word.mined_form and _differs_by_okurigana_only(word.mined_form, word.lemma):
-        pairs.append((word.lemma, word.lemma_reading))
+    if hasattr(type(fetcher), "candidates_for"):
+        ladder: list[tuple[str, str]] = fetcher.candidates_for(word)
+        return ladder
+    return _expression_audio_candidates(word)
 
-    candidates: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
 
-    def _add(kanji: str, kana: str) -> None:
-        if not kanji or not kana:
-            return
-        pair = (kanji, kana)
-        if pair not in seen:
-            seen.add(pair)
-            candidates.append(pair)
+def _chain_label(kind: str, source_id: str | None, enabled: bool) -> str:
+    """Render one chain member as ``kind:id``, marking a disabled entry.
 
-    for kanji, kana in pairs:
-        _add(kanji, kana)
-        if has_katakana(kanji):
-            _add(kanji, hiragana_to_katakana(kana))
-    return candidates
+    A bare count ("chain_entries=3") answers none of the questions a stalled
+    or empty audio stage raises: which sources were in the chain, in what
+    order, and which of them was switched off. The label carries no
+    whitespace, so ``log_summary`` keeps the whole chain one token.
+    """
+    label = f"{kind}:{source_id}" if source_id else kind
+    return label if enabled else f"{label}(disabled)"
+
+
+def _expression_chain_labels(config: AnkiMinerConfig) -> tuple[list[str], int]:
+    """Ordered ``kind:pack_id`` labels for the word-audio chain, plus enabled count."""
+    labels = [_chain_label(entry.kind, entry.pack_id, entry.enabled) for entry in config.expression_audio_chain]
+    enabled = sum(1 for entry in config.expression_audio_chain if entry.enabled)
+    return labels, enabled
+
+
+def _sentence_chain_labels(config: AnkiMinerConfig) -> tuple[list[str], int]:
+    """Ordered provider labels for the sentence-TTS chain, plus enabled count.
+
+    Sentence TTS has no chain dataclass — its providers are two flags — so the
+    labels are built from those, keeping both stages' ``chain=`` field one
+    vocabulary.
+    """
+    providers = (
+        ("google", config.reading_tts_google_enabled),
+        ("papago", config.reading_tts_papago_enabled),
+    )
+    labels = [_chain_label(name, None, enabled) for name, enabled in providers]
+    return labels, sum(1 for _, enabled in providers if enabled)
+
+
+def _mounted_packs(fetcher: object) -> list[Any]:
+    """Local audio packs reachable through *fetcher*, in chain order.
+
+    Read off the chain's member list rather than the config: config names the
+    packs a user asked for, while this names the packs that actually mounted
+    (the registry drops a stale, cross-language or missing-folder pack). A
+    fetcher that is not a chain is examined itself, so a single pack fetcher
+    injected directly still reports.
+
+    The member list is read defensively — a duck-typed or MagicMock fetcher
+    hands back something that is not a sequence, and a pack is only counted
+    when its ``pack_id`` is a real non-empty string.
+    """
+    members = getattr(fetcher, "_fetchers", None)
+    candidates = list(members) if isinstance(members, (list, tuple)) else [fetcher]
+    packs = []
+    for member in candidates:
+        pack_id = getattr(member, "pack_id", None)
+        if isinstance(pack_id, str) and pack_id:
+            packs.append(member)
+    return packs
+
+
+def _log_mounted_packs(packs: list[Any]) -> None:
+    """Record which pack folders this run will read from, once per run.
+
+    The diagnosis this exists for: an expression-audio stage that stalls names
+    a pack id, and a bundle carried no way to map that id to the folder on the
+    slow medium. ``entries`` is the pack's indexed row count, which separates
+    "the pack is huge" from "the pack is empty and every word falls through".
+    """
+    log_summary(
+        logger,
+        "Audio packs mounted",
+        packs=capped(
+            f"id={pack.pack_id};dir={getattr(pack, 'pack_dir', None)};entries={getattr(pack, 'entry_count', None)}"
+            for pack in packs
+        ),
+    )
 
 
 def _dominant_transient_failure(counts: dict[str, int], attempts: int) -> str | None:
@@ -102,18 +158,46 @@ def _dominant_transient_failure(counts: dict[str, int], attempts: int) -> str | 
     return max(counts, key=lambda key: counts[key])
 
 
-def _audio_failure_diagnosis(counts: dict[str, int], attempts: int) -> str | None:
+def _audio_failure_diagnosis(counts: dict[str, int], attempts: int, slow_pack: str | None = None) -> str | None:
     """Name the dominant expression-audio failure cause, or None.
 
     ``counts`` is a ChainedExpressionAudioFetcher ``stats()`` tally keyed by
-    failure bucket (ssl/connection/timeout/http_status/non_audio), aggregated
-    across every enabled word-audio source (packs, JPod101, custom URL/JSON,
-    gTTS). Threshold/tie-break semantics live in
+    failure bucket (ssl/connection/timeout/http_status/non_audio/slow),
+    aggregated across every enabled word-audio source (packs, JPod101, custom
+    URL/JSON, gTTS). Threshold/tie-break semantics live in
     :func:`_dominant_transient_failure`.
+
+    ``slow_pack`` is the local pack the chain saw expire most often (its
+    ``slowest_pack_id()``), or None when no pack did. It only changes the
+    wording when "slow" is the dominant bucket.
     """
     dominant = _dominant_transient_failure(counts, attempts)
     if dominant is None:
         return None
+    if dominant == "slow":
+        if slow_pack:
+            # A local pack that blows the budget is not "responding slowly";
+            # its folder is. Every fresh hit copies one file out of that
+            # folder, and on a cloud-placeholder, network or external drive
+            # that copy is what cost 39-255s per word in the reported run.
+            # Reordering or disabling the pack does not fix that; moving the
+            # folder does, so name the pack and say so.
+            return tr_format(
+                QCoreApplication.translate(
+                    "EpisodeProcessor",
+                    "Audio pack '%1' reads too slowly — audio skipped; move its folder "
+                    "to a local drive and re-import it.",
+                ),
+                slow_pack,
+            )
+        # Distinct from every other bucket: nothing failed and nothing is
+        # retried differently next run. The source is reachable and answering,
+        # just far slower than the per-word budget, so the actionable advice is
+        # to reorder or disable it rather than to wait it out.
+        return QCoreApplication.translate(
+            "EpisodeProcessor",
+            "Word-audio source is too slow — audio skipped; reorder or disable it in Settings → Word Audio.",
+        )
     if dominant in ("ssl", "connection", "timeout"):
         return QCoreApplication.translate(
             "EpisodeProcessor",
@@ -220,17 +304,80 @@ class AudioStage:
             and (self.config.reading_tts_google_enabled or self.config.reading_tts_papago_enabled)
         )
 
+    def attach_expression_audio_probe(self, words: list[TokenizedWord]) -> None:
+        """Stamp ``word.expression_audio_available`` from a zero-network probe.
+
+        Runs on the mining worker thread just before the curation callback (both
+        mining paths, through ``EpisodeProcessor._run_curation``) so the Word
+        Curator opens with an Audio column already right for every word some
+        source has cached. Nothing is downloaded here: the curator's own
+        background prefetch resolves what is left at None, and phase 3's fetch
+        loop is unchanged.
+
+        A no-op when the expression-audio stage is not active — the column is
+        hidden then — and a no-op for a fetcher whose TYPE does not declare the
+        duck-typed ``has_cached_candidates``, which leaves every word at None
+        ("not knowable"), the state the column already shows. The lookup is on
+        the TYPE for the same reason :func:`_candidate_ladder` does it: the
+        suites inject bare MagicMocks, on which every instance attribute
+        auto-exists, and an instance-level probe would stamp a MagicMock onto
+        every word.
+        """
+        fetcher = self.expression_audio_fetcher
+        if not self.expression_audio_active or not hasattr(type(fetcher), "has_cached_candidates"):
+            return
+        # Duck-typed, deliberately not on the ExpressionAudioFetcher Protocol
+        # (see interfaces/expression_audio.py) — mypy can't narrow the TYPE-level
+        # hasattr guard above, so the call goes through getattr.
+        probe = getattr(fetcher, "has_cached_candidates")  # noqa: B009
+        for word in words:
+            # Between-words, like the fetch loop in _run_stage: unlike the other
+            # attaches this one touches disk and sqlite per candidate form, so a
+            # pack on a slow volume would otherwise run to the end of the list
+            # before the user's cancel is seen.
+            if self._is_cancelled():
+                return
+            word.expression_audio_available = probe(_candidate_ladder(fetcher, word))
+
+    @property
+    def curation_fetch_fn(self) -> Callable[[TokenizedWord, Callable[[], bool] | None], bool] | None:
+        """One-word expression-audio fetch for the Word Curator, or None.
+
+        ``None`` is the Audio column's off switch as well as the prefetch's: it
+        is exactly :attr:`expression_audio_active`, so the column appears under
+        the same condition the feature itself does (a mapped
+        ``expression_audio`` field plus a fetcher).
+
+        The returned callable drives the SAME chained fetcher phase 3 will use
+        — same cache, same politeness delay, same per-word budget — so a word
+        the curator resolved is a warm cache hit when phase 3 asks for it. It
+        runs on the curator's prefetch thread while the mining worker is parked
+        in the curation gate; the gate, plus the tab's cancel-then-join
+        discipline, is what keeps the two off this fetcher at the same time
+        (see ``MiningTabBase._join_curation_prefetch``).
+        """
+        fetcher = self.expression_audio_fetcher
+        if not self.expression_audio_active or fetcher is None:
+            return None
+
+        def _fetch(word: TokenizedWord, cancelled_check: Callable[[], bool] | None = None) -> bool:
+            return fetcher.fetch_candidates(_candidate_ladder(fetcher, word), cancelled_check) is not None
+
+        return _fetch
+
     def _run_stage(
         self,
         media_results: list[tuple[TokenizedWord, MediaData]],
         progress_callback: ProgressCallback | None,
         stage: str,
+        chain_labels: list[str],
         enabled_entries: int,
         fetcher: object,
         diagnose_fn: Callable[[dict[str, int], int], str | None],
         start_label: str,
         item_template: str,
         per_item: Callable[[TokenizedWord, MediaData], bool | None],
+        done_fields: Callable[[], dict[str, object]] | None = None,
     ) -> tuple[bool, int, int, int]:
         """Cancel-aware loop skeleton shared by both fetch entry points.
 
@@ -251,8 +398,17 @@ class AudioStage:
         when cancelled mid-loop (``on_complete`` already emitted; caller must
         return early without a presenter summary). The diagnostic and log
         summary are emitted here only after a completed loop.
+
+        ``done_fields`` contributes the caller's stage-specific fields to the
+        ``Audio stage done`` receipt (the stalling pack and its folder, for
+        expression audio); it is called once, after the loop.
         """
         words = len(media_results)
+        # Each run gets a fresh first-occurrence WARNING per (source, reason):
+        # the counters are process-wide, so without this the second run in a
+        # session reports its failures at DEBUG and the log looks clean while
+        # every word misses.
+        reset_fetch_outcome_rate_limit()
         if stage in self._started_diagnostic_stages:
             failure_counts_before = self._failure_counts(fetcher)
         else:
@@ -266,7 +422,8 @@ class AudioStage:
             "Audio stage",
             stage=stage,
             words=words,
-            chain_entries=enabled_entries,
+            chain=chain_labels,
+            enabled=enabled_entries,
         )
         attempts = 0
         hits = 0
@@ -298,16 +455,17 @@ class AudioStage:
                 stage,
                 failure_counts_before,
             )
-            log_summary(
-                logger,
-                "Audio stage done",
-                stage=stage,
-                words=words,
-                attempts=attempts,
-                hits=hits,
-                misses=misses,
+            done_summary: dict[str, object] = {
+                "stage": stage,
+                "words": words,
+                "attempts": attempts,
+                "hits": hits,
+                "misses": misses,
                 **failure_counts,
-            )
+            }
+            if done_fields is not None:
+                done_summary.update(done_fields())
+            log_summary(logger, "Audio stage done", level=logging.INFO, **done_summary)
         return True, attempts, hits, misses
 
     @staticmethod
@@ -376,7 +534,10 @@ class AudioStage:
         log_summary(logger, "Expression audio gate", active=active, reason=reason)
         if not active:
             return
-        enabled_entries = sum(entry.enabled for entry in self.config.expression_audio_chain)
+        chain_labels, enabled_entries = _expression_chain_labels(self.config)
+        packs = _mounted_packs(self.expression_audio_fetcher)
+        _log_mounted_packs(packs)
+        pack_dirs = {pack.pack_id: getattr(pack, "pack_dir", None) for pack in packs}
 
         def _per_item(word: TokenizedWord, media: MediaData) -> bool:
             # Source-priority outer / candidate-ladder inner: each source
@@ -384,7 +545,7 @@ class AudioStage:
             # lower-priority source, so a synthetic fallback can't satisfy
             # the surface form before JPod101 sees the lemma it actually has.
             path = self.expression_audio_fetcher.fetch_candidates(  # type: ignore[union-attr]
-                _expression_audio_candidates(word),
+                _candidate_ladder(self.expression_audio_fetcher, word),
                 cancelled_check=self._is_cancelled,
             )
             if path is not None:
@@ -393,16 +554,37 @@ class AudioStage:
                 return True
             return False
 
+        slowest_pack = getattr(self.expression_audio_fetcher, "slowest_pack_id", None)
+
+        def _slow_pack_id() -> str | None:
+            # Duck-typed like stats(): the chain names the pack that expired;
+            # anything else (a bare Protocol fetcher, a MagicMock) yields a
+            # non-string and is treated as absent.
+            pack = slowest_pack() if callable(slowest_pack) else None
+            return pack if isinstance(pack, str) and pack else None
+
+        def _diagnose(counts: dict[str, int], attempts: int) -> str | None:
+            return _audio_failure_diagnosis(counts, attempts, slow_pack=_slow_pack_id())
+
+        def _done_fields() -> dict[str, object]:
+            # The user-facing warning names the pack; the log line adds the
+            # folder, because moving that folder off the slow medium is the
+            # whole remedy and a bundle otherwise carries no path for it.
+            pack = _slow_pack_id()
+            return {"slow_pack": pack, "slow_pack_dir": pack_dirs.get(pack) if pack else None}
+
         completed, _, hits, _ = self._run_stage(
             media_results,
             progress_callback,
             "expression",
+            chain_labels,
             enabled_entries,
             self.expression_audio_fetcher,
-            _audio_failure_diagnosis,
+            _diagnose,
             QCoreApplication.translate("EpisodeProcessor", "Fetching expression audio"),
             QCoreApplication.translate("EpisodeProcessor", "Expression audio: %1"),
             _per_item,
+            done_fields=_done_fields,
         )
         if not completed:
             return
@@ -432,7 +614,7 @@ class AudioStage:
         # centralized in _run_stage.
         active = self.reading_tts_active
         reason: str | None = None
-        enabled_entries = sum((self.config.reading_tts_google_enabled, self.config.reading_tts_papago_enabled))
+        chain_labels, enabled_entries = _sentence_chain_labels(self.config)
         if not active:
             if not self.config.reading_tts_enabled:
                 reason = "disabled"
@@ -449,6 +631,10 @@ class AudioStage:
         memo: dict[str, Path | None] = {}
 
         def _per_item(word: TokenizedWord, media: MediaData) -> bool | None:
+            if media.audio_path is not None:
+                # The source brought a real recording (Anki deck); synthesis
+                # is only the stand-in for a line with none.
+                return None
             sentence = word.sentence
             if sentence.strip():
                 if sentence in memo:
@@ -471,6 +657,7 @@ class AudioStage:
             media_results,
             progress_callback,
             "sentence",
+            chain_labels,
             enabled_entries,
             self.sentence_audio_fetcher,
             _sentence_audio_failure_diagnosis,

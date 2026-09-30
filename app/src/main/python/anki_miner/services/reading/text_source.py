@@ -16,34 +16,40 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
-from anki_miner.exceptions import OperationCancelled
+from anki_miner.exceptions import raise_if_cancelled
 from anki_miner.models.reading import ImageRef, ReadingDocument, ReadingSourceRef, ReadingUnit
 from anki_miner.utils.logging_ext import log_summary
 
+from ._util import READING_CANCELLED, join_hard_wraps
 from .sentence_splitter import split_sentences
 
+if TYPE_CHECKING:
+    from anki_miner.languages.profile import SentenceRules
+
 logger = logging.getLogger(__name__)
-
-
-def _raise_if_cancelled(cancel_check: Callable[[], bool] | None) -> None:
-    if cancel_check is not None and cancel_check():
-        raise OperationCancelled("Reading load cancelled")
 
 
 def load(
     ref: ReadingSourceRef,
     *,
     cancel_check: Callable[[], bool] | None = None,
+    rules: SentenceRules | None = None,
 ) -> ReadingDocument:
     """Split pasted text into sentence units and return a book document.
 
-    Blank lines delimit paragraphs (the ``¶N`` location label); each non-blank
-    physical line is stripped (including full-width indents) and sentence-split.
-    Empty or whitespace-only text yields an empty-units document —
-    ``process_reading`` surfaces the "no words" outcome.
+    Blank lines delimit paragraphs (the ``¶N`` location label). In a
+    space-delimited language each run of non-blank lines is one hard-wrapped
+    paragraph (``_util.join_hard_wraps``); otherwise each non-blank physical
+    line is one. A paragraph is stripped (including full-width indents) and
+    sentence-split. Empty or whitespace-only text yields an empty-units
+    document — ``process_reading`` surfaces the "no words" outcome.
+
+    ``rules`` is the mining language's sentence-splitting policy; ``None`` is
+    the splitter's built-in Japanese one.
     """
-    _raise_if_cancelled(cancel_check)
+    raise_if_cancelled(cancel_check, READING_CANCELLED)
     # Physical lines only (\r\n / \r / \n), like aozora's _splitlines —
     # str.splitlines() would also break on \v/\f/NEL/U+2028 from PDF/web pastes.
     text = (ref.text or "").replace("\r\n", "\n").replace("\r", "\n")
@@ -57,15 +63,15 @@ def load(
     index = 0
     para_no = 0
     skipped = 0
-    for raw in text.split("\n"):
-        _raise_if_cancelled(cancel_check)
+    for raw in join_hard_wraps(text.split("\n"), rules):
+        raise_if_cancelled(cancel_check, READING_CANCELLED)
         stripped = raw.strip()
         if not stripped:
             skipped += 1
             continue
         para_no += 1
-        for sentence in split_sentences(stripped):
-            _raise_if_cancelled(cancel_check)
+        for sentence in split_sentences(stripped, rules=rules):
+            raise_if_cancelled(cancel_check, READING_CANCELLED)
             units.append(
                 ReadingUnit(
                     text=sentence,

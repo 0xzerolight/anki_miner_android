@@ -4,6 +4,7 @@ import logging
 import os
 import sqlite3
 import unicodedata
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 
@@ -13,7 +14,13 @@ logger = logging.getLogger(__name__)
 
 #: Schema revision stored in ``PRAGMA user_version``. Bumped when a migration
 #: must run once per database rather than on every ``initialize()``.
-_SCHEMA_VERSION = 1
+#: 2: zh gained a script fold, so existing ``known_words.zh.db`` rows re-key
+#: (traditional rows onto their simplified key); a no-op for other languages.
+#: A zh database migrated while OpenCC is missing keeps its NFC keys.
+_SCHEMA_VERSION = 2
+
+#: Sentinel for a comparison fold not looked up yet (``None`` is a real answer).
+_UNRESOLVED = object()
 
 
 def normalize_lemma(word: str) -> str:
@@ -42,13 +49,19 @@ class KnownWordDB:
     Supports differential sync: words are only added, never removed.
     """
 
-    def __init__(self, db_path: Path):
+    def __init__(self, db_path: Path, *, language: str = "ja"):
         """Initialize the known word database.
 
         Args:
             db_path: Path to the SQLite database file.
+            language: The mining language this file belongs to. Its profile's
+                ``dedup_fold`` keys every row (``None`` = :func:`normalize_lemma`).
+                Resolved on first use, never here: construction stays I/O-free
+                and registry-free for the GUI sites that build one eagerly.
         """
         self._db_path = db_path
+        self._language = language
+        self._fold: object = _UNRESOLVED
         # Run-lifetime memo (T24): the batch worker keeps one processor — and
         # one KnownWordDB — alive for every queue item (T20), so a full-table
         # scan + NFC-normalize on every get_known_words()/get_words_by_source()
@@ -72,6 +85,30 @@ class KnownWordDB:
         """Drop the run-cached known/source sets after a write."""
         self._known_cache = None
         self._source_cache = {}
+
+    def _resolved_fold(self) -> Callable[[str], str] | None:
+        """The language's comparison fold, looked up once on first use."""
+        if self._fold is _UNRESOLVED:
+            # Function-local: languages.profile imports services (see subtitle_parser).
+            from anki_miner.languages.registry import get_profile
+
+            self._fold = get_profile(self._language).dedup_fold
+        return self._fold  # type: ignore[return-value]
+
+    def normalize_key(self, word: str) -> str:
+        """The stored/probed key for *word* in this language."""
+        fold = self._resolved_fold()
+        return normalize_lemma(word) if fold is None else fold(word)
+
+    def _normalize_words(self, words: set[str]) -> set[str]:
+        """Normalize a lemma set, collapsing keys that fold together.
+
+        ``None`` fold (ja/ko) calls the module-level :func:`_normalize_all`
+        exactly as before — ``test_known_word_db.py`` spies on that function
+        for the Anki-vocabulary memo — and a folding language maps its fold.
+        """
+        fold = self._resolved_fold()
+        return _normalize_all(words) if fold is None else {fold(word) for word in words}
 
     def _connect(self) -> sqlite3.Connection:
         """Open a connection with a 5 s busy timeout.
@@ -103,10 +140,11 @@ class KnownWordDB:
             self._migrate_to_nfc(conn)
 
     def _migrate_to_nfc(self, conn: sqlite3.Connection) -> None:
-        """Rewrite pre-normalization rows to NFC, once per database.
+        """Rewrite pre-normalization rows to their key, once per database.
 
-        Rows written before ``normalize_lemma`` existed can hold NFD spellings
-        that no lookup will ever match. Two rows can also normalize onto the
+        The key is :meth:`normalize_key` — NFC for ja/ko, the language's
+        fold otherwise. Rows written before ``normalize_lemma`` existed can hold
+        NFD spellings that no lookup will ever match. Two rows can also normalize onto the
         same lemma; those merge, keeping ``source='user'`` if any side had it so
         a curated "mark known" is never downgraded, and the earliest
         ``added_at``. Gated on ``PRAGMA user_version`` so a large collection is
@@ -121,7 +159,7 @@ class KnownWordDB:
             merged: dict[str, tuple[str, str]] = {}
             rewritten = False
             for lemma, source, added_at in rows:
-                canonical = normalize_lemma(lemma)
+                canonical = self.normalize_key(lemma)
                 if canonical != lemma:
                     rewritten = True
                 previous = merged.get(canonical)
@@ -179,8 +217,12 @@ class KnownWordDB:
             return self._known_cache
         with closing(self._connect()) as conn:
             cursor = conn.execute("SELECT lemma FROM known_words")
-            words = _normalize_all({row[0] for row in cursor.fetchall()})
-        log_summary(logger, "Known words load done", rows=len(words))
+            words = self._normalize_words({row[0] for row in cursor.fetchall()})
+            # The schema version rides along because a DB left behind by an
+            # older build reads as "0 known words" rather than as an unmigrated
+            # file, and the path says WHICH per-language sibling answered.
+            schema = int(conn.execute("PRAGMA user_version").fetchone()[0])
+        log_summary(logger, "Known words load done", rows=len(words), schema=schema, db=self._db_path)
         self._known_cache = words
         return words
 
@@ -203,7 +245,7 @@ class KnownWordDB:
             return self._source_cache[source]
         with closing(self._connect()) as conn:
             cursor = conn.execute("SELECT lemma FROM known_words WHERE source = ?", (source,))
-            words = _normalize_all({row[0] for row in cursor.fetchall()})
+            words = self._normalize_words({row[0] for row in cursor.fetchall()})
         log_summary(
             logger,
             "Known words source load done",
@@ -224,7 +266,7 @@ class KnownWordDB:
             Number of newly inserted rows (an in-place source upgrade is not
             counted as new).
         """
-        words = _normalize_all(words)
+        words = self._normalize_words(words)
         if not words:
             return 0
 
@@ -263,7 +305,7 @@ class KnownWordDB:
         transaction, so callers never need a racy before/after snapshot.
         Existing rows upgraded to ``source='user'`` are not newly inserted.
         """
-        words = _normalize_all(words)
+        words = self._normalize_words(words)
         if not words:
             return set()
 
@@ -307,7 +349,7 @@ class KnownWordDB:
         # get_known_words() return value), which is already NFC-normalized —
         # re-normalizing it here was pure repeat work on top of the memo.
         # A caller-supplied set that is NOT this memo is normalized as before.
-        normalized_existing = existing if existing is self._known_cache else _normalize_all(existing)
+        normalized_existing = existing if existing is self._known_cache else self._normalize_words(existing)
         normalized_anki = self._normalize_anki_vocabulary(anki_vocabulary)
         new_words = normalized_anki - normalized_existing
         added = self.add_words(new_words, source="anki")
@@ -322,7 +364,7 @@ class KnownWordDB:
         if anki_vocabulary is self._anki_vocab_ref:
             assert self._anki_vocab_normalized is not None
             return self._anki_vocab_normalized
-        normalized = _normalize_all(anki_vocabulary)
+        normalized = self._normalize_words(anki_vocabulary)
         self._anki_vocab_ref = anki_vocabulary
         self._anki_vocab_normalized = normalized
         return normalized
@@ -333,6 +375,13 @@ class KnownWordDB:
         Used by the Manage Known Words dialog to remove individual user-added
         entries, and by the Undo callback to revert ``source='mined'`` rows
         without touching ``source='user'`` or ``source='anki'`` rows (OVH-030).
+
+        Rows are matched on :meth:`normalize_key`, the comparison every read
+        already applies, not on the stored spelling. A row written before its
+        language had a fold — or, for zh, while OpenCC was unavailable — is
+        stored unfolded, so matching the folded request against the raw column
+        deleted nothing: Manage Known Words listed the folded spelling, Remove
+        was silently a no-op, and the word stayed known for good.
 
         Args:
             words: Set of lemma strings to remove.
@@ -346,18 +395,23 @@ class KnownWordDB:
         Returns:
             Number of rows actually removed.
         """
-        words = _normalize_all(words)
+        words = self._normalize_words(words)
         if not words:
             return 0
 
         with closing(self._connect()) as conn:
             before = self._count(conn)
             if source is None:
-                conn.executemany("DELETE FROM known_words WHERE lemma = ?", [(w,) for w in words])
+                stored = conn.execute("SELECT lemma FROM known_words").fetchall()
+                conn.executemany(
+                    "DELETE FROM known_words WHERE lemma = ?",
+                    [(lemma,) for (lemma,) in stored if self.normalize_key(lemma) in words],
+                )
             else:
+                stored = conn.execute("SELECT lemma FROM known_words WHERE source = ?", (source,)).fetchall()
                 conn.executemany(
                     "DELETE FROM known_words WHERE lemma = ? AND source = ?",
-                    [(w, source) for w in words],
+                    [(lemma, source) for (lemma,) in stored if self.normalize_key(lemma) in words],
                 )
             conn.commit()
             after = self._count(conn)
@@ -445,27 +499,31 @@ class KnownWordDB:
         return int(cursor.fetchone()[0])
 
 
-def add_user_known_words(db_path: Path, forms: set[str]) -> int:
+def add_user_known_words(db_path: Path, forms: set[str], *, language: str = "ja") -> int:
     """Persist curator-confirmed forms to the local known/ignore list.
 
     Encapsulates the user "mark known" rule shared by every mining tab's
     curation callback: build the DB ad hoc from the config path, write with
-    ``source='user'``, and store the ``mined_form`` spelling as passed — never
-    the lemma. Same pattern the settings tab uses for the rebuild action.
+    ``source='user'``, and store the ``mined_form`` spelling — never the lemma —
+    under the language's comparison key (zh stores 頭髮 as 头发). Same pattern
+    the settings tab uses for the rebuild action.
 
     The curator stages its marks and calls this only from a successful Confirm
     (D34-B), so cancelling a review writes nothing. Callers must not treat this
     as "persisted the moment the user clicked"; it is the commit step.
 
     Args:
-        db_path: Path to the known-words SQLite database
-            (``config.known_words_db_path``).
+        db_path: Path to the known-words SQLite database. Callers pass the
+            active language's file — ``resolve_known_words_db_path(config)``,
+            never the raw config field.
         forms: Set of ``mined_form`` strings the curator marked as known.
+        language: The mining language ``db_path`` belongs to; its profile's
+            ``dedup_fold`` keys the rows (see :class:`KnownWordDB`).
 
     Returns:
         Number of newly inserted rows (an in-place source upgrade is not
         counted as new).
     """
-    db = KnownWordDB(db_path)
+    db = KnownWordDB(db_path, language=language)
     db.initialize()
     return db.add_words(forms, source="user")
