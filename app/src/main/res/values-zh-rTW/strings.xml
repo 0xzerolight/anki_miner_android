@@ -21,9 +21,7 @@
     <string name="video_file_label">影片</string>
     <string name="audio_file_label">音訊檔案</string>
     <string name="subtitle_file_label">字幕</string>
-    <string name="audio_transcript_label">逐字稿</string>
     <string name="video_subtitle_offset_label">字幕時間偏移（秒）</string>
-    <string name="audio_subtitle_offset_label">逐字稿時間偏移（秒）</string>
     <string name="video_subtitle_offset_placeholder">使用目前預設值（%1$s 秒）</string>
     <string name="video_secondary_subtitle_label">翻譯字幕</string>
     <string name="video_secondary_subtitle_offset_label">翻譯時間偏移（毫秒）</string>

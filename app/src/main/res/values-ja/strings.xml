@@ -21,9 +21,7 @@
     <string name="video_file_label">動画</string>
     <string name="audio_file_label">音声ファイル</string>
     <string name="subtitle_file_label">字幕</string>
-    <string name="audio_transcript_label">文字起こし</string>
     <string name="video_subtitle_offset_label">字幕タイミングオフセット（秒）</string>
-    <string name="audio_subtitle_offset_label">文字起こしタイミングオフセット（秒）</string>
     <string name="video_subtitle_offset_placeholder">現在の既定値を使用（%1$s秒）</string>
     <string name="video_secondary_subtitle_label">翻訳字幕</string>
     <string name="video_secondary_subtitle_offset_label">翻訳タイミングオフセット（ミリ秒）</string>

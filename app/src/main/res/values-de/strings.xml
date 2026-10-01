@@ -21,9 +21,7 @@
     <string name="video_file_label">Video</string>
     <string name="audio_file_label">Audiodatei</string>
     <string name="subtitle_file_label">Untertitel</string>
-    <string name="audio_transcript_label">Transkript</string>
     <string name="video_subtitle_offset_label">Untertitel-Timing-Versatz (Sekunden)</string>
-    <string name="audio_subtitle_offset_label">Transkript-Timing-Versatz (Sekunden)</string>
     <string name="video_subtitle_offset_placeholder">Aktuellen Standard verwenden (%1$s Sekunden)</string>
     <string name="video_secondary_subtitle_label">Übersetzungs-Untertitel</string>
     <string name="video_secondary_subtitle_offset_label">Übersetzungs-Timing-Versatz (Millisekunden)</string>

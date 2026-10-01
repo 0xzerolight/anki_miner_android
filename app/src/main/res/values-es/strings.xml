@@ -21,9 +21,7 @@
     <string name="video_file_label">Vídeo</string>
     <string name="audio_file_label">Archivo de audio</string>
     <string name="subtitle_file_label">Subtítulos</string>
-    <string name="audio_transcript_label">Transcripción</string>
     <string name="video_subtitle_offset_label">Desfase de subtítulos (segundos)</string>
-    <string name="audio_subtitle_offset_label">Desfase de transcripción (segundos)</string>
     <string name="video_subtitle_offset_placeholder">Usar el valor predeterminado actual (%1$s segundos)</string>
     <string name="video_secondary_subtitle_label">Subtítulos de traducción</string>
     <string name="video_secondary_subtitle_offset_label">Desfase de la traducción (milisegundos)</string>

@@ -21,9 +21,7 @@
     <string name="video_file_label">Видео</string>
     <string name="audio_file_label">Аудиофайл</string>
     <string name="subtitle_file_label">Субтитры</string>
-    <string name="audio_transcript_label">Расшифровка</string>
     <string name="video_subtitle_offset_label">Смещение тайминга субтитров (секунды)</string>
-    <string name="audio_subtitle_offset_label">Смещение тайминга расшифровки (секунды)</string>
     <string name="video_subtitle_offset_placeholder">Использовать текущее значение по умолчанию (%1$s с)</string>
     <string name="video_secondary_subtitle_label">Субтитры перевода</string>
     <string name="video_secondary_subtitle_offset_label">Смещение тайминга перевода (миллисекунды)</string>

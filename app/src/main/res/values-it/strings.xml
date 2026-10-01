@@ -21,9 +21,7 @@
     <string name="video_file_label">Video</string>
     <string name="audio_file_label">File audio</string>
     <string name="subtitle_file_label">Sottotitoli</string>
-    <string name="audio_transcript_label">Trascrizione</string>
     <string name="video_subtitle_offset_label">Scostamento temporale dei sottotitoli (secondi)</string>
-    <string name="audio_subtitle_offset_label">Scostamento temporale della trascrizione (secondi)</string>
     <string name="video_subtitle_offset_placeholder">Usa il valore predefinito corrente (%1$s secondi)</string>
     <string name="video_secondary_subtitle_label">Sottotitoli di traduzione</string>
     <string name="video_secondary_subtitle_offset_label">Scostamento temporale della traduzione (millisecondi)</string>

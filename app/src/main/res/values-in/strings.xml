@@ -21,9 +21,7 @@
     <string name="video_file_label">Video</string>
     <string name="audio_file_label">Berkas audio</string>
     <string name="subtitle_file_label">Subtitel</string>
-    <string name="audio_transcript_label">Transkrip</string>
     <string name="video_subtitle_offset_label">Offset waktu subtitel (detik)</string>
-    <string name="audio_subtitle_offset_label">Offset waktu transkrip (detik)</string>
     <string name="video_subtitle_offset_placeholder">Gunakan default saat ini (%1$s detik)</string>
     <string name="video_secondary_subtitle_label">Subtitel terjemahan</string>
     <string name="video_secondary_subtitle_offset_label">Offset waktu terjemahan (milidetik)</string>

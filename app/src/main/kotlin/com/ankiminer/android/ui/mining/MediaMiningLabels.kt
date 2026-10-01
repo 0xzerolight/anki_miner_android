@@ -28,8 +28,8 @@ data class MediaMiningLabels(
                 R.string.audio_phase_setup_title,
                 R.string.audio_file_label,
                 R.string.audio_file_error,
-                R.string.audio_transcript_label,
-                R.string.audio_subtitle_offset_label,
+                R.string.subtitle_file_label,
+                R.string.video_subtitle_offset_label,
                 R.string.result_audio,
             )
     }

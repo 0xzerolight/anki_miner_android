@@ -21,9 +21,7 @@
     <string name="video_file_label">Video</string>
     <string name="audio_file_label">Tệp âm thanh</string>
     <string name="subtitle_file_label">Phụ đề</string>
-    <string name="audio_transcript_label">Bản chép lời</string>
     <string name="video_subtitle_offset_label">Độ lệch thời gian phụ đề (giây)</string>
-    <string name="audio_subtitle_offset_label">Độ lệch thời gian bản chép lời (giây)</string>
     <string name="video_subtitle_offset_placeholder">Dùng mặc định hiện tại (%1$s giây)</string>
     <string name="video_secondary_subtitle_label">Phụ đề bản dịch</string>
     <string name="video_secondary_subtitle_offset_label">Độ lệch thời gian bản dịch (mili giây)</string>

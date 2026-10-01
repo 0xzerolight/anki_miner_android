@@ -21,9 +21,7 @@
     <string name="video_file_label">Vidéo</string>
     <string name="audio_file_label">Fichier audio</string>
     <string name="subtitle_file_label">Sous-titres</string>
-    <string name="audio_transcript_label">Transcription</string>
     <string name="video_subtitle_offset_label">Décalage temporel des sous-titres (secondes)</string>
-    <string name="audio_subtitle_offset_label">Décalage temporel de la transcription (secondes)</string>
     <string name="video_subtitle_offset_placeholder">Utiliser la valeur par défaut actuelle (%1$s secondes)</string>
     <string name="video_secondary_subtitle_label">Sous-titres de traduction</string>
     <string name="video_secondary_subtitle_offset_label">Décalage temporel de la traduction (millisecondes)</string>
