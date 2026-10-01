@@ -1,11 +1,12 @@
 package com.ankiminer.android.ui.video
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ankiminer.android.ui.mining.DocumentPickRequest
+import com.ankiminer.android.ui.mining.OpenDocumentNear
 import com.ankiminer.android.vm.MediaMiningViewModel
 
 private val VIDEO_MIME_TYPES = arrayOf("video/*", "application/octet-stream")
@@ -27,29 +28,34 @@ fun VideoMiningRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val audioTrackPicker by viewModel.audioTrackPickerState.collectAsStateWithLifecycle()
     val videoPicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onVideoPicked(it.toString()) }
         }
     val subtitlePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onSubtitlePicked(it.toString()) }
         }
     val secondarySubtitlePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onSecondarySubtitlePicked(it.toString()) }
         }
 
+    // Every picker opens in the folder of the file already chosen for this run.
+    val nearDocumentUri = state.video.document?.uri ?: state.subtitle.document?.uri
+
     VideoMiningScreen(
         state = state,
-        onPickVideo = { videoPicker.launch(VIDEO_MIME_TYPES) },
-        onPickSubtitle = { subtitlePicker.launch(SUBTITLE_MIME_TYPES) },
+        onPickVideo = { videoPicker.launch(DocumentPickRequest(VIDEO_MIME_TYPES.asList(), nearDocumentUri)) },
+        onPickSubtitle = { subtitlePicker.launch(DocumentPickRequest(SUBTITLE_MIME_TYPES.asList(), nearDocumentUri)) },
         onClearVideo = viewModel::clearVideo,
         onClearSubtitle = viewModel::clearSubtitle,
         onDismissDocumentError = viewModel::dismissDocumentError,
         onDismissCommandError = viewModel::dismissCommandError,
         onDismissTimingPreviewError = viewModel::dismissTimingPreviewError,
         onSubtitleOffsetDraftChange = viewModel::setSubtitleOffsetDraft,
-        onPickSecondarySubtitle = { secondarySubtitlePicker.launch(SUBTITLE_MIME_TYPES) },
+        onPickSecondarySubtitle = {
+            secondarySubtitlePicker.launch(DocumentPickRequest(SUBTITLE_MIME_TYPES.asList(), nearDocumentUri))
+        },
         onClearSecondarySubtitle = viewModel::clearSecondarySubtitle,
         onSecondarySubtitleOffsetDraftChange = viewModel::setSecondarySubtitleOffsetDraft,
         onTestTiming = viewModel::openTimingPreview,

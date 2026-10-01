@@ -1,12 +1,13 @@
 package com.ankiminer.android.ui.audio
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ankiminer.android.ui.mining.DocumentPickRequest
 import com.ankiminer.android.ui.mining.MediaMiningLabels
+import com.ankiminer.android.ui.mining.OpenDocumentNear
 import com.ankiminer.android.ui.video.SUBTITLE_MIME_TYPES
 import com.ankiminer.android.ui.video.VideoMiningScreen
 import com.ankiminer.android.vm.MediaMiningViewModel
@@ -22,18 +23,23 @@ fun AudioMiningRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val audioTrackPicker by viewModel.audioTrackPickerState.collectAsStateWithLifecycle()
     val audioPicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onVideoPicked(it.toString()) }
         }
     val transcriptPicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onSubtitlePicked(it.toString()) }
         }
 
+    // Both pickers open in the folder of the file already chosen for this run.
+    val nearDocumentUri = state.video.document?.uri ?: state.subtitle.document?.uri
+
     VideoMiningScreen(
         state = state,
-        onPickVideo = { audioPicker.launch(AUDIO_MIME_TYPES) },
-        onPickSubtitle = { transcriptPicker.launch(SUBTITLE_MIME_TYPES) },
+        onPickVideo = { audioPicker.launch(DocumentPickRequest(AUDIO_MIME_TYPES.asList(), nearDocumentUri)) },
+        onPickSubtitle = {
+            transcriptPicker.launch(DocumentPickRequest(SUBTITLE_MIME_TYPES.asList(), nearDocumentUri))
+        },
         onClearVideo = viewModel::clearVideo,
         onClearSubtitle = viewModel::clearSubtitle,
         onDismissDocumentError = viewModel::dismissDocumentError,

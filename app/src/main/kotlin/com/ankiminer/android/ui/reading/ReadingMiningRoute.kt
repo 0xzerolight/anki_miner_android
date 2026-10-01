@@ -1,11 +1,12 @@
 package com.ankiminer.android.ui.reading
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ankiminer.android.ui.mining.DocumentPickRequest
+import com.ankiminer.android.ui.mining.OpenDocumentNear
 import com.ankiminer.android.vm.ReadingMiningViewModel
 
 internal val READING_SOURCE_MIME_TYPES =
@@ -47,18 +48,27 @@ fun ReadingMiningRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val sourcePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onSourcePicked(it.toString()) }
         }
     val archivePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onArchivePicked(it.toString()) }
         }
 
     ReadingMiningScreen(
         state = state,
-        onPickSource = { sourcePicker.launch(READING_SOURCE_MIME_TYPES) },
-        onPickArchive = { archivePicker.launch(MOKURO_ARCHIVE_MIME_TYPES) },
+        onPickSource = {
+            sourcePicker.launch(DocumentPickRequest(READING_SOURCE_MIME_TYPES.asList(), state.source.document?.uri))
+        },
+        onPickArchive = {
+            archivePicker.launch(
+                DocumentPickRequest(
+                    MOKURO_ARCHIVE_MIME_TYPES.asList(),
+                    state.archive.document?.uri ?: state.source.document?.uri,
+                ),
+            )
+        },
         onClearSource = viewModel::clearSource,
         onClearArchive = viewModel::clearArchive,
         onSourceModeChanged = viewModel::onSourceModeChanged,
