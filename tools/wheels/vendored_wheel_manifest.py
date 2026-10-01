@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import sys
 import zipfile
@@ -20,6 +21,7 @@ DEFAULT_MANIFEST = DEFAULT_WHEELS_ROOT / "manifest.json"
 RUNTIME_SOURCE_LOCK = REPO_ROOT / "tools/runtime-wheels/sources.lock"
 S1A_SOURCE_LOCK = TOOL_ROOT / "sources.lock"
 REPACKED_LOCK = REPO_ROOT / "tools/runtime-wheels/repacked-wheels.lock"
+RUNTIME_WHEELS_TOOL = REPO_ROOT / "tools/runtime-wheels/runtime_wheels.py"
 ABIS = ("arm64-v8a", "common", "x86_64")
 ENTRY_KEYS = {
     "abi",
@@ -71,6 +73,16 @@ def _repacked_entries(path: Path) -> dict[str, dict[str, Any]]:
     if not isinstance(entries, dict) or not all(isinstance(entry, dict) for entry in entries.values()):
         raise ManifestError(f"repack lock has no wheels object: {path}")
     return {_normalize_package(name): entry for name, entry in entries.items()}
+
+
+def _publication_repacks() -> frozenset[str]:
+    """Packages the runtime-wheels publication repacks (its ``REPACKS`` table)."""
+    spec = importlib.util.spec_from_file_location("runtime_wheels", RUNTIME_WHEELS_TOOL)
+    if spec is None or spec.loader is None:
+        raise ManifestError(f"cannot load {RUNTIME_WHEELS_TOOL}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return frozenset(_normalize_package(name) for name in module.REPACKS)
 
 
 def _normalize_package(value: str) -> str:
@@ -126,6 +138,7 @@ def _provenance(
     runtime_sources: dict[str, dict[str, Any]],
     s1a_sources: dict[str, dict[str, Any]],
     repacked: dict[str, dict[str, Any]],
+    publication_repacks: frozenset[str],
 ) -> tuple[str, dict[str, str]]:
     runtime_matches = [
         entry for entry in runtime_sources.values() if _normalize_package(str(entry.get("package", ""))) == package
@@ -141,7 +154,12 @@ def _provenance(
         expression = license_value.get("expression") if isinstance(license_value, dict) else None
         if not isinstance(expression, str) or not expression:
             raise ManifestError(f"runtime source lacks license expression: {package}")
-        return expression, _locked_source(entry)
+        source = _locked_source(entry)
+        if source["kind"] == "prebuilt-wheel" and package in publication_repacks:
+            # The publication drops members from the upstream wheel (nltk's
+            # doctests, underthesea's models): label it as pythainlp's is.
+            source["kind"] = "repacked-wheel"
+        return expression, source
     repacked_entry = repacked.get(package)
     if repacked_entry is not None:
         # Desktop pack.py components: the source is the upstream PyPI wheel, and
@@ -205,13 +223,23 @@ def build_manifest(wheels_root: Path) -> dict[str, Any]:
     runtime_sources = _source_entries(RUNTIME_SOURCE_LOCK)
     s1a_sources = _source_entries(S1A_SOURCE_LOCK)
     repacked = _repacked_entries(REPACKED_LOCK)
+    publication_repacks = _publication_repacks()
     entries: list[dict[str, Any]] = []
     for path in _wheel_paths(wheels_root):
         relative = path.relative_to(wheels_root)
         abi = relative.parts[0]
         package, version = _wheel_identity(path)
         sha256 = _sha256(path)
-        license_expression, source = _provenance(package, version, abi, sha256, runtime_sources, s1a_sources, repacked)
+        license_expression, source = _provenance(
+            package,
+            version,
+            abi,
+            sha256,
+            runtime_sources,
+            s1a_sources,
+            repacked,
+            publication_repacks,
+        )
         entries.append(
             {
                 "abi": abi,

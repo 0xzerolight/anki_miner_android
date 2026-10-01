@@ -730,7 +730,7 @@
       "sha256": "2f69dd8a6158e19dc9f8f24a9838c380f3d1a68cd4581b680d26f838ad5903e2",
       "source": {
         "filename": "nltk-3.10.3-py3-none-any.whl",
-        "kind": "prebuilt-wheel",
+        "kind": "repacked-wheel",
         "sha256": "ff9598a8e20518ee0d557745890cc4435b9578489e2dcbc69c4f81fa060caf7c",
         "url": "https://files.pythonhosted.org/packages/b6/6d/ebd2af4640b12168fdf0cb74b6118df2f32a2f62ec7e0c06fbfd80706639/nltk-3.10.3-py3-none-any.whl"
       },
@@ -1015,7 +1015,7 @@
       "sha256": "5bb9e203fb6ba9724f2e4123212d8ecff6452da2f159cd2e9728655240dfbfe4",
       "source": {
         "filename": "underthesea-9.5.0-py3-none-any.whl",
-        "kind": "prebuilt-wheel",
+        "kind": "repacked-wheel",
         "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
         "url": "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl"
       },

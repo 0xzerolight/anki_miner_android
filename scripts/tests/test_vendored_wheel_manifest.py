@@ -49,6 +49,19 @@ class VendoredWheelManifestTests(unittest.TestCase):
         self.assertEqual(0, result.returncode, result.stderr)
         self.assertIn("99 wheels verified", result.stdout)
 
+    def test_a_prebuilt_wheel_the_publication_repacks_is_labelled_repacked(self) -> None:
+        # nltk ships without its doctests and underthesea without its models: the
+        # vendored file is not the upstream wheel the source lock pins.
+        document = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        kinds = {entry["package"]: entry["source"]["kind"] for entry in document["wheels"]}
+        self.assertEqual("repacked-wheel", kinds["nltk"])
+        self.assertEqual("repacked-wheel", kinds["underthesea"])
+        self.assertEqual("repacked-wheel", kinds["pythainlp"])
+        self.assertEqual("prebuilt-wheel", kinds["certifi"])
+        for entry in document["wheels"]:
+            if entry["source"]["kind"] == "prebuilt-wheel":
+                self.assertEqual(entry["source"]["sha256"], entry["sha256"], entry["path"])
+
     def test_generate_records_required_provenance_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
