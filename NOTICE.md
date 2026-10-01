@@ -21,7 +21,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 
 ## Downloaded language resources
 
-UniDic Lite, the Jitendex and JMdict Yomitan dictionaries, the JPDB v2.2 kana frequency list and the Kanjium pitch accent data are downloaded as data after installation. Their immutable identities and attributions are stored in `app/src/main/python/android_bridge/resource_catalog_v1.json` and presented by the app. Jitendex includes data under CC BY-SA and source-specific terms, including EDRDG/JMdict attribution. Download-on-demand does not remove the need to preserve required notices in the product and store listing.
+UniDic Lite, the Jitendex and JMdict Yomitan dictionaries, the JPDB v2.2 kana frequency list and the Kanjium pitch accent data are downloaded as data after installation. Their immutable identities and attributions are stored in `app/src/main/python/android_bridge/resource_catalog/` (one file per mining language) and presented by the app. Jitendex includes data under CC BY-SA and source-specific terms, including EDRDG/JMdict attribution. Other mining languages download their own data the same way: the Hebrew wty-he-en Wiktionary dictionary and the FrequencyWords OpenSubtitles 2018 list (both CC BY-SA 4.0); the Arabic calima-msa-r13 morphology database from CAMeL Lab's camel-tools-data (GPL-2.0, derived from Aramorph 1.2.1; the archive's own `LICENSE` is extracted beside the database); and the hazm 0.12.1 Persian lexicon tables (MIT). Only data is extracted: an archive whose selected members include Python or native code is refused. Download-on-demand does not remove the need to preserve required notices in the product and store listing.
 
 ## Source availability
 

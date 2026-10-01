@@ -212,13 +212,13 @@ internal fun installedLocalCatalogAttributions(
     frequencySources: List<InstalledFrequencySource>,
     pitchSources: List<InstalledPitchSource>,
 ): List<ResourceAttribution> {
-    val catalog = FrozenResourceCatalog.value
+    val catalogs = FrozenResourceCatalog.all
     val frequencyIds = frequencySources.mapTo(mutableSetOf()) { it.sourceId }
     val pitchIds = pitchSources.mapTo(mutableSetOf()) { it.sourceId }
-    return (
+    return catalogs.flatMap { catalog ->
         catalog.frequencies.filter { it.sourceId in frequencyIds } +
             catalog.pitchSources.filter { it.sourceId in pitchIds }
-    ).flatMap { it.attribution }
+    }.flatMap { it.attribution }
         .distinctBy { listOf(it.name, it.copyright, it.license, it.url) }
 }
 

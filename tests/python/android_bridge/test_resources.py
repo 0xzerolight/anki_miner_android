@@ -214,9 +214,9 @@ def test_catalog_recommended_set_names_existing_resources_in_install_order() -> 
     [
         (lambda payload: payload["recommended"].append("does-not-exist"), "unknown resource"),
         (lambda payload: payload["recommended"].append(payload["recommended"][0]), "repeats"),
-        (lambda payload: payload.__setitem__("recommended", []), "bounded array"),
+        (lambda payload: payload.__setitem__("recommended", ["x"] * 9), "bounded array"),
     ],
-    ids=["unknown-id", "duplicate-id", "empty"],
+    ids=["unknown-id", "duplicate-id", "oversized"],
 )
 def test_catalog_parser_rejects_a_malformed_recommended_set(mutate, match: str) -> None:
     payload = load_resource_catalog().payload()
@@ -282,7 +282,7 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
 
 @pytest.mark.parametrize(
     "schema_version",
-    [True, 2.0, 1, 3],
+    [True, 3.0, 2, 4],
     ids=["boolean", "floating-point", "superseded", "unsupported"],
 )
 def test_catalog_parser_rejects_non_integer_or_unsupported_schema_versions(
@@ -1373,6 +1373,7 @@ def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
             "catalogResourceId": None,
             "attribution": [],
             "rebuildSourcePath": None,
+            "language": "ja",
         }
     ]
 
@@ -1889,7 +1890,7 @@ def test_boundary_routes_strict_resource_catalog_and_operation_cancel(
         boundary.dispatch(encode_message("resource.catalog.get", {})),
         expected_type="resource.catalog",
     )
-    assert catalog.payload == load_resource_catalog().payload()
+    assert catalog.payload == resource_catalog.catalogs_payload()
 
     invalid = decode_envelope(
         boundary.dispatch(encode_message("resource.dictionary.list", {"extra": True})),
@@ -1993,6 +1994,7 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
             "schemaVersion": 3,
             "isCategorical": False,
             "rebuildSourcePath": str(home / "freqs" / "fixture-freq" / "source.csv"),
+            "language": "ja",
         }
     ]
 
@@ -2238,6 +2240,7 @@ def test_v018_pitch_csv_is_migrated_without_removing_released_files(
             "schemaOk": True,
             "schemaVersion": 3,
             "rebuildSourcePath": str(home / "pitch" / "legacy-pitch" / "source.csv"),
+            "language": "ja",
         }
     ]
     migrated = home / "pitch" / "legacy-pitch" / "index.sqlite"
@@ -2304,6 +2307,7 @@ def test_pitch_csv_import_publishes_its_own_slot_and_inventory(
             # The persisted copy keeps the *input* suffix, which is not the
             # reported format: this fixture is imported from a .tsv.
             "rebuildSourcePath": str(home / "pitch" / "fixture-pitch" / "source.tsv"),
+            "language": "ja",
         }
     ]
 
@@ -2336,6 +2340,7 @@ def test_malformed_pitch_slot_is_exposed_for_same_id_replacement(
             "schemaOk": False,
             "schemaVersion": 0,
             "rebuildSourcePath": None,
+            "language": "ja",
         }
     ]
 
@@ -3231,6 +3236,7 @@ def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
             "format": "ajt",
             "entryCount": 1,
             "contentAvailable": True,
+            "language": "ja",
         }
     ]
 
@@ -3274,6 +3280,7 @@ def test_audio_inventory_surfaces_corrupt_slot_for_replace_and_delete(
             "format": "unknown",
             "entryCount": 0,
             "contentAvailable": False,
+            "language": "ja",
         }
     ]
 
@@ -3560,6 +3567,7 @@ def test_import_android_audio_db_registers_metadata_only_pack(
             "format": "android_db",
             "entryCount": 1,
             "contentAvailable": True,
+            "language": "ja",
         }
     ]
 
@@ -4096,7 +4104,7 @@ def test_known_words_import_reports_undecodable_bytes_as_unreadable(
 ) -> None:
     _local_home(tmp_path, monkeypatch)
     source = tmp_path / "undecodable.txt"
-    # Fails every leg of the Japanese decode ladder (utf-8-sig, cp932) and
+    # Fails every leg of the Japanese decode ladder (utf-8-sig, cp932, euc_jp) and
     # carries no UTF-16 BOM, which the ladder would honour first.
     source.write_bytes(b"\x81\xff")
 

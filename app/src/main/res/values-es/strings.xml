@@ -500,6 +500,9 @@
     <string name="jpdb_frequency_resource_title">Frecuencia kana de JPDB v2.2</string>
     <string name="kanjium_pitch_resource_title">Acentos tonales de Kanjium</string>
     <string name="jmdict_resource_title">Diccionario JMdict (inglés)</string>
+    <string name="language_dictionary_resource_title">Diccionario</string>
+    <string name="language_frequency_resource_title">Lista de frecuencia de palabras</string>
+    <string name="language_data_resource_title">Datos del idioma</string>
     <string name="jmdict_resource_description">Diccionario Yomitan sin conexión con glosas en inglés · descarga de unos 15 MiB y hasta 163 MiB durante la importación</string>
     <string name="resource_installed">Instalado</string>
     <string name="resource_not_installed">No instalado</string>

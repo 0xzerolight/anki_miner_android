@@ -396,3 +396,149 @@ def test_known_words_preview_reads_with_the_languages_ladder(home: Path, tmp_pat
     )
 
     assert preview.payload["sampleWords"] == ["ספר"]
+
+
+# ---------------------------------------------------------------- inventory stamps
+
+
+def _listed_local(**payload: object) -> dict:
+    return decode_envelope(local_resources.list_local_resources(payload), expected_type="resource.local.listed").payload
+
+
+def test_every_inventory_reports_each_slots_language_stamp(home: Path, tmp_path: Path) -> None:
+    """Kotlin offers a chain only the active language's slots; the stamp is how it tells them apart."""
+    he_list = tmp_path / "he.csv"
+    he_list.write_text("word,rank\nספר,10\n", encoding="utf-8")
+    ja_list = tmp_path / "ja.csv"
+    ja_list.write_text("word,rank\n猫,10\n", encoding="utf-8")
+    local_resources.import_frequency(_frequency_request(he_list, language="he"))
+    local_resources.import_frequency({**_frequency_request(ja_list), "operationId": "ja-op", "sourceId": "ja-freq"})
+    _import_dictionary(_hebrew_dictionary(tmp_path / "hebrew.zip"), language="he")
+
+    listed = _listed_local(language="he")
+    dictionaries = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
+
+    assert {item["sourceId"]: item["language"] for item in listed["frequencies"]} == {
+        "hebrew-freq": "he",
+        "ja-freq": "ja",
+    }
+    assert [(item["slotId"], item["language"]) for item in dictionaries.payload["dictionaries"]] == [
+        ("hebrew-dict", "he")
+    ]
+
+
+def test_an_unreadable_or_unstamped_slot_reports_japanese(home: Path) -> None:
+    slot = home / "dicts" / "broken"
+    slot.mkdir(parents=True)
+    (slot / "index.sqlite").write_bytes(b"not sqlite")
+
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
+
+    assert listed.payload["dictionaries"][0]["language"] == "ja"
+
+
+# ---------------------------------------------------------------- missing language data
+
+
+def test_a_lemmatised_list_for_a_language_missing_its_data_is_refused_as_unavailable(
+    home: Path, tmp_path: Path
+) -> None:
+    """Arabic lemmatises its lists with a tagger its downloaded data feeds; without it, no crash."""
+    source = tmp_path / "ar.txt"
+    source.write_text("كتاب 10\n", encoding="utf-8")
+
+    with pytest.raises(BridgeProtocolError) as error:
+        local_resources.import_frequency(
+            {**_frequency_request(source, language="ar"), "sourceId": "ar-freq", "sourceFormat": "txt"}
+        )
+
+    assert (error.value.code, str(error.value)) == ("language_unavailable", "language_data_required")
+    assert not (home / "freqs" / "ar-freq").exists()
+
+
+def test_rebuilding_a_lemmatised_slot_whose_data_went_missing_leaves_the_slot_alone(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The startup rebuild of one slot must fail on its own, never wedge recovery (Kotlin degrades it)."""
+    import anki_miner.services.frequency.lemmatize as lemmatize
+
+    monkeypatch.setattr(lemmatize, "build_frequency_lemmatizer", lambda language, dicts_root=None: list)
+    monkeypatch.setattr(local_resources, "unavailable_reason_code", lambda profile: None)
+    source = tmp_path / "ar.txt"
+    source.write_text("كتاب 10\n", encoding="utf-8")
+    request = {**_frequency_request(source, language="ar"), "sourceId": "ar-freq", "sourceFormat": "txt"}
+    local_resources.import_frequency(request)
+    slot = home / "freqs" / "ar-freq"
+    before = sorted(path.name for path in slot.iterdir())
+    monkeypatch.undo()
+
+    with pytest.raises(BridgeProtocolError) as error:
+        local_resources.import_frequency(
+            {**request, "sourcePath": str(slot / "source.txt"), "operationId": "rebuild", "overwrite": True}
+        )
+
+    assert error.value.code == "language_unavailable"
+    assert sorted(path.name for path in slot.iterdir()) == before
+    assert _meta_language(slot) == "ar"
+
+
+def test_known_words_need_no_language_data(home: Path, tmp_path: Path) -> None:
+    local_resources.import_known_words(
+        {
+            "operationId": "ar-known",
+            "sourcePath": str(_known_words_file(tmp_path, "كتاب\n".encode())),
+            "sourceFormat": "txt",
+            "language": "ar",
+        }
+    )
+
+    inventory = _listed_local(language="ar")["knownWords"]
+    assert (inventory["totalCount"], inventory["schemaOk"]) == (1, True)
+
+
+# ---------------------------------------------------------------- the Japanese known-words ladder
+
+
+def test_japanese_known_words_read_with_the_profiles_three_encoding_ladder(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Desktop's Manage Known Words passes ``profile.import_encodings`` for ja too, in its order."""
+    import anki_miner.services.known_words_import as known_words_import
+
+    seen: list[dict[str, object]] = []
+    real = known_words_import.parse_known_words_file
+
+    def spy(path: Path, **kwargs: object):  # type: ignore[no-untyped-def]
+        seen.append(kwargs)
+        return real(path, **kwargs)
+
+    monkeypatch.setattr(known_words_import, "parse_known_words_file", spy)
+    local_resources.preview_known_words(
+        {
+            "operationId": "ja-ladder",
+            "sourcePath": str(_known_words_file(tmp_path, "猫\n".encode())),
+            "sourceFormat": "txt",
+        }
+    )
+
+    assert seen[0]["encodings"] == ("utf-8-sig", "cp932", "euc_jp")
+    assert "script_check" not in seen[0]
+
+
+def test_a_japanese_list_only_euc_jp_decodes_is_imported(home: Path, tmp_path: Path) -> None:
+    data = "食べる\n日本語\n".encode("euc_jp")
+    for codec in ("utf-8", "cp932"):
+        with pytest.raises(UnicodeDecodeError):
+            data.decode(codec)
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {"operationId": "ja-euc", "sourcePath": str(_known_words_file(tmp_path, data)), "sourceFormat": "txt"}
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+
+    assert imported.payload["importedCount"] == 2
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる", "日本語"}

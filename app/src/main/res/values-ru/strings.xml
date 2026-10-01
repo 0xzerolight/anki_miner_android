@@ -501,6 +501,9 @@
     <string name="jpdb_frequency_resource_title">Частотность каны JPDB v2.2</string>
     <string name="kanjium_pitch_resource_title">Тональные ударения Kanjium</string>
     <string name="jmdict_resource_title">Словарь JMdict (английский)</string>
+    <string name="language_dictionary_resource_title">Словарь</string>
+    <string name="language_frequency_resource_title">Частотный список слов</string>
+    <string name="language_data_resource_title">Языковые данные</string>
     <string name="jmdict_resource_description">Офлайн-словарь Yomitan с английскими глоссами · загрузка около 15 MiB, до 163 MiB при импорте</string>
     <string name="resource_installed">Установлено</string>
     <string name="resource_not_installed">Не установлено</string>

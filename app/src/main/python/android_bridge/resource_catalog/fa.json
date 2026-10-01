@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 3,
+  "language": "fa",
+  "resources": [
+    {
+      "resourceId": "fa-hazm-data",
+      "kind": "language-data",
+      "displayName": "hazm 0.12.1 Persian lexicon tables",
+      "importName": "hazm_data",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/14/85/02f95ca414a5d629239a3fde8f4134a2355dd023044219192e48562dee71/hazm-0.12.1-py3-none-any.whl",
+        "sha256": "91507896f5b77dcfe26c710b457801e1204ab0d86dcb756a7ab5912719108db0",
+        "sizeBytes": 887193,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "hazm/data/",
+        "exclude": [],
+        "sentinels": [
+          "words.dat",
+          "verbs.dat",
+          "iverbs.dat",
+          "iwords.dat",
+          "stopwords.dat"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "hazm 0.12.1 data tables",
+          "copyright": "Copyright (c) 2013 Alireza Nourian and hazm contributors",
+          "license": "MIT",
+          "url": "https://github.com/roshan-research/hazm"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

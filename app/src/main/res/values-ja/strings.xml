@@ -500,6 +500,9 @@
     <string name="jpdb_frequency_resource_title">JPDB v2.2かな頻度</string>
     <string name="kanjium_pitch_resource_title">Kanjiumピッチアクセント</string>
     <string name="jmdict_resource_title">JMdict辞書（英語）</string>
+    <string name="language_dictionary_resource_title">辞書</string>
+    <string name="language_frequency_resource_title">単語頻度リスト</string>
+    <string name="language_data_resource_title">言語データ</string>
     <string name="jmdict_resource_description">英語訳付きオフラインYomitan辞書 · ダウンロード約15 MiB、インポート中最大163 MiB</string>
     <string name="resource_installed">インストール済み</string>
     <string name="resource_not_installed">未インストール</string>

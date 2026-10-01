@@ -2349,6 +2349,97 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun anotherLanguagesSetInstallsItsEngineDataFromThePinnedDownload() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+            assertTrue(harness.manager.state.value.recommendedPlan("ar").isActionable)
+
+            harness.manager.installRecommendedResources("ar")
+
+            assertNull(harness.manager.state.value.failure)
+            val request = harness.bridge.requestsOfType("resource.languagedata.install").single()
+            assertTrue(request.contains("\"resourceId\":\"ar-calima-msa\""))
+            assertTrue(request.contains("\"archivePath\":\"/"))
+            // No Japanese member ran: the set is the requested language's.
+            assertTrue(harness.bridge.requestTypes.none { it.endsWith(".import") })
+            assertEquals(setOf("ar-calima-msa"), harness.manager.state.value.installedLanguageData)
+            assertTrue(harness.manager.state.value.recommendedPlan("ar").isSatisfied)
+            assertFalse(harness.manager.state.value.recommendedPlan.isSatisfied)
+
+            harness.bridge.clearRequests()
+            harness.manager.installRecommendedResources("ar")
+            assertTrue(harness.bridge.requestsOfType("resource.languagedata.install").isEmpty())
+        }
+
+    @Test
+    fun everyRequestMadeForTheUserCarriesTheActiveLanguage() =
+        runTest {
+            val harness = Harness(activeLanguage = { "he" })
+
+            harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.manager.searchKnownWords("")
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            for (type in listOf("resource.local.list", "resource.knownwords.import", "resource.knownwords.list")) {
+                val requests = harness.bridge.requestsOfType(type)
+                assertTrue(type, requests.isNotEmpty())
+                assertTrue(type, requests.all { it.contains("\"language\":\"he\"") })
+            }
+            // The active language's own catalog is the one the state offers.
+            assertEquals("he", harness.manager.state.value.catalog?.language)
+            assertEquals(
+                FrozenResourceCatalog.forLanguage("he")!!.recommended,
+                harness.manager.state.value.recommendedPlan.items.map { it.resource.resourceId },
+            )
+        }
+
+    @Test
+    fun aPinnedDictionaryIsImportedForItsCatalogsLanguageWhateverIsActive() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+
+            harness.manager.installCatalogDictionary("wty-he-en-2026.09.20", replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            val request = harness.bridge.requestsOfType("resource.dictionary.import").single()
+            assertTrue(request.contains("\"catalogResourceId\":\"wty-he-en-2026.09.20\""))
+            assertTrue(request.contains("\"language\":\"he\""))
+        }
+
+    @Test
+    fun aRebuildThatCannotRunForMissingLanguageDataDoesNotFailStartup() =
+        runTest {
+            // An Arabic list is lemmatised by a tagger its downloaded data feeds. With that data
+            // gone the bridge refuses the rebuild; recovery must finish and keep the slot listed.
+            val harness =
+                Harness(
+                    staleFrequency = "opensubtitles-ar" to "ar",
+                    frequencyImportFailureCode = "language_unavailable",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            val rebuild = harness.bridge.requestsOfType("resource.frequency.import").single()
+            assertTrue(rebuild.contains("\"language\":\"ar\""))
+            assertTrue(rebuild.contains("\"overwrite\":true"))
+            val stale = harness.manager.state.value.frequencySources.single()
+            assertEquals("opensubtitles-ar" to false, stale.sourceId to stale.schemaOk)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun aLanguageWithNoCatalogOffersNothingToDownload() =
+        runTest {
+            val harness = Harness(activeLanguage = { "th" })
+
+            assertNull(harness.manager.state.value.catalog)
+            assertFalse(harness.manager.state.value.recommendedPlan.isActionable)
+            assertEquals(FrozenResourceCatalog.all, harness.manager.state.value.catalogs)
+        }
+
+    @Test
     fun theRecommendedSetHoldsOneForegroundLeaseAndOneJournalRecord() =
         runTest {
             val harness = Harness(fakePinnedDownloads = true)
@@ -2516,6 +2607,9 @@ class ResourceManagerTest {
         audioContainer: AudioArchiveContainer = AudioArchiveContainer.ZIP,
         safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
         foregroundStartFailure: Boolean = false,
+        activeLanguage: () -> String = { JAPANESE },
+        staleFrequency: Pair<String, String>? = null,
+        frequencyImportFailureCode: String? = null,
     ) {
         val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
@@ -2568,6 +2662,8 @@ class ResourceManagerTest {
                 committedDictionaryDecodeFailure,
                 committedFrequencyDecodeFailure,
                 committedPitchDecodeFailure,
+                staleFrequency,
+                frequencyImportFailureCode,
             )
         val manager =
             AndroidResourceManager(
@@ -2611,6 +2707,7 @@ class ResourceManagerTest {
                     },
                 wordListMover = wordListMover,
                 resourceDirectorySync = resourceDirectorySync,
+                activeLanguage = activeLanguage,
             )
 
         init {
@@ -2846,6 +2943,9 @@ class ResourceManagerTest {
         private val committedDictionaryDecodeFailure: Boolean = false,
         private val committedFrequencyDecodeFailure: Boolean = false,
         private val committedPitchDecodeFailure: Boolean = false,
+        /** A schema-stale frequency slot (sourceId to its language stamp) with a rebuild source. */
+        private val staleFrequency: Pair<String, String>? = null,
+        private val frequencyImportFailureCode: String? = null,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
         var userCount = initialUserCount
@@ -2855,6 +2955,7 @@ class ResourceManagerTest {
         private var installedPitchSourceId: String? = installedPitchSourceId
         private var installedPitchSchemaOk: Boolean = installedPitchSchemaOk
         private var installedFrequencySourceId: String? = null
+        private val installedLanguageData = mutableListOf<String>()
         private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
 
@@ -2906,6 +3007,16 @@ class ResourceManagerTest {
                 "resource.local.list" -> inventoryResponse()
                 "resource.cleanup" ->
                     envelope("resource.cleanup.result", """{"clean":true}""")
+                "resource.languagedata.install" -> {
+                    val resourceId = stringField(rawRequest, "resourceId")
+                    val catalog = checkNotNull(FrozenResourceCatalog.catalogOf(resourceId))
+                    val data = catalog.languageData.single { it.resourceId == resourceId }
+                    installedLanguageData += resourceId
+                    envelope(
+                        "resource.languagedata.installed",
+                        """{"resourceId":"$resourceId","language":"${catalog.language}","importName":"${data.importName}"}""",
+                    )
+                }
                 "resource.unidic.install" -> {
                     val expected = FrozenResourceCatalog.value.unidic
                     envelope(
@@ -2950,6 +3061,7 @@ class ResourceManagerTest {
                         """{"slotId":"fixture-dictionary-2026-08"}""",
                     )
                 "resource.frequency.import" -> {
+                    frequencyImportFailureCode?.let { throw ResourceBridgeException(it, "simulated rebuild failure") }
                     if (failFrequencyImport) {
                         throw ResourceBridgeException(
                             "frequency_import_failed",
@@ -3099,13 +3211,13 @@ class ResourceManagerTest {
                 // The decoder checks an installed catalog dictionary against the frozen
                 // catalog identity, attribution included, so echo the catalog's own list.
                 entries +=
-                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null}"""
+                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null,"language":"ja"}"""
             }
             if (customDictionaryInstalled) {
                 val rebuildPath =
                     installedCustomDictionaryRebuildPath?.let { "\"$it\"" } ?: "null"
                 entries +=
-                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath}"""
+                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath,"language":"ja"}"""
             }
             val dictionaries = entries.joinToString(",", prefix = "[", postfix = "]")
             return envelope(
@@ -3115,7 +3227,7 @@ class ResourceManagerTest {
         }
 
         private fun catalogDictionaryOf(resourceId: String): YomitanCatalogResource =
-            FrozenResourceCatalog.value.dictionary(resourceId)
+            FrozenResourceCatalog.dictionary(resourceId)
                 ?: error("fake asked for a dictionary outside the frozen catalog: $resourceId")
 
         private fun importedDictionaryResponse(): String {
@@ -3133,19 +3245,21 @@ class ResourceManagerTest {
             }
             val frequencies =
                 installedFrequencySourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false,"rebuildSourcePath":null}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}]"""
+                } ?: staleFrequency?.let { (sourceId, language) ->
+                    """[{"sourceId":"$sourceId","sourceName":"Stale Frequency","format":"txt","entryCount":1,"schemaOk":false,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":"/data/user/0/files/freqs/$sourceId/source.txt","language":"$language"}]"""
                 } ?: "[]"
             val pitchSources =
                 installedPitchSourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1,"rebuildSourcePath":${installedPitchRebuildPath?.let { "\"$it\"" } ?: "null"}}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1,"rebuildSourcePath":${installedPitchRebuildPath?.let { "\"$it\"" } ?: "null"},"language":"ja"}]"""
                 } ?: "[]"
             val audioPacks =
                 installedAudioPackId?.let { packId ->
-                    """[{"packId":"$packId","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"contentAvailable":true}]"""
+                    """[{"packId":"$packId","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"contentAvailable":true,"language":"ja"}]"""
                 } ?: "[]"
             return envelope(
                 "resource.local.listed",
-                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":${installedLanguageData.joinToString(",", "[", "]") { "\"$it\"" }}}""",
             )
         }
 
@@ -3186,15 +3300,7 @@ class ResourceManagerTest {
             )
         }
 
-        private fun catalogResponse(): String {
-            val payload =
-                checkNotNull(
-                    ResourceManagerTest::class.java.getResourceAsStream("/resource_catalog_v1.json"),
-                ) { "resource catalog fixture missing" }
-                    .bufferedReader()
-                    .use { it.readText().trim() }
-            return envelope("resource.catalog", payload)
-        }
+        private fun catalogResponse(): String = envelope("resource.catalog", CommittedCatalogs.payload())
     }
 
     companion object {

@@ -498,6 +498,9 @@
     <string name="jpdb_frequency_resource_title">Frekuensi kana JPDB v2.2</string>
     <string name="kanjium_pitch_resource_title">Aksen nada Kanjium</string>
     <string name="jmdict_resource_title">Kamus JMdict (Inggris)</string>
+    <string name="language_dictionary_resource_title">Kamus</string>
+    <string name="language_frequency_resource_title">Daftar frekuensi kata</string>
+    <string name="language_data_resource_title">Data bahasa</string>
     <string name="jmdict_resource_description">Kamus Yomitan luring dengan definisi bahasa Inggris · sekitar 15 MiB unduhan dan hingga 163 MiB saat mengimpor</string>
     <string name="resource_installed">Terpasang</string>
     <string name="resource_not_installed">Tidak terpasang</string>

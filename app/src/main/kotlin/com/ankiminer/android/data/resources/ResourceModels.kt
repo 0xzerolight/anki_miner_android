@@ -3,6 +3,9 @@ package com.ankiminer.android.data.resources
 import java.io.IOException
 import java.util.Locale
 
+/** The mining language every request without one means, as on the Python side. */
+internal const val JAPANESE = "ja"
+
 data class ResourceAttribution(
     val name: String,
     val copyright: String,
@@ -95,12 +98,54 @@ data class PitchCatalogResource(
         }
 }
 
+data class LanguageDataInnerDigest(
+    val path: String,
+    val sha256: String,
+)
+
+/** How the vendored pack installer unpacks one data component (its `ArtifactSpec`). */
+data class LanguageDataInstallIdentity(
+    val memberPrefix: String,
+    val exclude: List<String>,
+    val sentinels: List<String>,
+    val innerSha256: List<LanguageDataInnerDigest>,
+)
+
+/**
+ * A data-only component of a vendored language pack, installed through
+ * `resource.languagedata.install` into `language_packs/<language>/<importName>/`.
+ *
+ * Generated from the vendored `pack.py`; engine code is never downloaded.
+ */
+data class LanguageDataCatalogResource(
+    override val resourceId: String,
+    override val displayName: String,
+    val importName: String,
+    override val archive: ResourceArchive,
+    val install: LanguageDataInstallIdentity,
+    override val attribution: List<ResourceAttribution>,
+) : CatalogResource
+
+data class InstalledLanguageData(
+    val resourceId: String,
+    val language: String,
+    val importName: String,
+)
+
+/**
+ * One mining language's pinned resources (`resource_catalog/<language>.json`, schema 3).
+ *
+ * Resource ids are unique across every language's catalog, so a persisted id (a retry target, a
+ * dictionary's `catalogResourceId`) names one resource without a language beside it.
+ */
 data class ResourceCatalog(
     val schemaVersion: Long,
+    val language: String,
     val resources: List<CatalogResource>,
     /** Resource ids of the recommended set, in the order they are installed. */
     val recommended: List<String>,
 ) {
+    /** Japanese only: no other language tokenizes with UniDic. */
     val unidic: UniDicCatalogResource
         get() = resources.filterIsInstance<UniDicCatalogResource>().single()
 
@@ -112,6 +157,10 @@ data class ResourceCatalog(
 
     val pitchSources: List<PitchCatalogResource>
         get() = resources.filterIsInstance<PitchCatalogResource>()
+
+    /** Engine data the language cannot mine without; installed with the language, never recommended. */
+    val languageData: List<LanguageDataCatalogResource>
+        get() = resources.filterIsInstance<LanguageDataCatalogResource>()
 
     fun dictionary(resourceId: String): YomitanCatalogResource? =
         dictionaries.singleOrNull { it.resourceId == resourceId }
@@ -159,6 +208,8 @@ data class InstalledDictionary(
     val attribution: List<ResourceAttribution>,
     /** See [InstalledFrequencySource.rebuildSourcePath]. */
     val rebuildSourcePath: String?,
+    /** The mining language the slot was imported for; unstamped legacy slots are Japanese. */
+    val language: String = JAPANESE,
 ) {
     val isUsable: Boolean
         get() = occupied && valid && schemaOk
@@ -342,6 +393,8 @@ data class InstalledFrequencySource(
      * user re-picking the original file; null means the slot is unrecoverable.
      */
     val rebuildSourcePath: String?,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 data class ImportedPitchSource(
@@ -365,6 +418,8 @@ data class InstalledPitchSource(
     val schemaVersion: Long,
     /** See [InstalledFrequencySource.rebuildSourcePath]. */
     val rebuildSourcePath: String?,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 /**
@@ -395,6 +450,8 @@ data class InstalledAudioPack(
     val format: String,
     val entryCount: Long,
     val contentAvailable: Boolean,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 data class ImportedKnownWords(
@@ -465,6 +522,8 @@ data class LocalResourceInventory(
     val audioPacks: List<InstalledAudioPack>,
     val knownWords: KnownWordsInventory,
     val wordsets: List<BundledWordset>,
+    /** Resource ids of the pinned language-data components complete on disk. */
+    val languageData: Set<String> = emptySet(),
 )
 
 data class DictionaryLookup(
@@ -616,7 +675,10 @@ data class ResourceFailure(
 
 data class ResourceManagerState(
     val startupReadiness: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
+    /** The active mining language's catalog. */
     val catalog: ResourceCatalog? = null,
+    /** Every language's catalog, Japanese first; empty before the first refresh. */
+    val catalogs: List<ResourceCatalog> = emptyList(),
     val installedUniDic: InstalledUniDic? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
@@ -624,6 +686,8 @@ data class ResourceManagerState(
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val wordsets: List<BundledWordset> = emptyList(),
+    /** Resource ids of the pinned language-data components complete on disk. */
+    val installedLanguageData: Set<String> = emptySet(),
     val wordLists: List<InstalledWordList> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
@@ -639,7 +703,18 @@ data class ResourceManagerState(
 
     /** What one press of the recommended-set download would install right now. */
     val recommendedPlan: RecommendedResourcePlan
-        get() = recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources)
+        get() = recommendedResourcePlan(catalog)
+
+    /**
+     * The set one press would install for [language] — its engine data first, then its
+     * recommended dictionary and lists. Empty before the first refresh or for a language with no
+     * catalog.
+     */
+    fun recommendedPlan(language: String): RecommendedResourcePlan =
+        recommendedResourcePlan(catalogs.firstOrNull { it.language == language })
+
+    private fun recommendedResourcePlan(catalog: ResourceCatalog?): RecommendedResourcePlan =
+        recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources, installedLanguageData)
 
     val catalogDictionaries: List<CatalogDictionaryStatus>
         get() =

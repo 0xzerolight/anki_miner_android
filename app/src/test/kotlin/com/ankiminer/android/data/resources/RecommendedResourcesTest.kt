@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.resources
 
+import com.ankiminer.android.R
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -70,6 +71,21 @@ class RecommendedResourcesTest {
     }
 
     @Test
+    fun aSlotStampedForAnotherLanguageDoesNotSatisfyThisOne() {
+        val plan =
+            plan(
+                dictionaries = listOf(dictionary(dictionarySlot).copy(language = "he")),
+                frequencySources = listOf(frequency(frequencyId).copy(language = "he")),
+                pitchSources = listOf(pitch(pitchId)),
+            )
+
+        assertEquals(
+            listOf(RecommendedResourceAction.REPLACE, RecommendedResourceAction.REPLACE, RecommendedResourceAction.SKIP),
+            plan.items.map { it.action },
+        )
+    }
+
+    @Test
     fun nullCatalogYieldsAPlanThatIsNeitherSatisfiedNorActionable() {
         val plan = recommendedResourcePlan(null, emptyList(), emptyList(), emptyList())
 
@@ -87,9 +103,50 @@ class RecommendedResourcesTest {
 
     @Test
     fun everyRecommendedMemberHasAName() {
-        catalog.recommendedResources.forEach { resource ->
+        FrozenResourceCatalog.all.flatMap { it.languageData + it.recommendedResources }.forEach { resource ->
             assertTrue(recommendedResourceTitleRes(resource) != 0)
         }
+    }
+
+    @Test
+    fun anotherLanguagesMembersAreNamedByWhatTheyAre() {
+        val hebrew = FrozenResourceCatalog.forLanguage("he")!!
+
+        assertEquals(
+            listOf(R.string.language_dictionary_resource_title, R.string.language_frequency_resource_title),
+            hebrew.recommendedResources.map(::recommendedResourceTitleRes),
+        )
+        assertEquals(
+            R.string.language_data_resource_title,
+            recommendedResourceTitleRes(FrozenResourceCatalog.forLanguage("ar")!!.languageData.single()),
+        )
+        assertEquals(R.string.jmdict_resource_title, recommendedResourceTitleRes(catalog.recommendedResources.first()))
+    }
+
+    @Test
+    fun aLanguagesEngineDataLeadsItsPlanUntilItIsInstalled() {
+        val persian = FrozenResourceCatalog.forLanguage("fa")!!
+        val data = persian.languageData.single()
+
+        val missing = recommendedResourcePlan(persian, emptyList(), emptyList(), emptyList())
+        assertEquals(listOf(data.resourceId), missing.items.map { it.resource.resourceId })
+        assertEquals(RecommendedResourceAction.INSTALL, missing.items.single().action)
+
+        val installed =
+            recommendedResourcePlan(persian, emptyList(), emptyList(), emptyList(), setOf(data.resourceId))
+        assertTrue(installed.isSatisfied)
+    }
+
+    @Test
+    fun theStatePlansAnyLanguageFromItsOwnCatalog() {
+        val state = ResourceManagerState(catalog = catalog, catalogs = FrozenResourceCatalog.all)
+
+        assertEquals(plan(), state.recommendedPlan("ja"))
+        assertEquals(
+            FrozenResourceCatalog.forLanguage("he")!!.recommended,
+            state.recommendedPlan("he").items.map { it.resource.resourceId },
+        )
+        assertTrue(state.recommendedPlan("xx").items.isEmpty())
     }
 
     private fun plan(

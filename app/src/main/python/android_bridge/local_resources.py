@@ -26,12 +26,14 @@ from pathlib import Path, PurePosixPath
 
 from . import resources as core
 from .bootstrap import require_initialized
+from .language_data import installed_language_data
 from .languages import (
     JAPANESE,
     get_profile,
     known_words_db_path,
     language_kwarg,
     payload_language,
+    unavailable_reason_code,
     without_language,
 )
 from .protocol import BridgeProtocolError, encode_message
@@ -530,15 +532,23 @@ def _frequency_import_options(
     )
 
     if rebuild_slot is None:
-        return {**lemmatize_kwarg(manual_import_lemmatizer(language, dicts_root))}
-    from anki_miner.services.frequency.source_importer import slot_import_options
+        lemmatize = manual_import_lemmatizer(language, dicts_root)
+        declared: dict[str, object] = {}
+    else:
+        from anki_miner.services.frequency.source_importer import slot_import_options
 
-    declared_mode, lemmatised = slot_import_options(rebuild_slot)
-    lemmatize = build_frequency_lemmatizer(language, dicts_root) if lemmatised else None
-    return {
-        **({"declared_mode": declared_mode} if declared_mode else {}),
-        **lemmatize_kwarg(lemmatize),
-    }
+        declared_mode, lemmatised = slot_import_options(rebuild_slot)
+        lemmatize = build_frequency_lemmatizer(language, dicts_root) if lemmatised else None
+        declared = {"declared_mode": declared_mode} if declared_mode else {}
+    if lemmatize is not None:
+        # The tagger is built lazily, mid-import: with the language's data
+        # missing (ar/fa before their download, or after it is deleted) it would
+        # raise from inside the importer. Refuse up front with the reason code,
+        # so a startup rebuild fails this one slot and nothing else.
+        reason = unavailable_reason_code(get_profile(language))
+        if reason is not None:
+            raise _fail("language_unavailable", reason)
+    return {**declared, **lemmatize_kwarg(lemmatize)}
 
 
 def import_frequency(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
@@ -1820,16 +1830,16 @@ def _parse_known_words_copy(
     )
 
     # Desktop's Manage Known Words reads a file with the mining language's
-    # ladder; Japanese keeps the parser's own two-leg default here.
-    ladder: dict[str, object] = {}
-    if language != JAPANESE:
-        from anki_miner.utils.subtitle_encoding import script_check_kwarg
+    # ladder, Japanese included: utf-8-sig, cp932, then euc_jp. The third leg
+    # is tried only after the first two fail, so a file either already read
+    # decodes exactly as before.
+    from anki_miner.utils.subtitle_encoding import script_check_kwarg
 
-        profile = get_profile(language)
-        ladder = {
-            "encodings": profile.import_encodings,
-            **script_check_kwarg(profile.import_encodings, profile.script),
-        }
+    profile = get_profile(language)
+    ladder: dict[str, object] = {
+        "encodings": profile.import_encodings,
+        **script_check_kwarg(profile.import_encodings, profile.script),
+    }
     try:
         parsed = parse_known_words_file(
             copied.path,
@@ -2164,6 +2174,7 @@ def _invalid_pitch_inventory_entry(source_id: str) -> dict[str, object]:
         # An entry only reaches here when its index could not be read at all,
         # which is the "missing" case, not the rebuildable "stale" one.
         "rebuildSourcePath": None,
+        "language": core._inventory_language(None),
     }
 
 
@@ -2306,6 +2317,7 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaOk": version == core._PITCH_SCHEMA_VERSION,
                 "schemaVersion": max(version, 0),
                 "rebuildSourcePath": _rebuild_source_path(child),
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     if legacy_occupied and not any(item["sourceId"] == _LEGACY_PITCH_SOURCE_ID for item in result):
@@ -2446,6 +2458,7 @@ def _frequency_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaVersion": max(version, 0),
                 "isCategorical": meta.get("is_categorical") == "1",
                 "rebuildSourcePath": _rebuild_source_path(child),
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     return result
@@ -2476,6 +2489,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                     "format": "unknown",
                     "entryCount": 0,
                     "contentAvailable": False,
+                    "language": core._inventory_language(None),
                 }
             )
             continue
@@ -2516,6 +2530,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                 "format": meta.get("format", "unknown"),
                 "entryCount": max(count, 0),
                 "contentAvailable": content_available,
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     return result
@@ -2593,6 +2608,7 @@ def list_local_resources(payload: Mapping[str, object]) -> str:
             "audioPacks": _audio_inventory(home),
             "knownWords": _known_words_inventory(home, language),
             "wordsets": _wordset_inventory(),
+            "languageData": installed_language_data(home),
         },
     )
 

@@ -499,6 +499,9 @@
     <string name="jpdb_frequency_resource_title">JPDB v2.2 Kana-Häufigkeit</string>
     <string name="kanjium_pitch_resource_title">Kanjium-Tonhöhenakzente</string>
     <string name="jmdict_resource_title">JMdict-Wörterbuch (Englisch)</string>
+    <string name="language_dictionary_resource_title">Wörterbuch</string>
+    <string name="language_frequency_resource_title">Worthäufigkeitsliste</string>
+    <string name="language_data_resource_title">Sprachdaten</string>
     <string name="jmdict_resource_description">Offline-Yomitan-Wörterbuch mit englischen Definitionen · etwa 15 MiB Download und bis zu 163 MiB beim Import</string>
     <string name="resource_installed">Installiert</string>
     <string name="resource_not_installed">Nicht installiert</string>

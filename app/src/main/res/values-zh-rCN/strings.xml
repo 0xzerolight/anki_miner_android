@@ -498,6 +498,9 @@
     <string name="jpdb_frequency_resource_title">JPDB v2.2 假名词频</string>
     <string name="kanjium_pitch_resource_title">Kanjium 音调</string>
     <string name="jmdict_resource_title">JMdict 词典（英语）</string>
+    <string name="language_dictionary_resource_title">词典</string>
+    <string name="language_frequency_resource_title">词频列表</string>
+    <string name="language_data_resource_title">语言数据</string>
     <string name="jmdict_resource_description">含英语释义的离线 Yomitan 词典 · 下载约 15 MiB，导入时最多 163 MiB</string>
     <string name="resource_installed">已安装</string>
     <string name="resource_not_installed">未安装</string>

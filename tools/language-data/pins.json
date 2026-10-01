@@ -1,0 +1,40 @@
+{
+  "components": {
+    "ar/calima_msa": {
+      "data": {
+        "sha256": "fe6531250c5529307627cc63ed56447cbb9968020d6ea3ab867e6ad9af94c738",
+        "sizeBytes": 40488532,
+        "displayName": "CAMeL Tools calima-msa-r13 morphology database",
+        "attribution": [
+          {
+            "name": "calima-msa-r13 (camel-tools-data 2022.03.21)",
+            "copyright": "CAMeL Lab, New York University Abu Dhabi; derived from Aramorph 1.2.1 (Linguistic Data Consortium, QAMUS LLC, University of Pennsylvania, Jon Dehdari)",
+            "license": "GPL-2.0-only",
+            "url": "https://github.com/CAMeL-Lab/camel-tools-data"
+          }
+        ]
+      }
+    },
+    "fa/hazm_data": {
+      "data": {
+        "sha256": "91507896f5b77dcfe26c710b457801e1204ab0d86dcb756a7ab5912719108db0",
+        "sizeBytes": 887193,
+        "displayName": "hazm 0.12.1 Persian lexicon tables",
+        "attribution": [
+          {
+            "name": "hazm 0.12.1 data tables",
+            "copyright": "Copyright (c) 2013 Alireza Nourian and hazm contributors",
+            "license": "MIT",
+            "url": "https://github.com/roshan-research/hazm"
+          }
+        ]
+      }
+    },
+    "th/pythainlp": {
+      "apk": "engine code: the repacked pythainlp wheel ships in the APK (C.1), corpora and all"
+    },
+    "th/tzdata": {
+      "apk": "time zone package pythainlp imports; ships in the APK beside it (C.1)"
+    }
+  }
+}
