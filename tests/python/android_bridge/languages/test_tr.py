@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from catalog_completeness import PENDING_PIN, assert_catalog_complete
+from catalog_completeness import assert_catalog_complete
 
 pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
 pytest.importorskip("zeyrek", reason="runtime dependency lane: the Turkish engine ships in the APK")
@@ -136,17 +136,17 @@ def test_every_pack_component_ships_in_the_apk_and_nothing_downloads(initialized
     assert names == {"cloudpickle", "colorama", "defusedxml", "joblib", "nltk", "regex", "zeyrek"}
     assert all(importlib.util.find_spec(name) is not None for name in names)
     assert not {("tr", name) for name in names} & DOWNLOADABLE_DATA_COMPONENTS
-    if "tr" in CATALOG_LANGUAGES:
-        assert all(resource.kind != "language-data" for resource in load_resource_catalog("tr").resources)
+    assert "tr" in CATALOG_LANGUAGES
+    assert all(resource.kind != "language-data" for resource in load_resource_catalog("tr").resources)
 
 
 def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home: Path) -> None:
     del initialized_bridge_home
     assert_catalog_complete(
         "tr",
-        pinned={},
-        excluded={
-            "wty-tr-en": PENDING_PIN,
-            "opensubtitles-tr": PENDING_PIN,
+        pinned={
+            "wty-tr-en": "wty-tr-en-2026.09.20",
+            "opensubtitles-tr": "opensubtitles-tr-2018",
         },
+        excluded={},
     )
