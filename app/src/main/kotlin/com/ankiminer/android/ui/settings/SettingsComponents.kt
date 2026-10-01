@@ -584,6 +584,7 @@ internal fun ResourceCard(
     inlineFailure: (@Composable () -> Unit)? = null,
     actionEnabled: Boolean = true,
     statusOnly: Boolean = false,
+    emphasized: Boolean = false,
 ) {
     // Install/Repair on the button already says which state the resource is in, so the state line
     // is announced rather than drawn. The description is what the download actually is.
@@ -610,6 +611,11 @@ internal fun ResourceCard(
             // In the wizard an installed resource just says so: a Repair button read as broken.
             if (installed && statusOnly) {
                 SupportingText(stringResource(R.string.resource_installed))
+            } else if (emphasized) {
+                PrimaryActionButton(
+                    onClick = action,
+                    enabled = !busy && actionEnabled,
+                ) { Text(actionLabel) }
             } else {
                 SecondaryActionButton(
                     onClick = action,

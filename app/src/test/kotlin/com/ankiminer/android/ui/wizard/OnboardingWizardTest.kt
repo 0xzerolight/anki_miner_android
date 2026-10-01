@@ -1,7 +1,21 @@
 package com.ankiminer.android.ui.wizard
 
 import com.ankiminer.android.MainDispatcherRule
+import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.anki.provider.AnkiRecoveryReadiness
+import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
+import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.ResourceOperationPhase
+import com.ankiminer.android.data.resources.ResourceOperationProgress
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.engine.ContentDirection
+import com.ankiminer.android.engine.LanguageProfileInfo
+import com.ankiminer.android.engine.LanguageUnavailableReason
+import com.ankiminer.android.engine.PythonRuntimeReadiness
+import com.ankiminer.android.mining.AnkiMiningTargetReadiness
+import com.ankiminer.android.ui.settings.setupAttentionCount
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SessionSettingsRepository
 import com.ankiminer.android.vm.WizardCompletionStatus
 import com.ankiminer.android.vm.setupSessionViewModel
@@ -13,6 +27,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import java.util.Locale
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class OnboardingWizardTest {
@@ -97,76 +112,102 @@ class OnboardingWizardTest {
     }
 
     @Test
-    fun wizardStepNavigationIsBounded() {
-        assertEquals(WizardStep.ANKIDROID, nextWizardStep(WizardStep.WELCOME))
-        assertEquals(WizardStep.ANKIDROID_DECK, nextWizardStep(WizardStep.ANKIDROID))
-        assertEquals(WizardStep.ANKIDROID_NOTE_TYPE, nextWizardStep(WizardStep.ANKIDROID_DECK))
-        assertEquals(WizardStep.TOKENIZER, nextWizardStep(WizardStep.ANKIDROID_NOTE_TYPE))
-        assertEquals(WizardStep.DICTIONARY, nextWizardStep(WizardStep.TOKENIZER))
-        assertEquals(WizardStep.DONE, nextWizardStep(WizardStep.DONE))
-        assertEquals(WizardStep.WELCOME, previousWizardStep(WizardStep.WELCOME))
-        assertEquals(WizardStep.DICTIONARY, previousWizardStep(WizardStep.DONE))
-    }
-
-    @Test
-    fun aLanguageWithoutUniDicSkipsTheTokenizerStep() {
-        val steps = wizardSteps(uniDicRequired = false)
-        assertEquals(WizardStep.entries - WizardStep.TOKENIZER, steps)
-        assertEquals(WizardStep.DICTIONARY, nextWizardStep(WizardStep.ANKIDROID_NOTE_TYPE, steps))
-        assertEquals(WizardStep.ANKIDROID_NOTE_TYPE, previousWizardStep(WizardStep.DICTIONARY, steps))
+    fun theWizardWalksDesktopsFourPages() {
         assertEquals(
-            WizardBackAction.Previous(WizardStep.ANKIDROID_NOTE_TYPE),
-            wizardBackAction(WizardStep.DICTIONARY, steps),
-        )
-        assertEquals(WizardStep.entries, wizardSteps(uniDicRequired = true))
-    }
-
-    @Test
-    fun wizardOrderAndRequirementLabelsMatchMiningGates() {
-        assertEquals(
-            listOf(
-                WizardStep.WELCOME,
-                WizardStep.ANKIDROID,
-                WizardStep.ANKIDROID_DECK,
-                WizardStep.ANKIDROID_NOTE_TYPE,
-                WizardStep.TOKENIZER,
-                WizardStep.DICTIONARY,
-                WizardStep.DONE,
-            ),
+            listOf(WizardStep.LANGUAGE, WizardStep.DOWNLOADS, WizardStep.ANKIDROID, WizardStep.READY),
             WizardStep.entries,
         )
-        assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.ANKIDROID))
-        assertEquals(WizardStepRequirement.OPTIONAL, wizardStepRequirement(WizardStep.ANKIDROID_DECK))
-        assertEquals(
-            WizardStepRequirement.REQUIRED,
-            wizardStepRequirement(WizardStep.ANKIDROID_NOTE_TYPE),
-        )
-        assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.TOKENIZER))
-        // Mining cannot start without one: the engine raises SetupError before any work.
-        assertEquals(WizardStepRequirement.REQUIRED, wizardStepRequirement(WizardStep.DICTIONARY))
-        assertEquals(null, wizardStepRequirement(WizardStep.WELCOME))
-        assertEquals(null, wizardStepRequirement(WizardStep.DONE))
+        assertEquals(WizardStep.DOWNLOADS, nextWizardStep(WizardStep.LANGUAGE))
+        assertEquals(WizardStep.READY, nextWizardStep(WizardStep.ANKIDROID))
+        assertEquals(WizardStep.READY, nextWizardStep(WizardStep.READY))
+        assertEquals(WizardStep.LANGUAGE, previousWizardStep(WizardStep.LANGUAGE))
+        assertEquals(WizardStep.ANKIDROID, previousWizardStep(WizardStep.READY))
     }
 
     @Test
-    fun systemBackMovesToPreviousStepAndRequestsConfirmationAtWelcome() {
-        assertEquals(
-            WizardBackAction.Previous(WizardStep.ANKIDROID_DECK),
-            wizardBackAction(WizardStep.ANKIDROID_NOTE_TYPE),
-        )
-        assertEquals(WizardBackAction.ConfirmSkip, wizardBackAction(WizardStep.WELCOME))
+    fun systemBackMovesToThePreviousPageAndAsksBeforeLeavingTheFirst() {
+        assertEquals(WizardBackAction.Previous(WizardStep.DOWNLOADS), wizardBackAction(WizardStep.ANKIDROID))
+        assertEquals(WizardBackAction.ConfirmSkip, wizardBackAction(WizardStep.LANGUAGE))
     }
 
     @Test
-    fun finalReadinessCopyNeverClaimsReadyForIncompleteSetup() {
+    fun finalPageNeverClaimsReadyAndSaysAlmostReadyOnlyWhileDownloadsAreAllThatIsLeft() {
+        val ready = readySetup()
+        val downloading =
+            ready.copy(
+                dictionaries = emptyList(),
+                operation = ResourceOperationProgress("op", "JMdict", ResourceOperationPhase.DOWNLOADING),
+            )
+
+        assertEquals(WizardFinalState.READY, wizardFinalState(ready))
+        assertEquals(WizardFinalState.ALMOST_READY, wizardFinalState(downloading))
+        assertEquals(WizardFinalState.INCOMPLETE, wizardFinalState(downloading.copy(anki = AnkiProviderReadiness.NotInstalled)))
+        assertEquals(WizardFinalState.INCOMPLETE, wizardFinalState(ready.copy(dictionaries = emptyList())))
+    }
+
+    @Test
+    fun finalStateIsAlmostReadyWhileThePickedLanguageDownloads() {
+        // The old language's missing tokenizer and dictionary are not what the user picked.
         assertEquals(
-            WizardFinalState.READY,
-            wizardFinalState(isMiningReady = true),
+            WizardFinalState.ALMOST_READY,
+            wizardFinalState(readySetup().copy(uniDicInstalled = false, dictionaries = emptyList()), languagePending = true),
         )
         assertEquals(
             WizardFinalState.INCOMPLETE,
-            wizardFinalState(isMiningReady = false),
+            wizardFinalState(readySetup().copy(anki = AnkiProviderReadiness.NotInstalled), languagePending = true),
         )
+        // Picked but no longer downloading (process death, or a failed download): never "Almost ready".
+        assertEquals(
+            WizardFinalState.INCOMPLETE,
+            wizardFinalState(readySetup(), languagePending = true, languageDownloadRunning = false),
+        )
+    }
+
+    @Test
+    fun theStepsOwnRequiredActionTakesTheEmphasisUntilItRuns() {
+        val ready = readySetup()
+        val running = ResourceOperationProgress("op", "UniDic", ResourceOperationPhase.DOWNLOADING)
+
+        assertTrue(wizardStepActionPending(WizardStep.DOWNLOADS, ready.copy(uniDicInstalled = false)))
+        assertFalse(wizardStepActionPending(WizardStep.DOWNLOADS, ready))
+        assertFalse(wizardStepActionPending(WizardStep.DOWNLOADS, ready.copy(uniDicInstalled = false, operation = running)))
+        // While another language is picked, the old language's UniDic is not this page's action.
+        assertFalse(wizardStepActionPending(WizardStep.DOWNLOADS, ready.copy(uniDicInstalled = false), languagePending = true))
+        assertTrue(wizardStepActionPending(WizardStep.ANKIDROID, ready.copy(anki = AnkiProviderReadiness.NotInstalled)))
+        assertFalse(wizardStepActionPending(WizardStep.LANGUAGE, ready.copy(uniDicInstalled = false)))
+        assertFalse(wizardStepActionPending(WizardStep.READY, ready.copy(anki = AnkiProviderReadiness.NotInstalled)))
+    }
+
+    @Test
+    fun aNonJapaneseLearnerIsNeitherRushedPastTheListNorSentToUniDic() {
+        assertFalse(wizardNextEnabled(WizardStep.LANGUAGE, saving = false, profilesLoaded = false))
+        assertTrue(wizardNextEnabled(WizardStep.LANGUAGE, saving = false, profilesLoaded = true))
+        assertTrue(wizardNextEnabled(WizardStep.DOWNLOADS, saving = false, profilesLoaded = false))
+        assertFalse(wizardNextEnabled(WizardStep.READY, saving = true, profilesLoaded = true))
+        val german = readySetup().copy(language = "de", uniDicRequired = false, uniDicInstalled = false)
+        assertFalse(wizardStepActionPending(WizardStep.DOWNLOADS, german))
+        assertEquals(WizardFinalState.READY, wizardFinalState(german))
+        assertEquals(0, german.setupAttentionCount())
+    }
+
+    @Test
+    fun languageChoicesPutTheActiveLanguageFirstAndDropWhatThisBuildCannotMine() {
+        val choices =
+            wizardLanguageChoices(
+                profiles =
+                    listOf(
+                        profile("th", "ไทย", "Thai"),
+                        profile("ja", "日本語", "Japanese"),
+                        profile("ko", "한국어", "Korean", LanguageUnavailableReason.DATA_REQUIRED),
+                        profile("xx", "Xx", "Unminable", LanguageUnavailableReason.UNSUPPORTED),
+                    ),
+                uiLocale = Locale.ENGLISH,
+                activeCode = "ja",
+            )
+
+        assertEquals(listOf("ja", "ko", "th"), choices.map { it.code })
+        assertEquals("日本語 — Japanese", choices.first().label)
+        assertEquals(listOf(false, true, false), choices.map { it.needsDownload })
     }
 
     @Test
@@ -221,4 +262,53 @@ class OnboardingWizardTest {
                 ),
             )
         }
+
+    private fun readySetup() =
+        SetupUiState(
+            python = PythonRuntimeReadiness.Ready("/runtime"),
+            resourceStartup = ResourceStartupReadiness.READY,
+            anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L),
+            ankiRecovery = AnkiRecoveryReadiness.Ready,
+            noteTypeStatus = NoteTypeSetupStatus.Verified(modelId = 1L),
+            miningTarget = AnkiMiningTargetReadiness.Ready,
+            uniDicInstalled = true,
+            dictionaries =
+                listOf(
+                    InstalledDictionary(
+                        slotId = "dictionary-1",
+                        occupied = true,
+                        valid = true,
+                        sourceName = "Jitendex",
+                        sourceRevision = "2026-08-01",
+                        format = "yomitan",
+                        entryCount = 1_000L,
+                        schemaOk = true,
+                        embeddedAttribution = emptyMap(),
+                        catalogResourceId = "jitendex",
+                        attribution = emptyList(),
+                        rebuildSourcePath = null,
+                    ),
+                ),
+        )
+
+    private fun profile(
+        code: String,
+        native: String,
+        english: String,
+        reason: LanguageUnavailableReason? = null,
+    ) = LanguageProfileInfo(
+        code = code,
+        displayName = native,
+        englishName = english,
+        unavailableReason = reason,
+        scriptVariants = emptyList(),
+        contentDirection = ContentDirection.LTR,
+        contentLanguage = code,
+        speechLanguage = code,
+        audioTrackCodes = emptyList(),
+        capabilities = emptySet(),
+        requiresUnidic = code == "ja",
+        scopedDefaults = emptyMap(),
+        extraCardFields = emptyList(),
+    )
 }

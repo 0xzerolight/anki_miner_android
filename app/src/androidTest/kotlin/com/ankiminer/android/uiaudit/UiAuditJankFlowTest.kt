@@ -173,7 +173,7 @@ class UiAuditJankFlowTest {
     @Test
     fun wizardStepsThroughEveryScreen() {
         runRealTimeFlow("wizard-step-through") { onComplete ->
-            var step by remember { mutableStateOf(WizardStep.WELCOME) }
+            var step by remember { mutableStateOf(WizardStep.LANGUAGE) }
             val scrollState = rememberScrollState()
             OnboardingWizardContent(
                 state = setupAuditState(),

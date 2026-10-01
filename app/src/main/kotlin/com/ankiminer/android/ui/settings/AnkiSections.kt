@@ -61,7 +61,7 @@ internal fun AnkiDeckCard(
                 Text(stringResource(R.string.anki_deck_connect_first))
             }
             val resolution = state.deckSelection
-            NoteTypeDropdown(
+            SettingsDropdown(
                 label = stringResource(R.string.anki_deck_picker),
                 options =
                     resolution.choices.map { choice ->
@@ -122,7 +122,7 @@ internal fun AnkiTargetCard(
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
             } else {
-                NoteTypeDropdown(
+                SettingsDropdown(
                     label = stringResource(R.string.anki_note_type_picker),
                     options = state.availableNoteTypes.map { it.name to it.name },
                     selected = state.noteType ?: "",
@@ -188,7 +188,7 @@ internal fun AnkiTargetCard(
                         // field name it auto-maps to.
                         val base = fieldKeyLabel(key, state.extraCardFields)
                         val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
-                        NoteTypeDropdown(
+                        SettingsDropdown(
                             label = label,
                             options =
                                 AnkiFieldMapPolicy
@@ -274,7 +274,7 @@ private fun CardTypeMarkerSection(
         style = MaterialTheme.typography.titleSmall,
     )
     SupportingText(stringResource(R.string.anki_card_type_explainer))
-    NoteTypeDropdown(
+    SettingsDropdown(
         label = stringResource(R.string.anki_card_type_picker),
         options =
             listOf("" to noneLabel) +
@@ -286,7 +286,7 @@ private fun CardTypeMarkerSection(
         },
     )
     if (state.cardType != null) {
-        NoteTypeDropdown(
+        SettingsDropdown(
             label = stringResource(R.string.anki_card_type_marker_field),
             options = (listOf("") + fields).map { it to it.ifEmpty { noneLabel } },
             selected = state.cardTypeMarkerField ?: "",
@@ -331,7 +331,7 @@ internal fun WizardAnkiTargetCard(
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
             } else {
-                NoteTypeDropdown(
+                SettingsDropdown(
                     label = stringResource(R.string.anki_note_type_picker),
                     options = state.availableNoteTypes.map { it.name to it.name },
                     selected = state.noteType.orEmpty(),
@@ -394,9 +394,10 @@ private fun noteTypeStatusText(status: NoteTypeSetupStatus): String =
         },
     )
 
+/** A read-only Material dropdown over (value, label) pairs; used by the Anki cards and the wizard's language page. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteTypeDropdown(
+internal fun SettingsDropdown(
     label: String,
     options: List<Pair<String, String>>,
     selected: String,

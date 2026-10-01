@@ -93,6 +93,7 @@ import com.ankiminer.android.ui.video.TimingPreviewOverlay
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizard
+import com.ankiminer.android.ui.wizard.WizardLanguageState
 import com.ankiminer.android.ui.wizard.wizardVisible
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MediaMiningViewModel
@@ -485,6 +486,8 @@ internal fun AnkiMinerApp(
             destination.route == currentRoute
         }
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val languageProfiles by settingsViewModel.languageProfiles.collectAsStateWithLifecycle()
+    val languageDownload by settingsViewModel.languageDownload.collectAsStateWithLifecycle()
     val wizardDismissedForSession by
         setupViewModel.wizardDismissedForSession.collectAsStateWithLifecycle()
     val videoWorkflow by
@@ -671,6 +674,9 @@ internal fun AnkiMinerApp(
                         OnboardingWizard(
                             state = setup,
                             viewModel = setupViewModel,
+                            language = WizardLanguageState(profiles = languageProfiles, downloadingCode = languageDownload),
+                            onSwitchLanguage = { code -> settingsViewModel.switchLanguage(code) },
+                            onDownloadAndSwitchLanguage = settingsViewModel::downloadAndSwitchLanguage,
                             onRequestPermissions = onRequestPermissions,
                             onOpenAppSettings = onOpenAppSettings,
                             onInstallAnkiDroid = onInstallAnkiDroid,

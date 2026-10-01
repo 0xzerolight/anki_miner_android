@@ -51,6 +51,7 @@ internal fun RecommendedResourcesCard(
     uniDicMissing: Boolean = false,
     title: String = stringResource(R.string.recommended_resources_title),
     statusOnly: Boolean = false,
+    emphasized: Boolean = false,
 ) {
     val plan = state.recommendedPlan
     val installed = !uniDicMissing && plan.isSatisfied
@@ -71,6 +72,7 @@ internal fun RecommendedResourcesCard(
             ),
         inlineFailure = inlineFailure,
         statusOnly = statusOnly,
+        emphasized = emphasized,
     )
 }
 
