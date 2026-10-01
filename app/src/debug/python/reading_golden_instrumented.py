@@ -338,6 +338,9 @@ def run(fixture_json: str, expected_home: str) -> str:
             # As the desktop exporter maps it: the reading image phase runs only
             # while the picture field is mapped.
             anki_fields={"picture": "Picture"},
+            # mined_forms is the insert receipt: a database that outlives the
+            # run would make the next run on this install mismatch.
+            known_words_db_path=root / "known_words.db",
             include_known_words=True,
             bypass_optional_filters=True,
             reading_min_occurrence=1,
