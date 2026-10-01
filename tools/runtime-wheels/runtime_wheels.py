@@ -64,6 +64,7 @@ EXTERNAL_RUNTIME_LIBS = frozenset({"libc++_shared.so"})
 
 FAMILIES = {
     "base": "tokenizer-neutral runtime: requests, pysubs2, Pillow, lxml",
+    "f1": "Turkish (tr): zeyrek over nltk and regex",
 }
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
@@ -83,6 +84,16 @@ COMMON_SPECS = {
     "urllib3": ("2.7.0", "urllib3-2.7.0-py3-none-any.whl"),
     "idna": ("3.18", "idna-3.18-py3-none-any.whl"),
     "certifi": ("2026.6.17", "certifi-2026.6.17-py3-none-any.whl"),
+    # F1: zeyrek and its nltk closure (click, joblib, tqdm and colorama are
+    # nltk's; cloudpickle is joblib's).
+    "click": ("8.1.8", "click-8.1.8-py3-none-any.whl"),
+    "cloudpickle": ("3.1.2", "cloudpickle-3.1.2-py3-none-any.whl"),
+    "colorama": ("0.4.6", "colorama-0.4.6-py2.py3-none-any.whl"),
+    "defusedxml": ("0.7.1", "defusedxml-0.7.1-py2.py3-none-any.whl"),
+    "joblib": ("1.6.0", "joblib-1.6.0-py3-none-any.whl"),
+    "nltk": ("3.10.3", "nltk-3.10.3-py3-none-any.whl"),
+    "tqdm": ("4.68.3", "tqdm-4.68.3-py3-none-any.whl"),
+    "zeyrek": ("0.1.3", "zeyrek-0.1.3-py2.py3-none-any.whl"),
 }
 
 NATIVE_SPECS = {
@@ -135,6 +146,13 @@ NATIVE_SPECS = {
         "abi": "cp312",
         "source": "lxml",
     },
+    "regex": {
+        "version": "2026.9.10",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "regex",
+    },
 }
 
 SOURCE_SPECS = {
@@ -155,6 +173,15 @@ SOURCE_SPECS = {
     "python-x86_64": ("python-target", None, None),
     "requests": ("prebuilt-wheel", "requests", "2.34.2"),
     "urllib3": ("prebuilt-wheel", "urllib3", "2.7.0"),
+    "click": ("prebuilt-wheel", "click", "8.1.8"),
+    "cloudpickle": ("prebuilt-wheel", "cloudpickle", "3.1.2"),
+    "colorama": ("prebuilt-wheel", "colorama", "0.4.6"),
+    "defusedxml": ("prebuilt-wheel", "defusedxml", "0.7.1"),
+    "joblib": ("prebuilt-wheel", "joblib", "1.6.0"),
+    "nltk": ("prebuilt-wheel", "nltk", "3.10.3"),
+    "regex": ("runtime-source", "regex", "2026.9.10"),
+    "tqdm": ("prebuilt-wheel", "tqdm", "4.68.3"),
+    "zeyrek": ("prebuilt-wheel", "zeyrek", "0.1.3"),
 }
 
 HOST_REQUIREMENTS = {
@@ -198,6 +225,15 @@ MANDATORY_DEPENDENCIES = {
     "chaquopy-libxslt": {"chaquopy-libxml2"},
     "pillow": {"chaquopy-libjpeg", "chaquopy-freetype", "chaquopy-libwebp"},
     "lxml": {"chaquopy-libxml2", "chaquopy-libxslt"},
+    "click": {"colorama", "importlib-metadata"},
+    "cloudpickle": set(),
+    "colorama": set(),
+    "defusedxml": set(),
+    "joblib": {"cloudpickle"},
+    "nltk": {"click", "defusedxml", "joblib", "regex", "tqdm"},
+    "regex": set(),
+    "tqdm": {"colorama"},
+    "zeyrek": {"nltk"},
 }
 
 NATIVE_REQUIRED_PATHS = {
@@ -215,6 +251,7 @@ NATIVE_REQUIRED_PATHS = {
     },
     "pillow": {"PIL/_imaging.so", "PIL/_imagingft.so"},
     "lxml": {"lxml/etree.so", "lxml/objectify.so"},
+    "regex": {"regex/_regex.so"},
 }
 
 REQUIRED_NEEDED = {
@@ -236,6 +273,7 @@ REQUIRED_NEEDED = {
         "libxslt.so",
         "libexslt.so",
     },
+    "regex": {"libpython3.12.so"},
 }
 
 ANDROID_SYSTEM_LIBS = {
@@ -279,6 +317,17 @@ FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
         "requests",
         "urllib3",
     ),
+    "f1": (
+        "click",
+        "cloudpickle",
+        "colorama",
+        "defusedxml",
+        "joblib",
+        "nltk",
+        "regex",
+        "tqdm",
+        "zeyrek",
+    ),
 }
 PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
     package: tuple(family for family, packages in FAMILY_PACKAGES.items() if package in packages)
@@ -287,7 +336,10 @@ PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
 # Members dropped when a wheel is repacked for publication: (package
 # directory, excludes). Excludes follow desktop pack.py: an entry ending in "/"
 # drops that subtree, any other entry exactly one file.
-REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {}
+REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
+    # nltk's doctest suite: 1.6 MB the tr path never imports.
+    "nltk": ("nltk/", ("test/",)),
+}
 # Pure packages published only as an sdist: the member prefix that becomes the
 # wheel's package directory. The wheel carries the sdist's PKG-INFO as METADATA.
 SDIST_WHEELS: dict[str, str] = {}

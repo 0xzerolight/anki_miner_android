@@ -218,7 +218,11 @@ class LockContractTests(unittest.TestCase):
                 "idna": "3.18",
                 "certifi": "2026.6.17",
             },
-            {name: version for name, (version, _) in runtime_wheels.COMMON_SPECS.items()},
+            {
+                name: version
+                for name, (version, _) in runtime_wheels.COMMON_SPECS.items()
+                if "base" in runtime_wheels.PACKAGE_FAMILIES[name]
+            },
         )
         locked_text = runtime_wheels.SOURCE_LOCK.read_text(encoding="utf-8").casefold()
         for forbidden in ("unidic", "pyqt6", "gtts", "yt-dlp", "yt_dlp"):

@@ -41,6 +41,62 @@
       "url": "https://files.pythonhosted.org/packages/db/8f/61959034484a4a7c527811f4721e75d02d653a35afb0b6054474d8185d4c/charset_normalizer-3.4.7-py3-none-any.whl",
       "version": "3.4.7"
     },
+    "click": {
+      "filename": "click-8.1.8-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "click-8.1.8.dist-info/LICENSE.txt": "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d"
+        }
+      },
+      "package": "click",
+      "sha256": "63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2",
+      "url": "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl",
+      "version": "8.1.8"
+    },
+    "cloudpickle": {
+      "filename": "cloudpickle-3.1.2-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "cloudpickle-3.1.2.dist-info/licenses/LICENSE": "3029ea34173e9fdc233ad315dc6b100bd1ea71f529b1c1af97664a272fdc55f5"
+        }
+      },
+      "package": "cloudpickle",
+      "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
+      "url": "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl",
+      "version": "3.1.2"
+    },
+    "colorama": {
+      "filename": "colorama-0.4.6-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "colorama-0.4.6.dist-info/licenses/LICENSE.txt": "cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318"
+        }
+      },
+      "package": "colorama",
+      "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+      "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
+      "version": "0.4.6"
+    },
+    "defusedxml": {
+      "filename": "defusedxml-0.7.1-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "PSF-2.0",
+        "members": {
+          "defusedxml-0.7.1.dist-info/LICENSE": "b80ce9da8c42a1f91079627fbbe2bf27210ae108a0ffe5f077d5b08e076c24c8"
+        }
+      },
+      "package": "defusedxml",
+      "sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "url": "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl",
+      "version": "0.7.1"
+    },
     "freetype": {
       "filename": "freetype-2.14.1.tar.xz",
       "kind": "runtime-source",
@@ -68,6 +124,20 @@
       "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
       "url": "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl",
       "version": "3.18"
+    },
+    "joblib": {
+      "filename": "joblib-1.6.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "joblib-1.6.0.dist-info/licenses/LICENSE.txt": "42612911c1872c5e4b43f6ae0e8ee59467cd350332241cf72ce90640264fae6a"
+        }
+      },
+      "package": "joblib",
+      "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba",
+      "url": "https://files.pythonhosted.org/packages/18/53/84099323c2ec4be98d935f63c033ac4151ee83836ca1050ede3b3aadf155/joblib-1.6.0-py3-none-any.whl",
+      "version": "1.6.0"
     },
     "libjpeg": {
       "filename": "libjpeg-turbo-1.5.3.tar.gz",
@@ -139,6 +209,20 @@
       "url": "https://files.pythonhosted.org/packages/05/3b/aab6728cae887456f409b4d75e8a01856e4f04bd510de38052a47768b680/lxml-6.1.1.tar.gz",
       "version": "6.1.1"
     },
+    "nltk": {
+      "filename": "nltk-3.10.3-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "Apache-2.0",
+        "members": {
+          "nltk-3.10.3.dist-info/licenses/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        }
+      },
+      "package": "nltk",
+      "sha256": "ff9598a8e20518ee0d557745890cc4435b9578489e2dcbc69c4f81fa060caf7c",
+      "url": "https://files.pythonhosted.org/packages/b6/6d/ebd2af4640b12168fdf0cb74b6118df2f32a2f62ec7e0c06fbfd80706639/nltk-3.10.3-py3-none-any.whl",
+      "version": "3.10.3"
+    },
     "patchelf": {
       "filename": "patchelf-0.18.0-x86_64.tar.gz",
       "kind": "build-tool-binary",
@@ -185,6 +269,20 @@
       "sha256": "d4140d76c0a3c73bbbb89a7139e9bcc3080b37f210f2c343acfdea8b21113aad",
       "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
     },
+    "regex": {
+      "filename": "regex-2026.9.10.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "Apache-2.0 AND CNRI-Python",
+        "members": {
+          "regex-2026.9.10/LICENSE.txt": "bff55ef4cdcc8c14ce259f8e8ab60e264418440d6335f4dc138273fbd506144d"
+        }
+      },
+      "package": "regex",
+      "sha256": "1e321e2c84f0e52c457f5ea5944f796d6e8e09cb99738ea98dcc1bfe402a128d",
+      "url": "https://files.pythonhosted.org/packages/b9/5c/f403115361de25809e8f785686ec7096e30fef73be9ae35aa51da4e80abb/regex-2026.9.10.tar.gz",
+      "version": "2026.9.10"
+    },
     "requests": {
       "filename": "requests-2.34.2-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -200,6 +298,20 @@
       "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
       "version": "2.34.2"
     },
+    "tqdm": {
+      "filename": "tqdm-4.68.3-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MPL-2.0 AND MIT",
+        "members": {
+          "tqdm-4.68.3.dist-info/licenses/LICENCE": "fcff87c3a47ce8028a8512aa182d4fcf0ad1c90544ee75cf9b343684cac194de"
+        }
+      },
+      "package": "tqdm",
+      "sha256": "39832cc2def2789a6f29df83f172db7416cea70052c0907a57801c5f2fdccb03",
+      "url": "https://files.pythonhosted.org/packages/d8/8e/bb97bb0c71802080bfc8952937d174e49cfc50de5c951dd47b2496f0dcdb/tqdm-4.68.3-py3-none-any.whl",
+      "version": "4.68.3"
+    },
     "urllib3": {
       "filename": "urllib3-2.7.0-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -213,6 +325,20 @@
       "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
       "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
       "version": "2.7.0"
+    },
+    "zeyrek": {
+      "filename": "zeyrek-0.1.3-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "zeyrek-0.1.3.dist-info/LICENSE": "ee3498eecc1e397dcc1cb85a3958d64120d56a05cf33ef9604c79c9fe4dbe28a"
+        }
+      },
+      "package": "zeyrek",
+      "sha256": "23649bb49322a52d1e94959029b047fa4037bc540762819feb1096aa976b25b5",
+      "url": "https://files.pythonhosted.org/packages/7f/5b/76970fab035d2e2649ba06af037c394b9690d0e07a8faf53817ccccb3951/zeyrek-0.1.3-py2.py3-none-any.whl",
+      "version": "0.1.3"
     }
   }
 }
