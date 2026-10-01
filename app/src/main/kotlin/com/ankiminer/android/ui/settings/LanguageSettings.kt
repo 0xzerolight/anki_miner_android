@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextDirection
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.LanguageScope
+import com.ankiminer.android.engine.ContentDirection
 import com.ankiminer.android.engine.LanguageProfileInfo
 import com.ankiminer.android.engine.LanguageUnavailableReason
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -124,15 +125,41 @@ internal fun languageDisplayName(
     }
 }
 
-/** The picker's order: by the name the user reads, in their own collation. */
+/**
+ * The picker's order: by the name the user reads, in their own collation.
+ *
+ * Before `language.profiles` answers, or when it failed, only [activeCode] is known: it is listed
+ * alone, under its locale names, and stays selected.
+ */
 internal fun orderedLanguageChoices(
     profiles: List<LanguageProfileInfo>,
     uiLocale: Locale,
+    activeCode: String,
 ): List<LanguageProfileInfo> {
+    if (profiles.isEmpty()) return listOf(activeLanguageOnly(activeCode))
     val collator = Collator.getInstance(uiLocale)
     return profiles.sortedWith { left, right ->
         collator.compare(languageDisplayName(left, uiLocale), languageDisplayName(right, uiLocale))
     }
+}
+
+private fun activeLanguageOnly(code: String): LanguageProfileInfo {
+    val locale = Locale.forLanguageTag(code)
+    return LanguageProfileInfo(
+        code = code,
+        displayName = locale.getDisplayLanguage(locale).ifBlank { code },
+        englishName = locale.getDisplayLanguage(Locale.ENGLISH).ifBlank { code },
+        unavailableReason = null,
+        scriptVariants = emptyList(),
+        contentDirection = ContentDirection.LTR,
+        contentLanguage = code,
+        speechLanguage = code,
+        audioTrackCodes = emptyList(),
+        capabilities = emptySet(),
+        requiresUnidic = code == LanguageScope.JAPANESE,
+        scopedDefaults = emptyMap(),
+        extraCardFields = emptyList(),
+    )
 }
 
 /** What the note-type route does once a requested switch lands. */
@@ -359,8 +386,7 @@ private fun MiningLanguagePicker(
     actions: LanguageSettingsActions,
 ) {
     val uiLocale = currentUiLocale()
-    // Before the bridge answers only the active language is known; it stays listed and selected.
-    val profiles = orderedLanguageChoices(language.profiles, uiLocale)
+    val profiles = orderedLanguageChoices(language.profiles, uiLocale, language.activeCode)
     Column(
         modifier =
             Modifier

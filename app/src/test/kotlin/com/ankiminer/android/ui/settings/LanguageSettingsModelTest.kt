@@ -78,10 +78,20 @@ class LanguageSettingsModelTest {
 
     @Test
     fun `languages are listed by the interface language's names`() {
-        val english = orderedLanguageChoices(profiles, Locale.ENGLISH).map { it.code }
+        val english = orderedLanguageChoices(profiles, Locale.ENGLISH, "he").map { it.code }
         assertEquals(listOf("ar", "he", "ja"), english)
         assertEquals("Hebrew", languageDisplayName(LanguageProfileFixtures.hebrew, Locale.ENGLISH))
         assertEquals("Hebräisch", languageDisplayName(LanguageProfileFixtures.hebrew, Locale.GERMAN))
+    }
+
+    @Test
+    fun `with no profiles the active language alone is listed by its names`() {
+        val only = orderedLanguageChoices(emptyList(), Locale.ENGLISH, "he").single()
+
+        assertEquals("he", only.code)
+        assertEquals("Hebrew", languageDisplayName(only, Locale.ENGLISH))
+        assertEquals("עברית", only.displayName)
+        assertEquals(null, only.unavailableReason)
     }
 
     @Test
