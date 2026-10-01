@@ -263,6 +263,16 @@ class OnboardingWizardTest {
             )
         }
 
+    @Test
+    fun continueSetupOpensTheFirstPageThatStillNeedsWork() {
+        val ready = readySetup()
+
+        assertEquals(WizardStep.DOWNLOADS, firstIncompleteWizardStep(ready.copy(dictionaries = emptyList())))
+        assertEquals(WizardStep.DOWNLOADS, firstIncompleteWizardStep(ready.copy(uniDicInstalled = false)))
+        assertEquals(WizardStep.ANKIDROID, firstIncompleteWizardStep(ready.copy(anki = AnkiProviderReadiness.NotInstalled)))
+        assertEquals(WizardStep.READY, firstIncompleteWizardStep(ready))
+    }
+
     private fun readySetup() =
         SetupUiState(
             python = PythonRuntimeReadiness.Ready("/runtime"),

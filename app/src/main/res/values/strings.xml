@@ -323,7 +323,6 @@
     <string name="nav_licenses">Licences</string>
     <string name="nav_notices">Third-party notices</string>
     <string name="mining_not_ready">Mining is not ready</string>
-    <string name="open_settings">Open Settings</string>
     <string name="allow_required_access">Allow access</string>
     <string name="allow_in_android_settings">Allow in Android settings</string>
     <string name="ankidroid_permission_settings_prompt">Turn on “Read and write to the AnkiDroid database” under Permissions › Additional permissions.</string>
@@ -381,6 +380,11 @@
     <string name="readiness_connect_ankidroid">Connect AnkiDroid</string>
     <string name="readiness_choose_note_type">Choose note type</string>
     <string name="readiness_check_again">Check again</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="one">Finish setup (%1$d left)</item>
+        <item quantity="other">Finish setup (%1$d left)</item>
+    </plurals>
+    <string name="readiness_continue_setup">Continue setup</string>
 
     <string name="anki_note_type_title">Anki note type</string>
     <string name="anki_note_type_connect_first">Connect AnkiDroid to discover note types.</string>

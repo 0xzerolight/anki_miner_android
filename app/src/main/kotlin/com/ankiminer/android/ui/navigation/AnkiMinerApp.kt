@@ -43,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -82,6 +83,7 @@ import com.ankiminer.android.ui.settings.SettingsRoute
 import com.ankiminer.android.ui.settings.ankiDroidInstallLabel
 import com.ankiminer.android.ui.settings.settingsCardIndexFor
 import com.ankiminer.android.ui.settings.settingsCategoryFor
+import com.ankiminer.android.ui.settings.setupAttentionCount
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.LargeFontScale
 import com.ankiminer.android.ui.theme.ScreenTitle
@@ -94,6 +96,8 @@ import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizard
 import com.ankiminer.android.ui.wizard.WizardLanguageState
+import com.ankiminer.android.ui.wizard.WizardStep
+import com.ankiminer.android.ui.wizard.firstIncompleteWizardStep
 import com.ankiminer.android.ui.wizard.wizardVisible
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MediaMiningViewModel
@@ -507,6 +511,7 @@ internal fun AnkiMinerApp(
             TesterDiagnosticsBuilder.identity(buildIdentity)
         }
     var wizardRerunRequested by rememberSaveable { mutableStateOf(false) }
+    var wizardStartStep by rememberSaveable { mutableStateOf(WizardStep.LANGUAGE) }
     var requestedSettingsCategory by
         rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
     var requestedSettingsItemIndex by rememberSaveable { mutableStateOf(2) }
@@ -655,6 +660,10 @@ internal fun AnkiMinerApp(
                 }
             },
             onCancelOperation = setupViewModel::cancelOperation,
+            onContinueSetup = {
+                wizardStartStep = firstIncompleteWizardStep(setup)
+                wizardRerunRequested = true
+            },
         )
     }
 
@@ -673,6 +682,7 @@ internal fun AnkiMinerApp(
                         OnboardingWizard(
                             state = setup,
                             viewModel = setupViewModel,
+                            initialStep = wizardStartStep,
                             language = WizardLanguageState(profiles = languageProfiles, downloadingCode = languageDownload),
                             onSwitchLanguage = { code -> settingsViewModel.switchLanguage(code) },
                             onDownloadAndSwitchLanguage = settingsViewModel::downloadAndSwitchLanguage,
@@ -829,7 +839,10 @@ internal fun AnkiMinerApp(
                     onAttributions = {
                         navController.navigate(AnkiMinerDestination.ATTRIBUTION.route)
                     },
-                    onRunSetupWizard = { wizardRerunRequested = true },
+                    onRunSetupWizard = {
+                        wizardStartStep = WizardStep.LANGUAGE
+                        wizardRerunRequested = true
+                    },
                     onManageKnownWords = {
                         navController.navigate(
                             AnkiMinerDestination.KNOWN_WORDS_MANAGER.route,
@@ -884,12 +897,20 @@ internal fun MiningReadinessNotice(
     onOpenAppSettings: () -> Unit = {},
     onInstallDictionary: () -> Unit = {},
     onCancelOperation: () -> Unit = {},
+    onContinueSetup: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
     ) {
-        ScreenTitle(stringResource(R.string.mining_not_ready))
+        val left = state.setupAttentionCount()
+        ScreenTitle(
+            if (left > 0) {
+                pluralStringResource(R.plurals.readiness_finish_setup_count, left, left)
+            } else {
+                stringResource(R.string.mining_not_ready)
+            },
+        )
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
                 Text(message)
@@ -916,6 +937,7 @@ internal fun MiningReadinessNotice(
                             installAnkiDroidLabel = ankiDroidInstallLabel(state.anki),
                             onOpenAppSettings = onOpenAppSettings,
                             onInstallDictionary = onInstallDictionary,
+                            onContinueSetup = onContinueSetup,
                         )
                 }
             }
@@ -936,6 +958,7 @@ internal fun MiningReadinessActions(
     @StringRes installAnkiDroidLabel: Int = R.string.install_ankidroid,
     onOpenAppSettings: () -> Unit = {},
     onInstallDictionary: () -> Unit = {},
+    onContinueSetup: () -> Unit = {},
 ) {
     val actionSpec =
         when (action) {
@@ -1002,11 +1025,12 @@ internal fun MiningReadinessActions(
         Text(stringResource(actionSpec.label))
     }
     if (!actionSpec.opensSettings) {
+        // Back into the wizard where work remains, not onto Settings' first tab.
         SecondaryActionButton(
-            onClick = { onOpenSettings(null) },
+            onClick = onContinueSetup,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.open_settings))
+            Text(stringResource(R.string.readiness_continue_setup))
         }
     }
 }

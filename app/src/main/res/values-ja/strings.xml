@@ -315,7 +315,6 @@
     <string name="nav_licenses">ライセンス</string>
     <string name="nav_notices">サードパーティ通知</string>
     <string name="mining_not_ready">マイニングの準備ができていません</string>
-    <string name="open_settings">設定を開く</string>
     <string name="allow_required_access">アクセスを許可</string>
     <string name="allow_in_android_settings">Android の設定で許可</string>
     <string name="ankidroid_permission_settings_prompt">権限 › その他の権限 で「AnkiDroid データベースの読み書き」をオンにしてください。</string>
@@ -373,6 +372,10 @@
     <string name="readiness_connect_ankidroid">AnkiDroidに接続</string>
     <string name="readiness_choose_note_type">ノートタイプを選択</string>
     <string name="readiness_check_again">もう一度確認</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="other">セットアップを完了（残り %1$d 件）</item>
+    </plurals>
+    <string name="readiness_continue_setup">セットアップを続ける</string>
 
     <string name="anki_note_type_title">Ankiノートタイプ</string>
     <string name="anki_note_type_connect_first">AnkiDroidを接続してノートタイプを検出します。</string>

@@ -315,7 +315,6 @@
     <string name="nav_licenses">Lizenzen</string>
     <string name="nav_notices">Drittanbieterhinweise</string>
     <string name="mining_not_ready">Mining ist nicht bereit</string>
-    <string name="open_settings">Einstellungen öffnen</string>
     <string name="allow_required_access">Zugriff erlauben</string>
     <string name="allow_in_android_settings">In den Android-Einstellungen erlauben</string>
     <string name="ankidroid_permission_settings_prompt">Aktivieren Sie unter Berechtigungen › Zusätzliche Berechtigungen „Lesen und Schreiben in der AnkiDroid-Datenbank“.</string>
@@ -373,6 +372,11 @@
     <string name="readiness_connect_ankidroid">AnkiDroid verbinden</string>
     <string name="readiness_choose_note_type">Notiztyp auswählen</string>
     <string name="readiness_check_again">Erneut prüfen</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="one">Einrichtung abschließen (%1$d offen)</item>
+        <item quantity="other">Einrichtung abschließen (%1$d offen)</item>
+    </plurals>
+    <string name="readiness_continue_setup">Einrichtung fortsetzen</string>
     <string name="anki_note_type_title">Anki-Notiztyp</string>
     <string name="anki_note_type_connect_first">Verbinden Sie AnkiDroid, um Notiztypen zu finden.</string>
     <string name="anki_deck_title">Zielstapel</string>

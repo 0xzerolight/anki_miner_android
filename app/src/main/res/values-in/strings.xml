@@ -314,7 +314,6 @@
     <string name="nav_licenses">Lisensi</string>
     <string name="nav_notices">Pemberitahuan pihak ketiga</string>
     <string name="mining_not_ready">Mining belum siap</string>
-    <string name="open_settings">Buka Pengaturan</string>
     <string name="allow_required_access">Izinkan akses</string>
     <string name="allow_in_android_settings">Izinkan di pengaturan Android</string>
     <string name="ankidroid_permission_settings_prompt">Aktifkan “Membaca dan menulis ke database AnkiDroid” di Izin › Izin tambahan.</string>
@@ -372,6 +371,10 @@
     <string name="readiness_connect_ankidroid">Hubungkan AnkiDroid</string>
     <string name="readiness_choose_note_type">Pilih tipe catatan</string>
     <string name="readiness_check_again">Periksa lagi</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="other">Selesaikan penyiapan (%1$d tersisa)</item>
+    </plurals>
+    <string name="readiness_continue_setup">Lanjutkan penyiapan</string>
     <string name="anki_note_type_title">Tipe catatan Anki</string>
     <string name="anki_note_type_connect_first">Hubungkan AnkiDroid untuk menemukan tipe catatan.</string>
     <string name="anki_deck_title">Dek tujuan</string>

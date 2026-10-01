@@ -314,7 +314,6 @@
     <string name="nav_licenses">授權</string>
     <string name="nav_notices">第三方聲明</string>
     <string name="mining_not_ready">尚未準備好採集</string>
-    <string name="open_settings">開啟設定</string>
     <string name="allow_required_access">允許存取</string>
     <string name="allow_in_android_settings">在 Android 設定中允許</string>
     <string name="ankidroid_permission_settings_prompt">在「權限 › 其他權限」中開啟「讀寫 AnkiDroid 資料庫」。</string>
@@ -372,6 +371,10 @@
     <string name="readiness_connect_ankidroid">連線至 AnkiDroid</string>
     <string name="readiness_choose_note_type">選擇筆記類型</string>
     <string name="readiness_check_again">再次檢查</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="other">完成設定（還剩 %1$d 項）</item>
+    </plurals>
+    <string name="readiness_continue_setup">繼續設定</string>
     <string name="anki_note_type_title">Anki 筆記類型</string>
     <string name="anki_note_type_connect_first">請連線 AnkiDroid 以探索筆記類型。</string>
     <string name="anki_deck_title">目標牌組</string>

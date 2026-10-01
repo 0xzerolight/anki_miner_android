@@ -317,7 +317,6 @@
     <string name="nav_licenses">Лицензии</string>
     <string name="nav_notices">Уведомления о сторонних компонентах</string>
     <string name="mining_not_ready">Майнинг не готов</string>
-    <string name="open_settings">Открыть настройки</string>
     <string name="allow_required_access">Разрешить доступ</string>
     <string name="allow_in_android_settings">Разрешить в настройках Android</string>
     <string name="ankidroid_permission_settings_prompt">Включите «Чтение и запись в базу данных AnkiDroid» в разделе Разрешения › Дополнительные разрешения.</string>
@@ -375,6 +374,13 @@
     <string name="readiness_connect_ankidroid">Подключить AnkiDroid</string>
     <string name="readiness_choose_note_type">Выбрать тип заметки</string>
     <string name="readiness_check_again">Проверить снова</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="one">Завершить настройку (остался %1$d шаг)</item>
+        <item quantity="few">Завершить настройку (осталось %1$d шага)</item>
+        <item quantity="many">Завершить настройку (осталось %1$d шагов)</item>
+        <item quantity="other">Завершить настройку (осталось %1$d шага)</item>
+    </plurals>
+    <string name="readiness_continue_setup">Продолжить настройку</string>
     <string name="anki_note_type_title">Тип заметки Anki</string>
     <string name="anki_note_type_connect_first">Подключите AnkiDroid, чтобы найти типы заметок.</string>
     <string name="anki_deck_title">Целевая колода</string>

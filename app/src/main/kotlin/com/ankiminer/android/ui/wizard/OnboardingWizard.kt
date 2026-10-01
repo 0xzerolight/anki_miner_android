@@ -109,6 +109,14 @@ internal sealed interface WizardBackAction {
     data object ConfirmSkip : WizardBackAction
 }
 
+/** Where "Continue setup" reopens the wizard: the first page whose work is still undone. */
+internal fun firstIncompleteWizardStep(state: SetupUiState): WizardStep =
+    when {
+        !state.tokenizerReady || !state.dictionaryReady -> WizardStep.DOWNLOADS
+        !state.ankiReady || !state.targetReady -> WizardStep.ANKIDROID
+        else -> WizardStep.READY
+    }
+
 internal fun wizardBackAction(step: WizardStep): WizardBackAction =
     if (step == WizardStep.LANGUAGE) {
         WizardBackAction.ConfirmSkip
@@ -256,8 +264,9 @@ internal fun OnboardingWizard(
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
     onChangeCardFields: () -> Unit = {},
+    initialStep: WizardStep = WizardStep.LANGUAGE,
 ) {
-    var step by rememberSaveable { mutableStateOf(WizardStep.LANGUAGE) }
+    var step by rememberSaveable { mutableStateOf(initialStep) }
     val inventory by viewModel.inventory.collectAsStateWithLifecycle()
     OnboardingWizardContent(
         state = state,

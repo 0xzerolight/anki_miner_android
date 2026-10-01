@@ -110,4 +110,29 @@ class MiningReadinessNoticeTest {
         composeRule.onNodeWithText(context.getString(R.string.cancel)).performClick()
         composeRule.runOnIdle { assertEquals(1, cancels) }
     }
+
+    @Test
+    fun noticeCountsWhatIsLeftAndContinuesSetup() {
+        var continued = 0
+        composeRule.setContent {
+            AnkiMinerTheme {
+                MiningReadinessNotice(
+                    state = readyExceptDictionary().copy(anki = AnkiProviderReadiness.NotInstalled),
+                    message = context.getString(R.string.readiness_dictionary_required),
+                    onRequestPermissions = {},
+                    onInstallUniDic = {},
+                    onInstallAnkiDroid = {},
+                    onOpenAnkiDroid = {},
+                    onCheckAgain = {},
+                    onOpenSettings = {},
+                    onImportDictionary = {},
+                    onContinueSetup = { continued += 1 },
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Finish setup (2 left)").assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.readiness_continue_setup)).performClick()
+        composeRule.runOnIdle { assertEquals(1, continued) }
+    }
 }

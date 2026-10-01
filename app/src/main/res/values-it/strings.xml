@@ -316,7 +316,6 @@
     <string name="nav_licenses">Licenze</string>
     <string name="nav_notices">Note su terze parti</string>
     <string name="mining_not_ready">Mining non pronto</string>
-    <string name="open_settings">Apri le impostazioni</string>
     <string name="allow_required_access">Consenti accesso</string>
     <string name="allow_in_android_settings">Consenti nelle impostazioni di Android</string>
     <string name="ankidroid_permission_settings_prompt">Attiva «Leggere e scrivere nel database di AnkiDroid» in Autorizzazioni › Autorizzazioni aggiuntive.</string>
@@ -374,6 +373,12 @@
     <string name="readiness_connect_ankidroid">Connetti AnkiDroid</string>
     <string name="readiness_choose_note_type">Scegli un tipo di nota</string>
     <string name="readiness_check_again">Controlla di nuovo</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="one">Completa la configurazione (%1$d rimanente)</item>
+        <item quantity="many">Completa la configurazione (%1$d rimanenti)</item>
+        <item quantity="other">Completa la configurazione (%1$d rimanenti)</item>
+    </plurals>
+    <string name="readiness_continue_setup">Continua la configurazione</string>
     <string name="anki_note_type_title">Tipo di nota Anki</string>
     <string name="anki_note_type_connect_first">Connetti AnkiDroid per rilevare i tipi di nota.</string>
     <string name="anki_deck_title">Mazzo di destinazione</string>

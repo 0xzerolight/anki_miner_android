@@ -314,7 +314,6 @@
     <string name="nav_licenses">Giấy phép</string>
     <string name="nav_notices">Thông báo bên thứ ba</string>
     <string name="mining_not_ready">Khai thác chưa sẵn sàng</string>
-    <string name="open_settings">Mở Cài đặt</string>
     <string name="allow_required_access">Cho phép truy cập</string>
     <string name="allow_in_android_settings">Cho phép trong cài đặt Android</string>
     <string name="ankidroid_permission_settings_prompt">Bật “Đọc và ghi cơ sở dữ liệu AnkiDroid” trong Quyền › Quyền bổ sung.</string>
@@ -372,6 +371,10 @@
     <string name="readiness_connect_ankidroid">Kết nối AnkiDroid</string>
     <string name="readiness_choose_note_type">Chọn loại ghi chú</string>
     <string name="readiness_check_again">Kiểm tra lại</string>
+    <plurals name="readiness_finish_setup_count">
+        <item quantity="other">Hoàn tất thiết lập (còn %1$d)</item>
+    </plurals>
+    <string name="readiness_continue_setup">Tiếp tục thiết lập</string>
     <string name="anki_note_type_title">Loại ghi chú Anki</string>
     <string name="anki_note_type_connect_first">Kết nối AnkiDroid để tìm loại ghi chú.</string>
     <string name="anki_deck_title">Bộ thẻ đích</string>
