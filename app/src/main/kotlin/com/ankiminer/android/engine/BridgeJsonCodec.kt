@@ -970,6 +970,8 @@ object BridgeJsonCodec {
             setOf(
                 "videoPath",
                 "subtitlePath",
+                "secondarySubtitlePath",
+                "secondarySubtitleOffsetMs",
                 "episodeName",
                 "seriesName",
                 "sourceLabel",
@@ -981,13 +983,14 @@ object BridgeJsonCodec {
             ),
             "mining.video.run",
         )
-        val subtitlePath = absolutePath(payload.getValue("subtitlePath"), "subtitlePath")
-        if (!subtitlePath.lowercase().let { it.endsWith(".ass") || it.endsWith(".srt") || it.endsWith(".ssa") || it.endsWith(".vtt") }) {
-            fail(BridgeProtocolCategory.INVALID_VALUE, "subtitlePath must preserve a supported suffix")
+        val secondaryPath = payload.getValue("secondarySubtitlePath")
+        val secondaryOffsetMs = integral(payload.getValue("secondarySubtitleOffsetMs"), "secondarySubtitleOffsetMs")
+        if (secondaryOffsetMs !in VideoMiningWireRequest.SECONDARY_SUBTITLE_OFFSET_MS) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "secondarySubtitleOffsetMs is outside -300000 through 300000")
         }
         return VideoMiningWireRequest(
             absolutePath(payload.getValue("videoPath"), "videoPath"),
-            subtitlePath,
+            subtitleFilePath(payload.getValue("subtitlePath"), "subtitlePath"),
             emptyableCanonicalLabel(payload.getValue("episodeName"), "episodeName"),
             canonicalLabel(payload.getValue("seriesName"), "seriesName"),
             nullableCanonicalLabel(payload.getValue("sourceLabel"), "sourceLabel"),
@@ -996,8 +999,25 @@ object BridgeJsonCodec {
             absolutePath(payload.getValue("cacheDir"), "cacheDir"),
             absolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir"),
             readConfigSnapshot(objectValue(payload.getValue("configSnapshot"), "configSnapshot")),
+            secondarySubtitlePath =
+                if (secondaryPath is BridgeJsonValue.Null) {
+                    null
+                } else {
+                    subtitleFilePath(secondaryPath, "secondarySubtitlePath")
+                },
+            secondarySubtitleOffsetMs = secondaryOffsetMs,
         )
     }
+
+    private fun subtitleFilePath(
+        value: BridgeJsonValue,
+        context: String,
+    ): String =
+        absolutePath(value, context).also { path ->
+            if (!path.lowercase().let { it.endsWith(".ass") || it.endsWith(".srt") || it.endsWith(".ssa") || it.endsWith(".vtt") }) {
+                fail(BridgeProtocolCategory.INVALID_VALUE, "$context must preserve a supported suffix")
+            }
+        }
 
     private fun readReadingRequest(payload: Map<String, BridgeJsonValue>): ReadingMiningWireRequest {
         requireExact(
@@ -1377,6 +1397,9 @@ object BridgeJsonCodec {
     ) {
         generator.writeStringField("videoPath", request.videoPath)
         generator.writeStringField("subtitlePath", request.subtitlePath)
+        generator.writeFieldName("secondarySubtitlePath")
+        writeNullableString(generator, request.secondarySubtitlePath)
+        generator.writeNumberField("secondarySubtitleOffsetMs", request.secondarySubtitleOffsetMs)
         generator.writeStringField("episodeName", request.episodeName)
         generator.writeStringField("seriesName", request.seriesName)
         generator.writeFieldName("sourceLabel")

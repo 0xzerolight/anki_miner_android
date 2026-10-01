@@ -108,7 +108,7 @@ class BridgeJsonCodecTest {
     fun `video run encoder preserves subtitle suffix and typed nulls`() {
         val raw = BridgeJsonCodec.encodeVideoRun(videoRequest(audioOnly = false))
         assertEquals(
-            "{\"schemaVersion\":1,\"type\":\"mining.video.run\",\"payload\":{\"videoPath\":\"/proc/self/fd/8\",\"subtitlePath\":\"/cache/subtitle.SRT\",\"episodeName\":\"Episode 1\",\"seriesName\":\"Series\",\"sourceLabel\":null,\"audioTrackOverride\":null,\"audioOnly\":false,\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
+            "{\"schemaVersion\":1,\"type\":\"mining.video.run\",\"payload\":{\"videoPath\":\"/proc/self/fd/8\",\"subtitlePath\":\"/cache/subtitle.SRT\",\"secondarySubtitlePath\":null,\"secondarySubtitleOffsetMs\":0,\"episodeName\":\"Episode 1\",\"seriesName\":\"Series\",\"sourceLabel\":null,\"audioTrackOverride\":null,\"audioOnly\":false,\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
             raw,
         )
         assertTrue(BridgeJsonCodec.decode(raw) is BridgeMessage.VideoRun)
@@ -160,6 +160,8 @@ class BridgeJsonCodecTest {
             setOf(
                 "videoPath",
                 "subtitlePath",
+                "secondarySubtitlePath",
+                "secondarySubtitleOffsetMs",
                 "episodeName",
                 "seriesName",
                 "sourceLabel",
@@ -204,6 +206,73 @@ class BridgeJsonCodecTest {
         assertThrows(BridgeProtocolException::class.java) {
             BridgeJsonCodec.decode(fixture.message)
         }
+    }
+
+    @Test
+    fun `video run round trip carries a secondary subtitle and its signed offset`() {
+        listOf(-300_000L, -1_500L, 0L, 300_000L).forEach { offsetMs ->
+            val request =
+                videoRequest(audioOnly = false).copy(
+                    secondarySubtitlePath = "/cache/secondary.Ass",
+                    secondarySubtitleOffsetMs = offsetMs,
+                )
+
+            assertEquals(
+                BridgeMessage.VideoRun(request),
+                BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)),
+            )
+        }
+    }
+
+    @Test
+    fun `video run decoder accepts an integral offset spelled as a decimal`() {
+        val decoded =
+            BridgeJsonCodec.decode(videoRunWithSecondary(path = "\"/cache/secondary.vtt\"", offsetMs = "500.0"))
+                as BridgeMessage.VideoRun
+
+        assertEquals("/cache/secondary.vtt", decoded.request.secondarySubtitlePath)
+        assertEquals(500L, decoded.request.secondarySubtitleOffsetMs)
+    }
+
+    @Test
+    fun `video run decoder fails closed on a bad secondary subtitle`() {
+        listOf(
+            Triple("\"cache/secondary.srt\"", "0", BridgeProtocolCategory.INVALID_VALUE),
+            Triple("\"/cache/secondary.txt\"", "0", BridgeProtocolCategory.INVALID_VALUE),
+            Triple("\"\"", "0", BridgeProtocolCategory.INVALID_VALUE),
+            Triple("7", "0", BridgeProtocolCategory.INVALID_PAYLOAD),
+            Triple("null", "300001", BridgeProtocolCategory.INVALID_VALUE),
+            Triple("null", "-300001", BridgeProtocolCategory.INVALID_VALUE),
+            Triple("null", "1.5", BridgeProtocolCategory.INVALID_VALUE),
+            Triple("null", "true", BridgeProtocolCategory.INVALID_PAYLOAD),
+            Triple("null", "null", BridgeProtocolCategory.INVALID_PAYLOAD),
+            // Both keys are required, like every other video run field.
+            Triple(null, "0", BridgeProtocolCategory.INVALID_PAYLOAD),
+            Triple("null", null, BridgeProtocolCategory.INVALID_PAYLOAD),
+        ).forEach { (path, offsetMs, category) ->
+            assertEquals(
+                "$path / $offsetMs",
+                category,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSecondary(path, offsetMs)) }.category,
+            )
+        }
+    }
+
+    /** A video run whose two secondary-subtitle values are raw JSON; null leaves the key out. */
+    private fun videoRunWithSecondary(
+        path: String?,
+        offsetMs: String?,
+    ): String {
+        val secondary =
+            buildString {
+                path?.let { append(""""secondarySubtitlePath":$it,""") }
+                offsetMs?.let { append(""""secondarySubtitleOffsetMs":$it,""") }
+            }
+        return """{"schemaVersion":1,"type":"mining.video.run","payload":{"videoPath":"/proc/self/fd/8",""" +
+            """"subtitlePath":"/cache/subtitle.SRT",$secondary"episodeName":"Episode 1",""" +
+            """"seriesName":"Series","sourceLabel":null,"audioTrackOverride":null,"audioOnly":false,""" +
+            """"cacheDir":"/cache","nativeLibraryDir":"/native",""" +
+            """"configSnapshot":{"settings":{},"androidTtsEnabled":false}}}"""
     }
 
     @Test
@@ -1262,7 +1331,8 @@ class BridgeJsonCodecTest {
 
     private fun videoRunWithSettings(settings: String): String =
         """{"schemaVersion":1,"type":"mining.video.run","payload":{"videoPath":"/proc/self/fd/8",""" +
-            """"subtitlePath":"/cache/subtitle.SRT","episodeName":"Episode 1","seriesName":"Series",""" +
+            """"subtitlePath":"/cache/subtitle.SRT","secondarySubtitlePath":null,"secondarySubtitleOffsetMs":0,""" +
+            """"episodeName":"Episode 1","seriesName":"Series",""" +
             """"sourceLabel":null,"audioTrackOverride":null,"audioOnly":false,"cacheDir":"/cache",""" +
             """"nativeLibraryDir":"/native","configSnapshot":{"settings":{$settings},""" +
             """"androidTtsEnabled":false}}}"""

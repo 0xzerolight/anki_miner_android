@@ -411,6 +411,8 @@ def test_video_run_schema_requires_boolean_audio_only(
         "payload": {
             "videoPath": "/cache/input.media",
             "subtitlePath": "/cache/subtitle.srt",
+            "secondarySubtitlePath": None,
+            "secondarySubtitleOffsetMs": 0,
             "episodeName": "Episode",
             "seriesName": "Series",
             "sourceLabel": None,
