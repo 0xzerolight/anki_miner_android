@@ -73,7 +73,33 @@ class ResourceBridgeCodecTest {
     @Test
     fun committedPythonCatalogJsonMatchesTheFrozenKotlinCatalog() {
         // decodeCatalog throws resource_catalog_mismatch on any divergence.
-        assertEquals(FrozenResourceCatalog.value, ResourceBridgeCodec.decodeCatalog(committedCatalogEnvelope()))
+        assertEquals(FrozenResourceCatalog.all, ResourceBridgeCodec.decodeCatalogs(committedCatalogEnvelope()))
+    }
+
+    @Test
+    fun everyLanguageHasOneCatalogAndResourceIdsAreUniqueAcrossThem() {
+        val catalogs = FrozenResourceCatalog.all
+
+        assertEquals("ja", catalogs.first().language)
+        assertEquals(catalogs.map { it.language }.distinct(), catalogs.map { it.language })
+        val ids = catalogs.flatMap { catalog -> catalog.resources.map { it.resourceId } }
+        assertEquals(ids.distinct(), ids)
+        catalogs.forEach { catalog ->
+            assertEquals(3L, catalog.schemaVersion)
+            assertEquals(catalog, FrozenResourceCatalog.forLanguage(catalog.language))
+            catalog.resources.forEach { assertEquals(catalog, FrozenResourceCatalog.catalogOf(it.resourceId)) }
+        }
+    }
+
+    @Test
+    fun catalogRejectsAFileThatNamesAnotherLanguage() {
+        val raw = committedCatalogEnvelope().replaceFirst(""""language": "ja"""", """"language": "xx"""")
+
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCatalogs(raw)
+            }
+        assertEquals("resource_catalog_mismatch", failure.code)
     }
 
     @Test
@@ -83,7 +109,7 @@ class ResourceBridgeCodecTest {
 
         val failure =
             assertThrows(ResourceBridgeException::class.java) {
-                ResourceBridgeCodec.decodeCatalog(raw)
+                ResourceBridgeCodec.decodeCatalogs(raw)
             }
         assertEquals("invalid_resource_response", failure.code)
     }
@@ -98,18 +124,12 @@ class ResourceBridgeCodecTest {
         // decoded catalog differ, which is the mismatch the equality check exists to catch.
         val failure =
             assertThrows(ResourceBridgeException::class.java) {
-                ResourceBridgeCodec.decodeCatalog(raw)
+                ResourceBridgeCodec.decodeCatalogs(raw)
             }
         assertEquals("resource_catalog_mismatch", failure.code)
     }
 
-    private fun committedCatalogEnvelope(): String {
-        val payload =
-            checkNotNull(javaClass.getResourceAsStream("/resource_catalog_v1.json")) {
-                "resource_catalog_v1.json missing from the test classpath"
-            }.bufferedReader().use { it.readText() }
-        return """{"schemaVersion":1,"type":"resource.catalog","payload":${payload.trim()}}"""
-    }
+    private fun committedCatalogEnvelope(): String = CommittedCatalogs.envelope()
 
     @Test
     fun lookupResponsePreservesEngineHtmlByteForByte() {

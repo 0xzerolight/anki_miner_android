@@ -35,6 +35,8 @@ from .protocol import BridgeProtocolError, encode_message
 from .resource_catalog import (
     UniDicResource,
     YomitanResource,
+    catalogs_payload,
+    find_catalog_resource,
     load_resource_catalog,
 )
 from .resource_progress import make_reporter
@@ -1873,11 +1875,12 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
         raise _fail("invalid_resource_request", "overwrite must be a boolean")
     raw_catalog_id = payload["catalogResourceId"]
     catalog_resource: YomitanResource | None
+    catalog_language = "ja"
     if raw_catalog_id is None:
         catalog_resource = None
     else:
         catalog_id = _bounded_text(raw_catalog_id, name="catalogResourceId", max_bytes=64)
-        selected = load_resource_catalog().get(catalog_id)
+        catalog_language, selected = find_catalog_resource(catalog_id)
         if not isinstance(selected, YomitanResource):
             raise _fail(
                 "invalid_resource_kind",
@@ -1891,6 +1894,18 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
         catalog_resource = selected
 
     home = Path(require_initialized())
+    # A pinned dictionary belongs to its catalog's language; stamping it for
+    # another would hide it from the chain it was downloaded for. A rebuild
+    # replays the slot's own stamp instead (below), whatever the request says.
+    if (
+        catalog_resource is not None
+        and _dictionary_root(home) not in source.parents
+        and payload_language(payload) != catalog_language
+    ):
+        raise _fail(
+            "invalid_resource_request",
+            "Pinned dictionary must be imported for its catalog's language",
+        )
     final = _dictionary_root(home) / slot_id
     if _path_occupied(final) and not overwrite:
         raise _fail("resource_already_installed", f"Dictionary slot {slot_id!r} already exists")
@@ -2167,7 +2182,7 @@ def _read_dictionary_sidecar(
         if catalog_text is None:
             return None
         try:
-            selected = load_resource_catalog().get(catalog_text)
+            _language, selected = find_catalog_resource(catalog_text)
         except BridgeProtocolError:
             return None
         if not isinstance(selected, YomitanResource):
@@ -2434,7 +2449,7 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
 
 def catalog_response(payload: Mapping[str, object]) -> str:
     _exact(payload, set(), code="invalid_resource_request")
-    return encode_message("resource.catalog", load_resource_catalog().payload())
+    return encode_message("resource.catalog", catalogs_payload())
 
 
 def cancel_operation(payload: Mapping[str, object]) -> str:

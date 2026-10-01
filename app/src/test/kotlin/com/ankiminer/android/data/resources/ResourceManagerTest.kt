@@ -3186,15 +3186,7 @@ class ResourceManagerTest {
             )
         }
 
-        private fun catalogResponse(): String {
-            val payload =
-                checkNotNull(
-                    ResourceManagerTest::class.java.getResourceAsStream("/resource_catalog_v1.json"),
-                ) { "resource catalog fixture missing" }
-                    .bufferedReader()
-                    .use { it.readText().trim() }
-            return envelope("resource.catalog", payload)
-        }
+        private fun catalogResponse(): String = envelope("resource.catalog", CommittedCatalogs.payload())
     }
 
     companion object {

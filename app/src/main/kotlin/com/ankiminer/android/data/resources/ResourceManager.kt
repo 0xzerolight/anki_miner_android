@@ -336,7 +336,9 @@ internal class AndroidResourceManager(
                     mutableState.update { it.copy(knownWordsImportPreview = null) }
                 }
                 clearStaging()
-                downloader.reconcile(FrozenResourceCatalog.value.resources.map { it.archive })
+                downloader.reconcile(
+                    FrozenResourceCatalog.all.flatMap { catalog -> catalog.resources.map { it.archive } },
+                )
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
                 ResourceBridgeCodec.decodeCleanup(
@@ -2548,8 +2550,10 @@ internal class AndroidResourceManager(
 
     private fun catalog(): ResourceCatalog {
         mutableState.value.catalog?.let { return it }
-        val value = ResourceBridgeCodec.decodeCatalog(bridge.dispatch(ResourceBridgeCodec.encodeCatalogRequest(), null))
-        mutableState.update { it.copy(catalog = value) }
+        val catalogs =
+            ResourceBridgeCodec.decodeCatalogs(bridge.dispatch(ResourceBridgeCodec.encodeCatalogRequest(), null))
+        val value = catalogs.single { it.language == JAPANESE }
+        mutableState.update { it.copy(catalog = value, catalogs = catalogs) }
         return value
     }
 

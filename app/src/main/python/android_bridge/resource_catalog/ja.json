@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 3,
+  "language": "ja",
+  "resources": [
+    {
+      "resourceId": "unidic-lite-1.0.8",
+      "kind": "unidic",
+      "displayName": "UniDic Lite 1.0.8",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/55/2b/8cf7514cb57d028abcef625afa847d60ff1ffbf0049c36b78faa7c35046f/unidic-lite-1.0.8.tar.gz",
+        "sha256": "db9d4572d9fdd4d00a97949d4b0741ec480ee05a7e7e2e32f547500dae27b245",
+        "sizeBytes": 47356746,
+        "format": "tar.gz"
+      },
+      "install": {
+        "memberPrefix": "unidic-lite-1.0.8/unidic_lite/dicdir/",
+        "treeSha256": "bd942f1b395aa7c56fe20321dc7f021930e29107f6b2949a49f5c56caab55ea7",
+        "fileCount": 19,
+        "sizeBytes": 260467176,
+        "archiveMemberLimit": 128
+      },
+      "attribution": [
+        {
+          "name": "unidic-lite",
+          "copyright": "Copyright 2020 Paul McCann",
+          "license": "MIT",
+          "url": "https://github.com/polm/unidic-lite"
+        },
+        {
+          "name": "UniDic 2.1.2",
+          "copyright": "Copyright (c) 2011-2017, The UniDic Consortium",
+          "license": "BSD-3-Clause",
+          "url": "https://unidic.ninjal.ac.jp/"
+        }
+      ]
+    },
+    {
+      "resourceId": "jitendex-2026.07.09.0",
+      "kind": "yomitan-dictionary",
+      "displayName": "Jitendex.org 2026-07-09",
+      "slotId": "jitendex",
+      "archive": {
+        "url": "https://github.com/stephenmk/stephenmk.github.io/releases/download/2026.07.09.0/jitendex-yomitan.zip",
+        "sha256": "807d911114af9d2154d270702972aafb2b6a6c2dc2400afa98db870d035c1a0b",
+        "sizeBytes": 38545572,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "Jitendex.org [2026-07-09]",
+        "revision": "2026.07.09.0",
+        "format": 3,
+        "memberCount": 473,
+        "uncompressedBytes": 540565403,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "Jitendex",
+          "copyright": "Copyright Stephen Kraus 2023-2026",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://jitendex.org/pages/legal.html"
+        },
+        {
+          "name": "JMdict",
+          "copyright": "Electronic Dictionary Research and Development Group",
+          "license": "EDRDG-Licence",
+          "url": "https://www.edrdg.org/edrdg/licence.html"
+        },
+        {
+          "name": "Tatoeba example sentences",
+          "copyright": "Tatoeba contributors",
+          "license": "CC-BY-2.0-FR",
+          "url": "https://tatoeba.org/en/downloads"
+        },
+        {
+          "name": "Kanji alive pronunciation audio",
+          "copyright": "Kanji alive project contributors",
+          "license": "CC-BY-4.0",
+          "url": "https://github.com/kanjialive/kanji-data-media"
+        },
+        {
+          "name": "JmdictFurigana",
+          "copyright": "JmdictFurigana contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/Doublevil/JmdictFurigana"
+        }
+      ]
+    },
+    {
+      "resourceId": "jmdict-en-2026-07-17",
+      "kind": "yomitan-dictionary",
+      "displayName": "JMdict (English) 2026-07-17",
+      "slotId": "jmdict",
+      "archive": {
+        "url": "https://github.com/yomidevs/jmdict-yomitan/releases/download/2026-07-17/JMdict_english.zip",
+        "sha256": "c085472220cdb5aec7e85d7ed4b10a66a74c285659ba5c794b2e9556cd646657",
+        "sizeBytes": 15493641,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "JMdict [2026-07-17]",
+        "revision": "JMdict.2026-07-17",
+        "format": 3,
+        "memberCount": 55,
+        "uncompressedBytes": 170311400,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "JMdict",
+          "copyright": "Electronic Dictionary Research and Development Group",
+          "license": "EDRDG-Licence",
+          "url": "https://www.edrdg.org/edrdg/licence.html"
+        },
+        {
+          "name": "jmdict-yomitan",
+          "copyright": "yomidevs contributors (yomitan-import conversion)",
+          "license": "EDRDG-Licence",
+          "url": "https://github.com/yomidevs/jmdict-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "jpdb-v2.2-kana-2024-10-13",
+      "kind": "frequency",
+      "displayName": "JPDB v2.2 Kana Frequency",
+      "sourceId": "jpdb",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/Kuuuube/yomitan-dictionaries/d6fde809e3f26eb5aed6d41896f332179044998c/dictionaries/JPDB_v2.2_Frequency_Kana_2024-10-13.zip",
+        "sha256": "4fa06c784155ea0ea0953740b99d421296c775ee0d035cfe1ff65a40d7d3e685",
+        "sizeBytes": 5996363,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "JPDB v2.2 frequency list",
+          "copyright": "Compiled by Kuuube and Gecko from the JPDB corpus",
+          "license": "No upstream licence stated",
+          "url": "https://github.com/Kuuuube/yomitan-dictionaries"
+        },
+        {
+          "name": "JPDB corpus",
+          "copyright": "jpdb.io",
+          "license": "No upstream licence stated",
+          "url": "https://jpdb.io"
+        }
+      ]
+    },
+    {
+      "resourceId": "kanjium-pitch-8a0cdaa1",
+      "kind": "pitch",
+      "displayName": "Kanjium Pitch Accent",
+      "sourceId": "kanjium",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/mifunetoshiro/kanjium/8a0cdaa16d64a281a2048de2eee2ec5e3a440fa6/data/source_files/raw/accents.txt",
+        "sha256": "8bd0dd127dab32ceec94cb03ab1ba6b68858ea73421dfa1731af2f373deb4f20",
+        "sizeBytes": 3226405,
+        "format": "tsv"
+      },
+      "attribution": [
+        {
+          "name": "Kanjium pitch accent data",
+          "copyright": "Copyright Uros Ozvald and Kanjium contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/mifunetoshiro/kanjium"
+        },
+        {
+          "name": "EDICT and KANJIDIC",
+          "copyright": "Electronic Dictionary Research and Development Group",
+          "license": "EDRDG-Licence",
+          "url": "https://www.edrdg.org/edrdg/licence.html"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "jmdict-en-2026-07-17",
+    "jpdb-v2.2-kana-2024-10-13",
+    "kanjium-pitch-8a0cdaa1"
+  ]
+}

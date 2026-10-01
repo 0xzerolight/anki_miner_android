@@ -214,9 +214,9 @@ def test_catalog_recommended_set_names_existing_resources_in_install_order() -> 
     [
         (lambda payload: payload["recommended"].append("does-not-exist"), "unknown resource"),
         (lambda payload: payload["recommended"].append(payload["recommended"][0]), "repeats"),
-        (lambda payload: payload.__setitem__("recommended", []), "bounded array"),
+        (lambda payload: payload.__setitem__("recommended", ["x"] * 9), "bounded array"),
     ],
-    ids=["unknown-id", "duplicate-id", "empty"],
+    ids=["unknown-id", "duplicate-id", "oversized"],
 )
 def test_catalog_parser_rejects_a_malformed_recommended_set(mutate, match: str) -> None:
     payload = load_resource_catalog().payload()
@@ -282,7 +282,7 @@ def test_catalog_parser_rejects_duplicate_keys_unknown_fields_and_mutable_urls()
 
 @pytest.mark.parametrize(
     "schema_version",
-    [True, 2.0, 1, 3],
+    [True, 3.0, 2, 4],
     ids=["boolean", "floating-point", "superseded", "unsupported"],
 )
 def test_catalog_parser_rejects_non_integer_or_unsupported_schema_versions(
@@ -1889,7 +1889,7 @@ def test_boundary_routes_strict_resource_catalog_and_operation_cancel(
         boundary.dispatch(encode_message("resource.catalog.get", {})),
         expected_type="resource.catalog",
     )
-    assert catalog.payload == load_resource_catalog().payload()
+    assert catalog.payload == resource_catalog.catalogs_payload()
 
     invalid = decode_envelope(
         boundary.dispatch(encode_message("resource.dictionary.list", {"extra": True})),

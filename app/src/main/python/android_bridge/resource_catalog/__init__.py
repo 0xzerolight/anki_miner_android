@@ -1,19 +1,33 @@
-"""Strict models for the immutable Android resource catalog."""
+"""Strict models for the immutable Android resource catalogs, one per mining language.
+
+Each language's pins live in ``resource_catalog/<code>.json`` (schema 3), a file
+whose ``language`` names its code. Japanese holds what the single schema-2
+``resource_catalog_v1.json`` held, unchanged: the same resource ids, archives,
+identities and attribution, so every Japanese resource installed under the old
+file (UniDic's install manifest, a dictionary sidecar's ``catalogResourceId``)
+still resolves. Resource ids are unique across every catalog: Kotlin persists
+them (operation retry, dictionary sidecars) without a language beside them.
+"""
 
 from __future__ import annotations
 
 import json
 import re
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import cache, lru_cache
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlsplit
 
-from .protocol import BridgeProtocolError
+from ..protocol import BridgeProtocolError
 
-CATALOG_SCHEMA_VERSION = 2
-_CATALOG_PATH = Path(__file__).with_name("resource_catalog_v1.json")
+CATALOG_SCHEMA_VERSION = 3
+#: Every language with a catalog file, in the order ``resource.catalog`` lists them.
+#: A fixed tuple rather than a directory listing: the packaged tree is read by
+#: path on device, and ``test_resources`` binds this to the files present.
+CATALOG_LANGUAGES: tuple[str, ...] = ("ja",)
+_CATALOG_DIR = Path(__file__).parent
+_LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
 _MAX_CATALOG_BYTES = 64 * 1024
 # Mirrors local_resources._FREQUENCY_FORMATS / _PITCH_FORMATS. For a local resource the pinned
 # archive format IS the importer's wire format: the bridge renames the download to
@@ -382,6 +396,7 @@ PinnedResource = UniDicResource | YomitanResource | FrequencyResource | PitchRes
 class ResourceCatalog:
     resources: tuple[PinnedResource, ...]
     recommended: tuple[str, ...]
+    language: str = "ja"
     schema_version: int = CATALOG_SCHEMA_VERSION
 
     def get(self, resource_id: str) -> PinnedResource:
@@ -393,6 +408,7 @@ class ResourceCatalog:
     def payload(self) -> dict[str, object]:
         return {
             "schemaVersion": self.schema_version,
+            "language": self.language,
             "resources": [resource.payload() for resource in self.resources],
             "recommended": list(self.recommended),
         }
@@ -462,8 +478,10 @@ def _parse_resource(value: Any) -> PinnedResource:
 
 
 def _parse_recommended(value: Any, *, known: set[str]) -> tuple[str, ...]:
-    if not isinstance(value, list) or not value or len(value) > _MAX_RECOMMENDED:
-        raise _error("Recommended set must be a non-empty bounded array")
+    # Empty is legal: a language whose only pins are its engine data has no
+    # dictionary or list to recommend yet.
+    if not isinstance(value, list) or len(value) > _MAX_RECOMMENDED:
+        raise _error("Recommended set must be a bounded array")
     recommended = tuple(_resource_id(item, context="recommended resource id") for item in value)
     if len(set(recommended)) != len(recommended):
         raise _error("Recommended set repeats a resource id")
@@ -487,11 +505,14 @@ def parse_catalog_json(raw: str) -> ResourceCatalog:
         raise _error("Resource catalog is not valid JSON") from exc
     root = _exact(
         document,
-        {"schemaVersion", "resources", "recommended"},
+        {"schemaVersion", "language", "resources", "recommended"},
         context="resource catalog",
     )
     if type(root["schemaVersion"]) is not int or root["schemaVersion"] != CATALOG_SCHEMA_VERSION:
         raise _error("Unsupported resource catalog schema")
+    language = root["language"]
+    if not isinstance(language, str) or not _LANGUAGE_RE.fullmatch(language):
+        raise _error("Resource catalog language is invalid")
     values = root["resources"]
     if not isinstance(values, list) or not values or len(values) > 32:
         raise _error("Resource catalog resources must be a non-empty bounded array")
@@ -500,13 +521,47 @@ def parse_catalog_json(raw: str) -> ResourceCatalog:
     if len(set(ids)) != len(ids):
         raise _error("Resource catalog contains duplicate resource ids")
     recommended = _parse_recommended(root["recommended"], known=set(ids))
-    return ResourceCatalog(resources=resources, recommended=recommended)
+    return ResourceCatalog(resources=resources, recommended=recommended, language=language)
+
+
+@cache
+def load_resource_catalog(language: str = "ja") -> ResourceCatalog:
+    """The bundled catalog of *language*; ja when no language is named."""
+
+    if language not in CATALOG_LANGUAGES:
+        raise BridgeProtocolError("unknown_resource", f"No resource catalog for language: {language!r}")
+    try:
+        raw = (_CATALOG_DIR / f"{language}.json").read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise _error("Bundled resource catalog cannot be read") from exc
+    catalog = parse_catalog_json(raw)
+    if catalog.language != language:
+        raise _error(f"Resource catalog {language}.json names another language")
+    return catalog
 
 
 @lru_cache(maxsize=1)
-def load_resource_catalog() -> ResourceCatalog:
-    try:
-        raw = _CATALOG_PATH.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as exc:
-        raise _error("Bundled resource catalog cannot be read") from exc
-    return parse_catalog_json(raw)
+def load_resource_catalogs() -> tuple[ResourceCatalog, ...]:
+    """Every bundled catalog, in ``CATALOG_LANGUAGES`` order, ids unique across all."""
+
+    catalogs = tuple(load_resource_catalog(language) for language in CATALOG_LANGUAGES)
+    ids = [resource.resource_id for catalog in catalogs for resource in catalog.resources]
+    if len(set(ids)) != len(ids):
+        raise _error("Resource catalogs share a resource id")
+    return catalogs
+
+
+def find_catalog_resource(resource_id: str) -> tuple[str, PinnedResource]:
+    """``(language, resource)`` for a pinned id from any catalog."""
+
+    for catalog in load_resource_catalogs():
+        for resource in catalog.resources:
+            if resource.resource_id == resource_id:
+                return catalog.language, resource
+    raise BridgeProtocolError("unknown_resource", f"Unknown pinned resource: {resource_id}")
+
+
+def catalogs_payload() -> dict[str, object]:
+    """The ``resource.catalog`` payload: every language's catalog."""
+
+    return {"catalogs": [catalog.payload() for catalog in load_resource_catalogs()]}

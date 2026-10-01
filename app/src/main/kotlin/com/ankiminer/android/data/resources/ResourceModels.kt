@@ -3,6 +3,9 @@ package com.ankiminer.android.data.resources
 import java.io.IOException
 import java.util.Locale
 
+/** The mining language every request without one means, as on the Python side. */
+internal const val JAPANESE = "ja"
+
 data class ResourceAttribution(
     val name: String,
     val copyright: String,
@@ -95,12 +98,20 @@ data class PitchCatalogResource(
         }
 }
 
+/**
+ * One mining language's pinned resources (`resource_catalog/<language>.json`, schema 3).
+ *
+ * Resource ids are unique across every language's catalog, so a persisted id (a retry target, a
+ * dictionary's `catalogResourceId`) names one resource without a language beside it.
+ */
 data class ResourceCatalog(
     val schemaVersion: Long,
+    val language: String,
     val resources: List<CatalogResource>,
     /** Resource ids of the recommended set, in the order they are installed. */
     val recommended: List<String>,
 ) {
+    /** Japanese only: no other language tokenizes with UniDic. */
     val unidic: UniDicCatalogResource
         get() = resources.filterIsInstance<UniDicCatalogResource>().single()
 
@@ -616,7 +627,10 @@ data class ResourceFailure(
 
 data class ResourceManagerState(
     val startupReadiness: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
+    /** The active mining language's catalog. */
     val catalog: ResourceCatalog? = null,
+    /** Every language's catalog, Japanese first; empty before the first refresh. */
+    val catalogs: List<ResourceCatalog> = emptyList(),
     val installedUniDic: InstalledUniDic? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),

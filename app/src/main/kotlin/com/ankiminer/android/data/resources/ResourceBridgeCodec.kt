@@ -26,6 +26,7 @@ object ResourceBridgeCodec {
     private val resourceId = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val sha256 = Regex("[0-9a-f]{64}")
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
+    private val languageCode = Regex("[a-z]{2,3}")
     private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
     /**
@@ -307,23 +308,32 @@ object ResourceBridgeCodec {
         }
     }
 
-    fun decodeCatalog(raw: String): ResourceCatalog {
+    /** Every language's catalog, in the order Python lists them (Japanese first). */
+    fun decodeCatalogs(raw: String): List<ResourceCatalog> {
         val payload = payload(raw, "resource.catalog")
-        exact(payload, setOf("schemaVersion", "resources", "recommended"), "resource catalog")
-        val schema = positive(payload.getValue("schemaVersion"), "catalog schema")
-        val resources = array(payload.getValue("resources"), "catalog resources").map(::catalogResource)
-        val recommended =
-            array(payload.getValue("recommended"), "recommended set").map {
-                requireResourceId(text(it, "recommended resource id"))
-            }
-        val catalog = ResourceCatalog(schema, resources, recommended)
-        if (catalog != FrozenResourceCatalog.value) {
+        exact(payload, setOf("catalogs"), "resource catalogs")
+        val catalogs = array(payload.getValue("catalogs"), "resource catalogs").map(::catalog)
+        if (catalogs != FrozenResourceCatalog.all) {
             throw ResourceBridgeException(
                 "resource_catalog_mismatch",
                 "Bundled Python resources do not match the Android catalog contract",
             )
         }
-        return catalog
+        return catalogs
+    }
+
+    private fun catalog(raw: BridgeJsonValue): ResourceCatalog {
+        val payload = objectValue(raw, "resource catalog")
+        exact(payload, setOf("schemaVersion", "language", "resources", "recommended"), "resource catalog")
+        val schema = positive(payload.getValue("schemaVersion"), "catalog schema")
+        val language = text(payload.getValue("language"), "catalog language")
+        if (!languageCode.matches(language)) invalid("Catalog language is invalid")
+        val resources = array(payload.getValue("resources"), "catalog resources").map(::catalogResource)
+        val recommended =
+            array(payload.getValue("recommended"), "recommended set").map {
+                requireResourceId(text(it, "recommended resource id"))
+            }
+        return ResourceCatalog(schema, language, resources, recommended)
     }
 
     fun decodeInstalledUniDic(raw: String): InstalledUniDic {
@@ -1010,7 +1020,7 @@ object ResourceBridgeCodec {
         }
         installed.catalogResourceId?.let { catalogId ->
             val expected =
-                FrozenResourceCatalog.value.dictionary(catalogId)
+                FrozenResourceCatalog.dictionary(catalogId)
                     ?: invalid("Installed catalog dictionary identity is invalid")
             if (
                 installed.slotId != expected.slotId ||
@@ -1357,11 +1367,28 @@ object ResourceBridgeCodec {
         throw ResourceBridgeException("invalid_resource_response", message, cause = cause)
 }
 
-/** Kotlin copy of the frozen Python catalog. Equality is checked before network access. */
+/**
+ * Kotlin copy of the frozen Python catalogs, one per language. Equality is checked before network
+ * access, so Python can never point a download at anything this table does not pin.
+ */
 object FrozenResourceCatalog {
+    /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
+    val all: List<ResourceCatalog> by lazy { listOf(value) }
+
+    fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
+
+    /** The catalog holding [resourceId]; ids are unique across languages. */
+    fun catalogOf(resourceId: String): ResourceCatalog? =
+        all.singleOrNull { catalog -> catalog.resources.any { it.resourceId == resourceId } }
+
+    fun dictionary(resourceId: String): YomitanCatalogResource? =
+        all.firstNotNullOfOrNull { it.dictionary(resourceId) }
+
+    /** Japanese, the catalog every pre-language caller meant. */
     val value =
         ResourceCatalog(
-            schemaVersion = 2,
+            schemaVersion = 3,
+            language = "ja",
             resources =
                 listOf(
                     UniDicCatalogResource(
