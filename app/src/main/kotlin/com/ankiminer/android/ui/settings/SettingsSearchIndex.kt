@@ -467,6 +467,9 @@ internal fun availableSettingsSearchEntries(
             "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
             "language.script_variant" -> language.scriptVariants.isNotEmpty()
             "language.reading_tone_color" -> language.showsToneColor
+            "word_filters.kana_variants", "word_filters.exclude_hiragana", "word_filters.exclude_katakana" ->
+                language.showsKanaFilters
+            "word_filters.wordsets" -> language.showsNameWordsets
             "diagnostics.unidic" ->
                 !setup.tokenizerReady ||
                     setup.failure?.origin == ResourceFailureOrigin.UNIDIC

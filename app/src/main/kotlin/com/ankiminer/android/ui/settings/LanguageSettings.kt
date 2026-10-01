@@ -90,6 +90,18 @@ internal data class LanguageSettingsState(
     val showsToneColor: Boolean
         get() = activeProfile?.let { TONE_COLOR_CAPABILITY in it.capabilities } == true
 
+    /** The kana-only filters and kana-variant matching (desktop `kana_filters`). */
+    val showsKanaFilters: Boolean
+        get() = hasCapability(KANA_FILTERS_CAPABILITY)
+
+    /** The bundled wordsets are Japanese name lists (desktop `name_wordsets`). */
+    val showsNameWordsets: Boolean
+        get() = hasCapability(NAME_WORDSETS_CAPABILITY)
+
+    /** Before the profiles load only Japanese is known to have its capabilities. */
+    private fun hasCapability(capability: String): Boolean =
+        activeProfile?.let { capability in it.capabilities } ?: (activeCode == LanguageScope.JAPANESE)
+
     val scriptVariants: List<String>
         get() = activeProfile?.scriptVariants.orEmpty()
 
@@ -100,6 +112,8 @@ internal data class LanguageSettingsState(
     companion object {
         const val PITCH_CAPABILITY = "pitch"
         const val TONE_COLOR_CAPABILITY = "tone_color"
+        const val KANA_FILTERS_CAPABILITY = "kana_filters"
+        const val NAME_WORDSETS_CAPABILITY = "name_wordsets"
     }
 }
 

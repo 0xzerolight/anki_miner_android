@@ -186,6 +186,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 setupViewModel,
                 recorder,
                 callbacks,
+                language,
             )
         SettingsCategory.SENTENCES ->
             sentencesSettings(
@@ -1112,6 +1113,7 @@ private fun LazyListScope.wordFilterSettings(
     setupViewModel: SetupViewModel,
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
+    language: LanguageSettingsState,
 ) {
     // First on the tab: the known-words and word-list deep links count on staying at 3 and 4.
     wordFilterOptions(
@@ -1120,6 +1122,8 @@ private fun LazyListScope.wordFilterSettings(
         setup.availableDeckNames,
         recorder,
         callbacks.onDraftChange,
+        showsKanaFilters = language.showsKanaFilters,
+        showsNameWordsets = language.showsNameWordsets,
     )
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "known-words-import") {
         KnownWordsImportCard(
@@ -1170,7 +1174,8 @@ private fun LazyListScope.wordFilterSettings(
 
 /**
  * Which words get mined, mirroring desktop's Word Filters page: the frequency band, the known-words
- * rules and excluded decks, the script filters and the reading threshold.
+ * rules and excluded decks, the script filters and the reading threshold. The kana rows and the
+ * name wordsets are Japanese; desktop shows them only under `kana_filters` and `name_wordsets`.
  *
  * Internal rather than private so the instrumented tests can compose the real card.
  */
@@ -1180,6 +1185,8 @@ internal fun LazyListScope.wordFilterOptions(
     availableDeckNames: List<String>,
     recorder: SettingsCardIndexRecorder,
     onDraftChange: (SettingsDraft) -> Unit,
+    showsKanaFilters: Boolean = true,
+    showsNameWordsets: Boolean = true,
 ) {
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "filtering-options") {
         SettingsSection(stringResource(R.string.settings_filtering)) {
@@ -1218,12 +1225,14 @@ internal fun LazyListScope.wordFilterOptions(
                 draft.knownWords,
                 EngineDefaults.USE_KNOWN_WORDS_DATABASE,
             ) { onDraftChange(draft.copy(knownWords = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_known_words_match_kana_variants),
-                draft.knownWordsMatchKanaVariants,
-                EngineDefaults.KNOWN_WORDS_MATCH_KANA_VARIANTS,
-            ) { onDraftChange(draft.copy(knownWordsMatchKanaVariants = it)) }
-            SupportingText(stringResource(R.string.settings_known_words_match_kana_variants_help))
+            if (showsKanaFilters) {
+                NullableToggle(
+                    stringResource(R.string.settings_known_words_match_kana_variants),
+                    draft.knownWordsMatchKanaVariants,
+                    EngineDefaults.KNOWN_WORDS_MATCH_KANA_VARIANTS,
+                ) { onDraftChange(draft.copy(knownWordsMatchKanaVariants = it)) }
+                SupportingText(stringResource(R.string.settings_known_words_match_kana_variants_help))
+            }
             // Desktop keeps the excluded decks with the known-words rules: they decide which
             // cards count as known.
             val choices = excludedDeckChoices(availableDeckNames, draft.excludedDecks)
@@ -1266,16 +1275,18 @@ internal fun LazyListScope.wordFilterOptions(
                     }
                 }
             }
-            NullableToggle(
-                stringResource(R.string.settings_exclude_hiragana),
-                draft.hiragana,
-                EngineDefaults.EXCLUDE_HIRAGANA_ONLY,
-            ) { onDraftChange(draft.copy(hiragana = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_exclude_katakana),
-                draft.katakana,
-                EngineDefaults.EXCLUDE_KATAKANA_ONLY,
-            ) { onDraftChange(draft.copy(katakana = it)) }
+            if (showsKanaFilters) {
+                NullableToggle(
+                    stringResource(R.string.settings_exclude_hiragana),
+                    draft.hiragana,
+                    EngineDefaults.EXCLUDE_HIRAGANA_ONLY,
+                ) { onDraftChange(draft.copy(hiragana = it)) }
+                NullableToggle(
+                    stringResource(R.string.settings_exclude_katakana),
+                    draft.katakana,
+                    EngineDefaults.EXCLUDE_KATAKANA_ONLY,
+                ) { onDraftChange(draft.copy(katakana = it)) }
+            }
             NumericField(
                 draft.readingOccurrence,
                 { onDraftChange(draft.copy(readingOccurrence = it)) },
@@ -1293,43 +1304,45 @@ internal fun LazyListScope.wordFilterOptions(
                 error = validationMessage(draft, SettingsFieldKey.WORKERS),
                 placeholder = inheritedDefault(EngineDefaults.MAX_PARALLEL_WORKERS),
             )
-            HorizontalDivider()
-            CollapsibleSettingGroup(
-                title = stringResource(R.string.settings_wordsets),
-                selectedCount =
-                    resources.wordsets.count { it.wordsetId in draft.enabledWordsets },
-                totalCount = resources.wordsets.size,
-                forceOpen = resources.wordsets.isEmpty(),
-            ) {
-                if (resources.wordsets.isEmpty()) {
-                    Text(
-                        stringResource(R.string.bundled_wordsets_unavailable),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    resources.wordsets.forEach { wordset ->
-                        BooleanSetting(
-                            label = wordset.displayName,
-                            detail =
-                                stringResource(
-                                    R.string.settings_resource_entries,
-                                    wordset.entryCount,
-                                ),
-                            checked = wordset.wordsetId in draft.enabledWordsets,
-                            onCheckedChange = { checked ->
-                                onDraftChange(
-                                    draft.copy(
-                                        enabledWordsets =
-                                            if (checked) {
-                                                (draft.enabledWordsets + wordset.wordsetId)
-                                                    .distinct()
-                                            } else {
-                                                draft.enabledWordsets - wordset.wordsetId
-                                            },
-                                    ),
-                                )
-                            },
+            if (showsNameWordsets) {
+                HorizontalDivider()
+                CollapsibleSettingGroup(
+                    title = stringResource(R.string.settings_wordsets),
+                    selectedCount =
+                        resources.wordsets.count { it.wordsetId in draft.enabledWordsets },
+                    totalCount = resources.wordsets.size,
+                    forceOpen = resources.wordsets.isEmpty(),
+                ) {
+                    if (resources.wordsets.isEmpty()) {
+                        Text(
+                            stringResource(R.string.bundled_wordsets_unavailable),
+                            color = MaterialTheme.colorScheme.error,
                         )
+                    } else {
+                        resources.wordsets.forEach { wordset ->
+                            BooleanSetting(
+                                label = wordset.displayName,
+                                detail =
+                                    stringResource(
+                                        R.string.settings_resource_entries,
+                                        wordset.entryCount,
+                                    ),
+                                checked = wordset.wordsetId in draft.enabledWordsets,
+                                onCheckedChange = { checked ->
+                                    onDraftChange(
+                                        draft.copy(
+                                            enabledWordsets =
+                                                if (checked) {
+                                                    (draft.enabledWordsets + wordset.wordsetId)
+                                                        .distinct()
+                                                } else {
+                                                    draft.enabledWordsets - wordset.wordsetId
+                                                },
+                                        ),
+                                    )
+                                },
+                            )
+                        }
                     }
                 }
             }

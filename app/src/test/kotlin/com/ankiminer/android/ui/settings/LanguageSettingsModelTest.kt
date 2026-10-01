@@ -117,6 +117,31 @@ class LanguageSettingsModelTest {
     }
 
     @Test
+    fun `kana filters and name wordsets are Japanese only, in the card and in search`() {
+        val japanese = LanguageSettingsState(activeCode = "ja", profiles = profiles)
+        val hebrew = LanguageSettingsState(activeCode = "he", profiles = profiles)
+        val kanaRows =
+            setOf(
+                "word_filters.kana_variants",
+                "word_filters.exclude_hiragana",
+                "word_filters.exclude_katakana",
+                "word_filters.wordsets",
+            )
+
+        assertTrue(japanese.showsKanaFilters && japanese.showsNameWordsets)
+        assertFalse(hebrew.showsKanaFilters || hebrew.showsNameWordsets)
+        // Before the profiles load, Japanese keeps its rows.
+        assertTrue(LanguageSettingsState(activeCode = "ja").showsKanaFilters)
+        assertFalse(LanguageSettingsState(activeCode = "he").showsNameWordsets)
+        val hebrewIds =
+            availableSettingsSearchEntries(SETTINGS_SEARCH_INDEX, SetupUiState(), false, hebrew).map { it.id }
+        val japaneseIds =
+            availableSettingsSearchEntries(SETTINGS_SEARCH_INDEX, SetupUiState(), false, japanese).map { it.id }
+        assertTrue(kanaRows.none { it in hebrewIds })
+        assertTrue(japaneseIds.containsAll(kanaRows))
+    }
+
+    @Test
     fun `search finds the device voice only where it speaks`() {
         fun ids(code: String) =
             availableSettingsSearchEntries(
