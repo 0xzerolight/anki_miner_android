@@ -82,7 +82,6 @@
     <string name="starting_title">Đang chuẩn bị lượt khai thác</string>
     <string name="running_title">Đang khai thác</string>
     <string name="progress_count">%1$d trên %2$d</string>
-    <string name="progress_count_with_percent">%1$d trên %2$d · %3$d%%</string>
     <string name="mining_progress_working">Đang xử lý</string>
     <string name="cancel_mining">Hủy</string>
     <string name="cancelling">Đang hủy…</string>
@@ -205,6 +204,7 @@
     <string name="mining_notification_title">Anki Miner đang xử lý phương tiện</string>
     <string name="mining_notification_preparing">Đang chuẩn bị từ vựng đã chọn…</string>
     <string name="mining_notification_count">Đã hoàn tất %1$d trên %2$d</string>
+    <string name="mining_notification_step">Bước %1$d/%2$d</string>
     <string name="mining_notification_cancel">Hủy</string>
     <string name="mining_notification_cancelling">Đang hủy lượt khai thác…</string>
     <string name="mining_progress_copying_video">Đang sao chép video</string>

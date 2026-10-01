@@ -59,6 +59,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.localization.byteProgressResource
@@ -193,6 +194,8 @@ internal fun MiningProgressPanel(
                     contentDescription = announcement
                 },
             style = MaterialTheme.typography.bodyLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
         if (fraction == null) {
             LinearProgressIndicator(
@@ -217,26 +220,27 @@ internal fun MiningProgressPanel(
                 drawStopIndicator = {},
             )
         }
-        if (progress != null && progress.total > 0) {
-            Text(
-                when (progress.unit) {
+        val count =
+            progress?.takeIf { it.total > 0 }?.let { current ->
+                when (current.unit) {
                     MiningProgressUnit.ITEMS ->
-                        stringResource(
-                            R.string.progress_count_with_percent,
-                            progress.current,
-                            progress.total,
-                            requireNotNull(percentage),
-                        )
+                        stringResource(R.string.progress_count, current.current, current.total)
                     // Raw byte counts read as nonsense next to an item count, and a fixed
                     // mebibyte scale reads "0.0 of 0.0 MiB" for the sub-megabyte reading sources
                     // that are the ordinary case.
                     MiningProgressUnit.BYTES ->
-                        byteProgressResource(progress.current, progress.total).let {
+                        byteProgressResource(current.current, current.total).let {
                             stringResource(it.resourceId, *it.formatArguments.toTypedArray())
                         }
-                },
-            )
-        }
+                }
+            }
+        // The stage's own count, no percent: the count restarts each stage while the bar is the whole
+        // run, so "0 of 751 · 80%" contradicted itself. Always one line tall, so Cancel never moves.
+        Text(
+            text = count.orEmpty(),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 1,
+        )
     }
 }
 

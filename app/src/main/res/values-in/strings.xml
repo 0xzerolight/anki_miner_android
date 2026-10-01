@@ -82,7 +82,6 @@
     <string name="starting_title">Menyiapkan proses mining</string>
     <string name="running_title">Mining sedang berlangsung</string>
     <string name="progress_count">%1$d dari %2$d</string>
-    <string name="progress_count_with_percent">%1$d dari %2$d · %3$d%%</string>
     <string name="mining_progress_working">Memproses</string>
     <string name="cancel_mining">Batal</string>
     <string name="cancelling">Membatalkan…</string>
@@ -205,6 +204,7 @@
     <string name="mining_notification_title">Anki Miner sedang memproses media</string>
     <string name="mining_notification_preparing">Menyiapkan kosakata yang dipilih…</string>
     <string name="mining_notification_count">%1$d dari %2$d selesai</string>
+    <string name="mining_notification_step">Langkah %1$d dari %2$d</string>
     <string name="mining_notification_cancel">Batal</string>
     <string name="mining_notification_cancelling">Membatalkan proses mining…</string>
     <string name="mining_progress_copying_video">Menyalin video</string>

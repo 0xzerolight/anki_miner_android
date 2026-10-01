@@ -62,11 +62,18 @@ enum class MiningForegroundProgressUnit {
  *
  * [unit] selects between those resources; it is a closed enum, not a caller-supplied label, so it
  * cannot become a text channel.
+ *
+ * [runPermille] is the in-app bar's whole-run fraction, and [stageIndex]/[stageCount] number the
+ * engine's stage. They are numbers too: "Step 4 of 5" is built from an app string, so engine text
+ * still never crosses.
  */
 data class MiningForegroundProgress(
     val completed: Int? = null,
     val total: Int? = null,
     val unit: MiningForegroundProgressUnit = MiningForegroundProgressUnit.ITEMS,
+    val runPermille: Int? = null,
+    val stageIndex: Int? = null,
+    val stageCount: Int? = null,
 ) {
     init {
         require((completed == null) == (total == null)) {
@@ -75,6 +82,13 @@ data class MiningForegroundProgress(
         if (completed != null && total != null) {
             require(total > 0) { "total must be positive" }
             require(completed in 0..total) { "completed must be between zero and total" }
+        }
+        require(runPermille == null || runPermille in 0..1000) { "runPermille must be between 0 and 1000" }
+        require((stageIndex == null) == (stageCount == null)) {
+            "stageIndex and stageCount must both be set or both be absent"
+        }
+        if (stageIndex != null && stageCount != null) {
+            require(stageIndex in 1..stageCount) { "stageIndex must be between one and stageCount" }
         }
     }
 }
@@ -91,6 +105,11 @@ internal fun miningNotificationRedrawRequired(
     previous: MiningForegroundProgress,
     next: MiningForegroundProgress,
 ): Boolean {
+    if (previous.stageIndex != next.stageIndex || previous.stageCount != next.stageCount) return true
+    val before = previous.runPermille
+    val after = next.runPermille
+    // The bar follows the whole-run fraction, so a new whole percentage point redraws it.
+    if (before != after && (before == null || after == null || before / 10 != after / 10)) return true
     val previousTotal = previous.total
     val nextTotal = next.total
     // Two indeterminate values render the same string, whatever their counts were.

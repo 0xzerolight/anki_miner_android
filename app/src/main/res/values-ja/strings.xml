@@ -82,7 +82,6 @@
     <string name="starting_title">マイニングを準備中</string>
     <string name="running_title">マイニング中</string>
     <string name="progress_count">%1$d / %2$d</string>
-    <string name="progress_count_with_percent">%1$d / %2$d · %3$d%%</string>
     <string name="mining_progress_working">処理中</string>
     <string name="cancel_mining">キャンセル</string>
     <string name="cancelling">キャンセル中…</string>
@@ -205,6 +204,7 @@
     <string name="mining_notification_title">Anki Miner がメディアを処理しています</string>
     <string name="mining_notification_preparing">選択した単語を準備しています…</string>
     <string name="mining_notification_count">%2$d件中%1$d件完了</string>
+    <string name="mining_notification_step">ステップ %1$d/%2$d</string>
     <string name="mining_notification_cancel">キャンセル</string>
     <string name="mining_notification_cancelling">マイニングを中止しています…</string>
     <string name="mining_progress_copying_video">動画をコピー中</string>

@@ -42,6 +42,13 @@ internal fun warnMalformedForegroundIntent(
  * no Robolectric, so the unit-to-resource choice would otherwise be untested.
  */
 internal fun miningNotificationProgressText(progress: MiningForegroundProgress): LocalizedStringResource? {
+    val stageIndex = progress.stageIndex
+    val stageCount = progress.stageCount
+    // The stage's own count restarts each stage while the bar spans the whole run; the step reads
+    // consistently next to that bar.
+    if (stageIndex != null && stageCount != null) {
+        return LocalizedStringResource(R.string.mining_notification_step, listOf(stageIndex, stageCount))
+    }
     val completed = progress.completed ?: return null
     val total = progress.total ?: return null
     return when (progress.unit) {
@@ -53,6 +60,18 @@ internal fun miningNotificationProgressText(progress: MiningForegroundProgress):
             byteProgressResource(completed.toLong(), total.toLong())
     }
 }
+
+/** Max, current and indeterminacy for the notification bar: the in-app bar's whole-run fraction when known. */
+internal data class MiningNotificationBar(
+    val max: Int,
+    val current: Int,
+    val indeterminate: Boolean,
+)
+
+internal fun miningNotificationBar(progress: MiningForegroundProgress): MiningNotificationBar =
+    progress.runPermille?.let { MiningNotificationBar(1000, it, false) }
+        ?: progress.total?.let { MiningNotificationBar(it, requireNotNull(progress.completed), false) }
+        ?: MiningNotificationBar(0, 0, true)
 
 /**
  * Whether the wake lease still has to be moved to reach [parked], given that it is currently
@@ -379,12 +398,10 @@ class MiningForegroundService : Service() {
             miningNotificationProgressText(progress)
                 ?.let { getString(it.resourceId, *it.formatArguments.toTypedArray()) }
                 ?: getString(R.string.mining_notification_preparing)
+        val bar = miningNotificationBar(progress)
         return baseNotification(identity, text)
-            .setProgress(
-                progress.total ?: 0,
-                progress.completed ?: 0,
-                progress.total == null,
-            ).addAction(
+            .setProgress(bar.max, bar.current, bar.indeterminate)
+            .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 getString(R.string.mining_notification_cancel),
                 cancelPendingIntent(identity),

@@ -495,7 +495,7 @@ class BridgeReadingMiningRepositoryTest {
 
         val published = harness.foreground.lease.published
         assertTrue("expected the hostile progress event to be published", published.isNotEmpty())
-        assertEquals(MiningForegroundProgress(completed = 2, total = 3), published.last())
+        assertEquals(2 to 3, published.last().let { it.completed to it.total })
         published.forEach { progress ->
             assertFalse(
                 "mined term leaked into foreground progress: $progress",
@@ -687,20 +687,12 @@ class BridgeReadingMiningRepositoryTest {
         // "novel" is five staged bytes; without a unit they rendered as five items.
         assertTrue(
             published.toString(),
-            MiningForegroundProgress(
-                completed = 5,
-                total = 5,
-                unit = MiningForegroundProgressUnit.BYTES,
-            ) in published,
+            published.any {
+                it.completed == 5 && it.total == 5 && it.unit == MiningForegroundProgressUnit.BYTES
+            },
         )
-        assertEquals(
-            MiningForegroundProgress(
-                completed = 2,
-                total = 3,
-                unit = MiningForegroundProgressUnit.ITEMS,
-            ),
-            published.last(),
-        )
+        assertEquals(2 to 3, published.last().let { it.completed to it.total })
+        assertEquals(MiningForegroundProgressUnit.ITEMS, published.last().unit)
 
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)

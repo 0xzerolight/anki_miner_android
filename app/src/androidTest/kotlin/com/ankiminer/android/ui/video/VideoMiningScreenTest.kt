@@ -1929,7 +1929,7 @@ class VideoMiningScreenTest {
         )
 
         composeRule.onNodeWithTag(VideoMiningTestTags.PROGRESS).assertExists()
-        composeRule.onNodeWithText("100 of 100 · 100%").assertExists()
+        composeRule.onNodeWithText("100 of 100").assertExists()
     }
 
     @Test
@@ -1953,7 +1953,7 @@ class VideoMiningScreenTest {
             .onAllNodes(
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion),
             ).assertCountEquals(1)
-        composeRule.onNodeWithText("47 of 100 · 47%").assertExists()
+        composeRule.onNodeWithText("47 of 100").assertExists()
         composeRule.onNodeWithText("Mining in progress").assertDoesNotExist()
         composeRule
             .onAllNodes(

@@ -82,7 +82,6 @@
     <string name="starting_title">正在準備採集工作</string>
     <string name="running_title">採集中</string>
     <string name="progress_count">%1$d／%2$d</string>
-    <string name="progress_count_with_percent">%1$d／%2$d · %3$d%%</string>
     <string name="mining_progress_working">處理中</string>
     <string name="cancel_mining">取消</string>
     <string name="cancelling">取消中…</string>
@@ -205,6 +204,7 @@
     <string name="mining_notification_title">Anki Miner 正在處理媒體</string>
     <string name="mining_notification_preparing">正在準備選取的單字…</string>
     <string name="mining_notification_count">已完成 %1$d／%2$d</string>
+    <string name="mining_notification_step">第 %1$d／%2$d 步</string>
     <string name="mining_notification_cancel">取消</string>
     <string name="mining_notification_cancelling">正在取消採集工作…</string>
     <string name="mining_progress_copying_video">正在複製影片</string>

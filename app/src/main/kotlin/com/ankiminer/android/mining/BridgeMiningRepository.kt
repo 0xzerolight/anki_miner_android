@@ -1382,6 +1382,9 @@ internal class BridgeMiningRepository(
                         MiningProgressUnit.ITEMS -> MiningForegroundProgressUnit.ITEMS
                         MiningProgressUnit.BYTES -> MiningForegroundProgressUnit.BYTES
                     },
+                runPermille = progress.fraction?.let { (it.coerceIn(0f, 1f) * 1000).toInt() },
+                stageIndex = progress.stage?.index,
+                stageCount = progress.stage?.total,
             )
         val accepted =
             try {

@@ -82,7 +82,6 @@
     <string name="starting_title">Préparation de l\'extraction</string>
     <string name="running_title">Extraction en cours</string>
     <string name="progress_count">%1$d sur %2$d</string>
-    <string name="progress_count_with_percent">%1$d sur %2$d · %3$d%%</string>
     <string name="mining_progress_working">En cours</string>
     <string name="cancel_mining">Annuler</string>
     <string name="cancelling">Annulation…</string>
@@ -213,6 +212,7 @@
     <string name="mining_notification_title">Anki Miner traite les médias</string>
     <string name="mining_notification_preparing">Préparation du vocabulaire sélectionné…</string>
     <string name="mining_notification_count">%1$d sur %2$d terminés</string>
+    <string name="mining_notification_step">Étape %1$d sur %2$d</string>
     <string name="mining_notification_cancel">Annuler</string>
     <string name="mining_notification_cancelling">Annulation de l\'extraction…</string>
     <string name="mining_progress_copying_video">Copie de la vidéo</string>

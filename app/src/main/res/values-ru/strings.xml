@@ -82,7 +82,6 @@
     <string name="starting_title">Подготовка запуска майнинга</string>
     <string name="running_title">Майнинг выполняется</string>
     <string name="progress_count">%1$d из %2$d</string>
-    <string name="progress_count_with_percent">%1$d из %2$d · %3$d%%</string>
     <string name="mining_progress_working">Обработка</string>
     <string name="cancel_mining">Отмена</string>
     <string name="cancelling">Отмена…</string>
@@ -217,6 +216,7 @@
     <string name="mining_notification_title">Anki Miner обрабатывает медиа</string>
     <string name="mining_notification_preparing">Подготовка выбранных слов…</string>
     <string name="mining_notification_count">%1$d из %2$d готово</string>
+    <string name="mining_notification_step">Шаг %1$d из %2$d</string>
     <string name="mining_notification_cancel">Отмена</string>
     <string name="mining_notification_cancelling">Отмена запуска майнинга…</string>
     <string name="mining_progress_copying_video">Копирование видео</string>
