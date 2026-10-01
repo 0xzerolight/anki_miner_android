@@ -503,7 +503,7 @@
     <string name="resource_failure_inventory_unsafe">Un recurso local está dañado o no es seguro y necesita atención</string>
     <string name="resource_failure_dictionary_schema">Este diccionario debe reemplazarse porque su esquema de índice está obsoleto</string>
     <string name="resource_failure_dictionary_invalid">Un espacio de diccionario ocupado está dañado u obsoleto; reemplácelo explícitamente antes de minar</string>
-    <string name="unidic_resource_title">Tokenizador japonés — obligatorio</string>
+    <string name="unidic_resource_title">Tokenizador japonés</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · descarga de unos 45 MiB y 249 MiB instalado</string>
     <string name="jitendex_resource_title">Diccionario Jitendex</string>
     <string name="recommended_resources_title">Recursos recomendados</string>

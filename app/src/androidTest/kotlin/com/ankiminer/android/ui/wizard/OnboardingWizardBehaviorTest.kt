@@ -101,7 +101,7 @@ class OnboardingWizardBehaviorTest {
                     step = step,
                     callbacks =
                         OnboardingWizardCallbacks(
-                            onInstallUniDic = { resourceRetries += 1 },
+                            onInstallRequiredResources = { resourceRetries += 1 },
                             onRefresh = { ankiRetries += 1 },
                         ),
                 )

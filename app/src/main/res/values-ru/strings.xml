@@ -504,7 +504,7 @@
     <string name="resource_failure_inventory_unsafe">Локальный ресурс повреждён или небезопасен и требует внимания</string>
     <string name="resource_failure_dictionary_schema">Этот словарь нужно заменить, так как схема его индекса устарела</string>
     <string name="resource_failure_dictionary_invalid">Занятый слот словаря повреждён или устарел; явно замените его перед майнингом</string>
-    <string name="unidic_resource_title">Японский токенизатор — требуется</string>
+    <string name="unidic_resource_title">Японский токенизатор</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · загрузка около 45 MiB, установлено 249 MiB</string>
     <string name="jitendex_resource_title">Словарь Jitendex</string>
     <string name="recommended_resources_title">Рекомендуемые ресурсы</string>

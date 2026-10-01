@@ -501,7 +501,7 @@
     <string name="resource_failure_inventory_unsafe">本機資源已損毀或不安全，需要處理</string>
     <string name="resource_failure_dictionary_schema">此字典的索引結構已過時，必須取代</string>
     <string name="resource_failure_dictionary_invalid">已占用的字典槽位已損毀或過時；請在採集前明確取代</string>
-    <string name="unidic_resource_title">日文斷詞器 — 必要</string>
+    <string name="unidic_resource_title">日文斷詞器</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · 下載約 45 MiB，安裝後 249 MiB</string>
     <string name="jitendex_resource_title">Jitendex 字典</string>
     <string name="recommended_resources_title">建議資源</string>

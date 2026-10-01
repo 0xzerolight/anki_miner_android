@@ -178,8 +178,7 @@ internal data class OnboardingWizardCallbacks(
     val onDismissResourceReplace: () -> Unit = {},
     val onDismissFailure: () -> Unit = {},
     val onDismissAnkiFailure: () -> Unit = {},
-    val onInstallUniDic: () -> Unit = {},
-    val onDownloadRecommendedResources: () -> Unit = {},
+    val onInstallRequiredResources: () -> Unit = {},
     val onSelectDeck: (String) -> Unit = {},
     val onRetryDeckSelection: () -> Unit = {},
     val onSelectNoteType: (String) -> Unit = {},
@@ -220,8 +219,7 @@ internal fun OnboardingWizard(
                 onDismissResourceReplace = viewModel::dismissPendingReplace,
                 onDismissFailure = viewModel::dismissFailure,
                 onDismissAnkiFailure = viewModel::dismissAnkiFailure,
-                onInstallUniDic = viewModel::installUniDic,
-                onDownloadRecommendedResources = viewModel::installRecommendedResources,
+                onInstallRequiredResources = viewModel::installRequiredResources,
                 onSelectDeck = viewModel::selectDeck,
                 onRetryDeckSelection = viewModel::retryDeckSelection,
                 onSelectNoteType = viewModel::selectNoteType,
@@ -429,7 +427,7 @@ private fun WizardStepBody(
                 onOpenAppSettings = callbacks.onOpenAppSettings,
                 onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
                 onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
-                onInstallUniDic = callbacks.onInstallUniDic,
+                onInstallUniDic = callbacks.onInstallRequiredResources,
                 onChooseNoteType = {
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },
@@ -489,7 +487,7 @@ private fun WizardStepBody(
                 description = stringResource(R.string.unidic_resource_description),
                 installed = state.uniDicInstalled,
                 busy = state.busy,
-                action = callbacks.onInstallUniDic,
+                action = callbacks.onInstallRequiredResources,
                 actionLabel =
                     stringResource(
                         if (state.uniDicInstalled) {
@@ -502,7 +500,7 @@ private fun WizardStepBody(
                     WizardResourceFailure(
                         state,
                         ResourceFailureOrigin.UNIDIC,
-                        callbacks.onInstallUniDic,
+                        callbacks.onInstallRequiredResources,
                         callbacks.onDismissFailure,
                     )
                 },
@@ -511,7 +509,7 @@ private fun WizardStepBody(
         WizardStep.DICTIONARY -> {
             RecommendedResourcesCard(
                 state = state,
-                onDownload = callbacks.onDownloadRecommendedResources,
+                onDownload = callbacks.onInstallRequiredResources,
                 inlineFailure = {
                     WizardResourceFailure(
                         state,
@@ -530,7 +528,7 @@ private fun WizardStepBody(
                 onOpenAppSettings = callbacks.onOpenAppSettings,
                 onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
                 onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
-                onInstallUniDic = callbacks.onInstallUniDic,
+                onInstallUniDic = callbacks.onInstallRequiredResources,
                 onChooseNoteType = {
                     callbacks.onStep(WizardStep.ANKIDROID_NOTE_TYPE)
                 },

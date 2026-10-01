@@ -511,7 +511,7 @@
     <string name="resource_failure_inventory_unsafe">A local resource is damaged or unsafe and needs attention</string>
     <string name="resource_failure_dictionary_schema">This dictionary must be replaced because its index schema is stale</string>
     <string name="resource_failure_dictionary_invalid">An occupied dictionary slot is damaged or stale; explicitly replace it before mining</string>
-    <string name="unidic_resource_title">Japanese tokenizer — required</string>
+    <string name="unidic_resource_title">Japanese tokenizer</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · about 45 MiB download and 249 MiB installed</string>
     <string name="jitendex_resource_title">Jitendex dictionary</string>
     <string name="recommended_resources_title">Recommended resources</string>

@@ -49,11 +49,13 @@ internal fun RecommendedResourcesCard(
     onDownload: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
     uniDicMissing: Boolean = false,
+    title: String = stringResource(R.string.recommended_resources_title),
+    statusOnly: Boolean = false,
 ) {
     val plan = state.recommendedPlan
     val installed = !uniDicMissing && plan.isSatisfied
     ResourceCard(
-        title = stringResource(R.string.recommended_resources_title),
+        title = title,
         description = requiredDownloadsSummary(requiredDownloads(plan, uniDicMissing)),
         installed = installed,
         busy = state.busy,
@@ -68,6 +70,7 @@ internal fun RecommendedResourcesCard(
                 },
             ),
         inlineFailure = inlineFailure,
+        statusOnly = statusOnly,
     )
 }
 

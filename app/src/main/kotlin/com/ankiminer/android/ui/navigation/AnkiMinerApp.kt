@@ -634,7 +634,7 @@ internal fun AnkiMinerApp(
             state = setup,
             message = stringResource(miningReadinessMessage(setup)),
             onRequestPermissions = onRequestPermissions,
-            onInstallUniDic = setupViewModel::installUniDic,
+            onInstallUniDic = setupViewModel::installRequiredResources,
             onInstallAnkiDroid = onInstallAnkiDroid,
             onOpenAnkiDroid = onOpenAnkiDroid,
             onCheckAgain = setupViewModel::refresh,

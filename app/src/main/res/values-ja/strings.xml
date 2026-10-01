@@ -503,7 +503,7 @@
     <string name="resource_failure_inventory_unsafe">ローカルリソースが破損または安全でなく、対応が必要です</string>
     <string name="resource_failure_dictionary_schema">インデックススキーマが古いため、この辞書を置き換える必要があります</string>
     <string name="resource_failure_dictionary_invalid">使用中の辞書スロットが破損または古くなっています。採掘前に明示的に置き換えてください</string>
-    <string name="unidic_resource_title">日本語形態素解析器 — 必須</string>
+    <string name="unidic_resource_title">日本語形態素解析器</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · ダウンロード約45 MiB、インストール後249 MiB</string>
     <string name="jitendex_resource_title">Jitendex辞書</string>
     <string name="recommended_resources_title">推奨リソース</string>

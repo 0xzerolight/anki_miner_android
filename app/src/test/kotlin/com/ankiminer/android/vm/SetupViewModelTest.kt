@@ -16,6 +16,7 @@ import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.InstalledResourceKind
+import com.ankiminer.android.data.resources.InstalledUniDic
 import com.ankiminer.android.data.resources.ResourceDeleteTarget
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
@@ -1903,6 +1904,34 @@ class SetupViewModelTest {
         rebuildSourcePath = null,
     )
 
+    @Test
+    fun `one tap installs UniDic and then the recommended set`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources = resources)
+            advanceUntilIdle()
+
+            model.installRequiredResources()
+            advanceUntilIdle()
+
+            assertEquals(1, resources.uniDicInstalls)
+            assertEquals(listOf<String?>(null), resources.recommendedInstalls)
+        }
+
+    @Test
+    fun `a failed UniDic install stops the chain before the recommended set`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager().apply { uniDicInstallSucceeds = false }
+            val model = viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), resources = resources)
+            advanceUntilIdle()
+
+            model.installRequiredResources()
+            advanceUntilIdle()
+
+            assertEquals(1, resources.uniDicInstalls)
+            assertEquals(emptyList<String?>(), resources.recommendedInstalls)
+        }
+
     private fun viewModel(
         repository: AppSettingsRepository,
         setup: FakeAnkiSetupManager,
@@ -2094,7 +2123,27 @@ class SetupViewModelTest {
 
         override suspend fun recoverAndRefresh() = Unit
 
-        override suspend fun installUniDic() = Unit
+        var uniDicInstalls = 0
+        var uniDicInstallSucceeds = true
+
+        override suspend fun installUniDic() {
+            uniDicInstalls += 1
+            if (uniDicInstallSucceeds) {
+                mutableState.value =
+                    mutableState.value.copy(
+                        installedUniDic =
+                            InstalledUniDic(
+                                resourceId = "unidic-lite-1.0.8",
+                                dicDir = "/dic",
+                                treeSha256 = "0".repeat(64),
+                                fileCount = 1,
+                                sizeBytes = 1,
+                                alreadyInstalled = false,
+                                attribution = emptyList(),
+                            ),
+                    )
+            }
+        }
 
         override suspend fun installCatalogDictionary(resourceId: String, replace: Boolean) = Unit
 

@@ -656,6 +656,23 @@ internal class SetupViewModel(
         viewModelScope.launch { resources.installRecommendedResources() }
     }
 
+    /**
+     * The one Download press: UniDic first when this language tokenizes with it and it is missing,
+     * then the language's recommended set. A failed or cancelled UniDic install stops the chain;
+     * its own failure carries the Retry. The set's install is itself a no-op once satisfied.
+     */
+    fun installRequiredResources() {
+        val state = currentState()
+        if (state.busy) return
+        viewModelScope.launch {
+            if (state.uniDicRequired && !state.uniDicInstalled) {
+                resources.installUniDic()
+                if (!resources.state.value.hasUniDic) return@launch
+            }
+            resources.installRecommendedResources()
+        }
+    }
+
     /** Dispatches the import the pending record describes, this time authorised to overwrite. */
     fun confirmPendingReplace() {
         val state = currentState()

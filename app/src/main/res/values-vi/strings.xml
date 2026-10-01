@@ -501,7 +501,7 @@
     <string name="resource_failure_inventory_unsafe">Tài nguyên cục bộ bị hỏng hoặc không an toàn cần được chú ý</string>
     <string name="resource_failure_dictionary_schema">Phải thay thế từ điển này vì lược đồ chỉ mục đã cũ</string>
     <string name="resource_failure_dictionary_invalid">Một vị trí từ điển đang dùng bị hỏng hoặc đã cũ; hãy thay thế rõ ràng trước khi khai thác</string>
-    <string name="unidic_resource_title">Trình tách từ tiếng Nhật — bắt buộc</string>
+    <string name="unidic_resource_title">Trình tách từ tiếng Nhật</string>
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · tải xuống khoảng 45 MiB và cài đặt 249 MiB</string>
     <string name="jitendex_resource_title">Từ điển Jitendex</string>
     <string name="recommended_resources_title">Tài nguyên được đề xuất</string>
