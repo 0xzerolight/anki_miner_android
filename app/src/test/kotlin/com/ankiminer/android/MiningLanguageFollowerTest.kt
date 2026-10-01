@@ -47,4 +47,37 @@ class MiningLanguageFollowerTest {
             assertEquals(listOf("he"), refreshedFor)
             follower.cancel()
         }
+
+    @Test
+    fun `only a change of language re-verifies the Anki target, after its resources`() =
+        runTest {
+            val language = MutableStateFlow("ja")
+            val idle = MutableStateFlow(true)
+            val events = mutableListOf<String>()
+            val follower =
+                launch {
+                    followMiningLanguage(
+                        language,
+                        idle,
+                        refresh = { events += "refresh:${language.value}" },
+                        reverify = { events += "reverify:${language.value}" },
+                    )
+                }
+            runCurrent()
+            idle.value = false
+            runCurrent()
+            idle.value = true
+            runCurrent()
+            assertEquals(listOf("refresh:ja", "refresh:ja"), events)
+            events.clear()
+
+            idle.value = false
+            language.value = "he"
+            runCurrent()
+            idle.value = true
+            runCurrent()
+
+            assertEquals(listOf("refresh:he", "reverify:he"), events)
+            follower.cancel()
+        }
 }

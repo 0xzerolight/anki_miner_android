@@ -176,14 +176,25 @@ internal suspend fun refreshAnkiSetupFromSettings(
  * switch made during a run, or before recovery finished, is caught up when the runtime frees up
  * instead of being lost. [refresh] is a no-op while the state already describes the language, so
  * the re-checks are cheap.
+ *
+ * A switch also brings in the language's own note type and field map, which the Anki target and
+ * admission were verified against under the previous language. [reverify] runs after [refresh]
+ * whenever the language differs from the one last followed; the first one is startup recovery's.
  */
 internal suspend fun followMiningLanguage(
     language: Flow<String>,
     idle: Flow<Boolean>,
+    reverify: suspend () -> Unit = {},
     refresh: suspend () -> Unit,
 ) {
-    combine(language, idle.distinctUntilChanged()) { _, isIdle -> isIdle }
-        .collect { isIdle -> if (isIdle) refresh() }
+    var followed: String? = null
+    combine(language, idle.distinctUntilChanged()) { code, isIdle -> code to isIdle }
+        .collect { (code, isIdle) ->
+            if (!isIdle) return@collect
+            refresh()
+            if (followed != null && followed != code) reverify()
+            followed = code
+        }
 }
 
 internal suspend fun runStartupRecoverySequence(
@@ -694,6 +705,10 @@ class AnkiMinerApplication : Application() {
                     combine(resourceManager.state, runtimeWorkCoordinator.activeKind) { resources, work ->
                         resources.startupReadiness == ResourceStartupReadiness.READY && work == null
                     },
+                reverify = {
+                    refreshAnkiSetupAndAwait()
+                    refreshMiningAdmissionAndAwait()
+                },
                 refresh = resourceManager::refreshLanguage,
             )
         }
