@@ -59,11 +59,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -1182,6 +1184,15 @@ class BridgeReadingMiningRepositoryTest {
             awaitState(harness.repository) {
                 (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 0L
             } as MiningRunState.Curating
+        // Unconfined: each state is recorded on the thread that sets it, so a page shown even
+        // briefly before its auto-answer is caught.
+        val shownPages = CopyOnWriteArrayList<Long?>()
+        val recorder =
+            CoroutineScope(Dispatchers.Unconfined).launch {
+                harness.repository.state.collect { state ->
+                    (state as? MiningRunState.Curating)?.let { shownPages += it.request.page?.pageIndex }
+                }
+            }
 
         runBlocking {
             harness.repository.finishCuration(
@@ -1196,10 +1207,8 @@ class BridgeReadingMiningRepositoryTest {
         assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
         // The final page went back as [] (zero selected), not null (cancel).
         assertEquals(emptyList<CurationSelection>(), harness.bridge.selection)
-        assertNotEquals(
-            1L,
-            (harness.repository.state.value as? MiningRunState.Curating)?.request?.page?.pageIndex,
-        )
+        recorder.cancel()
+        assertEquals(listOf<Long?>(0L), shownPages.distinct())
         assertEquals(1, harness.foreground.startCount.get())
         harness.bridge.allowTerminal.countDown()
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
