@@ -15,6 +15,8 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -144,6 +146,37 @@ class OnboardingWizardBehaviorTest {
         composeRule.onNodeWithText("Retry").performClick()
         composeRule.runOnIdle { assertEquals(1, ankiRetries) }
 
+    }
+
+    @Test
+    fun missingAnkiDroidShowsOneSentenceAndNoProviderError() {
+        var installs = 0
+        composeRule.setContent {
+            AnkiMinerTheme {
+                OnboardingWizardContent(
+                    state =
+                        SetupUiState(
+                            anki = AnkiProviderReadiness.NotInstalled,
+                            ankiFailure =
+                                AnkiSetupFailure(
+                                    code = "provider_unavailable",
+                                    message = "AnkiDroid is not available",
+                                    origin = AnkiSetupFailureOrigin.TARGET,
+                                ),
+                        ),
+                    step = WizardStep.ANKIDROID,
+                    callbacks = OnboardingWizardCallbacks(onInstallAnkiDroid = { installs += 1 }),
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("AnkiDroid is not available").assertDoesNotExist()
+        composeRule
+            .onNodeWithText("Anki Miner adds cards through AnkiDroid. Install it, then come back.")
+            .performScrollTo()
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("Install AnkiDroid").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, installs) }
     }
 
     @Test

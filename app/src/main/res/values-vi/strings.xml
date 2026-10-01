@@ -317,8 +317,13 @@
     <string name="open_settings">Mở Cài đặt</string>
     <string name="allow_required_access">Yêu cầu quyền ứng dụng</string>
     <string name="open_app_settings">Mở cài đặt ứng dụng</string>
-    <string name="install_or_update_ankidroid">Cài đặt hoặc cập nhật AnkiDroid</string>
     <string name="open_ankidroid">Mở AnkiDroid</string>
+    <string name="install_ankidroid">Cài AnkiDroid</string>
+    <string name="update_ankidroid">Cập nhật AnkiDroid</string>
+    <string name="ankidroid_install_prompt">Anki Miner thêm thẻ qua AnkiDroid. Hãy cài AnkiDroid rồi quay lại.</string>
+    <string name="ankidroid_update_prompt">Phiên bản AnkiDroid này quá cũ với Anki Miner. Hãy cập nhật rồi quay lại.</string>
+    <string name="ankidroid_open_prompt">Hãy mở AnkiDroid một lần để ứng dụng tạo bộ sưu tập, rồi quay lại.</string>
+    <string name="ankidroid_permission_prompt">Cho phép Anki Miner thêm thẻ vào AnkiDroid.</string>
     <string name="return_to_active_run">Quay lại lượt khai thác đang hoạt động</string>
     <string name="ankidroid_action_unavailable">Không có ứng dụng để mở AnkiDroid hoặc trang phát hành chính thức của ứng dụng.</string>
     <string name="settings_verbose_logging_section">Nhật ký</string>

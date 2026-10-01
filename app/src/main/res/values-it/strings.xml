@@ -319,8 +319,13 @@
     <string name="open_settings">Apri le impostazioni</string>
     <string name="allow_required_access">Richiedi autorizzazioni app</string>
     <string name="open_app_settings">Apri impostazioni app</string>
-    <string name="install_or_update_ankidroid">Installa o aggiorna AnkiDroid</string>
     <string name="open_ankidroid">Apri AnkiDroid</string>
+    <string name="install_ankidroid">Installa AnkiDroid</string>
+    <string name="update_ankidroid">Aggiorna AnkiDroid</string>
+    <string name="ankidroid_install_prompt">Anki Miner aggiunge le carte tramite AnkiDroid. Installalo, poi torna qui.</string>
+    <string name="ankidroid_update_prompt">Questa versione di AnkiDroid è troppo vecchia per Anki Miner. Aggiornala, poi torna qui.</string>
+    <string name="ankidroid_open_prompt">Apri AnkiDroid una volta perché crei la sua raccolta, poi torna qui.</string>
+    <string name="ankidroid_permission_prompt">Consenti ad Anki Miner di aggiungere carte ad AnkiDroid.</string>
     <string name="return_to_active_run">Torna all\'esecuzione attiva</string>
     <string name="ankidroid_action_unavailable">Nessuna app può aprire AnkiDroid o la pagina delle release ufficiali.</string>
     <string name="settings_verbose_logging_section">Registrazione</string>

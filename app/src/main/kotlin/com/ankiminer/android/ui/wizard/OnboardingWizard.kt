@@ -52,6 +52,7 @@ import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.navigation.AppChrome
 import com.ankiminer.android.ui.settings.AnkiDeckCard
+import com.ankiminer.android.ui.settings.AnkiDroidConnectActions
 import com.ankiminer.android.ui.settings.AnkiOperationCard
 import com.ankiminer.android.ui.settings.RecommendedResourcesCard
 import com.ankiminer.android.ui.settings.ResourceReplaceDialog
@@ -65,9 +66,7 @@ import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
-import com.ankiminer.android.ui.theme.UtilityActionButton
 import com.ankiminer.android.ui.theme.accentTextButtonColors
-import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 import com.ankiminer.android.vm.WizardCompletionStatus
@@ -451,8 +450,13 @@ private fun WizardStepBody(
                     Modifier.padding(AnkiMinerTokens.Space.content),
                     verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
                 ) {
-                    WizardAnkiFailure(state, callbacks)
-                    AnkiDroidActionButtons(
+                    // A provider error only once AnkiDroid is there and allowed; before that the
+                    // read can only fail and the sentence below already says what to do.
+                    if (state.ankiDroidAction == null) {
+                        WizardAnkiFailure(state, callbacks)
+                        Text(stringResource(R.string.wizard_ankidroid_ready))
+                    }
+                    AnkiDroidConnectActions(
                         state = state,
                         onRequestPermissions = callbacks.onRequestPermissions,
                         onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
@@ -638,38 +642,6 @@ private fun WizardCompletionCard(
         WizardCompletionStatus.PERSISTED,
         WizardCompletionStatus.DISMISSED_FOR_SESSION,
         -> Unit
-    }
-}
-
-@Composable
-private fun AnkiDroidActionButtons(
-    state: SetupUiState,
-    onRequestPermissions: () -> Unit,
-    onInstallAnkiDroid: () -> Unit,
-    onOpenAnkiDroid: () -> Unit,
-) {
-    when (state.ankiDroidAction) {
-        AnkiDroidSetupAction.INSTALL ->
-            UtilityActionButton(onClick = onInstallAnkiDroid, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.install_or_update_ankidroid))
-            }
-        AnkiDroidSetupAction.OPEN ->
-            UtilityActionButton(onClick = onOpenAnkiDroid, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.open_ankidroid))
-            }
-        AnkiDroidSetupAction.OPEN_OR_INSTALL -> {
-            UtilityActionButton(onClick = onOpenAnkiDroid, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.open_ankidroid))
-            }
-            UtilityActionButton(onClick = onInstallAnkiDroid, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.install_or_update_ankidroid))
-            }
-        }
-        AnkiDroidSetupAction.REQUEST_PERMISSION ->
-            UtilityActionButton(onClick = onRequestPermissions, modifier = Modifier.fillMaxWidth()) {
-                Text(stringResource(R.string.allow_required_access))
-            }
-        null -> Text(stringResource(R.string.wizard_ankidroid_ready))
     }
 }
 

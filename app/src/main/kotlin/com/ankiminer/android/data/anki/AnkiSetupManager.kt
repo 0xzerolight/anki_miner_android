@@ -1,6 +1,7 @@
 package com.ankiminer.android.data.anki
 
 import com.ankiminer.android.R
+import com.ankiminer.android.providerErrorMessage
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiReadFailure
@@ -178,21 +179,24 @@ internal class ProcessAnkiSetupManager(
                 )
             }
         } catch (failure: AnkiReadFailure) {
+            val status =
+                NoteTypeSetupStatus.ProviderError(
+                    reason = failure.providerErrorReason,
+                    code = failure.code,
+                    retryable = failure.retryable,
+                    stableMessage = failure.stableMessage,
+                )
             mutableState.update { current ->
                 current.copy(
                     availableNoteTypes = emptyList(),
                     availableDeckNames = emptyList(),
-                    noteTypeStatus =
-                        NoteTypeSetupStatus.ProviderError(
-                            reason = failure.providerErrorReason,
-                            code = failure.code,
-                            retryable = failure.retryable,
-                            stableMessage = failure.stableMessage,
-                        ),
+                    noteTypeStatus = status,
+                    // The status keeps the English stable message for logs and diagnostics; the
+                    // failure is what the setup screens show, so it is said in the user's language.
                     failure =
                         AnkiSetupFailure(
                             failure.code.wireName,
-                            failure.stableMessage,
+                            providerErrorMessage(status, strings),
                             origin = AnkiSetupFailureOrigin.TARGET,
                         ),
                 )

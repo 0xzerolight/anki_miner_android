@@ -320,8 +320,13 @@
     <string name="open_settings">Открыть настройки</string>
     <string name="allow_required_access">Запросить разрешения приложения</string>
     <string name="open_app_settings">Открыть настройки приложения</string>
-    <string name="install_or_update_ankidroid">Установить или обновить AnkiDroid</string>
     <string name="open_ankidroid">Открыть AnkiDroid</string>
+    <string name="install_ankidroid">Установить AnkiDroid</string>
+    <string name="update_ankidroid">Обновить AnkiDroid</string>
+    <string name="ankidroid_install_prompt">Anki Miner добавляет карточки через AnkiDroid. Установите его и вернитесь.</string>
+    <string name="ankidroid_update_prompt">Эта версия AnkiDroid слишком старая для Anki Miner. Обновите её и вернитесь.</string>
+    <string name="ankidroid_open_prompt">Откройте AnkiDroid один раз, чтобы он создал коллекцию, и вернитесь.</string>
+    <string name="ankidroid_permission_prompt">Разрешите Anki Miner добавлять карточки в AnkiDroid.</string>
     <string name="return_to_active_run">Вернуться к активному запуску</string>
     <string name="ankidroid_action_unavailable">Нет приложения для открытия AnkiDroid или страницы его официальных релизов.</string>
     <string name="settings_verbose_logging_section">Журналирование</string>

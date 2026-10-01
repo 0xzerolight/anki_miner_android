@@ -317,8 +317,13 @@
     <string name="open_settings">Buka Pengaturan</string>
     <string name="allow_required_access">Minta izin aplikasi</string>
     <string name="open_app_settings">Buka pengaturan aplikasi</string>
-    <string name="install_or_update_ankidroid">Instal atau perbarui AnkiDroid</string>
     <string name="open_ankidroid">Buka AnkiDroid</string>
+    <string name="install_ankidroid">Instal AnkiDroid</string>
+    <string name="update_ankidroid">Perbarui AnkiDroid</string>
+    <string name="ankidroid_install_prompt">Anki Miner menambahkan kartu melalui AnkiDroid. Instal AnkiDroid, lalu kembali ke sini.</string>
+    <string name="ankidroid_update_prompt">Versi AnkiDroid ini terlalu lama untuk Anki Miner. Perbarui, lalu kembali ke sini.</string>
+    <string name="ankidroid_open_prompt">Buka AnkiDroid sekali agar koleksinya dibuat, lalu kembali ke sini.</string>
+    <string name="ankidroid_permission_prompt">Izinkan Anki Miner menambahkan kartu ke AnkiDroid.</string>
     <string name="return_to_active_run">Kembali ke proses mining aktif</string>
     <string name="ankidroid_action_unavailable">Tidak ada aplikasi untuk membuka AnkiDroid atau halaman rilis resminya.</string>
     <string name="settings_verbose_logging_section">Pencatatan log</string>

@@ -287,7 +287,7 @@ private fun SetupTaskAction(
         SetupTaskId.ANKIDROID ->
             when (state.ankiDroidAction) {
                 AnkiDroidSetupAction.INSTALL ->
-                    StatusAction(R.string.install_or_update_ankidroid, onInstallAnkiDroid)
+                    StatusAction(ankiDroidInstallLabel(state.anki), onInstallAnkiDroid)
                 AnkiDroidSetupAction.OPEN ->
                     StatusAction(R.string.open_ankidroid, onOpenAnkiDroid)
                 AnkiDroidSetupAction.OPEN_OR_INSTALL ->

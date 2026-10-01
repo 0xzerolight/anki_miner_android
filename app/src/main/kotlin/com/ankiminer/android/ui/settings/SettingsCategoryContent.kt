@@ -267,6 +267,7 @@ private fun LazyListScope.ankiSettings(
                     setup,
                     AnkiSetupFailureOrigin.TARGET,
                     setupViewModel,
+                    callbacks,
                 )
             },
         )
@@ -1841,7 +1842,17 @@ private fun AnkiOriginFailure(
     setup: SetupUiState,
     origin: AnkiSetupFailureOrigin,
     setupViewModel: SetupViewModel,
+    callbacks: SettingsScreenCallbacks,
 ) {
+    if (setup.ankiDroidAction != null) {
+        AnkiDroidConnectActions(
+            state = setup,
+            onRequestPermissions = callbacks.onRequestPermissions,
+            onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+            onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
+        )
+        return
+    }
     val failure = setup.ankiFailure?.takeIf { it.origin == origin } ?: return
     InlineFailureContainer(
         message = failure.message,

@@ -78,6 +78,7 @@ import com.ankiminer.android.ui.settings.KnownWordsManagerRoute
 import com.ankiminer.android.ui.settings.MessageSnackbarEffect
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsRoute
+import com.ankiminer.android.ui.settings.ankiDroidInstallLabel
 import com.ankiminer.android.ui.settings.settingsCardIndexFor
 import com.ankiminer.android.ui.settings.settingsCategoryFor
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -900,6 +901,7 @@ internal fun MiningReadinessNotice(
                             onCheckAgain = onCheckAgain,
                             onOpenSettings = onOpenSettings,
                             onImportDictionary = onImportDictionary,
+                            installAnkiDroidLabel = ankiDroidInstallLabel(state.anki),
                         )
                 }
             }
@@ -917,6 +919,7 @@ internal fun MiningReadinessActions(
     onCheckAgain: () -> Unit,
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
     onImportDictionary: () -> Unit,
+    @StringRes installAnkiDroidLabel: Int = R.string.install_ankidroid,
 ) {
     val actionSpec =
         when (action) {
@@ -940,7 +943,7 @@ internal fun MiningReadinessActions(
                 )
             MiningReadinessAction.INSTALL_ANKIDROID ->
                 ReadinessActionSpec(
-                    R.string.install_or_update_ankidroid,
+                    installAnkiDroidLabel,
                     onInstallAnkiDroid,
                     opensSettings = false,
                 )

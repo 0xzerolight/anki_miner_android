@@ -317,8 +317,13 @@
     <string name="open_settings">打开设置</string>
     <string name="allow_required_access">请求应用权限</string>
     <string name="open_app_settings">打开应用设置</string>
-    <string name="install_or_update_ankidroid">安装或更新 AnkiDroid</string>
     <string name="open_ankidroid">打开 AnkiDroid</string>
+    <string name="install_ankidroid">安装 AnkiDroid</string>
+    <string name="update_ankidroid">更新 AnkiDroid</string>
+    <string name="ankidroid_install_prompt">Anki Miner 通过 AnkiDroid 添加卡片。请先安装 AnkiDroid，然后回到这里。</string>
+    <string name="ankidroid_update_prompt">此 AnkiDroid 版本对 Anki Miner 来说太旧。请更新后回到这里。</string>
+    <string name="ankidroid_open_prompt">请先打开一次 AnkiDroid，让它创建牌组集合，然后回到这里。</string>
+    <string name="ankidroid_permission_prompt">允许 Anki Miner 向 AnkiDroid 添加卡片。</string>
     <string name="return_to_active_run">返回正在进行的任务</string>
     <string name="ankidroid_action_unavailable">没有可用于打开 AnkiDroid 或其官方发布页面的应用。</string>
     <string name="settings_verbose_logging_section">日志</string>

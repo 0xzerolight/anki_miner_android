@@ -318,8 +318,13 @@
     <string name="open_settings">設定を開く</string>
     <string name="allow_required_access">必要な権限をリクエスト</string>
     <string name="open_app_settings">アプリ設定を開く</string>
-    <string name="install_or_update_ankidroid">AnkiDroidをインストールまたは更新</string>
     <string name="open_ankidroid">AnkiDroidを開く</string>
+    <string name="install_ankidroid">AnkiDroid をインストール</string>
+    <string name="update_ankidroid">AnkiDroid を更新</string>
+    <string name="ankidroid_install_prompt">Anki Miner は AnkiDroid を通してカードを追加します。AnkiDroid をインストールしてから戻ってきてください。</string>
+    <string name="ankidroid_update_prompt">この AnkiDroid は Anki Miner には古すぎます。更新してから戻ってきてください。</string>
+    <string name="ankidroid_open_prompt">AnkiDroid を一度開いてコレクションを作成させてから、戻ってきてください。</string>
+    <string name="ankidroid_permission_prompt">Anki Miner が AnkiDroid にカードを追加できるよう許可してください。</string>
     <string name="return_to_active_run">実行中のマイニングに戻る</string>
     <string name="ankidroid_action_unavailable">AnkiDroidまたは公式リリースページを開けるアプリがありません。</string>
     <string name="settings_verbose_logging_section">ログ</string>
