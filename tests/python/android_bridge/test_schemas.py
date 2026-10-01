@@ -1604,6 +1604,29 @@ def test_curation_schema_rejects_partial_or_invalid_page_context(
         Draft202012Validator(schemas["curation"]).validate(payload)
 
 
+def test_curation_schema_accepts_a_sentence_preview(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = _curation_request_with_sentence_fields({"linesBefore": 1, "linesAfter": 2, "translation": "A cat."})
+
+    Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "sentence_fields",
+    [{"linesBefore": 0}, {"linesAfter": 101}, {"linesAfter": 1.5}, {"translation": ""}, {"translation": None}],
+    ids=["zero-count", "count-over-bound", "fractional-count", "empty-translation", "null-translation"],
+)
+def test_curation_schema_rejects_an_invalid_sentence_preview(
+    schemas: dict[str, dict[str, Any]],
+    sentence_fields: dict[str, Any],
+) -> None:
+    payload = _curation_request_with_sentence_fields(sentence_fields)
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
 @pytest.mark.parametrize(
     "payload",
     [

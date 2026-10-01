@@ -11,6 +11,7 @@ configured and keep writing cards from a memory-starved interpreter. Mirrors
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 import threading
@@ -20,6 +21,7 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from .audio_cache import _RunAudioCache
@@ -29,7 +31,7 @@ from .config_map import (
     map_config_settings,
 )
 from .faults import record_fault
-from .jobs import JobRegistry, registry
+from .jobs import JobRegistry, SentencePreview, registry
 from .protocol import (
     BridgeProtocolError,
     decode_message,
@@ -1101,6 +1103,79 @@ def _build_processor(
         raise
 
 
+class _SentencePreview:
+    """The curation preview desktop's curator paints from the run's own cues.
+
+    Desktop's curator holds both cue lists and derives two things the card will
+    carry: the automatic cue merge (``merge_incomplete_cues``), which it
+    re-derives for a picked sentence (``_restamp_auto_expansion``), and the
+    secondary track's line over the shown window (``_translation_cell_values``).
+    Kotlin holds neither, so each curation sentence carries both, computed with
+    the same engine functions over the same ``parse_raw_entries`` calls the
+    processor makes (``_auto_stamp_line_expansions`` for the primary track,
+    ``_load_secondary_entries`` for the second). Each file is parsed on first
+    use, after the processor has already read it; a run with neither feature
+    parses nothing and sends nothing new.
+    """
+
+    def __init__(self, processor: Any, config: Any, request: _VideoRequest) -> None:
+        self._processor = processor
+        self._config = config
+        self._request = request
+
+    @functools.cached_property
+    def _entries(self) -> list[tuple[float, float, str]]:
+        return self._processor.subtitle_parser.parse_raw_entries(self._request.subtitle_path)
+
+    @functools.cached_property
+    def _secondary_entries(self) -> list[tuple[float, float, str]]:
+        parser = self._processor.subtitle_parser
+        return parser.parse_raw_entries(self._request.secondary_subtitle_path, 0.0, encodings=())
+
+    def _cue_index(self, word: Any) -> int | None:
+        """The processor's own cue match: tight tolerance and the exact cue text."""
+
+        from anki_miner.services.word_filter import find_cue_index
+
+        index = find_cue_index(self._entries, word.start_time, word.sentence, tolerance=1e-3)
+        return index if index is not None and self._entries[index][2] == word.sentence else None
+
+    def __call__(self, word: Any) -> SentencePreview:
+        from anki_miner.services.word_filter import merge_cue_window
+
+        expansion: tuple[int, int] = word.line_expansion
+        index: int | None = None
+        if expansion == (0, 0) and self._config.merge_incomplete_cues:
+            from anki_miner.languages.registry import config_language, get_profile
+            from anki_miner.services.cue_merge import auto_line_expansion, merge_budget_seconds
+
+            index = self._cue_index(word)
+            if index is not None:
+                expansion = auto_line_expansion(
+                    self._entries,
+                    index,
+                    get_profile(config_language(self._config)).sentence_rules,
+                    max_seconds=merge_budget_seconds(self._config.audio_padding),
+                )
+        translation = ""
+        if self._request.secondary_subtitle_path is not None:
+            from anki_miner.services.secondary_subtitles import match_secondary_line
+
+            start, end = word.start_time, word.end_time
+            if expansion != (0, 0):
+                index = self._cue_index(word) if index is None else index
+                if index is not None:
+                    window = merge_cue_window(self._entries, index, *expansion)
+                    start, end = window.start, window.end
+            translation = match_secondary_line(
+                self._secondary_entries,
+                start,
+                end,
+                offset=self._request.secondary_subtitle_offset,
+            )
+        return SentencePreview(line_expansion=expansion, translation=translation)
+
+
 def _process_episode(
     request: _VideoRequest,
     config: object,
@@ -1129,6 +1204,7 @@ def _process_episode(
         )
         processor = _build_processor(config, adapters, anki_adapter)
         stack.callback(processor.close)
+        adapters.sentence_preview = _SentencePreview(processor, config, request)
         from .definitions import clear_run_dictionaries, register_run_dictionaries
 
         register_run_dictionaries(adapters.run_id, config)

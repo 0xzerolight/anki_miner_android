@@ -6,6 +6,7 @@ import queue
 import re
 import sqlite3
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -65,6 +66,7 @@ def _start_wait(
     *,
     allow_line_expansion: bool = True,
     allow_clip_override: bool = False,
+    sentence_preview: Callable[[object], jobs.SentencePreview] | None = None,
 ) -> tuple[str, dict[str, object], list[object], threading.Thread]:
     handle = registry.begin()
     request, returned, thread = _start_wait_for_run(
@@ -73,6 +75,7 @@ def _start_wait(
         candidates,
         allow_line_expansion=allow_line_expansion,
         allow_clip_override=allow_clip_override,
+        sentence_preview=sentence_preview,
     )
     return handle.run_id, request, returned, thread
 
@@ -84,6 +87,7 @@ def _start_wait_for_run(
     *,
     allow_line_expansion: bool = True,
     allow_clip_override: bool = False,
+    sentence_preview: Callable[[object], jobs.SentencePreview] | None = None,
 ) -> tuple[dict[str, object], list[object], threading.Thread]:
     emitted = threading.Event()
     request: dict[str, object] = {}
@@ -101,6 +105,7 @@ def _start_wait_for_run(
                 emit,
                 allow_line_expansion=allow_line_expansion,
                 allow_clip_override=allow_clip_override,
+                sentence_preview=sentence_preview,
             )
         )
 
@@ -1300,6 +1305,147 @@ def test_paged_curation_without_sentence_context_omits_new_keys_on_every_page() 
     thread.join(1)
     assert not thread.is_alive()
     assert returned == [[]]
+
+
+def _merge_preview(word: object) -> jobs.SentencePreview:
+    """Echo the word's own stamp, the way the video lane reports the engine's merge."""
+
+    return jobs.SentencePreview(line_expansion=word.line_expansion, translation="")
+
+
+def test_sentence_payload_carries_the_preview_merge_and_translation() -> None:
+    word = FakeWord("猫", "猫", "猫を", 1.0, 2.0, 1.0)
+    preview = jobs.SentencePreview(line_expansion=(1, 2), translation="I see a cat.")
+
+    payload = jobs._sentence_payload("sentence_" + "0" * 32, word, sentence_preview=lambda w: preview)
+
+    assert (payload["linesBefore"], payload["linesAfter"], payload["translation"]) == (1, 2, "I see a cat.")
+    assert payload["sentence"] == "猫を"
+
+
+def test_sentence_payload_omits_zero_counts_and_an_empty_translation() -> None:
+    word = FakeWord("猫", "猫", "猫を", 1.0, 2.0, 1.0)
+    base = {"sentenceId", "sentence", "sentenceFurigana", "sentenceReading", "startTime", "endTime", "duration"}
+
+    after_only = jobs._sentence_payload(
+        "sentence_" + "0" * 32,
+        word,
+        sentence_preview=lambda w: jobs.SentencePreview(line_expansion=(0, 1), translation=""),
+    )
+    untouched = jobs._sentence_payload(
+        "sentence_" + "0" * 32,
+        word,
+        sentence_preview=lambda w: jobs.SentencePreview(line_expansion=(0, 0), translation=""),
+    )
+
+    assert set(after_only) == base | {"linesAfter"}
+    assert set(untouched) == base
+
+
+def test_await_curation_previews_every_sentence_variant_on_every_page() -> None:
+    registry = JobRegistry()
+    words = []
+    for index in range(101):
+        word = FakeWord(str(index), str(index), f"fragment-{index}", 1, 2, 1, line_expansion=(0, 1))
+        alternative = FakeWord(str(index), str(index), f"other-{index}", 5, 6, 1)
+        word.sentence_candidates = [word, alternative]
+        words.append(word)
+
+    def preview(word: object) -> jobs.SentencePreview:
+        # The alternative gets a merge of its own, as a re-derived pick would.
+        expansion = (1, 0) if word.sentence.startswith("other") else word.line_expansion
+        return jobs.SentencePreview(line_expansion=expansion, translation=f"tr:{word.sentence}")
+
+    handle = registry.begin()
+    emitted: queue.Queue[tuple[str, dict[str, object]]] = queue.Queue()
+    thread = threading.Thread(
+        target=lambda: registry.await_curation(
+            handle.run_id,
+            words,
+            lambda raw: emitted.put((raw, json.loads(raw))),
+            sentence_preview=preview,
+        ),
+        daemon=True,
+    )
+    thread.start()
+
+    request_id: str | None = None
+    seen = 0
+    for page_index in range(2):
+        _, request = emitted.get(timeout=1)
+        payload = request["payload"]
+        assert isinstance(payload, dict)
+        request_id = request_id or payload["requestId"]
+        for candidate in payload["candidates"]:
+            default, alternative = candidate["sentences"]
+            assert default["sentenceId"] == candidate["defaultSentenceId"]
+            assert ("linesBefore" in default, default["linesAfter"]) == (False, 1)
+            assert default["translation"] == f"tr:{default['sentence']}"
+            assert (alternative["linesBefore"], "linesAfter" in alternative) == (1, False)
+            assert alternative["translation"] == f"tr:{alternative['sentence']}"
+            seen += 1
+        registry.resolve_curation(_page_response(handle.run_id, request_id, page_index, []))
+
+    thread.join(1)
+    assert not thread.is_alive()
+    assert seen == 101
+
+
+def test_echoing_the_automatic_merge_returns_the_engine_object_itself() -> None:
+    registry = JobRegistry()
+    word = FakeWord("猫", "猫", "猫を", 1, 2, 1, line_expansion=(0, 1))
+    run_id, request, returned, thread = _start_wait(registry, [word], sentence_preview=_merge_preview)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+    candidate = payload["candidates"][0]
+    assert candidate["sentences"][0]["linesAfter"] == 1
+
+    registry.resolve_curation(
+        _response(run_id, payload["requestId"], [{"candidateId": candidate["candidateId"], "linesAfter": 1}])
+    )
+    thread.join(1)
+
+    assert returned[0][0] is word
+
+
+def test_reset_writes_no_expansion_over_the_automatic_merge() -> None:
+    registry = JobRegistry()
+    word = FakeWord("猫", "猫", "猫を", 1, 2, 1, line_expansion=(0, 1))
+    run_id, request, returned, thread = _start_wait(registry, [word], sentence_preview=_merge_preview)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+
+    registry.resolve_curation(
+        _response(run_id, payload["requestId"], [{"candidateId": payload["candidates"][0]["candidateId"]}])
+    )
+    thread.join(1)
+
+    (chosen,) = returned[0]
+    assert chosen is not word
+    assert chosen.line_expansion == (0, 0)
+    assert word.line_expansion == (0, 1)
+
+
+def test_manual_lines_extend_the_automatic_merge() -> None:
+    registry = JobRegistry()
+    word = FakeWord("猫", "猫", "猫を", 1, 2, 1, line_expansion=(0, 1))
+    run_id, request, returned, thread = _start_wait(registry, [word], sentence_preview=_merge_preview)
+    payload = request["payload"]
+    assert isinstance(payload, dict)
+
+    # Kotlin seeds (0, 1) from the sentence; + previous line and + next line add to it.
+    registry.resolve_curation(
+        _response(
+            run_id,
+            payload["requestId"],
+            [{"candidateId": payload["candidates"][0]["candidateId"], "linesBefore": 1, "linesAfter": 2}],
+        )
+    )
+    thread.join(1)
+
+    (chosen,) = returned[0]
+    assert chosen.line_expansion == (1, 2)
+    assert word.line_expansion == (0, 1)
 
 
 def test_known_forms_commit_once_on_the_final_page(
