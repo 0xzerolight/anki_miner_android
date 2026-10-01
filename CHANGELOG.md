@@ -37,6 +37,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Importing a dictionary whose own data names another language says so (Settings -> Resources).** It is still imported.
 - **Jisho is offered only while mining Japanese.** A settings backup cannot turn it on for another language.
 - **Japanese words, sentences and definitions in curation and Reading use Japanese character shapes.** On a phone set to another language some kanji used to show their Chinese forms.
+- **The APK is about twice the size, roughly 110 MB.** The new languages' tokenizers ship in the app; their models and dictionaries still download only for the language you pick.
 
 ### Removed
 
