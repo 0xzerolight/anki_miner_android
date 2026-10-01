@@ -129,23 +129,31 @@ internal fun WizardAnkiDroidPage(
     callbacks: OnboardingWizardCallbacks,
     emphasized: Boolean,
 ) {
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(
-            Modifier.padding(AnkiMinerTokens.Space.content),
-            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-        ) {
-            if (state.ankiDroidAction == null) {
-                WizardAnkiFailure(state, callbacks)
-                if (!state.ankiReady) Text(stringResource(R.string.b3_status_checking))
+    // A connected AnkiDroid with no provider error has nothing to say here; an empty card above
+    // the deck read as a broken step.
+    val connectCardHasContent =
+        !state.ankiReady ||
+            state.ankiDroidAction != null ||
+            state.ankiFailure?.origin == AnkiSetupFailureOrigin.TARGET
+    if (connectCardHasContent) {
+        OutlinedCard(Modifier.fillMaxWidth()) {
+            Column(
+                Modifier.padding(AnkiMinerTokens.Space.content),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            ) {
+                if (state.ankiDroidAction == null) {
+                    WizardAnkiFailure(state, callbacks)
+                    if (!state.ankiReady) Text(stringResource(R.string.b3_status_checking))
+                }
+                AnkiDroidConnectActions(
+                    state = state,
+                    onRequestPermissions = callbacks.onRequestPermissions,
+                    onOpenAppSettings = callbacks.onOpenAppSettings,
+                    onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
+                    onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
+                    emphasized = emphasized,
+                )
             }
-            AnkiDroidConnectActions(
-                state = state,
-                onRequestPermissions = callbacks.onRequestPermissions,
-                onOpenAppSettings = callbacks.onOpenAppSettings,
-                onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
-                onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
-                emphasized = emphasized,
-            )
         }
     }
     if (state.ankiReady) {
