@@ -1,0 +1,23 @@
+--- src-original/CMakeLists.txt
++++ src/CMakeLists.txt
+@@ -11,6 +11,11 @@
+ set ( CMAKE_SKIP_RPATH ON )
+ set ( CMAKE_OSX_DEPLOYMENT_TARGET "10.14" CACHE STRING "Minimum OS X deployment version" )
+ 
++# Chaquopy: cpuinfo logs through liblog on Android.
++if(CMAKE_SYSTEM_NAME STREQUAL "Android")
++  link_libraries(log)
++endif()
++
+ add_subdirectory( Kiwi )
+ 
+ if(KIWI_USE_MIMALLOC)
+@@ -80,6 +85,8 @@
+   kiwi_static
+   ${LIBRARIES}
+ )
++# Chaquopy: a Python extension module is loaded by path and carries no SONAME.
++set_target_properties("_kiwipiepy" PROPERTIES NO_SONAME ON)
+ 
+ if(CMAKE_BUILD_TYPE STREQUAL "Release")
+   if(APPLE)

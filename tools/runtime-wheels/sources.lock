@@ -321,6 +321,27 @@
       "url": "https://files.pythonhosted.org/packages/18/53/84099323c2ec4be98d935f63c033ac4151ee83836ca1050ede3b3aadf155/joblib-1.6.0-py3-none-any.whl",
       "version": "1.6.0"
     },
+    "kiwipiepy": {
+      "filename": "kiwipiepy-0.23.2.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "carried": {
+          "COPYING.eigen-MPL2": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
+          "LICENSE.cpp-btree": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "LICENSE.cpuinfo": "8e7e60636c3aa0cb03571a1a841ce5697f9551ff92b3c426c2561613d15ade70",
+          "LICENSE.nlohmann-json": "46a65cffd1ea955132d95a8dd921640714a8d6b537d2e4e482d31145ae95b603",
+          "LICENSE.streamvbyte": "cb5e8e7e5f4a3988e1063c142c60dc2df75605f4c46515e776e3aca6df976e14"
+        },
+        "expression": "LGPL-3.0-or-later AND BSD-2-Clause AND Apache-2.0 AND MIT AND MPL-2.0",
+        "members": {
+          "kiwipiepy-0.23.2/LICENSE.txt": "e4aac7916a568db1d99a1c04f9273e9810a0fbf70fc4204cd3d436348032d263"
+        }
+      },
+      "package": "kiwipiepy",
+      "sha256": "632d627531ceaf4b55bd5c01d50eebdae0253c79c2c8a3f682f2e68492f36198",
+      "url": "https://files.pythonhosted.org/packages/c6/3f/b317dfd0085341a8e2b24fa8eddd7e709b07a91e6bcf20b8d8952ca26a03/kiwipiepy-0.23.2.tar.gz",
+      "version": "0.23.2"
+    },
     "libjpeg": {
       "filename": "libjpeg-turbo-1.5.3.tar.gz",
       "kind": "runtime-source",

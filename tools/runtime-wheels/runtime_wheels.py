@@ -66,6 +66,7 @@ FAMILIES = {
     "base": "tokenizer-neutral runtime: requests, pysubs2, Pillow, lxml",
     "f1": "Turkish (tr): zeyrek over nltk and regex",
     "f2": "spaCy languages, Russian and Ukrainian (pymorphy3)",
+    "f3": "Korean (ko): kiwipiepy",
 }
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
@@ -254,6 +255,13 @@ NATIVE_SPECS = {
         "abi": "cp312",
         "source": "thinc",
     },
+    "kiwipiepy": {
+        "version": "0.23.2",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "kiwipiepy",
+    },
 }
 
 SOURCE_SPECS = {
@@ -321,6 +329,7 @@ SOURCE_SPECS = {
     "spacy": ("runtime-source", "spacy", "3.8.14"),
     "srsly": ("runtime-source", "srsly", "2.5.3"),
     "thinc": ("runtime-source", "thinc", "8.3.13"),
+    "kiwipiepy": ("runtime-source", "kiwipiepy", "0.23.2"),
 }
 
 HOST_REQUIREMENTS = {
@@ -472,6 +481,9 @@ MANDATORY_DEPENDENCIES = {
         "srsly",
         "wasabi",
     },
+    # numpy is declared but never imported by Kiwi().tokenize; the model is
+    # downloaded data. Chaquopy installs with --no-deps.
+    "kiwipiepy": {"chaquopy-libcxx", "dataclasses", "kiwipiepy-model", "numpy", "tqdm"},
 }
 
 NATIVE_REQUIRED_PATHS = {
@@ -500,6 +512,7 @@ NATIVE_REQUIRED_PATHS = {
     "spacy": {"spacy/tokenizer.so", "spacy/vocab.so"},
     "srsly": {"srsly/ujson/ujson.so"},
     "thinc": {"thinc/backends/numpy_ops.so"},
+    "kiwipiepy": {"_kiwipiepy.so"},
 }
 
 REQUIRED_NEEDED = {
@@ -532,6 +545,8 @@ REQUIRED_NEEDED = {
     "spacy": {"libc++_shared.so", "libpython3.12.so"},
     "srsly": {"libc++_shared.so", "libpython3.12.so"},
     "thinc": {"libc++_shared.so", "libpython3.12.so"},
+    # Kiwi's bundled cpuinfo logs through liblog.
+    "kiwipiepy": {"libc++_shared.so", "liblog.so", "libpython3.12.so"},
 }
 
 ANDROID_SYSTEM_LIBS = {
@@ -628,6 +643,7 @@ FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
         "weasel",
         "wrapt",
     ),
+    "f3": ("kiwipiepy", "tqdm"),
 }
 PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
     package: tuple(family for family, packages in FAMILY_PACKAGES.items() if package in packages)
