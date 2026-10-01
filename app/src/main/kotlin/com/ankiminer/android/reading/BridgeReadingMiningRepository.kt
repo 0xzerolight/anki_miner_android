@@ -918,7 +918,7 @@ internal class BridgeReadingMiningRepository(
                     failure =
                         MiningFailure(
                             message =
-                                terminal.error?.message
+                                terminal.error?.let { noticeRewriter.terminalMessage(it.code, it.message) }
                                     ?: terminalNotices.firstOrNull()
                                     ?: strings.resolve(R.string.mining_failure_generic),
                             retryable = terminal.error?.code in RETRYABLE_TERMINAL_ERRORS,

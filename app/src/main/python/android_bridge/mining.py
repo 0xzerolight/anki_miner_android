@@ -1158,36 +1158,63 @@ def _result_terminal(run_id: str, result: object) -> tuple[str, str]:
 
 
 def _android_engine_message(message: str) -> str:
-    """Re-word the engine messages that name desktop-only menus.
+    """Re-word the one engine message that names desktop-only menus.
 
-    Engine exception text crosses the bridge verbatim, and two pre-flight gates
-    point at desktop surfaces Android does not have:
-
-    * the offline-dictionary gate says "Use Tools → Download Recommended
-      Resources or Settings → Dictionaries";
-    * the resource-staleness gate ends each stale family's line with a desktop
-      path such as "Settings → Word Audio → More → Reimport All".
-
-    Both are matched against the engine's own constants rather than a substring,
-    so an upstream re-wording surfaces the desktop text again (visible, and caught
-    by the bridge test) rather than silently mapping the wrong message.
+    Engine exception text crosses the bridge verbatim, and the offline-dictionary
+    pre-flight tells the user to "Use Tools → Download Recommended Resources or
+    Settings → Dictionaries" — two surfaces Android does not have. Matched against
+    the engine's own constant rather than a substring, so an upstream re-wording
+    surfaces the desktop text again (visible, and caught by the bridge test) rather
+    than silently mapping the wrong message.
     """
 
     from anki_miner.orchestration.episode_processor import (
         _OFFLINE_DICTIONARY_REQUIRED_MESSAGE,
     )
-    from anki_miner.services.resource_staleness import _FAMILY_LABELS
 
     if message == _OFFLINE_DICTIONARY_REQUIRED_MESSAGE:
         return "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
-    desktop_fixes = tuple(f" — {fix}" for _plural, _singular, fix in _FAMILY_LABELS.values())
-    lines: list[str] = []
+    return message
+
+
+def _stale_resource_names(message: str) -> str | None:
+    """The quoted names a resource-staleness ``SetupError`` lists, or None for any other message.
+
+    The staleness gate writes one line per stale family and ends each with a
+    desktop Settings path ("… — Settings → Word Audio → More → Reimport All").
+    Kotlin renders its own localized sentence for the ``resources_stale`` code, so
+    only the names cross, as the engine quoted them. The fixed text around the
+    names comes from re-running the engine's own formatter with sentinel names,
+    so an upstream re-wording stops matching and the message falls back to
+    ``setup_incomplete`` verbatim (visible, and caught by the bridge test).
+    """
+
+    from anki_miner.services.resource_staleness import (
+        _FAMILY_LABELS,
+        format_stale_family_message,
+    )
+
+    sentinel = "'\x00'"
+    shapes: list[tuple[str, str]] = []
+    for family in _FAMILY_LABELS:
+        for count in (1, 2):
+            probe = format_stale_family_message(family, ["\x00"] * count)
+            shapes.append((probe[: probe.index(sentinel)], probe[probe.rindex(sentinel) + len(sentinel) :]))
+    names: list[str] = []
     for line in message.split("\n"):
-        fix = next((candidate for candidate in desktop_fixes if line.endswith(candidate)), None)
-        if fix is None:
-            return message
-        lines.append(f"{line[: -len(fix)]} — reimport in Settings, under Resources.")
-    return "\n".join(lines)
+        shape = next(
+            (
+                (head, tail)
+                for head, tail in shapes
+                if len(line) > len(head) + len(tail) and line.startswith(head) and line.endswith(tail)
+            ),
+            None,
+        )
+        if shape is None:
+            return None
+        head, tail = shape
+        names.append(line[len(head) : len(line) - len(tail)])
+    return ", ".join(names)
 
 
 def _exception_terminal(
@@ -1232,8 +1259,15 @@ def _exception_terminal(
         # AnkiMinerException branch, which would otherwise swallow it into engine_error
         # and offer the user a Retry that can never succeed.
         if isinstance(error, SetupError):
-            code = "setup_incomplete"
-            message = _android_engine_message(str(error)) or "Setup is incomplete"
+            stale_names = _stale_resource_names(str(error))
+            if stale_names is not None:
+                # Its own code so Kotlin can say it from the catalogs: the
+                # engine's sentence points at desktop Settings paths.
+                code = "resources_stale"
+                message = stale_names
+            else:
+                code = "setup_incomplete"
+                message = _android_engine_message(str(error)) or "Setup is incomplete"
         elif isinstance(error, AnkiMinerException):
             code = "engine_error"
             message = _android_engine_message(str(error)) or "Mining failed"

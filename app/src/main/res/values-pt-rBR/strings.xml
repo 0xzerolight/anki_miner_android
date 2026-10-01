@@ -178,6 +178,7 @@
     <string name="undo_words_failed">Notas excluídas, mas a reversão das palavras conhecidas falhou.</string>
     <string name="mining_notice_no_definition">Nenhuma entrada de dicionário para %1$d palavra(s): %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Limite de frequência ignorado: nenhuma fonte de frequência com classificação está carregada. Adicione uma em Configurações → Recursos.</string>
+    <string name="mining_failure_resources_stale">Após a atualização do app, estes recursos precisam ser reimportados: %1$s. Reimporte-os em Configurações → Recursos.</string>
     <string name="result_metric_created">Criados</string>
     <string name="result_metric_skipped_new">Ignorados / novos</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

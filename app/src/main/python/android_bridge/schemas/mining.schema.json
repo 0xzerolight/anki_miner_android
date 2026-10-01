@@ -134,7 +134,7 @@
         },
         "message": {
           "type": "string",
-          "$comment": "result_error_text preserves a possibly empty desktop error string verbatim; Kotlin supplies any display fallback."
+          "$comment": "result_error_text preserves a possibly empty desktop error string verbatim; Kotlin supplies any display fallback. For code resources_stale it carries only the stale resources' names as the engine quoted them; Kotlin renders the sentence from its catalogs."
         },
         "faultId": {
           "type": "string",

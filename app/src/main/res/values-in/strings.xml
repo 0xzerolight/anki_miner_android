@@ -176,6 +176,7 @@
     <string name="undo_words_failed">Catatan telah dihapus, tetapi pemulihan kata yang dikenal gagal.</string>
     <string name="mining_notice_no_definition">Tidak ada entri kamus untuk %1$d kata: %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Batas frekuensi diabaikan: tidak ada sumber frekuensi berperingkat yang dimuat. Tambahkan di Pengaturan → Sumber daya.</string>
+    <string name="mining_failure_resources_stale">Setelah pembaruan aplikasi, sumber daya ini perlu diimpor ulang: %1$s. Impor ulang di Pengaturan → Sumber daya.</string>
     <string name="result_metric_created">Dibuat</string>
     <string name="result_metric_skipped_new">Dilewati / baru</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

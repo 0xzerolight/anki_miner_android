@@ -40,6 +40,24 @@ class EngineNoticeRewriterTest {
         assertEquals("resource:${R.string.mining_notice_frequency_cutoff_ignored}", rewritten)
     }
 
+    /** The staleness gate crosses as its own code with only the names; the sentence is Android's. */
+    @Test
+    fun staleResourcesTerminalIsSaidFromTheCatalogs() {
+        assertEquals(
+            "resource:${R.string.mining_failure_resources_stale}:'JMdict', 'Forvo'",
+            rewriter.terminalMessage("resources_stale", "'JMdict', 'Forvo'"),
+        )
+    }
+
+    @Test
+    fun otherTerminalCodesKeepTheBridgeMessage() {
+        assertEquals(
+            "No usable offline dictionary is installed.",
+            rewriter.terminalMessage("setup_incomplete", "No usable offline dictionary is installed."),
+        )
+        assertEquals("Mining failed", rewriter.terminalMessage("engine_error", "Mining failed"))
+    }
+
     /** The engine appends the overflow tail inside its own %3 slot, so it rides along in group 2. */
     @Test
     fun overflowTailStaysAttachedToTheWordList() {
