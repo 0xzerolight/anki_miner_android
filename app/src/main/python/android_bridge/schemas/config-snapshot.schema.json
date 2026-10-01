@@ -63,6 +63,7 @@
         "colloquial_form": {"$ref": "#/$defs/optionalMappedField"},
         "expression_grammar": {"$ref": "#/$defs/optionalMappedField"},
         "formal_form": {"$ref": "#/$defs/optionalMappedField"},
+        "hanja": {"$ref": "#/$defs/optionalMappedField"},
         "noun_gender": {"$ref": "#/$defs/optionalMappedField"},
         "noun_plural": {"$ref": "#/$defs/optionalMappedField"},
         "pos": {"$ref": "#/$defs/optionalMappedField"},

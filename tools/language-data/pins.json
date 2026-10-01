@@ -30,6 +30,28 @@
         ]
       }
     },
+    "ko/kiwipiepy": {
+      "apk": "engine code: the kiwipiepy wheel (its _kiwipiepy extension built for Android) ships in the APK (D3)"
+    },
+    "ko/kiwipiepy_model": {
+      "data": {
+        "sha256": "498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2",
+        "sizeBytes": 87976912,
+        "displayName": "Kiwi 0.23.0 Korean morphological model",
+        "dropCode": [
+          "__init__.py",
+          "_version.py"
+        ],
+        "attribution": [
+          {
+            "name": "kiwipiepy_model 0.23.0 (Kiwi)",
+            "copyright": "bab2min (Minchul Lee); model files for kiwipiepy",
+            "license": "LGPL-3.0",
+            "url": "https://github.com/bab2min/Kiwi"
+          }
+        ]
+      }
+    },
     "th/pythainlp": {
       "apk": "engine code: the repacked pythainlp wheel ships in the APK (C.1), corpora and all"
     },

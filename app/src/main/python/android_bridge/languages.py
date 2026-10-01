@@ -50,6 +50,7 @@ DOWNLOADABLE_DATA_COMPONENTS: frozenset[tuple[str, str]] = frozenset(
     {
         ("ar", "calima_msa"),  # the CAMeL morphology database (a plain zip)
         ("fa", "hazm_data"),  # hazm's five .dat tables (the wheel's data/ directory only)
+        ("ko", "kiwipiepy_model"),  # the Kiwi model files (the sdist minus its two .py files)
     }
 )
 

@@ -21,8 +21,10 @@ from __future__ import annotations
 import logging
 import posixpath
 import stat
+import tarfile
 import zipfile
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -69,7 +71,13 @@ def escapes(target: str) -> bool:
 
 
 def _vendored_component(language: str, resource: LanguageDataResource) -> tuple[Any, Any]:
-    """The vendored ``(PackComponent, ArtifactSpec)`` the catalog entry was generated from."""
+    """The vendored ``(PackComponent, ArtifactSpec)`` the catalog entry was generated from.
+
+    The catalog's ``exclude`` is the vendored list, optionally followed by the code
+    members Android drops (an sdist's ``__init__.py``: desktop imports the model
+    package, Android reads it by path). Those extra entries may only name code, so
+    they never drop data; the returned spec carries them into the extraction.
+    """
 
     from anki_miner.services.language_pack_installer import load_pack
 
@@ -81,6 +89,8 @@ def _vendored_component(language: str, resource: LanguageDataResource) -> tuple[
     )
     spec = None if component is None else component.universal
     install = resource.install
+    vendored_exclude = () if spec is None else tuple(spec.exclude)
+    dropped_code = install.exclude[len(vendored_exclude) :]
     if (
         spec is None
         or component.per_platform is not None
@@ -90,7 +100,8 @@ def _vendored_component(language: str, resource: LanguageDataResource) -> tuple[
         or spec.sha256 != resource.archive.sha256
         or spec.kind != resource.archive.format
         or spec.member_prefix != install.member_prefix
-        or tuple(spec.exclude) != install.exclude
+        or install.exclude[: len(vendored_exclude)] != vendored_exclude
+        or not all(is_code_member(entry) and not entry.endswith("/") for entry in dropped_code)
         or tuple(component.sentinels) != install.sentinels
         or tuple(spec.inner_sha256) != tuple((digest.path, digest.sha256) for digest in install.inner_sha256)
     ):
@@ -98,7 +109,21 @@ def _vendored_component(language: str, resource: LanguageDataResource) -> tuple[
             "resource_catalog_mismatch",
             "Pinned language data does not match the vendored pack manifest",
         )
-    return component, spec
+    return component, replace(spec, exclude=install.exclude)
+
+
+def _member_names(archive: Path, kind: str) -> list[str]:
+    """Every member name of *archive*, read the way the vendored extractor opens it."""
+
+    try:
+        if kind == "sdist":
+            with tarfile.open(archive, mode="r:gz") as bundle:
+                return bundle.getnames()
+        with zipfile.ZipFile(archive) as bundle:
+            # Directory entries too: a ``x/evil.py/./`` entry is judged like the file it names.
+            return bundle.namelist()
+    except (OSError, EOFError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        raise _fail("language_data_install_failed", "The language data archive is not a valid archive") from exc
 
 
 def _refuse_code_members(archive: Path, spec: Any) -> None:
@@ -110,14 +135,8 @@ def _refuse_code_members(archive: Path, spec: Any) -> None:
 
     from anki_miner.services.pack_installer import _wanted, _wanted_root
 
-    try:
-        with zipfile.ZipFile(archive) as bundle:
-            # Directory entries too: a ``x/evil.py/./`` entry is judged like the file it names.
-            names = bundle.namelist()
-    except (OSError, zipfile.BadZipFile) as exc:
-        raise _fail("language_data_install_failed", "The language data archive is not a valid zip") from exc
     refused = []
-    for name in names:
+    for name in _member_names(archive, spec.kind):
         target = _wanted(name, spec) or _wanted_root(name, spec)
         if target is not None and (is_code_member(name) or escapes(target)):
             refused.append(name)

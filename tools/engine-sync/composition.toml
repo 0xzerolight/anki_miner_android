@@ -87,6 +87,7 @@ protected_verbatim = [
 allowed_external = [
   "PIL",
   "charset_normalizer",
+  "kiwipiepy",
   "lxml",
   "pysubs2",
   "pythainlp",
@@ -181,7 +182,7 @@ forbidden_imports = [
 ]
 
 # Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
-languages = ["ja", "he", "id", "ar", "fa", "th"]
+languages = ["ja", "he", "id", "ar", "fa", "th", "ko"]
 
 # Imported only inside functions, never vendored. ASR and retiming are reached
 # from episode_processor's deferred paths; gui only through languages/ja/text.py's
