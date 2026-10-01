@@ -19,6 +19,8 @@ import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
 import com.ankiminer.android.data.settings.EngineDefaults
+import com.ankiminer.android.data.settings.LanguageDefaults
+import com.ankiminer.android.data.settings.LanguageProfileFixtures
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupException
 import com.ankiminer.android.data.settings.SettingsBackupFailure
@@ -1140,6 +1142,107 @@ class SettingsViewModelTest {
                 SettingsBackupState.Imported(applied = 1, ignored = 0, rejected = 0),
                 viewModel.backupState.value,
             )
+        }
+
+    @Test
+    fun `importing a language this build cannot mine keeps the current one and says so`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings(deckName = "Mining"))
+            val io =
+                RecordingDocumentIo(
+                    content =
+                        """{"ankiMinerAndroidSettings":2,"appVersion":"9.9.9","schemaVersion":3,"settings":{"mining_language":"zh","theme_mode":"light"}}""",
+                )
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentReader = io,
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+
+            viewModel.importSettings("content://in.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertEquals("ja", repository.current.language)
+            assertEquals(ThemeMode.LIGHT, repository.current.theme)
+            assertEquals(
+                SettingsBackupState.Imported(applied = 1, ignored = 0, rejected = 1, unknownLanguage = "zh"),
+                viewModel.backupState.value,
+            )
+        }
+
+    @Test
+    fun `switching language saves pending edits to the outgoing language first`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings(jishoEnabled = true))
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(ResourceManagerState()),
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(deckName = "Japanese"))
+
+            assertTrue(viewModel.switchLanguage("he"))
+            advanceUntilIdle()
+
+            assertEquals("he", repository.current.language)
+            assertEquals("Japanese", repository.current.languageStash.getValue("ja")["deck_name"])
+            assertEquals(true, repository.current.languageStash.getValue("ja")["jisho_enabled"])
+            assertFalse(repository.current.jishoEnabled)
+            assertEquals(EngineDefaults.DECK_NAME, viewModel.draftState.value.draft.deckName)
+            assertFalse(viewModel.draftState.value.dirty)
+            assertFalse(viewModel.draftState.value.draft.jisho)
+        }
+
+    @Test
+    fun `the active language's defaults follow a switch and Japanese keeps the engine's`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(ResourceManagerState()),
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+
+            assertEquals(LanguageDefaults.JAPANESE, viewModel.languageDefaults.value)
+            assertEquals(listOf("ja", "he", "ar"), viewModel.languageProfiles.value.map { it.code })
+
+            viewModel.switchLanguage("he")
+            advanceUntilIdle()
+
+            val hebrew = checkNotNull(viewModel.languageDefaults.value)
+            assertEquals("he", hebrew.code)
+            assertTrue(hebrew.useSubtitleRegexFilter)
+            assertFalse(hebrew.knownWordsMatchKanaVariants)
+            assertTrue("transliteration" in hebrew.fieldKeys)
+            assertEquals("Transliteration", hebrew.extraCardFields.first().placeholder)
+        }
+
+    @Test
+    fun `a language that is not a loaded profile is refused without a write`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(ResourceManagerState()),
+                    languageProfileSource = { Result.failure(IOException("bridge down")) },
+                )
+            advanceUntilIdle()
+
+            assertFalse(viewModel.switchLanguage("he"))
+            advanceUntilIdle()
+
+            assertEquals(0, repository.writeCount)
+            assertEquals("ja", repository.current.language)
+            assertEquals(LanguageDefaults.JAPANESE, viewModel.languageDefaults.value)
         }
 
     @Test

@@ -1441,7 +1441,7 @@ internal fun SettingsBackupSection(
                     stringResource(R.string.settings_backup_exported),
                     style = MaterialTheme.typography.bodySmall,
                 )
-            is SettingsBackupState.Imported ->
+            is SettingsBackupState.Imported -> {
                 Text(
                     if (state.ignored + state.rejected == 0) {
                         stringResource(R.string.settings_backup_imported, state.applied)
@@ -1454,6 +1454,13 @@ internal fun SettingsBackupSection(
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
+                state.unknownLanguage?.let { code ->
+                    Text(
+                        stringResource(R.string.settings_backup_unknown_language, code),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             is SettingsBackupState.Failed ->
                 InlineFailureContainer(
                     message = state.message.localized(),

@@ -798,6 +798,7 @@
     <string name="settings_backup_import_failed">そのファイルから設定を読み込めませんでした。</string>
     <string name="settings_backup_not_a_backup">このファイルは Anki Miner の設定ファイルではありません。</string>
     <string name="settings_backup_too_large">このファイルは設定ファイルとしては大きすぎます。</string>
+    <string name="settings_backup_unknown_language">このバージョンではファイルの言語（%1$s）をマイニングできないため、現在のマイニング言語を維持しました。</string>
     <string name="b3_settings_android_override_state">カスタム上書き</string>
     <string name="b3_validation_numeric_incomplete">数値を最後まで入力するか、空欄にしてください</string>
     <string name="b3_validation_finite">有限の数値を入力してください</string>

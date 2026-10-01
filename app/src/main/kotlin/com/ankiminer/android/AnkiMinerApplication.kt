@@ -25,9 +25,11 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AndroidSettingsDocumentReader
+import com.ankiminer.android.data.settings.BridgeLanguageProfileSource
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.data.settings.LanguageProfileSource
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.update.DataStoreUpdateCheckRepository
 import com.ankiminer.android.data.update.GitHubUpdateCheckClient
@@ -223,6 +225,10 @@ class AnkiMinerApplication : Application() {
         lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
             BridgeDefinitionLookupService(pyBridge, resourceExecutor)
         }
+
+    val languageProfileSource: LanguageProfileSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BridgeLanguageProfileSource(pyBridge)
+    }
 
     val subtitleCueLookupService: SubtitleCueLookupService by
         lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
