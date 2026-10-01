@@ -715,7 +715,9 @@ REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
     # nltk's doctest suite: 1.6 MB the tr path never imports.
     "nltk": ("nltk/", ("test/",)),
     # Desktop yue/pack.py: the CTCPC and Common Voice training corpora, the
-    # GPL-3 CantoMap data and the training scripts never ship.
+    # GPL-3 CantoMap data and the training scripts never ship. The segmenter
+    # and tagger models are downloaded instead (language data
+    # yue-pycantonese-models); the engine override loads them by path.
     "pycantonese": (
         "pycantonese/",
         (
@@ -724,9 +726,13 @@ REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
             "data/common_voice/",
             "word_segmentation/train_segmenter.py",
             "pos_tagging/train_tagger.py",
+            "word_segmentation/segmenter.fb.zst",
+            "pos_tagging/tagger.fb.zst",
         ),
     ),
-    # Desktop vi/pack.py: what the tokenize and tag path never imports.
+    # Desktop vi/pack.py: what the tokenize and tag path never imports. The
+    # two CRF models are downloaded instead (language data
+    # vi-underthesea-models); the engine override loads them by path.
     "underthesea": (
         "underthesea/",
         (
@@ -739,6 +745,8 @@ REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
             "pipeline/tts/",
             "trainers/",
             "utils/",
+            "pipeline/word_tokenize/models/",
+            "pipeline/pos_tag/models/",
         ),
     ),
     # Desktop zh/pack.py: the .p pickles are Jython-only fallbacks, lac_small/
