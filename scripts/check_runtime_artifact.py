@@ -473,6 +473,7 @@ def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
 
 def _inspect_vendored_native(
     data: bytes,
+    wheel: str,
     member: str,
     abi: str,
     label: str,
@@ -490,7 +491,7 @@ def _inspect_vendored_native(
         )
         if abi == "arm64-v8a":
             assert llvm_objdump is not None
-            native_policy.audit_arm64_isa(data, member, logical, llvm_objdump)
+            native_policy.audit_arm64_isa(data, wheel, member, logical, llvm_objdump)
     except native_policy.ArtifactError as error:
         raise RuntimeArtifactError(str(error)) from error
     return metadata
@@ -622,6 +623,7 @@ def load_vendored_inventory(
                         )
                     inventory.native_metadata[member] = _inspect_vendored_native(
                         data,
+                        filename,
                         member,
                         abi,
                         f"{label}: {path}",

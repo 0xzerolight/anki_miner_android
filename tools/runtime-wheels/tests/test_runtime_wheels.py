@@ -1164,8 +1164,12 @@ class RepackTests(unittest.TestCase):
             self.assertIn("demo/train.py.orig", names)
             self.assertIn("demo/data/keep.txt", names)
             self.assertEqual("demo-1.0.dist-info/RECORD", names[-1])
-            with mock.patch.object(runtime_wheels, "REPACKS", {"demo": ("demo/", ("absent/",))}):
-                with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "match no member"):
+            for excludes in (("absent/",), ("data/big.bin", "absent/")):
+                with (
+                    self.subTest(excludes=excludes),
+                    mock.patch.object(runtime_wheels, "REPACKS", {"demo": ("demo/", excludes)}),
+                    self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, r"match no member: \['absent/'\]"),
+                ):
                     runtime_wheels.repack_wheel(source, root / "third.whl", "demo")
 
     def test_verification_rejects_a_repack_excluded_member(self) -> None:

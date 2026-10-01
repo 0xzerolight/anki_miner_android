@@ -15,6 +15,7 @@ import tempfile
 import zipfile
 from collections import Counter, deque
 from collections.abc import Iterable, Iterator
+from contextlib import closing
 from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -110,18 +111,22 @@ NDK_OBJDUMP = "toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-objdump"
 # feature some arm64 phones lack, so it must sit behind a runtime check.
 ARM64_ISA_BASELINE = "+v8a,+neon,+fp-armv8"
 ARM64_ISA_GUARD_WINDOW = 8
-# Kinds a specific extension module may contain because the judge traced every
-# hit to a runtime dispatch (docs/decisions/2026-09-30-multilang-s-judge.md).
+# An outline atomic's LL/SC fallback follows its LSE instruction within this many.
+ARM64_LSE_FALLBACK_WINDOW = 16
+# The exact non-baseline instruction counts the judge traced to runtime dispatch
+# in one release of one module (docs/decisions/2026-09-30-multilang-s-judge.md),
+# keyed by the wheel's name-version and the module's path. Any other release,
+# and any other count, fails until it is audited again and pinned here.
 # Shape-checked kinds (outline atomics, libunwind's MTE frame loop) are allowed
-# anywhere and need no entry here.
-ARM64_GUARDED_KINDS: dict[str, frozenset[str]] = {
+# anywhere and need no entry.
+ARM64_GUARDED_KINDS: dict[tuple[str, str], dict[str, int]] = {
     # highway VQSort float16 kernels, dispatched on ASIMDHP when numpy imports.
-    "numpy/_core/_multiarray_umath.so": frozenset({"fp16"}),
+    ("numpy-2.5.0", "numpy/_core/_multiarray_umath.so"): {"fp16": 3039},
     # aes, sha1/sha2, crc32fast and zlib-rs behind cpufeatures or
     # is_aarch64_feature_detected!, and constant_time_eq's DIT/SB variants
     # behind get_aarch64_dit_sb_features(). All reached through the zip crate.
-    "pycantonese/_rust.so": frozenset({"crc", "crypto", "sb", "sysreg:DIT"}),
-    "rustling/_lib_name.so": frozenset({"crc", "crypto", "sb", "sysreg:DIT"}),
+    ("pycantonese-5.0.0", "pycantonese/_rust.so"): {"crc": 24, "crypto": 178, "sb": 1, "sysreg:DIT": 10},
+    ("rustling-0.9.0", "rustling/_lib_name.so"): {"crc": 30, "crypto": 234, "sb": 1, "sysreg:DIT": 10},
 }
 _ISA_LINE = re.compile(r"^\s*([0-9a-f]+):\s+(\S.*)$")
 _ISA_LSE = re.compile(
@@ -151,6 +156,9 @@ _ISA_CRYPTO = re.compile(r"^(?:aes[de]|aesi?mc|sha1[chmp]|sha1su[01]|sha256h2?|s
 _ISA_CRC = re.compile(r"^crc32c?[bhwx]$")
 _ISA_HALF = re.compile(r"\bh\d+\b|\.[48]h\b")
 _ISA_BRANCH = re.compile(r"^cbz (w\d+), 0x([0-9a-f]+)")
+_ISA_FHM = frozenset({"fmlal", "fmlal2", "fmlsl", "fmlsl2"})
+_ISA_EXCLUSIVE_LOAD = re.compile(r"^lda?x(?:r[bh]?|p)$")
+_ISA_EXCLUSIVE_STORE = re.compile(r"^stl?x(?:r[bh]?|p)$")
 
 
 class ArtifactError(RuntimeError):
@@ -633,33 +641,39 @@ def default_llvm_objdump() -> Path:
     android_home = os.environ.get("ANDROID_HOME")
     if not android_home:
         raise ArtifactError("ANDROID_HOME is required to locate the NDK llvm-objdump for the arm64 ISA audit")
-    ndk_version = os.environ.get("ANDROID_NDK_VERSION") or NDK_VERSION
-    objdump = Path(android_home) / "ndk" / ndk_version / NDK_OBJDUMP
+    objdump = Path(android_home) / "ndk" / NDK_VERSION / NDK_OBJDUMP
     if not objdump.is_file() or not os.access(objdump, os.X_OK):
         raise ArtifactError(f"arm64 ISA audit needs the NDK llvm-objdump: {objdump}")
     return objdump
 
 
 def _disassembly(objdump: Path, elf: Path, mattr: str) -> Iterator[tuple[int, str]]:
-    process = subprocess.Popen(
-        [str(objdump), "-d", "--no-show-raw-insn", f"--mattr={mattr}", str(elf)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        env={**os.environ, "LC_ALL": "C"},
-    )
-    assert process.stdout is not None and process.stderr is not None
-    try:
-        for line in process.stdout:
-            match = _ISA_LINE.match(line)
-            if match is not None:
-                yield int(match.group(1), 16), " ".join(match.group(2).split("//", 1)[0].split())
-    finally:
-        process.stdout.close()
-        error = process.stderr.read()
-        process.stderr.close()
-        if process.wait() != 0:
-            raise ArtifactError(f"llvm-objdump failed on {elf.name}: {error.strip()}")
+    """Stream (address, instruction) pairs; closing early stops llvm-objdump quietly."""
+    with tempfile.TemporaryFile() as errors:
+        process = subprocess.Popen(
+            [str(objdump), "-d", "--no-show-raw-insn", f"--mattr={mattr}", str(elf)],
+            stdout=subprocess.PIPE,
+            stderr=errors,
+            text=True,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+        assert process.stdout is not None
+        completed = False
+        try:
+            for line in process.stdout:
+                match = _ISA_LINE.match(line)
+                if match is not None:
+                    yield int(match.group(1), 16), " ".join(match.group(2).split("//", 1)[0].split())
+            completed = True
+        finally:
+            process.stdout.close()
+            if not completed:
+                process.kill()
+            returncode = process.wait()
+        if returncode != 0:
+            errors.seek(0)
+            message = errors.read().decode("utf-8", "replace").strip()
+            raise ArtifactError(f"llvm-objdump failed on {elf.name}: {message}")
 
 
 def _isa_kind(full: str, baseline: str) -> str | None:
@@ -683,6 +697,8 @@ def _isa_kind(full: str, baseline: str) -> str | None:
         return "crypto"
     if _ISA_CRC.match(mnemonic):
         return "crc"
+    if mnemonic in _ISA_FHM:
+        return "fhm"  # FEAT_FHM (HWCAP asimdfhm), not the FP16 arithmetic of ASIMDHP.
     if (mnemonic.startswith("f") or mnemonic in {"scvtf", "ucvtf"}) and _ISA_HALF.search(operands):
         return "fp16"
     return f"isa:{mnemonic}"
@@ -691,10 +707,9 @@ def _isa_kind(full: str, baseline: str) -> str | None:
 def _guarded_by(window: deque[tuple[int, str]], address: int, register: str | None, loader: str) -> bool:
     """Whether a forward ``cbz`` over ``address`` tests a flag byte loaded just before it.
 
-    Outline atomics test ``__aarch64_have_lse_atomics`` (``ldrb w16, [x16, ...]``)
-    and branch to the LL/SC fallback. libunwind's stepWithDwarf tests
-    ``cieInfo.mteTaggedFrame`` (``ldurb wN, [x29, #-...]``) and skips its stg loop.
-    ``loader`` is the expected load with ``{reg}`` standing for the tested register.
+    libunwind's stepWithDwarf tests ``cieInfo.mteTaggedFrame``
+    (``ldurb wN, [x29, #-...]``) and skips its stg loop. ``loader`` is the
+    expected load with ``{reg}`` standing for the tested register.
     """
     items = list(window)
     for index in range(len(items) - 1, -1, -1):
@@ -710,49 +725,98 @@ def _guarded_by(window: deque[tuple[int, str]], address: int, register: str | No
     return False
 
 
+def _outline_atomic_entry(window: deque[tuple[int, str]], address: int) -> bool:
+    """Whether ``address`` opens a compiler-rt outline atomic helper.
+
+    The helper reads ``__aarch64_have_lse_atomics`` (``adrp x16`` then
+    ``ldrb w16, [x16, ...]``) and branches past the LSE instruction to its LL/SC
+    fallback when the CPU lacks LSE; the caller then checks that fallback.
+    """
+    items = list(window)[-3:]
+    if len(items) != 3:
+        return False
+    match = _ISA_BRANCH.match(items[2][1])
+    return (
+        items[0][1].startswith("adrp x16, ")
+        and items[1][1].startswith("ldrb w16, [x16")
+        and match is not None
+        and match.group(1) == "w16"
+        and int(match.group(2), 16) > address
+    )
+
+
 def audit_arm64_isa(
     data: bytes,
+    wheel: str,
     member_path: str,
     logical_name: str,
     objdump: Path,
 ) -> dict[str, int]:
     """Fail on arm64 instructions beyond ARMv8.0 that no runtime check guards.
 
-    Returns the instruction count and the guarded non-baseline hits by kind.
+    ``wheel`` is the wheel's file name; its name-version and ``member_path`` select
+    the judged allowance in ``ARM64_GUARDED_KINDS``, whose counts must match
+    exactly. Returns the instruction count and the guarded hits by kind.
     """
-    allowed = ARM64_GUARDED_KINDS.get(member_path, frozenset())
+    release = "-".join(PurePosixPath(wheel).name.split("-")[:2])
+    pinned = ARM64_GUARDED_KINDS.get((release, member_path), {})
     counts: Counter[str] = Counter()
     window: deque[tuple[int, str]] = deque(maxlen=ARM64_ISA_GUARD_WINDOW)
+    fallbacks: list[list[object]] = []  # [address, instruction, remaining, load seen, store seen]
     instructions = 0
     with tempfile.TemporaryDirectory(prefix="anki-miner-isa-") as temporary:
         elf = Path(temporary) / "payload.so"
         elf.write_bytes(data)
-        full_pass = _disassembly(objdump, elf, "+all")
-        baseline_pass = _disassembly(objdump, elf, ARM64_ISA_BASELINE)
-        for (address, full), baseline in zip(full_pass, baseline_pass, strict=True):
-            if baseline[0] != address:
-                raise ArtifactError(f"{logical_name}: disassembly passes disagree at {address:#x}")
-            instructions += 1
-            kind = _isa_kind(full, baseline[1])
-            if kind is not None:
+        with (
+            closing(_disassembly(objdump, elf, "+all")) as full_pass,
+            closing(_disassembly(objdump, elf, ARM64_ISA_BASELINE)) as baseline_pass,
+        ):
+            for (address, full), baseline in zip(full_pass, baseline_pass, strict=True):
+                if baseline[0] != address:
+                    raise ArtifactError(f"{logical_name}: disassembly passes disagree at {address:#x}")
+                instructions += 1
                 mnemonic = full.split(" ", 1)[0]
-                guarded = (
-                    (kind == "lse" and _guarded_by(window, address, "w16", "ldrb {reg}, [x16"))
-                    or (
-                        kind == "mte"
-                        and mnemonic == "stg"
-                        and _guarded_by(window, address, None, "ldurb {reg}, [x29, #-")
+                for pending in list(fallbacks):
+                    pending[3] = pending[3] or bool(_ISA_EXCLUSIVE_LOAD.match(mnemonic))
+                    pending[4] = pending[4] or bool(_ISA_EXCLUSIVE_STORE.match(mnemonic))
+                    pending[2] = int(pending[2]) - 1
+                    if pending[3] and pending[4]:
+                        fallbacks.remove(pending)
+                    elif pending[2] == 0:
+                        raise ArtifactError(
+                            f"{logical_name}: arm64 lse instruction at {pending[0]:#x} has no LL/SC "
+                            f"fallback: {pending[1]}",
+                        )
+                kind = _isa_kind(full, baseline[1])
+                if kind is not None:
+                    outline_atomic = kind == "lse" and _outline_atomic_entry(window, address)
+                    guarded = (
+                        outline_atomic
+                        or (
+                            kind == "mte"
+                            and mnemonic == "stg"
+                            and _guarded_by(window, address, None, "ldurb {reg}, [x29, #-")
+                        )
+                        or kind in pinned
                     )
-                    or kind in allowed
-                )
-                if not guarded:
-                    raise ArtifactError(
-                        f"{logical_name}: unguarded arm64 {kind} instruction at {address:#x}: {full}",
-                    )
-                counts[kind] += 1
-            window.append((address, full))
+                    if not guarded:
+                        raise ArtifactError(
+                            f"{logical_name}: unguarded arm64 {kind} instruction at {address:#x}: {full}",
+                        )
+                    if outline_atomic:
+                        fallbacks.append([address, full, ARM64_LSE_FALLBACK_WINDOW, False, False])
+                    counts[kind] += 1
+                window.append((address, full))
+    if fallbacks:
+        raise ArtifactError(f"{logical_name}: arm64 lse instruction at {fallbacks[0][0]:#x} has no LL/SC fallback")
     if instructions == 0:
         raise ArtifactError(f"{logical_name}: llvm-objdump found no instructions")
+    judged = {kind: counts[kind] for kind in pinned}
+    if judged != pinned:
+        raise ArtifactError(
+            f"{logical_name}: judged arm64 instruction counts changed from {pinned} to {judged}; "
+            "audit the new build and update ARM64_GUARDED_KINDS",
+        )
     return {"instructions": instructions, **dict(sorted(counts.items()))}
 
 

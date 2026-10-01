@@ -57,7 +57,6 @@ RUST_TOOLCHAIN = {
     "targets": {"arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android"},
 }
 RUSTUP_HOME_ENV = "ANKI_MINER_RUSTUP_HOME"
-NDK_LLVM_BIN = "toolchains/llvm/prebuilt/linux-x86_64/bin"
 # Shipped beside the runtime publication by tools/wheels (chaquopy-libcxx);
 # C++ extensions here link it, and Chaquopy records the requirement.
 EXTERNAL_RUNTIME_LIBS = frozenset({"libc++_shared.so"})
@@ -761,6 +760,7 @@ REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
 }
 # Pure packages published only as an sdist: the member prefix that becomes the
 # wheel's package directory. The wheel carries the sdist's PKG-INFO as METADATA.
+# licenses/jieba/LICENSE is fxsjy/jieba's LICENSE at tag v0.42.1 (1e20c89b).
 SDIST_WHEELS: dict[str, str] = {
     "jieba": "jieba-0.42.1/jieba/",
 }
@@ -2456,15 +2456,27 @@ def _filename_tags(filename: str) -> list[str]:
     )
 
 
+def _exclude_matches(rule: str, name: str, prefix: str) -> bool:
+    if not name.startswith(prefix):
+        return False
+    relative = name[len(prefix) :]
+    return relative.startswith(rule) if rule.endswith("/") else relative == rule
+
+
 def _repack_excluded(name: str, package: str) -> bool:
     repack = REPACKS.get(package)
     if repack is None:
         return False
     prefix, excludes = repack
-    if not name.startswith(prefix):
-        return False
-    relative = name[len(prefix) :]
-    return any(relative.startswith(rule) if rule.endswith("/") else relative == rule for rule in excludes)
+    return any(_exclude_matches(rule, name, prefix) for rule in excludes)
+
+
+def _require_every_exclude(source: str, package: str, names: list[str]) -> None:
+    """A stale exclude is an upstream layout change; fail rather than ship it unnoticed."""
+    prefix, excludes = REPACKS[package]
+    stale = [rule for rule in excludes if not any(_exclude_matches(rule, name, prefix) for name in names)]
+    if stale:
+        raise RuntimeWheelError(f"{source}: repack excludes match no member: {stale}")
 
 
 def _record(entries: list[tuple[str, bytes, bool]], record_name: str) -> bytes:
@@ -2500,9 +2512,8 @@ def repack_wheel(source: Path, output: Path, package: str) -> None:
     records = [name for name, _, _ in files if name.endswith(".dist-info/RECORD") and name.count("/") == 1]
     if len(records) != 1:
         raise RuntimeWheelError(f"{source.name}: wheel must have one RECORD")
+    _require_every_exclude(source.name, package, [name for name, _, _ in files])
     kept = [entry for entry in files if entry[0] != records[0] and not _repack_excluded(entry[0], package)]
-    if len(kept) == len(files) - 1:
-        raise RuntimeWheelError(f"{source.name}: repack excludes match no member")
     _write_wheel(output, kept, records[0])
 
 
@@ -2528,6 +2539,12 @@ def sdist_wheel(sdist: Path, output: Path, package: str, version: str) -> None:
                 return stream.read()
 
         metadata = [read(member) for member in members if member.name == f"{root}/PKG-INFO"]
+        if package in REPACKS:
+            _require_every_exclude(
+                sdist.name,
+                package,
+                [f"{target_root}/{member.name[len(prefix):]}" for member in members if member.name.startswith(prefix)],
+            )
         files = []
         for member in members:
             if not member.isfile() or not member.name.startswith(prefix):
@@ -2825,30 +2842,26 @@ def _validate_publication_natives(wheels: dict[str, list[dict[str, object]]]) ->
             raise RuntimeWheelError(str(error)) from error
 
 
-def ndk_llvm_objdump() -> Path:
-    android_home = os.environ.get("ANDROID_HOME")
-    if not android_home:
-        raise RuntimeWheelError("ANDROID_HOME is required for the arm64 ISA audit")
-    objdump = Path(android_home) / "ndk" / NDK_VERSION / NDK_LLVM_BIN / "llvm-objdump"
-    if not objdump.is_file() or not os.access(objdump, os.X_OK):
-        raise RuntimeWheelError(f"locked NDK llvm-objdump is missing: {objdump}")
-    return objdump
-
-
 def _isa_audit(directory: Path, wheels: dict[str, list[dict[str, object]]]) -> dict[str, object]:
     """Disassemble every arm64 native; unguarded extension instructions fail the publication."""
     checker = _native_artifact_checker()
-    objdump = ndk_llvm_objdump()
     natives: dict[str, object] = {}
-    for entry in wheels["arm64-v8a"]:
-        with zipfile.ZipFile(directory / str(entry["filename"])) as archive:
-            for native in entry["native"]:
-                member = str(native["path"])
-                key = f"{entry['filename']}!{member}"
-                try:
-                    natives[key] = checker.audit_arm64_isa(archive.read(member), member, key, objdump)
-                except checker.ArtifactError as error:
-                    raise RuntimeWheelError(str(error)) from error
+    try:
+        objdump = checker.default_llvm_objdump()
+        for entry in wheels["arm64-v8a"]:
+            with zipfile.ZipFile(directory / str(entry["filename"])) as archive:
+                for native in entry["native"]:
+                    member = str(native["path"])
+                    key = f"{entry['filename']}!{member}"
+                    natives[key] = checker.audit_arm64_isa(
+                        archive.read(member),
+                        str(entry["filename"]),
+                        member,
+                        key,
+                        objdump,
+                    )
+    except checker.ArtifactError as error:
+        raise RuntimeWheelError(str(error)) from error
     return {"baseline": checker.ARM64_ISA_BASELINE, "natives": natives}
 
 

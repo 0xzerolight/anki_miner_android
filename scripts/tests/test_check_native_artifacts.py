@@ -13,10 +13,12 @@ import zipfile
 from argparse import Namespace
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import check_native_artifacts as native_checker  # noqa: E402
 from check_native_artifacts import (  # noqa: E402
     ArtifactError,
     Inspection,
@@ -1227,6 +1229,13 @@ OUTLINE_ATOMIC = [
     (0x10C, "cbz w16, 0x118 <x+0x18>", "cbz w16, 0x118 <x+0x18>"),
     (0x110, "casal x0, x1, [x2]", "<unknown>"),
     (0x114, "ret", "ret"),
+    (0x118, "mov x16, x0", "mov x16, x0"),
+    (0x11C, "ldaxr x0, [x2]", "ldaxr x0, [x2]"),
+    (0x120, "cmp x0, x16", "cmp x0, x16"),
+    (0x124, "b.ne 0x130 <x+0x30>", "b.ne 0x130 <x+0x30>"),
+    (0x128, "stlxr w17, x1, [x2]", "stlxr w17, x1, [x2]"),
+    (0x12C, "cbnz w17, 0x11c <x+0x1c>", "cbnz w17, 0x11c <x+0x1c>"),
+    (0x130, "ret", "ret"),
 ]
 UNWIND_MTE_LOOP = [
     (0x200, "tbz w23, #0x0, 0x238 <y+0x38>", "tbz w23, #0x0, 0x238 <y+0x38>"),
@@ -1238,10 +1247,28 @@ UNWIND_MTE_LOOP = [
     (0x218, "b.hs 0x238 <y+0x38>", "b.hs 0x238 <y+0x38>"),
     (0x21C, "stg x8, [x8]", "<unknown>"),
 ]
+NUMPY = ("numpy-2.5.0-0-cp312-cp312-android_26_arm64_v8a.whl", "numpy/_core/_multiarray_umath.so")
+PYCANTONESE = ("pycantonese-5.0.0-0-cp312-cp312-android_26_arm64_v8a.whl", "pycantonese/_rust.so")
+FP16 = [(0x10, "fmaxnm v20.8h, v0.8h, v4.8h", "<unknown>"), (0x14, "fcmp h3, h3", "<unknown>")]
+RUST = [
+    (0x10, "aese v0.16b, v1.16b", "<unknown>"),
+    (0x14, "crc32x w8, w8, x13", "<unknown>"),
+    (0x18, "mrs x8, DIT", "mrs x8, S3_3_C4_C2_5"),
+    (0x1C, "sb", "msr S0_3_C3_C0_7, xzr"),
+]
+JUDGED = {
+    ("numpy-2.5.0", NUMPY[1]): {"fp16": 2},
+    ("pycantonese-5.0.0", PYCANTONESE[1]): {"crc": 1, "crypto": 1, "sb": 1, "sysreg:DIT": 1},
+}
 
 
 class Arm64IsaAuditTest(unittest.TestCase):
-    def audit(self, rows: list[tuple[int, str, str]], member: str = "pkg/module.so") -> dict[str, int]:
+    def audit(
+        self,
+        rows: list[tuple[int, str, str]],
+        module: tuple[str, str] = ("pkg-1.0-0-cp312-cp312-android_26_arm64_v8a.whl", "pkg/module.so"),
+    ) -> dict[str, int]:
+        wheel, member = module
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             listing = root / "listing.json"
@@ -1259,7 +1286,7 @@ class Arm64IsaAuditTest(unittest.TestCase):
                 encoding="utf-8",
             )
             objdump.chmod(0o755)
-            return audit_arm64_isa(b"\x7fELF fixture", member, f"fixture!{member}", objdump)
+            return audit_arm64_isa(b"\x7fELF fixture", wheel, member, f"fixture!{member}", objdump)
 
     def test_plain_armv8_code_and_hint_space_pass(self) -> None:
         report = self.audit([(0x10, "add x0, x0, #0x1", "add x0, x0, #0x1"), (0x14, "paciasp", "hint #0x19")])
@@ -1267,7 +1294,7 @@ class Arm64IsaAuditTest(unittest.TestCase):
 
     def test_outline_atomics_and_libunwind_mte_loop_are_guarded(self) -> None:
         report = self.audit(OUTLINE_ATOMIC + UNWIND_MTE_LOOP)
-        self.assertEqual({"instructions": 14, "lse": 1, "mte": 1}, report)
+        self.assertEqual({"instructions": 21, "lse": 1, "mte": 1}, report)
 
     def test_unguarded_extensions_are_rejected(self) -> None:
         cases = {
@@ -1277,6 +1304,7 @@ class Arm64IsaAuditTest(unittest.TestCase):
             "isa:smmla": [(0x10, "smmla v0.4s, v1.16b, v2.16b", "<unknown>")],
             "isa:ld1w": [(0x10, "ld1w { z0.s }, p0/z, [x0]", "<unknown>")],
             "fp16": [(0x10, "fadd h0, h1, h2", "<unknown>")],
+            "fhm": [(0x10, "fmlal v0.4s, v1.4h, v2.4h", "<unknown>")],
             "crc": [(0x10, "crc32x w8, w8, x13", "<unknown>")],
             "crypto": [(0x10, "aese v0.16b, v1.16b", "<unknown>")],
             "sysreg:DIT": [(0x10, "msr DIT, #0x1", "msr S0_3_C4_C1_2, xzr")],
@@ -1286,33 +1314,61 @@ class Arm64IsaAuditTest(unittest.TestCase):
             with self.subTest(kind=kind), self.assertRaisesRegex(ArtifactError, f"unguarded arm64 {kind} "):
                 self.audit(rows)
 
-    def test_atomic_guard_must_test_the_lse_flag_and_branch_past_the_instruction(self) -> None:
-        backwards = [
-            row if row[0] != 0x10C else (0x10C, "cbz w16, 0x100 <x>", "cbz w16, 0x100 <x>") for row in OUTLINE_ATOMIC
-        ]
-        other_register = [
-            row if row[0] != 0x108 else (0x108, "ldrb w17, [x16, #0x900]", "ldrb w17, [x16, #0x900]")
-            for row in OUTLINE_ATOMIC
-        ]
-        for rows in (backwards, other_register):
-            with self.subTest(rows=rows[3]), self.assertRaisesRegex(ArtifactError, "unguarded arm64 lse"):
+    def test_atomic_guard_must_be_the_outline_helper_shape(self) -> None:
+        def replace(address: int, text: str) -> list[tuple[int, str, str]]:
+            return [row if row[0] != address else (address, text, text) for row in OUTLINE_ATOMIC]
+
+        cases = {
+            "backward branch": replace(0x10C, "cbz w16, 0x100 <x>"),
+            "other register": replace(0x108, "ldrb w17, [x16, #0x900]"),
+            "flag not from adrp": replace(0x104, "add x16, x19, #0x8"),
+        }
+        for label, rows in cases.items():
+            with self.subTest(label=label), self.assertRaisesRegex(ArtifactError, "unguarded arm64 lse"):
                 self.audit(rows)
 
-    def test_judged_kinds_are_allowed_only_in_their_own_module(self) -> None:
-        fp16 = [(0x10, "fmaxnm v20.8h, v0.8h, v4.8h", "<unknown>"), (0x14, "fcmp h3, h3", "<unknown>")]
-        self.assertEqual({"instructions": 2, "fp16": 2}, self.audit(fp16, "numpy/_core/_multiarray_umath.so"))
-        rust = [
-            (0x10, "aese v0.16b, v1.16b", "<unknown>"),
-            (0x14, "crc32x w8, w8, x13", "<unknown>"),
-            (0x18, "mrs x8, DIT", "mrs x8, S3_3_C4_C2_5"),
-            (0x1C, "sb", "msr S0_3_C3_C0_7, xzr"),
-        ]
-        expected = {"instructions": 4, "crc": 1, "crypto": 1, "sb": 1, "sysreg:DIT": 1}
-        self.assertEqual(expected, self.audit(rust, "pycantonese/_rust.so"))
-        with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fp16"):
-            self.audit(fp16, "spacy/tokenizer.so")
-        with self.assertRaisesRegex(ArtifactError, "unguarded arm64 crypto"):
-            self.audit(rust, "numpy/_core/_multiarray_umath.so")
+    def test_atomic_needs_its_ll_sc_fallback(self) -> None:
+        no_store = [row for row in OUTLINE_ATOMIC if row[0] != 0x128]
+        truncated = OUTLINE_ATOMIC[:6]
+        for label, rows in (("no store-exclusive", no_store), ("stream ends", truncated)):
+            with self.subTest(label=label), self.assertRaisesRegex(ArtifactError, "no LL/SC fallback"):
+                self.audit(rows)
+        far = OUTLINE_ATOMIC[:6] + [(0x118 + 4 * index, "nop", "nop") for index in range(16)]
+        with self.assertRaisesRegex(ArtifactError, "no LL/SC fallback"):
+            self.audit(far)
+
+    def test_judged_kinds_need_the_judged_release_module_and_counts(self) -> None:
+        with mock.patch.dict(native_checker.ARM64_GUARDED_KINDS, JUDGED, clear=True):
+            self.assertEqual({"instructions": 2, "fp16": 2}, self.audit(FP16, NUMPY))
+            expected = {"instructions": 4, "crc": 1, "crypto": 1, "sb": 1, "sysreg:DIT": 1}
+            self.assertEqual(expected, self.audit(RUST, PYCANTONESE))
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fp16"):
+                self.audit(FP16, ("spacy-3.8.14-0-cp312-cp312-android_26_arm64_v8a.whl", "spacy/tokenizer.so"))
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 crypto"):
+                self.audit(RUST, NUMPY)
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fhm"):
+                self.audit([(0x10, "fmlal v0.4s, v1.4h, v2.4h", "<unknown>")], NUMPY)
+
+    def test_a_version_bump_or_count_change_forces_a_new_audit(self) -> None:
+        with mock.patch.dict(native_checker.ARM64_GUARDED_KINDS, JUDGED, clear=True):
+            bumped = ("numpy-2.5.1-0-cp312-cp312-android_26_arm64_v8a.whl", NUMPY[1])
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fp16"):
+                self.audit(FP16, bumped)
+            with self.assertRaisesRegex(ArtifactError, r"counts changed from \{'fp16': 2\} to \{'fp16': 1\}"):
+                self.audit(FP16[:1], NUMPY)
+            extra = [*FP16, (0x18, "fadd h0, h1, h2", "<unknown>")]
+            with self.assertRaisesRegex(ArtifactError, "counts changed"):
+                self.audit(extra, NUMPY)
+
+    def test_shipped_allowances_pin_the_judged_publication_counts(self) -> None:
+        self.assertEqual(
+            {
+                ("numpy-2.5.0", "numpy/_core/_multiarray_umath.so"): {"fp16": 3039},
+                ("pycantonese-5.0.0", "pycantonese/_rust.so"): {"crc": 24, "crypto": 178, "sb": 1, "sysreg:DIT": 10},
+                ("rustling-0.9.0", "rustling/_lib_name.so"): {"crc": 30, "crypto": 234, "sb": 1, "sysreg:DIT": 10},
+            },
+            native_checker.ARM64_GUARDED_KINDS,
+        )
 
     def test_shipped_libcxx_passes_with_the_real_ndk_objdump(self) -> None:
         try:
@@ -1322,7 +1378,7 @@ class Arm64IsaAuditTest(unittest.TestCase):
         wheel = SCRIPTS_DIR.parent / "app/wheels/arm64-v8a/chaquopy_libcxx-190000-0-py3-none-android_26_arm64_v8a.whl"
         with zipfile.ZipFile(wheel) as source:
             data = source.read("chaquopy/lib/libc++_shared.so")
-        report = audit_arm64_isa(data, "chaquopy/lib/libc++_shared.so", wheel.name, objdump)
+        report = audit_arm64_isa(data, wheel.name, "chaquopy/lib/libc++_shared.so", wheel.name, objdump)
         self.assertEqual({"lse", "mte", "instructions"}, set(report))
         self.assertGreater(report["lse"], 0)
 
