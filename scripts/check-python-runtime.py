@@ -77,7 +77,7 @@ def main() -> int:
         raise RuntimeError(f"Pillow codecs are unavailable: {missing_codecs}")
     external_imports = set(manifest["external_imports"]["eager"])
     external_imports.update(manifest["external_imports"]["deferred"])
-    expected_external = {"PIL", "charset_normalizer", "lxml", "pysubs2", "pythainlp", "requests"}
+    expected_external = {"PIL", "charset_normalizer", "lxml", "pysubs2", "pythainlp", "requests", "zeyrek"}
     if external_imports != expected_external:
         raise RuntimeError(
             "neutral engine external imports differ: "

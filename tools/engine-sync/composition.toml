@@ -91,6 +91,7 @@ allowed_external = [
   "pysubs2",
   "pythainlp",
   "requests",
+  "zeyrek",
 ]
 
 # Imports under these names must resolve from the overlay. They must never be
@@ -181,7 +182,7 @@ forbidden_imports = [
 ]
 
 # Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
-languages = ["ja", "he", "id", "ar", "fa", "th"]
+languages = ["ja", "he", "id", "ar", "fa", "th", "tr"]
 
 # Imported only inside functions, never vendored. ASR and retiming are reached
 # from episode_processor's deferred paths; gui only through languages/ja/text.py's

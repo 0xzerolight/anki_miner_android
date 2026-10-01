@@ -70,7 +70,7 @@ def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
 
 def test_every_vendored_language_validates() -> None:
     _runtime_lane()
-    assert _available() == ("ja", "id", "ar", "th", "fa", "he")
+    assert _available() == ("ja", "tr", "id", "ar", "th", "fa", "he")
     for code in _available():
         assert languages.validated_language(code) == code
 
@@ -112,7 +112,7 @@ def test_config_map_refuses_a_malformed_language(tmp_path: Path) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["he", "id", "th", "ar", "fa"])
+@pytest.mark.parametrize("code", ["he", "id", "th", "ar", "fa", "tr"])
 def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(code: str, tmp_path: Path) -> None:
     _runtime_lane()
     from anki_miner.languages.registry import get_profile
@@ -207,7 +207,7 @@ def test_scoped_defaults_cover_every_android_scoped_field() -> None:
         assert set(LANGUAGE_SCOPED_FIELDS) - set(wire) == {"downloader_subtitle_langs", "downloader_audio_lang"}
 
 
-@pytest.mark.parametrize("code", ["ja", "he", "id", "th", "ar", "fa"])
+@pytest.mark.parametrize("code", ["ja", "he", "id", "th", "ar", "fa", "tr"])
 def test_scoped_defaults_round_trip_through_config_map(code: str, tmp_path: Path) -> None:
     """Kotlin stores scopedDefaults and sends them back: config_map must rebuild the profile's values."""
     _runtime_lane()
