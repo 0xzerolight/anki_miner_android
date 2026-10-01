@@ -859,6 +859,9 @@ class VideoMiningScreenTest {
             }
         }
 
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(CurationPlayerTestTags.SURFACE))
         composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
         // The initial focus seek is debounced on the real clock; waitForIdle does not wait it out.
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -983,39 +986,36 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun curationPlayerCanCollapseAndTogglePlayback() {
+    fun inlinePreviewFollowsFocusAndTogglesPlayback() {
         val request = request()
         val fake = FakeCurationPreviewPlayer()
-        setScreen(
-            state =
+        var state by
+            mutableStateOf(
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
                     curation =
                         curationState(request).copy(
-                            player =
-                                CurationPlayerUiState(
-                                    "/cache/episode.mkv",
-                                    emptyList(),
-                                    false,
-                                ),
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
                         ),
                 ),
-            playerFactory = { fake },
-        )
-
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
-        composeRule.runOnIdle {
-            assertEquals(1, fake.togglePlayPauseCount)
-            assertTrue(fake.isPlaying.value)
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(state = state, playerFactory = { fake })
+            }
         }
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
-        composeRule.runOnIdle { assertFalse(fake.isPlaying.value) }
 
-        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(CurationPlayerTestTags.PLAY_PAUSE))
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
+        composeRule.runOnIdle { assertEquals(1, fake.togglePlayPauseCount) }
+        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).assertDoesNotExist()
+
+        composeRule.runOnIdle {
+            state = state.copy(curation = requireNotNull(state.curation).copy(focusedCandidateId = null))
+        }
         composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertDoesNotExist()
-        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).performClick()
-        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
     }
 
     @Test
@@ -1040,9 +1040,15 @@ class VideoMiningScreenTest {
         )
 
         composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.CUES_UNAVAILABLE))
+        composeRule
             .onNodeWithTag(VideoMiningTestTags.CUES_UNAVAILABLE)
             .assertIsDisplayed()
         composeRule.onNodeWithText("unused").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(CurationPlayerTestTags.PLAY_PAUSE))
         composeRule
             .onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE)
             .assertIsEnabled()

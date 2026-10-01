@@ -113,6 +113,8 @@
     <string name="curation_copied_sentence">已复制句子</string>
     <string name="curation_preview_play_description">播放视频</string>
     <string name="curation_preview_pause_description">暂停视频</string>
+    <string name="curation_preview_play_audio_description">播放音频</string>
+    <string name="curation_preview_pause_audio_description">暂停音频</string>
     <string name="curation_preview_collapse_description">收起视频预览</string>
     <string name="curation_preview_expand_description">展开视频预览</string>
     <string name="curation_preview_overlay_description">字幕叠加层</string>
@@ -121,11 +123,8 @@
     <string name="curation_preview_audio_unsupported">此设备无法解码此音频（%1$s）</string>
     <string name="curation_preview_playback_failed">预览播放失败（%1$s）</string>
     <string name="curation_preview_retry">重试</string>
-    <string name="curation_page_image_missing">此词没有页面图像</string>
     <string name="curation_page_image_error">无法加载页面图像</string>
     <string name="curation_page_image_description">漫画页面图像</string>
-    <string name="curation_page_collapse_description">收起页面图像</string>
-    <string name="curation_page_expand_description">展开页面图像</string>
     <string name="definition_loading">正在查询…</string>
     <string name="definition_missing">没有离线词典条目</string>
     <string name="definition_unavailable">无法查询词典</string>

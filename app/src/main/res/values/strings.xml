@@ -120,6 +120,8 @@
     <string name="curation_copied_sentence">Copied sentence</string>
     <string name="curation_preview_play_description">Play video</string>
     <string name="curation_preview_pause_description">Pause video</string>
+    <string name="curation_preview_play_audio_description">Play audio</string>
+    <string name="curation_preview_pause_audio_description">Pause audio</string>
     <string name="curation_preview_collapse_description">Collapse video preview</string>
     <string name="curation_preview_expand_description">Expand video preview</string>
     <string name="curation_preview_overlay_description">Subtitle overlay</string>
@@ -128,11 +130,8 @@
     <string name="curation_preview_audio_unsupported">This device can\'t decode this audio (%1$s)</string>
     <string name="curation_preview_playback_failed">Preview playback failed (%1$s)</string>
     <string name="curation_preview_retry">Retry</string>
-    <string name="curation_page_image_missing">No page image for this word</string>
     <string name="curation_page_image_error">Could not load page image</string>
     <string name="curation_page_image_description">Manga page image</string>
-    <string name="curation_page_collapse_description">Collapse page image</string>
-    <string name="curation_page_expand_description">Expand page image</string>
     <string name="definition_loading">Looking up…</string>
     <string name="definition_missing">No offline dictionary entry</string>
     <string name="definition_unavailable">Dictionary lookup unavailable</string>

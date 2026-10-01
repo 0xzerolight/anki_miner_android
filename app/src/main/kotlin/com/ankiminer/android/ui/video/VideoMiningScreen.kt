@@ -1,7 +1,6 @@
 package com.ankiminer.android.ui.video
 
 import android.content.Context
-import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -24,7 +23,6 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,7 +37,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
@@ -62,6 +59,8 @@ import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.curationDefinitionMaxHeight
 import com.ankiminer.android.ui.mining.CurationRowPosition
+import com.ankiminer.android.ui.mining.CurationInlinePreview
+import com.ankiminer.android.ui.mining.CurationPlayerEffects
 import com.ankiminer.android.ui.mining.curationMediaMaxHeight
 import com.ankiminer.android.ui.mining.curationRowPositions
 import com.ankiminer.android.ui.mining.curationVisibleSelection
@@ -76,7 +75,6 @@ import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
 import com.ankiminer.android.ui.mining.curationSentenceLayout
 import com.ankiminer.android.ui.mining.CurationSort
-import com.ankiminer.android.ui.mining.CurationVideoPreview
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
@@ -105,10 +103,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
-import java.io.File
-import kotlinx.coroutines.delay
 
-private const val CURATION_SEEK_DEBOUNCE_MS = 150L
 
 @Composable
 fun VideoMiningScreen(
@@ -352,18 +347,27 @@ fun VideoMiningScreen(
                 Column(
                     modifier = Modifier.fillMaxSize().semantics { paneTitle = phaseTitle },
                 ) {
-                    if (player != null && targetCuration != null) {
+                    val playerState = targetCuration?.player
+                    if (player != null && targetCuration != null && playerState != null) {
                         key(targetCuration.runId) {
-                            CurationPlayerSlot(
-                                curation = targetCuration,
+                            val focused =
+                                targetCuration.candidates.firstOrNull {
+                                    it.candidateId == targetCuration.focusedCandidateId
+                                }
+                            val selectedSentenceId =
+                                focused?.let { targetCuration.sentenceIds[it.candidateId] ?: it.defaultSentenceId }
+                            val selectedSentence =
+                                focused?.sentences?.firstOrNull { it.sentenceId == selectedSentenceId }
+                            CurationPlayerEffects(
                                 player = player,
-                                maxSurfaceHeight = mediaMaxHeight,
-                                modifier =
-                                    Modifier.padding(
-                                        start = AnkiMinerTokens.Space.content,
-                                        top = AnkiMinerTokens.Space.content,
-                                        end = AnkiMinerTokens.Space.content,
-                                    ),
+                                videoPath = playerState.videoPath,
+                                audioTrackOverride = playerState.audioTrackOverride,
+                                focusedCandidateId = targetCuration.focusedCandidateId,
+                                selectedSentenceId = selectedSentenceId,
+                                // "+ Previous line" and reset move the start and so the key;
+                                // "+ Next line" does not reseek.
+                                seekTarget =
+                                    targetCuration.expansionPreview?.startTime ?: selectedSentence?.startTime,
                             )
                         }
                     }
@@ -496,6 +500,8 @@ fun VideoMiningScreen(
                                     copiedWord = copiedWord,
                                     copiedSentence = copiedSentence,
                                     definitionMaxHeight = definitionMaxHeight,
+                                    player = player,
+                                    mediaMaxHeight = mediaMaxHeight,
                                 )
                             is MiningRunState.Running ->
                                 progressItems(
@@ -600,76 +606,6 @@ fun VideoMiningScreen(
     audioTrackPicker?.let {
         AudioTrackPickerDialog(it, onSelectAudioTrack, onApplyAudioTrackPicker, onDismissAudioTrackPicker)
     }
-}
-
-@Composable
-private fun CurationPlayerSlot(
-    curation: CurationUiState,
-    player: CurationPreviewPlayer,
-    maxSurfaceHeight: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val playerState = curation.player ?: return
-    val videoUri = remember(playerState.videoPath) { Uri.fromFile(File(playerState.videoPath)) }
-    // The player and the curation controls are both pinned, so at large font scales they compete
-    // for a viewport that cannot hold either in full — and the controls are the ones that get
-    // clipped, which puts sort and bulk selection out of reach. Start folded and let the user
-    // open it; the toggle below still persists whatever they choose.
-    val startCollapsed = LocalDensity.current.fontScale >= 1.3f
-    var collapsed by rememberSaveable(curation.runId) { mutableStateOf(startCollapsed) }
-
-    val focusedCandidate =
-        curation.candidates.firstOrNull { it.candidateId == curation.focusedCandidateId }
-    val selectedSentenceId =
-        focusedCandidate?.let { candidate ->
-            curation.sentenceIds[candidate.candidateId] ?: candidate.defaultSentenceId
-        }
-    val selectedSentence =
-        focusedCandidate?.sentences?.firstOrNull { it.sentenceId == selectedSentenceId }
-
-    CurationVideoPreview(
-        player = player,
-        videoUri = videoUri,
-        cues = playerState.cues.takeUnless { playerState.cuesUnavailable }.orEmpty(),
-        overlayOffsetSeconds = 0.0,
-        collapsed = collapsed,
-        onToggleCollapsed = { collapsed = !collapsed },
-        audioOnly = playerState.audioOnly,
-        audioTrackOverride = playerState.audioTrackOverride,
-        maxSurfaceHeight = maxSurfaceHeight,
-        notice =
-            if (playerState.cuesUnavailable) {
-                { CuesUnavailableNotice() }
-            } else {
-                null
-            },
-        modifier = modifier,
-    )
-
-    // Line expansion widens the window: "+ Previous line"/reset move the start and snap the
-    // preview there; "+ Next line" leaves the start (and so the key) unchanged - no reseek.
-    val seekTarget = curation.expansionPreview?.startTime ?: selectedSentence?.startTime
-    LaunchedEffect(curation.focusedCandidateId, selectedSentenceId, seekTarget) {
-        delay(CURATION_SEEK_DEBOUNCE_MS)
-        player.seekTo(seekTarget ?: return@LaunchedEffect)
-    }
-}
-
-@Composable
-private fun CuesUnavailableNotice() {
-    Text(
-        text = stringResource(R.string.curation_preview_cues_unavailable),
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = AnkiMinerTokens.Space.related,
-                    vertical = AnkiMinerTokens.Space.micro,
-                ).testTag(VideoMiningTestTags.CUES_UNAVAILABLE),
-        color = MaterialTheme.colorScheme.error,
-        maxLines = 1,
-        style = MaterialTheme.typography.bodySmall,
-    )
 }
 
 private fun LazyListScope.setupItems(
@@ -986,6 +922,8 @@ private fun LazyListScope.curationItems(
     copiedWord: String,
     copiedSentence: String,
     definitionMaxHeight: Dp,
+    player: CurationPreviewPlayer?,
+    mediaMaxHeight: Dp,
 ) {
     val curation = state.curation ?: return
     val enabled = !state.curationPending && !state.cancelPending
@@ -1147,6 +1085,18 @@ private fun LazyListScope.curationItems(
                         term = candidate.minedForm,
                         testTag = VideoMiningTestTags.DEFINITION,
                         maxHeight = definitionMaxHeight,
+                    )
+                }
+            }
+            val inlinePlayer = curation.player
+            if (player != null && inlinePlayer != null) {
+                item(key = "media:${candidate.candidateId}", contentType = "media") {
+                    CurationInlinePreview(
+                        containerColor = curationRowContainerColor(selected, animateSelection),
+                        player = player,
+                        playerState = inlinePlayer,
+                        maxSurfaceHeight = mediaMaxHeight,
+                        cuesUnavailableTestTag = VideoMiningTestTags.CUES_UNAVAILABLE,
                     )
                 }
             }

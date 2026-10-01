@@ -876,6 +876,11 @@ class ReadingMiningScreenTest {
                     ),
             )
 
+            composeRule
+                .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+                .performScrollToNode(
+                    hasTestTag(ReadingMiningTestTags.pageImage(request.candidates.first().candidateId)),
+                )
             // SURFACE is tagged only on the loaded Canvas (not the loading placeholder), so
             // waiting for it here proves the archive was actually decoded and drawn, not just
             // that the pane mounted.
@@ -902,11 +907,8 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun pageImagePlaceholderShowsWhenTheFocusedSentenceLacksPageContext() {
-        // The pane's mount gate needs SOME candidate on the page to carry a pageContext (an
-        // all-null-pageContext page keeps the slot unmounted entirely, not showing a permanent
-        // placeholder) — attach it to the second candidate so the focused (first, default-focus)
-        // candidate's sentence still has none and the placeholder still renders for it.
+    fun noPageImageShowsWhenTheFocusedSentenceHasNoPage() {
+        // Another candidate on the page carries a pageContext; the focused (first) one does not.
         val request = requestWithPageContext(pageContext("unused-entry.png"), candidateIndex = 1)
         setScreen(
             state =
@@ -920,36 +922,9 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithTag(CurationPageImageTestTags.PLACEHOLDER).assertIsDisplayed()
-        composeRule.onNodeWithText("No page image for this word").assertExists()
-    }
-
-    @Test
-    fun pageImageCollapseTogglesTheExpandedContent() {
-        val archive = pageImageArchive()
-        try {
-            val request = requestWithPageContext(pageContext(archive.entryName))
-            setScreen(
-                state =
-                    ReadingMiningUiState(
-                        runState = MiningRunState.Curating(request),
-                        curation =
-                            curationState(request, pageImage = CurationPageImageUiState(archive.file.path)),
-                    ),
-            )
-
-            waitForPageImageSurface()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
-            // Collapsing disposes PageImageContent's remembered decode state, so re-expanding
-            // decodes again from scratch — wait for it the same way as the initial expand.
-            waitForPageImageSurface()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
-        } finally {
-            archive.file.delete()
-        }
+        composeRule.onNodeWithTag(CurationPageImageTestTags.PLACEHOLDER).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
+        composeRule.onNodeWithText("No page image for this word").assertDoesNotExist()
     }
 
     @Test

@@ -2,16 +2,12 @@ package com.ankiminer.android.ui.mining
 
 import android.util.LruCache
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -40,7 +36,6 @@ import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.reading.CurationPageImageDecoder
 import com.ankiminer.android.reading.CurationPageImageDecoder.DecodedPageImage
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.ChevronGlyph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.min
@@ -48,7 +43,6 @@ import kotlin.math.roundToInt
 
 object CurationPageImageTestTags {
     const val SURFACE = "curation_page_image_surface"
-    const val COLLAPSE = "curation_page_image_collapse"
     const val PLACEHOLDER = "curation_page_image_placeholder"
     const val CAPTION = "curation_page_image_caption"
 }
@@ -137,59 +131,38 @@ private fun Modifier.paneContentSize(
         .aspectRatio(aspectRatio)
 
 /**
- * Collapsible pane showing the mokuro page a focused curation word came from, with the mokuro
- * text block (speech bubble) containing it highlighted. Fit-to-pane only — no zoom or pan.
+ * The mokuro page a focused curation word came from, with the mokuro text block (speech bubble)
+ * containing it highlighted. Fit-to-pane only — no zoom or pan.
  *
- * Stays mounted (showing the "missing" placeholder) when [pageContext] is null so the pane never
- * pops in and out as the focused candidate/sentence changes.
- *
- * [maxContentHeight] caps the image/placeholder region so it cannot starve the candidate list
- * below it: a full-width portrait page with no cap leaves the list 0dp tall on 320x640. Once a
- * tall page hits the cap the box's aspect stops matching the page, which is what makes
- * pageFitTransform's dx/dy letterboxing draw.
+ * [maxContentHeight] caps the image region so it cannot starve the candidate list around it: a
+ * full-width portrait page with no cap fills the whole 320x640 viewport. Once a tall page hits the
+ * cap the box's aspect stops matching the page, which is what makes pageFitTransform's dx/dy
+ * letterboxing draw.
  */
 @Composable
 fun CurationPageImagePane(
     archivePath: String,
-    pageContext: CurationPageContext?,
-    collapsed: Boolean,
-    onToggleCollapsed: () -> Unit,
+    pageContext: CurationPageContext,
     decoder: CurationPageImageDecoder,
     maxContentHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        if (collapsed) {
-            CollapsedPageImageBar(onToggleCollapsed)
-        } else {
-            Column {
-                if (pageContext == null) {
-                    PageImagePlaceholder(
-                        text = stringResource(R.string.curation_page_image_missing),
-                        modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO, maxContentHeight),
-                    )
-                } else {
-                    PageImageContent(
-                        archivePath = archivePath,
-                        pageContext = pageContext,
-                        decoder = decoder,
-                        maxContentHeight = maxContentHeight,
-                    )
-                    Text(
-                        text = pageContext.locationLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = AnkiMinerTokens.Space.content,
-                                    vertical = AnkiMinerTokens.Space.micro,
-                                ).testTag(CurationPageImageTestTags.CAPTION),
-                    )
-                }
-                ExpandedPageImageControls(onToggleCollapsed)
-            }
-        }
+    Column(modifier = modifier.fillMaxWidth()) {
+        PageImageContent(
+            archivePath = archivePath,
+            pageContext = pageContext,
+            decoder = decoder,
+            maxContentHeight = maxContentHeight,
+        )
+        Text(
+            text = pageContext.locationLabel,
+            style = MaterialTheme.typography.bodySmall,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = AnkiMinerTokens.Space.micro)
+                    .testTag(CurationPageImageTestTags.CAPTION),
+        )
     }
 }
 
@@ -341,46 +314,5 @@ private fun PageImagePlaceholder(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(AnkiMinerTokens.Space.content),
         )
-    }
-}
-
-@Composable
-private fun ExpandedPageImageControls(onToggleCollapsed: () -> Unit) {
-    val collapseDescription = stringResource(R.string.curation_page_collapse_description)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-    ) {
-        IconButton(
-            onClick = onToggleCollapsed,
-            modifier =
-                Modifier
-                    .testTag(CurationPageImageTestTags.COLLAPSE)
-                    .semantics { contentDescription = collapseDescription },
-        ) {
-            ChevronGlyph(pointsUp = true)
-        }
-    }
-}
-
-@Composable
-private fun CollapsedPageImageBar(onToggleCollapsed: () -> Unit) {
-    val expandDescription = stringResource(R.string.curation_page_expand_description)
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
-        contentAlignment = Alignment.Center,
-    ) {
-        IconButton(
-            onClick = onToggleCollapsed,
-            modifier =
-                Modifier
-                    .testTag(CurationPageImageTestTags.COLLAPSE)
-                    .semantics { contentDescription = expandDescription },
-        ) {
-            ChevronGlyph(pointsUp = false)
-        }
     }
 }

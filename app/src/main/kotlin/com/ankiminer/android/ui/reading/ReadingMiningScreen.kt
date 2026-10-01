@@ -35,14 +35,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -61,6 +59,7 @@ import com.ankiminer.android.reading.CurationPageImageDecoder
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.curationDefinitionMaxHeight
 import com.ankiminer.android.ui.mining.CurationRowPosition
+import com.ankiminer.android.ui.mining.CurationInlinePageImage
 import com.ankiminer.android.ui.mining.curationMediaMaxHeight
 import com.ankiminer.android.ui.mining.curationRowPositions
 import com.ankiminer.android.ui.mining.curationVisibleSelection
@@ -69,7 +68,6 @@ import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
 import com.ankiminer.android.ui.mining.CurationDefinitionPane
 import com.ankiminer.android.ui.mining.CurationFilter
-import com.ankiminer.android.ui.mining.CurationPageImagePane
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
 import com.ankiminer.android.ui.mining.curationSentenceLayout
@@ -240,16 +238,7 @@ fun ReadingMiningScreen(
                     target.initialState
                 }
             val targetCuration = targetState.curation
-            // A mokuro volume whose blocks are ALL malformed produces zero pageContexts across
-            // every candidate/sentence; without this the pane would stay mounted showing nothing
-            // but the "missing" placeholder for the whole run. A page with partial coverage still
-            // keeps the pane's existing stay-mounted behavior once any pageContext exists.
-            val curationHasPageContext =
-                remember(targetCuration?.candidates) {
-                    targetCuration?.candidates.orEmpty().any { candidate ->
-                        candidate.sentences.any { it.pageContext != null }
-                    }
-                }
+            val pageImageDecoder = remember { CurationPageImageDecoder() }
             val selectionProjectionKey =
                 if (filter == CurationFilter.ALL) {
                     emptySet()
@@ -330,24 +319,6 @@ fun ReadingMiningScreen(
                 Column(
                     modifier = Modifier.fillMaxSize().semantics { paneTitle = phaseTitle },
                 ) {
-                    if (
-                        targetState.runState is MiningRunState.Curating &&
-                        targetCuration?.pageImage != null &&
-                        curationHasPageContext
-                    ) {
-                        key(targetCuration.runId) {
-                            CurationPageImageSlot(
-                                curation = targetCuration,
-                                maxContentHeight = mediaMaxHeight,
-                                modifier =
-                                    Modifier.padding(
-                                        start = AnkiMinerTokens.Space.content,
-                                        top = AnkiMinerTokens.Space.content,
-                                        end = AnkiMinerTokens.Space.content,
-                                    ),
-                            )
-                        }
-                    }
                     if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
                         CurationChrome(
                             selectedCount = targetCuration.selectedCount,
@@ -464,6 +435,8 @@ fun ReadingMiningScreen(
                                     copiedWord = copiedWord,
                                     copiedSentence = copiedSentence,
                                     definitionMaxHeight = definitionMaxHeight,
+                                    pageImageDecoder = pageImageDecoder,
+                                    mediaMaxHeight = mediaMaxHeight,
                                 )
                             is MiningRunState.Running ->
                                 progressItems(
@@ -564,41 +537,6 @@ fun ReadingMiningScreen(
             }
         }
     }
-}
-
-@Composable
-private fun CurationPageImageSlot(
-    curation: ReadingCurationUiState,
-    maxContentHeight: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val pageImage = curation.pageImage ?: return
-    val decoder = remember { CurationPageImageDecoder() }
-    // The page pane and the curation controls are both pinned, so at large font scales they
-    // compete for a viewport that cannot hold either in full — same rationale as
-    // VideoMiningScreen's CurationPlayerSlot. Start folded and let the user open it; the toggle
-    // below still persists whatever they choose.
-    val startCollapsed = LocalDensity.current.fontScale >= 1.3f
-    var collapsed by rememberSaveable(curation.runId) { mutableStateOf(startCollapsed) }
-
-    val focusedCandidate =
-        curation.candidates.firstOrNull { it.candidateId == curation.focusedCandidateId }
-    val selectedSentenceId =
-        focusedCandidate?.let { candidate ->
-            curation.sentenceIds[candidate.candidateId] ?: candidate.defaultSentenceId
-        }
-    val selectedSentence =
-        focusedCandidate?.sentences?.firstOrNull { it.sentenceId == selectedSentenceId }
-
-    CurationPageImagePane(
-        archivePath = pageImage.archivePath,
-        pageContext = selectedSentence?.pageContext,
-        collapsed = collapsed,
-        onToggleCollapsed = { collapsed = !collapsed },
-        decoder = decoder,
-        maxContentHeight = maxContentHeight,
-        modifier = modifier,
-    )
 }
 
 private fun LazyListScope.setupItems(
@@ -863,6 +801,8 @@ private fun LazyListScope.curationItems(
     copiedWord: String,
     copiedSentence: String,
     definitionMaxHeight: Dp,
+    pageImageDecoder: CurationPageImageDecoder,
+    mediaMaxHeight: Dp,
 ) {
     val curation = state.curation ?: return
     val enabled = !state.curationPending && !state.cancelPending
@@ -1015,6 +955,20 @@ private fun LazyListScope.curationItems(
                         term = candidate.minedForm,
                         testTag = ReadingMiningTestTags.DEFINITION,
                         maxHeight = definitionMaxHeight,
+                    )
+                }
+            }
+            val pageImage = curation.pageImage
+            val pageContext = layout.chosen.pageContext
+            if (pageImage != null && pageContext != null) {
+                item(key = "reading_page_image:${candidate.candidateId}", contentType = "media") {
+                    CurationInlinePageImage(
+                        containerColor = curationRowContainerColor(selected, animateSelection),
+                        archivePath = pageImage.archivePath,
+                        pageContext = pageContext,
+                        decoder = pageImageDecoder,
+                        maxContentHeight = mediaMaxHeight,
+                        modifier = Modifier.testTag(ReadingMiningTestTags.pageImage(candidate.candidateId)),
                     )
                 }
             }

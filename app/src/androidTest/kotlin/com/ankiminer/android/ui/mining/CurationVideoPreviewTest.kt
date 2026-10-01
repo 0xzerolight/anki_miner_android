@@ -19,6 +19,7 @@ import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -38,20 +39,16 @@ class CurationVideoPreviewTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun audioOnlyShowsTranscriptSurfaceWithoutVideoFrame() {
+    fun audioOnlyIsOneSlimBarWithTheCurrentLine() {
         setPreview(audioOnly = true)
 
-        scrollTo(CurationPlayerTestTags.SURFACE)
-        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
-        scrollTo(CurationPlayerTestTags.SURFACE)
+        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
         composeRule.onNodeWithTag(CurationPlayerTestTags.VIDEO_FRAME).assertDoesNotExist()
-        scrollTo(CurationPlayerTestTags.OVERLAY)
-        composeRule.onNodeWithTag(CurationPlayerTestTags.OVERLAY).assertIsDisplayed()
-        composeRule.onNodeWithText(CUE_TEXT).performScrollTo().assertIsDisplayed()
-        scrollTo(CurationPlayerTestTags.PLAY_PAUSE)
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertIsDisplayed()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).assertDoesNotExist()
         scrollTo(CurationPlayerTestTags.PLAY_PAUSE)
         composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertIsEnabled()
+        composeRule.onNodeWithContentDescription("Play audio").assertExists()
+        composeRule.onNodeWithText(CUE_TEXT).performScrollTo().assertIsDisplayed()
     }
 
     @Test
@@ -63,15 +60,20 @@ class CurationVideoPreviewTest {
     }
 
     @Test
-    fun collapsingAudioOnlyPreviewHidesSurface() {
-        setPreview(audioOnly = true)
+    fun withoutACollapseActionThePreviewShowsNoCollapseButton() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                CurationVideoPreview(
+                    player = FakeCurationPreviewPlayer(),
+                    videoUri = VIDEO_URI,
+                    cues = emptyList(),
+                    overlayOffsetSeconds = 0.0,
+                )
+            }
+        }
 
-        composeRule
-            .onNodeWithTag(CurationPlayerTestTags.COLLAPSE)
-            .performScrollTo()
-            .performClick()
-        scrollTo(CurationPlayerTestTags.COLLAPSE)
-        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertExists()
+        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).assertDoesNotExist()
     }
 
     @Test
