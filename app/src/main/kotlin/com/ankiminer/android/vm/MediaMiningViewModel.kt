@@ -30,10 +30,10 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningLane
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
-import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.TokenizerConfigurationFailure
 import com.ankiminer.android.mining.VideoMiningInput
@@ -41,6 +41,7 @@ import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.mining.terminalResult
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.timing.TimingPreviewBusyException
 import com.ankiminer.android.timing.TimingPreviewOpener
@@ -54,7 +55,9 @@ import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.ExpansionPreview
 import com.ankiminer.android.ui.mining.clipWindowUiState
 import com.ankiminer.android.ui.mining.expansionPreview
+import com.ankiminer.android.ui.mining.miningFieldAdvisories
 import com.ankiminer.android.ui.mining.MiningPendingAction
+import com.ankiminer.android.ui.mining.MiningReceipt
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.TimingPreviewState
@@ -118,6 +121,7 @@ class MediaMiningViewModel internal constructor(
     private val undoManager: MiningRunUndoManager? = null,
     private val audioTrackProbeOpener: AudioTrackProbeOpener? = null,
     secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
+    deckName: Flow<String?> = flowOf(null),
 ) : ViewModel() {
     private val subtitleOffsetDraftKey = "${lane.savedStateKeyPrefix}.subtitleOffsetDraft"
     private val secondarySubtitleOffsetDraftKey =
@@ -145,6 +149,11 @@ class MediaMiningViewModel internal constructor(
         val audioTrackProbePending: Boolean = false,
         val audioTrackPickerError: AudioTrackPickerError? = null,
         val undoConfirmationNoteCount: Int? = null,
+        val deckName: String? = null,
+        /** The deck the current run started with; the result line names it even if Settings changed since. */
+        val runDeckName: String? = null,
+        /** The last run's Undo receipt, restored after Android killed the app in the background. */
+        val restoredReceipt: MiningReceipt? = null,
     )
 
     /**
@@ -200,6 +209,7 @@ class MediaMiningViewModel internal constructor(
             ),
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
+    private val receiptStore = MiningReceiptStore(savedStateHandle, "${lane.savedStateKeyPrefix}.receipt")
     private val cueState = MutableStateFlow<CueState?>(null)
     private val mutableTimingPreviewState = MutableStateFlow<TimingPreviewState?>(null)
     val timingPreviewState: StateFlow<TimingPreviewState?> = mutableTimingPreviewState
@@ -289,11 +299,14 @@ class MediaMiningViewModel internal constructor(
             // lane's undo (same process-owned manager) plus the narrow handoff gap between the
             // delete phase releasing its ANKI_SETUP lease and the revert phase acquiring RESOURCE,
             // during which `aux.activeKind` alone would read null.
-            val undoneReceipt = runState.runId?.let { aux.undoneRuns[it] }
+            val restored = local.restoredReceipt?.takeIf { runState == MiningRunState.Idle }
+            val undoneReceipt = (runState.runId ?: restored?.runId)?.let { aux.undoneRuns[it] }
             val undoAvailable =
                 undoManager != null &&
-                    runState.isTerminal &&
-                    runState.terminalResultOrNull()?.cardIds?.isNotEmpty() == true &&
+                    (
+                        (runState.isTerminal && runState.terminalResult?.cardIds?.isNotEmpty() == true) ||
+                            restored != null
+                    ) &&
                     undoneReceipt == null &&
                     aux.activeKind == null &&
                     !aux.undoActive &&
@@ -313,18 +326,9 @@ class MediaMiningViewModel internal constructor(
                     local.subtitleOffsetOverride
                         ?: local.globalSubtitleOffset
                         ?: ENGINE_DEFAULT_SUBTITLE_OFFSET,
-                audioFieldUnmapped =
-                    lane == MiningLane.AUDIO &&
-                        local.fieldMap["audio"].isNullOrBlank() &&
-                        !local.fieldMap["picture"].isNullOrBlank(),
-                // Not lane-gated: expression audio applies to every mining lane.
-                // Fires only when a usable pack proves the user wants word audio;
-                // with no pack there is no source to warn about.
-                expressionAudioFieldUnmapped =
-                    local.fieldMap["expression_audio"].isNullOrBlank() &&
-                        local.audioPacks.any { it.contentAvailable && it.entryCount > 0 },
-                unusableAudioPackInstalled =
-                    local.audioPacks.any { !(it.contentAvailable && it.entryCount > 0) },
+                advisories =
+                    miningFieldAdvisories(local.fieldMap, local.audioPacks, audioLane = lane == MiningLane.AUDIO),
+                resultDeckName = local.runDeckName,
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -337,11 +341,21 @@ class MediaMiningViewModel internal constructor(
                 audioTrackOverride = local.audioTrackOverride,
                 audioTrackProbePending = local.audioTrackProbePending,
                 audioTrackPickerError = local.audioTrackPickerError,
+                // The tab's own probe or timing preview holds that lease; its button spinner already
+                // says so, and a banner calling it another run would be wrong.
                 runtimeConflict =
-                    aux.activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
+                    aux.activeKind?.toRuntimeConflict()?.takeIf {
+                        runState.acceptsInputEdits &&
+                            // The tab's own undo is not another run either.
+                            !local.pending.undo &&
+                            !local.timingPreviewPending &&
+                            !local.audioTrackProbePending
+                    },
                 undoConfirmationNoteCount = local.undoConfirmationNoteCount,
                 undoneNoteCount = undoneReceipt?.deletedNotes,
                 undoAvailable = undoAvailable,
+                undoPending = local.pending.undo,
+                restoredReceipt = restored,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -350,6 +364,9 @@ class MediaMiningViewModel internal constructor(
         )
 
     init {
+        if (repository.state.value == MiningRunState.Idle) {
+            receiptStore.restore()?.let { receipt -> localState.update { it.copy(restoredReceipt = receipt) } }
+        }
         viewModelScope.launch {
             effectiveSubtitleOffset.distinctUntilChanged().collect { offset ->
                 localState.update { local ->
@@ -372,6 +389,11 @@ class MediaMiningViewModel internal constructor(
             }
         }
         viewModelScope.launch {
+            deckName.distinctUntilChanged().collect { name ->
+                localState.update { local -> local.copy(deckName = name) }
+            }
+        }
+        viewModelScope.launch {
             fieldMap.distinctUntilChanged().collect { currentFieldMap ->
                 localState.update { local -> local.copy(fieldMap = currentFieldMap) }
             }
@@ -383,6 +405,9 @@ class MediaMiningViewModel internal constructor(
         }
         viewModelScope.launch {
             repository.state.collect { runState ->
+                // StateFlow conflates, so Starting alone may never be seen: any in-flight state means a
+                // new run, and Undo must not reach the older run's notes after a process kill.
+                if (!runState.acceptsInputEdits) forgetReceipt()
                 if (runState is MiningRunState.Curating) {
                     val saved = repository.curationSessionState()
                     localState.update { local ->
@@ -405,6 +430,7 @@ class MediaMiningViewModel internal constructor(
                     }
                     saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
+                    saveReceipt(runState)
                     definitionJob?.cancel()
                     definitionJob = null
                     requestDefinition(null, null)
@@ -480,7 +506,7 @@ class MediaMiningViewModel internal constructor(
 
     fun clearVideo() {
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
             mutableTimingPreviewState.value != null ||
@@ -513,7 +539,7 @@ class MediaMiningViewModel internal constructor(
 
     private fun clearSubtitleDocument(kind: DocumentKind) {
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
             mutableTimingPreviewState.value != null ||
@@ -558,9 +584,13 @@ class MediaMiningViewModel internal constructor(
                     local.copy(video = local.video.copy(error = null))
                 DocumentSelectionError.AUDIO_TYPE ->
                     local.copy(video = local.video.copy(error = null))
-                DocumentSelectionError.SUBTITLE ->
+                DocumentSelectionError.SUBTITLE,
+                DocumentSelectionError.SUBTITLE_TYPE,
+                ->
                     local.copy(subtitle = local.subtitle.copy(error = null))
-                DocumentSelectionError.SECONDARY_SUBTITLE ->
+                DocumentSelectionError.SECONDARY_SUBTITLE,
+                DocumentSelectionError.SECONDARY_SUBTITLE_TYPE,
+                ->
                     local.copy(secondarySubtitle = local.secondarySubtitle.copy(error = null))
             }
         }
@@ -577,7 +607,7 @@ class MediaMiningViewModel internal constructor(
     fun setSubtitleOffsetDraft(value: String) {
         val local = localState.value
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             local.pending.start ||
             local.pending.reset ||
             local.timingPreviewPending ||
@@ -592,7 +622,7 @@ class MediaMiningViewModel internal constructor(
         val local = localState.value
         if (
             secondarySubtitleSelection == null ||
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             local.pending.start ||
             local.pending.reset ||
             local.timingPreviewPending ||
@@ -612,7 +642,7 @@ class MediaMiningViewModel internal constructor(
             if (
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
-                repository.state.value != MiningRunState.Idle ||
+                !repository.state.value.acceptsInputEdits ||
                 local.subtitleOffsetDraftInvalid ||
                 local.pending.start ||
                 local.pending.reset ||
@@ -646,7 +676,7 @@ class MediaMiningViewModel internal constructor(
                                 onSuccess = { session ->
                                     val current = localState.value
                                     if (
-                                        repository.state.value != MiningRunState.Idle ||
+                                        !repository.state.value.acceptsInputEdits ||
                                         current.video.isResolving ||
                                         current.subtitle.isResolving ||
                                         current.video.document?.uri != video.uri ||
@@ -732,7 +762,7 @@ class MediaMiningViewModel internal constructor(
             val video = local.video.document ?: return
             if (
                 local.video.isResolving ||
-                repository.state.value != MiningRunState.Idle ||
+                !repository.state.value.acceptsInputEdits ||
                 local.pending.start ||
                 local.pending.reset ||
                 local.timingPreviewPending ||
@@ -800,13 +830,15 @@ class MediaMiningViewModel internal constructor(
         while (true) {
             val local = localState.value
             val input = buildVideoInput(local) ?: return
-            if (repository.state.value != MiningRunState.Idle ||
+            val runState = repository.state.value
+            if (!runState.acceptsInputEdits ||
                 runtimeWorkState.value != null ||
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
                 (local.secondarySubtitleEnabled && local.secondarySubtitle.isResolving) ||
                 local.pending.start ||
                 local.pending.reset ||
+                local.pending.undo ||
                 local.timingPreviewPending ||
                 mutableTimingPreviewState.value != null ||
                 local.audioTrackProbePending ||
@@ -814,16 +846,23 @@ class MediaMiningViewModel internal constructor(
             ) {
                 return
             }
+            val restart = runState.isTerminal
             if (localState.compareAndSet(
                     local,
                     local.copy(
-                        pending = local.pending.begin(MiningPendingAction.START),
+                        pending =
+                            if (restart) {
+                                local.pending.beginRetry()
+                            } else {
+                                local.pending.begin(MiningPendingAction.START)
+                            },
                         commandError = null,
                         previousPageSelectedCount = 0,
+                        runDeckName = local.deckName,
                     ),
                 )
             ) {
-                launchStart(input)
+                if (restart) launchRestart(runState.runId, input) else launchStart(input)
                 return
             }
         }
@@ -909,15 +948,6 @@ class MediaMiningViewModel internal constructor(
             )
         }
         saveCurationSession(request)
-    }
-
-    /**
-     * Page-wide selection, kept distinct from the visible-scope action so the UI can label each
-     * one for what it actually reaches.
-     */
-    fun setSelectionForPage(selected: Boolean) {
-        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
-        setSelectionForVisible(request.candidates.map { it.candidateId }, selected)
     }
 
     /** Called when search, filter, or sort changes which candidates remain on screen. */
@@ -1010,9 +1040,15 @@ class MediaMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
-    fun confirmCuration() {
+    fun confirmCuration() = submitCuration(finishRemainingPages = false)
+
+    /** Finish (N): this page with its selection, every later page with [] (D5). Cancel still sends null. */
+    fun finishCuration() = submitCuration(finishRemainingPages = true)
+
+    private fun submitCuration(finishRemainingPages: Boolean) {
         val runState = repository.state.value as? MiningRunState.Curating ?: return
         if (runState.pageSubmissionPending) return
+        val finishing = finishRemainingPages && !runState.request.isFinalPage
         var acceptedSelection: List<CurationSelection>? = null
         var acceptedDraft: SharedCurationDraft? = null
         var submittedPreviousPageCount: Int? = null
@@ -1045,17 +1081,27 @@ class MediaMiningViewModel internal constructor(
             AppLog.i(
                 LogComponent.UI,
                 "command",
-                "command" to "curation",
+                "command" to if (finishing) "curation_finish" else "curation",
                 "outcome" to "ok",
             )
             try {
-                repository.confirmCuration(
-                    runId = runState.request.runId,
-                    requestId = runState.request.requestId,
-                    selection = selection,
-                    pageIndex = runState.request.page?.pageIndex,
-                    knownCandidateIds = draft.knownCandidateIds.toList(),
-                )
+                if (finishing) {
+                    repository.finishCuration(
+                        runId = runState.request.runId,
+                        requestId = runState.request.requestId,
+                        selection = selection,
+                        pageIndex = requireNotNull(runState.request.page).pageIndex,
+                        knownCandidateIds = draft.knownCandidateIds.toList(),
+                    )
+                } else {
+                    repository.confirmCuration(
+                        runId = runState.request.runId,
+                        requestId = runState.request.requestId,
+                        selection = selection,
+                        pageIndex = runState.request.page?.pageIndex,
+                        knownCandidateIds = draft.knownCandidateIds.toList(),
+                    )
+                }
                 if (!runState.request.isFinalPage) {
                     val previousPageSelectedCount =
                         requireNotNull(submittedPreviousPageCount)
@@ -1139,98 +1185,10 @@ class MediaMiningViewModel internal constructor(
         }
     }
 
-    fun reset() {
-        val runState = repository.state.value
-        if (!runState.isTerminal || localState.value.pending.reset) return
-        updateSubtitleOffsetDraft("")
-        updateSecondarySubtitleOffsetDraft("")
-        localState.update {
-            it.copy(
-                pending = it.pending.begin(MiningPendingAction.RESET),
-                commandError = null,
-            )
-        }
-        viewModelScope.launch(LogContext.asContextElement(runState.runId)) {
-            AppLog.i(
-                LogComponent.UI,
-                "command",
-                "command" to "reset",
-                "outcome" to "ok",
-            )
-            try {
-                repository.reset()
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: RuntimeException) {
-                AppLog.e(
-                    LogComponent.UI,
-                    "command",
-                    failure,
-                    "command" to "reset",
-                    "outcome" to "fail",
-                )
-                localState.update { it.copy(commandError = MiningCommandError.RESET) }
-            } finally {
-                localState.update {
-                    it.copy(pending = it.pending.complete(MiningPendingAction.RESET))
-                }
-            }
-        }
-    }
-
-    fun retry() {
-        val failed = repository.state.value as? MiningRunState.Failed ?: return
-        if (!failed.failure.retryable ||
-            localState.value.pending.reset ||
-            localState.value.pending.start
-        ) {
-            return
-        }
-        val input = buildVideoInput(localState.value) ?: return
-        localState.update {
-            it.copy(pending = it.pending.beginRetry(), commandError = null)
-        }
-        viewModelScope.launch(LogContext.asContextElement(failed.runId)) {
-            AppLog.i(
-                LogComponent.UI,
-                "command",
-                "command" to "retry",
-                "outcome" to "ok",
-            )
-            try {
-                repository.reset()
-                localState.update {
-                    it.copy(pending = it.pending.complete(MiningPendingAction.RESET))
-                }
-                repository.startVideo(input)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: RuntimeException) {
-                AppLog.e(
-                    LogComponent.UI,
-                    "command",
-                    failure,
-                    "command" to "retry",
-                    "outcome" to "fail",
-                )
-                localState.update { it.copy(commandError = MiningCommandError.START) }
-            } finally {
-                localState.update {
-                    it.copy(
-                        pending =
-                            it.pending
-                                .complete(MiningPendingAction.RESET)
-                                .complete(MiningPendingAction.START),
-                    )
-                }
-            }
-        }
-    }
-
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
-        val result = repository.state.value.terminalResultOrNull() ?: return
-        localState.update { it.copy(undoConfirmationNoteCount = result.cardIds.size) }
+        val target = undoTarget() ?: return
+        localState.update { it.copy(undoConfirmationNoteCount = target.noteIds.size) }
     }
 
     fun dismissUndoConfirmation() {
@@ -1239,17 +1197,8 @@ class MediaMiningViewModel internal constructor(
 
     fun confirmUndo() {
         val manager = undoManager ?: return
-        val runState = repository.state.value
-        val result =
-            (runState as? MiningRunState.Success)?.result
-                ?: (runState as? MiningRunState.Cancelled)?.result
-                ?: (runState as? MiningRunState.Failed)?.result
-        // `runState.runId` is nullable for Cancelled/Failed (unlike Success); the manager needs a
-        // non-null run to key its receipt, so a null id is treated the same as no result.
-        val runId = runState.runId
-        if (result == null || runId == null || result.cardIds.isEmpty() || localState.value.pending.undo) {
-            return
-        }
+        val target = undoTarget() ?: return
+        if (localState.value.pending.undo) return
         localState.update {
             it.copy(
                 pending = it.pending.begin(MiningPendingAction.UNDO),
@@ -1257,14 +1206,16 @@ class MediaMiningViewModel internal constructor(
                 undoConfirmationNoteCount = null,
             )
         }
-        viewModelScope.launch(LogContext.asContextElement(runId)) {
+        viewModelScope.launch(LogContext.asContextElement(target.runId)) {
             AppLog.i(LogComponent.UI, "command", "command" to "undo", "outcome" to "ok")
             try {
-                when (val outcome = manager.undoRun(runId, result.cardIds, result.minedForms)) {
-                    is UndoRunOutcome.Undone ->
+                when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms)) {
+                    is UndoRunOutcome.Undone -> {
+                        receiptStore.clear()
                         if (!outcome.receipt.knownWordsReverted) {
                             localState.update { it.copy(commandError = MiningCommandError.UNDO_WORDS) }
                         }
+                    }
                     UndoRunOutcome.Busy, UndoRunOutcome.DeleteFailed ->
                         localState.update { it.copy(commandError = MiningCommandError.UNDO) }
                 }
@@ -1277,6 +1228,35 @@ class MediaMiningViewModel internal constructor(
                 localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.UNDO)) }
             }
         }
+    }
+
+    /** The run Undo acts on: the finished run on screen, or the receipt restored after a process kill. */
+    private fun undoTarget(): MiningReceipt? {
+        val runState = repository.state.value
+        val result = runState.terminalResult
+        val runId = runState.runId
+        if (result != null && runId != null && result.cardIds.isNotEmpty()) {
+            return MiningReceipt(runId, result.cardsCreated, null, result.cardIds, result.minedForms)
+        }
+        return localState.value.restoredReceipt.takeIf { runState == MiningRunState.Idle }
+    }
+
+    private fun forgetReceipt() {
+        receiptStore.clear()
+        if (localState.value.restoredReceipt != null) localState.update { it.copy(restoredReceipt = null) }
+    }
+
+    private fun saveReceipt(runState: MiningRunState) {
+        val runId = runState.runId
+        val result = runState.terminalResult
+        if (runId == null || result == null || result.cardIds.isEmpty()) {
+            // This run left nothing to undo, so no older receipt may stand in for it.
+            receiptStore.clear()
+            return
+        }
+        receiptStore.save(
+            MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms),
+        )
     }
 
     private fun launchStart(input: VideoMiningInput) {
@@ -1308,13 +1288,54 @@ class MediaMiningViewModel internal constructor(
         }
     }
 
+    /** Mine from a finished run: clear its terminal state, then start with the inputs now on screen. */
+    private fun launchRestart(
+        previousRunId: String?,
+        input: VideoMiningInput,
+    ) {
+        viewModelScope.launch(LogContext.asContextElement(previousRunId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "start",
+                "after" to "terminal",
+                "outcome" to "ok",
+            )
+            try {
+                repository.reset()
+                localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.RESET)) }
+                repository.startVideo(input)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "start",
+                    "outcome" to "fail",
+                )
+                localState.update { it.copy(commandError = MiningCommandError.START) }
+            } finally {
+                localState.update {
+                    it.copy(
+                        pending =
+                            it.pending
+                                .complete(MiningPendingAction.RESET)
+                                .complete(MiningPendingAction.START),
+                    )
+                }
+            }
+        }
+    }
+
     private fun resolveDocument(
         kind: DocumentKind,
         uri: String,
         restoring: Boolean = false,
     ) {
         if (uri.isBlank() ||
-            (!restoring && repository.state.value != MiningRunState.Idle) ||
+            (!restoring && !repository.state.value.acceptsInputEdits) ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
             mutableTimingPreviewState.value != null ||
@@ -1374,13 +1395,13 @@ class MediaMiningViewModel internal constructor(
                                             if (hasSupportedSubtitleExtension(document.displayName)) {
                                                 null
                                             } else {
-                                                DocumentSelectionError.SUBTITLE
+                                                DocumentSelectionError.SUBTITLE_TYPE
                                             }
                                         DocumentKind.SECONDARY_SUBTITLE ->
                                             if (hasSupportedSubtitleExtension(document.displayName)) {
                                                 null
                                             } else {
-                                                DocumentSelectionError.SECONDARY_SUBTITLE
+                                                DocumentSelectionError.SECONDARY_SUBTITLE_TYPE
                                             }
                                     }
                                 error.also { rejectionError = it } == null
@@ -1501,7 +1522,7 @@ class MediaMiningViewModel internal constructor(
     ) {
         val current = localState.value
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             current.video.document?.uri != video.uri ||
             !isCurrentDocumentRequest(DocumentKind.VIDEO, videoRequest) ||
             mutableAudioTrackPickerState.value != null
@@ -1923,15 +1944,6 @@ class MediaMiningViewModel internal constructor(
         )
     }
 
-    /** The result a terminal run carries, regardless of which terminal branch it landed in. */
-    private fun MiningRunState.terminalResultOrNull(): ProcessingResult? =
-        when (this) {
-            is MiningRunState.Success -> result
-            is MiningRunState.Cancelled -> result
-            is MiningRunState.Failed -> result
-            else -> null
-        }
-
     internal class Factory(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
@@ -1951,6 +1963,7 @@ class MediaMiningViewModel internal constructor(
             { extras -> extras.createSavedStateHandle() },
         private val undoManager: MiningRunUndoManager? = null,
         private val secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
+        private val deckName: Flow<String?> = flowOf(null),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1976,6 +1989,7 @@ class MediaMiningViewModel internal constructor(
                 undoManager = undoManager,
                 audioTrackProbeOpener = audioTrackProbeOpener,
                 secondarySubtitleEnabled = secondarySubtitleEnabled,
+                deckName = deckName,
             ) as T
         }
     }

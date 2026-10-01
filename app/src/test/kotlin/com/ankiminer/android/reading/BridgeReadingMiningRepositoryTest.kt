@@ -59,6 +59,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -494,7 +497,7 @@ class BridgeReadingMiningRepositoryTest {
 
         val published = harness.foreground.lease.published
         assertTrue("expected the hostile progress event to be published", published.isNotEmpty())
-        assertEquals(MiningForegroundProgress(completed = 2, total = 3), published.last())
+        assertEquals(2 to 3, published.last().let { it.completed to it.total })
         published.forEach { progress ->
             assertFalse(
                 "mined term leaked into foreground progress: $progress",
@@ -686,20 +689,12 @@ class BridgeReadingMiningRepositoryTest {
         // "novel" is five staged bytes; without a unit they rendered as five items.
         assertTrue(
             published.toString(),
-            MiningForegroundProgress(
-                completed = 5,
-                total = 5,
-                unit = MiningForegroundProgressUnit.BYTES,
-            ) in published,
+            published.any {
+                it.completed == 5 && it.total == 5 && it.unit == MiningForegroundProgressUnit.BYTES
+            },
         )
-        assertEquals(
-            MiningForegroundProgress(
-                completed = 2,
-                total = 3,
-                unit = MiningForegroundProgressUnit.ITEMS,
-            ),
-            published.last(),
-        )
+        assertEquals(2 to 3, published.last().let { it.completed to it.total })
+        assertEquals(MiningForegroundProgressUnit.ITEMS, published.last().unit)
 
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
@@ -733,7 +728,10 @@ class BridgeReadingMiningRepositoryTest {
 
         val interrupted = recreated.repository.state.value as MiningRunState.Failed
         assertEquals(RUN_ID, interrupted.runId)
-        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+        assertEquals(
+            "Android closed Anki Miner while it was in the background, so this run stopped.",
+            interrupted.failure.message,
+        )
 
         runBlocking { activeHarness.repository.cancel(curating.request.runId) }
         activeHarness.bridge.allowTerminal.countDown()
@@ -777,7 +775,10 @@ class BridgeReadingMiningRepositoryTest {
         val harness = harness(interruptionStore = interruptionStore)
 
         val interrupted = harness.repository.state.value as MiningRunState.Failed
-        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+        assertEquals(
+            "Android closed Anki Miner while it was in the background, so this run stopped.",
+            interrupted.failure.message,
+        )
         // The other lane's run id has no meaning on this screen.
         assertNull(interrupted.runId)
 
@@ -1173,6 +1174,44 @@ class BridgeReadingMiningRepositoryTest {
         assertTrue(cancelled is MiningRunState.Cancelled)
         assertFalse(stagedFile.exists())
         assertTrue(harness.stageRoot.listFiles().orEmpty().isEmpty())
+    }
+
+    @Test
+    fun `finish answers every later page with an empty selection and never shows it`() {
+        val harness = harness(pagedCuration = true, expressionAudioFieldMapped = true)
+        runBlocking { harness.repository.startReading(INPUT) }
+        val first =
+            awaitState(harness.repository) {
+                (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 0L
+            } as MiningRunState.Curating
+        // Unconfined: each state is recorded on the thread that sets it, so a page shown even
+        // briefly before its auto-answer is caught.
+        val shownPages = CopyOnWriteArrayList<Long?>()
+        val recorder =
+            CoroutineScope(Dispatchers.Unconfined).launch {
+                harness.repository.state.collect { state ->
+                    (state as? MiningRunState.Curating)?.let { shownPages += it.request.page?.pageIndex }
+                }
+            }
+
+        runBlocking {
+            harness.repository.finishCuration(
+                first.request.runId,
+                first.request.requestId,
+                FIRST_SELECTION,
+                pageIndex = 0,
+            )
+        }
+
+        assertTrue(harness.bridge.intermediateCurationSubmitted.await(2, TimeUnit.SECONDS))
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        // The final page went back as [] (zero selected), not null (cancel).
+        assertEquals(emptyList<CurationSelection>(), harness.bridge.selection)
+        recorder.cancel()
+        assertEquals(listOf<Long?>(0L), shownPages.distinct())
+        assertEquals(1, harness.foreground.startCount.get())
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
     }
 
     @Test

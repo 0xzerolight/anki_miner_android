@@ -535,6 +535,13 @@ internal fun AnkiMinerApp(
         navigateTo(AnkiMinerDestination.SETTINGS)
     }
 
+    fun navigateToFieldMapping() {
+        requestedSettingsCategory = SettingsCategory.ANKI
+        // The anki-target card: SettingsScreen expands it on this deep link, which opens the field mapping.
+        requestedSettingsItemIndex = settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET)
+        navigateTo(AnkiMinerDestination.SETTINGS)
+    }
+
     /**
      * Deep-links the readiness notice to the catalog-dictionary card, which is the only one that
      * can resolve "no dictionary installed" without the user already having an archive on disk.
@@ -698,9 +705,7 @@ internal fun AnkiMinerApp(
                                 // Finish's path first, so the wizard does not come back next launch.
                                 wizardRerunRequested = false
                                 if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
-                                requestedSettingsCategory = SettingsCategory.ANKI
-                                requestedSettingsItemIndex = settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET)
-                                navigateTo(AnkiMinerDestination.SETTINGS)
+                                navigateToFieldMapping()
                             },
                         )
                     }
@@ -768,6 +773,7 @@ internal fun AnkiMinerApp(
                             activeWorkflowDestination
                                 ?.takeIf { it != AnkiMinerDestination.VIDEO }
                                 ?.let { destination -> { navigateTo(destination) } },
+                        onMapFields = ::navigateToFieldMapping,
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
@@ -788,6 +794,7 @@ internal fun AnkiMinerApp(
                             activeWorkflowDestination
                                 ?.takeIf { it != AnkiMinerDestination.AUDIO }
                                 ?.let { destination -> { navigateTo(destination) } },
+                        onMapFields = ::navigateToFieldMapping,
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
@@ -808,6 +815,7 @@ internal fun AnkiMinerApp(
                             activeWorkflowDestination
                                 ?.takeIf { it != AnkiMinerDestination.READING }
                                 ?.let { destination -> { navigateTo(destination) } },
+                        onMapFields = ::navigateToFieldMapping,
                         modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),
                     )
                 } else {

@@ -2,16 +2,10 @@ package com.ankiminer.android.ui.mining
 
 import android.util.LruCache
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Card
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -31,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -39,7 +34,6 @@ import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.reading.CurationPageImageDecoder
 import com.ankiminer.android.reading.CurationPageImageDecoder.DecodedPageImage
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.ChevronGlyph
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.min
@@ -47,7 +41,6 @@ import kotlin.math.roundToInt
 
 object CurationPageImageTestTags {
     const val SURFACE = "curation_page_image_surface"
-    const val COLLAPSE = "curation_page_image_collapse"
     const val PLACEHOLDER = "curation_page_image_placeholder"
     const val CAPTION = "curation_page_image_caption"
 }
@@ -122,69 +115,45 @@ private val HighlightStrokeWidth = 2.5.dp
 // manga page, so the pane doesn't jump size once the decode resolves.
 private const val FALLBACK_ASPECT_RATIO = 3f / 4f
 
-// Caps the pane's image/placeholder region so it cannot starve the candidate list below it: on
-// the 320x640@160 CI emulator a full-width portrait page (no cap) leaves the list 0dp tall. This
-// also means the box's real aspect ratio stops matching the declared one once a tall page hits
-// the cap, which is what makes pageFitTransform's dx/dy letterboxing actually draw (matches the
-// video lane's own 16:9-at-full-width player surface, which lands at 180dp on that geometry).
-private val PaneContentMaxHeight = 180.dp
 
-// fillMaxWidth MUST run before heightIn/aspectRatio: it locks width to an exact constraint so
-// aspectRatio, seeing a capped maxHeight from heightIn, can only give way on height — producing a
-// capped box instead of one that silently ignores the cap and grows past it.
-private fun Modifier.paneContentSize(aspectRatio: Float): Modifier =
-    this
-        .fillMaxWidth()
-        .heightIn(max = PaneContentMaxHeight)
-        .aspectRatio(aspectRatio)
+private fun Modifier.paneContentSize(
+    aspectRatio: Float,
+    maxHeight: Dp,
+): Modifier = cappedAspectRatio(aspectRatio, maxHeight)
 
 /**
- * Collapsible pane showing the mokuro page a focused curation word came from, with the mokuro
- * text block (speech bubble) containing it highlighted. Fit-to-pane only — no zoom or pan.
+ * The mokuro page a focused curation word came from, with the mokuro text block (speech bubble)
+ * containing it highlighted. Fit-to-pane only — no zoom or pan.
  *
- * Stays mounted (showing the "missing" placeholder) when [pageContext] is null so the pane never
- * pops in and out as the focused candidate/sentence changes.
+ * [maxContentHeight] caps the image region so it cannot starve the candidate list around it: a
+ * full-width portrait page with no cap fills the whole 320x640 viewport. Once a tall page hits the
+ * cap the box's aspect stops matching the page, which is what makes pageFitTransform's dx/dy
+ * letterboxing draw.
  */
 @Composable
 fun CurationPageImagePane(
     archivePath: String,
-    pageContext: CurationPageContext?,
-    collapsed: Boolean,
-    onToggleCollapsed: () -> Unit,
+    pageContext: CurationPageContext,
     decoder: CurationPageImageDecoder,
+    maxContentHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        if (collapsed) {
-            CollapsedPageImageBar(onToggleCollapsed)
-        } else {
-            Column {
-                if (pageContext == null) {
-                    PageImagePlaceholder(
-                        text = stringResource(R.string.curation_page_image_missing),
-                        modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO),
-                    )
-                } else {
-                    PageImageContent(
-                        archivePath = archivePath,
-                        pageContext = pageContext,
-                        decoder = decoder,
-                    )
-                    Text(
-                        text = pageContext.locationLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(
-                                    horizontal = AnkiMinerTokens.Space.content,
-                                    vertical = AnkiMinerTokens.Space.micro,
-                                ).testTag(CurationPageImageTestTags.CAPTION),
-                    )
-                }
-                ExpandedPageImageControls(onToggleCollapsed)
-            }
-        }
+    Column(modifier = modifier.fillMaxWidth()) {
+        PageImageContent(
+            archivePath = archivePath,
+            pageContext = pageContext,
+            decoder = decoder,
+            maxContentHeight = maxContentHeight,
+        )
+        Text(
+            text = pageContext.locationLabel,
+            style = MaterialTheme.typography.bodySmall,
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = AnkiMinerTokens.Space.micro)
+                    .testTag(CurationPageImageTestTags.CAPTION),
+        )
     }
 }
 
@@ -193,6 +162,7 @@ private fun PageImageContent(
     archivePath: String,
     pageContext: CurationPageContext,
     decoder: CurationPageImageDecoder,
+    maxContentHeight: Dp,
 ) {
     // Two adjacent candidates commonly share (or alternate between) the same page image; the
     // cache spares a re-decode of a ~1280px-long-edge bitmap on every focus flip between them.
@@ -229,7 +199,7 @@ private fun PageImageContent(
         is PageDecodeState.Failed ->
             PageImagePlaceholder(
                 text = stringResource(R.string.curation_page_image_error),
-                modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO),
+                modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO, maxContentHeight),
             )
         is PageDecodeState.Loading ->
             // Tagged PLACEHOLDER, not SURFACE: SURFACE is reserved for the loaded Canvas so tests
@@ -237,11 +207,15 @@ private fun PageImageContent(
             Box(
                 modifier =
                     Modifier
-                        .paneContentSize(FALLBACK_ASPECT_RATIO)
+                        .paneContentSize(FALLBACK_ASPECT_RATIO, maxContentHeight)
                         .testTag(CurationPageImageTestTags.PLACEHOLDER),
             )
         is PageDecodeState.Loaded ->
-            PageImageCanvas(decoded = state.image, blockBox = pageContext.blockBox)
+            PageImageCanvas(
+                decoded = state.image,
+                blockBox = pageContext.blockBox,
+                maxContentHeight = maxContentHeight,
+            )
     }
 }
 
@@ -249,6 +223,7 @@ private fun PageImageContent(
 private fun PageImageCanvas(
     decoded: DecodedPageImage,
     blockBox: CurationBlockBox,
+    maxContentHeight: Dp,
 ) {
     val imageBitmap = remember(decoded.bitmap) { decoded.bitmap.asImageBitmap() }
     // Block boxes are in ORIGINAL-page pixel coords; the decoded bitmap may be downsampled, so
@@ -271,7 +246,10 @@ private fun PageImageCanvas(
     Canvas(
         modifier =
             Modifier
-                .paneContentSize(decoded.bitmap.width / decoded.bitmap.height.toFloat())
+                .paneContentSize(
+                    decoded.bitmap.width / decoded.bitmap.height.toFloat(),
+                    maxContentHeight,
+                )
                 .testTag(CurationPageImageTestTags.SURFACE)
                 .semantics { contentDescription = imageDescription },
     ) {
@@ -327,46 +305,5 @@ private fun PageImagePlaceholder(
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(AnkiMinerTokens.Space.content),
         )
-    }
-}
-
-@Composable
-private fun ExpandedPageImageControls(onToggleCollapsed: () -> Unit) {
-    val collapseDescription = stringResource(R.string.curation_page_collapse_description)
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-    ) {
-        IconButton(
-            onClick = onToggleCollapsed,
-            modifier =
-                Modifier
-                    .testTag(CurationPageImageTestTags.COLLAPSE)
-                    .semantics { contentDescription = collapseDescription },
-        ) {
-            ChevronGlyph(pointsUp = true)
-        }
-    }
-}
-
-@Composable
-private fun CollapsedPageImageBar(onToggleCollapsed: () -> Unit) {
-    val expandDescription = stringResource(R.string.curation_page_expand_description)
-    Box(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget),
-        contentAlignment = Alignment.Center,
-    ) {
-        IconButton(
-            onClick = onToggleCollapsed,
-            modifier =
-                Modifier
-                    .testTag(CurationPageImageTestTags.COLLAPSE)
-                    .semantics { contentDescription = expandDescription },
-        ) {
-            ChevronGlyph(pointsUp = false)
-        }
     }
 }

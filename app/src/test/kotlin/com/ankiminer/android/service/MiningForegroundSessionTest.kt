@@ -26,6 +26,9 @@ class MiningForegroundSessionTest {
                 "completed" to Integer::class.java,
                 "total" to Integer::class.java,
                 "unit" to MiningForegroundProgressUnit::class.java,
+                "runPermille" to Integer::class.java,
+                "stageIndex" to Integer::class.java,
+                "stageCount" to Integer::class.java,
             ),
             fieldTypes,
         )
@@ -208,5 +211,36 @@ class MiningForegroundSessionTest {
             foregroundCommandDisposition(activeIdentity = current, commandIdentity = current),
         )
         assertTrue(current != stale)
+    }
+
+    @Test
+    fun theNotificationShowsTheStepAndTheWholeRunBar() {
+        val progress =
+            MiningForegroundProgress(completed = 0, total = 751, runPermille = 800, stageIndex = 4, stageCount = 5)
+        val text = requireNotNull(miningNotificationProgressText(progress))
+
+        assertEquals(R.string.mining_notification_step, text.resourceId)
+        assertEquals(listOf<Any>(4, 5), text.formatArguments)
+        assertEquals(MiningNotificationBar(1000, 800, false), miningNotificationBar(progress))
+        assertEquals(MiningNotificationBar(3, 2, false), miningNotificationBar(MiningForegroundProgress(2, 3)))
+        assertEquals(MiningNotificationBar(0, 0, true), miningNotificationBar(MiningForegroundProgress()))
+    }
+
+    @Test
+    fun aStageChangeRedrawsAndASubPercentFractionDoesNot() {
+        val base = MiningForegroundProgress(runPermille = 500, stageIndex = 2, stageCount = 5)
+
+        assertTrue(miningNotificationRedrawRequired(base, base.copy(stageIndex = 3)))
+        assertFalse(miningNotificationRedrawRequired(base, base.copy(runPermille = 505)))
+        assertTrue(miningNotificationRedrawRequired(base, base.copy(runPermille = 510)))
+    }
+
+    @Test
+    fun stageNumbersArriveTogetherAndInRange() {
+        assertThrows(IllegalArgumentException::class.java) { MiningForegroundProgress(stageIndex = 1) }
+        assertThrows(IllegalArgumentException::class.java) {
+            MiningForegroundProgress(stageIndex = 6, stageCount = 5)
+        }
+        assertThrows(IllegalArgumentException::class.java) { MiningForegroundProgress(runPermille = 1001) }
     }
 }

@@ -2,12 +2,10 @@ package com.ankiminer.android.ui.settings
 
 import android.content.Context
 import android.webkit.WebView
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -82,14 +80,9 @@ class DictionarySectionsTest {
     @Test
     fun renderedHtmlCarriesThemeColorsAndWebViewBackground() {
         lateinit var recordingWebView: RecordingWebView
-        var expectedSurface = 0
-        var expectedSurfaceHex = ""
 
         composeRule.setContent {
             AnkiMinerTheme {
-                val surface = MaterialTheme.colorScheme.surface
-                expectedSurface = surface.toArgb()
-                expectedSurfaceHex = "#%06X".format(0xFFFFFF and surface.toArgb())
                 DictionaryHtml(
                     html = "<p>x</p>",
                     webViewFactory = { context ->
@@ -102,9 +95,9 @@ class DictionarySectionsTest {
         composeRule.runOnIdle {
             val loaded = requireNotNull(recordingWebView.loadedData)
             assertTrue(loaded.contains("color-scheme"))
-            assertTrue(loaded.contains("background-color:$expectedSurfaceHex"))
+            assertTrue(loaded.contains("background-color:transparent"))
             assertTrue(loaded.endsWith("<p>x</p>"))
-            assertEquals(expectedSurface, recordingWebView.backgroundColor)
+            assertEquals(android.graphics.Color.TRANSPARENT, recordingWebView.backgroundColor)
         }
     }
 
@@ -119,7 +112,7 @@ class DictionarySectionsTest {
             )
 
         assertTrue(out.contains("content=\"dark\""))
-        assertTrue(out.contains("background-color:#101318"))
+        assertTrue(out.contains("background-color:transparent"))
         assertTrue(out.contains("color:#E2E2E9"))
         assertTrue(out.contains("a{color:#ADC6FF}"))
         assertTrue(out.endsWith("<p>x</p>"))

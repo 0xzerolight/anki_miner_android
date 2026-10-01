@@ -11,16 +11,17 @@ object VideoMiningTestTags {
     const val PICK_SECONDARY_SUBTITLE = "pick_secondary_subtitle"
     const val CLEAR_SECONDARY_SUBTITLE = "clear_secondary_subtitle"
     const val SECONDARY_SUBTITLE_OFFSET_FIELD = "secondary_subtitle_offset_field"
+    const val SETUP_HINT = "setup_hint"
     const val TEST_TIMING = "test_timing"
     const val START = "start_mining"
+    const val MAP_FIELDS = "map_fields"
     const val PROGRESS = "mining_progress"
     const val SELECT_ALL = "select_all_candidates"
+    const val FINISH_CURATION = "finish_curation"
     const val DEFINITION = "curation_definition"
     const val CUES_UNAVAILABLE = "curation_cues_unavailable"
     const val CONFIRM_CURATION = "confirm_curation"
     const val CANCEL = "cancel_mining"
-    const val RETRY = "retry_mining"
-    const val RESET = "reset_mining"
     const val RESULT = "mining_result"
     const val UNDO = "undo_mining_run"
     const val UNDO_CONFIRM = "undo_mining_run_confirm"
@@ -28,7 +29,6 @@ object VideoMiningTestTags {
     const val TIMING_PREVIEW_CONTENT = "timing_preview_content"
     const val TIMING_PREVIEW_TITLE = "timing_preview_title"
     const val TIMING_PREVIEW_UNAVAILABLE = "timing_preview_unavailable"
-    const val TIMING_PREVIEW_READOUT = "timing_preview_readout"
     const val TIMING_PREVIEW_NUDGE_EARLIER = "timing_preview_nudge_earlier"
     const val TIMING_PREVIEW_NUDGE_LATER = "timing_preview_nudge_later"
     const val TIMING_PREVIEW_TOGGLE = "timing_preview_toggle"
@@ -48,6 +48,8 @@ object VideoMiningTestTags {
     fun candidateToggle(candidateId: String): String = "candidate_toggle:$candidateId"
 
     fun candidateKnown(candidateId: String): String = "candidate_known:$candidateId"
+
+    fun candidateCopyMenu(candidateId: String): String = "candidate_copy_menu:$candidateId"
 
     fun candidateCopyWord(candidateId: String): String = "candidate_copy_word:$candidateId"
 

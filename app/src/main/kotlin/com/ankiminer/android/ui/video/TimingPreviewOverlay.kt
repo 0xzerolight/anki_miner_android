@@ -10,13 +10,17 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -102,9 +106,12 @@ internal fun TimingPreviewOverlay(
         color = MaterialTheme.colorScheme.background,
     ) {
         Column(
+            // Drawn outside the shell Scaffold: nothing else keeps the title off the status bar or
+            // Apply off the gesture bar.
             modifier =
                 Modifier
                     .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(AnkiMinerTokens.Space.content),
             verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
@@ -133,42 +140,42 @@ internal fun TimingPreviewOverlay(
                         .testTag(VideoMiningTestTags.TIMING_PREVIEW_CONTENT),
                 verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
-                item(key = "readout") {
-                    Text(
-                        text =
-                            if (state.previewingUnshifted) {
-                                stringResource(R.string.timing_preview_readout_unshifted)
-                            } else {
-                                stringResource(
-                                    R.string.timing_preview_readout_offset,
-                                    state.previewOffset,
-                                )
-                            },
-                        modifier =
-                            Modifier.testTag(VideoMiningTestTags.TIMING_PREVIEW_READOUT),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                }
-                item(key = "nudges") {
+                item(key = "offset") {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement =
-                            Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
+                        verticalAlignment = Alignment.Top,
                     ) {
                         NudgeButton(
                             label = stringResource(R.string.timing_preview_nudge_earlier),
                             testTag = VideoMiningTestTags.TIMING_PREVIEW_NUDGE_EARLIER,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.padding(top = AnkiMinerTokens.Space.related),
                         ) {
                             val updated = state.nudge(-TimingPreviewState.NUDGE_SECONDS)
                             offsetDraft = editableOffset(updated.workingOffset)
                             onNudge(-TimingPreviewState.NUDGE_SECONDS)
                             seekSelectedCue(player, updated, seekable == true)
                         }
+                        NumericField(
+                            value = offsetDraft,
+                            onChange = { value ->
+                                offsetDraft = value
+                                parsedOffset(value)?.let(onSetWorking)
+                            },
+                            label = stringResource(R.string.timing_preview_offset_label),
+                            allowNegative = true,
+                            error =
+                                stringResource(R.string.b3_validation_numeric_incomplete)
+                                    .takeIf { parsedOffset(offsetDraft) == null },
+                            modifier =
+                                Modifier
+                                    .weight(1f)
+                                    .testTag(VideoMiningTestTags.TIMING_PREVIEW_OFFSET_FIELD),
+                        )
                         NudgeButton(
                             label = stringResource(R.string.timing_preview_nudge_later),
                             testTag = VideoMiningTestTags.TIMING_PREVIEW_NUDGE_LATER,
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.padding(top = AnkiMinerTokens.Space.related),
                         ) {
                             val updated = state.nudge(TimingPreviewState.NUDGE_SECONDS)
                             offsetDraft = editableOffset(updated.workingOffset)
@@ -178,36 +185,18 @@ internal fun TimingPreviewOverlay(
                     }
                 }
                 item(key = "toggle") {
-                    SecondaryActionButton(
+                    FilterChip(
+                        selected = state.previewingUnshifted,
                         onClick = {
                             val updated = state.toggleUnshifted()
                             onToggleUnshifted()
                             seekSelectedCue(player, updated, seekable == true)
                         },
+                        label = { Text(stringResource(R.string.timing_preview_toggle_unshifted)) },
                         modifier =
                             Modifier
-                                .fillMaxWidth()
+                                .heightIn(min = 48.dp)
                                 .testTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE),
-                    ) {
-                        Text(stringResource(R.string.timing_preview_toggle_unshifted))
-                    }
-                }
-                item(key = "offset") {
-                    NumericField(
-                        value = offsetDraft,
-                        onChange = { value ->
-                            offsetDraft = value
-                            parsedOffset(value)?.let(onSetWorking)
-                        },
-                        label = stringResource(R.string.timing_preview_offset_label),
-                        allowNegative = true,
-                        error =
-                            stringResource(R.string.b3_validation_numeric_incomplete)
-                                .takeIf { parsedOffset(offsetDraft) == null },
-                        modifier =
-                            Modifier.testTag(
-                                VideoMiningTestTags.TIMING_PREVIEW_OFFSET_FIELD,
-                            ),
                     )
                 }
                 itemsIndexed(

@@ -10,22 +10,28 @@ import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.ExpansionPreview
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.MiningReceipt
 
 enum class DocumentSelectionError {
     VIDEO,
     AUDIO_TYPE,
     SUBTITLE,
     SECONDARY_SUBTITLE,
+
+    /** A subtitle pick whose extension is not a supported subtitle format; not lost access. */
+    SUBTITLE_TYPE,
+    SECONDARY_SUBTITLE_TYPE,
 }
 
 enum class MiningCommandError {
     START,
     CURATION,
     CANCEL,
-    RESET,
     UNDO,
     UNDO_WORDS,
 }
@@ -106,9 +112,9 @@ data class VideoMiningUiState(
     val secondarySubtitleOffsetDraft: String = "",
     val secondarySubtitleOffsetDraftInvalid: Boolean = false,
     val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
-    val audioFieldUnmapped: Boolean = false,
-    val expressionAudioFieldUnmapped: Boolean = false,
-    val unusableAudioPackInstalled: Boolean = false,
+    val advisories: MiningFieldAdvisories = MiningFieldAdvisories(),
+    /** The deck the shown result's run wrote to. */
+    val resultDeckName: String? = null,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: CurationUiState? = null,
     val startPending: Boolean = false,
@@ -122,13 +128,17 @@ data class VideoMiningUiState(
     val undoConfirmationNoteCount: Int? = null,
     val undoneNoteCount: Int? = null,
     val undoAvailable: Boolean = false,
+    /** The tab's own Undo is deleting notes; Mine waits for it. */
+    val undoPending: Boolean = false,
+    /** A finished run's Undo receipt restored after a background process kill; shown while Idle. */
+    val restoredReceipt: MiningReceipt? = null,
     val audioTrackOverride: Long? = null,
     val audioTrackProbePending: Boolean = false,
     val audioTrackPickerError: AudioTrackPickerError? = null,
 ) {
     val canStart: Boolean
         get() =
-            runState == MiningRunState.Idle &&
+            runState.acceptsInputEdits &&
                 video.document != null &&
                 subtitle.document != null &&
                 !video.isResolving &&
@@ -137,13 +147,15 @@ data class VideoMiningUiState(
                 !(secondarySubtitleEnabled && secondarySubtitle.isResolving) &&
                 !secondarySubtitleOffsetDraftInvalid &&
                 !startPending &&
+                !resetPending &&
+                !undoPending &&
                 !timingPreviewPending &&
                 !audioTrackProbePending &&
                 runtimeConflict == null
 
     val canTestTiming: Boolean
         get() =
-            runState == MiningRunState.Idle &&
+            runState.acceptsInputEdits &&
                 video.document != null &&
                 subtitle.document != null &&
                 !video.isResolving &&
@@ -155,7 +167,7 @@ data class VideoMiningUiState(
 
     val canPickAudioTracks: Boolean
         get() =
-            runState == MiningRunState.Idle &&
+            runState.acceptsInputEdits &&
                 video.document != null &&
                 !video.isResolving &&
                 !startPending &&

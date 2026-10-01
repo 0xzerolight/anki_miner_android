@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.reading
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
@@ -40,6 +41,7 @@ import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningFailure
+import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
@@ -47,6 +49,8 @@ import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.CurationPageImageTestTags
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import java.io.ByteArrayOutputStream
@@ -78,9 +82,6 @@ class ReadingMiningScreenTest {
         )
 
         composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_SOURCE).performClick()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled().performClick()
 
         composeRule.runOnIdle {
@@ -119,9 +120,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_SOURCE).assertDoesNotExist()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -146,9 +144,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).performTextInput("本文。")
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled().performClick()
 
         composeRule.runOnIdle { assertEquals(1, starts) }
@@ -173,10 +168,84 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).performTextInput(" \n\t ")
+        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun pasteReplacesTheTextFromTheClipboardWithoutTheKeyboard() {
+        val clip = "吾輩は猫である。"
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            instrumentation.targetContext
+                .getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("test", clip))
+        }
+        var pasted: String? = null
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state =
+                        ReadingMiningUiState(
+                            sourceMode = ReadingSourceMode.PASTED_TEXT,
+                            pastedText = "old",
+                        ),
+                    onPastedTextChanged = { pasted = it },
+                )
+            }
+        }
+
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
-        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_FROM_CLIPBOARD))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_FROM_CLIPBOARD).performClick()
+        composeRule.runOnIdle { assertEquals(clip, pasted) }
+    }
+
+    @Test
+    fun theCharacterCountShowsOnlyWithTheTruncationNotice() {
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(sourceMode = ReadingSourceMode.PASTED_TEXT, pastedText = "猫"),
+            )
+        composeRule.setContent { AnkiMinerTheme { ScreenUnderTest(state = state) } }
+        val counter =
+            InstrumentationRegistry.getInstrumentation().targetContext
+                .getString(R.string.reading_paste_counter, 1)
+
+        composeRule.onNodeWithText(counter).assertDoesNotExist()
+        composeRule.runOnIdle { state = state.copy(pastedTextTruncated = true) }
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasText(counter))
+        composeRule.onNodeWithText(counter).assertExists()
+    }
+
+    @Test
+    fun unmappedAudioIsOneQuietLineWithMapFieldsOnReading() {
+        var mapped = false
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state =
+                        ReadingMiningUiState(
+                            advisories =
+                                MiningFieldAdvisories(sentenceAudio = SentenceAudioAdvisory.UNMAPPED),
+                        ),
+                    onMapFields = { mapped = true },
+                )
+            }
+        }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.MAP_FIELDS))
+        composeRule
+            .onNodeWithText(context.getString(R.string.mining_advisory_sentence_audio))
+            .assertIsDisplayed()
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(0)
+        composeRule.onNodeWithTag(ReadingMiningTestTags.MAP_FIELDS).performClick()
+        composeRule.runOnIdle { assertTrue(mapped) }
     }
 
     @Test
@@ -264,9 +333,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PICK_ARCHIVE))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_ARCHIVE).performClick()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled()
         composeRule.runOnIdle { assertTrue(pickedArchive) }
 
@@ -284,9 +350,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasText(mismatchMessage))
         composeRule.onNodeWithText(mismatchMessage).assertExists()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -301,12 +364,13 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Page 2 of 2 · 3–4 of 4").assertExists()
+        composeRule.onNodeWithText("2 selected · page 2 of 2").assertExists()
         composeRule.onNodeWithText("Finish (2)").assertIsDisplayed()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.FINISH_CURATION).assertDoesNotExist()
     }
 
     @Test
-    fun terminalResultUsesRetainedNamesWithoutExposingEnginePaths() {
+    fun terminalResultNeverShowsEnginePaths() {
         val rawSourcePath = "/data/user/0/com.ankiminer.android/cache/run/private.mokuro"
         val rawArchivePath = "/proc/self/fd/57"
         val result =
@@ -326,9 +390,8 @@ class ReadingMiningScreenTest {
 
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.RESULT))
-        composeRule.onNodeWithText("Reading source: Retained source.mokuro").assertExists()
-        composeRule.onNodeWithText("Mokuro image archive: Retained source.cbz").assertExists()
+            .performScrollToNode(hasText("Details"))
+        composeRule.onNodeWithText("Details").performClick()
         composeRule.onNodeWithText(rawSourcePath, substring = true).assertDoesNotExist()
         composeRule.onNodeWithText(rawArchivePath, substring = true).assertDoesNotExist()
     }
@@ -543,8 +606,11 @@ class ReadingMiningScreenTest {
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(
-                hasTestTag(ReadingMiningTestTags.candidateCopySentence(first.candidateId)),
+                hasTestTag(ReadingMiningTestTags.candidateCopyMenu(first.candidateId)),
             )
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.candidateCopyMenu(first.candidateId))
+            .performClick()
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.candidateCopySentence(first.candidateId))
             .performClick()
@@ -600,7 +666,6 @@ class ReadingMiningScreenTest {
                     onSetCandidateSelected = { _, _ -> },
                     onMarkCandidateKnown = { _, _ -> },
                     onSetSelectionForVisible = { _, _ -> },
-                    onSetSelectionForPage = {},
                     onReconcileFocus = { _, _ -> },
                     onSelectSentence = { id, sentenceId ->
                         val curation = requireNotNull(state.curation)
@@ -614,8 +679,6 @@ class ReadingMiningScreenTest {
                     },
                     onConfirmCuration = {},
                     onCancel = {},
-                    onRetry = {},
-                    onReset = {},
                 )
             }
         }
@@ -743,13 +806,10 @@ class ReadingMiningScreenTest {
                     onSetCandidateSelected = { _, _ -> },
                     onMarkCandidateKnown = { _, _ -> },
                     onSetSelectionForVisible = { _, _ -> },
-                    onSetSelectionForPage = {},
                     onReconcileFocus = { _, _ -> },
                     onSelectSentence = { _, _ -> },
                     onConfirmCuration = {},
                     onCancel = { cancelled = true },
-                    onRetry = {},
-                    onReset = {},
                 )
             }
         }
@@ -761,7 +821,7 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun readingToolsToggleCollapsesAndRestoresSearchAndFilterControls() {
+    fun readingToolsStartFoldedOnASmallPageAndOpenOnDemand() {
         val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
@@ -771,12 +831,15 @@ class ReadingMiningScreenTest {
                 ),
         )
 
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SELECT_ALL).assertIsDisplayed()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SELECT_ALL).assertIsDisplayed()
         composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SELECT_ALL).assertIsDisplayed()
     }
 
     @Test
@@ -794,6 +857,7 @@ class ReadingMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).performClick()
         composeRule.onNodeWithText("Excluded").performClick()
 
@@ -836,7 +900,7 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun terminalReadingFailureSuppressesCommandError() {
+    fun aFailedReadingRunShowsItsCauseAboveTheInputs() {
         setScreen(
             state =
                 ReadingMiningUiState(
@@ -848,12 +912,28 @@ class ReadingMiningScreenTest {
                             failure = MiningFailure("Private protocol detail", retryable = true),
                             result = null,
                         ),
-                    commandError = ReadingMiningCommandError.START,
                 ),
         )
 
-        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
         composeRule.onNodeWithText("Private protocol detail").assertIsDisplayed()
+        composeRule.onNodeWithText("Retry").assertDoesNotExist()
+        composeRule.onNodeWithText("Start over").assertDoesNotExist()
+    }
+
+    @Test
+    fun readingInputsStayOnScreenButLockedWhileARunIsActive() {
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    sourceMode = ReadingSourceMode.PASTED_TEXT,
+                    pastedText = "吾輩は猫である。",
+                    runState = MiningRunState.Running("run", MiningProgress(1, 4, "Tokenising")),
+                ),
+        )
+
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PROGRESS).assertExists()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertDoesNotExist()
     }
 
     @Test
@@ -870,6 +950,11 @@ class ReadingMiningScreenTest {
                     ),
             )
 
+            composeRule
+                .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+                .performScrollToNode(
+                    hasTestTag(ReadingMiningTestTags.pageImage(request.candidates.first().candidateId)),
+                )
             // SURFACE is tagged only on the loaded Canvas (not the loading placeholder), so
             // waiting for it here proves the archive was actually decoded and drawn, not just
             // that the pane mounted.
@@ -896,11 +981,8 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun pageImagePlaceholderShowsWhenTheFocusedSentenceLacksPageContext() {
-        // The pane's mount gate needs SOME candidate on the page to carry a pageContext (an
-        // all-null-pageContext page keeps the slot unmounted entirely, not showing a permanent
-        // placeholder) — attach it to the second candidate so the focused (first, default-focus)
-        // candidate's sentence still has none and the placeholder still renders for it.
+    fun noPageImageShowsWhenTheFocusedSentenceHasNoPage() {
+        // Another candidate on the page carries a pageContext; the focused (first) one does not.
         val request = requestWithPageContext(pageContext("unused-entry.png"), candidateIndex = 1)
         setScreen(
             state =
@@ -914,36 +996,9 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithTag(CurationPageImageTestTags.PLACEHOLDER).assertIsDisplayed()
-        composeRule.onNodeWithText("No page image for this word").assertExists()
-    }
-
-    @Test
-    fun pageImageCollapseTogglesTheExpandedContent() {
-        val archive = pageImageArchive()
-        try {
-            val request = requestWithPageContext(pageContext(archive.entryName))
-            setScreen(
-                state =
-                    ReadingMiningUiState(
-                        runState = MiningRunState.Curating(request),
-                        curation =
-                            curationState(request, pageImage = CurationPageImageUiState(archive.file.path)),
-                    ),
-            )
-
-            waitForPageImageSurface()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.COLLAPSE).performClick()
-            // Collapsing disposes PageImageContent's remembered decode state, so re-expanding
-            // decodes again from scratch — wait for it the same way as the initial expand.
-            waitForPageImageSurface()
-            composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertIsDisplayed()
-        } finally {
-            archive.file.delete()
-        }
+        composeRule.onNodeWithTag(CurationPageImageTestTags.PLACEHOLDER).assertDoesNotExist()
+        composeRule.onNodeWithTag(CurationPageImageTestTags.SURFACE).assertDoesNotExist()
+        composeRule.onNodeWithText("No page image for this word").assertDoesNotExist()
     }
 
     @Test
@@ -1003,6 +1058,12 @@ class ReadingMiningScreenTest {
             .assertIsDisplayed()
     }
 
+    private fun openCurationTools() {
+        if (composeRule.onAllNodesWithTag(CURATION_SEARCH_TEST_TAG).fetchSemanticsNodes().isEmpty()) {
+            composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        }
+    }
+
     private fun setScreen(
         state: ReadingMiningUiState,
         onPickSource: () -> Unit = {},
@@ -1031,6 +1092,7 @@ class ReadingMiningScreenTest {
         onPastedTextChanged: (String) -> Unit = {},
         onStart: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
+        onMapFields: () -> Unit = {},
         listState: LazyListState = rememberLazyListState(),
     ) {
         ReadingMiningScreen(
@@ -1050,13 +1112,11 @@ class ReadingMiningScreenTest {
             onSetCandidateSelected = { _, _ -> },
             onMarkCandidateKnown = onMarkCandidateKnown,
             onSetSelectionForVisible = { _, _ -> },
-            onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
             onSelectSentence = { _, _ -> },
             onConfirmCuration = {},
             onCancel = {},
-            onRetry = {},
-            onReset = {},
+            onMapFields = onMapFields,
             listState = listState,
         )
     }

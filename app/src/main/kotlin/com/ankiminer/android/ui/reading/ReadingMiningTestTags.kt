@@ -11,15 +11,16 @@ object ReadingMiningTestTags {
     const val CLEAR_ARCHIVE = "reading_clear_archive"
     const val PASTE_TEXT = "reading_paste_text"
     const val CLEAR_PASTED_TEXT = "reading_clear_pasted_text"
+    const val PASTE_FROM_CLIPBOARD = "reading_paste_from_clipboard"
     const val SERIES_NAME = "reading_series_name"
     const val START = "reading_start_mining"
+    const val MAP_FIELDS = "reading_map_fields"
     const val PROGRESS = "reading_mining_progress"
     const val SELECT_ALL = "reading_select_all_candidates"
+    const val FINISH_CURATION = "reading_finish_curation"
     const val DEFINITION = "reading_curation_definition"
     const val CONFIRM_CURATION = "reading_confirm_curation"
     const val CANCEL = "reading_cancel_mining"
-    const val RETRY = "reading_retry_mining"
-    const val RESET = "reading_reset_mining"
     const val RESULT = "reading_mining_result"
     const val UNDO = "reading_undo_mining_run"
     const val UNDO_CONFIRM = "reading_undo_mining_run_confirm"
@@ -31,6 +32,11 @@ object ReadingMiningTestTags {
 
     fun candidateKnown(candidateId: String): String =
         "reading_candidate_known:$candidateId"
+
+    fun pageImage(candidateId: String): String = "reading_page_image:$candidateId"
+
+    fun candidateCopyMenu(candidateId: String): String =
+        "reading_candidate_copy_menu:$candidateId"
 
     fun candidateCopyWord(candidateId: String): String =
         "reading_candidate_copy_word:$candidateId"

@@ -10,6 +10,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.MiningRunUndoManager
 import com.ankiminer.android.data.anki.UndoRunOutcome
 import com.ankiminer.android.data.anki.UndoneRunReceipt
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.log.AppLog
@@ -22,24 +23,27 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRunState
-import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.mining.terminalResult
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.MiningPendingAction
+import com.ankiminer.android.ui.mining.MiningReceipt
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.completed
 import com.ankiminer.android.ui.mining.defaultCurationDraft
 import com.ankiminer.android.ui.mining.draftFor
 import com.ankiminer.android.ui.mining.forRequest
+import com.ankiminer.android.ui.mining.miningFieldAdvisories
 import com.ankiminer.android.ui.mining.request
 import com.ankiminer.android.ui.mining.toCurationSessionState
 import com.ankiminer.android.ui.reading.CurationPageImageUiState
@@ -82,6 +86,9 @@ class ReadingMiningViewModel internal constructor(
     selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val definitionLookup: DefinitionLookupService? = null,
     private val undoManager: MiningRunUndoManager? = null,
+    fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+    audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
+    deckName: Flow<String?> = flowOf(null),
 ) : ViewModel() {
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
@@ -96,6 +103,13 @@ class ReadingMiningViewModel internal constructor(
         val pending: MiningPendingState = MiningPendingState(),
         val commandError: ReadingMiningCommandError? = null,
         val undoConfirmationNoteCount: Int? = null,
+        val fieldMap: Map<String, String> = emptyMap(),
+        val audioPacks: List<InstalledAudioPack> = emptyList(),
+        val deckName: String? = null,
+        /** The deck the current run started with; the result line names it even if Settings changed since. */
+        val runDeckName: String? = null,
+        /** The last run's Undo receipt, restored after Android killed the app in the background. */
+        val restoredReceipt: MiningReceipt? = null,
     )
 
     /**
@@ -130,6 +144,7 @@ class ReadingMiningViewModel internal constructor(
     )
 
     private val definitionState = MutableStateFlow(CurationDefinitionState())
+    private val receiptStore = MiningReceiptStore(savedStateHandle, "readingMining.receipt")
     private var definitionJob: Job? = null
     private var sourceDocumentRequest = 0L
     private var archiveDocumentRequest = 0L
@@ -203,11 +218,14 @@ class ReadingMiningViewModel internal constructor(
             // Own-lane in-flight is `local.pending.undo`; `aux.undoActive` catches the narrow
             // handoff gap between the delete phase releasing its ANKI_SETUP lease and the revert
             // phase acquiring RESOURCE, during which `aux.activeKind` alone would read null.
-            val undoneReceipt = runState.runId?.let { aux.undoneRuns[it] }
+            val restored = local.restoredReceipt?.takeIf { runState == MiningRunState.Idle }
+            val undoneReceipt = (runState.runId ?: restored?.runId)?.let { aux.undoneRuns[it] }
             val undoAvailable =
                 undoManager != null &&
-                    runState.isTerminal &&
-                    runState.terminalResultOrNull()?.cardIds?.isNotEmpty() == true &&
+                    (
+                        (runState.isTerminal && runState.terminalResult?.cardIds?.isNotEmpty() == true) ||
+                            restored != null
+                    ) &&
                     undoneReceipt == null &&
                     aux.activeKind == null &&
                     !aux.undoActive &&
@@ -221,6 +239,8 @@ class ReadingMiningViewModel internal constructor(
                 pastedText = local.pastedText,
                 pastedTextTruncated = local.pastedTextTruncated,
                 subtitleSeriesName = local.subtitleSeriesName,
+                advisories = miningFieldAdvisories(local.fieldMap, local.audioPacks, audioLane = false),
+                resultDeckName = local.runDeckName,
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -229,10 +249,15 @@ class ReadingMiningViewModel internal constructor(
                 resetPending = local.pending.reset,
                 commandError = local.commandError,
                 runtimeConflict =
-                    aux.activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
+                    aux.activeKind?.toRuntimeConflict()?.takeIf {
+                        // The tab's own undo is not another run.
+                        runState.acceptsInputEdits && !local.pending.undo
+                    },
                 undoConfirmationNoteCount = local.undoConfirmationNoteCount,
                 undoneNoteCount = undoneReceipt?.deletedNotes,
                 undoAvailable = undoAvailable,
+                undoPending = local.pending.undo,
+                restoredReceipt = restored,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -241,8 +266,29 @@ class ReadingMiningViewModel internal constructor(
         )
 
     init {
+        if (repository.state.value == MiningRunState.Idle) {
+            receiptStore.restore()?.let { receipt -> localState.update { it.copy(restoredReceipt = receipt) } }
+        }
+        viewModelScope.launch {
+            deckName.distinctUntilChanged().collect { name ->
+                localState.update { local -> local.copy(deckName = name) }
+            }
+        }
+        viewModelScope.launch {
+            fieldMap.distinctUntilChanged().collect { currentFieldMap ->
+                localState.update { local -> local.copy(fieldMap = currentFieldMap) }
+            }
+        }
+        viewModelScope.launch {
+            audioPacks.distinctUntilChanged().collect { currentPacks ->
+                localState.update { local -> local.copy(audioPacks = currentPacks) }
+            }
+        }
         viewModelScope.launch {
             repository.state.collect { runState ->
+                // StateFlow conflates, so Starting alone may never be seen: any in-flight state means a
+                // new run, and Undo must not reach the older run's notes after a process kill.
+                if (!runState.acceptsInputEdits) forgetReceipt()
                 if (runState is MiningRunState.Curating) {
                     val saved = repository.curationSessionState()
                     localState.update { local ->
@@ -265,6 +311,7 @@ class ReadingMiningViewModel internal constructor(
                     }
                     saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
+                    saveReceipt(runState)
                     definitionJob?.cancel()
                     definitionJob = null
                     requestDefinition(null, null)
@@ -329,12 +376,12 @@ class ReadingMiningViewModel internal constructor(
     }
 
     fun onSourceModeChanged(mode: ReadingSourceMode) {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         localState.update { it.copy(sourceMode = mode) }
     }
 
     fun onPastedTextChanged(text: String) {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         val bounded = text.takeCodePoints(MAX_PASTED_TEXT_CODE_POINTS)
         localState.update {
             it.copy(
@@ -345,7 +392,7 @@ class ReadingMiningViewModel internal constructor(
     }
 
     fun clearPastedText() {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         localState.update {
             it.copy(
                 pastedText = "",
@@ -355,7 +402,7 @@ class ReadingMiningViewModel internal constructor(
     }
 
     fun onSubtitleSeriesNameChanged(value: String) {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         val bounded = value.takeCodePoints(MAX_SERIES_NAME_CODE_POINTS)
         localState.update {
             it.copy(subtitleSeriesName = bounded)
@@ -364,7 +411,7 @@ class ReadingMiningViewModel internal constructor(
     }
 
     fun clearSource() {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         AppLog.i(
             LogComponent.UI,
             "command",
@@ -393,7 +440,7 @@ class ReadingMiningViewModel internal constructor(
     }
 
     fun clearArchive() {
-        if (repository.state.value != MiningRunState.Idle || localState.value.pending.start) return
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         AppLog.i(
             LogComponent.UI,
             "command",
@@ -431,27 +478,36 @@ class ReadingMiningViewModel internal constructor(
         while (true) {
             val local = localState.value
             val input = local.toInputOrNull() ?: return
+            val runState = repository.state.value
             if (
-                repository.state.value != MiningRunState.Idle ||
+                !runState.acceptsInputEdits ||
                 runtimeWorkState.value != null ||
                 (local.sourceMode == ReadingSourceMode.FILE &&
                     (local.source.isResolving || local.archive.isResolving)) ||
                 local.pending.start ||
-                local.pending.reset
+                local.pending.reset ||
+                local.pending.undo
             ) {
                 return
             }
+            val restart = runState.isTerminal
             if (
                 localState.compareAndSet(
                     local,
                     local.copy(
-                        pending = local.pending.begin(MiningPendingAction.START),
+                        pending =
+                            if (restart) {
+                                local.pending.beginRetry()
+                            } else {
+                                local.pending.begin(MiningPendingAction.START)
+                            },
                         commandError = null,
                         previousPageSelectedCount = 0,
+                        runDeckName = local.deckName,
                     ),
                 )
             ) {
-                launchStart(input)
+                if (restart) launchRestart(runState.runId, input) else launchStart(input)
                 return
             }
         }
@@ -539,15 +595,6 @@ class ReadingMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
-    /**
-     * Page-wide selection, kept distinct from the visible-scope action so the UI can label each
-     * one for what it actually reaches.
-     */
-    fun setSelectionForPage(selected: Boolean) {
-        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
-        setSelectionForVisible(request.candidates.map { it.candidateId }, selected)
-    }
-
     /** Called when search, filter, or sort changes which candidates remain on screen. */
     fun reconcileCurationFocus(
         visibleCandidateIds: List<String>,
@@ -586,9 +633,15 @@ class ReadingMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
-    fun confirmCuration() {
+    fun confirmCuration() = submitCuration(finishRemainingPages = false)
+
+    /** Finish (N): this page with its selection, every later page with [] (D5). Cancel still sends null. */
+    fun finishCuration() = submitCuration(finishRemainingPages = true)
+
+    private fun submitCuration(finishRemainingPages: Boolean) {
         val runState = repository.state.value as? MiningRunState.Curating ?: return
         if (runState.pageSubmissionPending) return
+        val finishing = finishRemainingPages && !runState.request.isFinalPage
         var acceptedSelection: List<CurationSelection>? = null
         var acceptedDraft: SharedCurationDraft? = null
         var submittedPreviousPageCount: Int? = null
@@ -622,17 +675,27 @@ class ReadingMiningViewModel internal constructor(
             AppLog.i(
                 LogComponent.UI,
                 "command",
-                "command" to "curation",
+                "command" to if (finishing) "curation_finish" else "curation",
                 "outcome" to "ok",
             )
             try {
-                repository.confirmCuration(
-                    runId = runState.request.runId,
-                    requestId = runState.request.requestId,
-                    selection = selection,
-                    pageIndex = runState.request.page?.pageIndex,
-                    knownCandidateIds = draft.knownCandidateIds.toList(),
-                )
+                if (finishing) {
+                    repository.finishCuration(
+                        runId = runState.request.runId,
+                        requestId = runState.request.requestId,
+                        selection = selection,
+                        pageIndex = requireNotNull(runState.request.page).pageIndex,
+                        knownCandidateIds = draft.knownCandidateIds.toList(),
+                    )
+                } else {
+                    repository.confirmCuration(
+                        runId = runState.request.runId,
+                        requestId = runState.request.requestId,
+                        selection = selection,
+                        pageIndex = runState.request.page?.pageIndex,
+                        knownCandidateIds = draft.knownCandidateIds.toList(),
+                    )
+                }
                 if (!runState.request.isFinalPage) {
                     val previousPageSelectedCount =
                         requireNotNull(submittedPreviousPageCount)
@@ -717,97 +780,10 @@ class ReadingMiningViewModel internal constructor(
         }
     }
 
-    fun reset() {
-        val runState = repository.state.value
-        if (!runState.isTerminal || localState.value.pending.reset) return
-        localState.update {
-            it.copy(
-                pending = it.pending.begin(MiningPendingAction.RESET),
-                commandError = null,
-            )
-        }
-        viewModelScope.launch(LogContext.asContextElement(runState.runId)) {
-            AppLog.i(
-                LogComponent.UI,
-                "command",
-                "command" to "reset",
-                "outcome" to "ok",
-            )
-            try {
-                repository.reset()
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: RuntimeException) {
-                AppLog.e(
-                    LogComponent.UI,
-                    "command",
-                    failure,
-                    "command" to "reset",
-                    "outcome" to "fail",
-                )
-                localState.update { it.copy(commandError = ReadingMiningCommandError.RESET) }
-            } finally {
-                localState.update {
-                    it.copy(pending = it.pending.complete(MiningPendingAction.RESET))
-                }
-            }
-        }
-    }
-
-    fun retry() {
-        val failed = repository.state.value as? MiningRunState.Failed ?: return
-        if (
-            !failed.failure.retryable ||
-            localState.value.pending.reset ||
-            localState.value.pending.start
-        ) {
-            return
-        }
-        val input = localState.value.toInputOrNull() ?: return
-        localState.update {
-            it.copy(pending = it.pending.beginRetry(), commandError = null)
-        }
-        viewModelScope.launch(LogContext.asContextElement(failed.runId)) {
-            AppLog.i(
-                LogComponent.UI,
-                "command",
-                "command" to "retry",
-                "outcome" to "ok",
-            )
-            try {
-                repository.reset()
-                localState.update {
-                    it.copy(pending = it.pending.complete(MiningPendingAction.RESET))
-                }
-                repository.startReading(input)
-            } catch (failure: CancellationException) {
-                throw failure
-            } catch (failure: RuntimeException) {
-                AppLog.e(
-                    LogComponent.UI,
-                    "command",
-                    failure,
-                    "command" to "retry",
-                    "outcome" to "fail",
-                )
-                localState.update { it.copy(commandError = ReadingMiningCommandError.START) }
-            } finally {
-                localState.update {
-                    it.copy(
-                        pending =
-                            it.pending
-                                .complete(MiningPendingAction.RESET)
-                                .complete(MiningPendingAction.START),
-                    )
-                }
-            }
-        }
-    }
-
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
-        val result = repository.state.value.terminalResultOrNull() ?: return
-        localState.update { it.copy(undoConfirmationNoteCount = result.cardIds.size) }
+        val target = undoTarget() ?: return
+        localState.update { it.copy(undoConfirmationNoteCount = target.noteIds.size) }
     }
 
     fun dismissUndoConfirmation() {
@@ -816,17 +792,8 @@ class ReadingMiningViewModel internal constructor(
 
     fun confirmUndo() {
         val manager = undoManager ?: return
-        val runState = repository.state.value
-        val result =
-            (runState as? MiningRunState.Success)?.result
-                ?: (runState as? MiningRunState.Cancelled)?.result
-                ?: (runState as? MiningRunState.Failed)?.result
-        // `runState.runId` is nullable for Cancelled/Failed (unlike Success); the manager needs a
-        // non-null run to key its receipt, so a null id is treated the same as no result.
-        val runId = runState.runId
-        if (result == null || runId == null || result.cardIds.isEmpty() || localState.value.pending.undo) {
-            return
-        }
+        val target = undoTarget() ?: return
+        if (localState.value.pending.undo) return
         localState.update {
             it.copy(
                 pending = it.pending.begin(MiningPendingAction.UNDO),
@@ -834,14 +801,16 @@ class ReadingMiningViewModel internal constructor(
                 undoConfirmationNoteCount = null,
             )
         }
-        viewModelScope.launch(LogContext.asContextElement(runId)) {
+        viewModelScope.launch(LogContext.asContextElement(target.runId)) {
             AppLog.i(LogComponent.UI, "command", "command" to "undo", "outcome" to "ok")
             try {
-                when (val outcome = manager.undoRun(runId, result.cardIds, result.minedForms)) {
-                    is UndoRunOutcome.Undone ->
+                when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms)) {
+                    is UndoRunOutcome.Undone -> {
+                        receiptStore.clear()
                         if (!outcome.receipt.knownWordsReverted) {
                             localState.update { it.copy(commandError = ReadingMiningCommandError.UNDO_WORDS) }
                         }
+                    }
                     UndoRunOutcome.Busy, UndoRunOutcome.DeleteFailed ->
                         localState.update { it.copy(commandError = ReadingMiningCommandError.UNDO) }
                 }
@@ -854,6 +823,35 @@ class ReadingMiningViewModel internal constructor(
                 localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.UNDO)) }
             }
         }
+    }
+
+    /** The run Undo acts on: the finished run on screen, or the receipt restored after a process kill. */
+    private fun undoTarget(): MiningReceipt? {
+        val runState = repository.state.value
+        val result = runState.terminalResult
+        val runId = runState.runId
+        if (result != null && runId != null && result.cardIds.isNotEmpty()) {
+            return MiningReceipt(runId, result.cardsCreated, null, result.cardIds, result.minedForms)
+        }
+        return localState.value.restoredReceipt.takeIf { runState == MiningRunState.Idle }
+    }
+
+    private fun forgetReceipt() {
+        receiptStore.clear()
+        if (localState.value.restoredReceipt != null) localState.update { it.copy(restoredReceipt = null) }
+    }
+
+    private fun saveReceipt(runState: MiningRunState) {
+        val runId = runState.runId
+        val result = runState.terminalResult
+        if (runId == null || result == null || result.cardIds.isEmpty()) {
+            // This run left nothing to undo, so no older receipt may stand in for it.
+            receiptStore.clear()
+            return
+        }
+        receiptStore.save(
+            MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms),
+        )
     }
 
     private fun launchStart(input: ReadingMiningInput) {
@@ -880,6 +878,47 @@ class ReadingMiningViewModel internal constructor(
             } finally {
                 localState.update {
                     it.copy(pending = it.pending.complete(MiningPendingAction.START))
+                }
+            }
+        }
+    }
+
+    /** Mine from a finished run: clear its terminal state, then start with the inputs now on screen. */
+    private fun launchRestart(
+        previousRunId: String?,
+        input: ReadingMiningInput,
+    ) {
+        viewModelScope.launch(LogContext.asContextElement(previousRunId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "start",
+                "after" to "terminal",
+                "outcome" to "ok",
+            )
+            try {
+                repository.reset()
+                localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.RESET)) }
+                repository.startReading(input)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "start",
+                    "outcome" to "fail",
+                )
+                localState.update { it.copy(commandError = ReadingMiningCommandError.START) }
+            } finally {
+                localState.update {
+                    it.copy(
+                        pending =
+                            it.pending
+                                .complete(MiningPendingAction.RESET)
+                                .complete(MiningPendingAction.START),
+                    )
                 }
             }
         }
@@ -931,7 +970,7 @@ class ReadingMiningViewModel internal constructor(
     ) {
         if (
             uri.isBlank() ||
-            (!restoring && repository.state.value != MiningRunState.Idle) ||
+            (!restoring && !repository.state.value.acceptsInputEdits) ||
             localState.value.pending.start ||
             (kind == DocumentKind.ARCHIVE &&
                 localState.value.sourceKind != ReadingSourceKindUi.MOKURO)
@@ -1480,15 +1519,6 @@ class ReadingMiningViewModel internal constructor(
         return if (count <= maximum) this else substring(0, offsetByCodePoints(0, maximum))
     }
 
-    /** The result a terminal run carries, regardless of which terminal branch it landed in. */
-    private fun MiningRunState.terminalResultOrNull(): ProcessingResult? =
-        when (this) {
-            is MiningRunState.Success -> result
-            is MiningRunState.Cancelled -> result
-            is MiningRunState.Failed -> result
-            else -> null
-        }
-
     internal class Factory(
         private val repository: ReadingMiningRepository,
         private val safBroker: SafBroker,
@@ -1498,6 +1528,9 @@ class ReadingMiningViewModel internal constructor(
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
         private val undoManager: MiningRunUndoManager? = null,
+        private val fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+        private val audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
+        private val deckName: Flow<String?> = flowOf(null),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1513,6 +1546,9 @@ class ReadingMiningViewModel internal constructor(
                 selectionInventory = selectionInventory,
                 definitionLookup = definitionLookup,
                 undoManager = undoManager,
+                fieldMap = fieldMap,
+                audioPacks = audioPacks,
+                deckName = deckName,
             ) as T
         }
     }

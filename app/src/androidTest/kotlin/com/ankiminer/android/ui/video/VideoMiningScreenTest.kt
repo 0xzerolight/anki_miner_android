@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.video
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -19,7 +20,9 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasNoClickAction
 import androidx.compose.ui.test.hasTestTag
@@ -62,13 +65,15 @@ import com.ankiminer.android.ui.mining.ClipWindowSeconds
 import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.CurationPlayerTestTags
 import com.ankiminer.android.ui.mining.ExpansionPreview
-import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
+import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -103,9 +108,6 @@ class VideoMiningScreenTest {
 
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_VIDEO).performClick()
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SUBTITLE).performClick()
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsEnabled().performClick()
 
         composeRule.runOnIdle {
@@ -172,9 +174,6 @@ class VideoMiningScreenTest {
         val clear = composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_VIDEO).getUnclippedBoundsInRoot()
         assertTrue("Replace and remove must share a row", clear.top < pick.bottom && pick.top < clear.bottom)
         // START is asserted last: scrolling to it can dispose the slot actions above.
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -258,20 +257,32 @@ class VideoMiningScreenTest {
                     R.string.video_secondary_subtitle_offset_error,
                 ),
             ).assertIsDisplayed()
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
     }
 
     @Test
-    fun audioTracksButtonVisibleButDisabledWithoutVideo() {
+    fun idleWithNothingChosenShowsOnlyTheHintAndThePickers() {
         setScreen(state = VideoMiningUiState())
 
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
-        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SETUP_HINT).assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.TEST_TIMING).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertDoesNotExist()
+    }
+
+    @Test
+    fun theAudioLaneNeverOffersAudioTracks() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("audio", "episode.m4a")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                ),
+            labels = MediaMiningLabels.AUDIO,
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertDoesNotExist()
     }
 
     @Test
@@ -289,9 +300,6 @@ class VideoMiningScreenTest {
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
         composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
         composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -387,7 +395,6 @@ class VideoMiningScreenTest {
             onConfirmCuration = { confirmed = true },
         )
 
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).performClick()
         composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
@@ -546,8 +553,8 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandReset("candidate-1")))
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertIsNotEnabled()
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandPrev("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertDoesNotExist()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
             .assertDoesNotExist()
@@ -648,7 +655,7 @@ class VideoMiningScreenTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val initialText = context.getString(R.string.curation_clip_window, 1.0, 3.0, 2.0)
         assertEquals(initialText, clipReadoutText("candidate-1"))
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertDoesNotExist()
 
         composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipSlider("candidate-1")).performTouchInput {
             down(Offset(right - 4f, centerY))
@@ -662,7 +669,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun resetIsDisabledUntilTheWindowIsEdited() {
+    fun clipResetAppearsOnlyOnceTheWindowIsEdited() {
         val request = request()
         setScreen(
             state =
@@ -678,8 +685,8 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipReset("candidate-1")))
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsNotEnabled()
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipSlider("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertDoesNotExist()
     }
 
     @Test
@@ -858,6 +865,9 @@ class VideoMiningScreenTest {
             }
         }
 
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(CurationPlayerTestTags.SURFACE))
         composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
         // The initial focus seek is debounced on the real clock; waitForIdle does not wait it out.
         composeRule.waitUntil(timeoutMillis = 5_000) {
@@ -982,39 +992,36 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun curationPlayerCanCollapseAndTogglePlayback() {
+    fun inlinePreviewFollowsFocusAndTogglesPlayback() {
         val request = request()
         val fake = FakeCurationPreviewPlayer()
-        setScreen(
-            state =
+        var state by
+            mutableStateOf(
                 VideoMiningUiState(
                     runState = MiningRunState.Curating(request),
                     curation =
                         curationState(request).copy(
-                            player =
-                                CurationPlayerUiState(
-                                    "/cache/episode.mkv",
-                                    emptyList(),
-                                    false,
-                                ),
+                            player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
                         ),
                 ),
-            playerFactory = { fake },
-        )
-
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
-        composeRule.runOnIdle {
-            assertEquals(1, fake.togglePlayPauseCount)
-            assertTrue(fake.isPlaying.value)
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(state = state, playerFactory = { fake })
+            }
         }
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
-        composeRule.runOnIdle { assertFalse(fake.isPlaying.value) }
 
-        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(CurationPlayerTestTags.PLAY_PAUSE))
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).performClick()
+        composeRule.runOnIdle { assertEquals(1, fake.togglePlayPauseCount) }
+        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).assertDoesNotExist()
+
+        composeRule.runOnIdle {
+            state = state.copy(curation = requireNotNull(state.curation).copy(focusedCandidateId = null))
+        }
         composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertDoesNotExist()
-        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertDoesNotExist()
-        composeRule.onNodeWithTag(CurationPlayerTestTags.COLLAPSE).performClick()
-        composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).assertIsDisplayed()
     }
 
     @Test
@@ -1039,9 +1046,15 @@ class VideoMiningScreenTest {
         )
 
         composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.CUES_UNAVAILABLE))
+        composeRule
             .onNodeWithTag(VideoMiningTestTags.CUES_UNAVAILABLE)
             .assertIsDisplayed()
         composeRule.onNodeWithText("unused").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(CurationPlayerTestTags.PLAY_PAUSE))
         composeRule
             .onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE)
             .assertIsEnabled()
@@ -1224,7 +1237,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsNotEnabled()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate(request.candidates.first().candidateId))
             .assertIsNotEnabled()
@@ -1465,6 +1478,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).performClick()
         composeRule.onNodeWithText("Excluded").performClick()
 
@@ -1509,6 +1523,7 @@ class VideoMiningScreenTest {
         val tailTag = VideoMiningTestTags.candidate("candidate-99")
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).performClick()
         composeRule.onNodeWithText("Occurrences").performClick()
 
@@ -1541,6 +1556,7 @@ class VideoMiningScreenTest {
         val tailTag = VideoMiningTestTags.candidate(candidates.last().candidateId)
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("懐かしい")
 
         composeRule.onNodeWithTag(tailTag).assertIsDisplayed()
@@ -1561,6 +1577,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule
             .onNodeWithTag(CURATION_SEARCH_TEST_TAG)
             .performTextReplacement(oversized)
@@ -1575,7 +1592,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun bulkMenuCountsAndSelectsOnlyEligibleCandidates() {
+    fun headerCheckboxCountsAndSelectsOnlyEligibleCandidates() {
         val known =
             candidate("candidate-known", "match-known", listOf(sentence("s-known", "Known")))
         val visible =
@@ -1603,24 +1620,20 @@ class VideoMiningScreenTest {
             onSetSelectionForVisible = { ids, selected -> bulkChange = ids to selected },
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("match")
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).performClick()
-
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         composeRule
-            .onNodeWithText(context.getString(R.string.select_visible, 1))
-            .assertIsDisplayed()
-        composeRule
-            .onNodeWithText(context.getString(R.string.curation_select_whole_page, 2))
-            .assertIsDisplayed()
-        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
+            .onNodeWithTag(VideoMiningTestTags.SELECT_ALL)
+            .assertContentDescriptionEquals(context.getString(R.string.select_visible, 1))
+            .performClick()
         composeRule.runOnIdle {
             assertEquals(listOf(visible.candidateId) to true, bulkChange)
         }
     }
 
     @Test
-    fun toolsToggleCollapsesAndRestoresSearchAndFilterControls() {
+    fun toolsStartFoldedOnASmallPageAndOpenOnDemand() {
         val request = request()
         setScreen(
             state =
@@ -1630,14 +1643,16 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsDisplayed()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsDisplayed()
         composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsDisplayed()
     }
 
     @Test
@@ -1656,6 +1671,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("懐かしい")
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate("candidate-other"))
@@ -1703,100 +1719,81 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun nonFinalCurationPageShowsPositionAndNextPageAction() {
-        val request = request().copy(page = CurationPage(0, 2, 0, 4))
-        setScreen(
-            state =
-                VideoMiningUiState(
-                    runState = MiningRunState.Curating(request),
-                    curation = curationState(request),
-                ),
-        )
-
-        composeRule.onNodeWithText("Page 1 of 2 · 1–2 of 4").assertExists()
+    fun aMiddlePageShowsTheRunTotalAndFinishBesideNext() {
+        val request = request().copy(page = CurationPage(1, 3, 2, 6))
+        var finished = false
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state =
+                        VideoMiningUiState(
+                            runState = MiningRunState.Curating(request),
+                            curation = curationState(request, previousPageSelectedCount = 3),
+                        ),
+                    onFinishCuration = { finished = true },
+                )
+            }
+        }
+        composeRule.onNodeWithText("5 selected · page 2 of 3").assertExists()
         composeRule.onNodeWithText("Next (2)").assertExists()
+        // Finish counts the whole run (3 earlier + 2 here); Next counts this page.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.FINISH_CURATION)
+            .assertTextEquals("Finish (5)")
+            .performClick()
+        composeRule.runOnIdle { assertTrue(finished) }
     }
 
     @Test
-    fun progressAndEveryTerminalOutcomeExposeTheCorrectActions() {
+    fun everyOutcomeKeepsTheInputsWithMineOrCancelInTheBar() {
         var cancelled = false
-        var retried = false
-        var reset = false
+        var mined = 0
         var state by
             mutableStateOf(
                 VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
                     runState = MiningRunState.Starting(runId = null, progress = null),
                 ),
             )
         composeRule.setContent {
             AnkiMinerTheme {
-                ScreenUnderTest(
-                    state = state,
-                    onCancel = { cancelled = true },
-                    onRetry = { retried = true },
-                    onReset = { reset = true },
-                )
+                ScreenUnderTest(state = state, onCancel = { cancelled = true }, onStart = { mined += 1 })
             }
         }
 
         composeRule.onNodeWithTag(VideoMiningTestTags.PROGRESS).assertExists()
         composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).assertDoesNotExist()
-
+        composeRule.onNodeWithTag(VideoMiningTestTags.START).assertDoesNotExist()
         composeRule.runOnIdle {
-            state =
-                state.copy(
-                    runState =
-                        MiningRunState.Running(
-                            "run",
-                            MiningProgress(current = 0, total = 0, description = "Working"),
-                        ),
-                )
+            state = state.copy(runState = MiningRunState.Running("run", MiningProgress(0, 0, "Working")))
         }
         composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).performClick()
         composeRule.runOnIdle { assertTrue(cancelled) }
 
-        composeRule.runOnIdle {
-            state = state.copy(runState = MiningRunState.Success("run", result()))
+        listOf(
+            MiningRunState.Success("run", result()),
+            MiningRunState.Cancelled("run", result()),
+            MiningRunState.Failed(
+                runId = "run",
+                failure = MiningFailure("Scripted failure", retryable = true),
+                result = result(),
+            ),
+        ).forEach { outcome ->
+            composeRule.runOnIdle { state = state.copy(runState = outcome) }
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(VideoMiningTestTags.RESULT))
+            composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsEnabled()
         }
-        composeRule.onNodeWithTag(VideoMiningTestTags.RESULT).assertExists()
-
-        composeRule.runOnIdle {
-            state =
-                state.copy(
-                    runState = MiningRunState.Cancelled("run", result()),
-                )
-        }
-        composeRule.onNodeWithTag(VideoMiningTestTags.RESULT).assertExists()
-
-        composeRule.runOnIdle {
-            state =
-                state.copy(
-                    video = DocumentSlotState(document("video", "episode.mkv")),
-                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
-                    runState =
-                        MiningRunState.Failed(
-                            runId = "run",
-                            failure = MiningFailure("Scripted failure", retryable = true),
-                            result = result(),
-                        ),
-                )
-        }
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.RETRY))
-        composeRule.onNodeWithTag(VideoMiningTestTags.RETRY).performClick()
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.RESET))
-        composeRule.onNodeWithTag(VideoMiningTestTags.RESET).performClick()
-        composeRule.runOnIdle {
-            assertTrue(retried)
-            assertTrue(reset)
-        }
+        composeRule.onNodeWithTag(VideoMiningTestTags.START).performClick()
+        composeRule.runOnIdle { assertEquals(1, mined) }
+        composeRule.onNodeWithText("Start over").assertDoesNotExist()
+        composeRule.onNodeWithText("Retry").assertDoesNotExist()
     }
 
     @Test
-    fun terminalFailureSuppressesMatchingCommandErrorAndShowsCause() {
+    fun aFailedRunShowsItsCauseAboveTheInputs() {
         setScreen(
             state =
                 VideoMiningUiState(
@@ -1808,14 +1805,32 @@ class VideoMiningScreenTest {
                             failure = MiningFailure("Protocol detail 37", retryable = true),
                             result = null,
                         ),
-                    commandError = MiningCommandError.START,
                 ),
         )
 
-        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
         composeRule.onNodeWithText("Protocol detail 37").assertIsDisplayed()
-        composeRule.onNodeWithText("Retry").assertExists()
-        composeRule.onNodeWithText("Start over").assertExists()
+        val cause = composeRule.onNodeWithText("Protocol detail 37").fetchSemanticsNode().boundsInRoot
+        val picker = composeRule.onNodeWithTag(VideoMiningTestTags.PICK_VIDEO).fetchSemanticsNode().boundsInRoot
+        assertTrue("the cause must sit above the inputs", cause.bottom <= picker.top)
+        composeRule.onNodeWithText("Retry").assertDoesNotExist()
+        composeRule.onNodeWithText("Start over").assertDoesNotExist()
+    }
+
+    @Test
+    fun inputsStayOnScreenButLockedWhileARunIsActive() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    runState = MiningRunState.Running("run", MiningProgress(3, 10, "Parsing subtitles")),
+                ),
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.PICK_VIDEO).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_SUBTITLE).assertIsNotEnabled()
+        composeRule.onNodeWithText("3 of 10").assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.CANCEL).assertIsEnabled()
     }
 
     @Test
@@ -1851,7 +1866,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun resultUsesRetainedNamesWithoutExposingEnginePaths() {
+    fun resultNeverShowsEnginePaths() {
         val rawVideoPath = "/proc/self/fd/41"
         val rawSubtitlePath = "/data/user/0/com.ankiminer.android/cache/run/subtitle.srt"
         val result =
@@ -1867,32 +1882,13 @@ class VideoMiningScreenTest {
             )
 
         setScreen(state = state)
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Details"))
+        composeRule.onNodeWithText("Details").performClick()
 
-        composeRule.onNodeWithText("Video: Retained video.mkv").assertExists()
-        composeRule.onNodeWithText("Subtitles: Retained subtitles.srt").assertExists()
         composeRule.onNodeWithText(rawVideoPath, substring = true).assertDoesNotExist()
         composeRule.onNodeWithText(rawSubtitlePath, substring = true).assertDoesNotExist()
-    }
-
-    @Test
-    fun missingRetainedNamesNeverFallBackToPrivateEnginePaths() {
-        val result =
-            result().copy(
-                videoFile = "/proc/self/fd/41",
-                subtitleFile = "/data/user/0/com.ankiminer.android/cache/run/private-title.srt",
-            )
-
-        setScreen(
-            state =
-                VideoMiningUiState(
-                    runState = MiningRunState.Success("run", result),
-                ),
-        )
-
-        composeRule.onNodeWithText("Video: Unknown file").assertExists()
-        composeRule.onNodeWithText("Subtitles: Unknown file").assertExists()
-        composeRule.onNodeWithText("/proc/self/fd", substring = true).assertDoesNotExist()
-        composeRule.onNodeWithText("private-title.srt", substring = true).assertDoesNotExist()
     }
 
     @Test
@@ -1909,7 +1905,7 @@ class VideoMiningScreenTest {
         )
 
         composeRule.onNodeWithTag(VideoMiningTestTags.PROGRESS).assertExists()
-        composeRule.onNodeWithText("100 of 100 · 100%").assertExists()
+        composeRule.onNodeWithText("100 of 100").assertExists()
     }
 
     @Test
@@ -1933,7 +1929,7 @@ class VideoMiningScreenTest {
             .onAllNodes(
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.LiveRegion),
             ).assertCountEquals(1)
-        composeRule.onNodeWithText("47 of 100 · 47%").assertExists()
+        composeRule.onNodeWithText("47 of 100").assertExists()
         composeRule.onNodeWithText("Mining in progress").assertDoesNotExist()
         composeRule
             .onAllNodes(
@@ -2053,20 +2049,29 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun legacyProcessingResultNamesArePresentedAsAnkiNotes() {
+    fun aResultLeadsWithTheNotesItAddedAndKeepsIdsOutOfSight() {
         setScreen(
             state =
                 VideoMiningUiState(
                     runState = MiningRunState.Success("run", result()),
+                    resultDeckName = "Anki Miner",
                 ),
         )
 
-        composeRule.onNodeWithText("Created").assertExists()
-        composeRule.onNodeWithText("Anki notes created: 2").assertDoesNotExist()
-        composeRule.onNodeWithText("Anki note IDs: 10, 11").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.RESULT))
+        composeRule.onNodeWithText("2 notes added to Anki Miner").assertExists()
+        composeRule.onNodeWithText("Created").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Details"))
         composeRule.onNodeWithText("Details").performClick()
-        composeRule.onNodeWithText("Anki note IDs: 10, 11").assertExists()
-        composeRule.onNodeWithText("Anki card IDs", substring = true).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Comprehension: 75.0%"))
+        composeRule.onNodeWithText("Anki note IDs", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("Mined forms", substring = true).assertDoesNotExist()
     }
 
     @Test
@@ -2105,7 +2110,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun cancelledRunWithCreatedNotesLabelsItsResultAsPartial() {
+    fun aCancelledRunSaysHowManyNotesItAdded() {
         setScreen(
             state =
                 VideoMiningUiState(
@@ -2115,8 +2120,23 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasText("Notes added"))
-        composeRule.onNodeWithText("Notes added").assertExists()
+            .performScrollToNode(hasText("2 notes added"))
+        composeRule.onNodeWithText("2 notes added").assertExists()
+    }
+
+    @Test
+    fun aUserCancelWithNothingAddedSaysSo() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Cancelled("run", null),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Run cancelled. Nothing was added."))
+        composeRule.onNodeWithText("Run cancelled. Nothing was added.").assertExists()
     }
 
     @Test
@@ -2256,8 +2276,11 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(
-                hasTestTag(VideoMiningTestTags.candidateCopySentence(first.candidateId)),
+                hasTestTag(VideoMiningTestTags.candidateCopyMenu(first.candidateId)),
             )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateCopyMenu(first.candidateId))
+            .performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidateCopySentence(first.candidateId))
             .performClick()
@@ -2347,8 +2370,127 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.UNDO).assertDoesNotExist()
     }
 
+    @Test
+    fun aWordSeenOnceReadsOneOccurrence() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = null),
+                ),
+        )
+        composeRule.onAllNodesWithText("1 occurrence", substring = true).assertCountEquals(2)
+        composeRule.onAllNodesWithText("1 occurrences", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun expandedRowLeadsWithTheSentenceThenDefinitionThenTools() {
+        val request = request()
+        val candidateId = request.candidates.first().candidateId
+        composeRule.setContent {
+            AnkiMinerTheme {
+                Box(Modifier.requiredHeight(2400.dp)) {
+                    ScreenUnderTest(
+                        state =
+                            VideoMiningUiState(
+                                runState = MiningRunState.Curating(request),
+                                curation =
+                                    curationState(request, definition = CurationDefinition.Missing).copy(
+                                        player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                                        clipWindow = clipWindowState(),
+                                    ),
+                            ),
+                    )
+                }
+            }
+        }
+
+        fun top(tag: String) = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.top
+        val sentence =
+            top(VideoMiningTestTags.sentence(candidateId, request.candidates.first().defaultSentenceId))
+        val definition = top(VideoMiningTestTags.DEFINITION)
+        val clip = top(VideoMiningTestTags.candidateClipSlider(candidateId))
+        val known = top(VideoMiningTestTags.candidateKnown(candidateId))
+        assertTrue(
+            "sentence=$sentence definition=$definition clip=$clip known=$known",
+            sentence < definition && definition < clip && clip < known,
+        )
+    }
+
+    @Test
+    fun aWrongSubtitleTypeNamesTheFormatsInsteadOfLostAccess() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(error = DocumentSelectionError.SUBTITLE_TYPE),
+                ),
+        )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(MINING_FAILURE_TEST_TAG))
+        composeRule.onNodeWithText("Pick a subtitle file (.srt, .ass, .ssa, .vtt).").assertIsDisplayed()
+        composeRule.onNodeWithText("Access lost. Choose again.").assertDoesNotExist()
+    }
+
+    @Test
+    fun neighbouringCandidateRowsSitFlushInOneList() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = null),
+                ),
+        )
+        val (upper, lower) =
+            request.candidates
+                .map {
+                    composeRule
+                        .onNodeWithTag(VideoMiningTestTags.candidate(it.candidateId))
+                        .fetchSemanticsNode()
+                        .boundsInRoot
+                }.sortedBy { it.top }
+        assertEquals(upper.bottom, lower.top, 1f)
+    }
+
+    private fun openCurationTools() {
+        if (composeRule.onAllNodesWithTag(CURATION_SEARCH_TEST_TAG).fetchSemanticsNodes().isEmpty()) {
+            composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        }
+    }
+
+    @Test
+    fun unmappedAudioIsOneQuietLineWithMapFields() {
+        var mapped = false
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    advisories =
+                        MiningFieldAdvisories(
+                            sentenceAudio = SentenceAudioAdvisory.UNMAPPED,
+                            wordAudioUnmapped = true,
+                        ),
+                ),
+            onMapFields = { mapped = true },
+        )
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.MAP_FIELDS))
+        composeRule
+            .onNodeWithText(context.getString(R.string.mining_advisory_sentence_and_word_audio))
+            .assertIsDisplayed()
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(0)
+        composeRule.onNodeWithTag(VideoMiningTestTags.MAP_FIELDS).performClick()
+        composeRule.runOnIdle { assertTrue(mapped) }
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
+        labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
@@ -2366,12 +2508,14 @@ class VideoMiningScreenTest {
         onCancel: () -> Unit = {},
         onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
         onResetClipWindow: (String) -> Unit = {},
+        onMapFields: () -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
                 ScreenUnderTest(
                     state = state,
+                    labels = labels,
                     onPickVideo = onPickVideo,
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
@@ -2389,6 +2533,7 @@ class VideoMiningScreenTest {
                     onCancel = onCancel,
                     onSetClipWindow = onSetClipWindow,
                     onResetClipWindow = onResetClipWindow,
+                    onMapFields = onMapFields,
                     playerFactory = playerFactory,
                 )
             }
@@ -2399,6 +2544,7 @@ class VideoMiningScreenTest {
     @androidx.compose.runtime.Composable
     private fun ScreenUnderTest(
         state: VideoMiningUiState,
+        labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
@@ -2418,9 +2564,8 @@ class VideoMiningScreenTest {
         onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
         onResetClipWindow: (String) -> Unit = {},
         onConfirmCuration: () -> Unit = {},
+        onFinishCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
-        onRetry: () -> Unit = {},
-        onReset: () -> Unit = {},
         onFocusCandidate: (String?) -> Unit = {},
         onSetCandidateSelected: (String, Boolean) -> Unit = { _, _ -> },
         onRequestUndo: () -> Unit = {},
@@ -2429,11 +2574,13 @@ class VideoMiningScreenTest {
         onPickSecondarySubtitle: () -> Unit = {},
         onClearSecondarySubtitle: () -> Unit = {},
         onSecondarySubtitleOffsetDraftChange: (String) -> Unit = {},
+        onMapFields: () -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
         listState: LazyListState = rememberLazyListState(),
     ) {
         VideoMiningScreen(
             state = state,
+            labels = labels,
             onPickVideo = onPickVideo,
             onPickSubtitle = onPickSubtitle,
             onClearVideo = {},
@@ -2455,7 +2602,6 @@ class VideoMiningScreenTest {
             onSetCandidateSelected = onSetCandidateSelected,
             onMarkCandidateKnown = onMarkCandidateKnown,
             onSetSelectionForVisible = onSetSelectionForVisible,
-            onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
             onSelectSentence = onSelectSentence,
             onExpandSentencePrev = onExpandSentencePrev,
@@ -2464,12 +2610,12 @@ class VideoMiningScreenTest {
             onSetClipWindow = onSetClipWindow,
             onResetClipWindow = onResetClipWindow,
             onConfirmCuration = onConfirmCuration,
+            onFinishCuration = onFinishCuration,
             onCancel = onCancel,
-            onRetry = onRetry,
-            onReset = onReset,
             onRequestUndo = onRequestUndo,
             onConfirmUndo = onConfirmUndo,
             onDismissUndoConfirmation = onDismissUndoConfirmation,
+            onMapFields = onMapFields,
             playerFactory = playerFactory,
             modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
             listState = listState,

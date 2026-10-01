@@ -194,3 +194,29 @@ def test_define_word_bounds_the_part_of_speech() -> None:
     with pytest.raises(BridgeProtocolError) as excinfo:
         definitions.define_word({**_request(RUN_A, "猫"), "partOfSpeech": "x" * 65})
     assert excinfo.value.code == "invalid_definition_request"
+
+
+def test_a_glossary_entry_carries_the_cards_own_style_block(monkeypatch, initialized_bridge_home) -> None:
+    pytest.importorskip("anki_miner.services.dictionary.card_style_block")
+    html = '<div class="yomitan-glossary"><ol data-count="1"><li>cat</li></ol></div>'
+    monkeypatch.setattr(definitions, "_build_service", lambda config: _FakeService({"猫": [("Jitendex", html)]}))
+    monkeypatch.setattr(definitions, "_css_entries", lambda run_id, config: [])
+    monkeypatch.setattr(definitions, "_style_direction", lambda config: "ltr")
+    definitions.register_run_dictionaries(RUN_A, object())
+
+    entry = json.loads(definitions.define_word(_request(RUN_A, "猫")))["payload"]["entries"][0]
+
+    assert entry["html"].startswith(html)
+    assert entry["html"].endswith("</style>")
+
+
+def test_html_without_miner_markup_gets_no_style_block(monkeypatch) -> None:
+    monkeypatch.setattr(
+        definitions, "_build_service", lambda config: _FakeService({"猫": [("Legacy", "<div>cat</div>")]})
+    )
+    monkeypatch.setattr(definitions, "_css_entries", lambda run_id, config: pytest.fail("no CSS needed"))
+    definitions.register_run_dictionaries(RUN_A, object())
+
+    entry = json.loads(definitions.define_word(_request(RUN_A, "猫")))["payload"]["entries"][0]
+
+    assert entry["html"] == "<div>cat</div>"

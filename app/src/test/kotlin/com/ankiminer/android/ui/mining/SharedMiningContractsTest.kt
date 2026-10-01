@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.mining
 
+import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
@@ -7,6 +8,10 @@ import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
+import com.ankiminer.android.mining.AnkiWriteState
+import com.ankiminer.android.mining.MiningFailure
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.ProcessingResult
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -14,6 +19,30 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SharedMiningContractsTest {
+    @Test
+    fun aFinishedRunLeadsWithWhatItAdded() {
+        val added = result().copy(cardsCreated = 751)
+
+        assertEquals(
+            MiningResultHeadline.NotesAdded(751, "Anki Miner"),
+            miningResultHeadline(MiningRunState.Success("run", added), "Anki Miner"),
+        )
+        assertEquals(
+            MiningResultHeadline.NothingAdded,
+            miningResultHeadline(MiningRunState.Success("run", added.copy(cardsCreated = 0)), null),
+        )
+        assertEquals(
+            MiningResultHeadline.CancelledNothingAdded,
+            miningResultHeadline(MiningRunState.Cancelled("run", null), null),
+        )
+        assertEquals(
+            MiningResultHeadline.NotesAdded(751, null),
+            miningResultHeadline(MiningRunState.Cancelled("run", added), null),
+        )
+        assertNull(miningResultHeadline(MiningRunState.Failed("run", MiningFailure("x", retryable = false), null), null))
+        assertNull(miningResultHeadline(MiningRunState.Idle, null))
+    }
+
     @Test
     fun resultSummaryBoundsItemsAndReportsExactRemainder() {
         val summary = (1..101).toList().boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
@@ -142,13 +171,19 @@ class SharedMiningContractsTest {
         val scope =
             curationBulkSelectionScope(
                 visibleCandidateIds = listOf("known", "visible"),
-                pageCandidateIds = listOf("known", "visible", "hidden"),
                 knownCandidateIds = setOf("known"),
             )
 
         assertEquals(listOf("visible"), scope.visibleCandidateIds)
         assertEquals(1, scope.visibleCount)
-        assertEquals(2, scope.pageCandidateCount)
+    }
+
+    @Test
+    fun theHeaderCheckboxIsOnOffOrMixed() {
+        assertEquals(ToggleableState.On, curationVisibleSelection(listOf("a", "b"), setOf("a", "b", "c")))
+        assertEquals(ToggleableState.Off, curationVisibleSelection(listOf("a", "b"), setOf("c")))
+        assertEquals(ToggleableState.Indeterminate, curationVisibleSelection(listOf("a", "b"), setOf("a")))
+        assertEquals(ToggleableState.Off, curationVisibleSelection(emptyList(), setOf("a")))
     }
 
     @Test
@@ -673,4 +708,20 @@ class SharedMiningContractsTest {
             sentences = listOf(sentence),
         )
     }
+
+    private fun result(): ProcessingResult =
+        ProcessingResult(
+            totalWordsFound = 3,
+            newWordsFound = 2,
+            cardsCreated = 1,
+            errors = emptyList(),
+            elapsedTime = 1.5,
+            comprehensionPercentage = 80.0,
+            cardIds = listOf(42),
+            videoFile = "video.mkv",
+            subtitleFile = "subtitle.srt",
+            minedForms = listOf("食べる"),
+            ankiWriteState = AnkiWriteState.NOTE_WRITE_CONFIRMED,
+            failureIsTransient = false,
+        )
 }

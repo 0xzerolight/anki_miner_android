@@ -152,6 +152,9 @@ private fun cssHex(color: Color): String = "#%06X".format(0xFFFFFF and color.toA
 /**
  * Wraps the engine renderer's HTML fragment in a theme envelope; the fragment itself is untouched.
  *
+ * The page canvas is transparent: the host's tint shows through, as on the card. [surface] only
+ * picks the light or dark color scheme.
+ *
  * Known limitation: an imported dictionary's own CSS may set light backgrounds on entry elements
  * (the renderer's scoper allows background properties) — those patches keep the dictionary
  * author's colors, as Yomitan does; only the page canvas and default text follow the app theme.
@@ -167,7 +170,7 @@ internal fun themedDictionaryHtml(
         append("<meta charset=\"utf-8\">")
         append("<meta name=\"color-scheme\" content=\"").append(scheme).append("\">")
         append("<style>:root{color-scheme:").append(scheme).append("}")
-        append("body{background-color:").append(cssHex(surface))
+        append("body{background-color:transparent")
         append(";color:").append(cssHex(onSurface)).append("}")
         append("a{color:").append(cssHex(accent)).append("}</style>")
         append(fragment)
@@ -178,15 +181,34 @@ internal fun themedDictionaryHtml(
  * WebView that claims vertical drags from Compose ancestors while its own content overflows.
  *
  * Inside a LazyColumn item the ancestor scrollable otherwise consumes the drag and cancels the
- * interop view's touch stream, leaving clipped definitions unreachable. Disallow-intercept is
+ * interop view's touch stream, leaving clipped definitions unreachable. The claim follows the
+ * drag: once the content cannot move further in the drag's direction it is released, so a swipe
+ * past the definition's edge scrolls the list instead of dying in the pane. Disallow-intercept is
  * reset by the framework at the end of each gesture, so short definitions keep list scrolling.
  */
 internal open class DictionaryWebView(context: Context) : WebView(context) {
+    private var lastTouchY = 0f
+
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        if (event.actionMasked == MotionEvent.ACTION_DOWN &&
-            (canScrollVertically(1) || canScrollVertically(-1))
-        ) {
-            parent?.requestDisallowInterceptTouchEvent(true)
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                lastTouchY = event.y
+                if (canScrollVertically(1) || canScrollVertically(-1)) {
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                // Positive when the finger moves up: the content scrolls toward its end.
+                val dy = lastTouchY - event.y
+                lastTouchY = event.y
+                if (dy != 0f) {
+                    // Keep the drag only while the content can still move that way; at its edge
+                    // the list takes over instead of the swipe dying in the pane.
+                    parent?.requestDisallowInterceptTouchEvent(
+                        canScrollVertically(if (dy > 0f) 1 else -1),
+                    )
+                }
+            }
         }
         return super.onTouchEvent(event)
     }
@@ -201,7 +223,6 @@ internal fun DictionaryHtml(
 ) {
     val scheme = MaterialTheme.colorScheme
     val themedHtml = themedDictionaryHtml(html, scheme.surface, scheme.onSurface, accentTextColor())
-    val surfaceArgb = scheme.surface.toArgb()
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -213,15 +234,15 @@ internal fun DictionaryHtml(
                 settings.domStorageEnabled = false
                 settings.databaseEnabled = false
                 setNetworkAvailable(false)
-                // Themed before first paint so a slow load never flashes a white page.
-                setBackgroundColor(surfaceArgb)
+                // Transparent before first paint so a slow load never flashes a white page.
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
             }
         },
         update = { webView ->
             // Keep unrelated lookup edits observable to this update block without reloading the
             // rendered result. AndroidView may update for any captured state change.
             updateKey?.hashCode()
-            webView.setBackgroundColor(surfaceArgb)
+            webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             // The engine renderer's HTML rides behind a theme envelope prefix; JavaScript,
             // file/content access, and all network subresources remain disabled for
             // user-imported dictionaries. A palette switch reloads once via the tag mismatch.

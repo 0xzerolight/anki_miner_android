@@ -56,6 +56,7 @@ import com.ankiminer.android.tracks.AudioTrackList
 import com.ankiminer.android.tracks.AudioTrackProbeBusyException
 import com.ankiminer.android.tracks.AudioTrackProbeFailedException
 import com.ankiminer.android.tracks.AudioTrackProbeOpener
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.video.AudioTrackPickerError
 import com.ankiminer.android.ui.video.DocumentSelectionError
 import com.ankiminer.android.ui.video.MiningCommandError
@@ -929,7 +930,7 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertEquals(
-                DocumentSelectionError.SUBTITLE,
+                DocumentSelectionError.SUBTITLE_TYPE,
                 rejectedViewModel.uiState.value.subtitle.error,
             )
             assertNull(rejectedViewModel.uiState.value.subtitle.document)
@@ -985,10 +986,9 @@ class MediaMiningViewModelTest {
             assertFalse(viewModel.uiState.value.canStart)
 
             repository.transitionTo(MiningRunState.Success("run", result()))
-            viewModel.reset()
             runCurrent()
 
-            assertEquals(MiningRunState.Idle, repository.state.value)
+            // A finished run already allows Mine with the restored inputs (D7).
             assertTrue(viewModel.uiState.value.canStart)
         }
 
@@ -1175,7 +1175,7 @@ class MediaMiningViewModelTest {
                 runCurrent()
 
                 assertEquals(
-                    DocumentSelectionError.SUBTITLE,
+                    DocumentSelectionError.SUBTITLE_TYPE,
                     viewModel.uiState.value.subtitle.error,
                 )
                 assertNull(viewModel.uiState.value.subtitle.document)
@@ -1246,7 +1246,143 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun audioLaneWarnsWhenAudioFieldIsUnmappedAndPictureFieldIsMapped() =
+    fun aFinishedRunsUndoSurvivesProcessDeath() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = RecordingRepository()
+            mediaViewModel(before, ImmediateSafBroker(), savedStateHandle = savedState)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            val undo = RecordingUndoManager()
+            val restored =
+                mediaViewModel(
+                    RecordingRepository(),
+                    ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                    undoManager = undo,
+                )
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+
+            restored.requestUndo()
+            restored.confirmUndo()
+            runCurrent()
+
+            assertEquals(listOf(RecordingUndoManager.UndoCall("run", listOf(42L), listOf("食べる"))), undo.calls)
+            assertNull(MiningReceiptStore(savedState, "videoMining.receipt").restore())
+        }
+
+    @Test
+    fun startingANewRunForgetsTheSavedReceipt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val repository = RecordingRepository()
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker(), savedStateHandle = savedState)
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+            assertEquals("run", MiningReceiptStore(savedState, "videoMining.receipt").restore()?.runId)
+
+            viewModel.start()
+            runCurrent()
+
+            assertNull(MiningReceiptStore(savedState, "videoMining.receipt").restore())
+        }
+
+    @Test
+    fun aRunTheCollectorNeverSawStartingStillReplacesTheSavedReceipt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val store = MiningReceiptStore(savedState, "videoMining.receipt")
+            val repository = RecordingRepository()
+            mediaViewModel(repository, ImmediateSafBroker(), savedStateHandle = savedState)
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+            assertEquals("run", store.restore()?.runId)
+
+            // StateFlow conflation can hide Starting: the next state seen is already Running.
+            repository.transitionTo(MiningRunState.Running("run-2", MiningProgress(0, 0, "Running")))
+            runCurrent()
+            assertNull(store.restore())
+
+            repository.transitionTo(MiningRunState.Success("run-2", result()))
+            runCurrent()
+            // A later run that added nothing leaves no receipt, not the older one.
+            val empty = result().copy(cardsCreated = 0, cardIds = emptyList(), minedForms = emptyList())
+            repository.transitionTo(MiningRunState.Success("run-3", empty))
+            runCurrent()
+            assertNull(store.restore())
+        }
+
+    @Test
+    fun mineAfterAFinishedRunResetsItThenStartsWithTheNewInputs() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            viewModel.onSubtitlePicked("content://test/episode-02.ass")
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(1, repository.resetCalls)
+            assertEquals(1, repository.startCalls)
+            assertEquals("content://test/episode-02.ass", repository.startedInputs.single().subtitle.uri)
+            assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
+        }
+
+    @Test
+    fun aRunInFlightKeepsTheInputsLocked() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Running("run", MiningProgress(0, 0, "Running")))
+            runCurrent()
+
+            viewModel.clearVideo()
+            runCurrent()
+
+            assertNotNull(viewModel.uiState.value.video.document)
+            assertFalse(viewModel.uiState.value.canStart)
+        }
+
+    @Test
+    fun theResultLineNamesTheDeckTheRunStartedWith() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val deck = MutableStateFlow<String?>("Deck A")
+            val repository = RecordingRepository()
+            val viewModel =
+                MediaMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    lane = MiningLane.VIDEO,
+                    deckName = deck,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+            deck.value = "Deck B"
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            assertEquals(1, repository.startCalls)
+            assertEquals("Deck A", viewModel.uiState.value.resultDeckName)
+        }
+
+    @Test
+    fun advisoriesFollowTheFieldMapForTheLane() =
         runTest(mainDispatcherRule.dispatcher) {
             val viewModel =
                 mediaViewModel(
@@ -1258,197 +1394,10 @@ class MediaMiningViewModelTest {
 
             runCurrent()
 
-            assertTrue(viewModel.uiState.value.audioFieldUnmapped)
-        }
-
-    @Test
-    fun audioLaneDoesNotWarnWhenBothMediaFieldsAreUnmapped() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(emptyMap()),
-                    lane = MiningLane.AUDIO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.audioFieldUnmapped)
-        }
-
-    @Test
-    fun audioLaneDoesNotWarnWhenBothMediaFieldsAreMapped() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap =
-                        flowOf(
-                            mapOf(
-                                "audio" to "Audio",
-                                "picture" to "Picture",
-                            ),
-                        ),
-                    lane = MiningLane.AUDIO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.audioFieldUnmapped)
-        }
-
-    @Test
-    fun videoLaneDoesNotWarnWhenAudioFieldIsUnmappedAndPictureFieldIsMapped() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(mapOf("picture" to "Picture")),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.audioFieldUnmapped)
-        }
-
-    @Test
-    fun warnsWhenExpressionAudioUnmappedAndUsablePackInstalled() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(mapOf("word" to "Word")),
-                    audioPacks = flowOf(listOf(usableAudioPack())),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertTrue(viewModel.uiState.value.expressionAudioFieldUnmapped)
-        }
-
-    @Test
-    fun audioLaneAlsoWarnsWhenExpressionAudioUnmapped() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(mapOf("word" to "Word")),
-                    audioPacks = flowOf(listOf(usableAudioPack())),
-                    lane = MiningLane.AUDIO,
-                )
-
-            runCurrent()
-
-            assertTrue(viewModel.uiState.value.expressionAudioFieldUnmapped)
-        }
-
-    @Test
-    fun doesNotWarnWhenExpressionAudioUnmappedWithoutInstalledPacks() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(mapOf("word" to "Word")),
-                    audioPacks = flowOf(emptyList()),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.expressionAudioFieldUnmapped)
-        }
-
-    @Test
-    fun doesNotWarnWhenExpressionAudioMapped() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(mapOf("expression_audio" to "WordAudio")),
-                    audioPacks = flowOf(listOf(usableAudioPack())),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.expressionAudioFieldUnmapped)
-        }
-
-    @Test
-    fun doesNotWarnWhenInstalledPackIsUnusableForUnmappedField() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    fieldMap = flowOf(mapOf("word" to "Word")),
-                    audioPacks = flowOf(listOf(unusableAudioPack())),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            // An unusable pack cannot produce audio, so it must not trigger the
-            // unmapped-field advisory -- it triggers the unusable-pack one instead.
-            assertFalse(viewModel.uiState.value.expressionAudioFieldUnmapped)
-            assertTrue(viewModel.uiState.value.unusableAudioPackInstalled)
-        }
-
-    @Test
-    fun warnsWhenAnInstalledAudioPackIsUnusable() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    audioPacks = flowOf(listOf(usableAudioPack(), unusableAudioPack())),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertTrue(viewModel.uiState.value.unusableAudioPackInstalled)
-        }
-
-    @Test
-    fun doesNotWarnWhenAllInstalledPacksAreUsable() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    audioPacks = flowOf(listOf(usableAudioPack())),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.unusableAudioPackInstalled)
-        }
-
-    @Test
-    fun doesNotWarnWithNoPacksInstalled() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val viewModel =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    audioPacks = flowOf(emptyList()),
-                    lane = MiningLane.VIDEO,
-                )
-
-            runCurrent()
-
-            assertFalse(viewModel.uiState.value.unusableAudioPackInstalled)
+            assertEquals(
+                SentenceAudioAdvisory.UNMAPPED_COVER_ART_ONLY,
+                viewModel.uiState.value.advisories.sentenceAudio,
+            )
         }
 
     @Test
@@ -1582,7 +1531,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun retryKeepsPerRunSubtitleOffsetOverride() =
+    fun mineAfterAFailedRunKeepsThePerRunOffset() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
             val viewModel = mediaViewModel(repository, ImmediateSafBroker())
@@ -1597,7 +1546,7 @@ class MediaMiningViewModelTest {
             )
             runCurrent()
 
-            viewModel.retry()
+            viewModel.start()
             runCurrent()
 
             assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
@@ -1701,35 +1650,6 @@ class MediaMiningViewModelTest {
                 ),
             )
             assertFalse(savedState.keys().any { it.startsWith("videoMining.") })
-        }
-
-    @Test
-    fun resetClearsSubtitleOffsetDraft() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val savedState = SavedStateHandle()
-            val repository = RecordingRepository()
-            val viewModel =
-                mediaViewModel(
-                    repository = repository,
-                    safBroker = ImmediateSafBroker(),
-                    savedStateHandle = savedState,
-                )
-            viewModel.setSubtitleOffsetDraft("1.5")
-            repository.transitionTo(MiningRunState.Success("run", result()))
-            runCurrent()
-
-            viewModel.reset()
-            runCurrent()
-
-            assertEquals("", viewModel.uiState.value.subtitleOffsetDraft)
-            val restored =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    savedStateHandle = savedState,
-                )
-            runCurrent()
-            assertEquals("", restored.uiState.value.subtitleOffsetDraft)
         }
 
     @Test
@@ -2044,7 +1964,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun runFailedKeepsAudioTrackOverrideAndRetryResendsIt() =
+    fun runFailedKeepsAudioTrackOverrideAndMineResendsIt() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
             val opener = FakeAudioTrackProbeOpener()
@@ -2064,7 +1984,7 @@ class MediaMiningViewModelTest {
             runCurrent()
             assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
 
-            viewModel.retry()
+            viewModel.start()
             runCurrent()
 
             assertEquals(2L, repository.startedInputs.last().audioTrackOverride)
@@ -2348,7 +2268,10 @@ class MediaMiningViewModelTest {
             viewModel.start()
             runCurrent()
 
-            viewModel.setSelectionForPage(false)
+            viewModel.setSelectionForVisible(
+                (repository.state.value as MiningRunState.Curating).request.candidates.map { it.candidateId },
+                false,
+            )
             viewModel.confirmCuration()
             runCurrent()
 
@@ -2544,35 +2467,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun resetClearsOnlyResetPendingAndReEnablesStart() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val resetGate = CompletableDeferred<Unit>()
-            val repository =
-                RecordingRepository(
-                    resetGate = resetGate,
-                )
-            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
-            selectDocuments(viewModel)
-            runCurrent()
-            repository.transitionTo(MiningRunState.Success("run", result()))
-            runCurrent()
-
-            viewModel.reset()
-            runCurrent()
-
-            assertTrue(viewModel.uiState.value.resetPending)
-            assertFalse(viewModel.uiState.value.startPending)
-            resetGate.complete(Unit)
-            runCurrent()
-
-            assertEquals(MiningRunState.Idle, repository.state.value)
-            assertFalse(viewModel.uiState.value.resetPending)
-            assertFalse(viewModel.uiState.value.startPending)
-            assertTrue(viewModel.uiState.value.canStart)
-        }
-
-    @Test
-    fun retrySetsBothPendingFlagsBeforeLaunchAndRejectsDuplicates() =
+    fun mineFromAFailedRunSetsBothPendingFlagsAndRejectsDuplicates() =
         runTest(mainDispatcherRule.dispatcher) {
             val resetGate = CompletableDeferred<Unit>()
             val startGate = CompletableDeferred<Unit>()
@@ -2593,8 +2488,8 @@ class MediaMiningViewModelTest {
             )
             runCurrent()
 
-            viewModel.retry()
-            viewModel.retry()
+            viewModel.start()
+            viewModel.start()
             runCurrent()
 
             assertEquals(1, repository.resetCalls)
@@ -2604,7 +2499,7 @@ class MediaMiningViewModelTest {
 
             resetGate.complete(Unit)
             runCurrent()
-            viewModel.retry()
+            viewModel.start()
 
             assertEquals(1, repository.resetCalls)
             assertEquals(1, repository.startCalls)
@@ -3431,11 +3326,11 @@ class MediaMiningViewModelTest {
 
             val slot = viewModel.uiState.value.secondarySubtitle
             assertNull(slot.document)
-            assertEquals(DocumentSelectionError.SECONDARY_SUBTITLE, slot.error)
+            assertEquals(DocumentSelectionError.SECONDARY_SUBTITLE_TYPE, slot.error)
             assertNull(viewModel.uiState.value.subtitle.error)
             assertEquals(listOf("content://test/notes.txt"), broker.releasedUris)
 
-            viewModel.dismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE)
+            viewModel.dismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE_TYPE)
             runCurrent()
             assertNull(viewModel.uiState.value.secondarySubtitle.error)
         }
@@ -3642,24 +3537,6 @@ class MediaMiningViewModelTest {
         isDefault = isDefault,
     )
 
-    private fun usableAudioPack(packId: String = "nhk16") =
-        InstalledAudioPack(
-            packId = packId,
-            sourceName = packId,
-            format = "nhk16",
-            entryCount = 100,
-            contentAvailable = true,
-        )
-
-    private fun unusableAudioPack(packId: String = "broken") =
-        InstalledAudioPack(
-            packId = packId,
-            sourceName = packId,
-            format = "ajt",
-            entryCount = 0,
-            contentAvailable = false,
-        )
-
     private class ImmediateSafBroker : SafBroker {
         val retainedUris = mutableListOf<String>()
         val releasedUris = mutableListOf<String>()
@@ -3770,6 +3647,66 @@ class MediaMiningViewModelTest {
         }
     }
 
+    @Test
+    fun finishingANonFinalPageSendsItsSelectionThroughFinishCuration() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request =
+                curationRequest().copy(
+                    page = CurationPage(pageIndex = 0, pageCount = 2, candidateStart = 0, totalCandidates = 2),
+                )
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(1, repository.finishCalls)
+            assertEquals(0, repository.confirmCalls)
+            assertEquals(0L, repository.confirmedPageIndex)
+            assertEquals(listOf("candidate"), repository.confirmedSelection?.map { it.candidateId })
+        }
+
+    @Test
+    fun finishingTheFinalPageIsAnOrdinaryConfirmation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository(MiningRunState.Curating(curationRequest()))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(0, repository.finishCalls)
+            assertEquals(1, repository.confirmCalls)
+        }
+
+    @Test
+    fun theTabsOwnTrackProbeIsNotReportedAsAnotherRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val runtime = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null)
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(
+                    RecordingRepository(),
+                    ImmediateSafBroker(),
+                    runtimeWorkState = runtime,
+                    audioTrackProbeOpener = opener,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openAudioTrackPicker()
+            runtime.value = RuntimeWorkCoordinator.Kind.MINING // the probe's own lease
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+            assertNull(viewModel.uiState.value.runtimeConflict)
+
+            opener.complete(Result.success(AudioTrackList(autoAudioIndex = 0, tracks = emptyList())))
+            runtime.value = null
+            runCurrent()
+        }
+
     private class RecordingRepository(
         initialState: MiningRunState = MiningRunState.Idle,
         private val resetGate: CompletableDeferred<Unit>? = null,
@@ -3790,6 +3727,8 @@ class MediaMiningViewModelTest {
         var cancelCalls = 0
             private set
         var confirmCalls = 0
+            private set
+        var finishCalls = 0
             private set
         var confirmedPageIndex: Long? = null
             private set
@@ -3843,6 +3782,22 @@ class MediaMiningViewModelTest {
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value =
                     MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            }
+        }
+
+        override suspend fun finishCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long,
+            knownCandidateIds: List<String>,
+        ) {
+            finishCalls += 1
+            confirmedPageIndex = pageIndex
+            confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
+            if (mutableState.value is MiningRunState.Curating) {
+                mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
             }
         }
 

@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.MiningRunUndoManager
@@ -41,6 +42,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.reading.CurationPageImageUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import com.ankiminer.android.ui.reading.ReadingMiningCommandError
@@ -56,6 +58,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -239,6 +242,140 @@ class ReadingMiningViewModelTest {
 
         assertNotNull(factory.create(ReadingMiningViewModel::class.java, CreationExtras.Empty))
     }
+
+    @Test
+    fun aFinishedReadingRunsUndoSurvivesProcessDeath() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = RecordingReadingRepository()
+            ReadingMiningViewModel(before, ImmediateSafBroker(), savedStateHandle = savedState)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            val undo = RecordingUndoManager()
+            val restored =
+                ReadingMiningViewModel(
+                    RecordingReadingRepository(),
+                    ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                    undoManager = undo,
+                )
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+
+            restored.requestUndo()
+            restored.confirmUndo()
+            runCurrent()
+
+            val expected = result()
+            assertEquals(
+                listOf(RecordingUndoManager.UndoCall("run", expected.cardIds, expected.minedForms)),
+                undo.calls,
+            )
+            assertNull(MiningReceiptStore(savedState, "readingMining.receipt").restore())
+        }
+
+    @Test
+    fun aReadingRunTheCollectorNeverSawStartingStillReplacesTheSavedReceipt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val store = MiningReceiptStore(savedState, "readingMining.receipt")
+            val repository = RecordingReadingRepository()
+            ReadingMiningViewModel(repository, ImmediateSafBroker(), savedStateHandle = savedState)
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+            assertEquals("run", store.restore()?.runId)
+
+            // StateFlow conflation can hide Starting: the next state seen is already Running.
+            repository.transitionTo(MiningRunState.Running("run-2", MiningProgress(0, 0, "Running")))
+            runCurrent()
+            assertNull(store.restore())
+
+            repository.transitionTo(MiningRunState.Success("run-2", result()))
+            runCurrent()
+            // A later run that added nothing leaves no receipt, not the older one.
+            val empty = result().copy(cardsCreated = 0, cardIds = emptyList(), minedForms = emptyList())
+            repository.transitionTo(MiningRunState.Success("run-3", empty))
+            runCurrent()
+            assertNull(store.restore())
+        }
+
+    @Test
+    fun mineAfterAFinishedReadingRunResetsItThenStarts() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("本")
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            viewModel.onPastedTextChanged("猫")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(1, repository.resetCalls)
+            assertEquals(
+                ReadingSourceSelection.PastedText("猫"),
+                repository.startedInputs.single().selection,
+            )
+        }
+
+    @Test
+    fun aFinishedReadingRunLeavesThePasteEditable() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("本")
+            runCurrent()
+            repository.transitionTo(MiningRunState.Running("run", MiningProgress(1, 2, "Running")))
+            runCurrent()
+            viewModel.onPastedTextChanged("走行中")
+            runCurrent()
+            assertEquals("本", viewModel.uiState.value.pastedText)
+
+            repository.transitionTo(MiningRunState.Cancelled("run", null))
+            runCurrent()
+            viewModel.onPastedTextChanged("猫")
+            runCurrent()
+
+            assertEquals("猫", viewModel.uiState.value.pastedText)
+        }
+
+    @Test
+    fun advisoriesFollowTheFieldMapAndAudioPacks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val unmapped =
+                ReadingMiningViewModel(RecordingReadingRepository(), ImmediateSafBroker(), fieldMap = flowOf(emptyMap()))
+            val mapped =
+                ReadingMiningViewModel(
+                    RecordingReadingRepository(),
+                    ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("audio" to "Audio")),
+                    audioPacks =
+                        flowOf(
+                            listOf(
+                                InstalledAudioPack(
+                                    "nhk16",
+                                    "nhk16",
+                                    "nhk16",
+                                    entryCount = 100,
+                                    contentAvailable = true,
+                                ),
+                            ),
+                        ),
+                )
+            runCurrent()
+
+            assertEquals(SentenceAudioAdvisory.UNMAPPED, unmapped.uiState.value.advisories.sentenceAudio)
+            assertEquals(SentenceAudioAdvisory.NONE, mapped.uiState.value.advisories.sentenceAudio)
+            assertTrue(mapped.uiState.value.advisories.wordAudioUnmapped)
+        }
 
     @Test
     fun switchingSourceModesPreservesPickedFileAndPasteDraft() =
@@ -515,10 +652,9 @@ class ReadingMiningViewModelTest {
             assertFalse(viewModel.uiState.value.canStart)
 
             repository.transitionTo(MiningRunState.Cancelled("run", null))
-            viewModel.reset()
             runCurrent()
 
-            assertEquals(MiningRunState.Idle, repository.state.value)
+            // A finished run already allows Mine with the restored pair (D7).
             assertTrue(viewModel.uiState.value.canStart)
         }
 
@@ -1080,7 +1216,10 @@ class ReadingMiningViewModelTest {
             val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
-            viewModel.setSelectionForPage(false)
+            viewModel.setSelectionForVisible(
+                (repository.state.value as MiningRunState.Curating).request.candidates.map { it.candidateId },
+                false,
+            )
             viewModel.confirmCuration()
             runCurrent()
 
@@ -1717,6 +1856,37 @@ class ReadingMiningViewModelTest {
         }
     }
 
+    @Test
+    fun finishingANonFinalPageSendsItsSelectionThroughFinishCuration() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(CurationPage(0, 2, 0, 2))
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(1, repository.finishCalls)
+            assertEquals(0, repository.confirmCalls)
+            assertEquals(0L, repository.confirmedPageIndex)
+            assertEquals(listOf("candidate-1"), repository.confirmedSelection?.map { it.candidateId })
+        }
+
+    @Test
+    fun finishingTheFinalPageIsAnOrdinaryConfirmation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository(MiningRunState.Curating(curationRequest(page = null)))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(0, repository.finishCalls)
+            assertEquals(1, repository.confirmCalls)
+        }
+
     private class RecordingReadingRepository(
         initialState: MiningRunState = MiningRunState.Idle,
         private val detachResult: Boolean = false,
@@ -1731,6 +1901,10 @@ class ReadingMiningViewModelTest {
         val detachedInputs = mutableListOf<ReadingMiningInput>()
         val cancelledTokens = mutableListOf<MiningCancellationToken>()
         val cancelledRunIds = mutableListOf<String>()
+        var confirmCalls = 0
+            private set
+        var finishCalls = 0
+            private set
         var confirmedPageIndex: Long? = null
             private set
         var confirmedSelection: List<CurationSelection>? = null
@@ -1771,10 +1945,27 @@ class ReadingMiningViewModelTest {
             pageIndex: Long?,
             knownCandidateIds: List<String>,
         ) {
+            confirmCalls += 1
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
             confirmedKnownCandidateIds = knownCandidateIds
             confirmGate?.await()
+            if (mutableState.value is MiningRunState.Curating) {
+                mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            }
+        }
+
+        override suspend fun finishCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long,
+            knownCandidateIds: List<String>,
+        ) {
+            finishCalls += 1
+            confirmedPageIndex = pageIndex
+            confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
             }
@@ -1794,7 +1985,11 @@ class ReadingMiningViewModelTest {
             }
         }
 
+        var resetCalls = 0
+            private set
+
         override suspend fun reset() {
+            resetCalls += 1
             mutableState.value = MiningRunState.Idle
         }
 

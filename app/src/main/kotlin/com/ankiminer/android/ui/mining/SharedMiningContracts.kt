@@ -1,5 +1,7 @@
 package com.ankiminer.android.ui.mining
 
+import androidx.compose.runtime.Immutable
+import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationClipWindow
@@ -8,6 +10,8 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.terminalResult
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
@@ -17,6 +21,43 @@ internal const val RESULT_ISSUE_PREVIEW_COUNT = 3
 internal const val MAX_SAVEABLE_QUERY_LENGTH = 1024
 
 internal fun String.boundedSaveableQuery(): String = take(MAX_SAVEABLE_QUERY_LENGTH)
+
+/** What Undo needs from a finished run, kept across a background process kill. */
+@Immutable
+data class MiningReceipt(
+    val runId: String,
+    val notesAdded: Long,
+    val deckName: String?,
+    val noteIds: List<Long>,
+    val minedForms: List<String>,
+)
+
+/** The one sentence a finished run leads with. */
+internal sealed interface MiningResultHeadline {
+    data class NotesAdded(val count: Long, val deckName: String?) : MiningResultHeadline
+
+    data object CancelledNothingAdded : MiningResultHeadline
+
+    data object NothingAdded : MiningResultHeadline
+}
+
+/** Null when there is nothing to report: a failure with no notes added speaks through its failure card. */
+internal fun miningResultHeadline(
+    runState: MiningRunState,
+    deckName: String?,
+): MiningResultHeadline? {
+    val added =
+        runState.terminalResult
+            ?.cardsCreated
+            ?.takeIf { it > 0 }
+            ?.let { MiningResultHeadline.NotesAdded(it, deckName) }
+    return when (runState) {
+        is MiningRunState.Success -> added ?: MiningResultHeadline.NothingAdded
+        is MiningRunState.Cancelled -> added ?: MiningResultHeadline.CancelledNothingAdded
+        is MiningRunState.Failed -> added
+        else -> null
+    }
+}
 
 internal data class BoundedResultItems<T>(
     val items: List<T>,
@@ -364,7 +405,6 @@ internal enum class CurationSort {
 
 internal data class CurationBulkSelectionScope(
     val visibleCandidateIds: List<String>,
-    val pageCandidateCount: Int?,
 ) {
     val visibleCount: Int
         get() = visibleCandidateIds.size
@@ -372,15 +412,21 @@ internal data class CurationBulkSelectionScope(
 
 internal fun curationBulkSelectionScope(
     visibleCandidateIds: List<String>,
-    pageCandidateIds: List<String>,
     knownCandidateIds: Set<String>,
-): CurationBulkSelectionScope {
-    val selectableVisible = visibleCandidateIds.filterNot(knownCandidateIds::contains)
-    val selectablePageCount = pageCandidateIds.count { it !in knownCandidateIds }
-    return CurationBulkSelectionScope(
-        visibleCandidateIds = selectableVisible,
-        pageCandidateCount = selectablePageCount.takeIf { selectableVisible.size < it },
-    )
+): CurationBulkSelectionScope =
+    CurationBulkSelectionScope(visibleCandidateIds.filterNot(knownCandidateIds::contains))
+
+/** The header checkbox: every eligible visible row selected, none, or some. */
+internal fun curationVisibleSelection(
+    selectableVisibleIds: List<String>,
+    selectedIds: Set<String>,
+): ToggleableState {
+    val selected = selectableVisibleIds.count { it in selectedIds }
+    return when {
+        selected == 0 -> ToggleableState.Off
+        selected == selectableVisibleIds.size -> ToggleableState.On
+        else -> ToggleableState.Indeterminate
+    }
 }
 
 /**

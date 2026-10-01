@@ -1,11 +1,12 @@
 package com.ankiminer.android.ui.reading
 
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ankiminer.android.ui.mining.DocumentPickRequest
+import com.ankiminer.android.ui.mining.OpenDocumentNear
 import com.ankiminer.android.vm.ReadingMiningViewModel
 
 internal val READING_SOURCE_MIME_TYPES =
@@ -43,22 +44,32 @@ internal val MOKURO_ARCHIVE_MIME_TYPES =
 fun ReadingMiningRoute(
     viewModel: ReadingMiningViewModel,
     onReturnToActiveRun: (() -> Unit)? = null,
+    onMapFields: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val sourcePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onSourcePicked(it.toString()) }
         }
     val archivePicker =
-        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        rememberLauncherForActivityResult(OpenDocumentNear()) { uri ->
             uri?.let { viewModel.onArchivePicked(it.toString()) }
         }
 
     ReadingMiningScreen(
         state = state,
-        onPickSource = { sourcePicker.launch(READING_SOURCE_MIME_TYPES) },
-        onPickArchive = { archivePicker.launch(MOKURO_ARCHIVE_MIME_TYPES) },
+        onPickSource = {
+            sourcePicker.launch(DocumentPickRequest(READING_SOURCE_MIME_TYPES.asList(), state.source.document?.uri))
+        },
+        onPickArchive = {
+            archivePicker.launch(
+                DocumentPickRequest(
+                    MOKURO_ARCHIVE_MIME_TYPES.asList(),
+                    state.archive.document?.uri ?: state.source.document?.uri,
+                ),
+            )
+        },
         onClearSource = viewModel::clearSource,
         onClearArchive = viewModel::clearArchive,
         onSourceModeChanged = viewModel::onSourceModeChanged,
@@ -72,17 +83,16 @@ fun ReadingMiningRoute(
         onSetCandidateSelected = viewModel::setCandidateSelected,
         onMarkCandidateKnown = viewModel::markCandidateKnown,
         onSetSelectionForVisible = viewModel::setSelectionForVisible,
-        onSetSelectionForPage = viewModel::setSelectionForPage,
         onReconcileFocus = viewModel::reconcileCurationFocus,
         onSelectSentence = viewModel::selectSentence,
         onConfirmCuration = viewModel::confirmCuration,
+        onFinishCuration = viewModel::finishCuration,
         onCancel = viewModel::cancel,
-        onRetry = viewModel::retry,
-        onReset = viewModel::reset,
         onRequestUndo = viewModel::requestUndo,
         onConfirmUndo = viewModel::confirmUndo,
         onDismissUndoConfirmation = viewModel::dismissUndoConfirmation,
         onReturnToActiveRun = onReturnToActiveRun,
+        onMapFields = onMapFields,
         modifier = modifier,
     )
 }

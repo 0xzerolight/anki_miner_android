@@ -7,6 +7,7 @@ SHARED = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/mining/SharedMinin
 CURATION = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/mining/CurationComponents.kt"
 READING = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/reading/ReadingMiningScreen.kt"
 VIDEO = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/video/VideoMiningScreen.kt"
+SCAFFOLD = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/mining/MiningPhaseScaffold.kt"
 SCREENSHOTS = ROOT / "app/src/androidTest/kotlin/com/ankiminer/android/uiaudit/UiAuditScreenshotTest.kt"
 NOTICES = ROOT / "app/src/main/kotlin/com/ankiminer/android/ui/attribution/NoticesScreen.kt"
 
@@ -19,15 +20,19 @@ def function_body(source: str, name: str, next_name: str | None) -> str:
 
 class UiScrollHotPathTest(unittest.TestCase):
     def test_phase_fade_targets_coarse_snapshot_and_skips_size_animation(self) -> None:
+        # Both screens fade through the shared scaffold, keyed on setup or curation only.
+        source = SCAFFOLD.read_text(encoding="utf-8")
+        self.assertIn("val phaseTarget =", source)
+        self.assertIn("targetState = phaseTarget", source)
+        self.assertIn("contentKey = { target -> target.key }", source)
+        # `using null` is the public ContentTransform infix for disabling the
+        # size animation; the property setter is internal in Compose 1.11.
+        self.assertIn("using null", source)
+        self.assertNotIn("targetState = state,", source)
         for path in (READING, VIDEO):
-            source = path.read_text(encoding="utf-8")
-            self.assertIn("val phaseTarget =", source, path)
-            self.assertIn("targetState = phaseTarget", source, path)
-            self.assertIn("contentKey = { target -> target.key }", source, path)
-            # `using null` is the public ContentTransform infix for disabling the
-            # size animation; the property setter is internal in Compose 1.11.
-            self.assertIn("using null", source, path)
-            self.assertNotIn("targetState = state,", source, path)
+            screen = path.read_text(encoding="utf-8")
+            self.assertIn("MiningPhaseScaffold(", screen, path)
+            self.assertNotIn("AnimatedContent(", screen, path)
 
     def test_passive_candidate_rows_have_no_animation_state_or_text_builds(self) -> None:
         source = CURATION.read_text(encoding="utf-8")
@@ -80,18 +85,18 @@ class UiScrollHotPathTest(unittest.TestCase):
         forbidden = re.compile(
             r"AnimatedContent|animate(?:Color|Float|Dp).*AsState|" r"(?:shadow|tonal)Elevation|\.shadow\("
         )
-        for path in (READING, VIDEO):
+        for path, next_name in ((READING, "ReadingMiningBottomBar"), (VIDEO, "VideoMiningBottomBar")):
             source = path.read_text(encoding="utf-8")
-            rows = function_body(source, "LazyListScope.curationItems", "LazyListScope.terminalItems")
+            rows = function_body(source, "LazyListScope.curationItems", next_name)
             self.assertNotRegex(rows, forbidden, path)
 
         source = SHARED.read_text(encoding="utf-8")
         result_rows = function_body(source, "LazyListScope.miningResultItems", "MiningResultSummary")
         self.assertNotRegex(result_rows, forbidden)
 
-    def test_result_metric_grid_does_not_build_collections_during_composition(self) -> None:
+    def test_result_details_do_not_build_collections_during_composition(self) -> None:
         source = SHARED.read_text(encoding="utf-8")
-        grid = function_body(source, "ResultMetricGrid", "ResultDetailsCard")
+        grid = function_body(source, "ResultDetails", "DetailLine")
         self.assertNotIn("listOf(", grid)
         self.assertNotIn("chunked(", grid)
         self.assertNotIn(" to stringResource", grid)

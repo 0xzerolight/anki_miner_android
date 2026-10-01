@@ -6,7 +6,10 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.MiningReceipt
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Locale
@@ -36,7 +39,6 @@ enum class ReadingMiningCommandError {
     START,
     CURATION,
     CANCEL,
-    RESET,
     UNDO,
     UNDO_WORDS,
 }
@@ -84,6 +86,9 @@ data class ReadingMiningUiState(
     val pastedText: String = "",
     val pastedTextTruncated: Boolean = false,
     val subtitleSeriesName: String = "",
+    val advisories: MiningFieldAdvisories = MiningFieldAdvisories(),
+    /** The deck the shown result's run wrote to. */
+    val resultDeckName: String? = null,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: ReadingCurationUiState? = null,
     val startPending: Boolean = false,
@@ -95,6 +100,10 @@ data class ReadingMiningUiState(
     val undoConfirmationNoteCount: Int? = null,
     val undoneNoteCount: Int? = null,
     val undoAvailable: Boolean = false,
+    /** The tab's own Undo is deleting notes; Mine waits for it. */
+    val undoPending: Boolean = false,
+    /** A finished run's Undo receipt restored after a background process kill; shown while Idle. */
+    val restoredReceipt: MiningReceipt? = null,
 ) {
     val acceptsArchive: Boolean
         get() =
@@ -112,9 +121,10 @@ data class ReadingMiningUiState(
     val canStart: Boolean
         get() {
             if (
-                runState != MiningRunState.Idle ||
+                !runState.acceptsInputEdits ||
                 startPending ||
                 resetPending ||
+                undoPending ||
                 runtimeConflict != null
             ) {
                 return false

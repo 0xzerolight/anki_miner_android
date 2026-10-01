@@ -28,6 +28,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -51,6 +53,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -76,7 +79,6 @@ import com.ankiminer.android.ui.theme.selectedRowContainer
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
 internal const val CURATION_FILTER_TEST_TAG = "curation_filter"
 internal const val CURATION_SORT_TEST_TAG = "curation_sort"
-internal const val CURATION_BULK_TEST_TAG = "curation_bulk_actions"
 internal const val CURATION_TOOLS_TOGGLE_TEST_TAG = "curation_tools_toggle"
 
 @StringRes
@@ -95,8 +97,8 @@ private fun CurationSort.label(): Int =
     }
 
 /**
- * Fixed chrome above the candidate list: how much is selected, and every control that acts on the
- * projection.
+ * Fixed chrome above the candidate list: one header row (select visible, how much is selected,
+ * Finish on a non-final page, the tools toggle) and, folded or open, the projection controls.
  *
  * It is pinned rather than scrolled because all of it stays relevant for the whole page. As list
  * items, the count and the search field left the screen after two flicks.
@@ -104,51 +106,88 @@ private fun CurationSort.label(): Int =
 @Composable
 internal fun CurationChrome(
     selectedCount: Int,
+    runSelectedCount: Int,
     candidateCount: Int,
     page: CurationPage?,
+    isFinalPage: Boolean,
     query: String,
     filter: CurationFilter,
     sort: CurationSort,
     enabled: Boolean,
+    visibleSelection: ToggleableState,
     visibleCount: Int,
-    allVisibleSelected: Boolean,
     selectVisibleEnabled: Boolean,
-    pageCandidateCount: Int?,
     selectAllTestTag: String,
+    finishTestTag: String,
     onQueryChanged: (String) -> Unit,
     onFilterChanged: (CurationFilter) -> Unit,
     onSortChanged: (CurationSort) -> Unit,
     onSetSelectionForVisible: (Boolean) -> Unit,
-    onSelectWholePage: () -> Unit,
+    onFinishCuration: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var toolsExpanded by rememberSaveable { mutableStateOf(true) }
+    val windowHeightDp = LocalConfiguration.current.screenHeightDp
+    var toolsExpanded by rememberSaveable {
+        mutableStateOf(curationToolsStartExpanded(candidateCount, windowHeightDp))
+    }
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            val selectionLabel =
+                stringResource(
+                    if (visibleSelection == ToggleableState.On) {
+                        R.string.deselect_visible
+                    } else {
+                        R.string.select_visible
+                    },
+                    visibleCount,
+                )
+            // One tap, always visible: the old Select… menu held a single item and clipped at 320dp.
+            TriStateCheckbox(
+                state = visibleSelection,
+                onClick = { onSetSelectionForVisible(visibleSelection != ToggleableState.On) },
+                enabled = selectVisibleEnabled,
+                modifier =
+                    Modifier
+                        .testTag(selectAllTestTag)
+                        .semantics { contentDescription = selectionLabel },
+            )
             Text(
                 text =
-                    stringResource(
-                        if (page == null) {
-                            R.string.curation_selected_count
-                        } else {
-                            R.string.curation_selected_count_page
-                        },
-                        selectedCount,
-                        candidateCount,
-                    ),
+                    if (page == null) {
+                        stringResource(R.string.curation_selected_count, selectedCount, candidateCount)
+                    } else {
+                        // The run total, not this page's: earlier pages' picks are otherwise invisible.
+                        stringResource(
+                            R.string.curation_header_paged,
+                            runSelectedCount,
+                            page.pageIndex + 1,
+                            page.pageCount,
+                        )
+                    },
                 modifier =
                     Modifier
                         .weight(1f)
                         .semantics { liveRegion = LiveRegionMode.Polite },
                 style = MaterialTheme.typography.labelLarge,
             )
+            if (page != null && !isFinalPage) {
+                TextButton(
+                    onClick = onFinishCuration,
+                    enabled = enabled,
+                    modifier = Modifier.heightIn(min = 48.dp).testTag(finishTestTag),
+                    colors = accentTextButtonColors(),
+                ) {
+                    // N is what Finish will mine: the run total, as in the header beside it.
+                    Text(stringResource(R.string.confirm_curation_final_page, runSelectedCount))
+                }
+            }
             val toggleDescription =
                 stringResource(
                     if (toolsExpanded) {
@@ -174,47 +213,23 @@ internal fun CurationChrome(
                 ChevronGlyph(pointsUp = toolsExpanded)
             }
         }
-        page?.let {
-            Text(
-                text =
-                    stringResource(
-                        R.string.curation_page_position,
-                        it.pageIndex + 1,
-                        it.pageCount,
-                        it.candidateStart + 1,
-                        it.candidateStart + candidateCount,
-                        it.totalCandidates,
-                    ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
         if (toolsExpanded) {
             CurationControls(
                 query = query,
                 filter = filter,
                 sort = sort,
                 enabled = enabled,
-                visibleCount = visibleCount,
-                allVisibleSelected = allVisibleSelected,
-                selectVisibleEnabled = selectVisibleEnabled,
-                pageCandidateCount = pageCandidateCount,
-                selectAllTestTag = selectAllTestTag,
                 onQueryChanged = onQueryChanged,
                 onFilterChanged = onFilterChanged,
                 onSortChanged = onSortChanged,
-                onSetSelectionForVisible = onSetSelectionForVisible,
-                onSelectWholePage = onSelectWholePage,
             )
         }
     }
 }
 
 /**
- * Search, projection and bulk selection for the candidate list.
- *
- * Filter and sort trade two scrolling chip rows for two menus, and the bulk actions — previously
- * two full-width buttons — fold into a third, which is what buys the vertical room back.
+ * Search and projection for the candidate list. Filter and sort trade two scrolling chip rows for
+ * two menus, which is what buys the vertical room back.
  */
 @Composable
 private fun CurationControls(
@@ -222,16 +237,9 @@ private fun CurationControls(
     filter: CurationFilter,
     sort: CurationSort,
     enabled: Boolean,
-    visibleCount: Int,
-    allVisibleSelected: Boolean,
-    selectVisibleEnabled: Boolean,
-    pageCandidateCount: Int?,
-    selectAllTestTag: String,
     onQueryChanged: (String) -> Unit,
     onFilterChanged: (CurationFilter) -> Unit,
     onSortChanged: (CurationSort) -> Unit,
-    onSetSelectionForVisible: (Boolean) -> Unit,
-    onSelectWholePage: () -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
         // Placeholder instead of a floating label: there is one field here and the screen above it
@@ -284,50 +292,6 @@ private fun CurationControls(
                         text = { Text(stringResource(option.label())) },
                         onClick = {
                             onSortChanged(option)
-                            dismiss()
-                        },
-                    )
-                }
-            }
-            CurationMenuButton(
-                label = stringResource(R.string.curation_bulk_action),
-                enabled = enabled,
-                testTag = CURATION_BULK_TEST_TAG,
-            ) { dismiss ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            stringResource(
-                                if (allVisibleSelected) {
-                                    R.string.deselect_visible
-                                } else {
-                                    R.string.select_visible
-                                },
-                                visibleCount,
-                            ),
-                        )
-                    },
-                    onClick = {
-                        onSetSelectionForVisible(!allVisibleSelected)
-                        dismiss()
-                    },
-                    modifier = Modifier.testTag(selectAllTestTag),
-                    enabled = selectVisibleEnabled,
-                )
-                // Page-wide selection stays reachable, but named for the scope it actually reaches
-                // rather than hiding behind the same action the filtered one uses.
-                if (pageCandidateCount != null) {
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                stringResource(
-                                    R.string.curation_select_whole_page,
-                                    pageCandidateCount,
-                                ),
-                            )
-                        },
-                        onClick = {
-                            onSelectWholePage()
                             dismiss()
                         },
                     )
@@ -393,8 +357,9 @@ internal fun rememberCurationCandidateRowTexts(
                         resources.getString(R.string.candidate_frequency_compact, rank)
                     } ?: resources.getString(R.string.candidate_frequency_unknown_compact)
                 val occurrences =
-                    resources.getString(
-                        R.string.candidate_occurrences_compact,
+                    resources.getQuantityString(
+                        R.plurals.candidate_occurrences_compact,
+                        candidate.occurrenceCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                         candidate.occurrenceCount,
                     )
                 put(
@@ -466,7 +431,8 @@ internal fun ReconcileCurationFocus(
 }
 
 /**
- * Gap below one item of a candidate group: 12dp after the last part, nothing inside.
+ * Gap below one item of a candidate group: 12dp after a run of rows or an expanded group; nothing
+ * inside.
  *
  * The list itself spaces curation items by zero so the header, actions, definition and sentences —
  * separate lazy items for virtualization's sake — can sit flush and read as one card.
@@ -509,6 +475,7 @@ internal fun CurationCandidateRow(
     includeLabel: String,
     selected: Boolean,
     expanded: Boolean,
+    position: CurationRowPosition,
     animateSelection: Boolean,
     enabled: Boolean,
     toggleEnabled: Boolean,
@@ -518,11 +485,16 @@ internal fun CurationCandidateRow(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Neighbouring rows share one container: only the ends of a run are rounded.
+    val corner = 12.dp
     val shape =
-        if (expanded) {
-            RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-        } else {
-            MaterialTheme.shapes.medium
+        when {
+            expanded || position == CurationRowPosition.FIRST ->
+                RoundedCornerShape(topStart = corner, topEnd = corner)
+            position == CurationRowPosition.ONLY -> RoundedCornerShape(corner)
+            position == CurationRowPosition.LAST ->
+                RoundedCornerShape(bottomStart = corner, bottomEnd = corner)
+            else -> RectangleShape
         }
     val containerColor = curationRowContainerColor(selected, animateSelection)
     // Two targets, not one. The row opens the detail; only the checkbox includes or excludes. The
@@ -540,43 +512,46 @@ internal fun CurationCandidateRow(
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = shape,
     ) {
-        Row(
-            modifier =
-                Modifier.padding(
-                    horizontal = AnkiMinerTokens.Space.group,
-                    vertical = AnkiMinerTokens.Space.related,
-                ),
-            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(
-                checked = selected,
-                onCheckedChange = onToggle,
-                enabled = toggleEnabled,
+        Column {
+            if (!position.startsRun) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
                 modifier =
-                    Modifier
-                        .minimumInteractiveComponentSize()
-                        .testTag(toggleTestTag)
-                        .semantics { contentDescription = includeLabel },
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+                    Modifier.padding(
+                        horizontal = AnkiMinerTokens.Space.group,
+                        vertical = AnkiMinerTokens.Space.line,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = text.headline,
-                    style = MaterialTheme.typography.titleMedium.minedText(),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = onToggle,
+                    enabled = toggleEnabled,
+                    modifier =
+                        Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag(toggleTestTag)
+                            .semantics { contentDescription = includeLabel },
                 )
-                Text(
-                    text = text.metadata,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+                ) {
+                    Text(
+                        text = text.headline,
+                        style = MaterialTheme.typography.titleMedium.minedText(),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = text.metadata,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -588,6 +563,7 @@ internal fun CurationRowActions(
     known: Boolean,
     enabled: Boolean,
     knownTestTag: String,
+    copyMenuTestTag: String,
     copyWordTestTag: String,
     copySentenceTestTag: String,
     onToggleKnown: (Boolean) -> Unit,
@@ -595,10 +571,13 @@ internal fun CurationRowActions(
     onCopySentence: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var copyMenuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
+        // Last part of an expanded group: it closes the card.
+        shape = RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
     ) {
         Column {
             HorizontalDivider()
@@ -626,21 +605,33 @@ internal fun CurationRowActions(
                         ),
                     )
                 }
-                TextButton(
-                    onClick = onCopyWord,
-                    enabled = enabled,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(copyWordTestTag),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(stringResource(R.string.curation_copy_word))
-                }
-                TextButton(
-                    onClick = onCopySentence,
-                    enabled = enabled,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(copySentenceTestTag),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(stringResource(R.string.curation_copy_sentence))
+                Box {
+                    TextButton(
+                        onClick = { copyMenuOpen = true },
+                        enabled = enabled,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(copyMenuTestTag),
+                        colors = accentTextButtonColors(),
+                    ) {
+                        Text(stringResource(R.string.curation_copy_menu))
+                    }
+                    DropdownMenu(expanded = copyMenuOpen, onDismissRequest = { copyMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.curation_copy_word)) },
+                            onClick = {
+                                copyMenuOpen = false
+                                onCopyWord()
+                            },
+                            modifier = Modifier.testTag(copyWordTestTag),
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.curation_copy_sentence)) },
+                            onClick = {
+                                copyMenuOpen = false
+                                onCopySentence()
+                            },
+                            modifier = Modifier.testTag(copySentenceTestTag),
+                        )
+                    }
                 }
             }
         }
@@ -725,13 +716,15 @@ internal fun CurationExpansionControls(
                 ) {
                     Text(stringResource(R.string.curation_expand_next_line))
                 }
-                TextButton(
-                    onClick = onReset,
-                    enabled = enabled && expanded,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(resetTestTag),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(stringResource(R.string.curation_expand_reset))
+                if (expanded) {
+                    TextButton(
+                        onClick = onReset,
+                        enabled = enabled,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(resetTestTag),
+                        colors = accentTextButtonColors(),
+                    ) {
+                        Text(stringResource(R.string.curation_expand_reset))
+                    }
                 }
             }
         }
@@ -744,6 +737,7 @@ internal fun CurationDefinitionPane(
     containerColor: Color,
     term: String,
     testTag: String,
+    maxHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -789,7 +783,7 @@ internal fun CurationDefinitionPane(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 96.dp, max = 260.dp)
+                                .heightIn(min = CurationDefinitionMinHeight, max = maxHeight)
                                 .padding(horizontal = AnkiMinerTokens.Space.group),
                         updateKey = definition.matchedTerm,
                     )
@@ -873,7 +867,6 @@ internal fun CurationSentenceChoice(
     containerColor: Color,
     selected: Boolean,
     enabled: Boolean,
-    isLast: Boolean,
     testTag: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -896,12 +889,7 @@ internal fun CurationSentenceChoice(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape =
-            if (isLast) {
-                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-            } else {
-                RoundedCornerShape(0.dp)
-            },
+        shape = RoundedCornerShape(0.dp),
     ) {
         Column {
             HorizontalDivider()
@@ -971,7 +959,6 @@ internal fun CurationAlternativesToggle(
     expanded: Boolean,
     containerColor: Color,
     enabled: Boolean,
-    isLast: Boolean,
     testTag: String,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -994,12 +981,7 @@ internal fun CurationAlternativesToggle(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape =
-            if (isLast) {
-                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-            } else {
-                RoundedCornerShape(0.dp)
-            },
+        shape = RoundedCornerShape(0.dp),
     ) {
         Column {
             HorizontalDivider()

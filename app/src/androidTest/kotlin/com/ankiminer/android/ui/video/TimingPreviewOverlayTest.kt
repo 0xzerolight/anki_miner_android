@@ -7,10 +7,11 @@ import androidx.compose.runtime.setValue
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
@@ -44,14 +45,16 @@ class TimingPreviewOverlayTest {
 
         scrollTo(VideoMiningTestTags.TIMING_PREVIEW_NUDGE_LATER)
         composeRule.onNodeWithTag(VideoMiningTestTags.TIMING_PREVIEW_NUDGE_LATER).performClick()
-        scrollTo(VideoMiningTestTags.TIMING_PREVIEW_READOUT)
-        composeRule.onNodeWithText("Offset +0.60 s").assertIsDisplayed()
+        scrollTo(VideoMiningTestTags.TIMING_PREVIEW_OFFSET_FIELD)
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.TIMING_PREVIEW_OFFSET_FIELD)
+            .assertTextContains("0.6", substring = true)
         composeRule.runOnIdle { assertEquals(1.6, fake.seekAndPlayCalls.last(), 0.000_001) }
 
         scrollTo(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE)
         composeRule.onNodeWithTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE).performClick()
-        scrollTo(VideoMiningTestTags.TIMING_PREVIEW_READOUT)
-        composeRule.onNodeWithText("Unshifted").assertIsDisplayed()
+        scrollTo(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE)
+        composeRule.onNodeWithTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE).assertIsSelected()
         composeRule.runOnIdle { assertEquals(1.0, fake.seekAndPlayCalls.last(), 0.000_001) }
     }
 

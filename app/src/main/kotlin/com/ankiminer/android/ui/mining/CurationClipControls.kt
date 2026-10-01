@@ -139,15 +139,17 @@ internal fun CurationClipControls(
                             ),
                     )
                 }
-                IconButton(
-                    onClick = onReset,
-                    enabled = enabled && state.overridden,
-                    modifier = Modifier.minimumInteractiveComponentSize().testTag(resetTestTag),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_refresh),
-                        contentDescription = stringResource(R.string.curation_clip_reset),
-                    )
+                if (state.overridden) {
+                    IconButton(
+                        onClick = onReset,
+                        enabled = enabled,
+                        modifier = Modifier.minimumInteractiveComponentSize().testTag(resetTestTag),
+                    ) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_refresh),
+                            contentDescription = stringResource(R.string.curation_clip_reset),
+                        )
+                    }
                 }
             }
             Text(

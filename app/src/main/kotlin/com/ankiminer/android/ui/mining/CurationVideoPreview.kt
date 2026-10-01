@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -37,6 +35,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -70,10 +70,11 @@ fun CurationVideoPreview(
     videoUri: Uri,
     cues: List<SubtitleCue>,
     overlayOffsetSeconds: Double,
-    collapsed: Boolean,
-    onToggleCollapsed: () -> Unit,
+    collapsed: Boolean = false,
+    onToggleCollapsed: (() -> Unit)? = null,
     audioOnly: Boolean = false,
     audioTrackOverride: Long? = null,
+    maxSurfaceHeight: Dp = Dp.Unspecified,
     notice: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -106,25 +107,32 @@ fun CurationVideoPreview(
     }
 
     Card(modifier = modifier.fillMaxWidth()) {
-        if (collapsed) {
-            CollapsedPreviewBar(onToggleCollapsed)
-        } else {
-            Column {
-                Box(
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .then(
-                                if (audioOnly) {
-                                    Modifier.height(AudioSurfaceHeight)
-                                } else {
-                                    Modifier.aspectRatio(VIDEO_ASPECT_RATIO)
-                                },
-                            )
-                            .background(Color.Black)
-                            .testTag(CurationPlayerTestTags.SURFACE),
-                ) {
-                    if (!audioOnly) {
+        when {
+            collapsed && onToggleCollapsed != null -> CollapsedPreviewBar(onToggleCollapsed)
+            audioOnly -> {
+                AudioPreviewBar(
+                    playing = playing,
+                    cueText =
+                        currentCue(
+                            cues = cues,
+                            positionSeconds = positionSeconds,
+                            offsetSeconds = overlayOffsetSeconds,
+                        )?.text.orEmpty(),
+                    failure = failure,
+                    onTogglePlayPause = player::togglePlayPause,
+                    onRetry = player::retry,
+                )
+                notice?.invoke()
+            }
+            else ->
+                Column {
+                    Box(
+                        modifier =
+                            Modifier
+                                .cappedAspectRatio(VIDEO_ASPECT_RATIO, maxSurfaceHeight)
+                                .background(Color.Black)
+                                .testTag(CurationPlayerTestTags.SURFACE),
+                    ) {
                         ContentFrame(
                             player = player.media3Player,
                             modifier =
@@ -138,30 +146,92 @@ fun CurationVideoPreview(
                                 )
                             },
                         )
-                    }
-                    SubtitleOverlay(
-                        text =
-                            currentCue(
-                                cues = cues,
-                                positionSeconds = positionSeconds,
-                                offsetSeconds = overlayOffsetSeconds,
-                            )?.text.orEmpty(),
-                        modifier = Modifier.align(Alignment.BottomCenter),
-                    )
-                    if (failure != null) {
-                        PreviewFailureShutter(
-                            failure = failure,
-                            onRetry = player::retry,
+                        SubtitleOverlay(
+                            text =
+                                currentCue(
+                                    cues = cues,
+                                    positionSeconds = positionSeconds,
+                                    offsetSeconds = overlayOffsetSeconds,
+                                )?.text.orEmpty(),
+                            modifier = Modifier.align(Alignment.BottomCenter),
                         )
+                        if (failure != null) {
+                            PreviewFailureShutter(
+                                failure = failure,
+                                onRetry = player::retry,
+                            )
+                        }
                     }
+                    notice?.invoke()
+                    PreviewControls(
+                        playing = playing,
+                        onTogglePlayPause = player::togglePlayPause,
+                        onToggleCollapsed = onToggleCollapsed,
+                    )
                 }
-                notice?.invoke()
-                PreviewControls(
-                    playing = playing,
-                    onTogglePlayPause = player::togglePlayPause,
-                    onToggleCollapsed = onToggleCollapsed,
-                )
+        }
+    }
+}
+
+/**
+ * The Audio lane's whole preview. There is no picture, so the old 160dp black surface only cost the
+ * list its rows; play/pause and the line under the playhead are all it ever showed.
+ */
+@Composable
+private fun AudioPreviewBar(
+    playing: Boolean,
+    cueText: String,
+    failure: PreviewFailure?,
+    onTogglePlayPause: () -> Unit,
+    onRetry: () -> Unit,
+) {
+    val playPauseDescription =
+        stringResource(
+            if (playing) {
+                R.string.curation_preview_pause_audio_description
+            } else {
+                R.string.curation_preview_play_audio_description
+            },
+        )
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
+                .padding(horizontal = AnkiMinerTokens.Space.related),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(
+            onClick = onTogglePlayPause,
+            modifier =
+                Modifier
+                    .testTag(CurationPlayerTestTags.PLAY_PAUSE)
+                    .semantics { contentDescription = playPauseDescription },
+        ) {
+            PlayPauseGlyph(playing)
+        }
+        if (failure != null) {
+            Text(
+                text = failureMessage(failure),
+                modifier = Modifier.weight(1f).testTag(CurationPlayerTestTags.FAILURE_NOTICE),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            TextButton(
+                onClick = onRetry,
+                modifier = Modifier.testTag(CurationPlayerTestTags.RETRY),
+                colors = accentTextButtonColors(),
+            ) {
+                Text(stringResource(R.string.curation_preview_retry))
             }
+        } else {
+            Text(
+                text = cueText,
+                modifier = Modifier.weight(1f).testTag(CurationPlayerTestTags.OVERLAY),
+                style = MaterialTheme.typography.bodyMedium.minedText(),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -243,7 +313,7 @@ private fun SubtitleOverlay(
 private fun PreviewControls(
     playing: Boolean,
     onTogglePlayPause: () -> Unit,
-    onToggleCollapsed: () -> Unit,
+    onToggleCollapsed: (() -> Unit)?,
 ) {
     val playPauseDescription =
         stringResource(
@@ -271,14 +341,16 @@ private fun PreviewControls(
         ) {
             PlayPauseGlyph(playing)
         }
-        IconButton(
-            onClick = onToggleCollapsed,
-            modifier =
-                Modifier
-                    .testTag(CurationPlayerTestTags.COLLAPSE)
-                    .semantics { contentDescription = collapseDescription },
-        ) {
-            ChevronGlyph(pointsUp = true)
+        if (onToggleCollapsed != null) {
+            IconButton(
+                onClick = onToggleCollapsed,
+                modifier =
+                    Modifier
+                        .testTag(CurationPlayerTestTags.COLLAPSE)
+                        .semantics { contentDescription = collapseDescription },
+            ) {
+                ChevronGlyph(pointsUp = true)
+            }
         }
     }
 }
@@ -342,5 +414,4 @@ private fun PlayPauseGlyph(playing: Boolean) {
 private const val VIDEO_ASPECT_RATIO = 16f / 9f
 private const val POSITION_TICK_MILLIS = 100L
 private const val OVERLAY_SCRIM_ALPHA = 0.68f
-private val AudioSurfaceHeight = 160.dp
 private val PlayerIconSize = 24.dp
