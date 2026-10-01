@@ -67,6 +67,7 @@
             "network_voice_rejected",
             "offline_japanese_voice_unavailable",
             "offline_voice_changed",
+            "offline_voice_unavailable",
             "synthesis_failed",
             "synthesis_timeout",
             "synthesizer_closed",

@@ -27,7 +27,11 @@ internal sealed interface OfflineTtsBackendOpenResult {
 }
 
 internal fun interface OfflineTtsBackendFactory {
-    fun open(cancellationCheck: () -> Boolean): OfflineTtsBackendOpenResult
+    /** Opens a backend speaking [language], a BCP-47 tag; each language gets its own voice. */
+    fun open(
+        language: String,
+        cancellationCheck: () -> Boolean,
+    ): OfflineTtsBackendOpenResult
 }
 
 internal interface OfflineTtsBackend : AutoCloseable {
@@ -72,7 +76,7 @@ internal class CachedSentenceAudioSynthesizer(
     private val root = cacheRoot.absoluteFile.normalize()
     private val closed = AtomicBoolean(false)
     private val pinnedFiles = linkedSetOf<File>()
-    private var backendState: OfflineTtsBackendOpenResult? = null
+    private val backendStates = linkedMapOf<String, OfflineTtsBackendOpenResult>()
 
     init {
         require(cacheBudgetBytes > 0)
@@ -82,6 +86,12 @@ internal class CachedSentenceAudioSynthesizer(
 
     override fun synthesize(
         sentence: String,
+        cancellationCheck: () -> Boolean,
+    ): SentenceAudioSynthesis = synthesize(sentence, JAPANESE, cancellationCheck)
+
+    override fun synthesize(
+        sentence: String,
+        language: String,
         cancellationCheck: () -> Boolean,
     ): SentenceAudioSynthesis =
         synchronized(CACHE_LOCK) {
@@ -97,7 +107,11 @@ internal class CachedSentenceAudioSynthesizer(
             if (!prepareRoot()) return@synchronized SentenceAudioSynthesis.failed("cache_unavailable")
 
             val backend =
-                when (val opened = backendState ?: backendFactory.open(cancellationCheck).also { backendState = it }) {
+                when (
+                    val opened =
+                        backendStates[language]
+                            ?: backendFactory.open(language, cancellationCheck).also { backendStates[language] = it }
+                ) {
                     is OfflineTtsBackendOpenResult.Ready -> opened.backend
                     is OfflineTtsBackendOpenResult.Unavailable ->
                         return@synchronized SentenceAudioSynthesis.unavailable(opened.errorCode)
@@ -169,12 +183,14 @@ internal class CachedSentenceAudioSynthesizer(
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
         synchronized(CACHE_LOCK) {
-            try {
-                (backendState as? OfflineTtsBackendOpenResult.Ready)?.backend?.close()
-            } catch (_: RuntimeException) {
-                // Optional engine teardown must not mask run finalization.
+            backendStates.values.forEach { state ->
+                try {
+                    (state as? OfflineTtsBackendOpenResult.Ready)?.backend?.close()
+                } catch (_: RuntimeException) {
+                    // Optional engine teardown must not mask run finalization.
+                }
             }
-            backendState = null
+            backendStates.clear()
             pinnedFiles.clear()
             try {
                 cleanupPartials()
@@ -282,6 +298,7 @@ internal class CachedSentenceAudioSynthesizer(
         const val DEFAULT_MAX_FILE_BYTES = 16L * 1024L * 1024L
         const val DEFAULT_RESERVE_BYTES = 64L * 1024L * 1024L
         const val MAX_INPUT_UTF16_UNITS = SentenceAudioBridgeCodec.MAX_SENTENCE_UTF16_UNITS
+        private const val JAPANESE = "ja"
         private const val CACHE_DOMAIN = "anki-miner-android-sentence-tts-v1"
         private const val CACHE_PREFIX = "android_tts_v1_"
         private val PUBLISHED_FILENAME = Regex("${CACHE_PREFIX}[0-9a-f]{64}\\.wav")

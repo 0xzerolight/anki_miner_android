@@ -36,6 +36,7 @@ _ERROR_CODES = frozenset(
         "network_voice_rejected",
         "offline_japanese_voice_unavailable",
         "offline_voice_changed",
+        "offline_voice_unavailable",
         "synthesis_failed",
         "synthesis_timeout",
         "synthesizer_closed",
@@ -192,6 +193,11 @@ class AndroidSentenceAudioFetcher:
             message = (
                 "Offline Japanese sentence audio is unavailable. Install an offline "
                 "Japanese voice in Android speech settings."
+            )
+        elif error_code == "offline_voice_unavailable":
+            message = (
+                "Offline sentence audio is unavailable. Install an offline voice for "
+                "the mining language in Android speech settings."
             )
         elif error_code in {"cache_full", "cache_unavailable", "cache_publish_failed"}:
             message = "Offline sentence audio was skipped because private cache storage is " "unavailable or full."

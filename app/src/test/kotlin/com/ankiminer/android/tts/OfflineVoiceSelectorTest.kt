@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-class OfflineJapaneseVoiceSelectorTest {
+class OfflineVoiceSelectorTest {
     @Test
     fun exactEmbeddedJapaneseVoiceWinsDeterministically() {
         val voices =
@@ -17,18 +17,19 @@ class OfflineJapaneseVoiceSelectorTest {
                 voice("english", "en-US", quality = 500),
             )
 
-        assertEquals("exact-not-embedded", selectOfflineJapaneseVoice(voices))
-        assertEquals("exact-not-embedded", selectOfflineJapaneseVoice(voices.reversed()))
+        assertEquals("exact-not-embedded", selectOfflineVoice(voices, "ja"))
+        assertEquals("exact-not-embedded", selectOfflineVoice(voices.reversed(), "ja"))
     }
 
     @Test
     fun networkOnlyOrNonJapaneseVoicesAreUnavailable() {
         assertNull(
-            selectOfflineJapaneseVoice(
+            selectOfflineVoice(
                 listOf(
                     voice("network", "ja-JP", network = true),
                     voice("english", "en-US"),
                 ),
+                "ja",
             ),
         )
     }
@@ -41,7 +42,7 @@ class OfflineJapaneseVoiceSelectorTest {
                 voice("installed-general", "ja", quality = 400),
             )
 
-        assertEquals("installed-general", selectOfflineJapaneseVoice(voices))
+        assertEquals("installed-general", selectOfflineVoice(voices, "ja"))
     }
 
     @Test
@@ -54,13 +55,45 @@ class OfflineJapaneseVoiceSelectorTest {
             )
 
         val selected =
-            selectOfflineJapaneseVoice(voices) { id ->
+            selectOfflineVoice(voices, "ja") { id ->
                 attempts += id
                 id == "fallback"
             }
 
         assertEquals("fallback", selected)
         assertEquals(listOf("best", "fallback"), attempts)
+    }
+
+    @Test
+    fun theRequestedLanguageSelectsItsOwnVoiceNeverJapanese() {
+        val voices =
+            listOf(
+                voice("japanese", "ja-JP", quality = 500),
+                voice("hebrew", "he-IL", quality = 300),
+                voice("arabic", "ar", quality = 400),
+            )
+
+        assertEquals("hebrew", selectOfflineVoice(voices, "he"))
+        assertEquals("arabic", selectOfflineVoice(voices, "ar"))
+        assertNull(selectOfflineVoice(voices, "th"))
+    }
+
+    @Test
+    fun legacyLanguageCodesMatchTheirCurrentCodesBothWays() {
+        assertEquals("legacy-hebrew", selectOfflineVoice(listOf(voice("legacy-hebrew", "iw-IL")), "he"))
+        assertEquals("hebrew", selectOfflineVoice(listOf(voice("hebrew", "he-IL")), "iw"))
+        assertEquals("legacy-indonesian", selectOfflineVoice(listOf(voice("legacy-indonesian", "in-ID")), "id"))
+        assertEquals("legacy-yiddish", selectOfflineVoice(listOf(voice("legacy-yiddish", "ji")), "yi"))
+        assertEquals("he", ttsLanguage("iw"))
+        assertEquals("id", ttsLanguage("in-ID"))
+        assertEquals("yi", ttsLanguage("ji"))
+        assertEquals("fa", ttsLanguage("fa-IR"))
+    }
+
+    @Test
+    fun onlyJapaneseKeepsItsOwnUnavailableCode() {
+        assertEquals("offline_japanese_voice_unavailable", offlineVoiceUnavailableCode("ja"))
+        assertEquals("offline_voice_unavailable", offlineVoiceUnavailableCode("he"))
     }
 
     private fun voice(
@@ -70,7 +103,7 @@ class OfflineJapaneseVoiceSelectorTest {
         installed: Boolean = true,
         quality: Int = 300,
     ) =
-        OfflineJapaneseVoiceCandidate(
+        OfflineVoiceCandidate(
             id = id,
             languageTag = tag,
             quality = quality,
