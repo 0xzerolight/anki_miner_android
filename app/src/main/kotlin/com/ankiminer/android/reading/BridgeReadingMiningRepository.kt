@@ -569,16 +569,16 @@ internal class BridgeReadingMiningRepository(
                         requireNotNull(run.configSnapshot).mapsExpressionAudioField()
                 // One synthesizer serves both the reading's sentence audio and, outside Japanese,
                 // the device voice speaking its word audio.
-                if (
-                    requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
-                    requireNotNull(run.configSnapshot).usesDeviceVoice()
-                ) {
+                val readingTts = requireNotNull(run.configSnapshot).androidTtsEnabled == true
+                if (readingTts || requireNotNull(run.configSnapshot).usesDeviceVoice()) {
                     val synthesizer =
                         try {
                             sentenceAudioSynthesizerFactory?.open()
                                 ?: throw IllegalStateException("Sentence-audio integration is unavailable")
                         } catch (failure: RuntimeException) {
-                            recordFault(generation, strings.resolve(R.string.mining_failure_sentence_audio_preparation))
+                            val sentence = R.string.mining_failure_sentence_audio_preparation
+                            val message = if (readingTts) sentence else R.string.mining_failure_word_audio_preparation
+                            recordFault(generation, strings.resolve(message))
                             throw failure
                         }
                     run.sentenceAudioSynthesizer = synthesizer

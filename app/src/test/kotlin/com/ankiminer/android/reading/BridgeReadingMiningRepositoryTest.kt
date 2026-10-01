@@ -1272,6 +1272,83 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `a non-Japanese reading run without reading TTS speaks its words with the device voice`() {
+        val audio = File(temporary.root, "android_tts_v1_${"d".repeat(64)}.wav").apply {
+            writeBytes(byteArrayOf(1, 2))
+        }
+        val spoken = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
+        val closed = AtomicBoolean()
+        val opened = AtomicInteger()
+        val synthesizer =
+            object : SentenceAudioSynthesizer {
+                override fun synthesize(
+                    sentence: String,
+                    cancellationCheck: () -> Boolean,
+                ): SentenceAudioSynthesis = error("word audio names its language")
+
+                override fun synthesize(
+                    sentence: String,
+                    language: String,
+                    cancellationCheck: () -> Boolean,
+                ): SentenceAudioSynthesis {
+                    spoken += sentence to language
+                    return SentenceAudioSynthesis.ready(audio)
+                }
+
+                override fun close() {
+                    closed.set(true)
+                }
+            }
+        val harness =
+            harness(
+                ttsEnabled = false,
+                invokeTts = true,
+                snapshotSettings = DEVICE_VOICE_SETTINGS,
+                ttsRequest = WORD_AUDIO_REQUEST,
+                sentenceAudioFactory =
+                    SentenceAudioSynthesizerFactory {
+                        opened.incrementAndGet()
+                        synthesizer
+                    },
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+
+        assertTrue(harness.bridge.ttsSubmitted.await(2, TimeUnit.SECONDS))
+        assertTrue(requireNotNull(harness.bridge.ttsResult.get()).contains("\"outcome\":\"ready\""))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, opened.get())
+        assertEquals(listOf("ספר" to "he"), spoken.toList())
+        assertTrue(closed.get())
+    }
+
+    @Test
+    fun `a device voice that will not open fails the reading run as word audio`() {
+        val harness =
+            harness(
+                snapshotSettings = DEVICE_VOICE_SETTINGS,
+                sentenceAudioFactory = SentenceAudioSynthesizerFactory { error("no text-to-speech engine") },
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("resource:${R.string.mining_failure_word_audio_preparation}", failed.failure.message)
+        assertTrue(harness.bridge.readingRunRequests.isEmpty())
+    }
+
+    @Test
     fun `TTS callback raced with cancellation returns cancelled without mining fault`() {
         val audio = File(temporary.root, "android_tts_v1_${"b".repeat(64)}.wav").apply {
             writeBytes(byteArrayOf(1))
@@ -1763,6 +1840,8 @@ class BridgeReadingMiningRepositoryTest {
         invokeTts: Boolean = false,
         sentenceAudioFactory: SentenceAudioSynthesizerFactory? = null,
         expressionAudioFieldMapped: Boolean = false,
+        snapshotSettings: Map<String, BridgeJsonValue>? = null,
+        ttsRequest: String = TTS_REQUEST,
         presenterWarning: String? = null,
         progressError: String? = null,
         terminalErrorCount: Int = 0,
@@ -1803,6 +1882,7 @@ class BridgeReadingMiningRepositoryTest {
                 cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
                 pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
                 invokeTtsAfterCancellation = invokeTtsAfterCancellation,
+                ttsRequest = ttsRequest,
             )
         val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
         val foreground = FakeForegroundStarter(foregroundFailure, pendingForegroundStart)
@@ -1854,7 +1934,9 @@ class BridgeReadingMiningRepositoryTest {
                     ReadingConfigSnapshotResolver {
                         MiningConfigSnapshot(
                             settings =
-                                if (expressionAudioFieldMapped) {
+                                if (snapshotSettings != null) {
+                                    snapshotSettings
+                                } else if (expressionAudioFieldMapped) {
                                     // The expression_audio Anki field is mapped and ZERO packs
                                     // are imported. The reading FGS predicate reads anki_fields
                                     // only, so it promotes on the mapped field alone.
@@ -2270,6 +2352,7 @@ class BridgeReadingMiningRepositoryTest {
         private val cancelFailuresBeforeSuccess: Int = 0,
         private val pauseCancellationUntilTerminal: Boolean = false,
         private val invokeTtsAfterCancellation: Boolean = false,
+        private val ttsRequest: String = TTS_REQUEST,
     ) : PyBridge {
         val readingRequest = AtomicReference<ReadingMiningWireRequest?>()
         val readingRunRequests = CopyOnWriteArrayList<String>()
@@ -2379,7 +2462,7 @@ class BridgeReadingMiningRepositoryTest {
                 check(allowTtsCallback.await(3, TimeUnit.SECONDS))
             }
             if (invokeTts && (!cancelled.get() || invokeTtsAfterCancellation)) {
-                ttsResult.set(callbacks.synthesizeSentenceAudio(TTS_REQUEST))
+                ttsResult.set(callbacks.synthesizeSentenceAudio(ttsRequest))
                 ttsSubmitted.countDown()
             }
             check(allowTerminal.await(3, TimeUnit.SECONDS))
@@ -2514,6 +2597,18 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"presenter.event","payload":{"runId":"$RUN_ID","kind":"warning","message":"$PRESENTER_WARNING_PLACEHOLDER"}}"""
         val PROGRESS_ERROR =
             """{"schemaVersion":1,"type":"progress.error","payload":{"runId":"$RUN_ID","description":"猫","message":"Audio extraction failed"}}"""
+        val DEVICE_VOICE_SETTINGS =
+            mapOf(
+                "language" to BridgeJsonValue.Text("he"),
+                "anki_fields" to
+                    BridgeJsonValue.ObjectValue(mapOf("expression_audio" to BridgeJsonValue.Text("WordAudio"))),
+                "expression_audio_chain" to
+                    BridgeJsonValue.ArrayValue(
+                        listOf(BridgeJsonValue.ObjectValue(mapOf("kind" to BridgeJsonValue.Text("android_tts")))),
+                    ),
+            )
+        const val WORD_AUDIO_REQUEST =
+            """{"schemaVersion":1,"type":"tts.sentence.request","payload":{"runId":"$RUN_ID","requestId":"tts_22222222222222222222222222222222","sentence":"ספר","language":"he"}}"""
         const val TTS_REQUEST =
             """{"schemaVersion":1,"type":"tts.sentence.request","payload":{"runId":"$RUN_ID","requestId":"tts_11111111111111111111111111111111","sentence":"猫だ。"}}"""
         val CURATION_REQUEST =
