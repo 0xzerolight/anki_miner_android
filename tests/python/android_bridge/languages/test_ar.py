@@ -1,15 +1,16 @@
 """Arabic: the profile, its tagger, scoped defaults, card fields and catalog, offline.
 
 Arabic mines only once its language data (the calima-msa-r13 morphology database) is installed.
-These tests install a committed subset of that database (``fixtures/ar/calima_msa``, written by
-``make_calima_subset.py``; GPL-2.0-only data with its own ``LICENSE``) where the pinned archive
-would extract it, so the real ``component_path`` -> ``build_tagger`` path runs without a download.
+As on desktop (``tests/_pack_seeds.py``), the repository commits none of that GPL-2.0 database:
+the real pinned archive is installed from the local cache
+(``tools/language-data/fetch_language_data.py ar``) through the real
+``resource.languagedata.install`` op, once per module, and a missing archive FAILS the tests
+rather than skipping them.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import Iterator
 from dataclasses import replace
 from pathlib import Path
@@ -17,8 +18,10 @@ from types import SimpleNamespace
 
 import pytest
 from catalog_completeness import assert_catalog_complete
+from language_data_fixtures import install_language_data, language_data_home
 
 pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
+pytest.importorskip("requests", reason="runtime dependency lane: the pack installer imports the downloader")
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ar"
 TOKEN_ROWS = [
@@ -34,22 +37,17 @@ def _profile():
     return get_profile("ar")
 
 
-@pytest.fixture
-def ar_pack(initialized_bridge_home: Path) -> Iterator[Path]:
-    """The fixture database installed as the ``ar-calima-msa`` language data; removed afterwards."""
-    from anki_miner.languages import tagger_provider
-
-    root = initialized_bridge_home / "language_packs" / "ar"
-    tagger_provider.evict("ar")
-    shutil.copytree(FIXTURES / "calima_msa", root / "calima_msa")
-    try:
-        yield initialized_bridge_home
-    finally:
-        tagger_provider.evict("ar")
-        shutil.rmtree(root)
+@pytest.fixture(scope="module")
+def ar_home(initialized_bridge_home: Path, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+    """A home with the pinned ``ar-calima-msa`` archive installed; the tagger loads it once."""
+    del initialized_bridge_home
+    with language_data_home(tmp_path_factory.mktemp("ar-home")) as home:
+        install_language_data("ar", home, required=True)
+        yield home
 
 
-def test_the_profile_loads_and_waits_for_its_language_data(initialized_bridge_home: Path) -> None:
+def test_the_profile_loads_and_waits_for_its_language_data(initialized_bridge_home: Path, tmp_path: Path) -> None:
+    del initialized_bridge_home
     from android_bridge.languages import unavailable_reason_code
     from anki_miner.languages.registry import available_languages
 
@@ -57,12 +55,13 @@ def test_the_profile_loads_and_waits_for_its_language_data(initialized_bridge_ho
     assert "ar" in available_languages()
     assert profile.code == "ar"
     assert profile.content_style.direction == "rtl"
-    assert not (initialized_bridge_home / "language_packs" / "ar").exists()
-    assert unavailable_reason_code(profile) == "language_data_required"
+    with language_data_home(tmp_path / "home") as home:
+        assert not (home / "language_packs" / "ar").exists()
+        assert unavailable_reason_code(profile) == "language_data_required"
 
 
-def test_the_tagger_tokenises_the_smoke_sentence(ar_pack: Path) -> None:
-    del ar_pack
+def test_the_tagger_tokenises_the_smoke_sentence(ar_home: Path) -> None:
+    del ar_home
     from anki_miner.languages.tagger_provider import get_tagger
 
     sentence = _profile().smoke_sentence
@@ -79,8 +78,8 @@ def test_the_tagger_tokenises_the_smoke_sentence(ar_pack: Path) -> None:
 
 
 @pytest.mark.parametrize("row", TOKEN_ROWS, ids=[f"{i:02d}-{row['pos1']}" for i, row in enumerate(TOKEN_ROWS)])
-def test_tokens_match_the_desktop_fixture(ar_pack: Path, row: dict) -> None:
-    del ar_pack
+def test_tokens_match_the_desktop_fixture(ar_home: Path, row: dict) -> None:
+    del ar_home
     from anki_miner.languages.ar.morphology import ArabicMinedForm
     from anki_miner.languages.tagger_provider import get_tagger
 
@@ -124,7 +123,10 @@ def test_switching_to_arabic_applies_its_scoped_defaults(initialized_bridge_home
     assert ar.language_stash["ja"]["subtitle_regex_filter"] == "ja-only"
 
 
-def test_an_extra_card_field_survives_from_the_snapshot_to_the_note(ar_pack: Path, tmp_path: Path) -> None:
+def test_an_extra_card_field_survives_from_the_snapshot_to_the_note(
+    ar_home: Path, initialized_bridge_home: Path, tmp_path: Path
+) -> None:
+    del ar_home
     from android_bridge.anki_adapter import _note_builder_kwargs
     from android_bridge.config_map import AndroidPaths, map_config_settings
     from anki_miner.models import CardPayload, MediaData
@@ -140,7 +142,7 @@ def test_an_extra_card_field_survives_from_the_snapshot_to_the_note(ar_pack: Pat
             "anki_note_type": "Basic",
             "anki_fields": {"root": "Root", "clitic_segmentation": "Segmentation"},
         },
-        AndroidPaths(ar_pack, tmp_path / "cache", tmp_path / "native"),
+        AndroidPaths(initialized_bridge_home, tmp_path / "cache", tmp_path / "native"),
     ).engine_config
     words, _index, _counts = profile.create_parser(config).parse_text_units(
         [ReadingUnit(text=profile.smoke_sentence, index=0, location_label="t")], False
@@ -169,7 +171,7 @@ def test_every_desktop_catalog_row_is_pinned_or_excluded(initialized_bridge_home
     )
 
 
-def test_the_installed_catalog_language_data_is_what_the_tagger_reads(ar_pack: Path) -> None:
+def test_the_installed_catalog_language_data_is_what_the_tagger_reads(ar_home: Path) -> None:
     from android_bridge.language_data import installed_language_data
     from android_bridge.languages import DOWNLOADABLE_DATA_COMPONENTS, unavailable_reason_code
     from android_bridge.resource_catalog import load_resource_catalog
@@ -182,5 +184,5 @@ def test_the_installed_catalog_language_data_is_what_the_tagger_reads(ar_pack: P
     path = component_path("ar", AR_DB_COMPONENT)
     assert path is not None
     assert (path / AR_DB_FILE).is_file()
-    assert installed_language_data(ar_pack) == ["ar-calima-msa"]
+    assert installed_language_data(ar_home) == ["ar-calima-msa"]
     assert unavailable_reason_code(_profile()) is None
