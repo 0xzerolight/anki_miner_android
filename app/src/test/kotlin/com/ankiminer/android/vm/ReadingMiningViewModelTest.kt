@@ -1717,6 +1717,37 @@ class ReadingMiningViewModelTest {
         }
     }
 
+    @Test
+    fun finishingANonFinalPageSendsItsSelectionThroughFinishCuration() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = curationRequest(CurationPage(0, 2, 0, 2))
+            val repository = RecordingReadingRepository(MiningRunState.Curating(request))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(1, repository.finishCalls)
+            assertEquals(0, repository.confirmCalls)
+            assertEquals(0L, repository.confirmedPageIndex)
+            assertEquals(listOf("candidate-1"), repository.confirmedSelection?.map { it.candidateId })
+        }
+
+    @Test
+    fun finishingTheFinalPageIsAnOrdinaryConfirmation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository(MiningRunState.Curating(curationRequest(page = null)))
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(0, repository.finishCalls)
+            assertEquals(1, repository.confirmCalls)
+        }
+
     private class RecordingReadingRepository(
         initialState: MiningRunState = MiningRunState.Idle,
         private val detachResult: Boolean = false,
@@ -1731,6 +1762,10 @@ class ReadingMiningViewModelTest {
         val detachedInputs = mutableListOf<ReadingMiningInput>()
         val cancelledTokens = mutableListOf<MiningCancellationToken>()
         val cancelledRunIds = mutableListOf<String>()
+        var confirmCalls = 0
+            private set
+        var finishCalls = 0
+            private set
         var confirmedPageIndex: Long? = null
             private set
         var confirmedSelection: List<CurationSelection>? = null
@@ -1771,10 +1806,27 @@ class ReadingMiningViewModelTest {
             pageIndex: Long?,
             knownCandidateIds: List<String>,
         ) {
+            confirmCalls += 1
             confirmedPageIndex = pageIndex
             confirmedSelection = selection
             confirmedKnownCandidateIds = knownCandidateIds
             confirmGate?.await()
+            if (mutableState.value is MiningRunState.Curating) {
+                mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            }
+        }
+
+        override suspend fun finishCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long,
+            knownCandidateIds: List<String>,
+        ) {
+            finishCalls += 1
+            confirmedPageIndex = pageIndex
+            confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
             }

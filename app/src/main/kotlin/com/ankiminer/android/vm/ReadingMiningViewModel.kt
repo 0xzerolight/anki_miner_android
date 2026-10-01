@@ -586,9 +586,15 @@ class ReadingMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
-    fun confirmCuration() {
+    fun confirmCuration() = submitCuration(finishRemainingPages = false)
+
+    /** Finish (N): this page with its selection, every later page with [] (D5). Cancel still sends null. */
+    fun finishCuration() = submitCuration(finishRemainingPages = true)
+
+    private fun submitCuration(finishRemainingPages: Boolean) {
         val runState = repository.state.value as? MiningRunState.Curating ?: return
         if (runState.pageSubmissionPending) return
+        val finishing = finishRemainingPages && !runState.request.isFinalPage
         var acceptedSelection: List<CurationSelection>? = null
         var acceptedDraft: SharedCurationDraft? = null
         var submittedPreviousPageCount: Int? = null
@@ -622,17 +628,27 @@ class ReadingMiningViewModel internal constructor(
             AppLog.i(
                 LogComponent.UI,
                 "command",
-                "command" to "curation",
+                "command" to if (finishing) "curation_finish" else "curation",
                 "outcome" to "ok",
             )
             try {
-                repository.confirmCuration(
-                    runId = runState.request.runId,
-                    requestId = runState.request.requestId,
-                    selection = selection,
-                    pageIndex = runState.request.page?.pageIndex,
-                    knownCandidateIds = draft.knownCandidateIds.toList(),
-                )
+                if (finishing) {
+                    repository.finishCuration(
+                        runId = runState.request.runId,
+                        requestId = runState.request.requestId,
+                        selection = selection,
+                        pageIndex = requireNotNull(runState.request.page).pageIndex,
+                        knownCandidateIds = draft.knownCandidateIds.toList(),
+                    )
+                } else {
+                    repository.confirmCuration(
+                        runId = runState.request.runId,
+                        requestId = runState.request.requestId,
+                        selection = selection,
+                        pageIndex = runState.request.page?.pageIndex,
+                        knownCandidateIds = draft.knownCandidateIds.toList(),
+                    )
+                }
                 if (!runState.request.isFinalPage) {
                     val previousPageSelectedCount =
                         requireNotNull(submittedPreviousPageCount)

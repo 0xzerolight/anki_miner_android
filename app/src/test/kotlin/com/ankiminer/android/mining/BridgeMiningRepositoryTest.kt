@@ -50,6 +50,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -556,6 +557,37 @@ class BridgeMiningRepositoryTest {
         assertEquals(emptyList<Boolean>(), harness.foreground.lease.cpuWakeEvents)
         harness.bridge.allowTerminal.countDown()
         awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `finish answers every later page with an empty selection and never shows it`() {
+        val harness = harness(pagedCuration = true)
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val first =
+            awaitState(harness.repository) {
+                (it as? MiningRunState.Curating)?.request?.page?.pageIndex == 0L
+            } as MiningRunState.Curating
+
+        runBlocking {
+            harness.repository.finishCuration(
+                first.request.runId,
+                first.request.requestId,
+                FIRST_SELECTION,
+                pageIndex = 0,
+            )
+        }
+
+        assertTrue(harness.bridge.intermediateCurationSubmitted.await(2, TimeUnit.SECONDS))
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        // The final page went back as [] (zero selected), not null (cancel).
+        assertEquals(emptyList<CurationSelection>(), harness.bridge.selection)
+        assertNotEquals(
+            1L,
+            (harness.repository.state.value as? MiningRunState.Curating)?.request?.page?.pageIndex,
+        )
+        assertEquals(1, harness.foreground.startCount.get())
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
     }
 
     @Test

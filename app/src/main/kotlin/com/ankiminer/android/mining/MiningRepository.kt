@@ -46,6 +46,21 @@ interface MiningRepository {
         knownCandidateIds: List<String> = emptyList(),
     )
 
+    /**
+     * Confirm the current page like [confirmCuration], then answer every later page of the run
+     * with an empty selection — empty, never null: null cancels the run, and the final page must
+     * still resolve so the staged known-word marks are committed (jobs.py resolve_curation).
+     */
+    suspend fun finishCuration(
+        runId: String,
+        requestId: String,
+        selection: List<CurationSelection>,
+        pageIndex: Long,
+        knownCandidateIds: List<String> = emptyList(),
+    ) {
+        throw MiningCommandException("Finishing curation early is not supported")
+    }
+
     /** Cancel the whole run, including a worker parked for curation. */
     suspend fun cancel(runId: String)
 

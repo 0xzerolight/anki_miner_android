@@ -3770,6 +3770,40 @@ class MediaMiningViewModelTest {
         }
     }
 
+    @Test
+    fun finishingANonFinalPageSendsItsSelectionThroughFinishCuration() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request =
+                curationRequest().copy(
+                    page = CurationPage(pageIndex = 0, pageCount = 2, candidateStart = 0, totalCandidates = 2),
+                )
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(1, repository.finishCalls)
+            assertEquals(0, repository.confirmCalls)
+            assertEquals(0L, repository.confirmedPageIndex)
+            assertEquals(listOf("candidate"), repository.confirmedSelection?.map { it.candidateId })
+        }
+
+    @Test
+    fun finishingTheFinalPageIsAnOrdinaryConfirmation() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository(MiningRunState.Curating(curationRequest()))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.finishCuration()
+            runCurrent()
+
+            assertEquals(0, repository.finishCalls)
+            assertEquals(1, repository.confirmCalls)
+        }
+
     private class RecordingRepository(
         initialState: MiningRunState = MiningRunState.Idle,
         private val resetGate: CompletableDeferred<Unit>? = null,
@@ -3790,6 +3824,8 @@ class MediaMiningViewModelTest {
         var cancelCalls = 0
             private set
         var confirmCalls = 0
+            private set
+        var finishCalls = 0
             private set
         var confirmedPageIndex: Long? = null
             private set
@@ -3843,6 +3879,22 @@ class MediaMiningViewModelTest {
             if (mutableState.value is MiningRunState.Curating) {
                 mutableState.value =
                     MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
+            }
+        }
+
+        override suspend fun finishCuration(
+            runId: String,
+            requestId: String,
+            selection: List<CurationSelection>,
+            pageIndex: Long,
+            knownCandidateIds: List<String>,
+        ) {
+            finishCalls += 1
+            confirmedPageIndex = pageIndex
+            confirmedSelection = selection
+            confirmedKnownCandidateIds = knownCandidateIds
+            if (mutableState.value is MiningRunState.Curating) {
+                mutableState.value = MiningRunState.Running(runId, MiningProgress(0, 0, "Running"))
             }
         }
 

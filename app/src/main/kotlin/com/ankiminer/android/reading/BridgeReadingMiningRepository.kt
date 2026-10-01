@@ -109,6 +109,21 @@ internal interface ReadingMiningRepository {
         knownCandidateIds: List<String> = emptyList(),
     )
 
+    /**
+     * Confirm the current page like [confirmCuration], then answer every later page of the run
+     * with an empty selection — empty, never null: null cancels the run, and the final page must
+     * still resolve so the staged known-word marks are committed (jobs.py resolve_curation).
+     */
+    suspend fun finishCuration(
+        runId: String,
+        requestId: String,
+        selection: List<CurationSelection>,
+        pageIndex: Long,
+        knownCandidateIds: List<String> = emptyList(),
+    ) {
+        throw MiningCommandException("Finishing curation early is not supported")
+    }
+
     suspend fun cancel(runId: String)
 
     suspend fun cancel(token: MiningCancellationToken) {
@@ -202,6 +217,9 @@ internal class BridgeReadingMiningRepository(
         var runId: String? = null
         var progress: MiningProgress? = null
         var curation: CurationRequest? = null
+
+        /** Set by finishCuration: every later page is answered with [] and never shown. */
+        var finishRemainingPages = false
         var terminalCallback: BridgeMessage.Terminal? = null
         var stickyFault: ProtocolFault? = null
         var cancellationDispatchFault: ProtocolFault? = null
@@ -336,6 +354,25 @@ internal class BridgeReadingMiningRepository(
         selection: List<CurationSelection>,
         pageIndex: Long?,
         knownCandidateIds: List<String>,
+    ) = submitCuration(runId, requestId, selection, pageIndex, knownCandidateIds, finishRemainingPages = false)
+
+    override suspend fun finishCuration(
+        runId: String,
+        requestId: String,
+        selection: List<CurationSelection>,
+        pageIndex: Long,
+        knownCandidateIds: List<String>,
+    ) = submitCuration(runId, requestId, selection, pageIndex, knownCandidateIds, finishRemainingPages = true)
+
+    @Suppress("LongParameterList")
+    private fun submitCuration(
+        runId: String,
+        requestId: String,
+        selection: List<CurationSelection>,
+        pageIndex: Long?,
+        knownCandidateIds: List<String>,
+        finishRemainingPages: Boolean,
+        publishPage: Boolean = true,
     ) {
         val request =
             synchronized(monitor) {
@@ -365,7 +402,9 @@ internal class BridgeReadingMiningRepository(
                 if (run.curation !== request || run.phase != Phase.CURATING) {
                     throw MiningCommandException("The curation response is stale")
                 }
-                resumingLease = run.foregroundLease
+                if (finishRemainingPages) run.finishRemainingPages = true
+                // An auto-answered page was never parked (acceptCuration), so it has no wait to end.
+                resumingLease = run.foregroundLease.takeIf { publishPage }
                 run.hasSelectedCandidate = run.hasSelectedCandidate || selection.isNotEmpty()
                 if (request.isFinalPage) {
                     transition = run.transition(Phase.PROMOTING, "curation_final")
@@ -375,12 +414,14 @@ internal class BridgeReadingMiningRepository(
                     mutableState.value = MiningRunState.Running(runId, progress)
                 } else {
                     transition = run.transition(Phase.ADVANCING, "curation_page")
-                    mutableState.value =
-                        MiningRunState.Curating(
-                            request,
-                            pageSubmissionPending = true,
-                            pageImage = run.imageArchiveCachePath?.let(::CurationPageImageBinding),
-                        )
+                    if (publishPage) {
+                        mutableState.value =
+                            MiningRunState.Curating(
+                                request,
+                                pageSubmissionPending = true,
+                                pageImage = run.imageArchiveCachePath?.let(::CurationPageImageBinding),
+                            )
+                    }
                 }
                 run.generation to run.hasSelectedCandidate
             }
@@ -1583,7 +1624,8 @@ internal class BridgeReadingMiningRepository(
                     }
                     else -> throw IllegalStateException("Curation request is duplicated or out of order")
                 }
-                parkingLease = run.foregroundLease
+                // A page answered for Finish (N) is not a wait: nothing parks for it.
+                parkingLease = run.foregroundLease.takeUnless { run.finishRemainingPages }
                 run.phase
             }
         // The engine is parked on a threading.Event until the user answers. Nothing is processed
@@ -1595,6 +1637,7 @@ internal class BridgeReadingMiningRepository(
         // before a confirm can even be admitted, and its resume can only follow.
         parkingLease?.parkCpuWake()
         var transition: PhaseTransition? = null
+        var autoAnswer: CurationRequest? = null
         synchronized(monitor) {
             val run = activeFor(generation) ?: throw IllegalStateException("Curation request is stale")
             // Cancellation is the only thing that can move this run while the lease call is out;
@@ -1602,14 +1645,38 @@ internal class BridgeReadingMiningRepository(
             if (run.cancelRequested || run.phase != admittedPhase) return
             transition = run.transition(Phase.CURATING, "curation_needed")
             run.curation = message.request
-            mutableState.value =
-                MiningRunState.Curating(
-                    message.request,
-                    pageSubmissionPending = false,
-                    pageImage = run.imageArchiveCachePath?.let(::CurationPageImageBinding),
-                )
+            if (run.finishRemainingPages) {
+                autoAnswer = message.request
+            } else {
+                mutableState.value =
+                    MiningRunState.Curating(
+                        message.request,
+                        pageSubmissionPending = false,
+                        pageImage = run.imageArchiveCachePath?.let(::CurationPageImageBinding),
+                    )
+            }
         }
         transition.emit()
+        val skipped = autoAnswer
+        if (skipped != null) executeControl(generation) { answerSkippedPage(skipped) }
+    }
+
+    /** A page after Finish (N): answered [] — zero selected, never null, which would cancel the run. */
+    private fun answerSkippedPage(request: CurationRequest) {
+        try {
+            submitCuration(
+                runId = request.runId,
+                requestId = request.requestId,
+                selection = emptyList(),
+                pageIndex = request.page?.pageIndex,
+                knownCandidateIds = emptyList(),
+                finishRemainingPages = false,
+                publishPage = false,
+            )
+        } catch (failure: MiningCommandException) {
+            // A cancellation that won the race already owns the run's terminal state.
+            AppLog.ignored(LogComponent.READING, "curation.finish", "page_superseded", failure)
+        }
     }
 
     private fun captureTerminal(
