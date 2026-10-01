@@ -19,6 +19,7 @@ first).
 from __future__ import annotations
 
 import logging
+import posixpath
 import stat
 import zipfile
 from collections.abc import Mapping
@@ -34,7 +35,9 @@ logger = logging.getLogger(__name__)
 
 #: Executable members the extraction never writes (decision 2). A versioned
 #: shared object (``libfoo.so.1``) is caught by the ``.so.`` infix. Matched on
-#: the lowercased file name, so ``a.PY`` and ``lib.So.1`` are code too.
+#: every lowercased component of the normalised path, so ``a.PY``,
+#: ``lib.So.1`` and ``evil.py/junk/..`` (which the extractor writes as
+#: ``evil.py``) are code too.
 _CODE_SUFFIXES = (".py", ".pyc", ".so")
 
 
@@ -42,9 +45,27 @@ def _fail(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
 
 
+def _normalised(name: str) -> str:
+    """*name* as the extractor's ``Path.resolve()`` lands it: separators unified, ``.``/``..`` collapsed.
+
+    Lexical collapsing equals ``resolve()`` here: staging is a fresh directory
+    and the extractor never creates a symlink.
+    """
+
+    return posixpath.normpath(name.replace("\\", "/"))
+
+
 def is_code_member(name: str) -> bool:
-    base = PurePosixPath(name.replace("\\", "/")).name.lower()
-    return base.endswith(_CODE_SUFFIXES) or ".so." in base
+    """True when any component of the normalised member path is named like code."""
+
+    return any(part.endswith(_CODE_SUFFIXES) or ".so." in part for part in _normalised(name).lower().split("/") if part)
+
+
+def escapes(target: str) -> bool:
+    """True when the path the extractor writes would leave its directory."""
+
+    path = _normalised(target)
+    return path.startswith("/") or path == ".." or path.startswith("../")
 
 
 def _vendored_component(language: str, resource: LanguageDataResource) -> tuple[Any, Any]:
@@ -91,15 +112,22 @@ def _refuse_code_members(archive: Path, spec: Any) -> None:
 
     try:
         with zipfile.ZipFile(archive) as bundle:
-            names = [name for name in bundle.namelist() if not name.endswith("/")]
+            # Directory entries too: a ``x/evil.py/./`` entry is judged like the file it names.
+            names = bundle.namelist()
     except (OSError, zipfile.BadZipFile) as exc:
         raise _fail("language_data_install_failed", "The language data archive is not a valid zip") from exc
-    code = [name for name in names if (_wanted(name, spec) or _wanted_root(name, spec)) and is_code_member(name)]
-    if code:
+    refused = []
+    for name in names:
+        target = _wanted(name, spec) or _wanted_root(name, spec)
+        if target is not None and (is_code_member(name) or escapes(target)):
+            refused.append(name)
+    if refused:
         logger.warning(
-            "language_data_code_refused outcome=fail members=%d first=%s", len(code), PurePosixPath(code[0]).name
+            "language_data_code_refused outcome=fail members=%d first=%s",
+            len(refused),
+            PurePosixPath(_normalised(refused[0])).name,
         )
-        raise _fail("language_data_rejected", "The language data archive contains executable code")
+        raise _fail("language_data_rejected", "The language data archive contains executable code or an escaping path")
 
 
 def install_language_data(payload: Mapping[str, object]) -> str:

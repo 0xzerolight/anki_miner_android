@@ -111,11 +111,19 @@ def test_the_catalog_language_data_is_exactly_the_downloadable_component_table()
         ("pkg/module.PYC", True),
         ("lib.SO", True),
         ("lib.So.1", True),
-        # Traversal and absolute spellings are judged by their file name.
+        # Traversal and absolute spellings are judged by their normalised path.
         ("../x.py", True),
         ("/abs/evil.py", True),
         ("hazm/data/../../evil.So", True),
         ("x\\evil.PY", True),
+        # A trailing ".." or "." the extractor's resolve() collapses: it writes evil.py / b.so.
+        ("evil.py/junk/..", True),
+        ("lib.so/x/..", True),
+        ("x/evil.py/junk/..", True),
+        ("x/evil.PY/./", True),
+        ("x/a.so/../b.so", True),
+        # Any component named like code, not only the last.
+        ("x.so/data.bin", True),
         ("morphology.db", False),
         ("hazm/data/words.dat", False),
         ("LICENSE", False),
@@ -124,6 +132,22 @@ def test_the_catalog_language_data_is_exactly_the_downloadable_component_table()
 )
 def test_code_members_are_recognised_by_name(name: str, code: bool) -> None:
     assert language_data.is_code_member(name) is code
+
+
+@pytest.mark.parametrize(
+    ("target", "escaping"),
+    [
+        ("../x.dat", True),
+        ("a/../../x.dat", True),
+        ("/abs/x.dat", True),
+        ("..", True),
+        ("a/../b.dat", False),
+        ("sub/x/..", False),
+        ("words.dat", False),
+    ],
+)
+def test_an_extraction_target_that_leaves_its_directory_is_recognised(target: str, escaping: bool) -> None:
+    assert language_data.escapes(target) is escaping
 
 
 def test_language_data_cannot_be_recommended_or_pinned_twice() -> None:
@@ -307,6 +331,12 @@ def test_every_data_component_installs_where_the_engine_looks_for_it(
         "lib.SO",
         "libs/lib.So.1",
         "../x.py",
+        "evil.py/junk/..",
+        "lib.so/x/..",
+        "x/evil.py/junk/..",
+        "x/evil.PY/./",
+        "x/a.so/../b.so",
+        "../escape.dat",
     ],
 )
 def test_an_archive_with_a_code_member_is_refused_before_anything_lands(
@@ -385,3 +415,31 @@ def test_installing_arabic_data_makes_arabic_available(
     _install(pinned, archive)
 
     assert unavailable_reason_code(get_profile("ar")) is None
+
+
+def test_the_vendored_extractor_alone_would_write_a_collapsed_code_member_the_filter_refuses(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``hazm/data/evil.py/junk/..`` is written as ``evil.py`` by resolve(); only the pre-filter stops it."""
+    from anki_miner.services import language_pack_installer
+    from anki_miner.services.pack_installer import _extract_component
+
+    code, entry = next((code, entry) for code, entry in _data_entries() if entry.install.member_prefix)
+    trick = entry.install.member_prefix + "evil.py/junk/.."
+    archive = _fixture_archive(tmp_path / "download.part", entry, extra={trick: b"import os\n"})
+    pinned = _pin_to_fixture(monkeypatch, code, entry, archive)
+
+    probe_root = tmp_path / "probe"
+    probe_root.mkdir()
+    component = next(
+        c for c in language_pack_installer.load_pack(code).components if c.import_name == entry.import_name
+    )
+    _extract_component(archive, probe_root, component, component.universal)
+    assert (probe_root / entry.import_name / "evil.py").is_file(), "the probe must show what the filter prevents"
+
+    payload = _install(pinned, archive)
+
+    assert payload["code"] == "language_data_rejected"
+    assert not (home / "language_packs").exists() or not any(
+        path.is_file() for path in (home / "language_packs").rglob("*")
+    )
