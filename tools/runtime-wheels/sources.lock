@@ -547,6 +547,25 @@
       "url": "https://files.pythonhosted.org/packages/43/75/fe6b7bbd0dea530a001b0e24c331b21a0be2786e402abf3c57f5dce43d4b/preshed-3.0.13.tar.gz",
       "version": "3.0.13"
     },
+    "pycantonese": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "pycantonese-5.0.0-cargo-vendor.tar.gz",
+        "sha256": "07be6ffcaf33237840e5abaada9a0a6d4f84bf07887b18de307da1ae072ef31c"
+      },
+      "filename": "pycantonese-5.0.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pycantonese-5.0.0/LICENSE.txt": "5e481f34b24f91466401e4b0606db7927f7f2f8e283cbc3a87660aee3074bf83"
+        }
+      },
+      "package": "pycantonese",
+      "sha256": "8655ba3cd891b528d6b070245abed55b20a08d673f1056fcf9afad0adbc47c1d",
+      "url": "https://files.pythonhosted.org/packages/09/09/32e8000e39eb9ff034e1d55a86536a14abab90f2f4df176129fd90c43c29/pycantonese-5.0.0.tar.gz",
+      "version": "5.0.0"
+    },
     "pydantic": {
       "filename": "pydantic-2.13.5-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -676,6 +695,25 @@
       "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
       "url": "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl",
       "version": "15.0.0"
+    },
+    "rustling": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "rustling-0.9.0-cargo-vendor.tar.gz",
+        "sha256": "cc1f8f8284afbc927d74bb56a81a88f64b2843b5716c18aef30c290d6411ce1d"
+      },
+      "filename": "rustling-0.9.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "rustling-0.9.0/LICENSE.md": "eb3bc37c450e7fee85d4fd4abd8b844555a70801ec6eb617499f240fec32b3c0"
+        }
+      },
+      "package": "rustling",
+      "sha256": "c698de9a650d6675673f1ead4743a86eb6de0d42c82be479f036a395bf4f27c6",
+      "url": "https://files.pythonhosted.org/packages/98/7c/c7324e7d463e31d313160e8f54273e3729482b3851ac344867612cdbc5f1/rustling-0.9.0.tar.gz",
+      "version": "0.9.0"
     },
     "shellingham": {
       "filename": "shellingham-1.5.4-py2.py3-none-any.whl",
@@ -831,6 +869,40 @@
       "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
       "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
       "version": "0.4.4"
+    },
+    "underthesea": {
+      "filename": "underthesea-9.5.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "Apache-2.0",
+        "members": {
+          "underthesea-9.5.0.dist-info/licenses/LICENSE": "05e32ccfed98673da93f046564baf9c7c3403826b8d8a5570fa9c1793fe8881b"
+        }
+      },
+      "package": "underthesea",
+      "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+      "url": "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl",
+      "version": "9.5.0"
+    },
+    "underthesea-core": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "underthesea_core-3.3.2-cargo-vendor.tar.gz",
+        "sha256": "2009750d9ebecb3244ce59e2dc3a66cf538d9fc561892cb5a5536f4c1ebed394"
+      },
+      "filename": "underthesea_core-3.3.2.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "carried": {
+          "LICENSE": "05e32ccfed98673da93f046564baf9c7c3403826b8d8a5570fa9c1793fe8881b"
+        },
+        "expression": "Apache-2.0",
+        "members": {}
+      },
+      "package": "underthesea-core",
+      "sha256": "7019f8f6d13f14556c032c63a9e5f77e107426654edce5e92d6513bb8ee8141a",
+      "url": "https://files.pythonhosted.org/packages/f1/62/a67e1ce6a0a7cf5a050d5debe3f4e1dad511bdf625fc4b169721c27da4be/underthesea_core-3.3.2.tar.gz",
+      "version": "3.3.2"
     },
     "urllib3": {
       "filename": "urllib3-2.7.0-py3-none-any.whl",

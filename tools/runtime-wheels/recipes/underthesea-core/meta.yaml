@@ -1,0 +1,19 @@
+# The sdist ships no licence file. LICENSE here is the Apache-2.0 text from the
+# upstream repository root (undertheseanlp/underthesea@4da7f5e3, sha256
+# 05e32ccfed98673da93f046564baf9c7c3403826b8d8a5570fa9c1793fe8881b).
+package:
+  name: underthesea_core
+  version: "3.3.2"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/underthesea-core
+
+requirements:
+  build:
+    - rust
+    - maturin 1.15.0
+  host:
+    - python

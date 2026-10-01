@@ -67,6 +67,7 @@ FAMILIES = {
     "f1": "Turkish (tr): zeyrek over nltk and regex",
     "f2": "spaCy languages, Russian and Ukrainian (pymorphy3)",
     "f3": "Korean (ko): kiwipiepy",
+    "f4": "Vietnamese (vi): underthesea; Cantonese (yue): pycantonese over rustling",
 }
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
@@ -126,6 +127,8 @@ COMMON_SPECS = {
     "wasabi": ("1.1.3", "wasabi-1.1.3-py3-none-any.whl"),
     "weasel": ("1.0.0", "weasel-1.0.0-py3-none-any.whl"),
     "wrapt": ("2.4.1", "wrapt-2.4.1-py3-none-any.whl"),
+    # F4: underthesea's tokenize and tag path imports joblib and cloudpickle.
+    "underthesea": ("9.5.0", "underthesea-9.5.0-py3-none-any.whl"),
 }
 
 NATIVE_SPECS = {
@@ -262,6 +265,27 @@ NATIVE_SPECS = {
         "abi": "cp312",
         "source": "kiwipiepy",
     },
+    "pycantonese": {
+        "version": "5.0.0",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "pycantonese",
+    },
+    "rustling": {
+        "version": "0.9.0",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "rustling",
+    },
+    "underthesea-core": {
+        "version": "3.3.2",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "underthesea-core",
+    },
 }
 
 SOURCE_SPECS = {
@@ -330,6 +354,10 @@ SOURCE_SPECS = {
     "srsly": ("runtime-source", "srsly", "2.5.3"),
     "thinc": ("runtime-source", "thinc", "8.3.13"),
     "kiwipiepy": ("runtime-source", "kiwipiepy", "0.23.2"),
+    "pycantonese": ("runtime-source", "pycantonese", "5.0.0"),
+    "rustling": ("runtime-source", "rustling", "0.9.0"),
+    "underthesea": ("prebuilt-wheel", "underthesea", "9.5.0"),
+    "underthesea-core": ("runtime-source", "underthesea-core", "3.3.2"),
 }
 
 HOST_REQUIREMENTS = {
@@ -484,6 +512,11 @@ MANDATORY_DEPENDENCIES = {
     # numpy is declared but never imported by Kiwi().tokenize; the model is
     # downloaded data. Chaquopy installs with --no-deps.
     "kiwipiepy": {"chaquopy-libcxx", "dataclasses", "kiwipiepy-model", "numpy", "tqdm"},
+    "pycantonese": {"rustling"},
+    "rustling": set(),
+    # Only underthesea-core and joblib are imported on the tokenize and tag path.
+    "underthesea": {"click", "huggingface-hub", "joblib", "pyyaml", "requests", "tqdm", "underthesea-core"},
+    "underthesea-core": set(),
 }
 
 NATIVE_REQUIRED_PATHS = {
@@ -513,6 +546,9 @@ NATIVE_REQUIRED_PATHS = {
     "srsly": {"srsly/ujson/ujson.so"},
     "thinc": {"thinc/backends/numpy_ops.so"},
     "kiwipiepy": {"_kiwipiepy.so"},
+    "pycantonese": {"pycantonese/_rust.so"},
+    "rustling": {"rustling/_lib_name.so"},
+    "underthesea-core": {"underthesea_core/underthesea_core.so"},
 }
 
 REQUIRED_NEEDED = {
@@ -547,6 +583,9 @@ REQUIRED_NEEDED = {
     "thinc": {"libc++_shared.so", "libpython3.12.so"},
     # Kiwi's bundled cpuinfo logs through liblog.
     "kiwipiepy": {"libc++_shared.so", "liblog.so", "libpython3.12.so"},
+    "pycantonese": {"libpython3.12.so"},
+    "rustling": {"libpython3.12.so"},
+    "underthesea-core": {"libpython3.12.so"},
 }
 
 ANDROID_SYSTEM_LIBS = {
@@ -644,6 +683,7 @@ FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
         "wrapt",
     ),
     "f3": ("kiwipiepy", "tqdm"),
+    "f4": ("cloudpickle", "joblib", "pycantonese", "rustling", "underthesea", "underthesea-core"),
 }
 PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
     package: tuple(family for family, packages in FAMILY_PACKAGES.items() if package in packages)
@@ -655,6 +695,33 @@ PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
 REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
     # nltk's doctest suite: 1.6 MB the tr path never imports.
     "nltk": ("nltk/", ("test/",)),
+    # Desktop yue/pack.py: the CTCPC and Common Voice training corpora, the
+    # GPL-3 CantoMap data and the training scripts never ship.
+    "pycantonese": (
+        "pycantonese/",
+        (
+            "data/ctcpc/",
+            "data/cantomap/",
+            "data/common_voice/",
+            "word_segmentation/train_segmenter.py",
+            "pos_tagging/train_tagger.py",
+        ),
+    ),
+    # Desktop vi/pack.py: what the tokenize and tag path never imports.
+    "underthesea": (
+        "underthesea/",
+        (
+            "address/",
+            "agent/",
+            "models/dependency_parser.py",
+            "modules/",
+            "pipeline/dependency_parse/",
+            "pipeline/translate/",
+            "pipeline/tts/",
+            "trainers/",
+            "utils/",
+        ),
+    ),
 }
 # Pure packages published only as an sdist: the member prefix that becomes the
 # wheel's package directory. The wheel carries the sdist's PKG-INFO as METADATA.
