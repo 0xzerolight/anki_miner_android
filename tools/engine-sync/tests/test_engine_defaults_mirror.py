@@ -52,15 +52,15 @@ MIRRORED_FIELDS = {
     "MAX_SENTENCE_DURATION_SECONDS": "max_sentence_duration_seconds",
     "MAX_SENTENCE_CHARACTERS": "max_sentence_chars",
     "MAX_FREQUENCY_RANK": "max_frequency_rank",
+    "MIN_FREQUENCY_RANK": "min_frequency_rank",
+    "FREQUENCY_KEEP_UNRANKED": "frequency_keep_unranked",
+    "KNOWN_WORDS_MATCH_KANA_VARIANTS": "known_words_match_kana_variants",
+    "STRICT_CARD_ORDER": "strict_card_order",
+    "MERGE_INCOMPLETE_CUES": "merge_incomplete_cues",
     "READING_MINIMUM_OCCURRENCE": "reading_min_occurrence",
     "MAX_PARALLEL_WORKERS": "max_parallel_workers",
     "PITCH_CATEGORY_FORMAT": "pitch_category_format",
 }
-
-# Constants EngineDefaults.kt declares for an Android-only setting, with no engine field to
-# mirror. USE_SENTENCE_LENGTH_FILTER outlived the engine's use_sentence_length_filter: the bridge
-# still reads the toggle as a legacy input until the Android setting goes too.
-ANDROID_LOCAL_CONSTANTS = frozenset({"USE_SENTENCE_LENGTH_FILTER"})
 
 # Kotlin enum entry -> the wire string the engine stores. Keeps the two enum-valued mirrors
 # comparable with the plain literals.
@@ -144,14 +144,9 @@ class EngineDefaultsMirrorTests(unittest.TestCase):
             + "\n".join(mismatches),
         )
 
-    def test_android_local_constant_has_no_engine_field(self) -> None:
-        """Local only while the engine lacks the field; if it returns, mirror it again."""
-        self.assertIn("USE_SENTENCE_LENGTH_FILTER", _kotlin_defaults())
-        self.assertNotIn("use_sentence_length_filter", _engine_defaults())
-
     def test_mirror_declares_nothing_the_map_does_not_cover(self) -> None:
         """A new constant must be mapped, or it is guarded by nothing."""
-        unmapped = sorted(set(_kotlin_defaults()) - set(MIRRORED_FIELDS) - ANDROID_LOCAL_CONSTANTS)
+        unmapped = sorted(set(_kotlin_defaults()) - set(MIRRORED_FIELDS))
         self.assertEqual(
             [],
             unmapped,

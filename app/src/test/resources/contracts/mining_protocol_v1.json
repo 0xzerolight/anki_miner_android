@@ -9,6 +9,8 @@
         "payload": {
           "videoPath": "/proc/self/fd/41",
           "subtitlePath": "/cache/subtitle.SRT",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode 1",
           "seriesName": "Series",
           "sourceLabel": "Series — Episode 1",
@@ -31,6 +33,31 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.vtt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "video run with a secondary subtitle and negative offset",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": "/cache/secondary.EN.Ass",
+          "secondarySubtitleOffsetMs": -300000,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -356,6 +383,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "audioTrackOverride": null,
@@ -376,6 +405,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -396,6 +427,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -418,6 +451,8 @@
         "payload": {
           "videoPath": "video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -439,6 +474,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.txt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -460,6 +497,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -481,6 +520,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -504,6 +545,8 @@
         "payload": {
           "videoPath": "/video.mkv",
           "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
           "episodeName": "Episode",
           "seriesName": "Series",
           "sourceLabel": null,
@@ -515,6 +558,165 @@
             "settings": {
               "audio_bitrate": 9223372036854775808
             }
+          }
+        }
+      }
+    },
+    {
+      "name": "video request missing secondary subtitle path",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "video request missing secondary subtitle offset",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "secondary subtitle path must be absolute",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": "secondary.srt",
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "secondary subtitle suffix must be preserved",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": "/secondary.txt",
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "secondary subtitle offset beyond five minutes",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 300001,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "secondary subtitle offset must be an integer",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 1.5,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
+          }
+        }
+      }
+    },
+    {
+      "name": "secondary subtitle offset cannot be null",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": null,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {}
           }
         }
       }

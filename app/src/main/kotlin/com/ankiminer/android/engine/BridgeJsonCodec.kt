@@ -970,6 +970,8 @@ object BridgeJsonCodec {
             setOf(
                 "videoPath",
                 "subtitlePath",
+                "secondarySubtitlePath",
+                "secondarySubtitleOffsetMs",
                 "episodeName",
                 "seriesName",
                 "sourceLabel",
@@ -981,13 +983,14 @@ object BridgeJsonCodec {
             ),
             "mining.video.run",
         )
-        val subtitlePath = absolutePath(payload.getValue("subtitlePath"), "subtitlePath")
-        if (!subtitlePath.lowercase().let { it.endsWith(".ass") || it.endsWith(".srt") || it.endsWith(".ssa") || it.endsWith(".vtt") }) {
-            fail(BridgeProtocolCategory.INVALID_VALUE, "subtitlePath must preserve a supported suffix")
+        val secondaryPath = payload.getValue("secondarySubtitlePath")
+        val secondaryOffsetMs = integral(payload.getValue("secondarySubtitleOffsetMs"), "secondarySubtitleOffsetMs")
+        if (secondaryOffsetMs !in VideoMiningWireRequest.SECONDARY_SUBTITLE_OFFSET_MS) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "secondarySubtitleOffsetMs is outside -300000 through 300000")
         }
         return VideoMiningWireRequest(
             absolutePath(payload.getValue("videoPath"), "videoPath"),
-            subtitlePath,
+            subtitleFilePath(payload.getValue("subtitlePath"), "subtitlePath"),
             emptyableCanonicalLabel(payload.getValue("episodeName"), "episodeName"),
             canonicalLabel(payload.getValue("seriesName"), "seriesName"),
             nullableCanonicalLabel(payload.getValue("sourceLabel"), "sourceLabel"),
@@ -996,8 +999,25 @@ object BridgeJsonCodec {
             absolutePath(payload.getValue("cacheDir"), "cacheDir"),
             absolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir"),
             readConfigSnapshot(objectValue(payload.getValue("configSnapshot"), "configSnapshot")),
+            secondarySubtitlePath =
+                if (secondaryPath is BridgeJsonValue.Null) {
+                    null
+                } else {
+                    subtitleFilePath(secondaryPath, "secondarySubtitlePath")
+                },
+            secondarySubtitleOffsetMs = secondaryOffsetMs,
         )
     }
+
+    private fun subtitleFilePath(
+        value: BridgeJsonValue,
+        context: String,
+    ): String =
+        absolutePath(value, context).also { path ->
+            if (!path.lowercase().let { it.endsWith(".ass") || it.endsWith(".srt") || it.endsWith(".ssa") || it.endsWith(".vtt") }) {
+                fail(BridgeProtocolCategory.INVALID_VALUE, "$context must preserve a supported suffix")
+            }
+        }
 
     private fun readReadingRequest(payload: Map<String, BridgeJsonValue>): ReadingMiningWireRequest {
         requireExact(
@@ -1174,12 +1194,13 @@ object BridgeJsonCodec {
                 "screenshot_animated_quality", "screenshot_animated_match_audio",
                 "subtitle_offset", "allowed_pos", "excluded_subtypes", "excluded_wordsets",
                 "dictionary_chain", "jisho_delay", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
-                "max_frequency_rank", "frequency_chain", "pitch_chain", "use_known_words_db",
+                "max_frequency_rank", "min_frequency_rank", "frequency_keep_unranked", "frequency_chain", "pitch_chain",
+                "use_known_words_db", "known_words_match_kana_variants",
                 "exclude_hiragana_only_words",
                 "exclude_katakana_only_words", "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist",
                 "subtitle_regex_filter", "subtitle_regex_replacement", "use_subtitle_regex_filter",
-                "bold_target_in_sentence",
-                "deduplicate_sentences", "use_i_plus_one_filter", "use_sentence_length_filter",
+                "bold_target_in_sentence", "strict_card_order", "merge_incomplete_cues",
+                "deduplicate_sentences", "use_i_plus_one_filter",
                 "max_sentence_duration_seconds", "max_sentence_chars", "reading_min_occurrence", "max_parallel_workers",
             )
         if (!known.containsAll(settings.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "config settings contain an unknown field")
@@ -1207,7 +1228,7 @@ object BridgeJsonCodec {
             "audio_format" -> requireOneOf(text(value, key), setOf("mp3", "opus"), key)
             "pitch_category_format" -> requireOneOf(text(value, key), setOf("jp", "romaji"), key)
             "audio_bitrate", "reading_min_occurrence" -> if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
-            "max_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
+            "max_frequency_rank", "min_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
             "max_parallel_workers" -> if (integral(value, key) !in 1L..20L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 20")
             "screenshot_animated", "screenshot_animated_match_audio" -> bool(value, key)
             "screenshot_animated_format" -> requireOneOf(text(value, key), setOf("avif", "webp"), key)
@@ -1223,7 +1244,8 @@ object BridgeJsonCodec {
             "exclude_hiragana_only_words", "exclude_katakana_only_words",
             "use_blacklist", "use_whitelist", "use_subtitle_regex_filter",
             "bold_target_in_sentence", "deduplicate_sentences", "use_i_plus_one_filter",
-            "use_sentence_length_filter" -> bool(value, key)
+            "frequency_keep_unranked", "known_words_match_kana_variants", "strict_card_order", "merge_incomplete_cues",
+            -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
             "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed", "jisho"))
             "expression_audio_chain" -> validateProviderArray(value, key, "kind", setOf("pack"))
@@ -1375,6 +1397,9 @@ object BridgeJsonCodec {
     ) {
         generator.writeStringField("videoPath", request.videoPath)
         generator.writeStringField("subtitlePath", request.subtitlePath)
+        generator.writeFieldName("secondarySubtitlePath")
+        writeNullableString(generator, request.secondarySubtitlePath)
+        generator.writeNumberField("secondarySubtitleOffsetMs", request.secondarySubtitleOffsetMs)
         generator.writeStringField("episodeName", request.episodeName)
         generator.writeStringField("seriesName", request.seriesName)
         generator.writeFieldName("sourceLabel")
@@ -1920,6 +1945,7 @@ object BridgeJsonCodec {
             "word", "sentence", "definition", "glossary", "picture", "audio", "expression_furigana",
             "expression_reading", "sentence_furigana", "sentence_reading", "pitch_position", "pitch_category",
             "pitch_graph", "pitch_text", "frequency", "frequency_sort", "source", "expression_audio",
+            "sentence_translation",
         )
     private val MARKER_FIELDS = setOf("word_and_sentence", "click", "sentence", "audio")
 

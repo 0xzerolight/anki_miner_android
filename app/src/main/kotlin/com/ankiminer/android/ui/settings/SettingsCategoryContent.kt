@@ -969,11 +969,6 @@ private fun LazyListScope.filteringSettings(
                 draft.iPlusOne,
                 EngineDefaults.USE_I_PLUS_ONE_FILTER,
             ) { callbacks.onDraftChange(draft.copy(iPlusOne = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_sentence_length),
-                draft.sentenceLength,
-                EngineDefaults.USE_SENTENCE_LENGTH_FILTER,
-            ) { callbacks.onDraftChange(draft.copy(sentenceLength = it)) }
             NumericField(
                 draft.maxDuration,
                 { callbacks.onDraftChange(draft.copy(maxDuration = it)) },

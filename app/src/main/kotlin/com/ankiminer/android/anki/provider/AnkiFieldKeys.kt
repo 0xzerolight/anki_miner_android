@@ -11,7 +11,7 @@ internal object AnkiFieldKeys {
     /** The word/expression key. By contract it maps to the note type's FIRST field (dedup key). */
     const val WORD = "word"
 
-    /** All 18 logical keys the engine can populate, in a stable order for UI. */
+    /** All 19 logical keys the engine can populate, in a stable order for UI. */
     val ALL: List<String> =
         listOf(
             "word",
@@ -32,6 +32,7 @@ internal object AnkiFieldKeys {
             "frequency_sort",
             "source",
             "expression_audio",
+            "sentence_translation",
         )
 
     /**

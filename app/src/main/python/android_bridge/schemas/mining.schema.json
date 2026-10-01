@@ -149,6 +149,8 @@
       "required": [
         "videoPath",
         "subtitlePath",
+        "secondarySubtitlePath",
+        "secondarySubtitleOffsetMs",
         "episodeName",
         "seriesName",
         "sourceLabel",
@@ -161,6 +163,19 @@
       "properties": {
         "videoPath": {"$ref": "#/$defs/absolutePath"},
         "subtitlePath": {"$ref": "#/$defs/subtitlePath"},
+        "secondarySubtitlePath": {
+          "oneOf": [
+            {"type": "null"},
+            {"$ref": "#/$defs/subtitlePath"}
+          ],
+          "$comment": "A second, staged subtitle track (desktop F7). Null when the Video tab sent none."
+        },
+        "secondarySubtitleOffsetMs": {
+          "type": "integer",
+          "minimum": -300000,
+          "maximum": 300000,
+          "$comment": "Signed shift of the secondary track in milliseconds; desktop bounds it to plus or minus 300 s. Inert while secondarySubtitlePath is null."
+        },
         "episodeName": {"$ref": "#/$defs/canonicalLabel"},
         "seriesName": {"$ref": "#/$defs/canonicalLabel"},
         "sourceLabel": {

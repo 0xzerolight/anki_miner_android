@@ -200,7 +200,6 @@ internal data class SettingsDraft(
     val boldTarget: Boolean?,
     val deduplicate: Boolean?,
     val iPlusOne: Boolean?,
-    val sentenceLength: Boolean?,
     val pitchFormat: PitchCategoryFormat?,
     val theme: ThemeMode,
     val lightThemeKey: String,
@@ -348,7 +347,6 @@ internal data class SettingsDraft(
             boldTargetInSentence = boldTarget,
             deduplicateSentences = deduplicate,
             useIPlusOneFilter = iPlusOne,
-            useSentenceLengthFilter = sentenceLength,
             maxSentenceDurationSeconds =
                 AppSettingsDraftParser.optionalDouble(maxDuration)
                     ?.takeUnless { it == EngineDefaults.MAX_SENTENCE_DURATION_SECONDS },
@@ -558,7 +556,6 @@ internal data class SettingsDraft(
                 boldTarget = settings.boldTargetInSentence,
                 deduplicate = settings.deduplicateSentences,
                 iPlusOne = settings.useIPlusOneFilter,
-                sentenceLength = settings.useSentenceLengthFilter,
                 pitchFormat = settings.pitchCategoryFormat,
                 theme = settings.theme,
                 lightThemeKey = settings.lightThemeKey,
@@ -643,8 +640,6 @@ private fun SettingsDraft.rebaseChangesSince(
         boldTarget = changedValue(baseline.boldTarget, boldTarget, persisted.boldTarget),
         deduplicate = changedValue(baseline.deduplicate, deduplicate, persisted.deduplicate),
         iPlusOne = changedValue(baseline.iPlusOne, iPlusOne, persisted.iPlusOne),
-        sentenceLength =
-            changedValue(baseline.sentenceLength, sentenceLength, persisted.sentenceLength),
         pitchFormat = changedValue(baseline.pitchFormat, pitchFormat, persisted.pitchFormat),
         theme = changedValue(baseline.theme, theme, persisted.theme),
         lightThemeKey =
