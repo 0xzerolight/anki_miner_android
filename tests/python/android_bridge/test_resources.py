@@ -962,6 +962,7 @@ def test_yomitan_import_list_lookup_and_stable_overwrite(
         expected_type="resource.dictionary.lookup.result",
     )
     assert "cat" in lookup.payload["html"]
+    assert lookup.payload["html"].endswith("</style>")
 
     second = _yomitan_zip(tmp_path / "second.zip", term="犬", meaning="dog", revision="2")
     replaced = decode_envelope(

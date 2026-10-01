@@ -2465,10 +2465,20 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
     lookup_key = unicodedata.normalize("NFC", term)
     try:
         html = provider.lookup(lookup_key)
+        dictionary_css = provider.dictionary_css
     finally:
         provider.close()
     if html is None:
         html = ""
+    # The preview is a browser: give it the trailing <style> block the card field carries.
+    from anki_miner.languages.registry import get_profile as profile_for
+    from anki_miner.services.dictionary.card_style_block import attach_card_style_block
+
+    html = attach_card_style_block(
+        html,
+        dict_css_entries=[(meta.dict_id, meta.source_name, dictionary_css)] if dictionary_css.strip() else [],
+        direction=profile_for(meta.language or "ja").content_style.direction,
+    )
     _validate_lookup_html(html)
     return encode_message(
         "resource.dictionary.lookup.result",

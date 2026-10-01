@@ -133,6 +133,9 @@ private fun cssHex(color: Color): String = "#%06X".format(0xFFFFFF and color.toA
 /**
  * Wraps the engine renderer's HTML fragment in a theme envelope; the fragment itself is untouched.
  *
+ * The page canvas is transparent: the host's tint shows through, as on the card. [surface] only
+ * picks the light or dark color scheme.
+ *
  * Known limitation: an imported dictionary's own CSS may set light backgrounds on entry elements
  * (the renderer's scoper allows background properties) — those patches keep the dictionary
  * author's colors, as Yomitan does; only the page canvas and default text follow the app theme.
@@ -148,7 +151,7 @@ internal fun themedDictionaryHtml(
         append("<meta charset=\"utf-8\">")
         append("<meta name=\"color-scheme\" content=\"").append(scheme).append("\">")
         append("<style>:root{color-scheme:").append(scheme).append("}")
-        append("body{background-color:").append(cssHex(surface))
+        append("body{background-color:transparent")
         append(";color:").append(cssHex(onSurface)).append("}")
         append("a{color:").append(cssHex(accent)).append("}</style>")
         append(fragment)
@@ -201,7 +204,6 @@ internal fun DictionaryHtml(
 ) {
     val scheme = MaterialTheme.colorScheme
     val themedHtml = themedDictionaryHtml(html, scheme.surface, scheme.onSurface, accentTextColor())
-    val surfaceArgb = scheme.surface.toArgb()
     AndroidView(
         modifier = modifier,
         factory = { context ->
@@ -213,15 +215,15 @@ internal fun DictionaryHtml(
                 settings.domStorageEnabled = false
                 settings.databaseEnabled = false
                 setNetworkAvailable(false)
-                // Themed before first paint so a slow load never flashes a white page.
-                setBackgroundColor(surfaceArgb)
+                // Transparent before first paint so a slow load never flashes a white page.
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
             }
         },
         update = { webView ->
             // Keep unrelated lookup edits observable to this update block without reloading the
             // rendered result. AndroidView may update for any captured state change.
             updateKey?.hashCode()
-            webView.setBackgroundColor(surfaceArgb)
+            webView.setBackgroundColor(android.graphics.Color.TRANSPARENT)
             // The engine renderer's HTML rides behind a theme envelope prefix; JavaScript,
             // file/content access, and all network subresources remain disabled for
             // user-imported dictionaries. A palette switch reloads once via the tag mismatch.

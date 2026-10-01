@@ -40,8 +40,12 @@ MAX_POS_BYTES = 64
 #: WebView is the display bound; this is the transport bound.
 MAX_DEFINITION_HTML_BYTES = 512 * 1024
 
+#: Same probe card_style_block uses: without both tokens the card writer attaches no block either.
+_MINER_MARKUP_TOKENS = ("yomitan-glossary", "data-count")
+
 _lock = threading.Lock()
 _run_configs: dict[str, object] = {}
+_run_css_entries: dict[str, list[tuple[str, str, str]]] = {}
 
 
 def register_run_dictionaries(run_id: str, config: object) -> None:
@@ -54,6 +58,7 @@ def clear_run_dictionaries(run_id: str) -> None:
     """Drop a run's snapshot. Safe for a run that never registered."""
     with _lock:
         _run_configs.pop(run_id, None)
+        _run_css_entries.pop(run_id, None)
 
 
 def get_run_config(run_id: str) -> object | None:
@@ -93,6 +98,35 @@ def _build_service(config: object) -> object:
     service = DefinitionService(config, providers=providers, registry=registry, **lookup)
     service.ensure_loaded()
     return service
+
+
+def _css_entries(run_id: str, config: object) -> list[tuple[str, str, str]]:
+    """The run's scoped dictionary CSS, collected as the card writer collects it, once per run."""
+    with _lock:
+        cached = _run_css_entries.get(run_id)
+    if cached is not None:
+        return cached
+    from anki_miner.services.definition_service import collect_dictionary_css_entries
+
+    entries = collect_dictionary_css_entries(config)
+    with _lock:
+        _run_css_entries[run_id] = entries
+    return entries
+
+
+def _style_direction(config: object) -> str:
+    return get_profile(config_language(config)).content_style.direction
+
+
+def _with_card_style(html: str, run_id: str, config: object) -> str:
+    """The entry with the trailing <style> block its card field carries; the WebView is a browser."""
+    if any(token not in html for token in _MINER_MARKUP_TOKENS):
+        return html
+    from anki_miner.services.dictionary.card_style_block import attach_card_style_block
+
+    return attach_card_style_block(
+        html, dict_css_entries=_css_entries(run_id, config), direction=_style_direction(config)
+    )
 
 
 def _close(service: object) -> None:
@@ -156,6 +190,7 @@ def define_word(payload: Mapping[str, object]) -> str:
     for source, html in hits:
         if not isinstance(source, str) or not isinstance(html, str):
             continue
+        html = _with_card_style(html, run_id, config)
         total += len(html.encode("utf-8"))
         if total > MAX_DEFINITION_HTML_BYTES:
             raise _fail(
