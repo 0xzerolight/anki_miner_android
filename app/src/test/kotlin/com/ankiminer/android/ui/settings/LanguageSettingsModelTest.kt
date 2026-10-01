@@ -115,4 +115,18 @@ class LanguageSettingsModelTest {
         assertTrue("language.mining_language" in ids)
         assertFalse("language.reading_tone_color" in ids)
     }
+
+    @Test
+    fun `search finds the device voice only where it speaks`() {
+        fun ids(code: String) =
+            availableSettingsSearchEntries(
+                SETTINGS_SEARCH_INDEX,
+                SetupUiState(),
+                false,
+                LanguageSettingsState(activeCode = code, profiles = profiles),
+            ).map { it.id }
+
+        assertTrue("resources.device_voice" in ids("he"))
+        assertFalse("resources.device_voice" in ids("ja"))
+    }
 }

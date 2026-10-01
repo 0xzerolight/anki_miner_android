@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.settings
 import androidx.annotation.StringRes
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.vm.SetupUiState
 
 internal data class SettingsSearchEntry(
@@ -205,6 +206,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "audio-sources",
             R.string.settings_reading_tts,
             R.string.settings_reading_audio,
+        ),
+        entry(
+            "resources.device_voice",
+            SettingsCategory.RESOURCES,
+            "audio-sources",
+            R.string.settings_word_audio_device_voice,
+            R.string.settings_word_audio_device_voice_help,
         ),
 
         // Frequency lists
@@ -455,6 +463,8 @@ internal fun availableSettingsSearchEntries(
             // The cards these find exist only for a language that has them.
             "resources.pitch_import", "resources.pitch_chain", "resources.pitch_format" -> language.showsPitch
             "resources.jisho" -> language.offersJisho
+            // The device voice speaks word audio only outside Japanese.
+            "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
             "language.script_variant" -> language.scriptVariants.isNotEmpty()
             "language.reading_tone_color" -> language.showsToneColor
             "diagnostics.unidic" ->
