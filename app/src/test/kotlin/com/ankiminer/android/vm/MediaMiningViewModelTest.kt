@@ -3807,6 +3807,32 @@ class MediaMiningViewModelTest {
             assertEquals(1, repository.confirmCalls)
         }
 
+    @Test
+    fun theTabsOwnTrackProbeIsNotReportedAsAnotherRun() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val runtime = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null)
+            val opener = FakeAudioTrackProbeOpener()
+            val viewModel =
+                mediaViewModel(
+                    RecordingRepository(),
+                    ImmediateSafBroker(),
+                    runtimeWorkState = runtime,
+                    audioTrackProbeOpener = opener,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.openAudioTrackPicker()
+            runtime.value = RuntimeWorkCoordinator.Kind.MINING // the probe's own lease
+            runCurrent()
+
+            assertTrue(viewModel.uiState.value.audioTrackProbePending)
+            assertNull(viewModel.uiState.value.runtimeConflict)
+
+            opener.complete(Result.success(AudioTrackList(autoAudioIndex = 0, tracks = emptyList())))
+            runtime.value = null
+            runCurrent()
+        }
+
     private class RecordingRepository(
         initialState: MiningRunState = MiningRunState.Idle,
         private val resetGate: CompletableDeferred<Unit>? = null,

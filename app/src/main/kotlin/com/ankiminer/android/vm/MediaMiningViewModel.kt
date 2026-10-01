@@ -337,8 +337,14 @@ class MediaMiningViewModel internal constructor(
                 audioTrackOverride = local.audioTrackOverride,
                 audioTrackProbePending = local.audioTrackProbePending,
                 audioTrackPickerError = local.audioTrackPickerError,
+                // The tab's own probe or timing preview holds that lease; its button spinner already
+                // says so, and a banner calling it another run would be wrong.
                 runtimeConflict =
-                    aux.activeKind?.toRuntimeConflict()?.takeIf { runState == MiningRunState.Idle },
+                    aux.activeKind?.toRuntimeConflict()?.takeIf {
+                        runState == MiningRunState.Idle &&
+                            !local.timingPreviewPending &&
+                            !local.audioTrackProbePending
+                    },
                 undoConfirmationNoteCount = local.undoConfirmationNoteCount,
                 undoneNoteCount = undoneReceipt?.deletedNotes,
                 undoAvailable = undoAvailable,
