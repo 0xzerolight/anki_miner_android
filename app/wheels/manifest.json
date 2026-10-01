@@ -153,6 +153,21 @@
     },
     {
       "abi": "arm64-v8a",
+      "filename": "kiwipiepy-0.23.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "LGPL-3.0-or-later AND BSD-2-Clause AND Apache-2.0 AND MIT AND MPL-2.0",
+      "package": "kiwipiepy",
+      "path": "arm64-v8a/kiwipiepy-0.23.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "e70dc464849a1b1a8c76eb17b0b46c5580cbff13c165f3acb17b2cb14ce8bd96",
+      "source": {
+        "filename": "kiwipiepy-0.23.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "632d627531ceaf4b55bd5c01d50eebdae0253c79c2c8a3f682f2e68492f36198",
+        "url": "https://files.pythonhosted.org/packages/c6/3f/b317dfd0085341a8e2b24fa8eddd7e709b07a91e6bcf20b8d8952ca26a03/kiwipiepy-0.23.2.tar.gz"
+      },
+      "version": "0.23.2"
+    },
+    {
+      "abi": "arm64-v8a",
       "filename": "lxml-6.1.1-0-cp312-cp312-android_26_arm64_v8a.whl",
       "license": "BSD-3-Clause",
       "package": "lxml",
@@ -1125,6 +1140,21 @@
         "url": "https://files.pythonhosted.org/packages/source/f/fugashi/fugashi-1.5.2.tar.gz"
       },
       "version": "1.5.2"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "kiwipiepy-0.23.2-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "LGPL-3.0-or-later AND BSD-2-Clause AND Apache-2.0 AND MIT AND MPL-2.0",
+      "package": "kiwipiepy",
+      "path": "x86_64/kiwipiepy-0.23.2-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "9f7463f719e4babc1fe7ef76b5e80b4ddcd5a9c4435c0c39b1db33702295e8ae",
+      "source": {
+        "filename": "kiwipiepy-0.23.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "632d627531ceaf4b55bd5c01d50eebdae0253c79c2c8a3f682f2e68492f36198",
+        "url": "https://files.pythonhosted.org/packages/c6/3f/b317dfd0085341a8e2b24fa8eddd7e709b07a91e6bcf20b8d8952ca26a03/kiwipiepy-0.23.2.tar.gz"
+      },
+      "version": "0.23.2"
     },
     {
       "abi": "x86_64",

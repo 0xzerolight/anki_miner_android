@@ -75,6 +75,7 @@ DOWNLOADABLE_DATA_COMPONENTS: frozenset[tuple[str, str]] = frozenset(
         # pymorphy3's dictionaries (data/ only), passed to the lemmatizer by path
         ("ru", "pymorphy3_dicts_ru"),
         ("uk", "pymorphy3_dicts_uk"),
+        ("ko", "kiwipiepy_model"),  # the Kiwi model files (the sdist minus its two .py files)
     }
 )
 

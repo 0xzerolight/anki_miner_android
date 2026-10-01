@@ -105,6 +105,7 @@ class GenerateLanguageDataTest(unittest.TestCase):
                 "sl": ["sl_core_news_sm"],
                 "ru": ["ru_core_news_sm", "pymorphy3_dicts_ru"],
                 "uk": ["uk_core_news_sm", "pymorphy3_dicts_uk"],
+                "ko": ["kiwipiepy_model"],
             },
             {code: [entry["importName"] for entry in items] for code, items in entries.items()},
         )
@@ -174,8 +175,25 @@ class GenerateLanguageDataTest(unittest.TestCase):
         self._write_pins({"xx/xx_data": {"apk": "engine code"}})
         self.assertEqual([], generator.drift(self.repo))
 
+    def test_an_sdist_lists_the_code_members_it_drops_after_the_vendored_excludes(self) -> None:
+        self._write_pack(kind="sdist", extra='exclude=("notes/",),')
+        self._write_pins({"xx/xx_data": {"data": {**self._data_pin(), "dropCode": ["__init__.py", "_version.py"]}}})
+
+        generator.refresh(self.repo)
+
+        (entry,) = self._catalog("xx")["resources"]
+        self.assertEqual("sdist", entry["archive"]["format"])
+        self.assertEqual(["notes/", "__init__.py", "_version.py"], entry["install"]["exclude"])
+
+    def test_drop_code_cannot_name_data(self) -> None:
+        for drop in (["table.dat"], ["notes/"], "__init__.py"):
+            with self.subTest(drop=drop):
+                self._write_pins({"xx/xx_data": {"data": {**self._data_pin(), "dropCode": drop}}})
+                with self.assertRaisesRegex(generator.GenerationError, "dropCode"):
+                    generator.drift(self.repo)
+
     def test_a_component_shaped_like_code_cannot_be_data(self) -> None:
-        for kind, extra in (("sdist", ""), ("zip", 'root_members=("_native.",),')):
+        for kind, extra in (("tar.gz", ""), ("zip", 'root_members=("_native.",),')):
             with self.subTest(kind=kind, extra=extra):
                 self._write_pack(kind=kind, extra=extra)
                 with self.assertRaises(generator.GenerationError):

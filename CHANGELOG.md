@@ -6,6 +6,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Added
 
+- **Korean mining.** The Kiwi tokenizer ships in the app; its 88 MB model and the recommended KRDICT Korean-English dictionary download for the language.
 - **Translation subtitles (Video tab).** With Settings -> Sentences -> Secondary subtitles on, a second subtitle file and its timing offset fill the Sentence translation field mapped under Settings -> Cards & Anki.
 - **Frequency band minimum (Settings -> Word filters).** "Minimum frequency rank" skips words more common than it, and "Include words missing from the frequency list" keeps unranked words while either end is set.
 - **"Treat kana spellings of known words as known" (Settings -> Word filters).** On by default, as before; it can now be turned off.

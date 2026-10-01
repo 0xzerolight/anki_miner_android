@@ -10,6 +10,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 PYTHON_ROOT = PROJECT_ROOT / "app" / "src" / "main" / "python"
 sys.path.insert(0, str(PYTHON_ROOT))
 
+#: Language data the runtime lane installs as a package only because pip resolves
+#: it as a dependency (kiwipiepy requires kiwipiepy_model). The APK never ships it:
+#: Android reads the model by path from the downloaded language data. A ``None``
+#: entry hides it the way the device lacks it: ``find_spec`` answers None and an
+#: import fails, while ``importlib.metadata`` still finds its files for fixtures.
+HIDDEN_DATA_PACKAGES = ("kiwipiepy_model",)
+for _name in HIDDEN_DATA_PACKAGES:
+    sys.modules.setdefault(_name, None)
+
 
 class FakeCallbacks:
     """Records ``onProgress`` envelopes; shared across resource-progress tests."""

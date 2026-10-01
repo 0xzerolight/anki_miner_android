@@ -58,9 +58,9 @@ def test_malformed_language_values_are_refused(value: object) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["xx", "zh", "ko"])
+@pytest.mark.parametrize("code", ["xx", "zh", "vi"])
 def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
-    # zh/ko are desktop languages that are not vendored in this wave: the
+    # zh/vi are desktop languages that are not vendored in this wave: the
     # engine would silently mine them as Japanese, the bridge must not.
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
@@ -72,6 +72,7 @@ def test_every_vendored_language_validates() -> None:
     _runtime_lane()
     assert _available() == (
         "ja",
+        "ko",
         "en",
         "ca",
         "de",
@@ -141,7 +142,7 @@ def test_config_map_refuses_a_malformed_language(tmp_path: Path) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["he", "id", "th", "ar", "fa", "tr"])
+@pytest.mark.parametrize("code", ["he", "id", "th", "ar", "fa", "tr", "ko"])
 def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(code: str, tmp_path: Path) -> None:
     _runtime_lane()
     from anki_miner.languages.registry import get_profile
@@ -399,12 +400,12 @@ def test_hebrew_profile_entry_describes_an_rtl_language_with_its_own_card_fields
     assert defaults["allowed_pos"] == ["WORD", "NOUN", "VERB", "ADJ", "ADV"]
 
 
-@pytest.mark.parametrize("code", ["ar", "fa"])
-def test_a_language_waiting_for_its_data_pack_reports_a_download_reason(code: str) -> None:
+@pytest.mark.parametrize(("code", "direction"), [("ar", "rtl"), ("fa", "rtl"), ("ko", "ltr")])
+def test_a_language_waiting_for_its_data_pack_reports_a_download_reason(code: str, direction: str) -> None:
     _runtime_lane()
     entry = _profiles()[code]
     assert entry["unavailableReason"] == "language_data_required"
-    assert entry["contentDirection"] == "rtl"
+    assert entry["contentDirection"] == direction
 
 
 def test_installed_data_clears_the_reason(initialized_bridge_home: Path) -> None:

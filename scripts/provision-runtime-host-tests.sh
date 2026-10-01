@@ -58,22 +58,24 @@ assert platform.python_version() == "3.12.13"
 expected = {
     "certifi": "2026.6.17",
     "charset-normalizer": "3.4.7",
-    "idna": "3.18",
-    "lxml": "6.1.1",
-    "pillow": "12.2.0",
-    "pysubs2": "1.8.1",
-    "pythainlp": "5.3.7",
-    "requests": "2.34.2",
-    "tzdata": "2026.3",
-    "urllib3": "2.7.0",
     "click": "8.1.8",
     "cloudpickle": "3.1.2",
     "colorama": "0.4.6",
     "defusedxml": "0.7.1",
+    "idna": "3.18",
     "joblib": "1.6.0",
+    "kiwipiepy": "0.23.2",
+    "kiwipiepy-model": "0.23.0",
+    "lxml": "6.1.1",
     "nltk": "3.10.3",
+    "pillow": "12.2.0",
+    "pysubs2": "1.8.1",
+    "pythainlp": "5.3.7",
     "regex": "2026.9.10",
+    "requests": "2.34.2",
     "tqdm": "4.68.3",
+    "tzdata": "2026.3",
+    "urllib3": "2.7.0",
     "zeyrek": "0.1.3",
 }
 for name, version in expected.items():
@@ -112,6 +114,7 @@ trap cleanup EXIT
 PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --disable-pip-version-check \
     --only-binary=:all: \
+    --no-binary=kiwipiepy-model \
     --require-hashes \
     --no-deps \
     -r "$LOCK_FILE"

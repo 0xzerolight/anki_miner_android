@@ -1,6 +1,7 @@
 # Fully resolved for the pinned Linux x86_64 CPython 3.12 runtime-test lane.
 # Regenerate from requirements-runtime-host-test.in with binary wheels, then
-# update every hash. Install with --only-binary=:all: --require-hashes --no-deps.
+# update every hash. Install with --only-binary=:all: --require-hashes --no-deps;
+# only kiwipiepy-model (published as an sdist alone) is built from source.
 
 annotated-doc==0.0.4 \
     --hash=sha256:571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320
@@ -52,6 +53,10 @@ jsonschema==4.26.0 \
     --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe
+kiwipiepy==0.23.2 \
+    --hash=sha256:46a0a9fd36727736e8010ff54c655639f5df1c2ec34b92679cd3a94e8734d81f
+kiwipiepy-model==0.23.0 \
+    --hash=sha256:498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2
 lxml==6.1.1 \
     --hash=sha256:ebe6af670449830d6d9b752c256a983291c766a1365ba5d5460048f9e33a7818
 markdown-it-py==4.2.0 \

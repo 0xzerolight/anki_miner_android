@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import io
+import tarfile
 import zipfile
 from dataclasses import replace
 from pathlib import Path
@@ -216,9 +217,34 @@ def test_the_local_inventory_carries_the_installed_language_data(
 # --------------------------------------------------------------- runtime lane: the vendored extractor
 
 
+def _dropped_code(entry: LanguageDataResource) -> list[str]:
+    """The code members the catalog entry drops (an sdist's ``__init__.py``)."""
+
+    return [name for name in entry.install.exclude if language_data.is_code_member(name)]
+
+
+def _fixture_sdist(path: Path, entry: LanguageDataResource, extra: dict[str, bytes]) -> Path:
+    """A ``.tar.gz`` shaped like a model sdist: data and the package's own ``.py`` files under the prefix."""
+
+    prefix = entry.install.member_prefix
+    members = {prefix + name: f"fixture {name}".encode() for name in entry.install.sentinels}
+    members.update({prefix + name: b"raise SystemExit\n" for name in _dropped_code(entry)})
+    members["model-1.0/PKG-INFO"] = b"Name: model\n"
+    members["model-1.0/setup.py"] = b"raise SystemExit\n"
+    members.update(extra)
+    with tarfile.open(path, "w:gz") as bundle:
+        for name, content in sorted(members.items()):
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            bundle.addfile(info, io.BytesIO(content))
+    return path
+
+
 def _fixture_archive(path: Path, entry: LanguageDataResource, *, extra: dict[str, bytes] | None = None) -> Path:
     """An archive shaped like the pinned one: every sentinel and inner file under the prefix."""
 
+    if entry.archive.format == "sdist":
+        return _fixture_sdist(path, entry, extra or {})
     prefix = entry.install.member_prefix
     with zipfile.ZipFile(path, "w") as bundle:
         for name in sorted({*entry.install.sentinels, *(digest.path for digest in entry.install.inner_sha256)}):
@@ -443,3 +469,81 @@ def test_the_vendored_extractor_alone_would_write_a_collapsed_code_member_the_fi
     assert not (home / "language_packs").exists() or not any(
         path.is_file() for path in (home / "language_packs").rglob("*")
     )
+
+
+def _korean_model() -> tuple[str, LanguageDataResource]:
+    return next((code, entry) for code, entry in _data_entries() if entry.archive.format == "sdist")
+
+
+def test_an_sdist_installs_its_data_without_the_code_members_its_entry_drops(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, entry = _korean_model()
+    assert _dropped_code(entry) == ["__init__.py", "_version.py"]
+    archive = _fixture_archive(tmp_path / "download.part", entry)
+    pinned = _pin_to_fixture(monkeypatch, code, entry, archive)
+
+    assert _install(pinned, archive)["importName"] == "kiwipiepy_model"
+
+    component = home / "language_packs" / code / entry.import_name
+    assert sorted(path.name for path in component.iterdir()) == sorted(entry.install.sentinels)
+
+
+def test_an_sdist_with_a_code_member_its_entry_does_not_drop_is_refused(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, entry = _korean_model()
+    archive = _fixture_archive(
+        tmp_path / "download.part", entry, extra={entry.install.member_prefix + "loader.py": b"import os\n"}
+    )
+    pinned = _pin_to_fixture(monkeypatch, code, entry, archive)
+
+    assert _install(pinned, archive)["code"] == "language_data_rejected"
+    assert not (home / "language_packs" / code / entry.import_name).exists()
+
+
+@pytest.mark.parametrize(
+    "exclude",
+    [
+        # An Android addition may only drop code: dropping data would hide it from the pin.
+        ("__init__.py", "_version.py", "sj.morph"),
+        ("__init__.py", "_version.py", "subdir/"),
+        ("__init__.py", "_version.py", "native.so/"),
+    ],
+)
+def test_a_catalog_exclude_may_add_only_code_members_to_the_vendored_list(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exclude: tuple[str, ...]
+) -> None:
+    code, entry = _korean_model()
+    archive = _fixture_archive(tmp_path / "download.part", entry)
+    pinned = _pin_to_fixture(monkeypatch, code, entry, archive)
+    drifted = replace(pinned, install=replace(pinned.install, exclude=exclude))
+    monkeypatch.setattr(language_data, "find_catalog_resource", lambda _id: (code, drifted))
+
+    assert _install(drifted, archive)["code"] == "resource_catalog_mismatch"
+
+
+def test_a_catalog_exclude_must_keep_every_vendored_exclude(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anki_miner.services import language_pack_installer
+
+    code, entry = _korean_model()
+    archive = _fixture_archive(tmp_path / "download.part", entry)
+    pinned = _pin_to_fixture(monkeypatch, code, entry, archive)
+    pack = language_pack_installer.load_pack(code)
+    vendored = tuple(
+        (
+            replace(component, universal=replace(component.universal, exclude=("notes/",)))
+            if component.import_name == entry.import_name
+            else component
+        )
+        for component in pack.components
+    )
+    monkeypatch.setattr(
+        language_pack_installer,
+        "load_pack",
+        lambda requested: replace(pack, components=vendored) if requested == code else None,
+    )
+
+    assert _install(pinned, archive)["code"] == "resource_catalog_mismatch"

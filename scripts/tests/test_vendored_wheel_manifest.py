@@ -47,7 +47,7 @@ class VendoredWheelManifestTests(unittest.TestCase):
     def test_committed_manifest_matches_every_vendored_wheel(self) -> None:
         result = self._run_tool("check")
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("86 wheels verified", result.stdout)
+        self.assertIn("88 wheels verified", result.stdout)
 
     def test_generate_records_required_provenance_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -64,7 +64,7 @@ class VendoredWheelManifestTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             document = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertEqual(1, document["schema"])
-            self.assertEqual(86, len(document["wheels"]))
+            self.assertEqual(88, len(document["wheels"]))
             for entry in document["wheels"]:
                 self.assertEqual(
                     {

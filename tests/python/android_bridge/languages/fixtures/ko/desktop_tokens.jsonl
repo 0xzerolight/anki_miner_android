@@ -1,0 +1,7 @@
+# desktop a1259f4e5b8f97385660389eef6d76fb403c1e38 tests/fixtures/ko/tokens.jsonl, rows 1-5 (the smoke sentence's
+# content tokens; the file is a hand-curated mined-form fixture, so later rows are not one tokenizer run).
+{"surface": "학생", "pos1": "NN", "pos2": "NNG", "lemma": "학생", "mined_form": "학생"}
+{"surface": "이", "pos1": "JK", "pos2": "JKS", "lemma": "이", "mined_form": "이"}
+{"surface": "밥", "pos1": "NN", "pos2": "NNG", "lemma": "밥", "mined_form": "밥"}
+{"surface": "을", "pos1": "JK", "pos2": "JKO", "lemma": "을", "mined_form": "을"}
+{"surface": "먹", "pos1": "VV", "pos2": "", "lemma": "먹다", "mined_form": "먹다"}

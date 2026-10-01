@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 3,
+  "language": "ko",
+  "resources": [
+    {
+      "resourceId": "ko-kiwipiepy-model",
+      "kind": "language-data",
+      "displayName": "Kiwi 0.23.0 Korean morphological model",
+      "importName": "kiwipiepy_model",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/77/59/28403890c5f757254bf2068ff321fb3e656fb2e5658a3de8bfc092e4fd83/kiwipiepy_model-0.23.0.tar.gz",
+        "sha256": "498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2",
+        "sizeBytes": 87976912,
+        "format": "sdist"
+      },
+      "install": {
+        "memberPrefix": "kiwipiepy_model-0.23.0/kiwipiepy_model/",
+        "exclude": [
+          "__init__.py",
+          "_version.py"
+        ],
+        "sentinels": [
+          "sj.morph",
+          "default.dict",
+          "combiningRule.txt"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "kiwipiepy_model 0.23.0 (Kiwi)",
+          "copyright": "bab2min (Minchul Lee); model files for kiwipiepy",
+          "license": "LGPL-3.0",
+          "url": "https://github.com/bab2min/Kiwi"
+        }
+      ]
+    },
+    {
+      "resourceId": "krdict-en-1.0.0",
+      "kind": "yomitan-dictionary",
+      "displayName": "KRDICT (Korean-English)",
+      "slotId": "krdict-en",
+      "archive": {
+        "url": "https://github.com/Lyroxide/yomitan-ko-dic/releases/download/1.0.0/KO-EN.KRDICT.No.Examples.zip",
+        "sha256": "c7aeb60823781388e68e941ece27694e09b868aa1832a980a116874d4dad07cf",
+        "sizeBytes": 4475945,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "KRDICT EN",
+        "revision": "krdict_ko-en_0924",
+        "format": 3,
+        "memberCount": 12,
+        "uncompressedBytes": 71717828,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "한국어기초사전 (Basic Korean Dictionary)",
+          "copyright": "국립국어원 (National Institute of Korean Language)",
+          "license": "CC-BY-SA-2.0-KR",
+          "url": "https://krdict.korean.go.kr/kor/kboardPolicy/copyRightTermsInfo"
+        },
+        {
+          "name": "yomitan-ko-dic",
+          "copyright": "Lyroxide (Yomitan build of KRDICT, without example sentences)",
+          "license": "CC-BY-SA-2.0-KR",
+          "url": "https://github.com/Lyroxide/yomitan-ko-dic"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "krdict-en-1.0.0"
+  ]
+}

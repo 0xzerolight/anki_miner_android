@@ -30,7 +30,7 @@ object ResourceBridgeCodec {
     private val importName = Regex("[a-z_][a-z0-9_]{0,63}")
 
     /** Pack artifact kinds a data-only component may use (`resource_catalog._LANGUAGE_DATA_FORMATS`). */
-    private val LANGUAGE_DATA_FORMATS = setOf("zip", "wheel")
+    private val LANGUAGE_DATA_FORMATS = setOf("zip", "wheel", "sdist")
     private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
     /**
@@ -1536,7 +1536,8 @@ object FrozenResourceCatalog {
                 slovenianCatalog,
                 russianCatalog,
                 ukrainianCatalog,
-            )
+            ) +
+            listOf(korean)
     }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
@@ -1881,5 +1882,71 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = emptyList(),
+        )
+
+    val korean =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "ko",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "ko-kiwipiepy-model",
+                        displayName = "Kiwi 0.23.0 Korean morphological model",
+                        importName = "kiwipiepy_model",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/77/59/28403890c5f757254bf2068ff321fb3e656fb2e5658a3de8bfc092e4fd83/kiwipiepy_model-0.23.0.tar.gz",
+                                sha256 = "498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2",
+                                sizeBytes = 87_976_912,
+                                format = "sdist",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "kiwipiepy_model-0.23.0/kiwipiepy_model/",
+                                exclude = listOf("__init__.py", "_version.py"),
+                                sentinels = listOf("sj.morph", "default.dict", "combiningRule.txt"),
+                                innerSha256 = emptyList(),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "kiwipiepy_model 0.23.0 (Kiwi)",
+                                    "bab2min (Minchul Lee); model files for kiwipiepy",
+                                    "LGPL-3.0",
+                                    "https://github.com/bab2min/Kiwi",
+                                ),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "krdict-en-1.0.0",
+                        displayName = "KRDICT (Korean-English)",
+                        slotId = "krdict-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/Lyroxide/yomitan-ko-dic/releases/download/1.0.0/KO-EN.KRDICT.No.Examples.zip",
+                                sha256 = "c7aeb60823781388e68e941ece27694e09b868aa1832a980a116874d4dad07cf",
+                                sizeBytes = 4_475_945,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "KRDICT EN",
+                                revision = "krdict_ko-en_0924",
+                                format = 3,
+                                memberCount = 12,
+                                uncompressedBytes = 71_717_828,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("한국어기초사전 (Basic Korean Dictionary)", "국립국어원 (National Institute of Korean Language)", "CC-BY-SA-2.0-KR", "https://krdict.korean.go.kr/kor/kboardPolicy/copyRightTermsInfo"),
+                                ResourceAttribution("yomitan-ko-dic", "Lyroxide (Yomitan build of KRDICT, without example sentences)", "CC-BY-SA-2.0-KR", "https://github.com/Lyroxide/yomitan-ko-dic"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("krdict-en-1.0.0"),
         )
 }

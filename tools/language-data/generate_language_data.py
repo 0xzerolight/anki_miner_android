@@ -18,8 +18,11 @@ Every component of every vendored pack must be classified in ``pins.json``:
   the reason.
 
 A data component must look like data in its manifest: one universal artifact,
-a zip or wheel, no root members and no ABI pin. The bridge's extraction
-pre-filter refuses any code member regardless.
+a zip, wheel or sdist, no root members and no ABI pin. A pin may name code
+members of its archive to drop (``dropCode``: an sdist's ``__init__.py``, which
+desktop imports and Android never does); they follow the vendored excludes in
+the catalog entry. The bridge's extraction pre-filter refuses any code member
+left over regardless.
 
 ``--check`` reports drift without writing; ``--refresh`` rewrites the catalog
 files (hand-pinned entries are kept in place; the language-data entries are
@@ -43,7 +46,9 @@ COMPOSITION_PATH = Path("tools/engine-sync/composition.toml")
 LANGUAGES_PATH = Path("app/src/main/python/anki_miner/languages")
 CATALOG_DIR = Path("app/src/main/python/android_bridge/resource_catalog")
 CATALOG_SCHEMA_VERSION = 3
-DATA_KINDS = frozenset({"zip", "wheel"})
+DATA_KINDS = frozenset({"zip", "wheel", "sdist"})
+#: What ``dropCode`` may name: code members only, never data (mirrors the bridge's rule).
+CODE_SUFFIXES = (".py", ".pyc", ".so")
 
 
 class GenerationError(Exception):
@@ -132,6 +137,11 @@ def _data_entry(code: str, component: Mapping[str, Any], pin: Mapping[str, Any])
             f"{where}: pins.json measured {pin.get('sha256')!r} but pack.py pins {spec['sha256']!r}; "
             "re-measure sizeBytes for the new artifact"
         )
+    drop_code = pin.get("dropCode", [])
+    if not isinstance(drop_code, list) or not all(
+        isinstance(member, str) and member.lower().endswith(CODE_SUFFIXES) for member in drop_code
+    ):
+        raise GenerationError(f"{where}: dropCode may only name code members (.py, .pyc, .so)")
     return {
         "resourceId": _resource_id(code, name),
         "kind": "language-data",
@@ -145,7 +155,7 @@ def _data_entry(code: str, component: Mapping[str, Any], pin: Mapping[str, Any])
         },
         "install": {
             "memberPrefix": spec["member_prefix"],
-            "exclude": list(spec.get("exclude", ())),
+            "exclude": [*spec.get("exclude", ()), *drop_code],
             "sentinels": list(component["sentinels"]),
             "innerSha256": [{"path": path, "sha256": digest} for path, digest in spec.get("inner_sha256", ())],
         },

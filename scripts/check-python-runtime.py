@@ -26,6 +26,8 @@ EXPECTED_DISTRIBUTIONS = {
     "defusedxml": "0.7.1",
     "idna": "3.18",
     "joblib": "1.6.0",
+    "kiwipiepy": "0.23.2",
+    "kiwipiepy-model": "0.23.0",
     "lxml": "6.1.1",
     "markupsafe": "3.0.3",
     "murmurhash": "1.0.15",
@@ -91,6 +93,7 @@ def main() -> int:
     expected_external = {
         "PIL",
         "charset_normalizer",
+        "kiwipiepy",
         "lxml",
         "numpy",
         "pysubs2",
