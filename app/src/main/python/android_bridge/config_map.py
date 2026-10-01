@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import cast
 
 from .bootstrap import require_initialized
+from .languages import JAPANESE, accepted_script_variants, base_config, get_profile, validated_language
 from .protocol import (
     BridgeProtocolError,
     decode_message,
@@ -69,6 +70,9 @@ _BOOL_FIELDS = frozenset(
         "strict_card_order",
         "frequency_keep_unranked",
         "known_words_match_kana_variants",
+        # Language-scoped; only a profile's card render hook reads it (zh). Kotlin
+        # shows its toggle only where the profile has the tone_color capability.
+        "reading_tone_color",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
@@ -108,6 +112,11 @@ _STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_sub
 _OPTIONAL_PATH_FIELDS = frozenset({"blacklist_path", "whitelist_path"})
 _MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
 _CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "pitch_chain", "expression_audio_chain"})
+# The mining language picks the config the snapshot is overlaid onto (see
+# ``languages.base_config``); ``script_variant`` is checked against that
+# language's own offer. ``language_stash`` is Kotlin's and never crosses.
+_LANGUAGE_FIELD = "language"
+_SCRIPT_VARIANT_FIELD = "script_variant"
 
 _EXPOSED_CONFIG_FIELDS = frozenset(
     _STRING_FIELDS
@@ -119,6 +128,7 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
     | _OPTIONAL_PATH_FIELDS
     | _MAPPING_FIELDS
     | _CHAIN_FIELDS
+    | {_LANGUAGE_FIELD, _SCRIPT_VARIANT_FIELD}
 )
 
 # Compatibility-only input.  It is captured into AndroidConfigSnapshot and is
@@ -237,6 +247,16 @@ def _string_tuple(field_name: str, value: object) -> tuple[str, ...]:
     if any(not isinstance(item, str) for item in value):
         raise _invalid(field_name, "expected an array of strings")
     return tuple(value)
+
+
+def _script_variant(value: object, language: str) -> str:
+    # Desktop shows a variant combo only for a profile with the capability, so
+    # nothing else ever writes one; a stale value from another language would
+    # otherwise reach a profile that reads it (zh, pt).
+    allowed = ("",) if language == JAPANESE else accepted_script_variants(get_profile(language))
+    if not isinstance(value, str) or value not in allowed:
+        raise _invalid(_SCRIPT_VARIANT_FIELD, f"expected one of {list(allowed)!r}")
+    return value
 
 
 def _excluded_decks(value: object) -> tuple[str, ...]:
@@ -553,17 +573,20 @@ def map_config_settings(
     require_initialized(paths.files_dir)
 
     from anki_miner.config import (
-        AnkiMinerConfig,
         AudioSourceEntry,
         ChainEntry,
         FreqEntry,
         PitchSourceEntry,
     )
 
-    base = AnkiMinerConfig()
+    language = validated_language(settings.get(_LANGUAGE_FIELD, JAPANESE))
+    base = base_config(language)
     updates: dict[str, object] = {}
     for field_name, value in settings.items():
-        if field_name == _LEGACY_ANDROID_TTS_FIELD:
+        if field_name in {_LEGACY_ANDROID_TTS_FIELD, _LANGUAGE_FIELD}:
+            continue
+        if field_name == _SCRIPT_VARIANT_FIELD:
+            updates[field_name] = _script_variant(value, language)
             continue
         if field_name in _STRING_FIELDS:
             updates[field_name] = (

@@ -173,6 +173,9 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "merge_incomplete_cues": True,
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
+        "language": "ja",
+        "script_variant": "",
+        "reading_tone_color": False,
     }
     assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled"}
     return {"settings": settings, "androidTtsEnabled": True}
@@ -199,6 +202,9 @@ def test_dictionary_schema_accepts_valid_and_rejects_invalid_requests_and_result
         "entries": [{"source": "Jitendex", "html": "<div>cat</div>"}],
     }
     validator.validate(valid_request)
+    validator.validate({**valid_request, "partOfSpeech": "名詞"})
+    with pytest.raises(ValidationError):
+        validator.validate({**valid_request, "partOfSpeech": 1})
     validator.validate(valid_result)
 
     invalid_request = {"runId": run_id, "term": "猫"}
@@ -247,12 +253,16 @@ def test_subtitle_cues_schema_accepts_valid_and_rejects_invalid_requests_and_res
     validator.validate(valid_request)
     validator.validate(valid_result)
 
+    validator.validate({**valid_request, "language": "he"})
+
     invalid_request = {"runId": "not-a-run", "subtitlePath": "/tmp/episode.srt"}
     invalid_result = {
         "runId": run_id,
         "subtitlePath": "/tmp/episode.srt",
         "cues": [{"start": -1.0, "end": 2.5, "text": "こんにちは"}],
     }
+    with pytest.raises(ValidationError):
+        validator.validate({**valid_request, "language": "Hebrew"})
     with pytest.raises(ValidationError):
         validator.validate(invalid_request)
     with pytest.raises(ValidationError):
@@ -304,6 +314,9 @@ def test_audio_tracks_schema_accepts_valid_and_rejects_invalid_requests_and_resu
     }
     validator.validate(valid_request)
     validator.validate(valid_result)
+    validator.validate({**valid_request, "language": "he"})
+    with pytest.raises(ValidationError):
+        validator.validate({**valid_request, "language": "iw-IL"})
 
     invalid_request = {"videoPath": "/videos/ep1.mkv"}
     invalid_result = {
@@ -374,6 +387,8 @@ def test_mining_protocol_valid_and_rejected_corpora_freeze_complete_messages(
         "job.registration.request",
         "job.registration.accepted",
         "mining.terminal",
+        "language.profiles",
+        "language.profiles.result",
     }
     for case in corpus["invalid"]:
         assert list(validator.iter_errors(case["message"])), case["name"]

@@ -81,6 +81,18 @@ class SentenceAudioProtocolTest {
     }
 
     @Test
+    fun decoderReadsTheRunLanguageAndTreatsTheOldWireAsJapanese() {
+        val hebrew = REQUEST.replace("\"sentence\":\"猫だ。\"", "\"sentence\":\"猫だ。\",\"language\":\"he\"")
+        val malformed = REQUEST.replace("\"sentence\":\"猫だ。\"", "\"sentence\":\"猫だ。\",\"language\":\"Hebrew\"")
+
+        assertEquals("he", SentenceAudioBridgeCodec.decodeRequest(hebrew, RUN_ID).language)
+        assertEquals("ja", SentenceAudioBridgeCodec.decodeRequest(REQUEST, RUN_ID).language)
+        assertThrows(SentenceAudioProtocolException::class.java) {
+            SentenceAudioBridgeCodec.decodeRequest(malformed, RUN_ID)
+        }
+    }
+
+    @Test
     fun strictDecoderRejectsOversizedSentence() {
         val oversized = REQUEST.replace("猫だ。", "猫".repeat(6_000))
 

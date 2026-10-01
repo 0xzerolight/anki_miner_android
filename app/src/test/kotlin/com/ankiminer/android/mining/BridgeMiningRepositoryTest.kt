@@ -13,6 +13,7 @@ import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.ContentDirection
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
@@ -76,6 +77,20 @@ class BridgeMiningRepositoryTest {
             )
         }
         AppLog.install(NoOpSink)
+    }
+
+    @Test
+    fun `the fake bridge answers language profiles with the runtime lane's ja and he entries`() {
+        val raw = FakePyBridge(mismatchedTerminal = false).dispatch(BridgeJsonCodec.encodeLanguageProfilesRequest(), null)
+        val profiles = (BridgeJsonCodec.decode(raw) as BridgeMessage.LanguageProfilesResult).profiles
+
+        assertEquals(listOf("ja", "he"), profiles.map { it.code })
+        val hebrew = profiles.last()
+        assertEquals(ContentDirection.RTL, hebrew.contentDirection)
+        assertFalse(hebrew.requiresUnidic)
+        assertEquals(BridgeJsonValue.Text(""), hebrew.scopedDefaults["anki_note_type"])
+        assertEquals(BridgeJsonValue.ArrayValue(emptyList()), hebrew.scopedDefaults["expression_audio_chain"])
+        assertTrue(profiles.first().requiresUnidic)
     }
 
     @Test
@@ -2349,6 +2364,7 @@ class BridgeMiningRepositoryTest {
                             totalBytes = 1024,
                         ),
                     )
+                is BridgeMessage.LanguageProfilesRequest -> LANGUAGE_PROFILES_RESULT
                 is BridgeMessage.VideoRun -> {
                     videoRunFailure?.let { throw it }
                     runVideo(request.request, requireNotNull(callbacks))
@@ -2557,6 +2573,9 @@ class BridgeMiningRepositoryTest {
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
         const val TERMINAL_FAULT_ID = "f0123abcd"
+        /** What `language.profiles` answers on the runtime lane for ja and he, verbatim. */
+        val LANGUAGE_PROFILES_RESULT =
+            """{"schemaVersion":1,"type":"language.profiles.result","payload":{"profiles":[{"code":"ja","displayName":"日本語","englishName":"Japanese","unavailableReason":null,"scriptVariants":[],"contentDirection":"ltr","contentLanguage":"ja","speechLanguage":"ja","audioTrackCodes":["ja","japanese","jp","jpn"],"capabilities":["deinflection","furigana","kana_filters","manga_ocr","name_wordsets","note_presets","pitch"],"requiresUnidic":true,"scopedDefaults":{"dictionary_chain":[{"kind":"indexed","dict_id":"jmdict-english","enabled":true},{"kind":"jisho","dict_id":null,"enabled":false}],"frequency_chain":[],"pitch_chain":[],"expression_audio_chain":[],"allowed_pos":["名詞","動詞","形容詞","副詞","形状詞","代名詞"],"excluded_subtypes":["非自立","数詞","接尾","助動詞","接頭","固有名詞"],"excluded_wordsets":["surnames","given-names","place-names","org-product"],"exclude_hiragana_only_words":false,"exclude_katakana_only_words":false,"known_words_match_kana_variants":true,"anki_fields":{"word":"Expression","sentence":"Sentence","definition":"MainDefinition","glossary":"","picture":"Picture","audio":"SentenceAudio","expression_furigana":"ExpressionFurigana","expression_reading":"","sentence_furigana":"SentenceFurigana","sentence_reading":"","pitch_position":"","pitch_category":"","pitch_graph":"","pitch_text":"","frequency":"","frequency_sort":"","source":"","expression_audio":"","sentence_translation":""},"anki_deck_name":"Anki Miner","anki_note_type":"Lapis","card_type":"","blacklist_path":null,"whitelist_path":null,"use_blacklist":false,"use_whitelist":false,"excluded_decks":[],"script_variant":"","reading_tone_color":false,"use_subtitle_regex_filter":false,"subtitle_regex_filter":"","subtitle_regex_replacement":"","min_frequency_rank":0,"max_frequency_rank":0,"frequency_keep_unranked":false},"extraCardFields":[]},{"code":"he","displayName":"עברית","englishName":"Hebrew","unavailableReason":null,"scriptVariants":[],"contentDirection":"rtl","contentLanguage":"he","speechLanguage":"he","audioTrackCodes":["he","heb","hebrew","iw"],"capabilities":["hebrew_binyan","hebrew_transliteration","noun_gender","noun_plural","pos_tag","rtl","vocalised_reading","word_root"],"requiresUnidic":false,"scopedDefaults":{"dictionary_chain":[],"frequency_chain":[],"pitch_chain":[],"expression_audio_chain":[],"allowed_pos":["WORD","NOUN","VERB","ADJ","ADV"],"excluded_subtypes":["stopword"],"excluded_wordsets":[],"exclude_hiragana_only_words":false,"exclude_katakana_only_words":false,"known_words_match_kana_variants":false,"anki_fields":{"word":"Expression","sentence":"Sentence","definition":"MainDefinition","glossary":"","picture":"Picture","audio":"SentenceAudio","expression_furigana":"","expression_reading":"Reading","sentence_furigana":"","sentence_reading":"","pitch_position":"","pitch_category":"","pitch_graph":"","pitch_text":"","frequency":"","frequency_sort":"","source":"","expression_audio":"","sentence_translation":"","transliteration":"","root":"","binyan":"","noun_gender":"","noun_plural":"","pos":""},"anki_deck_name":"Anki Miner","anki_note_type":"","card_type":"","blacklist_path":null,"whitelist_path":null,"use_blacklist":false,"use_whitelist":false,"excluded_decks":[],"script_variant":"","reading_tone_color":false,"use_subtitle_regex_filter":true,"subtitle_regex_filter":"\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…׃]\\s))[-–—]\\s+","subtitle_regex_replacement":"","min_frequency_rank":0,"max_frequency_rank":0,"frequency_keep_unranked":false},"extraCardFields":[{"key":"transliteration","capability":"hebrew_transliteration","placeholder":"Transliteration","rawHtml":false},{"key":"root","capability":"word_root","placeholder":"Root","rawHtml":false},{"key":"binyan","capability":"hebrew_binyan","placeholder":"Binyan","rawHtml":false},{"key":"noun_gender","capability":"noun_gender","placeholder":"Gender","rawHtml":false},{"key":"noun_plural","capability":"noun_plural","placeholder":"Plural","rawHtml":false},{"key":"pos","capability":"pos_tag","placeholder":"POS","rawHtml":false}]}]}}"""
         val RAISED_FAILURE_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"failed","result":null,"error":{"code":"engine_error","message":"Mining failed","faultId":"$TERMINAL_FAULT_ID"}}}"""
     }

@@ -8,7 +8,9 @@
     {"$ref": "#/$defs/readingRunMessage"},
     {"$ref": "#/$defs/jobRegistrationRequestMessage"},
     {"$ref": "#/$defs/jobRegistrationAcceptedMessage"},
-    {"$ref": "#/$defs/terminalMessage"}
+    {"$ref": "#/$defs/terminalMessage"},
+    {"$ref": "#/$defs/languageProfilesRequestMessage"},
+    {"$ref": "#/$defs/languageProfilesResultMessage"}
   ],
   "$defs": {
     "runId": {
@@ -456,6 +458,310 @@
         "schemaVersion": {"const": 1},
         "type": {"const": "mining.terminal"},
         "payload": {"$ref": "#/$defs/terminalPayload"}
+      }
+    },
+    "languageCode": {
+      "type": "string",
+      "pattern": "^[a-z]{2,3}$"
+    },
+    "logicalKey": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "scopedDefaults": {
+      "type": "object",
+      "$comment": "A profile's first-visit value for each LANGUAGE_SCOPED_FIELDS name config_map exposes, in the settings-snapshot shape. The two desktop downloader fields are not exposed.",
+      "additionalProperties": false,
+      "required": [
+        "dictionary_chain",
+        "frequency_chain",
+        "pitch_chain",
+        "expression_audio_chain",
+        "allowed_pos",
+        "excluded_subtypes",
+        "excluded_wordsets",
+        "exclude_hiragana_only_words",
+        "exclude_katakana_only_words",
+        "known_words_match_kana_variants",
+        "anki_fields",
+        "anki_deck_name",
+        "anki_note_type",
+        "card_type",
+        "blacklist_path",
+        "whitelist_path",
+        "use_blacklist",
+        "use_whitelist",
+        "excluded_decks",
+        "script_variant",
+        "reading_tone_color",
+        "use_subtitle_regex_filter",
+        "subtitle_regex_filter",
+        "subtitle_regex_replacement",
+        "min_frequency_rank",
+        "max_frequency_rank",
+        "frequency_keep_unranked"
+      ],
+      "properties": {
+        "dictionary_chain": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/dictionary_chain"
+        },
+        "frequency_chain": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/frequency_chain"
+        },
+        "pitch_chain": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/pitch_chain"
+        },
+        "expression_audio_chain": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/expression_audio_chain"
+        },
+        "allowed_pos": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/allowed_pos"
+        },
+        "excluded_subtypes": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/excluded_subtypes"
+        },
+        "excluded_wordsets": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/excluded_wordsets"
+        },
+        "exclude_hiragana_only_words": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/exclude_hiragana_only_words"
+        },
+        "exclude_katakana_only_words": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/exclude_katakana_only_words"
+        },
+        "known_words_match_kana_variants": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/known_words_match_kana_variants"
+        },
+        "anki_fields": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/anki_fields"
+        },
+        "anki_deck_name": {
+          "type": "string"
+        },
+        "anki_note_type": {
+          "type": "string",
+          "$comment": "Blank for every non-ja profile: the user must pick a note type before a run, and config_map refuses a blank one."
+        },
+        "card_type": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/card_type"
+        },
+        "blacklist_path": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/blacklist_path"
+        },
+        "whitelist_path": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/whitelist_path"
+        },
+        "use_blacklist": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/use_blacklist"
+        },
+        "use_whitelist": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/use_whitelist"
+        },
+        "excluded_decks": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/excluded_decks"
+        },
+        "script_variant": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/script_variant"
+        },
+        "reading_tone_color": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/reading_tone_color"
+        },
+        "use_subtitle_regex_filter": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/use_subtitle_regex_filter"
+        },
+        "subtitle_regex_filter": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/subtitle_regex_filter"
+        },
+        "subtitle_regex_replacement": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/subtitle_regex_replacement"
+        },
+        "min_frequency_rank": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/min_frequency_rank"
+        },
+        "max_frequency_rank": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/max_frequency_rank"
+        },
+        "frequency_keep_unranked": {
+          "$ref": "https://anki-miner.app/schemas/android-bridge/v1/config-snapshot.json#/$defs/settings/properties/frequency_keep_unranked"
+        }
+      }
+    },
+    "extraCardField": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "capability",
+        "placeholder",
+        "rawHtml"
+      ],
+      "properties": {
+        "key": {
+          "$ref": "#/$defs/logicalKey"
+        },
+        "capability": {
+          "$ref": "#/$defs/logicalKey"
+        },
+        "placeholder": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rawHtml": {
+          "type": "boolean"
+        }
+      }
+    },
+    "languageProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "displayName",
+        "englishName",
+        "unavailableReason",
+        "scriptVariants",
+        "contentDirection",
+        "contentLanguage",
+        "speechLanguage",
+        "audioTrackCodes",
+        "capabilities",
+        "requiresUnidic",
+        "scopedDefaults",
+        "extraCardFields"
+      ],
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/languageCode"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "englishName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unavailableReason": {
+          "enum": [
+            null,
+            "language_data_required",
+            "language_unsupported"
+          ],
+          "$comment": "An Android reason code; the engine's own sentence names desktop menus and never crosses."
+        },
+        "scriptVariants": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 5,
+          "items": {
+            "enum": [
+              "",
+              "simplified",
+              "traditional",
+              "br",
+              "pt"
+            ]
+          }
+        },
+        "contentDirection": {
+          "enum": [
+            "ltr",
+            "rtl"
+          ]
+        },
+        "contentLanguage": {
+          "$ref": "#/$defs/languageCode"
+        },
+        "speechLanguage": {
+          "$ref": "#/$defs/languageCode"
+        },
+        "audioTrackCodes": {
+          "type": "array",
+          "uniqueItems": true,
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/logicalKey"
+          }
+        },
+        "requiresUnidic": {
+          "type": "boolean"
+        },
+        "scopedDefaults": {
+          "$ref": "#/$defs/scopedDefaults"
+        },
+        "extraCardFields": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/extraCardField"
+          }
+        }
+      }
+    },
+    "languageProfilesRequestMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "language.profiles"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "maxProperties": 0
+        }
+      }
+    },
+    "languageProfilesResultMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "type",
+        "payload"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "type": {
+          "const": "language.profiles.result"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "profiles"
+          ],
+          "properties": {
+            "profiles": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/languageProfile"
+              }
+            }
+          }
+        }
       }
     }
   }

@@ -21,6 +21,11 @@ internal data class SentenceAudioRequest(
     val runId: String,
     val requestId: String,
     val sentence: String,
+    /**
+     * The BCP-47 tag of the run's mining language. The bridge always sends it; an absent tag is
+     * the pre-language wire, which only ever asked for Japanese.
+     */
+    val language: String = "ja",
 )
 
 internal enum class SentenceAudioOutcome(
@@ -137,6 +142,7 @@ internal object SentenceAudioBridgeCodec {
     private const val MAX_JSON_TOKENS = 64L
     private val runIdPattern = Regex("run_[0-9a-f]{32}")
     private val requestIdPattern = Regex("tts_[0-9a-f]{32}")
+    private val languagePattern = Regex("[a-z]{2,3}")
 
     private val factory: JsonFactory =
         JsonFactoryBuilder()
@@ -253,6 +259,7 @@ internal object SentenceAudioBridgeCodec {
         var runId: String? = null
         var requestId: String? = null
         var sentence: String? = null
+        var language: String? = null
         while (parser.nextToken() != JsonToken.END_OBJECT) {
             requireToken(parser.currentToken(), JsonToken.FIELD_NAME, "payload contains an invalid field")
             val field = parser.currentName()
@@ -261,6 +268,7 @@ internal object SentenceAudioBridgeCodec {
                 "runId" -> runId = parser.text
                 "requestId" -> requestId = parser.text
                 "sentence" -> sentence = parser.text
+                "language" -> language = parser.text
                 else -> fail("unknown payload field: $field")
             }
         }
@@ -278,7 +286,8 @@ internal object SentenceAudioBridgeCodec {
         if (strictUtf8(checkedSentence, MAX_SENTENCE_UTF8_BYTES).isEmpty()) {
             fail("sentence is empty")
         }
-        return SentenceAudioRequest(checkedRunId, checkedRequestId, checkedSentence)
+        if (language != null && !languagePattern.matches(language)) fail("language is invalid")
+        return SentenceAudioRequest(checkedRunId, checkedRequestId, checkedSentence, language ?: "ja")
     }
 
     private fun strictUtf8(

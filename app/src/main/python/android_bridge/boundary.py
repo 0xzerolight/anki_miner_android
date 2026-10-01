@@ -58,6 +58,7 @@ def _dispatch_validated(
         "curation.response",
         "bridge.shutdown.request",
         "diagnostics.loglevel.set",
+        "language.profiles",
         "mining.reading.run",
         "mining.video.run",
         "resource.catalog.get",
@@ -157,6 +158,11 @@ def _dispatch_validated(
         from .tokenizer_runtime import configure_tokenizer
 
         return configure_tokenizer(payload)
+
+    if request_type == "language.profiles":
+        from .languages import language_profiles
+
+        return language_profiles(payload)
 
     if request_type == "dictionary.define":
         from .definitions import define_word

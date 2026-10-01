@@ -348,7 +348,10 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert set(_WAVE_B_FIELDS) <= exposed
     assert "secondary_subtitle_enabled" not in exposed
     assert "use_sentence_length_filter" not in exposed
-    assert len(exposed) == 49
+    # 49 after Wave B, plus Wave C's language, script_variant and reading_tone_color.
+    assert {"language", "script_variant", "reading_tone_color"} <= exposed
+    assert "language_stash" not in exposed
+    assert len(exposed) == 52
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
 
 
@@ -567,7 +570,7 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
     defaults = AnkiMinerConfig()
 
     assert definitions["ankiFields"]["additionalProperties"] is False
-    assert set(definitions["ankiFields"]["properties"]) == set(defaults.anki_fields)
+    assert set(defaults.anki_fields) <= set(definitions["ankiFields"]["properties"])
     assert set(definitions["cardTypeMarkerFields"]["properties"]) == set(defaults.card_type_marker_fields)
     assert definitions["indexedDictionary"]["required"] == ["kind", "dict_id"]
     assert definitions["frequencySource"]["required"] == ["source_id"]

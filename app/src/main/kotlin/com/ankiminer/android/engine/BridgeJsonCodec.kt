@@ -73,6 +73,10 @@ object BridgeJsonCodec {
     // protocol error, not a correlation key worth showing anyone.
     private val faultIdPattern = Regex("f[0-9a-f]{8}")
     private val errorCodePattern = Regex("[a-z][a-z0-9]*(?:_[a-z0-9]+)*")
+    // Mining-language codes the vendored registry uses (ja, he, yue); whether one has a profile is
+    // the bridge's call (`unsupported_language`), not the codec's.
+    private val languageCodePattern = Regex("[a-z]{2,3}")
+    private val logicalFieldKeyPattern = Regex("[a-z][a-z0-9_]*")
 
     private val factory: JsonFactory =
         JsonFactoryBuilder()
@@ -179,35 +183,52 @@ object BridgeJsonCodec {
     fun encodeDiagnosticsLogLevelSet(level: String): String =
         encode("diagnostics.loglevel.set") { generator -> generator.writeStringField("level", level) }
 
+    /**
+     * [partOfSpeech] is the focused candidate's tag; a profile that ranks senses by it (he, id)
+     * otherwise leads the pane with another sense than the card. Null omits the key.
+     */
     fun encodeDictionaryDefineRequest(
         runId: String,
         term: String,
         fallbackTerm: String?,
+        partOfSpeech: String? = null,
     ): String =
         encode("dictionary.define") { generator ->
             generator.writeStringField("runId", runId)
             generator.writeStringField("term", term)
             generator.writeFieldName("fallbackTerm")
             if (fallbackTerm == null) generator.writeNull() else generator.writeString(fallbackTerm)
+            partOfSpeech?.let { generator.writeStringField("partOfSpeech", it) }
         }
 
+    /**
+     * [language] is the active mining language. Null omits the key, which the bridge reads as ja:
+     * a non-ja user's caller must pass it, or the cue view is cleaned and tokenized as Japanese.
+     */
     fun encodeSubtitleCuesRequest(
         runId: String?,
         subtitlePath: String,
+        language: String? = null,
     ): String =
         encode("subtitle.cues") { generator ->
             generator.writeFieldName("runId")
             writeNullableString(generator, runId)
             generator.writeStringField("subtitlePath", subtitlePath)
+            language?.let { generator.writeStringField("language", it) }
         }
 
+    fun encodeLanguageProfilesRequest(): String = encode("language.profiles") { }
+
+    /** [language] as for [encodeSubtitleCuesRequest]: null picks the auto track by the ja codes. */
     fun encodeAudioTracksRequest(
         videoPath: String,
         nativeLibraryDir: String,
+        language: String? = null,
     ): String =
         encode("media.audiotracks") { generator ->
             generator.writeStringField("videoPath", videoPath)
             generator.writeStringField("nativeLibraryDir", nativeLibraryDir)
+            language?.let { generator.writeStringField("language", it) }
         }
 
     fun encodeCurationResponse(
@@ -314,6 +335,11 @@ object BridgeJsonCodec {
             "dictionary.define.result" -> readDictionaryDefineResult(payload)
             "subtitle.cues" -> readSubtitleCuesRequest(payload)
             "subtitle.cues.result" -> readSubtitleCuesResult(payload)
+            "language.profiles" -> {
+                requireExact(payload, emptySet(), type)
+                BridgeMessage.LanguageProfilesRequest
+            }
+            "language.profiles.result" -> readLanguageProfilesResult(payload)
             "media.audiotracks" -> readAudioTracksRequest(payload)
             "media.audiotracks.result" -> readAudioTracksResult(payload)
             "diagnostics.loglevel.set" -> BridgeMessage.DiagnosticsLogLevelSet(logLevel(payload, type))
@@ -711,11 +737,12 @@ object BridgeJsonCodec {
     private fun readDictionaryDefineRequest(
         payload: Map<String, BridgeJsonValue>,
     ): BridgeMessage.DictionaryDefineRequest {
-        requireExact(payload, setOf("runId", "term", "fallbackTerm"), "dictionary.define")
+        requireExactWithOptional(payload, setOf("runId", "term", "fallbackTerm"), setOf("partOfSpeech"), "dictionary.define")
         return BridgeMessage.DictionaryDefineRequest(
             runId(payload.getValue("runId")),
             text(payload.getValue("term"), "definition term"),
             nullableText(payload.getValue("fallbackTerm"), "definition fallback term"),
+            payload["partOfSpeech"]?.let { nullableText(it, "definition part of speech") },
         )
     }
 
@@ -745,10 +772,11 @@ object BridgeJsonCodec {
     private fun readSubtitleCuesRequest(
         payload: Map<String, BridgeJsonValue>,
     ): BridgeMessage.SubtitleCuesRequest {
-        requireExact(payload, setOf("runId", "subtitlePath"), "subtitle.cues")
+        requireExactWithOptional(payload, setOf("runId", "subtitlePath"), setOf("language"), "subtitle.cues")
         return BridgeMessage.SubtitleCuesRequest(
             nullableRunId(payload.getValue("runId")),
             nonEmptyText(payload.getValue("subtitlePath"), "subtitlePath"),
+            payload["language"]?.let(::miningLanguage),
         )
     }
 
@@ -786,10 +814,11 @@ object BridgeJsonCodec {
     private fun readAudioTracksRequest(
         payload: Map<String, BridgeJsonValue>,
     ): BridgeMessage.AudioTracksRequest {
-        requireExact(payload, setOf("videoPath", "nativeLibraryDir"), "media.audiotracks")
+        requireExactWithOptional(payload, setOf("videoPath", "nativeLibraryDir"), setOf("language"), "media.audiotracks")
         return BridgeMessage.AudioTracksRequest(
             absolutePath(payload.getValue("videoPath"), "videoPath"),
             absolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir"),
+            payload["language"]?.let(::miningLanguage),
         )
     }
 
@@ -823,6 +852,93 @@ object BridgeJsonCodec {
             },
         )
     }
+
+    private fun readLanguageProfilesResult(payload: Map<String, BridgeJsonValue>): BridgeMessage.LanguageProfilesResult {
+        requireExact(payload, setOf("profiles"), "language.profiles.result")
+        val profiles = array(payload.getValue("profiles"), "language profiles").map { readLanguageProfile(objectValue(it, "language profile")) }
+        if (profiles.isEmpty() || profiles.size > MAX_LANGUAGE_PROFILES) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "language profile count is out of range")
+        }
+        if (profiles.map { it.code }.toSet().size != profiles.size) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "language profile codes must be unique")
+        }
+        return BridgeMessage.LanguageProfilesResult(profiles)
+    }
+
+    private fun readLanguageProfile(payload: Map<String, BridgeJsonValue>): LanguageProfileInfo {
+        requireExact(
+            payload,
+            setOf(
+                "code", "displayName", "englishName", "unavailableReason", "scriptVariants", "contentDirection",
+                "contentLanguage", "speechLanguage", "audioTrackCodes", "capabilities", "requiresUnidic",
+                "scopedDefaults", "extraCardFields",
+            ),
+            "language profile",
+        )
+        val code = miningLanguage(payload.getValue("code"))
+        val reason =
+            nullableText(payload.getValue("unavailableReason"), "language unavailable reason")?.let { wire ->
+                LanguageUnavailableReason.entries.singleOrNull { it.wireName == wire }
+                    ?: fail(BridgeProtocolCategory.INVALID_VALUE, "language unavailable reason is invalid")
+            }
+        val direction = text(payload.getValue("contentDirection"), "content direction")
+        val scopedDefaults = objectValue(payload.getValue("scopedDefaults"), "scoped defaults")
+        requireExact(scopedDefaults, SCOPED_DEFAULT_KEYS, "scoped defaults")
+        scopedDefaults.forEach { (key, value) ->
+            // A non-ja profile leaves the note type blank for the user to pick.
+            if (key == "anki_note_type" || key == "anki_deck_name") text(value, key) else validateSetting(key, value, code)
+        }
+        return LanguageProfileInfo(
+            code = code,
+            displayName = nonEmptyText(payload.getValue("displayName"), "language display name"),
+            englishName = nonEmptyText(payload.getValue("englishName"), "language English name"),
+            unavailableReason = reason,
+            scriptVariants =
+                uniqueStrings(payload.getValue("scriptVariants"), "script variants").onEach {
+                    requireOneOf(it, SCRIPT_VARIANTS, "script variant")
+                },
+            contentDirection =
+                ContentDirection.entries.singleOrNull { it.wireName == direction }
+                    ?: fail(BridgeProtocolCategory.INVALID_VALUE, "content direction is invalid"),
+            contentLanguage = miningLanguage(payload.getValue("contentLanguage")),
+            speechLanguage = miningLanguage(payload.getValue("speechLanguage")),
+            audioTrackCodes =
+                uniqueStrings(payload.getValue("audioTrackCodes"), "audio track codes").also { codes ->
+                    if (codes.isEmpty() || codes.any(String::isEmpty)) {
+                        fail(BridgeProtocolCategory.INVALID_VALUE, "audio track codes must be non-empty")
+                    }
+                },
+            capabilities =
+                uniqueStrings(payload.getValue("capabilities"), "capabilities").onEach {
+                    if (!logicalFieldKeyPattern.matches(it)) fail(BridgeProtocolCategory.INVALID_VALUE, "capability is invalid")
+                }.toSet(),
+            requiresUnidic = bool(payload.getValue("requiresUnidic"), "requiresUnidic"),
+            scopedDefaults = scopedDefaults,
+            extraCardFields =
+                array(payload.getValue("extraCardFields"), "extra card fields").map { raw ->
+                    val field = objectValue(raw, "extra card field")
+                    requireExact(field, setOf("key", "capability", "placeholder", "rawHtml"), "extra card field")
+                    LanguageExtraCardField(
+                        key = text(field.getValue("key"), "extra card field key").also {
+                            if (!logicalFieldKeyPattern.matches(it)) fail(BridgeProtocolCategory.INVALID_VALUE, "extra card field key is invalid")
+                        },
+                        capability = text(field.getValue("capability"), "extra card field capability").also {
+                            if (!logicalFieldKeyPattern.matches(it)) fail(BridgeProtocolCategory.INVALID_VALUE, "extra card field capability is invalid")
+                        },
+                        placeholder = nonEmptyText(field.getValue("placeholder"), "extra card field placeholder"),
+                        rawHtml = bool(field.getValue("rawHtml"), "extra card field rawHtml"),
+                    )
+                },
+        )
+    }
+
+    private fun uniqueStrings(
+        value: BridgeJsonValue,
+        context: String,
+    ): List<String> =
+        stringArray(value, context).also {
+            if (it.toSet().size != it.size) fail(BridgeProtocolCategory.INVALID_VALUE, "$context must be unique")
+        }
 
     private fun readCurationPageResponse(payload: Map<String, BridgeJsonValue>): BridgeMessage.CurationPageResponse {
         requireExactWithOptional(
@@ -1202,18 +1318,26 @@ object BridgeJsonCodec {
                 "bold_target_in_sentence", "strict_card_order", "merge_incomplete_cues",
                 "deduplicate_sentences", "use_i_plus_one_filter",
                 "max_sentence_duration_seconds", "max_sentence_chars", "reading_min_occurrence", "max_parallel_workers",
+                "language", "script_variant", "reading_tone_color",
             )
         if (!known.containsAll(settings.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "config settings contain an unknown field")
-        settings.forEach { (key, value) -> validateSetting(key, value) }
+        val language = settings["language"]?.let { miningLanguage(it) } ?: JAPANESE_LANGUAGE
+        settings.forEach { (key, value) -> validateSetting(key, value, language) }
     }
 
     private fun validateSetting(
         key: String,
         value: BridgeJsonValue,
+        language: String,
     ) {
         when (key) {
             "anki_deck_name", "anki_note_type" -> canonicalLabel(value, key)
-            "anki_fields" -> validateMappedFields(value, ANKI_FIELDS, key)
+            // A non-ja profile adds its own card fields (he `transliteration`); config_map holds the
+            // exact per-language key set, so this mirror only checks their shape.
+            "anki_fields" -> validateMappedFields(value, ANKI_FIELDS, key, profileExtras = language != JAPANESE_LANGUAGE)
+            "language" -> Unit
+            "script_variant" -> requireOneOf(text(value, key), SCRIPT_VARIANTS, key)
+            "reading_tone_color" -> bool(value, key)
             "card_type_marker_fields" -> validateMappedFields(value, MARKER_FIELDS, key)
             "card_type" -> requireOneOf(text(value, key), setOf("", "word_and_sentence", "click", "sentence", "audio"), key)
             "anki_tags", "subtitle_regex_filter", "subtitle_regex_replacement" -> text(value, key)
@@ -1257,9 +1381,13 @@ object BridgeJsonCodec {
         value: BridgeJsonValue,
         allowed: Set<String>,
         context: String,
+        profileExtras: Boolean = false,
     ) {
         val fields = objectValue(value, context)
-        if (!allowed.containsAll(fields.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "$context contains an unknown field")
+        val unknown = fields.keys - allowed
+        if (unknown.isNotEmpty() && (!profileExtras || !unknown.all(logicalFieldKeyPattern::matches))) {
+            fail(BridgeProtocolCategory.INVALID_PAYLOAD, "$context contains an unknown field")
+        }
         fields.values.forEach { mapped ->
             val text = text(mapped, context)
             if (text.isNotEmpty()) requireCanonical(text, context)
@@ -1789,6 +1917,11 @@ object BridgeJsonCodec {
         if (value !in allowed) fail(BridgeProtocolCategory.INVALID_VALUE, "$context is invalid")
     }
 
+    private fun miningLanguage(value: BridgeJsonValue): String =
+        text(value, "language").also {
+            if (!languageCodePattern.matches(it)) fail(BridgeProtocolCategory.INVALID_VALUE, "language is invalid")
+        }
+
     private fun requireMinimum(
         value: Double,
         minimum: Double,
@@ -1948,6 +2081,20 @@ object BridgeJsonCodec {
             "sentence_translation",
         )
     private val MARKER_FIELDS = setOf("word_and_sentence", "click", "sentence", "audio")
+    private const val JAPANESE_LANGUAGE = "ja"
+    private const val MAX_LANGUAGE_PROFILES = 64
+    /** `LANGUAGE_SCOPED_FIELDS` minus desktop's two downloader fields; pinned by the Python contract test. */
+    private val SCOPED_DEFAULT_KEYS =
+        setOf(
+            "dictionary_chain", "frequency_chain", "pitch_chain", "expression_audio_chain", "allowed_pos",
+            "excluded_subtypes", "excluded_wordsets", "exclude_hiragana_only_words", "exclude_katakana_only_words",
+            "known_words_match_kana_variants", "anki_fields", "anki_deck_name", "anki_note_type", "card_type",
+            "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist", "excluded_decks", "script_variant",
+            "reading_tone_color", "use_subtitle_regex_filter", "subtitle_regex_filter", "subtitle_regex_replacement",
+            "min_frequency_rank", "max_frequency_rank", "frequency_keep_unranked",
+        )
+    /** `config.config._SCRIPT_VARIANT_IDS`; config_map narrows it to the active profile's offer. */
+    private val SCRIPT_VARIANTS = setOf("", "simplified", "traditional", "br", "pt")
 
     private object PythonCanonicalEscapes : CharacterEscapes() {
         private val escapeCodes =

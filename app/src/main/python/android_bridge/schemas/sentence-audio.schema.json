@@ -22,6 +22,11 @@
           "minLength": 1,
           "maxLength": 4000,
           "$comment": "Code-point bound; runtime semantic validation applies the exact 4000 UTF-16-unit Android TextToSpeech bound."
+        },
+        "language": {
+          "type": "string",
+          "pattern": "^[a-z]{2,3}$",
+          "$comment": "The BCP-47 tag of the run's mining language (android_bridge.languages.speech_language). The bridge always sends it; Kotlin reads an absent tag as ja."
         }
       }
     },
