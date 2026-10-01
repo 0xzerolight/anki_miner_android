@@ -70,6 +70,7 @@
     <string name="expression_audio_field_unmapped_warning">未對應單字音訊欄位。請對應「WordAudio」，否則卡片沒有發音。</string>
     <string name="audio_pack_unusable_warning">已略過無法使用的音訊包。請於 設定 → 資源 重新匯入。</string>
     <string name="subtitle_file_error">存取遺失。請重新選擇。</string>
+    <string name="subtitle_selection_error_type">請選擇字幕檔案（.srt、.ass、.ssa、.vtt）。</string>
     <string name="secondary_subtitle_file_error">翻譯字幕：存取遺失。請重新選擇。</string>
     <string name="dismiss_error">關閉錯誤</string>
     <string name="start_mining">採集</string>

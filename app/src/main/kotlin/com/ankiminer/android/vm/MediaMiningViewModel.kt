@@ -558,9 +558,13 @@ class MediaMiningViewModel internal constructor(
                     local.copy(video = local.video.copy(error = null))
                 DocumentSelectionError.AUDIO_TYPE ->
                     local.copy(video = local.video.copy(error = null))
-                DocumentSelectionError.SUBTITLE ->
+                DocumentSelectionError.SUBTITLE,
+                DocumentSelectionError.SUBTITLE_TYPE,
+                ->
                     local.copy(subtitle = local.subtitle.copy(error = null))
-                DocumentSelectionError.SECONDARY_SUBTITLE ->
+                DocumentSelectionError.SECONDARY_SUBTITLE,
+                DocumentSelectionError.SECONDARY_SUBTITLE_TYPE,
+                ->
                     local.copy(secondarySubtitle = local.secondarySubtitle.copy(error = null))
             }
         }
@@ -1381,13 +1385,13 @@ class MediaMiningViewModel internal constructor(
                                             if (hasSupportedSubtitleExtension(document.displayName)) {
                                                 null
                                             } else {
-                                                DocumentSelectionError.SUBTITLE
+                                                DocumentSelectionError.SUBTITLE_TYPE
                                             }
                                         DocumentKind.SECONDARY_SUBTITLE ->
                                             if (hasSupportedSubtitleExtension(document.displayName)) {
                                                 null
                                             } else {
-                                                DocumentSelectionError.SECONDARY_SUBTITLE
+                                                DocumentSelectionError.SECONDARY_SUBTITLE_TYPE
                                             }
                                     }
                                 error.also { rejectionError = it } == null

@@ -929,7 +929,7 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertEquals(
-                DocumentSelectionError.SUBTITLE,
+                DocumentSelectionError.SUBTITLE_TYPE,
                 rejectedViewModel.uiState.value.subtitle.error,
             )
             assertNull(rejectedViewModel.uiState.value.subtitle.document)
@@ -1175,7 +1175,7 @@ class MediaMiningViewModelTest {
                 runCurrent()
 
                 assertEquals(
-                    DocumentSelectionError.SUBTITLE,
+                    DocumentSelectionError.SUBTITLE_TYPE,
                     viewModel.uiState.value.subtitle.error,
                 )
                 assertNull(viewModel.uiState.value.subtitle.document)
@@ -3434,11 +3434,11 @@ class MediaMiningViewModelTest {
 
             val slot = viewModel.uiState.value.secondarySubtitle
             assertNull(slot.document)
-            assertEquals(DocumentSelectionError.SECONDARY_SUBTITLE, slot.error)
+            assertEquals(DocumentSelectionError.SECONDARY_SUBTITLE_TYPE, slot.error)
             assertNull(viewModel.uiState.value.subtitle.error)
             assertEquals(listOf("content://test/notes.txt"), broker.releasedUris)
 
-            viewModel.dismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE)
+            viewModel.dismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE_TYPE)
             runCurrent()
             assertNull(viewModel.uiState.value.secondarySubtitle.error)
         }

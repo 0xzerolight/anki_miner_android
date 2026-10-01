@@ -19,6 +19,10 @@ enum class DocumentSelectionError {
     AUDIO_TYPE,
     SUBTITLE,
     SECONDARY_SUBTITLE,
+
+    /** A subtitle pick whose extension is not a supported subtitle format; not lost access. */
+    SUBTITLE_TYPE,
+    SECONDARY_SUBTITLE_TYPE,
 }
 
 enum class MiningCommandError {

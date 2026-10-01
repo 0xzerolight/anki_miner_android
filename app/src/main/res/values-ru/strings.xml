@@ -70,6 +70,7 @@
     <string name="expression_audio_field_unmapped_warning">Ни одно поле не сопоставлено с озвучкой слова. Сопоставьте поле «WordAudio», иначе карточки останутся без произношения.</string>
     <string name="audio_pack_unusable_warning">Непригодный аудиопакет пропущен. Импортируйте заново в разделе Настройки → Ресурсы.</string>
     <string name="subtitle_file_error">Доступ потерян. Выберите снова.</string>
+    <string name="subtitle_selection_error_type">Выберите файл субтитров (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Субтитры перевода: доступ потерян. Выберите снова.</string>
     <string name="dismiss_error">Скрыть ошибку</string>
     <string name="start_mining">Майнить</string>

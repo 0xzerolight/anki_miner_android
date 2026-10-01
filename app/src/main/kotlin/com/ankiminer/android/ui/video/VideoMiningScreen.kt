@@ -608,6 +608,18 @@ fun VideoMiningScreen(
     }
 }
 
+@StringRes
+private fun DocumentSelectionError.messageResource(labels: MediaMiningLabels): Int =
+    when (this) {
+        DocumentSelectionError.VIDEO -> labels.fileError
+        DocumentSelectionError.AUDIO_TYPE -> R.string.audio_selection_error_type
+        DocumentSelectionError.SUBTITLE -> R.string.subtitle_file_error
+        DocumentSelectionError.SECONDARY_SUBTITLE -> R.string.secondary_subtitle_file_error
+        DocumentSelectionError.SUBTITLE_TYPE,
+        DocumentSelectionError.SECONDARY_SUBTITLE_TYPE,
+        -> R.string.subtitle_selection_error_type
+    }
+
 private fun LazyListScope.setupItems(
     state: VideoMiningUiState,
     labels: MediaMiningLabels,
@@ -719,17 +731,7 @@ private fun LazyListScope.setupItems(
     state.video.error?.let { error ->
         item(key = "video_file_error", contentType = "actions") {
             MiningFailureCard(
-                message =
-                    stringResource(
-                        when (error) {
-                            DocumentSelectionError.VIDEO -> labels.fileError
-                            DocumentSelectionError.AUDIO_TYPE ->
-                                R.string.audio_selection_error_type
-                            DocumentSelectionError.SUBTITLE -> R.string.subtitle_file_error
-                            DocumentSelectionError.SECONDARY_SUBTITLE ->
-                                R.string.secondary_subtitle_file_error
-                        },
-                    ),
+                message = stringResource(error.messageResource(labels)),
                 primaryAction =
                     MiningFailureAction(
                         label = stringResource(R.string.dismiss_error),
@@ -738,28 +740,26 @@ private fun LazyListScope.setupItems(
             )
         }
     }
-    state.subtitle.error?.let {
+    state.subtitle.error?.let { error ->
         item(key = "subtitle_file_error", contentType = "actions") {
             MiningFailureCard(
-                message = stringResource(R.string.subtitle_file_error),
+                message = stringResource(error.messageResource(labels)),
                 primaryAction =
                     MiningFailureAction(
                         label = stringResource(R.string.dismiss_error),
-                        onClick = { onDismissDocumentError(DocumentSelectionError.SUBTITLE) },
+                        onClick = { onDismissDocumentError(error) },
                     ),
             )
         }
     }
-    state.secondarySubtitle.error?.takeIf { state.secondarySubtitleEnabled }?.let {
+    state.secondarySubtitle.error?.takeIf { state.secondarySubtitleEnabled }?.let { error ->
         item(key = "secondary_subtitle_file_error", contentType = "actions") {
             MiningFailureCard(
-                message = stringResource(R.string.secondary_subtitle_file_error),
+                message = stringResource(error.messageResource(labels)),
                 primaryAction =
                     MiningFailureAction(
                         label = stringResource(R.string.dismiss_error),
-                        onClick = {
-                            onDismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE)
-                        },
+                        onClick = { onDismissDocumentError(error) },
                     ),
             )
         }

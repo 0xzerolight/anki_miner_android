@@ -70,6 +70,7 @@
     <string name="expression_audio_field_unmapped_warning">Tidak ada bidang yang dipetakan untuk audio kata. Petakan “WordAudio” atau kartu tidak mendapat pelafalan.</string>
     <string name="audio_pack_unusable_warning">Paket audio yang tidak dapat digunakan dilewati. Impor ulang di Pengaturan → Sumber daya.</string>
     <string name="subtitle_file_error">Akses hilang. Pilih lagi.</string>
+    <string name="subtitle_selection_error_type">Pilih berkas subtitel (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Subtitel terjemahan: akses hilang. Pilih lagi.</string>
     <string name="dismiss_error">Tutup kesalahan</string>
     <string name="start_mining">Mining</string>

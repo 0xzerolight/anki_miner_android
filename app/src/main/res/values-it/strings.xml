@@ -70,6 +70,7 @@
     <string name="expression_audio_field_unmapped_warning">Nessun campo è associato all\'audio della parola. Associa un campo “WordAudio” o le carte non avranno pronuncia.</string>
     <string name="audio_pack_unusable_warning">Pacchetto audio inutilizzabile saltato. Reimportalo in Impostazioni → Risorse.</string>
     <string name="subtitle_file_error">Accesso perso. Scegli di nuovo.</string>
+    <string name="subtitle_selection_error_type">Scegli un file di sottotitoli (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Sottotitoli di traduzione: accesso perso. Scegli di nuovo.</string>
     <string name="dismiss_error">Ignora errore</string>
     <string name="start_mining">Estrai</string>

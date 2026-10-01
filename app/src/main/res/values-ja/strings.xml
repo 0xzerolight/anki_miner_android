@@ -70,6 +70,7 @@
     <string name="expression_audio_field_unmapped_warning">単語音声用のフィールドが対応付けられていません。「WordAudio」を対応付けないとカードに発音が付きません。</string>
     <string name="audio_pack_unusable_warning">使用できない音声パックをスキップしました。設定 → リソース から再インポートしてください。</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
+    <string name="subtitle_selection_error_type">字幕ファイルを選択してください（.srt、.ass、.ssa、.vtt）。</string>
     <string name="secondary_subtitle_file_error">翻訳字幕：アクセスが失われました。選び直してください。</string>
     <string name="dismiss_error">エラーを閉じる</string>
     <string name="start_mining">マイニング</string>

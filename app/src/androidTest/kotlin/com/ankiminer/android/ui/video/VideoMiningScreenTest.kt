@@ -2420,6 +2420,22 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun aWrongSubtitleTypeNamesTheFormatsInsteadOfLostAccess() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(error = DocumentSelectionError.SUBTITLE_TYPE),
+                ),
+        )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(MINING_FAILURE_TEST_TAG))
+        composeRule.onNodeWithText("Pick a subtitle file (.srt, .ass, .ssa, .vtt).").assertIsDisplayed()
+        composeRule.onNodeWithText("Access lost. Choose again.").assertDoesNotExist()
+    }
+
+    @Test
     fun neighbouringCandidateRowsSitFlushInOneList() {
         val request = request()
         setScreen(
