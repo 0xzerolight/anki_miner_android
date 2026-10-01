@@ -192,22 +192,30 @@ private fun WordListRow(
             }
         NullableToggle(toggleLabel, enabled, engineDefault, onChange = onEnabledChange)
     }
-    AdaptivePairedActions(
-        first = { modifier ->
-            SecondaryActionButton(
-                onClick = { onImport(kind) },
-                enabled = !state.busy,
-                modifier = modifier,
-            ) { Text(stringResource(R.string.word_list_choose_file)) }
-        },
-        second = { modifier ->
-            SecondaryActionButton(
-                onClick = { onRemove(kind) },
-                enabled = !state.busy && installed != null,
-                modifier = modifier,
-            ) { Text(stringResource(R.string.word_list_remove)) }
-        },
-    )
+    if (installed == null) {
+        // Nothing to remove yet: one Choose button instead of a dead full-width Remove.
+        SecondaryActionButton(
+            onClick = { onImport(kind) },
+            enabled = !state.busy,
+        ) { Text(stringResource(R.string.word_list_choose_file)) }
+    } else {
+        AdaptivePairedActions(
+            first = { modifier ->
+                SecondaryActionButton(
+                    onClick = { onImport(kind) },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { Text(stringResource(R.string.word_list_choose_file)) }
+            },
+            second = { modifier ->
+                SecondaryActionButton(
+                    onClick = { onRemove(kind) },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { Text(stringResource(R.string.word_list_remove)) }
+            },
+        )
+    }
 }
 
 /**

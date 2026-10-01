@@ -987,7 +987,10 @@ private fun LazyListScope.audioSourcesCard(
                     )
                     OtherLanguageSlotsNote(otherLanguageSlots)
                     if (callbacks.miningLanguage != LanguageScope.JAPANESE) {
-                        DeviceVoiceSection(callbacks.miningLanguage)
+                        DeviceVoiceSection(
+                            callbacks.miningLanguage,
+                            onOpenSpeechSettings = callbacks.onOpenSpeechSettings,
+                        )
                     }
                     SettingsSection(stringResource(R.string.settings_reading_audio)) {
                         BooleanSetting(
@@ -997,11 +1000,14 @@ private fun LazyListScope.audioSourcesCard(
                                 callbacks.onDraftChange(draft.copy(readingTts = it))
                             },
                         )
-                        SecondaryActionButton(
-                            onClick = callbacks.onOpenSpeechSettings,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(stringResource(R.string.settings_open_speech_services))
+                        // Only with read-aloud on: the button has nothing to set up otherwise.
+                        if (draft.readingTts) {
+                            SecondaryActionButton(
+                                onClick = callbacks.onOpenSpeechSettings,
+                                modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Text(stringResource(R.string.settings_open_speech_services))
+                            }
                         }
                     }
                 },
@@ -1019,6 +1025,7 @@ private fun LazyListScope.audioSourcesCard(
 @Composable
 internal fun DeviceVoiceSection(
     language: String,
+    onOpenSpeechSettings: () -> Unit = {},
     probe: suspend (Context, String) -> DeviceVoiceStatus = ::probeDeviceVoice,
 ) {
     val context = LocalContext.current
@@ -1029,6 +1036,13 @@ internal fun DeviceVoiceSection(
     SettingsSection(stringResource(R.string.settings_word_audio_device_voice)) {
         SupportingText(stringResource(R.string.settings_word_audio_device_voice_help))
         status?.let { SupportingText(stringResource(it.message)) }
+        // The missing-voice line names this button, so it appears with that line.
+        if (status == DeviceVoiceStatus.MISSING_DATA) {
+            SecondaryActionButton(
+                onClick = onOpenSpeechSettings,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.settings_open_speech_services)) }
+        }
     }
 }
 

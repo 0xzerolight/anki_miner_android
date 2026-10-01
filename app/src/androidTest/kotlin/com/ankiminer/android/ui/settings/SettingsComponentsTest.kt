@@ -48,10 +48,12 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.resources.InstalledResourceKind
+import com.ankiminer.android.data.resources.InstalledWordList
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -440,6 +442,33 @@ class SettingsComponentsTest {
 
         composeRule.onNodeWithText("Finishing…").assertIsDisplayed()
         composeRule.onNodeWithText("0 of 0").assertDoesNotExist()
+    }
+
+    @Test
+    fun wordListOffersRemoveOnlyOnceAFileIsImported() {
+        var state by mutableStateOf(SetupUiState(resourceStartup = ResourceStartupReadiness.READY))
+        composeRule.setContent {
+            AnkiMinerTheme {
+                WordListImportCard(
+                    state = state,
+                    blacklistEnabled = null,
+                    whitelistEnabled = null,
+                    onImport = {},
+                    onRemove = {},
+                    onBlacklistEnabledChange = {},
+                    onWhitelistEnabledChange = {},
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(0)
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    wordLists = listOf(InstalledWordList(WordListKind.BLACKLIST, entryCount = 12, sizeBytes = 64)),
+                )
+        }
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(1)
     }
 
     @Test

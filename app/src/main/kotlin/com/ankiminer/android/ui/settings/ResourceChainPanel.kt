@@ -142,6 +142,7 @@ internal fun ResourceChainPanel(
     val selectedRow = rows.firstOrNull { it.id == selectedId }
     val firstMovableId = rows.firstOrNull { it.movable }?.id
     val lastMovableId = rows.lastOrNull { it.movable }?.id
+    val arrowColumns = rows.count { it.movable } >= 2
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -193,6 +194,7 @@ internal fun ResourceChainPanel(
                     selected = row.id == selectedId,
                     canMoveUp = row.movable && row.id != firstMovableId,
                     canMoveDown = row.movable && row.id != lastMovableId,
+                    arrowColumns = arrowColumns,
                     busy = busy,
                     onSelect = { selectedId = row.id },
                     onMove = onMove,
@@ -205,7 +207,8 @@ internal fun ResourceChainPanel(
             extras = extras,
             busy = busy,
             quietAction = selectedRow?.quietAction,
-            removeEnabled = selectedRow != null && selectedRow.removable && !busy,
+            removeVisible = selectedRow?.removable == true,
+            removeEnabled = !busy,
             onRemove = { selectedRow?.let { onRemove(it.id) } },
         )
         footer?.invoke()
@@ -225,6 +228,7 @@ private fun ResourcePanelRow(
     selected: Boolean,
     canMoveUp: Boolean,
     canMoveDown: Boolean,
+    arrowColumns: Boolean,
     busy: Boolean,
     onSelect: () -> Unit,
     onMove: (id: String, delta: Int) -> Unit,
@@ -292,28 +296,31 @@ private fun ResourcePanelRow(
                     .semantics { contentDescription = enableLabel },
             enabled = row.onToggle != null && !busy,
         )
-        if (row.movable) {
-            SquareSlot {
-                MoveButton(
-                    rotationDegrees = MoveUpRotation,
-                    description = stringResource(R.string.resource_panel_move_up, row.title),
-                    testTag = ResourcePanelTestTags.moveUp(row.id),
-                    enabled = canMoveUp && !busy,
-                    onClick = { onMove(row.id, -1) },
-                )
+        // Arrows only where a reorder can happen; with one movable row they did nothing.
+        if (arrowColumns) {
+            if (row.movable) {
+                SquareSlot {
+                    MoveButton(
+                        rotationDegrees = MoveUpRotation,
+                        description = stringResource(R.string.resource_panel_move_up, row.title),
+                        testTag = ResourcePanelTestTags.moveUp(row.id),
+                        enabled = canMoveUp && !busy,
+                        onClick = { onMove(row.id, -1) },
+                    )
+                }
+                SquareSlot {
+                    MoveButton(
+                        rotationDegrees = MoveDownRotation,
+                        description = stringResource(R.string.resource_panel_move_down, row.title),
+                        testTag = ResourcePanelTestTags.moveDown(row.id),
+                        enabled = canMoveDown && !busy,
+                        onClick = { onMove(row.id, 1) },
+                    )
+                }
+            } else {
+                Spacer(Modifier.size(AnkiMinerTokens.Layout.minTouchTarget))
+                Spacer(Modifier.size(AnkiMinerTokens.Layout.minTouchTarget))
             }
-            SquareSlot {
-                MoveButton(
-                    rotationDegrees = MoveDownRotation,
-                    description = stringResource(R.string.resource_panel_move_down, row.title),
-                    testTag = ResourcePanelTestTags.moveDown(row.id),
-                    enabled = canMoveDown && !busy,
-                    onClick = { onMove(row.id, 1) },
-                )
-            }
-        } else {
-            Spacer(Modifier.size(AnkiMinerTokens.Layout.minTouchTarget))
-            Spacer(Modifier.size(AnkiMinerTokens.Layout.minTouchTarget))
         }
     }
 }
@@ -334,6 +341,7 @@ private fun ResourcePanelToolbar(
     extras: List<ResourcePanelAction>,
     busy: Boolean,
     quietAction: ResourcePanelAction?,
+    removeVisible: Boolean,
     removeEnabled: Boolean,
     onRemove: () -> Unit,
 ) {
@@ -343,26 +351,34 @@ private fun ResourcePanelToolbar(
         horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // A menu with one entry is just that entry: run it, under its own label.
+        val direct = addMenu.singleOrNull()
         Box {
             // Filled rather than the wrapper taxonomy's tonal "utility" import button: desktop D41
             // gives each panel exactly one filled accent, and Add is it.
             PrimaryActionButton(
                 onClick = {
-                    if (addMenu.isEmpty()) addPrimary.onClick() else menuOpen = true
+                    when {
+                        direct != null -> direct.onClick()
+                        addMenu.isEmpty() -> addPrimary.onClick()
+                        else -> menuOpen = true
+                    }
                 },
                 modifier = Modifier.testTag(ResourcePanelTestTags.ADD),
-                enabled = addPrimary.enabled && !busy,
-            ) { Text(addPrimary.label, maxLines = 1) }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                addMenu.forEach { option ->
-                    DropdownMenuItem(
-                        text = { Text(option.label) },
-                        onClick = {
-                            menuOpen = false
-                            option.onClick()
-                        },
-                        enabled = option.enabled && !busy,
-                    )
+                enabled = (direct?.enabled ?: addPrimary.enabled) && !busy,
+            ) { Text(direct?.label ?: addPrimary.label, maxLines = 1) }
+            if (addMenu.size >= 2) {
+                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    addMenu.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.label) },
+                            onClick = {
+                                menuOpen = false
+                                option.onClick()
+                            },
+                            enabled = option.enabled && !busy,
+                        )
+                    }
                 }
             }
         }
@@ -380,27 +396,29 @@ private fun ResourcePanelToolbar(
             ) { Text(action.label, maxLines = 1) }
         }
         Spacer(Modifier.weight(1f))
-        SquareSlot {
-            OutlinedIconButton(
-                onClick = onRemove,
-                modifier =
-                    Modifier
-                        .minimumInteractiveComponentSize()
-                        .size(SquareButtonSize)
-                        .testTag(ResourcePanelTestTags.REMOVE),
-                enabled = removeEnabled,
-                shape = MaterialTheme.shapes.small,
-                colors =
-                    IconButtonDefaults.outlinedIconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.error,
-                        disabledContentColor = disabledActionContentColor(),
-                    ),
-                border = removeBorder(removeEnabled),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_clear),
-                    contentDescription = stringResource(R.string.resource_panel_remove_selected),
-                )
+        if (removeVisible) {
+            SquareSlot {
+                OutlinedIconButton(
+                    onClick = onRemove,
+                    modifier =
+                        Modifier
+                            .minimumInteractiveComponentSize()
+                            .size(SquareButtonSize)
+                            .testTag(ResourcePanelTestTags.REMOVE),
+                    enabled = removeEnabled,
+                    shape = MaterialTheme.shapes.small,
+                    colors =
+                        IconButtonDefaults.outlinedIconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error,
+                            disabledContentColor = disabledActionContentColor(),
+                        ),
+                    border = removeBorder(removeEnabled),
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_clear),
+                        contentDescription = stringResource(R.string.resource_panel_remove_selected),
+                    )
+                }
             }
         }
     }

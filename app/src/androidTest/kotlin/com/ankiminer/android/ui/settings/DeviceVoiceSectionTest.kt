@@ -51,6 +51,7 @@ class DeviceVoiceSectionTest {
 
         composeRule.onNodeWithText(context.getString(R.string.settings_word_audio_device_voice_help)).assertExists()
         composeRule.onNodeWithText(context.getString(R.string.settings_word_audio_voice_missing_data)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.settings_open_speech_services)).assertExists()
 
         // The user downloads the voice from the speech services and comes back.
         composeRule.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.STARTED }
@@ -58,6 +59,7 @@ class DeviceVoiceSectionTest {
         composeRule.runOnUiThread { owner.lifecycle.currentState = Lifecycle.State.RESUMED }
         composeRule.waitForIdle()
         composeRule.onNodeWithText(context.getString(R.string.settings_word_audio_voice_available)).assertExists()
+        composeRule.onNodeWithText(context.getString(R.string.settings_open_speech_services)).assertDoesNotExist()
 
         language = "id"
         composeRule.waitForIdle()
