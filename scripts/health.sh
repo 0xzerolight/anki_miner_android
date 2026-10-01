@@ -92,6 +92,10 @@ PYTHONDONTWRITEBYTECODE=1 python3.13 \
 PYTHONDONTWRITEBYTECODE=1 "$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" \
     "$REPO_ROOT/tools/anki-contract/generate_html5_entities.py" --check
 PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
+    -s "$REPO_ROOT/tools/language-data/tests" -v
+PYTHONDONTWRITEBYTECODE=1 python3.13 \
+    "$REPO_ROOT/tools/language-data/generate_language_data.py" --check
+PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/dependencies/tests" -v
 PYTHONDONTWRITEBYTECODE=1 python3.13 -m unittest discover \
     -s "$REPO_ROOT/tools/runtime-wheels/tests" -v

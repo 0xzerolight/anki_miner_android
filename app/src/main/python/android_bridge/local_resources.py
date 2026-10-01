@@ -26,6 +26,7 @@ from pathlib import Path, PurePosixPath
 
 from . import resources as core
 from .bootstrap import require_initialized
+from .language_data import installed_language_data
 from .languages import (
     JAPANESE,
     get_profile,
@@ -2593,6 +2594,7 @@ def list_local_resources(payload: Mapping[str, object]) -> str:
             "audioPacks": _audio_inventory(home),
             "knownWords": _known_words_inventory(home, language),
             "wordsets": _wordset_inventory(),
+            "languageData": installed_language_data(home),
         },
     )
 

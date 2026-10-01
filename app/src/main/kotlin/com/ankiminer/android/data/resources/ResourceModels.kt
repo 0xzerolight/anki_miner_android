@@ -98,6 +98,40 @@ data class PitchCatalogResource(
         }
 }
 
+data class LanguageDataInnerDigest(
+    val path: String,
+    val sha256: String,
+)
+
+/** How the vendored pack installer unpacks one data component (its `ArtifactSpec`). */
+data class LanguageDataInstallIdentity(
+    val memberPrefix: String,
+    val exclude: List<String>,
+    val sentinels: List<String>,
+    val innerSha256: List<LanguageDataInnerDigest>,
+)
+
+/**
+ * A data-only component of a vendored language pack, installed through
+ * `resource.languagedata.install` into `language_packs/<language>/<importName>/`.
+ *
+ * Generated from the vendored `pack.py`; engine code is never downloaded.
+ */
+data class LanguageDataCatalogResource(
+    override val resourceId: String,
+    override val displayName: String,
+    val importName: String,
+    override val archive: ResourceArchive,
+    val install: LanguageDataInstallIdentity,
+    override val attribution: List<ResourceAttribution>,
+) : CatalogResource
+
+data class InstalledLanguageData(
+    val resourceId: String,
+    val language: String,
+    val importName: String,
+)
+
 /**
  * One mining language's pinned resources (`resource_catalog/<language>.json`, schema 3).
  *
@@ -123,6 +157,10 @@ data class ResourceCatalog(
 
     val pitchSources: List<PitchCatalogResource>
         get() = resources.filterIsInstance<PitchCatalogResource>()
+
+    /** Engine data the language cannot mine without; installed with the language, never recommended. */
+    val languageData: List<LanguageDataCatalogResource>
+        get() = resources.filterIsInstance<LanguageDataCatalogResource>()
 
     fun dictionary(resourceId: String): YomitanCatalogResource? =
         dictionaries.singleOrNull { it.resourceId == resourceId }
@@ -476,6 +514,8 @@ data class LocalResourceInventory(
     val audioPacks: List<InstalledAudioPack>,
     val knownWords: KnownWordsInventory,
     val wordsets: List<BundledWordset>,
+    /** Resource ids of the pinned language-data components complete on disk. */
+    val languageData: Set<String> = emptySet(),
 )
 
 data class DictionaryLookup(
@@ -638,6 +678,8 @@ data class ResourceManagerState(
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val wordsets: List<BundledWordset> = emptyList(),
+    /** Resource ids of the pinned language-data components complete on disk. */
+    val installedLanguageData: Set<String> = emptySet(),
     val wordLists: List<InstalledWordList> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
@@ -653,7 +695,18 @@ data class ResourceManagerState(
 
     /** What one press of the recommended-set download would install right now. */
     val recommendedPlan: RecommendedResourcePlan
-        get() = recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources)
+        get() = recommendedResourcePlan(catalog)
+
+    /**
+     * The set one press would install for [language] — its engine data first, then its
+     * recommended dictionary and lists. Empty before the first refresh or for a language with no
+     * catalog.
+     */
+    fun recommendedPlan(language: String): RecommendedResourcePlan =
+        recommendedResourcePlan(catalogs.firstOrNull { it.language == language })
+
+    private fun recommendedResourcePlan(catalog: ResourceCatalog?): RecommendedResourcePlan =
+        recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources, installedLanguageData)
 
     val catalogDictionaries: List<CatalogDictionaryStatus>
         get() =

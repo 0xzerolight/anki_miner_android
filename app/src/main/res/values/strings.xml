@@ -508,6 +508,9 @@
     <string name="jpdb_frequency_resource_title">JPDB v2.2 kana frequency</string>
     <string name="kanjium_pitch_resource_title">Kanjium pitch accents</string>
     <string name="jmdict_resource_title">JMdict dictionary (English)</string>
+    <string name="language_dictionary_resource_title">Dictionary</string>
+    <string name="language_frequency_resource_title">Word frequency list</string>
+    <string name="language_data_resource_title">Language data</string>
     <string name="jmdict_resource_description">Offline Yomitan dictionary with English glosses · about 15 MiB download and up to 163 MiB while importing</string>
     <string name="resource_installed">Installed</string>
     <string name="resource_not_installed">Not installed</string>

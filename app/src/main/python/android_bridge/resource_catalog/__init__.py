@@ -25,7 +25,7 @@ CATALOG_SCHEMA_VERSION = 3
 #: Every language with a catalog file, in the order ``resource.catalog`` lists them.
 #: A fixed tuple rather than a directory listing: the packaged tree is read by
 #: path on device, and ``test_resources`` binds this to the files present.
-CATALOG_LANGUAGES: tuple[str, ...] = ("ja", "he")
+CATALOG_LANGUAGES: tuple[str, ...] = ("ja", "ar", "fa", "he")
 _CATALOG_DIR = Path(__file__).parent
 _LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
 _MAX_CATALOG_BYTES = 64 * 1024
@@ -39,6 +39,12 @@ _PITCH_FORMATS = frozenset({"zip", "csv", "tsv"})
 _LOCAL_ARCHIVE_LIMIT = 512 * 1024 * 1024
 _LOCAL_TEXT_LIMIT = 64 * 1024 * 1024
 _MAX_RECOMMENDED = 8
+#: Pack artifact kinds a data-only component may use. An sdist is code by nature.
+_LANGUAGE_DATA_FORMATS = frozenset({"zip", "wheel"})
+#: Mirrors the vendored ``pack_installer.MAX_ARTIFACT_BYTES``.
+_LANGUAGE_DATA_ARCHIVE_LIMIT = 200 * 1024 * 1024
+_IMPORT_NAME_RE = re.compile(r"[a-z_][a-z0-9_]{0,63}")
+_MAX_INSTALL_PATHS = 64
 _ID_RE = re.compile(r"(?!.*\.\.)[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SLOT_ID_RE = re.compile(r"(?!.*(?:\.\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
 _SHA256_RE = re.compile(r"[0-9a-f]{64}")
@@ -389,7 +395,118 @@ class PitchResource:
         }
 
 
-PinnedResource = UniDicResource | YomitanResource | FrequencyResource | PitchResource
+def _relative_path(value: Any, *, context: str, directory: bool = False) -> str:
+    """A package-relative POSIX path; *directory* allows (and keeps) one trailing ``/``."""
+
+    candidate = _text(value, context=context, max_bytes=256)
+    body = candidate[:-1] if directory and candidate.endswith("/") else candidate
+    parts = body.split("/")
+    if "\\" in candidate or candidate.startswith("/") or any(part in {"", ".", ".."} for part in parts):
+        raise _error(f"{context} is unsafe")
+    return candidate
+
+
+def _path_list(value: Any, *, context: str, directory: bool = False, allow_empty: bool = True) -> tuple[str, ...]:
+    if not isinstance(value, list) or len(value) > _MAX_INSTALL_PATHS or (not value and not allow_empty):
+        raise _error(f"{context} must be a bounded array")
+    paths = tuple(_relative_path(item, context=context, directory=directory) for item in value)
+    if len(set(paths)) != len(paths):
+        raise _error(f"{context} repeats a path")
+    return paths
+
+
+@dataclass(frozen=True, slots=True)
+class InnerDigest:
+    path: str
+    sha256: str
+
+    def payload(self) -> dict[str, object]:
+        return {"path": self.path, "sha256": self.sha256}
+
+
+@dataclass(frozen=True, slots=True)
+class LanguageDataInstallIdentity:
+    """How the vendored installer unpacks one data component (its ``ArtifactSpec``).
+
+    Generated from ``languages/<code>/pack.py``; the bridge re-checks it against
+    the vendored manifest before extracting, and reads ``sentinels`` to report
+    an install without importing the engine.
+    """
+
+    member_prefix: str
+    exclude: tuple[str, ...]
+    sentinels: tuple[str, ...]
+    inner_sha256: tuple[InnerDigest, ...]
+
+    @classmethod
+    def parse(cls, value: Any) -> LanguageDataInstallIdentity:
+        item = _exact(
+            value,
+            {"memberPrefix", "exclude", "sentinels", "innerSha256"},
+            context="language-data install identity",
+        )
+        prefix = item["memberPrefix"]
+        if prefix != "":
+            prefix = _relative_path(prefix, context="language-data member prefix", directory=True)
+            if not prefix.endswith("/"):
+                raise _error("language-data member prefix must name a directory")
+        digests = item["innerSha256"]
+        if not isinstance(digests, list) or len(digests) > _MAX_INSTALL_PATHS:
+            raise _error("language-data inner digests must be a bounded array")
+        inner = tuple(
+            InnerDigest(
+                path=_relative_path(entry["path"], context="language-data inner path"),
+                sha256=_sha256(entry["sha256"], context="language-data inner hash"),
+            )
+            for entry in (_exact(raw, {"path", "sha256"}, context="language-data inner digest") for raw in digests)
+        )
+        if len({digest.path for digest in inner}) != len(inner):
+            raise _error("language-data inner digests repeat a path")
+        return cls(
+            member_prefix=prefix,
+            exclude=_path_list(item["exclude"], context="language-data exclude", directory=True),
+            sentinels=_path_list(item["sentinels"], context="language-data sentinel", allow_empty=False),
+            inner_sha256=inner,
+        )
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "memberPrefix": self.member_prefix,
+            "exclude": list(self.exclude),
+            "sentinels": list(self.sentinels),
+            "innerSha256": [digest.payload() for digest in self.inner_sha256],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LanguageDataResource:
+    """A data-only component of a vendored language pack (``language_packs/<code>/<importName>/``).
+
+    Generated by ``tools/language-data/generate_language_data.py`` from the
+    vendored ``pack.py``; installed through ``resource.languagedata.install``.
+    """
+
+    resource_id: str
+    display_name: str
+    import_name: str
+    archive: ArchiveIdentity
+    install: LanguageDataInstallIdentity
+    attribution: tuple[Attribution, ...]
+    kind: str = "language-data"
+
+    def payload(self) -> dict[str, object]:
+        return {
+            "resourceId": self.resource_id,
+            "kind": self.kind,
+            "displayName": self.display_name,
+            "importName": self.import_name,
+            "archive": self.archive.payload(),
+            "install": self.install.payload(),
+            "attribution": [item.payload() for item in self.attribution],
+        }
+
+
+PinnedResource = UniDicResource | YomitanResource | FrequencyResource | PitchResource | LanguageDataResource
 
 
 @dataclass(frozen=True, slots=True)
@@ -398,6 +515,10 @@ class ResourceCatalog:
     recommended: tuple[str, ...]
     language: str = "ja"
     schema_version: int = CATALOG_SCHEMA_VERSION
+
+    @property
+    def language_data(self) -> tuple[LanguageDataResource, ...]:
+        return tuple(resource for resource in self.resources if isinstance(resource, LanguageDataResource))
 
     def get(self, resource_id: str) -> PinnedResource:
         for resource in self.resources:
@@ -474,6 +595,28 @@ def _parse_resource(value: Any) -> PinnedResource:
             archive=ArchiveIdentity.parse(item["archive"], allowed_formats=formats),
             attribution=_attribution(item["attribution"]),
         )
+    if kind == "language-data":
+        item = _exact(
+            value,
+            {"resourceId", "kind", "displayName", "importName", "archive", "install", "attribution"},
+            context="language-data resource",
+        )
+        archive = ArchiveIdentity.parse(item["archive"])
+        if archive.format not in _LANGUAGE_DATA_FORMATS:
+            raise _error(f"Archive format must be one of {sorted(_LANGUAGE_DATA_FORMATS)!r}")
+        if archive.size_bytes > _LANGUAGE_DATA_ARCHIVE_LIMIT:
+            raise _error("Pinned language data exceeds the pack artifact limit")
+        import_name = _text(item["importName"], context="language-data import name", max_bytes=64)
+        if not _IMPORT_NAME_RE.fullmatch(import_name):
+            raise _error("language-data import name is invalid")
+        return LanguageDataResource(
+            resource_id=_resource_id(item["resourceId"], context="resource id"),
+            display_name=_text(item["displayName"], context="display name", max_bytes=256),
+            import_name=import_name,
+            archive=archive,
+            install=LanguageDataInstallIdentity.parse(item["install"]),
+            attribution=_attribution(item["attribution"]),
+        )
     raise _error(f"Unsupported resource kind: {kind!r}")
 
 
@@ -521,6 +664,12 @@ def parse_catalog_json(raw: str) -> ResourceCatalog:
     if len(set(ids)) != len(ids):
         raise _error("Resource catalog contains duplicate resource ids")
     recommended = _parse_recommended(root["recommended"], known=set(ids))
+    data = [resource for resource in resources if isinstance(resource, LanguageDataResource)]
+    if len({resource.import_name for resource in data}) != len(data):
+        raise _error("Resource catalog pins one language-data component twice")
+    # Engine data is installed with the language, never picked from the set.
+    if {resource.resource_id for resource in data} & set(recommended):
+        raise _error("Recommended set names language data")
     return ResourceCatalog(resources=resources, recommended=recommended, language=language)
 
 

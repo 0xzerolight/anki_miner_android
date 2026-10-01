@@ -77,6 +77,7 @@ def _dispatch_validated(
         "resource.knownwords.remove",
         "resource.knownwords.reset",
         "resource.knownwords.export",
+        "resource.languagedata.install",
         "resource.minedwords.remove",
         "resource.local.delete",
         "resource.local.list",
@@ -133,6 +134,11 @@ def _dispatch_validated(
             if request_type in _PROGRESS_HANDLERS:
                 return local_handlers[request_type](payload, callbacks=callbacks)
             return local_handlers[request_type](payload)
+
+        if request_type == "resource.languagedata.install":
+            from .language_data import install_language_data
+
+            return install_language_data(payload)
 
         handlers = {
             "resource.catalog.get": resources.catalog_response,

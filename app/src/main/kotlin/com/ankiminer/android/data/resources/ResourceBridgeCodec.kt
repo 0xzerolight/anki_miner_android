@@ -27,6 +27,10 @@ object ResourceBridgeCodec {
     private val sha256 = Regex("[0-9a-f]{64}")
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
     private val languageCode = Regex("[a-z]{2,3}")
+    private val importName = Regex("[a-z_][a-z0-9_]{0,63}")
+
+    /** Pack artifact kinds a data-only component may use (`resource_catalog._LANGUAGE_DATA_FORMATS`). */
+    private val LANGUAGE_DATA_FORMATS = setOf("zip", "wheel")
     private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
     /**
@@ -91,6 +95,44 @@ object ResourceBridgeCodec {
             generator.writeStringField("resourceId", selectedResourceId)
             generator.writeStringField("archivePath", archivePath)
         }
+    }
+
+    fun encodeLanguageDataInstallRequest(
+        operation: String,
+        selectedResourceId: String,
+        archivePath: String,
+    ): String {
+        requireOperationId(operation)
+        requireResourceId(selectedResourceId)
+        requireAbsolutePath(archivePath)
+        return encode("resource.languagedata.install") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("resourceId", selectedResourceId)
+            generator.writeStringField("archivePath", archivePath)
+        }
+    }
+
+    /** The installed component must be the pinned one the request named. */
+    fun decodeInstalledLanguageData(raw: String, expectedResourceId: String): InstalledLanguageData {
+        val value = payload(raw, "resource.languagedata.installed")
+        exact(value, setOf("resourceId", "language", "importName"), "installed language data")
+        val installed =
+            InstalledLanguageData(
+                resourceId = requireResourceId(text(value.getValue("resourceId"), "resourceId")),
+                language = text(value.getValue("language"), "language"),
+                importName = text(value.getValue("importName"), "importName"),
+            )
+        val catalog = FrozenResourceCatalog.catalogOf(installed.resourceId)
+        val expected = catalog?.languageData?.singleOrNull { it.resourceId == installed.resourceId }
+        if (
+            installed.resourceId != expectedResourceId ||
+                expected == null ||
+                installed.language != catalog.language ||
+                installed.importName != expected.importName
+        ) {
+            throw ResourceBridgeException("resource_identity_mismatch", "Installed language data identity is invalid")
+        }
+        return installed
     }
 
     fun encodeDictionaryImportRequest(
@@ -666,7 +708,7 @@ object ResourceBridgeCodec {
         val value = payload(raw, "resource.local.listed")
         exact(
             value,
-            setOf("frequencies", "pitchSources", "audioPacks", "knownWords", "wordsets"),
+            setOf("frequencies", "pitchSources", "audioPacks", "knownWords", "wordsets", "languageData"),
             "local resource inventory",
         )
         val frequencies = array(value.getValue("frequencies"), "frequencies").also {
@@ -685,12 +727,22 @@ object ResourceBridgeCodec {
         if (pitchSources.map { it.sourceId }.distinct().size != pitchSources.size) invalid("Duplicate pitch source")
         if (audioPacks.map { it.packId }.distinct().size != audioPacks.size) invalid("Duplicate audio pack")
         if (wordsets.map { it.wordsetId }.distinct().size != wordsets.size) invalid("Duplicate bundled wordset")
+        val languageData =
+            array(value.getValue("languageData"), "languageData").map {
+                requireResourceId(text(it, "language-data resource id")).also { id ->
+                    if (FrozenResourceCatalog.catalogOf(id)?.languageData?.any { data -> data.resourceId == id } != true) {
+                        invalid("Installed language data is not pinned")
+                    }
+                }
+            }
+        if (languageData.distinct().size != languageData.size) invalid("Duplicate installed language data")
         return LocalResourceInventory(
             frequencies = frequencies,
             pitchSources = pitchSources,
             audioPacks = audioPacks,
             knownWords = knownWordsInventory(value.getValue("knownWords")),
             wordsets = wordsets,
+            languageData = languageData.toSet(),
         )
     }
 
@@ -876,8 +928,49 @@ object ResourceBridgeCodec {
                     attributions(value.getValue("attribution")),
                 )
             }
+            "language-data" -> {
+                exact(
+                    value,
+                    setOf("resourceId", "kind", "displayName", "importName", "archive", "install", "attribution"),
+                    "language-data catalog resource",
+                )
+                val archive = objectValue(value.getValue("archive"), "archive")
+                val format = (archive["format"] as? BridgeJsonValue.Text)?.value
+                if (format !in LANGUAGE_DATA_FORMATS) invalid("Archive format is invalid")
+                LanguageDataCatalogResource(
+                    requireResourceId(text(value.getValue("resourceId"), "resourceId")),
+                    boundedText(value.getValue("displayName"), "displayName", 256),
+                    text(value.getValue("importName"), "importName").also {
+                        if (!importName.matches(it)) invalid("Language-data import name is invalid")
+                    },
+                    archive(value.getValue("archive"), format!!),
+                    languageDataInstall(value.getValue("install")),
+                    attributions(value.getValue("attribution")),
+                )
+            }
             else -> invalid("Unsupported resource kind")
         }
+    }
+
+    private fun languageDataInstall(raw: BridgeJsonValue): LanguageDataInstallIdentity {
+        val value = objectValue(raw, "language-data install")
+        exact(value, setOf("memberPrefix", "exclude", "sentinels", "innerSha256"), "language-data install")
+        return LanguageDataInstallIdentity(
+            memberPrefix = boundedText(value.getValue("memberPrefix"), "memberPrefix", 256, allowEmpty = true),
+            exclude = strings(value.getValue("exclude"), "exclude", 256),
+            sentinels = strings(value.getValue("sentinels"), "sentinels", 256).also {
+                if (it.isEmpty()) invalid("Language data needs a sentinel")
+            },
+            innerSha256 =
+                array(value.getValue("innerSha256"), "innerSha256").map { entry ->
+                    val digest = objectValue(entry, "inner digest")
+                    exact(digest, setOf("path", "sha256"), "inner digest")
+                    LanguageDataInnerDigest(
+                        boundedText(digest.getValue("path"), "inner path", 256),
+                        requireSha256(text(digest.getValue("sha256"), "inner sha256")),
+                    )
+                },
+        )
     }
 
     /**
@@ -1373,7 +1466,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, hebrew) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1580,5 +1673,87 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = listOf("wty-he-en-2026.09.20", "opensubtitles-he-2018"),
+        )
+
+    val arabic =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "ar",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "ar-calima-msa",
+                        displayName = "CAMeL Tools calima-msa-r13 morphology database",
+                        importName = "calima_msa",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/CAMeL-Lab/camel-tools-data/releases/download/2022.03.21/morphology_db_calima-msa-r13-0.4.0.zip",
+                                sha256 = "fe6531250c5529307627cc63ed56447cbb9968020d6ea3ab867e6ad9af94c738",
+                                sizeBytes = 40_488_532,
+                                format = "zip",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "",
+                                exclude = emptyList(),
+                                sentinels = listOf("morphology.db", "LICENSE"),
+                                innerSha256 =
+                                    listOf(
+                                        LanguageDataInnerDigest(
+                                            "morphology.db",
+                                            "195bc25a333237a2126470da888d7936b59ed3729f9210e0a4194ba43497dd70",
+                                        ),
+                                    ),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "calima-msa-r13 (camel-tools-data 2022.03.21)",
+                                    "CAMeL Lab, New York University Abu Dhabi; derived from Aramorph 1.2.1 (Linguistic Data Consortium, QAMUS LLC, University of Pennsylvania, Jon Dehdari)",
+                                    "GPL-2.0-only",
+                                    "https://github.com/CAMeL-Lab/camel-tools-data",
+                                ),
+                            ),
+                    ),
+                ),
+            recommended = emptyList(),
+        )
+
+    val persian =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "fa",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "fa-hazm-data",
+                        displayName = "hazm 0.12.1 Persian lexicon tables",
+                        importName = "hazm_data",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/14/85/02f95ca414a5d629239a3fde8f4134a2355dd023044219192e48562dee71/hazm-0.12.1-py3-none-any.whl",
+                                sha256 = "91507896f5b77dcfe26c710b457801e1204ab0d86dcb756a7ab5912719108db0",
+                                sizeBytes = 887_193,
+                                format = "wheel",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "hazm/data/",
+                                exclude = emptyList(),
+                                sentinels = listOf("words.dat", "verbs.dat", "iverbs.dat", "iwords.dat", "stopwords.dat"),
+                                innerSha256 = emptyList(),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "hazm 0.12.1 data tables",
+                                    "Copyright (c) 2013 Alireza Nourian and hazm contributors",
+                                    "MIT",
+                                    "https://github.com/roshan-research/hazm",
+                                ),
+                            ),
+                    ),
+                ),
+            recommended = emptyList(),
         )
 }

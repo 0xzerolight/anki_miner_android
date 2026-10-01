@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 3,
+  "language": "ar",
+  "resources": [
+    {
+      "resourceId": "ar-calima-msa",
+      "kind": "language-data",
+      "displayName": "CAMeL Tools calima-msa-r13 morphology database",
+      "importName": "calima_msa",
+      "archive": {
+        "url": "https://github.com/CAMeL-Lab/camel-tools-data/releases/download/2022.03.21/morphology_db_calima-msa-r13-0.4.0.zip",
+        "sha256": "fe6531250c5529307627cc63ed56447cbb9968020d6ea3ab867e6ad9af94c738",
+        "sizeBytes": 40488532,
+        "format": "zip"
+      },
+      "install": {
+        "memberPrefix": "",
+        "exclude": [],
+        "sentinels": [
+          "morphology.db",
+          "LICENSE"
+        ],
+        "innerSha256": [
+          {
+            "path": "morphology.db",
+            "sha256": "195bc25a333237a2126470da888d7936b59ed3729f9210e0a4194ba43497dd70"
+          }
+        ]
+      },
+      "attribution": [
+        {
+          "name": "calima-msa-r13 (camel-tools-data 2022.03.21)",
+          "copyright": "CAMeL Lab, New York University Abu Dhabi; derived from Aramorph 1.2.1 (Linguistic Data Consortium, QAMUS LLC, University of Pennsylvania, Jon Dehdari)",
+          "license": "GPL-2.0-only",
+          "url": "https://github.com/CAMeL-Lab/camel-tools-data"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

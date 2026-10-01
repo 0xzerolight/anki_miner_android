@@ -103,6 +103,49 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun languageDataInstallsByPinnedIdAndItsResponseMustNameThatPin() {
+        val request = ResourceBridgeCodec.encodeLanguageDataInstallRequest("op-1", "ar-calima-msa", "/staged/a.zip")
+        assertEquals(
+            """{"schemaVersion":1,"type":"resource.languagedata.install","payload":{"operationId":"op-1","resourceId":"ar-calima-msa","archivePath":"/staged/a.zip"}}""",
+            request,
+        )
+
+        fun installed(id: String, language: String, importName: String) =
+            """{"schemaVersion":1,"type":"resource.languagedata.installed","payload":{"resourceId":"$id","language":"$language","importName":"$importName"}}"""
+
+        assertEquals(
+            InstalledLanguageData("ar-calima-msa", "ar", "calima_msa"),
+            ResourceBridgeCodec.decodeInstalledLanguageData(installed("ar-calima-msa", "ar", "calima_msa"), "ar-calima-msa"),
+        )
+        for (raw in listOf(
+            installed("fa-hazm-data", "fa", "hazm_data"),
+            installed("ar-calima-msa", "fa", "calima_msa"),
+            installed("ar-calima-msa", "ar", "hazm_data"),
+        )) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeInstalledLanguageData(raw, "ar-calima-msa")
+                }
+            assertEquals("resource_identity_mismatch", failure.code)
+        }
+    }
+
+    @Test
+    fun theInventoryReportsOnlyPinnedLanguageData() {
+        fun listed(languageData: String) =
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":$languageData}}"""
+
+        assertEquals(setOf("fa-hazm-data"), ResourceBridgeCodec.decodeLocalResourceList(listed("""["fa-hazm-data"]""")).languageData)
+        for (bad in listOf("""["jmdict-en-2026-07-17"]""", """["fa-hazm-data","fa-hazm-data"]""", """["unknown"]""")) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeLocalResourceList(listed(bad))
+                }
+            assertEquals("invalid_resource_response", failure.code)
+        }
+    }
+
+    @Test
     fun catalogRejectsALocalFormatOutsideTheImporterContract() {
         // "txt" is a legal frequency format and an illegal pitch one.
         val raw = committedCatalogEnvelope().replace(""""format": "tsv"""", """"format": "txt"""")
@@ -118,7 +161,7 @@ class ResourceBridgeCodecTest {
     fun catalogRejectsARecommendedIdThatNamesNoResource() {
         val raw =
             committedCatalogEnvelope()
-                .replace(""""recommended": [""", """"recommended": ["not-in-the-catalog",""")
+                .replaceFirst(""""recommended": [""", """"recommended": ["not-in-the-catalog",""")
 
         // The Kotlin mirror is the authority here: an id the frozen copy does not list makes the
         // decoded catalog differ, which is the mismatch the equality check exists to catch.
@@ -580,7 +623,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryDecodesEveryInstalledClass() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}],"languageData":[]}}"""
 
         val inventory = ResourceBridgeCodec.decodeLocalResourceList(raw)
 
@@ -594,13 +637,13 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryRejectsDuplicateIdsAndInconsistentCounts() {
         val duplicateFrequency =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(duplicateFrequency)
         }
 
         val inconsistentKnownWords =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":1,"userCount":1,"ankiCount":1,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":1,"userCount":1,"ankiCount":1,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(inconsistentKnownWords)
         }

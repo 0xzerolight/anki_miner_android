@@ -498,6 +498,9 @@
     <string name="jpdb_frequency_resource_title">Tần suất kana JPDB v2.2</string>
     <string name="kanjium_pitch_resource_title">Trọng âm cao độ Kanjium</string>
     <string name="jmdict_resource_title">Từ điển JMdict (tiếng Anh)</string>
+    <string name="language_dictionary_resource_title">Từ điển</string>
+    <string name="language_frequency_resource_title">Danh sách tần suất từ</string>
+    <string name="language_data_resource_title">Dữ liệu ngôn ngữ</string>
     <string name="jmdict_resource_description">Từ điển Yomitan ngoại tuyến có chú giải tiếng Anh · tải xuống khoảng 15 MiB và tối đa 163 MiB khi nhập</string>
     <string name="resource_installed">Đã cài đặt</string>
     <string name="resource_not_installed">Chưa cài đặt</string>

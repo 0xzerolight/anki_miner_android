@@ -46,17 +46,28 @@ data class RecommendedResourcePlan(
 /**
  * Health per kind mirrors that kind's own chain gate, not the weaker startup-corruption rule: a
  * zero-entry slot is intact but useless to mine from, so the batch rebuilds it.
+ *
+ * A language's engine data comes first: the language cannot mine without it, and a frequency list
+ * the language lemmatises is ranked by the tagger that data feeds.
  */
 internal fun recommendedResourcePlan(
     catalog: ResourceCatalog?,
     dictionaries: List<InstalledDictionary>,
     frequencySources: List<InstalledFrequencySource>,
     pitchSources: List<InstalledPitchSource>,
+    installedLanguageData: Set<String> = emptySet(),
 ): RecommendedResourcePlan =
     RecommendedResourcePlan(
-        catalog?.recommendedResources.orEmpty().map { resource ->
+        (catalog?.languageData.orEmpty() + catalog?.recommendedResources.orEmpty()).map { resource ->
             val action =
                 when (resource) {
+                    // An incomplete extraction is not installed, and the install replaces it whole.
+                    is LanguageDataCatalogResource ->
+                        if (resource.resourceId in installedLanguageData) {
+                            RecommendedResourceAction.SKIP
+                        } else {
+                            RecommendedResourceAction.INSTALL
+                        }
                     is YomitanCatalogResource -> {
                         val slot = dictionaries.firstOrNull { it.occupied && it.slotId == resource.slotId }
                         when {
@@ -94,17 +105,26 @@ private fun localAction(
         else -> RecommendedResourceAction.REPLACE
     }
 
-/** One name per recommended member, shared by the progress label, the failure text and the card. */
+/**
+ * One name per recommended member, shared by the progress label, the failure text and the card.
+ *
+ * Japanese members keep their own names; another language's members are named by what they are,
+ * since their catalog display names are untranslated data.
+ */
 @StringRes
-internal fun recommendedResourceTitleRes(resource: CatalogResource): Int =
-    when (resource) {
+internal fun recommendedResourceTitleRes(resource: CatalogResource): Int {
+    val japanese = FrozenResourceCatalog.catalogOf(resource.resourceId)?.language == JAPANESE
+    return when (resource) {
         is YomitanCatalogResource ->
-            if (resource.slotId == JMDICT_SLOT_ID) {
-                R.string.jmdict_resource_title
-            } else {
-                R.string.jitendex_resource_title
+            when {
+                !japanese -> R.string.language_dictionary_resource_title
+                resource.slotId == JMDICT_SLOT_ID -> R.string.jmdict_resource_title
+                else -> R.string.jitendex_resource_title
             }
-        is FrequencyCatalogResource -> R.string.jpdb_frequency_resource_title
+        is FrequencyCatalogResource ->
+            if (japanese) R.string.jpdb_frequency_resource_title else R.string.language_frequency_resource_title
         is PitchCatalogResource -> R.string.kanjium_pitch_resource_title
         is UniDicCatalogResource -> R.string.unidic_resource_title
+        is LanguageDataCatalogResource -> R.string.language_data_resource_title
     }
+}

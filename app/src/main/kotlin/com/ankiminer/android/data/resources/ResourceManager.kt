@@ -60,6 +60,12 @@ interface ResourceManager {
      */
     suspend fun installRecommendedResources() = Unit
 
+    /**
+     * The same batch for [language]'s catalog: its engine data, then its recommended dictionary and
+     * lists, each stamped for [language]. Lets a language be downloaded before switching to it.
+     */
+    suspend fun installRecommendedResources(language: String) = Unit
+
     /** Inspect a retained Yomitan archive and return its desktop-derived base slot. */
     suspend fun preflightCustomDictionary(uri: String): String? =
         error("Custom dictionary preflight is unavailable")
@@ -467,10 +473,12 @@ internal class AndroidResourceManager(
         }
     }
 
-    override suspend fun installRecommendedResources() {
+    override suspend fun installRecommendedResources() = installRecommendedResources(JAPANESE)
+
+    override suspend fun installRecommendedResources(language: String) {
         // Pre-mutex early return so a satisfied set never takes the lease or writes a journal
         // record. The plan is recomputed inside the operation because this one can be stale.
-        val plan = mutableState.value.recommendedPlan
+        val plan = mutableState.value.recommendedPlan(language)
         if (!plan.isActionable) return
         // A broken dictionary slot and a schema-stale pitch index are exactly what fails startup,
         // and this button is the only install affordance the wizard has. Gating it on READY would
@@ -486,15 +494,15 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_operation_recommended_set),
                 ResourceOperationPhase.PREPARING,
                 failureOrigin = ResourceFailureOrigin.RECOMMENDED_SET,
-                failureRetry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                failureRetry = ResourceFailureRetry(ResourceFailureAction.RETRY, targetId = language),
                 persistForRecovery = true,
                 holdsForegroundLease = true,
                 requiresStartupReady = !allowFailedReadiness,
-            ) { operation -> runRecommendedBatch(operation, outcomes, completesFailedStartupRecovery) }
+            ) { operation -> runRecommendedBatch(operation, outcomes, completesFailedStartupRecovery, language) }
         // A refused operation has already recorded its own failure or was a deliberate no-op, so
         // only a run that reached the loop reports a summary. Recording it after runOperation
         // returns is deliberate: its finally clears a matching-origin failure on success first.
-        if (ran) publishRecommendedSummary(outcomes)
+        if (ran) publishRecommendedSummary(outcomes, language)
     }
 
     private sealed interface RecommendedOutcome {
@@ -513,14 +521,16 @@ internal class AndroidResourceManager(
         operation: ActiveOperation,
         outcomes: MutableList<RecommendedOutcome>,
         completesFailedStartupRecovery: Boolean,
+        language: String,
     ) {
         val state = mutableState.value
         val pending =
             recommendedResourcePlan(
-                catalog(),
+                catalogs().singleOrNull { it.language == language },
                 state.dictionaries,
                 state.frequencySources,
                 state.pitchSources,
+                state.installedLanguageData,
             ).pending
         var loopFailure: Throwable? = null
         try {
@@ -664,6 +674,21 @@ internal class AndroidResourceManager(
                         )
                     mutableState.update { it.copy(lastLocalImport = imported) }
                 }
+                is LanguageDataCatalogResource -> {
+                    operation.pythonStarted.set(true)
+                    decodePublishedMutation(
+                        raw =
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodeLanguageDataInstallRequest(
+                                    operation.id,
+                                    resource.resourceId,
+                                    staged.file.canonicalPath,
+                                ),
+                                null,
+                            ),
+                        decode = { raw -> ResourceBridgeCodec.decodeInstalledLanguageData(raw, resource.resourceId) },
+                    )
+                }
                 is UniDicCatalogResource -> error("UniDic is not part of the recommended set")
             }
         }
@@ -701,10 +726,13 @@ internal class AndroidResourceManager(
             else -> "resource_operation_failed" to strings.resolve(R.string.resource_failure_operation)
         }
 
-    private fun publishRecommendedSummary(outcomes: List<RecommendedOutcome>) {
+    private fun publishRecommendedSummary(
+        outcomes: List<RecommendedOutcome>,
+        language: String,
+    ) {
         val failed = outcomes.filterIsInstance<RecommendedOutcome.Failed>()
         if (failed.isEmpty()) {
-            clearInventoryVerdictsTheSetRepaired()
+            clearInventoryVerdictsTheSetRepaired(language)
             return
         }
         val names =
@@ -719,7 +747,7 @@ internal class AndroidResourceManager(
                     listOf(outcomes.size - failed.size, outcomes.size, names, failed.first().message),
                 ),
             origin = ResourceFailureOrigin.RECOMMENDED_SET,
-            retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+            retry = ResourceFailureRetry(ResourceFailureAction.RETRY, targetId = language),
         )
     }
 
@@ -731,8 +759,8 @@ internal class AndroidResourceManager(
      * so without this the "replace this pitch source" banner would outlive the source it named.
      * Gated on a satisfied plan: nothing is cleared while a member is still missing or broken.
      */
-    private fun clearInventoryVerdictsTheSetRepaired() {
-        if (!mutableState.value.recommendedPlan.isSatisfied) return
+    private fun clearInventoryVerdictsTheSetRepaired(language: String) {
+        if (!mutableState.value.recommendedPlan(language).isSatisfied) return
         mutableState.update { current ->
             if (current.failure?.code in REPAIRABLE_INVENTORY_VERDICTS) {
                 current.copy(failure = null)
@@ -2503,7 +2531,8 @@ internal class AndroidResourceManager(
             }
             // A kill after the last member leaves the record behind; a satisfied plan means the
             // batch finished and must not raise a spurious "interrupted".
-            ResourceFailureOrigin.RECOMMENDED_SET -> mutableState.value.recommendedPlan.isSatisfied
+            ResourceFailureOrigin.RECOMMENDED_SET ->
+                mutableState.value.recommendedPlan(operation.retry.targetId ?: JAPANESE).isSatisfied
             else -> false
         }
 
@@ -2529,32 +2558,44 @@ internal class AndroidResourceManager(
         }
     }
 
+    /** Every language's staged download whose resource is now installed and healthy. */
     private fun discardInstalledCatalogDownloads() {
         val current = mutableState.value
-        val catalog = current.catalog ?: return
-        if (current.installedUniDic?.resourceId == catalog.unidic.resourceId) {
-            downloader.discard(catalog.unidic.archive)
+        val japanese = current.catalogs.firstOrNull { it.language == JAPANESE } ?: return
+        if (current.installedUniDic?.resourceId == japanese.unidic.resourceId) {
+            downloader.discard(japanese.unidic.archive)
         }
-        current.catalogDictionaries
-            .filter { it.installed }
-            .forEach { downloader.discard(it.resource.archive) }
-        catalog.frequencies
-            .filter { resource ->
-                current.frequencySources.any { it.sourceId == resource.sourceId && it.schemaOk }
-            }.forEach { downloader.discard(it.archive) }
-        catalog.pitchSources
-            .filter { resource ->
-                current.pitchSources.any { it.sourceId == resource.sourceId && it.schemaOk }
-            }.forEach { downloader.discard(it.archive) }
+        for (catalog in current.catalogs) {
+            catalog.dictionaries
+                .filter { resource ->
+                    current.dictionaries.any {
+                        it.isUsable && it.slotId == resource.slotId && it.catalogResourceId == resource.resourceId
+                    }
+                }.forEach { downloader.discard(it.archive) }
+            catalog.frequencies
+                .filter { resource ->
+                    current.frequencySources.any { it.sourceId == resource.sourceId && it.schemaOk }
+                }.forEach { downloader.discard(it.archive) }
+            catalog.pitchSources
+                .filter { resource ->
+                    current.pitchSources.any { it.sourceId == resource.sourceId && it.schemaOk }
+                }.forEach { downloader.discard(it.archive) }
+            catalog.languageData
+                .filter { it.resourceId in current.installedLanguageData }
+                .forEach { downloader.discard(it.archive) }
+        }
     }
 
-    private fun catalog(): ResourceCatalog {
-        mutableState.value.catalog?.let { return it }
+    private fun catalog(): ResourceCatalog = catalogs().single { it.language == JAPANESE }
+
+    private fun catalogs(): List<ResourceCatalog> {
+        mutableState.value.catalogs.takeIf { it.isNotEmpty() }?.let { return it }
         val catalogs =
             ResourceBridgeCodec.decodeCatalogs(bridge.dispatch(ResourceBridgeCodec.encodeCatalogRequest(), null))
-        val value = catalogs.single { it.language == JAPANESE }
-        mutableState.update { it.copy(catalog = value, catalogs = catalogs) }
-        return value
+        mutableState.update { state ->
+            state.copy(catalog = catalogs.single { it.language == JAPANESE }, catalogs = catalogs)
+        }
+        return catalogs
     }
 
     private fun refreshFromPython() {
@@ -2621,6 +2662,7 @@ internal class AndroidResourceManager(
                 audioPacks = localResources.audioPacks.sortedBy { pack -> pack.packId },
                 knownWords = localResources.knownWords,
                 wordsets = localResources.wordsets,
+                installedLanguageData = localResources.languageData,
                 installedUniDic = installed,
             )
         }
@@ -2924,8 +2966,10 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_archive_unrecognized)
             "resource_archive_provider_representation" ->
                 strings.resolve(R.string.resource_failure_archive_provider_representation)
-            "unsafe_resource_archive" ->
+            "unsafe_resource_archive", "language_data_rejected" ->
                 strings.resolve(R.string.resource_failure_archive_unsafe)
+            "language_data_install_failed" ->
+                strings.resolve(R.string.resource_failure_archive_invalid)
             "resource_archive_unsupported_compression" ->
                 strings.resolve(R.string.resource_failure_archive_compression)
             "resource_already_installed" ->
@@ -3085,6 +3129,8 @@ internal class AndroidResourceManager(
             setOf(
                 "resource_archive_mismatch",
                 "resource_archive_too_large",
+                "language_data_rejected",
+                "language_data_install_failed",
                 "resource_archive_unsupported_compression",
                 "invalid_resource_archive",
                 "unsafe_resource_archive",

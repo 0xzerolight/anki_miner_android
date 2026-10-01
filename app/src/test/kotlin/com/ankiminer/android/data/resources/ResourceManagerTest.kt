@@ -2349,6 +2349,29 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun anotherLanguagesSetInstallsItsEngineDataFromThePinnedDownload() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+            assertTrue(harness.manager.state.value.recommendedPlan("ar").isActionable)
+
+            harness.manager.installRecommendedResources("ar")
+
+            assertNull(harness.manager.state.value.failure)
+            val request = harness.bridge.requestsOfType("resource.languagedata.install").single()
+            assertTrue(request.contains("\"resourceId\":\"ar-calima-msa\""))
+            assertTrue(request.contains("\"archivePath\":\"/"))
+            // No Japanese member ran: the set is the requested language's.
+            assertTrue(harness.bridge.requestTypes.none { it.endsWith(".import") })
+            assertEquals(setOf("ar-calima-msa"), harness.manager.state.value.installedLanguageData)
+            assertTrue(harness.manager.state.value.recommendedPlan("ar").isSatisfied)
+            assertFalse(harness.manager.state.value.recommendedPlan.isSatisfied)
+
+            harness.bridge.clearRequests()
+            harness.manager.installRecommendedResources("ar")
+            assertTrue(harness.bridge.requestsOfType("resource.languagedata.install").isEmpty())
+        }
+
+    @Test
     fun theRecommendedSetHoldsOneForegroundLeaseAndOneJournalRecord() =
         runTest {
             val harness = Harness(fakePinnedDownloads = true)
@@ -2855,6 +2878,7 @@ class ResourceManagerTest {
         private var installedPitchSourceId: String? = installedPitchSourceId
         private var installedPitchSchemaOk: Boolean = installedPitchSchemaOk
         private var installedFrequencySourceId: String? = null
+        private val installedLanguageData = mutableListOf<String>()
         private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
 
@@ -2906,6 +2930,16 @@ class ResourceManagerTest {
                 "resource.local.list" -> inventoryResponse()
                 "resource.cleanup" ->
                     envelope("resource.cleanup.result", """{"clean":true}""")
+                "resource.languagedata.install" -> {
+                    val resourceId = stringField(rawRequest, "resourceId")
+                    val catalog = checkNotNull(FrozenResourceCatalog.catalogOf(resourceId))
+                    val data = catalog.languageData.single { it.resourceId == resourceId }
+                    installedLanguageData += resourceId
+                    envelope(
+                        "resource.languagedata.installed",
+                        """{"resourceId":"$resourceId","language":"${catalog.language}","importName":"${data.importName}"}""",
+                    )
+                }
                 "resource.unidic.install" -> {
                     val expected = FrozenResourceCatalog.value.unidic
                     envelope(
@@ -3145,7 +3179,7 @@ class ResourceManagerTest {
                 } ?: "[]"
             return envelope(
                 "resource.local.listed",
-                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":${installedLanguageData.joinToString(",", "[", "]") { "\"$it\"" }}}""",
             )
         }
 
