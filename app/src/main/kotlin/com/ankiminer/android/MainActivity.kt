@@ -85,6 +85,8 @@ class MainActivity : ComponentActivity() {
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
             audioTrackProbeOpener = app.audioTrackProbeLoader,
+            secondarySubtitleEnabled =
+                app.settingsRepository.settings.map { it.secondarySubtitleEnabled },
         )
     }
     private val audioViewModelFactory by lazy {

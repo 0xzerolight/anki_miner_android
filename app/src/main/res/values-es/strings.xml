@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Desfase de subtítulos (segundos)</string>
     <string name="audio_subtitle_offset_label">Desfase de transcripción (segundos)</string>
     <string name="video_subtitle_offset_placeholder">Usar el valor predeterminado actual (%1$s segundos)</string>
+    <string name="video_secondary_subtitle_label">Subtítulos de traducción</string>
+    <string name="video_secondary_subtitle_offset_label">Desfase de la traducción (milisegundos)</string>
+    <string name="video_secondary_subtitle_offset_error">Introduzca un número entero del −300000 al 300000</string>
     <string name="timing_preview_test_action">Probar sincronización</string>
     <string name="timing_preview_title">Probar sincronización de subtítulos</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Ningún campo está asignado al audio de palabra. Asigne “WordAudio” o las tarjetas no tendrán pronunciación.</string>
     <string name="audio_pack_unusable_warning">Paquete de audio inservible omitido. Vuelva a importarlo en Ajustes → Recursos.</string>
     <string name="subtitle_file_error">Se perdió el acceso. Elija de nuevo.</string>
+    <string name="secondary_subtitle_file_error">Subtítulos de traducción: se perdió el acceso. Elija de nuevo.</string>
     <string name="dismiss_error">Descartar error</string>
     <string name="start_mining">Minar</string>
     <string name="starting_title">Preparando la ejecución de minería</string>

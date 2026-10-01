@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Deslocamento de tempo da legenda (segundos)</string>
     <string name="audio_subtitle_offset_label">Deslocamento de tempo da transcrição (segundos)</string>
     <string name="video_subtitle_offset_placeholder">Usar o padrão atual (%1$s segundos)</string>
+    <string name="video_secondary_subtitle_label">Legendas de tradução</string>
+    <string name="video_secondary_subtitle_offset_label">Deslocamento de tempo da tradução (milissegundos)</string>
+    <string name="video_secondary_subtitle_offset_error">Insira um número inteiro de −300000 a 300000</string>
     <string name="timing_preview_test_action">Testar sincronização</string>
     <string name="timing_preview_title">Testar sincronização da legenda</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Nenhum campo está mapeado para o áudio da palavra. Mapeie “WordAudio” ou os cartões ficam sem pronúncia.</string>
     <string name="audio_pack_unusable_warning">Pacote de áudio inutilizável ignorado. Reimporte em Configurações → Recursos.</string>
     <string name="subtitle_file_error">Acesso perdido. Escolha novamente.</string>
+    <string name="secondary_subtitle_file_error">Legendas de tradução: acesso perdido. Escolha novamente.</string>
     <string name="dismiss_error">Fechar erro</string>
     <string name="start_mining">Minerar</string>
     <string name="starting_title">Preparando execução de mineração</string>

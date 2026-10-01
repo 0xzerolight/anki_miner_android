@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">字幕タイミングオフセット（秒）</string>
     <string name="audio_subtitle_offset_label">文字起こしタイミングオフセット（秒）</string>
     <string name="video_subtitle_offset_placeholder">現在の既定値を使用（%1$s秒）</string>
+    <string name="video_secondary_subtitle_label">翻訳字幕</string>
+    <string name="video_secondary_subtitle_offset_label">翻訳タイミングオフセット（ミリ秒）</string>
+    <string name="video_secondary_subtitle_offset_error">−300000〜300000 の整数を入力してください</string>
     <string name="timing_preview_test_action">タイミングをテスト</string>
     <string name="timing_preview_title">字幕タイミングをテスト</string>
     <string name="timing_preview_nudge_earlier">−0.1秒</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">単語音声用のフィールドが対応付けられていません。「WordAudio」を対応付けないとカードに発音が付きません。</string>
     <string name="audio_pack_unusable_warning">使用できない音声パックをスキップしました。設定 → リソース から再インポートしてください。</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
+    <string name="secondary_subtitle_file_error">翻訳字幕：アクセスが失われました。選び直してください。</string>
     <string name="dismiss_error">エラーを閉じる</string>
     <string name="start_mining">マイニング</string>
     <string name="starting_title">マイニングを準備中</string>

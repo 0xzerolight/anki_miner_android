@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Độ lệch thời gian phụ đề (giây)</string>
     <string name="audio_subtitle_offset_label">Độ lệch thời gian bản chép lời (giây)</string>
     <string name="video_subtitle_offset_placeholder">Dùng mặc định hiện tại (%1$s giây)</string>
+    <string name="video_secondary_subtitle_label">Phụ đề bản dịch</string>
+    <string name="video_secondary_subtitle_offset_label">Độ lệch thời gian bản dịch (mili giây)</string>
+    <string name="video_secondary_subtitle_offset_error">Nhập số nguyên từ −300000 đến 300000</string>
     <string name="timing_preview_test_action">Thử canh thời gian</string>
     <string name="timing_preview_title">Thử canh thời gian phụ đề</string>
     <string name="timing_preview_nudge_earlier">−0.1 giây</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Chưa có trường nào được gán cho âm thanh của từ. Gán trường “WordAudio” nếu không thẻ sẽ không có phát âm.</string>
     <string name="audio_pack_unusable_warning">Gói âm thanh không dùng được, đã bỏ qua. Nhập lại trong Cài đặt → Tài nguyên.</string>
     <string name="subtitle_file_error">Mất quyền truy cập. Hãy chọn lại.</string>
+    <string name="secondary_subtitle_file_error">Phụ đề bản dịch: mất quyền truy cập. Hãy chọn lại.</string>
     <string name="dismiss_error">Đóng</string>
     <string name="start_mining">Khai thác</string>
     <string name="starting_title">Đang chuẩn bị lượt khai thác</string>

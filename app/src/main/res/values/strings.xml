@@ -32,6 +32,9 @@
     <string name="video_subtitle_offset_label">Subtitle timing offset (seconds)</string>
     <string name="audio_subtitle_offset_label">Transcript timing offset (seconds)</string>
     <string name="video_subtitle_offset_placeholder">Use current default (%1$s seconds)</string>
+    <string name="video_secondary_subtitle_label">Translation subtitles</string>
+    <string name="video_secondary_subtitle_offset_label">Translation timing offset (milliseconds)</string>
+    <string name="video_secondary_subtitle_offset_error">Enter a whole number from −300000 to 300000</string>
     <string name="timing_preview_test_action">Test timing</string>
     <string name="timing_preview_title">Test subtitle timing</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -78,6 +81,7 @@
     <string name="expression_audio_field_unmapped_warning">No field is mapped for word audio. Map “WordAudio” or cards get no pronunciation.</string>
     <string name="audio_pack_unusable_warning">Unusable audio pack skipped. Re-import under Settings → Resources.</string>
     <string name="subtitle_file_error">Access lost. Choose again.</string>
+    <string name="secondary_subtitle_file_error">Translation subtitles: access lost. Choose again.</string>
     <string name="dismiss_error">Dismiss error</string>
     <string name="start_mining">Mine</string>
     <string name="starting_title">Preparing mining run</string>

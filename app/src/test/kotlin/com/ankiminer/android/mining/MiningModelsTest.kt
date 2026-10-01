@@ -19,6 +19,25 @@ class MiningModelsTest {
     }
 
     @Test
+    fun videoInputBoundsTheSecondaryOffsetAndNeedsATrackToShift() {
+        val video = MiningSource("content://test/video", "episode.mkv")
+        val subtitle = MiningSource("content://test/subtitle", "episode.srt")
+        val translation = MiningSource("content://test/translation", "episode.en.srt")
+
+        assertEquals(
+            300_000L,
+            VideoMiningInput(video, subtitle, secondarySubtitle = translation, secondarySubtitleOffsetMs = 300_000)
+                .secondarySubtitleOffsetMs,
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            VideoMiningInput(video, subtitle, secondarySubtitle = translation, secondarySubtitleOffsetMs = -300_001)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            VideoMiningInput(video, subtitle, secondarySubtitleOffsetMs = 1)
+        }
+    }
+
+    @Test
     fun curationSelectionDefaultsToZeroLinesAndAcceptsLinesWithoutSentence() {
         val plain = CurationSelection("candidate-1", null)
         assertEquals(0, plain.linesBefore)
@@ -293,11 +312,16 @@ class MiningModelsTest {
         assertEquals(MiningRunKind.VIDEO, MiningLane.VIDEO.runKind)
         assertEquals(SafSelectionSlot.VIDEO, MiningLane.VIDEO.documentSlot)
         assertEquals(SafSelectionSlot.VIDEO_SUBTITLE, MiningLane.VIDEO.subtitleSlot)
+        assertEquals(
+            SafSelectionSlot.VIDEO_SECONDARY_SUBTITLE,
+            MiningLane.VIDEO.secondarySubtitleSlot,
+        )
 
         assertEquals(true, MiningLane.AUDIO.audioOnly)
         assertEquals(MiningRunKind.AUDIO, MiningLane.AUDIO.runKind)
         assertEquals(SafSelectionSlot.AUDIO, MiningLane.AUDIO.documentSlot)
         assertEquals(SafSelectionSlot.AUDIO_SUBTITLE, MiningLane.AUDIO.subtitleSlot)
+        assertNull(MiningLane.AUDIO.secondarySubtitleSlot)
     }
 
     @Test

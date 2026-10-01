@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Offset waktu subtitel (detik)</string>
     <string name="audio_subtitle_offset_label">Offset waktu transkrip (detik)</string>
     <string name="video_subtitle_offset_placeholder">Gunakan default saat ini (%1$s detik)</string>
+    <string name="video_secondary_subtitle_label">Subtitel terjemahan</string>
+    <string name="video_secondary_subtitle_offset_label">Offset waktu terjemahan (milidetik)</string>
+    <string name="video_secondary_subtitle_offset_error">Masukkan bilangan bulat dari −300000 hingga 300000</string>
     <string name="timing_preview_test_action">Uji Waktu</string>
     <string name="timing_preview_title">Uji waktu subtitel</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Tidak ada bidang yang dipetakan untuk audio kata. Petakan “WordAudio” atau kartu tidak mendapat pelafalan.</string>
     <string name="audio_pack_unusable_warning">Paket audio yang tidak dapat digunakan dilewati. Impor ulang di Pengaturan → Sumber daya.</string>
     <string name="subtitle_file_error">Akses hilang. Pilih lagi.</string>
+    <string name="secondary_subtitle_file_error">Subtitel terjemahan: akses hilang. Pilih lagi.</string>
     <string name="dismiss_error">Tutup kesalahan</string>
     <string name="start_mining">Mining</string>
     <string name="starting_title">Menyiapkan proses mining</string>

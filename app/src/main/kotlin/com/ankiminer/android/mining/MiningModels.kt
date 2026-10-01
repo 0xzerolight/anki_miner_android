@@ -2,6 +2,7 @@ package com.ankiminer.android.mining
 
 import androidx.compose.runtime.Immutable
 import com.ankiminer.android.data.settings.EngineDefaults
+import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.media.SafSelectionSlot
 
 enum class RuntimeWorkConflict {
@@ -48,10 +49,16 @@ data class VideoMiningInput(
     val subtitleOffsetOverride: Double? = null,
     /** Per-run override; null keeps the global setting or the engine default. */
     val audioTrackOverride: Long? = null,
+    /** Translation track whose lines fill `sentence_translation`; null sends none. */
+    val secondarySubtitle: MiningSource? = null,
+    /** Signed shift of [secondarySubtitle] in milliseconds; zero when there is no track. */
+    val secondarySubtitleOffsetMs: Long = 0,
 ) {
     init {
         subtitleOffsetOverride?.let { require(it.isFinite()) }
         audioTrackOverride?.let { require(it >= 0) }
+        require(secondarySubtitleOffsetMs in VideoMiningWireRequest.SECONDARY_SUBTITLE_OFFSET_MS)
+        require(secondarySubtitle != null || secondarySubtitleOffsetMs == 0L)
     }
 }
 
@@ -422,6 +429,8 @@ internal enum class MiningLane(
     val documentSlot: SafSelectionSlot,
     val subtitleSlot: SafSelectionSlot,
     val savedStateKeyPrefix: String,
+    /** The translation-track slot; null where the lane offers no second subtitle. */
+    val secondarySubtitleSlot: SafSelectionSlot?,
 ) {
     VIDEO(
         MiningRunKind.VIDEO,
@@ -430,6 +439,7 @@ internal enum class MiningLane(
         SafSelectionSlot.VIDEO,
         SafSelectionSlot.VIDEO_SUBTITLE,
         "videoMining",
+        SafSelectionSlot.VIDEO_SECONDARY_SUBTITLE,
     ),
     AUDIO(
         MiningRunKind.AUDIO,
@@ -438,6 +448,7 @@ internal enum class MiningLane(
         SafSelectionSlot.AUDIO,
         SafSelectionSlot.AUDIO_SUBTITLE,
         "audioMining",
+        null,
     ),
 }
 

@@ -3181,6 +3181,294 @@ class MediaMiningViewModelTest {
         }
     }
 
+    @Test
+    fun secondarySubtitlePickerIsHiddenAndNothingIsSentWhileTheToggleIsOff() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val enabled = MutableStateFlow(true)
+            val repository = RecordingRepository()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), secondarySubtitleEnabled = enabled)
+            selectDocuments(viewModel)
+            viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+            viewModel.setSecondarySubtitleOffsetDraft("-1500")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.secondarySubtitleEnabled)
+
+            enabled.value = false
+            runCurrent()
+
+            val state = viewModel.uiState.value
+            assertFalse(state.secondarySubtitleEnabled)
+            // The pick is kept for when the toggle comes back, as desktop keeps its hidden picker.
+            assertEquals("translation.srt", state.secondarySubtitle.document?.displayName)
+            viewModel.start()
+            runCurrent()
+            val input = repository.startedInputs.single()
+            assertNull(input.secondarySubtitle)
+            assertEquals(0L, input.secondarySubtitleOffsetMs)
+        }
+
+    @Test
+    fun secondarySubtitleAndItsOffsetAreSentWhileTheToggleIsOn() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    secondarySubtitleEnabled = flowOf(true),
+                )
+            selectDocuments(viewModel)
+            viewModel.onSecondarySubtitlePicked("content://test/translation.ASS")
+            viewModel.setSecondarySubtitleOffsetDraft("-1500")
+            runCurrent()
+
+            viewModel.start()
+            runCurrent()
+
+            val input = repository.startedInputs.single()
+            assertEquals("content://test/translation.ASS", input.secondarySubtitle?.uri)
+            assertEquals("translation.ASS", input.secondarySubtitle?.displayName)
+            assertEquals(-1500L, input.secondarySubtitleOffsetMs)
+        }
+
+    @Test
+    fun secondarySubtitleIsOptionalAndItsOffsetIsInertWithoutATrack() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    secondarySubtitleEnabled = flowOf(true),
+                )
+            selectDocuments(viewModel)
+            viewModel.setSecondarySubtitleOffsetDraft("2500")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+
+            viewModel.start()
+            runCurrent()
+
+            val input = repository.startedInputs.single()
+            assertNull(input.secondarySubtitle)
+            assertEquals(0L, input.secondarySubtitleOffsetMs)
+        }
+
+    @Test
+    fun secondarySubtitleOffsetMustBeWholeMillisecondsWithinTheWireRange() =
+        runTest(mainDispatcherRule.dispatcher) {
+            listOf("1.5", "abc", "300001", "-300001").forEach { draft ->
+                val repository = RecordingRepository()
+                val viewModel =
+                    mediaViewModel(
+                        repository,
+                        ImmediateSafBroker(),
+                        secondarySubtitleEnabled = flowOf(true),
+                    )
+                selectDocuments(viewModel)
+                viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+                viewModel.setSecondarySubtitleOffsetDraft(draft)
+                runCurrent()
+
+                assertTrue(draft, viewModel.uiState.value.secondarySubtitleOffsetDraftInvalid)
+                assertFalse(draft, viewModel.uiState.value.canStart)
+                viewModel.start()
+                runCurrent()
+                assertEquals(draft, 0, repository.startCalls)
+            }
+            listOf("300000" to 300_000L, "-300000" to -300_000L, "" to 0L).forEach { (draft, ms) ->
+                val repository = RecordingRepository()
+                val viewModel =
+                    mediaViewModel(
+                        repository,
+                        ImmediateSafBroker(),
+                        secondarySubtitleEnabled = flowOf(true),
+                    )
+                selectDocuments(viewModel)
+                viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+                viewModel.setSecondarySubtitleOffsetDraft(draft)
+                runCurrent()
+
+                viewModel.start()
+                runCurrent()
+                assertEquals(draft, ms, repository.startedInputs.single().secondarySubtitleOffsetMs)
+            }
+        }
+
+    @Test
+    fun anInvalidHiddenSecondaryOffsetDoesNotBlockTheStart() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val enabled = MutableStateFlow(true)
+            val repository = RecordingRepository()
+            val viewModel =
+                mediaViewModel(repository, ImmediateSafBroker(), secondarySubtitleEnabled = enabled)
+            selectDocuments(viewModel)
+            viewModel.setSecondarySubtitleOffsetDraft("abc")
+            runCurrent()
+            assertFalse(viewModel.uiState.value.canStart)
+
+            enabled.value = false
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.secondarySubtitleOffsetDraftInvalid)
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+            assertEquals(1, repository.startCalls)
+        }
+
+    @Test
+    fun clearingTheSecondarySubtitleReleasesItAndSendsNone() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val repository = RecordingRepository()
+            val viewModel =
+                mediaViewModel(repository, broker, secondarySubtitleEnabled = flowOf(true))
+            selectDocuments(viewModel)
+            viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+            runCurrent()
+
+            viewModel.clearSecondarySubtitle()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.secondarySubtitle.document)
+            assertEquals(listOf("content://test/translation.srt"), broker.eventualReleaseUris)
+            assertEquals("video", viewModel.uiState.value.video.document?.displayName)
+            assertEquals("subtitle.SRT", viewModel.uiState.value.subtitle.document?.displayName)
+            viewModel.start()
+            runCurrent()
+            assertNull(repository.startedInputs.single().secondarySubtitle)
+        }
+
+    @Test
+    fun secondarySubtitleRejectsAFileWithoutASubtitleSuffix() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                mediaViewModel(
+                    RecordingRepository(),
+                    broker,
+                    secondarySubtitleEnabled = flowOf(true),
+                )
+
+            viewModel.onSecondarySubtitlePicked("content://test/notes.txt")
+            runCurrent()
+
+            val slot = viewModel.uiState.value.secondarySubtitle
+            assertNull(slot.document)
+            assertEquals(DocumentSelectionError.SECONDARY_SUBTITLE, slot.error)
+            assertNull(viewModel.uiState.value.subtitle.error)
+            assertEquals(listOf("content://test/notes.txt"), broker.releasedUris)
+
+            viewModel.dismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE)
+            runCurrent()
+            assertNull(viewModel.uiState.value.secondarySubtitle.error)
+        }
+
+    @Test
+    fun secondarySubtitleSelectionRestoresFromItsOwnInventorySlot() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val inventory = TransientSafSelectionInventory()
+            inventory.putSelection(
+                SafSelectionSlot.VIDEO_SECONDARY_SUBTITLE,
+                SafSelectionRecord("content://test/translation.srt", "translation.srt"),
+            )
+            val viewModel =
+                mediaViewModel(
+                    repository = RecordingRepository(),
+                    safBroker = ImmediateSafBroker(),
+                    selectionInventory = inventory,
+                    selectionIoDispatcher = mainDispatcherRule.dispatcher,
+                    secondarySubtitleEnabled = flowOf(true),
+                )
+            runCurrent()
+
+            assertEquals(
+                "translation.srt",
+                viewModel.uiState.value.secondarySubtitle.document?.displayName,
+            )
+            assertNull(viewModel.uiState.value.subtitle.document)
+
+            viewModel.clearSecondarySubtitle()
+            runCurrent()
+            assertNull(inventory.selection(SafSelectionSlot.VIDEO_SECONDARY_SUBTITLE))
+        }
+
+    @Test
+    fun audioLaneHasNoSecondarySubtitleEvenWithTheToggleOn() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val viewModel =
+                mediaViewModel(
+                    RecordingRepository(),
+                    broker,
+                    lane = MiningLane.AUDIO,
+                    secondarySubtitleEnabled = flowOf(true),
+                )
+
+            viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+            viewModel.setSecondarySubtitleOffsetDraft("abc")
+            runCurrent()
+
+            assertFalse(viewModel.uiState.value.secondarySubtitleEnabled)
+            assertNull(viewModel.uiState.value.secondarySubtitle.document)
+            assertEquals("", viewModel.uiState.value.secondarySubtitleOffsetDraft)
+            assertTrue(broker.retainedUris.isEmpty())
+        }
+
+    @Test
+    fun teardownTransfersTheSentSecondarySubtitleWithTheOtherSources() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val repository = RecordingRepository(detachActiveSourcesResult = true)
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    factory(repository, broker, secondarySubtitleEnabled = flowOf(true)),
+                )[MediaMiningViewModel::class.java]
+            selectDocuments(viewModel)
+            viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+
+            store.clear()
+
+            assertEquals(emptyList<String>(), broker.eventualReleaseUris)
+            assertEquals(
+                "content://test/translation.srt",
+                repository.detachedInputs.single().secondarySubtitle?.uri,
+            )
+        }
+
+    @Test
+    fun teardownReleasesAHiddenSecondarySubtitleEvenWhenTheRunTakesTheOthers() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val broker = ImmediateSafBroker()
+            val enabled = MutableStateFlow(true)
+            val repository = RecordingRepository(detachActiveSourcesResult = true)
+            val store = ViewModelStore()
+            val viewModel =
+                ViewModelProvider.create(
+                    store,
+                    factory(repository, broker, secondarySubtitleEnabled = enabled),
+                )[MediaMiningViewModel::class.java]
+            selectDocuments(viewModel)
+            viewModel.onSecondarySubtitlePicked("content://test/translation.srt")
+            runCurrent()
+            enabled.value = false
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+
+            store.clear()
+
+            assertNull(repository.detachedInputs.single().secondarySubtitle)
+            assertEquals(listOf("content://test/translation.srt"), broker.eventualReleaseUris)
+        }
+
     private fun selectDocuments(viewModel: MediaMiningViewModel) {
         viewModel.onVideoPicked("content://test/video")
         viewModel.onSubtitlePicked("content://test/subtitle.SRT")
@@ -3190,6 +3478,7 @@ class MediaMiningViewModelTest {
         repository: MiningRepository,
         broker: SafBroker,
         lane: MiningLane = MiningLane.VIDEO,
+        secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
     ): MediaMiningViewModel.Factory =
         MediaMiningViewModel.Factory(
             repository = repository,
@@ -3197,6 +3486,7 @@ class MediaMiningViewModelTest {
             lane = lane,
             definitionLookup = NO_DEFINITION_LOOKUP,
             savedStateHandleFactory = { SavedStateHandle() },
+            secondarySubtitleEnabled = secondarySubtitleEnabled,
         )
 
     private fun timingPreviewViewModel(session: TimingPreviewSession): MediaMiningViewModel =
@@ -3224,6 +3514,7 @@ class MediaMiningViewModelTest {
         audioTrackProbeOpener: AudioTrackProbeOpener? = null,
         lane: MiningLane = MiningLane.VIDEO,
         undoManager: MiningRunUndoManager? = null,
+        secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
     ): MediaMiningViewModel =
         com.ankiminer.android.vm.MediaMiningViewModel(
             repository = repository,
@@ -3242,6 +3533,7 @@ class MediaMiningViewModelTest {
             timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
             undoManager = undoManager,
             audioTrackProbeOpener = audioTrackProbeOpener,
+            secondarySubtitleEnabled = secondarySubtitleEnabled,
         )
 
     /** Opens the picker, completes the probe with [tracks], selects, then applies. */

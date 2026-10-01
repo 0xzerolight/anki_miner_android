@@ -1207,6 +1207,72 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun startVideoStagesTheSecondarySubtitleAndSendsItsOffset() {
+        val harness = harness()
+
+        runBlocking {
+            harness.repository.startVideo(
+                INPUT.copy(secondarySubtitle = TRANSLATION, secondarySubtitleOffsetMs = -5000),
+            )
+        }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        val request = harness.bridge.videoRequest.get()!!
+        assertEquals("/tmp/translation.srt", request.secondarySubtitlePath)
+        assertEquals(-5000L, request.secondarySubtitleOffsetMs)
+        assertEquals(listOf(INPUT.subtitle, TRANSLATION), harness.inputOwner.materializedSubtitles)
+        // The curation preview keeps cueing from the primary track.
+        assertEquals("/tmp/subtitle.srt", curating.media?.subtitlePath)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun startVideoWithoutASecondarySubtitleSendsNone() {
+        val harness = harness()
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        val request = harness.bridge.videoRequest.get()!!
+        assertNull(request.secondarySubtitlePath)
+        assertEquals(0L, request.secondarySubtitleOffsetMs)
+        assertEquals(listOf(INPUT.subtitle), harness.inputOwner.materializedSubtitles)
+
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
+    fun `detached sources include the secondary subtitle`() {
+        val releases = Collections.synchronizedList(mutableListOf<String>())
+        val input = INPUT.copy(secondarySubtitle = TRANSLATION)
+        val harness = harness(releases = releases)
+
+        runBlocking { harness.repository.startVideo(input) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        // A ViewModel whose input lost the track does not match the run it started.
+        assertFalse(harness.repository.detachActiveSources(INPUT))
+        assertTrue(harness.repository.detachActiveSources(input))
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+
+        assertEquals(
+            listOf(INPUT.video.uri, INPUT.subtitle.uri, TRANSLATION.uri),
+            releases,
+        )
+    }
+
+    @Test
     fun curationMediaBindingSnapshotsTheRunsAudioTrackOverride() {
         val harness = harness()
 
@@ -2055,7 +2121,12 @@ class BridgeMiningRepositoryTest {
             return "/tmp/video.mkv"
         }
 
-        override fun materializeSubtitle(source: MiningSource): String = "/tmp/subtitle.srt"
+        val materializedSubtitles: MutableList<MiningSource> = Collections.synchronizedList(mutableListOf())
+
+        override fun materializeSubtitle(source: MiningSource): String {
+            materializedSubtitles += source
+            return if (source == TRANSLATION) "/tmp/translation.srt" else "/tmp/subtitle.srt"
+        }
 
         override fun close() {
             closeCount.incrementAndGet()
@@ -2492,6 +2563,7 @@ class BridgeMiningRepositoryTest {
                 video = MiningSource("content://test/video", "episode.mkv"),
                 subtitle = MiningSource("content://test/subtitle", "episode.srt"),
             )
+        val TRANSLATION = MiningSource("content://test/translation", "episode.en.srt")
         val JOB_REGISTRATION =
             """{"schemaVersion":1,"type":"job.registration.request","payload":{"runId":"$RUN_ID"}}"""
         val PROGRESS_START =

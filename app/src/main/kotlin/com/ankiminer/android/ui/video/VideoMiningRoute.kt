@@ -34,6 +34,10 @@ fun VideoMiningRoute(
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri?.let { viewModel.onSubtitlePicked(it.toString()) }
         }
+    val secondarySubtitlePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri?.let { viewModel.onSecondarySubtitlePicked(it.toString()) }
+        }
 
     VideoMiningScreen(
         state = state,
@@ -45,6 +49,9 @@ fun VideoMiningRoute(
         onDismissCommandError = viewModel::dismissCommandError,
         onDismissTimingPreviewError = viewModel::dismissTimingPreviewError,
         onSubtitleOffsetDraftChange = viewModel::setSubtitleOffsetDraft,
+        onPickSecondarySubtitle = { secondarySubtitlePicker.launch(SUBTITLE_MIME_TYPES) },
+        onClearSecondarySubtitle = viewModel::clearSecondarySubtitle,
+        onSecondarySubtitleOffsetDraftChange = viewModel::setSecondarySubtitleOffsetDraft,
         onTestTiming = viewModel::openTimingPreview,
         audioTrackPicker = audioTrackPicker,
         onAudioTracks = viewModel::openAudioTrackPicker,

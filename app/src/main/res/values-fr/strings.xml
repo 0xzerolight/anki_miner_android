@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Décalage temporel des sous-titres (secondes)</string>
     <string name="audio_subtitle_offset_label">Décalage temporel de la transcription (secondes)</string>
     <string name="video_subtitle_offset_placeholder">Utiliser la valeur par défaut actuelle (%1$s secondes)</string>
+    <string name="video_secondary_subtitle_label">Sous-titres de traduction</string>
+    <string name="video_secondary_subtitle_offset_label">Décalage temporel de la traduction (millisecondes)</string>
+    <string name="video_secondary_subtitle_offset_error">Saisissez un entier de −300000 à 300000</string>
     <string name="timing_preview_test_action">Tester la synchronisation</string>
     <string name="timing_preview_title">Tester la synchronisation des sous-titres</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Aucun champ n\'est mappé pour l\'audio du mot. Mappez « WordAudio », sinon les cartes n\'ont pas de prononciation.</string>
     <string name="audio_pack_unusable_warning">Pack audio inutilisable ignoré. Réimportez-le dans Paramètres → Ressources.</string>
     <string name="subtitle_file_error">Accès perdu. Choisissez de nouveau.</string>
+    <string name="secondary_subtitle_file_error">Sous-titres de traduction : accès perdu. Choisissez de nouveau.</string>
     <string name="dismiss_error">Fermer l\'erreur</string>
     <string name="start_mining">Extraire</string>
     <string name="starting_title">Préparation de l\'extraction</string>
