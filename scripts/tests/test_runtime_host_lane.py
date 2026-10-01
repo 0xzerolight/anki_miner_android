@@ -143,7 +143,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertNotRegex(health, r'(?m)^PIP_NO_CACHE_DIR=1 "\$runtime_host_python" -m pip check$')
         self.assertIn('-m pip check 2>&1)"', health)
         self.assertIn('|| [[ "$runtime_pip_check" == "$ALLOWED_MISSING_REQUIREMENT" ]]', health)
-        self.assertIn("|| fail \"runtime host test environment fails pip check:", health)
+        self.assertIn('|| fail "runtime host test environment fails pip check:', health)
 
 
 if __name__ == "__main__":
