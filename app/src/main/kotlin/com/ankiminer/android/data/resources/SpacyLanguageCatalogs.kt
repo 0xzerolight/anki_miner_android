@@ -669,8 +669,53 @@ internal val italianCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-it-en-2026.09.20",
+                    displayName = "Wiktionary (Italian-English) 2026-09-20",
+                    slotId = "wty-it-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/it/en/wty-it-en.zip",
+                            sha256 = "5e2490eaeb1362352c20ad70530bec018abf34471e657712912bc17f41ff3132",
+                            sizeBytes = 17_229_031,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-it-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 53,
+                            uncompressedBytes = 264_249_229,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-it-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Italian)",
+                    sourceId = "opensubtitles-it",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/it/it_50k.txt",
+                            sha256 = "bb96cdcb56d28342c1e909db6b2525448b7767136b7e86a2ccc649a1be66fc19",
+                            sizeBytes = 653_205,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-it-en-2026.09.20", "opensubtitles-it-2018"),
     )
 
 internal val dutchCatalog =
