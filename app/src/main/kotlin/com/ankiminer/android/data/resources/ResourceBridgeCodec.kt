@@ -1760,8 +1760,53 @@ object FrozenResourceCatalog {
                                 ),
                             ),
                     ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-ar-en-2026.09.20",
+                        displayName = "Wiktionary (Arabic-English) 2026-09-20",
+                        slotId = "wty-ar-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ar/en/wty-ar-en.zip",
+                                sha256 = "c3566fe6e3d3ab158cc313df605e6858171e252b9d1bb2ff17b9ee9897719176",
+                                sizeBytes = 13_584_376,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-ar-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 45,
+                                uncompressedBytes = 188_677_618,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-ar-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Arabic)",
+                        sourceId = "opensubtitles-ar",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ar/ar_50k.txt",
+                                sha256 = "bbe98b4b92902b392bdefa2e555a108fdb42a5dd79d261674be5ab666229e19f",
+                                sizeBytes = 805_779,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
                 ),
-            recommended = emptyList(),
+            recommended = listOf("wty-ar-en-2026.09.20", "opensubtitles-ar-2018"),
         )
 
     val persian =
