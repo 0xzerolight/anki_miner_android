@@ -46,6 +46,10 @@ The app carries the licence texts of the downloaded data whose terms require the
 | Downloaded data | Terms | Licence text in the app |
 |---|---|---|
 | Arabic calima-msa-r13 morphology database | GPL-2.0-only (derived from Aramorph 1.2.1, Linguistic Data Consortium) | `calima-msa-r13-LICENSE`, the archive's own `LICENSE` |
+| Greek `el_core_news_sm` and Italian `it_core_news_sm` 3.8.0 | CC BY-NC-SA 3.0 | `LICENSE-CC-BY-NC-SA-3.0.txt`; the training sources' texts in `el_core_news_sm-LICENSES_SOURCES` and `it_core_news_sm-LICENSES_SOURCES` |
+| Hungarian `hu_core_news_md` 3.8.0 | CC BY-SA 4.0; two of its four training corpora CC BY-NC-SA 3.0 | `wiktionary-LICENSE.CC-BY-SA-4.0` and `LICENSE-CC-BY-NC-SA-3.0.txt` |
+| Catalan, Spanish and Polish `*_core_news_sm` 3.8.0; `pymorphy3-dicts-uk` 2.4.1.1.1663094765 | GPL-3.0 | `LICENSE-GPL-3.0.txt` |
+| French `fr_core_news_sm` 3.8.0 | LGPL-LR | `LICENSE-LGPL-LR.txt` |
 
 A card mined with one of these can carry two licences in its provenance: the data's, which chose the word and its lemma, and the dictionary's that defines it.
 
@@ -57,4 +61,5 @@ in that APK. Pinned upstream sources for FFmpeg, LAME, Opus, dav1d, libwebp, lib
 runtime wheels and the language engine wheels (kiwipiepy among them) are recorded with hashes in
 the `sources.lock` files above. The downloaded language data is fetched unmodified from the URLs
 pinned with their SHA-256 digests in `resource_catalog/`; the calima-msa-r13 database is plain
-text, so that archive is its own corresponding source.
+text, so that archive is its own corresponding source, and each spaCy model's source is at its
+pinned release.
