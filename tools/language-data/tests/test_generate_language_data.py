@@ -164,6 +164,23 @@ class GenerateLanguageDataTest(unittest.TestCase):
         self.assertEqual(["pythainlp", "tzdata"], names)
         self.assertIn("corpus/wordnet_th.db", pack["components"][0]["universal"]["exclude"])
 
+    def test_the_vendored_chinese_manifest_expands_its_opencc_helper(self) -> None:
+        pack = generator.read_pack(REPO_ROOT / generator.LANGUAGES_PATH / "zh" / "pack.py")
+
+        names = [component["import_name"] for component in pack["components"]]
+        self.assertEqual(["jieba", "pypinyin", "opencc", "opencc", "opencc", "opencc"], names)
+        opencc_312 = pack["components"][3]
+        self.assertEqual((3, 12), opencc_312["abi"])
+        linux = opencc_312["per_platform"][("linux", "x86_64")]
+        self.assertEqual("d90a8b76ea5d1f425a4f2eb16114cb33abd29a73c6a4ec367361c61b1c059a10", linux["sha256"])
+        self.assertEqual(("clib/bin/", "clib/include/"), linux["exclude"])
+
+    def test_a_helper_that_does_more_than_return_fails(self) -> None:
+        path = self.repo / generator.LANGUAGES_PATH / "xx" / "pack.py"
+        path.write_text("def _make(name):\n    print(name)\n    return name\n\nPACK = _make('x')\n", encoding="utf-8")
+        with self.assertRaisesRegex(generator.GenerationError, "only return"):
+            generator.read_pack(path)
+
     def test_check_exits_non_zero_on_drift(self) -> None:
         self.assertEqual(1, generator.main(["--repo-root", str(self.repo), "--check"]))
         self.assertEqual(0, generator.main(["--repo-root", str(self.repo), "--refresh"]))

@@ -55,6 +55,32 @@ class GenerationError(Exception):
 _CONSTRUCTORS = frozenset({"ArtifactSpec", "PackComponent", "LanguagePack"})
 
 
+class _Helper:
+    """A module-level ``def`` whose body is a single ``return`` (zh's per-ABI opencc factory)."""
+
+    def __init__(self, node: ast.FunctionDef) -> None:
+        body = node.body[1:] if ast.get_docstring(node) is not None else node.body
+        arguments = node.args
+        plain = not (
+            arguments.posonlyargs or arguments.vararg or arguments.kwonlyargs or arguments.kwarg or arguments.defaults
+        )
+        if not plain or len(body) != 1 or not isinstance(body[0], ast.Return) or body[0].value is None:
+            raise GenerationError(f"helper {node.name} must take plain parameters and only return (line {node.lineno})")
+        self.name = node.name
+        self.parameters = [argument.arg for argument in arguments.args]
+        self.result = body[0].value
+
+
+def _bind(target: ast.expr, value: Any, scope: dict[str, Any]) -> None:
+    if isinstance(target, ast.Name):
+        scope[target.id] = value
+    elif isinstance(target, ast.Tuple) and isinstance(value, tuple) and len(value) == len(target.elts):
+        for element, item in zip(target.elts, value, strict=True):
+            _bind(element, item, scope)
+    else:
+        raise GenerationError(f"cannot bind the comprehension target (line {target.lineno})")
+
+
 def _evaluate(node: ast.expr, names: Mapping[str, Any]) -> Any:
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _CONSTRUCTORS:
         if node.args:
@@ -63,6 +89,28 @@ def _evaluate(node: ast.expr, names: Mapping[str, Any]) -> Any:
             "__type__": node.func.id,
             **{keyword.arg: _evaluate(keyword.value, names) for keyword in node.keywords if keyword.arg},
         }
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and isinstance(names.get(node.func.id), _Helper):
+        helper = names[node.func.id]
+        if node.keywords or len(node.args) != len(helper.parameters):
+            raise GenerationError(f"call {helper.name} with its positional arguments only (line {node.lineno})")
+        scope = dict(names)
+        scope.update(zip(helper.parameters, (_evaluate(argument, names) for argument in node.args), strict=True))
+        return _evaluate(helper.result, scope)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "items":
+        mapping = _evaluate(node.func.value, names)
+        if node.args or node.keywords or not isinstance(mapping, dict):
+            raise GenerationError(f"unsupported .items() call (line {node.lineno})")
+        return tuple(mapping.items())
+    if isinstance(node, ast.DictComp):
+        if len(node.generators) != 1 or node.generators[0].ifs or node.generators[0].is_async:
+            raise GenerationError(f"only one unfiltered comprehension clause is supported (line {node.lineno})")
+        clause = node.generators[0]
+        result = {}
+        for item in _evaluate(clause.iter, names):
+            scope = dict(names)
+            _bind(clause.target, item, scope)
+            result[_evaluate(node.key, scope)] = _evaluate(node.value, scope)
+        return result
     if isinstance(node, ast.Name):
         if node.id not in names:
             raise GenerationError(f"unresolved name {node.id!r} (line {node.lineno})")
@@ -81,6 +129,9 @@ def read_pack(path: Path) -> dict[str, Any]:
 
     names: dict[str, Any] = {}
     for statement in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(statement, ast.FunctionDef):
+            names[statement.name] = _Helper(statement)
+            continue
         if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
             target, value = statement.targets[0], statement.value
         elif isinstance(statement, ast.AnnAssign) and statement.value is not None:

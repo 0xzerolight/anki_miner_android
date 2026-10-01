@@ -35,6 +35,15 @@
     },
     "th/tzdata": {
       "apk": "time zone package pythainlp imports; ships in the APK beside it (C.1)"
+    },
+    "zh/jieba": {
+      "apk": "engine code: the repacked jieba wheel (dict.txt included) ships in the APK (D5)"
+    },
+    "zh/pypinyin": {
+      "apk": "engine code: the pypinyin wheel ships in the APK (D5)"
+    },
+    "zh/opencc": {
+      "apk": "engine code: the cross-built opencc wheel and its dictionaries ship in the APK (D5); one entry covers desktop's per-CPython siblings"
     }
   }
 }

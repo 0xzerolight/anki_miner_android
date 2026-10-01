@@ -96,7 +96,7 @@ def test_a_run_in_a_language_waiting_for_its_data_is_refused_before_admission() 
 def test_an_unvendored_language_is_refused_before_admission() -> None:
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
-        mining._ensure_runtime_ready({"language": "zh"})
+        mining._ensure_runtime_ready({"language": "xx"})
     assert error.value.code == "unsupported_language"
 
 
@@ -419,7 +419,7 @@ def test_workbench_cues_refuse_an_unavailable_language(tmp_path: Path) -> None:
     subtitle = tmp_path / "episode.srt"
     subtitle.write_text(_HEBREW_SRT, encoding="utf-8")
 
-    response = _cues({"runId": None, "subtitlePath": str(subtitle), "language": "zh"})
+    response = _cues({"runId": None, "subtitlePath": str(subtitle), "language": "xx"})
 
     assert response["payload"]["code"] == "unsupported_language"
 
@@ -485,7 +485,7 @@ def test_audio_track_auto_pick_follows_the_mining_language(monkeypatch: pytest.M
 
 def test_audio_tracks_refuse_an_unavailable_language(monkeypatch: pytest.MonkeyPatch) -> None:
     _runtime_lane()
-    response = _tracks(monkeypatch, language="zh")
+    response = _tracks(monkeypatch, language="xx")
     assert response["payload"]["code"] == "unsupported_language"
 
 

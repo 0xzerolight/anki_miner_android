@@ -200,9 +200,11 @@ def speech_language(profile: Any) -> str:
     """The BCP-47 tag Android TextToSpeech speaks *profile*'s text in.
 
     The profile code itself for every vendored language. A language whose voice
-    depends on its regional variety (pt) or script (zh) has to extend this when
-    it is vendored: desktop resolves those through ``AudioDefaults.gtts_lang``,
-    whose codes are Google's (``iw`` for Hebrew), not BCP-47.
+    depends on its regional variety (pt) has to extend this when it is vendored:
+    desktop resolves those through ``AudioDefaults.gtts_lang``, whose codes are
+    Google's (``iw`` for Hebrew), not BCP-47. zh does not: desktop speaks both
+    scripts with one Mandarin voice (``gtts_lang`` ``zh-CN``), and ``zh`` is
+    Android's Mandarin locale (``Locale.CHINESE``).
     """
 
     return str(profile.code)
