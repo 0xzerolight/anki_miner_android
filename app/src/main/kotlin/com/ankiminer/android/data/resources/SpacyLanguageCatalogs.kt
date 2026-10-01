@@ -1631,8 +1631,53 @@ internal val lithuanianCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-lt-en-2026.09.20",
+                    displayName = "Wiktionary (Lithuanian-English) 2026-09-20",
+                    slotId = "wty-lt-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/lt/en/wty-lt-en.zip",
+                            sha256 = "01cec5943c4136c13278674fb418e0078e53531ba47b7884fc15a915ad0aa223",
+                            sizeBytes = 2_259_176,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-lt-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 12,
+                            uncompressedBytes = 28_704_832,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-lt-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Lithuanian)",
+                    sourceId = "opensubtitles-lt",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/lt/lt_50k.txt",
+                            sha256 = "e953d15442ceb0a2eefd2910ca1e01e1bbf5cb261dc8ac905c918c8ae3edfe31",
+                            sizeBytes = 610_944,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-lt-en-2026.09.20", "opensubtitles-lt-2018"),
     )
 
 internal val danishCatalog =
