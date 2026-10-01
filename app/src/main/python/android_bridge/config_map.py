@@ -484,13 +484,14 @@ def _expression_audio_chain(
     language: str = JAPANESE,
 ) -> tuple[object, ...]:
     result: list[object] = []
-    identities: set[str] = set()
+    pack_ids: set[str] = set()
+    has_device_voice = False
     for raw in _chain_items("expression_audio_chain", value):
         if isinstance(raw, Mapping) and raw.get("kind") == _ANDROID_TTS_AUDIO_KIND and language != JAPANESE:
             item = _entry_mapping("expression_audio_chain", raw, frozenset({"kind", "enabled"}))
-            if _ANDROID_TTS_AUDIO_KIND in identities:
+            if has_device_voice:
                 raise _invalid("expression_audio_chain", "duplicate device voice")
-            identities.add(_ANDROID_TTS_AUDIO_KIND)
+            has_device_voice = True
             result.append(
                 constructor(
                     kind=_ANDROID_TTS_AUDIO_KIND,
@@ -504,9 +505,9 @@ def _expression_audio_chain(
         if item.get("kind") != "pack":
             raise _unsupported_audio_source()
         pack_id = _resource_id("expression_audio_chain.pack_id", item.get("pack_id"))
-        if pack_id in identities:
+        if pack_id in pack_ids:
             raise _invalid("expression_audio_chain", "duplicate pack")
-        identities.add(pack_id)
+        pack_ids.add(pack_id)
         result.append(
             constructor(
                 kind="pack",

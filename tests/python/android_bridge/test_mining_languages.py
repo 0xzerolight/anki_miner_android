@@ -549,14 +549,46 @@ def test_a_malformed_device_voice_entry_is_refused(tmp_path: Path, chain: list[o
     assert error.value.code == "invalid_config_field"
 
 
-def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(tmp_path: Path) -> None:
+def test_a_pack_named_like_the_device_voice_is_not_a_duplicate_of_it(tmp_path: Path) -> None:
     _runtime_lane()
-    from android_bridge.word_audio import AndroidWordAudioFetcher
+    from anki_miner.config import AudioSourceEntry
 
     config = _hebrew_config(
         tmp_path,
+        expression_audio_chain=[{"kind": "pack", "pack_id": "android_tts"}, {"kind": "android_tts"}],
+    )
+    assert config.expression_audio_chain == (
+        AudioSourceEntry(kind="pack", pack_id="android_tts"),
+        AudioSourceEntry(kind="android_tts"),
+    )
+
+
+def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _runtime_lane()
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    pack = SimpleNamespace(pack_id="forvo-he")
+
+    class InstalledPack:
+        packs: dict[str, object] = {}
+
+        def __init__(self, root: object) -> None:
+            pass
+
+        def load(self) -> None:
+            pass
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            return [pack]
+
+    monkeypatch.setattr("anki_miner.services.audio_packs.registry.AudioPackRegistry", InstalledPack)
+    config = _hebrew_config(
+        tmp_path,
         anki_fields={"expression_audio": "WordAudio"},
-        expression_audio_chain=[{"kind": "android_tts"}],
+        expression_audio_chain=[{"kind": "pack", "pack_id": "forvo-he"}, {"kind": "android_tts"}],
     )
     chain = mining._build_expression_audio_source_chain(
         config,
@@ -564,16 +596,17 @@ def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(tmp_path: 
         run_id="run_00000000000000000000000000000000",
     )
     assert chain is not None
-    (member,) = chain._fetchers
-    assert isinstance(member, AndroidWordAudioFetcher)
-    assert member.media_name("ספר", "").startswith("androidtts_he_")
+    first, second = chain._fetchers
+    assert first._fetcher is pack
+    assert isinstance(second, AndroidWordAudioFetcher)
+    assert second.media_name("ספר", "").startswith("androidtts_he_")
     chain.close()
 
     # Without the run's callbacks (a test double, a pre-language caller) the
     # entry builds nothing rather than a source that cannot speak.
     silent = mining._build_expression_audio_source_chain(config)
     assert silent is not None
-    assert silent._fetchers == ()
+    assert [member._fetcher for member in silent._fetchers] == [pack]
     silent.close()
 
 

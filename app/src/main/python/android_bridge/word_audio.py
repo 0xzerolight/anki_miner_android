@@ -95,6 +95,9 @@ class AndroidWordAudioFetcher:
             if source is None or (cancelled_check is not None and cancelled_check()):
                 return None
             return self._publish(source, self.media_name(mined_form, reading))
+        except MemoryError:
+            # As desktop's synthetic fetchers: memory exhaustion is the run's to stop on.
+            raise
         except Exception as error:
             # Word audio is optional: a broken voice must never abort the run.
             if not self._logged_failure:

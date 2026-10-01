@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from android_bridge.protocol import decode_envelope, encode_message
 from android_bridge.word_audio import AndroidWordAudioFetcher
 
@@ -115,6 +116,14 @@ def test_fetch_never_raises(tmp_path: Path) -> None:
     # A media directory that cannot be created is a miss, not a crash.
     (tmp_path / "media").write_text("not a directory")
     assert _fetcher(tmp_path, TtsCallbacks(tmp_path / "cache")).fetch("ספר", "") is None
+
+
+def test_memory_exhaustion_is_the_runs_to_stop_on(tmp_path: Path) -> None:
+    def exhausted(_term: str, _reading: str) -> str:
+        raise MemoryError
+
+    with pytest.raises(MemoryError):
+        _fetcher(tmp_path, TtsCallbacks(tmp_path / "cache"), speakable=exhausted).fetch("ספר", "")
 
 
 def test_cancellation_returns_none_and_writes_no_media(tmp_path: Path) -> None:
