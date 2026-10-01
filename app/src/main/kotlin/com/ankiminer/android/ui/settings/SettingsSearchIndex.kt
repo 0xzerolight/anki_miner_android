@@ -143,7 +143,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             SettingsCategory.RESOURCES,
             "dictionary-sources",
             R.string.recommended_resources_title,
-            R.string.recommended_resources_description,
         ),
         entry(
             "resources.jmdict",

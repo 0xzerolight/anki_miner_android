@@ -602,7 +602,7 @@ internal fun ResourceCard(
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (!installed) {
+            if (!installed && description.isNotEmpty()) {
                 Text(description)
             }
             inlineFailure?.invoke()

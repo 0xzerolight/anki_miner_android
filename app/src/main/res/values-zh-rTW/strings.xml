@@ -505,7 +505,6 @@
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · 下載約 45 MiB，安裝後 249 MiB</string>
     <string name="jitendex_resource_title">Jitendex 字典</string>
     <string name="recommended_resources_title">建議資源</string>
-    <string name="recommended_resources_description">JMdict 字典、JPDB 假名頻率表與 Kanjium 高低音調 · 下載約 24 MiB，匯入時最多 163 MiB</string>
     <string name="recommended_resources_download">下載並安裝</string>
     <string name="recommended_resources_installed_action">已全部安裝</string>
     <string name="jpdb_frequency_resource_title">JPDB v2.2 假名頻率</string>

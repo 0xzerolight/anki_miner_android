@@ -505,7 +505,6 @@
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · tải xuống khoảng 45 MiB và cài đặt 249 MiB</string>
     <string name="jitendex_resource_title">Từ điển Jitendex</string>
     <string name="recommended_resources_title">Tài nguyên được đề xuất</string>
-    <string name="recommended_resources_description">Từ điển JMdict, danh sách tần suất kana JPDB và trọng âm cao độ Kanjium · tải xuống khoảng 24 MiB và tối đa 163 MiB khi nhập</string>
     <string name="recommended_resources_download">Tải xuống và cài đặt</string>
     <string name="recommended_resources_installed_action">Đã cài đặt tất cả</string>
     <string name="jpdb_frequency_resource_title">Tần suất kana JPDB v2.2</string>

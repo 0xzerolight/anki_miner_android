@@ -507,7 +507,6 @@
     <string name="unidic_resource_description">UniDic Lite 1.0.8 · descarga de unos 45 MiB y 249 MiB instalado</string>
     <string name="jitendex_resource_title">Diccionario Jitendex</string>
     <string name="recommended_resources_title">Recursos recomendados</string>
-    <string name="recommended_resources_description">Diccionario JMdict, lista de frecuencia kana de JPDB y acentos tonales de Kanjium · descarga de unos 24 MiB y hasta 163 MiB durante la importación</string>
     <string name="recommended_resources_download">Descargar e instalar</string>
     <string name="recommended_resources_installed_action">Todos instalados</string>
     <string name="jpdb_frequency_resource_title">Frecuencia kana de JPDB v2.2</string>

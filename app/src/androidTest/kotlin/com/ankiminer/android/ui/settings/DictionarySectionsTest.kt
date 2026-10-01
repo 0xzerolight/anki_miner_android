@@ -195,4 +195,31 @@ class DictionarySectionsTest {
             super.setBackgroundColor(color)
         }
     }
+
+    @Test
+    fun recommendedResourcesCardNamesWhatItWillDownload() {
+        val catalog = FrozenResourceCatalog.value
+        composeRule.setContent {
+            AnkiMinerTheme {
+                RecommendedResourcesCard(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            recommendedPlan =
+                                RecommendedResourcePlan(
+                                    catalog.recommendedResources.map {
+                                        RecommendedResourceItem(it, RecommendedResourceAction.INSTALL)
+                                    },
+                                ),
+                        ),
+                    onDownload = {},
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithText(catalog.recommendedResources.first().displayName, substring = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("up to 163 MiB while importing", substring = true).assertDoesNotExist()
+    }
 }
