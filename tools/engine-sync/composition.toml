@@ -44,6 +44,7 @@ assets = [
   "anki_miner/languages/fa/data/compound_verbs.tsv",
   "anki_miner/languages/fa/data/preferred_present_stems.tsv",
   "anki_miner/languages/fa/data/verb_first.tsv",
+  "anki_miner/languages/yue/data/jyutping_overrides.txt",
   "anki_miner/resources/wordsets/LICENSE.txt",
   "anki_miner/resources/wordsets/given-names.txt",
   "anki_miner/resources/wordsets/org-product.txt",
@@ -88,9 +89,16 @@ allowed_external = [
   "PIL",
   "charset_normalizer",
   "lxml",
+  # yue's measure-word hook imports zh.render, whose OpenCC and pypinyin
+  # imports are function-local; OpenCC's absence is handled there, and the
+  # yue path never reaches pypinyin. The Chinese family ships both.
+  "opencc",
+  "pycantonese",
+  "pypinyin",
   "pysubs2",
   "pythainlp",
   "requests",
+  "underthesea",
 ]
 
 # Imports under these names must resolve from the overlay. They must never be
@@ -181,7 +189,7 @@ forbidden_imports = [
 ]
 
 # Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
-languages = ["ja", "he", "id", "ar", "fa", "th"]
+languages = ["ja", "he", "id", "ar", "fa", "th", "vi", "yue"]
 
 # Imported only inside functions, never vendored. ASR and retiming are reached
 # from episode_processor's deferred paths; gui only through languages/ja/text.py's

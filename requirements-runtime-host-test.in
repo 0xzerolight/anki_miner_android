@@ -1,5 +1,9 @@
 # CPython 3.12 bridge test runner and the Android common pip set (pythainlp and
-# tzdata as upstream wheels; app/wheels/common ships pythainlp repacked).
+# tzdata as upstream wheels; app/wheels/common ships pythainlp repacked). The
+# Vietnamese and Cantonese engines are the upstream wheels too; their models
+# live inside them here, while the APK ships them stripped and downloads the
+# models. underthesea's declared requirements (Click, PyYAML, huggingface-hub)
+# are resolved into the lock only so pip check passes: the APK never ships them.
 pytest==9.0.3
 jsonschema==4.26.0
 requests==2.34.2
@@ -12,3 +16,9 @@ idna==3.18
 certifi==2026.6.17
 pythainlp==5.3.7
 tzdata==2026.3
+underthesea==9.5.0
+underthesea-core==3.3.2
+joblib==1.6.0
+cloudpickle==3.1.2
+pycantonese==5.0.0
+rustling==0.9.0

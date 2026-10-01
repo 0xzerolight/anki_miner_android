@@ -35,6 +35,24 @@
     },
     "th/tzdata": {
       "apk": "time zone package pythainlp imports; ships in the APK beside it (C.1)"
+    },
+    "vi/cloudpickle": {
+      "apk": "engine code: joblib imports it; ships in the APK"
+    },
+    "vi/joblib": {
+      "apk": "engine code: underthesea loads its models with joblib; ships in the APK"
+    },
+    "vi/underthesea": {
+      "apk": "engine code: the repacked underthesea wheel ships in the APK, its CRF models included"
+    },
+    "vi/underthesea_core": {
+      "apk": "engine code: underthesea's Rust extension, built for Android and shipped in the APK"
+    },
+    "yue/pycantonese": {
+      "apk": "engine code: pycantonese and its Rust core, built for Android and shipped in the APK with its models"
+    },
+    "yue/rustling": {
+      "apk": "engine code: the Rust segmenter and tagger pycantonese calls, built for Android and shipped in the APK"
     }
   }
 }

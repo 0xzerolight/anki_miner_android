@@ -58,10 +58,11 @@ def test_malformed_language_values_are_refused(value: object) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["xx", "zh", "ko", "en"])
+@pytest.mark.parametrize("code", ["xx", "eo", "ko", "en"])
 def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
-    # zh/ko/en are desktop languages that are not vendored in this wave: the
-    # engine would silently mine them as Japanese, the bridge must not.
+    # ko/en are desktop languages that are not vendored in this wave, eo is no
+    # desktop language at all: the engine would silently mine them as Japanese,
+    # the bridge must not.
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
         languages.validated_language(code)
@@ -70,7 +71,7 @@ def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
 
 def test_every_vendored_language_validates() -> None:
     _runtime_lane()
-    assert _available() == ("ja", "id", "ar", "th", "fa", "he")
+    assert _available() == ("ja", "zh", "id", "ar", "th", "fa", "vi", "yue", "he")
     for code in _available():
         assert languages.validated_language(code) == code
 
@@ -102,7 +103,7 @@ def test_explicit_japanese_maps_exactly_like_an_absent_language(tmp_path: Path) 
 def test_config_map_refuses_an_unavailable_language(tmp_path: Path) -> None:
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"language": "zh", **_NOTE_TYPE}, _paths(tmp_path))
+        map_config_settings({"language": "eo", **_NOTE_TYPE}, _paths(tmp_path))
     assert error.value.code == "unsupported_language"
 
 

@@ -18,13 +18,19 @@ from PIL import features
 EXPECTED_DISTRIBUTIONS = {
     "certifi": "2026.6.17",
     "charset-normalizer": "3.4.7",
+    "cloudpickle": "3.1.2",
     "idna": "3.18",
+    "joblib": "1.6.0",
     "lxml": "6.1.1",
     "pillow": "12.2.0",
+    "pycantonese": "5.0.0",
     "pysubs2": "1.8.1",
     "pythainlp": "5.3.7",
     "requests": "2.34.2",
+    "rustling": "0.9.0",
     "tzdata": "2026.3",
+    "underthesea": "9.5.0",
+    "underthesea-core": "3.3.2",
     "urllib3": "2.7.0",
 }
 
@@ -68,7 +74,18 @@ def main() -> int:
         raise RuntimeError(f"Pillow codecs are unavailable: {missing_codecs}")
     external_imports = set(manifest["external_imports"]["eager"])
     external_imports.update(manifest["external_imports"]["deferred"])
-    expected_external = {"PIL", "charset_normalizer", "lxml", "pysubs2", "pythainlp", "requests"}
+    expected_external = {
+        "PIL",
+        "charset_normalizer",
+        "lxml",
+        "opencc",
+        "pycantonese",
+        "pypinyin",
+        "pysubs2",
+        "pythainlp",
+        "requests",
+        "underthesea",
+    }
     if external_imports != expected_external:
         raise RuntimeError(
             "neutral engine external imports differ: "
