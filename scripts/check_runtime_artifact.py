@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 import check_native_artifacts as native_policy
 
 SUPPORTED_ABIS = {"arm64-v8a": 183, "x86_64": 62}
-RUNTIME_SCHEMA = 1
+RUNTIME_SCHEMA = 2
 S1A_SCHEMA = 2
 KEY_PATTERN = re.compile(r"[0-9a-f]{64}")
 PACKAGE_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")

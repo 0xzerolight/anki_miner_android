@@ -118,14 +118,20 @@ runtime_build_stage() {
         --chaquopy-root "$chaquopy"
     patchelf_dir="$(dirname "$patchelf")"
 
-    mkdir -p "$stage/home" "$stage/tmp" "$stage/cache"
+    mkdir -p "$stage/home" "$stage/tmp" "$stage/cache" "$stage/cargo-home"
     (
         unset ALL_PROXY all_proxy HTTP_PROXY http_proxy HTTPS_PROXY https_proxy NO_PROXY no_proxy
+        unset RUSTUP_TOOLCHAIN RUSTC RUSTC_WRAPPER RUSTFLAGS CARGO_TARGET_DIR
         export ANDROID_HOME
         export ANKI_MINER_CHAQUOPY_BUILD_PYTHON
         export ANKI_MINER_HOST_WHEELHOUSE="$wheelhouse"
         export ANKI_MINER_RUNTIME_STAGE_ROOT="$stage"
+        # Rust: 16 KiB pages, a build ID, and no toolchain or stage paths in the binaries.
+        export ANKI_MINER_RUSTFLAGS="-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,--build-id=sha1 --remap-path-prefix=${rust_bin%/toolchains/*}=/rustup --remap-path-prefix=$stage=/anki-miner-runtime"
+        export CARGO_HOME="$stage/cargo-home"
+        export CARGO_INCREMENTAL=0
         export CARGO_NET_OFFLINE=true
+        export MATURIN_PEP517_ARGS="--frozen"
         export HOME="$stage/home"
         export PIP_CONFIG_FILE=/dev/null
         export PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -133,16 +139,16 @@ runtime_build_stage() {
         export PYTHONNOUSERSITE=1
         export TMPDIR="$stage/tmp"
         export XDG_CACHE_HOME="$stage/cache"
-        export PATH="$builder_env/bin:$patchelf_dir:$PATH"
+        export PATH="$builder_env/bin:$patchelf_dir:$rust_bin:$PATH"
         cd "$chaquopy/server/pypi"
         for abi in arm64-v8a x86_64; do
-            "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libjpeg
-            "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-freetype
-            "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libwebp
-            "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libxml2
-            "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 chaquopy-libxslt
-            "$builder_env/bin/python" build-wheel.py --python 3.12 --abi "$abi" --api-level 26 pillow
-            "$builder_env/bin/python" build-wheel.py --python 3.12 --abi "$abi" --api-level 26 lxml
+            for recipe in "${build_recipes[@]}"; do
+                if [[ "${recipe_kinds[$recipe]}" == python ]]; then
+                    "$builder_env/bin/python" build-wheel.py --python 3.12 --abi "$abi" --api-level 26 "$recipe"
+                else
+                    "$builder_env/bin/python" build-wheel.py --abi "$abi" --api-level 26 "$recipe"
+                fi
+            done
         done
     )
 }
@@ -171,6 +177,14 @@ runtime_build_target() {
     mapfile -t outer_requirements < <(
         runtime_python host-requirements --role outer
     )
+    rust_bin="$(runtime_python rust-bin)"
+    declare -gA recipe_kinds=()
+    build_recipes=()
+    local recipe kind
+    while IFS=$'\t' read -r recipe kind; do
+        build_recipes+=("$recipe")
+        recipe_kinds[$recipe]="$kind"
+    done < <(runtime_python build-order)
     runtime_build_stage "$stage_a"
     runtime_build_stage "$stage_b"
 

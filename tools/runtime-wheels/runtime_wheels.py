@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -38,10 +39,32 @@ PYTHON_TARGET = "3.12.12-0"
 TARGET_BUILD_PYTHON_VERSION = "3.12.13"
 TARGET_BUILD_PYTHON_ENV = "ANKI_MINER_CHAQUOPY_BUILD_PYTHON"
 STAGE_SCHEMA = 1
-PUBLICATION_SCHEMA = 1
+PUBLICATION_SCHEMA = 2
 ATTRIBUTION_SCHEMA = 1
 HOST_LOCK_SCHEMA = 2
+BUILDER_IDENTITY_SCHEMA = 3
 SOURCE_DATE_EPOCH = "1704067200"
+WHEEL_DATE_TIME = (2024, 1, 1, 0, 0, 0)
+
+# Rust recipes build with this toolchain only. rustup provisions it
+# (`rustup toolchain install 1.98.0 --profile minimal --target
+# aarch64-linux-android --target x86_64-linux-android`) but never runs during a
+# build: the builder puts the toolchain's own bin/ on PATH and verifies it.
+RUST_TOOLCHAIN = {
+    "release": "1.98.0",
+    "commit_hash": "88d9e12ae178fab0fb5cc050a94da85685d449ea",
+    "host": "x86_64-unknown-linux-gnu",
+    "targets": {"arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android"},
+}
+RUSTUP_HOME_ENV = "ANKI_MINER_RUSTUP_HOME"
+NDK_LLVM_BIN = "toolchains/llvm/prebuilt/linux-x86_64/bin"
+# Shipped beside the runtime publication by tools/wheels (chaquopy-libcxx);
+# C++ extensions here link it, and Chaquopy records the requirement.
+EXTERNAL_RUNTIME_LIBS = frozenset({"libc++_shared.so"})
+
+FAMILIES = {
+    "base": "tokenizer-neutral runtime: requests, pysubs2, Pillow, lxml",
+}
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
     "PYTHONHASHSEED": "0",
@@ -145,6 +168,13 @@ HOST_REQUIREMENTS = {
     "packaging==26.2": {"outer"},
     "pip==25.1.1": {"outer", "target"},
     "pybind11==3.0.1": {"target"},
+    # Rust (maturin), CMake and meson recipes install these in their build env.
+    "cmake==4.4.3": {"target"},
+    "maturin==1.15.0": {"target"},
+    "meson==1.12.1": {"target"},
+    "meson-python==0.22.0": {"target"},
+    "ninja==1.13.2": {"target"},
+    "pyproject-metadata==0.12.1": {"target"},
     "pyelftools==0.32": {"outer"},
     "pyproject-hooks==1.2.0": {"outer"},
     "PyYAML==6.0.2": {"outer"},
@@ -231,6 +261,47 @@ RUNTIME_NATIVE_LIBS = {
     "libxslt.so",
 }
 
+# The packages each family's wave vendors into app/wheels. A package may serve
+# several families; every published package belongs to at least one.
+FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
+    "base": (
+        "certifi",
+        "chaquopy-freetype",
+        "chaquopy-libjpeg",
+        "chaquopy-libwebp",
+        "chaquopy-libxml2",
+        "chaquopy-libxslt",
+        "charset-normalizer",
+        "idna",
+        "lxml",
+        "pillow",
+        "pysubs2",
+        "requests",
+        "urllib3",
+    ),
+}
+PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
+    package: tuple(family for family, packages in FAMILY_PACKAGES.items() if package in packages)
+    for package in sorted({package for packages in FAMILY_PACKAGES.values() for package in packages})
+}
+# Members dropped when a wheel is repacked for publication: (package
+# directory, excludes). Excludes follow desktop pack.py: an entry ending in "/"
+# drops that subtree, any other entry exactly one file.
+REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {}
+# Pure packages published only as an sdist: the member prefix that becomes the
+# wheel's package directory. The wheel carries the sdist's PKG-INFO as METADATA.
+SDIST_WHEELS: dict[str, str] = {}
+# Native payload locations for packages with more than their required modules:
+# an entry ending in "/" admits any .so below it, any other entry one path.
+NATIVE_ROOTS: dict[str, tuple[str, ...]] = {}
+# Members whose bytes are pinned by a recipe-side JSON file:
+# {"prefix": "...", "members": {"path": "sha256"}}. The wheel must carry
+# exactly these members below the prefix.
+PINNED_MEMBER_FILES: dict[str, str] = {}
+
+OPTIONAL_SOURCE_KEYS = {"cargo_manifest", "cargo_vendor", "git_commit"}
+LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")
+
 FORBIDDEN_PACKAGE_NAMES = {
     "unidic",
     "unidic-lite",
@@ -248,7 +319,9 @@ FORBIDDEN_PAYLOAD_MARKERS = (
     b"yt_dlp",
     b"gtts",
 )
-BUILD_PATH_MARKERS = (b"/home/", b"/tmp/", b"/Users/", b"C:\\")
+# POSIX build roots only: the builder is Linux, and drive-letter byte pairs
+# such as b"C:\\" occur as ordinary x86_64 machine code in Rust extensions.
+BUILD_PATH_MARKERS = (b"/home/", b"/tmp/", b"/Users/")
 
 RECIPE_FILES = (
     "build-runtime-wheels.sh",
@@ -315,13 +388,23 @@ def load_json(path: Path, expected_schema: int) -> dict[str, object]:
 
 
 def _validate_license(value: object, label: str) -> dict[str, object]:
-    license_value = require_exact_keys(value, {"expression", "members"}, label)
+    """Validate a locked licence: archive members, plus texts the repository carries.
+
+    ``carried`` names licence files committed beside the recipe (natives) or
+    under ``licenses/<package>/`` (pure wheels), for texts an upstream archive
+    omits. Both maps pin each file's SHA-256.
+    """
+    keys = {"expression", "members", "carried"} if isinstance(value, dict) and "carried" in value else None
+    license_value = require_exact_keys(value, keys or {"expression", "members"}, label)
     expression = license_value.get("expression")
     members = license_value.get("members")
+    carried = license_value.get("carried", {})
     if not isinstance(expression, str) or not expression.strip():
         raise RuntimeWheelError(f"{label} has no license expression")
-    if not isinstance(members, dict) or not members:
+    if not isinstance(members, dict) or not isinstance(carried, dict) or not (members or carried):
         raise RuntimeWheelError(f"{label} has no license members")
+    if keys is not None and not carried:
+        raise RuntimeWheelError(f"{label} has an empty carried licence map")
     for member, sha256 in members.items():
         if (
             not isinstance(member, str)
@@ -330,7 +413,41 @@ def _validate_license(value: object, label: str) -> dict[str, object]:
             or KEY_PATTERN.fullmatch(sha256) is None
         ):
             raise RuntimeWheelError(f"{label} has an unsafe license member")
+    for name, sha256 in carried.items():
+        if (
+            not isinstance(name, str)
+            or Path(name).name != name
+            or not name.upper().startswith(LICENSE_PREFIXES)
+            or not isinstance(sha256, str)
+            or KEY_PATTERN.fullmatch(sha256) is None
+        ):
+            raise RuntimeWheelError(f"{label} has an unsafe carried licence")
     return license_value
+
+
+def _validate_source_extras(entry: dict[str, object], label: str) -> None:
+    """Validate the optional cargo vendor and git commit pins of a source."""
+    if "cargo_vendor" in entry or "cargo_manifest" in entry:
+        vendor = require_exact_keys(entry.get("cargo_vendor"), {"filename", "sha256"}, f"{label} cargo vendor")
+        manifest = entry.get("cargo_manifest")
+        filename = vendor.get("filename")
+        sha256 = vendor.get("sha256")
+        if (
+            entry.get("kind") != "runtime-source"
+            or not isinstance(manifest, str)
+            or not _is_safe_archive_name(manifest)
+            or Path(manifest).name != "Cargo.toml"
+            or not isinstance(filename, str)
+            or Path(filename).name != filename
+            or not filename.endswith("-cargo-vendor.tar.gz")
+            or not isinstance(sha256, str)
+            or KEY_PATTERN.fullmatch(sha256) is None
+        ):
+            raise RuntimeWheelError(f"{label} has an unsafe cargo vendor pin")
+    if "git_commit" in entry:
+        commit = entry.get("git_commit")
+        if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+            raise RuntimeWheelError(f"{label} has an invalid git commit pin")
 
 
 def source_entries() -> dict[str, dict[str, object]]:
@@ -348,6 +465,8 @@ def source_entries() -> dict[str, dict[str, object]]:
             base_keys.add("license")
         if package is not None:
             base_keys.update({"package", "version"})
+        if isinstance(raw_entry, dict):
+            base_keys.update(set(raw_entry) & OPTIONAL_SOURCE_KEYS)
         entry = require_exact_keys(raw_entry, base_keys, f"source lock entry {name}")
         filename = entry.get("filename")
         sha256 = entry.get("sha256")
@@ -370,12 +489,20 @@ def source_entries() -> dict[str, dict[str, object]]:
             raise RuntimeWheelError(f"source identity mismatch: {name}")
         if "license" in entry:
             _validate_license(entry.get("license"), f"source license {name}")
+        _validate_source_extras(entry, f"source lock entry {name}")
         result[name] = entry
     prebuilt = {
         normalize_package(str(entry["package"])): str(entry["filename"])
         for entry in result.values()
         if entry["kind"] == "prebuilt-wheel"
     }
+    prebuilt.update(
+        {
+            normalize_package(str(entry["package"])): COMMON_SPECS[normalize_package(str(entry["package"]))][1]
+            for entry in result.values()
+            if entry["kind"] == "pure-sdist" and normalize_package(str(entry["package"])) in COMMON_SPECS
+        }
+    )
     if prebuilt != {name: filename for name, (_, filename) in COMMON_SPECS.items()}:
         raise RuntimeWheelError("prebuilt common wheel inventory differs from the contract")
     return result
@@ -465,13 +592,151 @@ def _download(url: str, target: Path, expected: str) -> None:
             temporary.unlink()
 
 
+def rustup_home() -> Path:
+    value = os.environ.get(RUSTUP_HOME_ENV) or os.environ.get("RUSTUP_HOME")
+    return Path(value) if value else Path.home() / ".rustup"
+
+
+def rust_toolchain_bin(home: Path | None = None) -> Path:
+    toolchain = f"{RUST_TOOLCHAIN['release']}-{RUST_TOOLCHAIN['host']}"
+    return (home or rustup_home()) / "toolchains" / toolchain / "bin"
+
+
+def validate_rust_identity(value: object) -> dict[str, object]:
+    identity = require_exact_keys(value, {"release", "commit_hash", "host", "targets"}, "Rust toolchain identity")
+    expected = {
+        "release": RUST_TOOLCHAIN["release"],
+        "commit_hash": RUST_TOOLCHAIN["commit_hash"],
+        "host": RUST_TOOLCHAIN["host"],
+        "targets": sorted(RUST_TOOLCHAIN["targets"].values()),
+    }
+    if identity != expected:
+        raise RuntimeWheelError(f"Rust toolchain differs from the pinned toolchain: {identity}")
+    return identity
+
+
+def rust_identity(home: Path | None = None) -> dict[str, object]:
+    """Identify the pinned toolchain by rustc's own report, without calling rustup."""
+    bin_dir = rust_toolchain_bin(home)
+    rustc = bin_dir / "rustc"
+    if not rustc.is_file() or not os.access(rustc, os.X_OK):
+        raise RuntimeWheelError(
+            f"pinned Rust toolchain is missing: {bin_dir}; run `rustup toolchain install "
+            f"{RUST_TOOLCHAIN['release']} --profile minimal --target aarch64-linux-android "
+            "--target x86_64-linux-android`",
+        )
+    environment = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+    report = subprocess.run([str(rustc), "-vV"], check=True, capture_output=True, text=True, env=environment)
+    fields = dict(line.split(": ", 1) for line in report.stdout.splitlines() if ": " in line)
+    sysroot = subprocess.run(
+        [str(rustc), "--print", "sysroot"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    ).stdout.strip()
+    return validate_rust_identity(
+        {
+            "release": fields.get("release"),
+            "commit_hash": fields.get("commit-hash"),
+            "host": fields.get("host"),
+            "targets": sorted(
+                triple
+                for triple in RUST_TOOLCHAIN["targets"].values()
+                if (Path(sysroot) / "lib/rustlib" / triple / "lib").is_dir()
+            ),
+        },
+    )
+
+
+def deterministic_tar(root: Path, arcname: str, output: Path) -> None:
+    """Pack ``root`` as ``arcname/...`` with sorted members and fixed metadata."""
+    epoch = int(SOURCE_DATE_EPOCH)
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        paths = sorted(root.rglob("*"), key=lambda path: path.relative_to(root).as_posix())
+        for path in [root, *paths]:
+            if path.is_symlink():
+                raise RuntimeWheelError(f"vendored tree contains a symlink: {path}")
+            relative = path.relative_to(root).as_posix()
+            info = tarfile.TarInfo(arcname if relative == "." else f"{arcname}/{relative}")
+            info.mtime = epoch
+            info.uid = info.gid = 0
+            info.uname = info.gname = ""
+            if path.is_dir():
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                archive.addfile(info)
+            else:
+                data = path.read_bytes()
+                info.size = len(data)
+                info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
+                archive.addfile(info, io.BytesIO(data))
+    with (
+        output.open("wb") as raw,
+        gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=9) as stream,
+    ):
+        stream.write(buffer.getvalue())
+
+
+def cargo_vendor(name: str, entry: dict[str, object], downloads: Path) -> Path:
+    """Regenerate a locked ``cargo vendor`` tarball; the only networked Rust step.
+
+    The tarball is a derived input: cargo fetches each crate the sdist's
+    Cargo.lock names and re-verifies its checksum, and the packed tree must hash
+    to the lock. Builds then run offline against it.
+    """
+    vendor = entry["cargo_vendor"]
+    assert isinstance(vendor, dict)
+    sdist = downloads / str(entry["filename"])
+    verify_file(sdist, str(entry["sha256"]))
+    rust_identity()
+    bin_dir = rust_toolchain_bin()
+    output = downloads / str(vendor["filename"])
+    with tempfile.TemporaryDirectory(prefix=f".{name}-vendor-", dir=downloads) as temporary:
+        work = Path(temporary)
+        source = safe_extract(sdist, work / "sdist")
+        environment = {
+            **os.environ,
+            "CARGO_HOME": str(work / "cargo-home"),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "RUSTUP_HOME": str(rustup_home()),
+        }
+        subprocess.run(
+            [
+                str(bin_dir / "cargo"),
+                "vendor",
+                "--locked",
+                "--versioned-dirs",
+                "--quiet",
+                "--manifest-path",
+                str(source / str(entry["cargo_manifest"])),
+                str(work / "vendor"),
+            ],
+            check=True,
+            env=environment,
+            stdout=subprocess.DEVNULL,
+        )
+        partial = work / output.name
+        deterministic_tar(work / "vendor", "vendor", partial)
+        if digest(partial) != vendor["sha256"]:
+            raise RuntimeWheelError(f"{name}: regenerated cargo vendor tree differs from the lock")
+        os.replace(partial, output)
+    return output
+
+
 def fetch_inputs(downloads: Path, wheelhouse: Path) -> None:
-    for entry in source_entries().values():
+    for name, entry in source_entries().items():
         _download(
             str(entry["url"]),
             downloads / str(entry["filename"]),
             str(entry["sha256"]),
         )
+        vendor = entry.get("cargo_vendor")
+        if isinstance(vendor, dict):
+            vendor_path = downloads / str(vendor["filename"])
+            if not vendor_path.is_file() or digest(vendor_path) != vendor["sha256"]:
+                cargo_vendor(name, entry, downloads)
     for entry in host_entries():
         _download(
             str(entry["url"]),
@@ -603,6 +868,22 @@ def _archive_member_bytes(path: Path, member_name: str) -> bytes:
     raise RuntimeWheelError(f"unsupported archive: {path}")
 
 
+def carried_license_path(entry: dict[str, object], name: str, tool_root: Path = TOOL_ROOT) -> Path:
+    """Where the repository carries a licence text that a source archive omits."""
+    package = normalize_package(str(entry["package"]))
+    if entry.get("kind") == "runtime-source":
+        return tool_root / "recipes" / package / name
+    return tool_root / "licenses" / package / name
+
+
+def verify_git_archive_commit(path: Path, commit: str) -> None:
+    """A git-archive tarball names its commit in the pax global header."""
+    with tarfile.open(path) as archive:
+        _validated_tar_members(archive, path.name)
+        if archive.pax_headers.get("comment") != commit:
+            raise RuntimeWheelError(f"{path.name}: archive is not git commit {commit}")
+
+
 def verify_source_archive(path: Path, entry: dict[str, object]) -> None:
     verify_file(path, str(entry["sha256"]))
     license_value = entry.get("license")
@@ -613,7 +894,26 @@ def verify_source_archive(path: Path, entry: dict[str, object]) -> None:
             data = _archive_member_bytes(path, str(name))
             if hashlib.sha256(data).hexdigest() != expected:
                 raise RuntimeWheelError(f"{path.name}: license member hash mismatch: {name}")
-    elif zipfile.is_zipfile(path):
+        carried = license_value.get("carried", {})
+        assert isinstance(carried, dict)
+        for name, expected in carried.items():
+            verify_file(carried_license_path(entry, str(name)), str(expected))
+        if not members:
+            _validate_archive(path)
+    else:
+        _validate_archive(path)
+    vendor = entry.get("cargo_vendor")
+    if isinstance(vendor, dict):
+        vendor_path = path.parent / str(vendor["filename"])
+        verify_file(vendor_path, str(vendor["sha256"]))
+        _validate_archive(vendor_path)
+    commit = entry.get("git_commit")
+    if isinstance(commit, str):
+        verify_git_archive_commit(path, commit)
+
+
+def _validate_archive(path: Path) -> None:
+    if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
             _validated_zip_members(archive, path.name, "archive")
     elif tarfile.is_tarfile(path):
@@ -907,6 +1207,106 @@ def patch_builder(chaquopy: Path) -> None:
     )
 
 
+CARGO_SOURCE_REPLACEMENT = """\
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+"""
+
+
+def patch_builder_rust(chaquopy: Path) -> None:
+    """Make Chaquopy's Rust support offline, pinned, 16 KiB aligned and path-neutral."""
+    builder = chaquopy / "server/pypi/build-wheel.py"
+    _replace(
+        builder,
+        '        run(f"rustup target add {tool_prefix}")\n',
+        '        sysroot = run("rustc --print sysroot", capture_output=True).stdout.strip()\n'
+        '        if not isdir(f"{sysroot}/lib/rustlib/{tool_prefix}/lib"):\n'
+        '            raise CommandError(f"Rust std for {tool_prefix} is not installed")\n'
+        # PyO3 links abi3 extensions for Android with -lpython3. Chaquopy's
+        # libpython3.12.so has no SONAME, so a symlink would leak libpython3.so
+        # into DT_NEEDED; a linker script resolves it to the real library.
+        '        libpython3 = f"{self.host_env}/chaquopy/lib/libpython3.so"\n'
+        "        if self.needs_python and not os.path.lexists(libpython3):\n"
+        '            with open(libpython3, "w") as script:\n'
+        '                script.write(f"INPUT(-lpython{self.python})\\n")\n'
+        # Version-specific (non-abi3) PyO3 crates cannot cross-compile without
+        # the target's sysconfigdata, which Chaquopy's 3.12 target lacks.
+        # Synthesise the keys PyO3 and maturin read.
+        "        if self.needs_python:\n"
+        '            cross_dir = ensure_dir(f"{self.build_dir}/pyo3-cross")\n'
+        '            nodot = self.python.replace(".", "")\n'
+        "            build_time_vars = {\n"
+        '                "ABIFLAGS": "", "EXT_SUFFIX": f".cpython-{nodot}-{tool_prefix}.so",\n'
+        '                "LDVERSION": self.python, "LIBDIR": f"{self.host_env}/chaquopy/lib",\n'
+        '                "MULTIARCH": tool_prefix, "Py_DEBUG": 0, "Py_ENABLE_SHARED": 1,\n'
+        '                "Py_GIL_DISABLED": 0, "SIZEOF_VOID_P": 8,\n'
+        '                "SOABI": f"cpython-{nodot}-{tool_prefix}", "VERSION": self.python,\n'
+        "            }\n"
+        '            with open(f"{cross_dir}/_sysconfigdata__android_{tool_prefix}.py", "w") as f:\n'
+        '                f.write(f"build_time_vars = {build_time_vars!r}\\n")\n'
+        '            env["PYO3_CROSS_LIB_DIR"] = cross_dir\n',
+    )
+    # maturin's CycloneDX SBOM lists the statically linked crates (kept for
+    # attribution) under absolute paths; `wheel pack` regenerates RECORD.
+    _replace(
+        builder,
+        '        info_dir = assert_isdir(f"{tmp_dir}/{self.name_version}.dist-info")\n',
+        '        info_dir = assert_isdir(f"{tmp_dir}/{self.name_version}.dist-info")\n'
+        '        sbom_dir = f"{info_dir}/sboms"\n'
+        "        if exists(sbom_dir):\n"
+        '            stage_root = os.environ["ANKI_MINER_RUNTIME_STAGE_ROOT"]\n'
+        "            for name in sorted(os.listdir(sbom_dir)):\n"
+        "                sbom = Path(sbom_dir, name)\n"
+        '                sbom.write_text(sbom.read_text().replace(stage_root, "/anki-miner-runtime"))\n',
+    )
+    _replace(
+        builder,
+        '"RUSTFLAGS": f"-C linker={env[\'CC\']} -L native={self.host_env}/chaquopy/lib",',
+        '"RUSTFLAGS": (f"-C linker={env[\'CC\']} -L native={self.host_env}/chaquopy/lib "\n'
+        '                          + os.environ["ANKI_MINER_RUSTFLAGS"]),',
+    )
+
+
+def patch_builder_cmake(chaquopy: Path) -> None:
+    """Point CMake at the NDK binutils.
+
+    Chaquopy's toolchain file names no strip, ar or ranlib, so CMake falls back
+    to the host's /usr/bin/strip, which cannot read Android ELF.
+    """
+    _replace(
+        chaquopy / "server/pypi/build-wheel.py",
+        "                set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)\n",
+        "                set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)\n"
+        "\n"
+        "                # Anki Miner: NDK binutils instead of the host's.\n"
+        "                set(CMAKE_AR {env['AR']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_NM {env['NM']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_RANLIB {env['RANLIB']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_READELF {env['READELF']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_STRIP {env['STRIP']} CACHE FILEPATH \"\")\n",
+    )
+
+
+def stage_cargo_vendor(name: str, entry: dict[str, object], downloads: Path, source: Path, scratch: Path) -> None:
+    """Unpack a locked vendor tree beside the crate and point cargo at it."""
+    vendor = entry["cargo_vendor"]
+    assert isinstance(vendor, dict)
+    crate_root = (source / str(entry["cargo_manifest"])).parent
+    vendored = safe_extract(downloads / str(vendor["filename"]), scratch / f"vendor-{name}")
+    if vendored.name != "vendor" or (crate_root / "vendor").exists():
+        raise RuntimeWheelError(f"{name}: cargo vendor tree cannot be staged")
+    shutil.copytree(vendored, crate_root / "vendor")
+    config = crate_root / ".cargo/config.toml"
+    config.parent.mkdir(exist_ok=True)
+    existing = config.read_text(encoding="utf-8") if config.exists() else ""
+    if "[source." in existing:
+        raise RuntimeWheelError(f"{name}: sdist already configures cargo sources")
+    config.write_text(existing + ("\n" if existing else "") + CARGO_SOURCE_REPLACEMENT, encoding="utf-8")
+
+
 def recipe_path_entries(
     tool_root: Path = TOOL_ROOT,
     repo_root: Path = ROOT,
@@ -915,14 +1315,15 @@ def recipe_path_entries(
     recipe_tree = tool_root / "recipes"
     if not recipe_tree.is_dir():
         raise RuntimeWheelError(f"recipe tree is missing: {recipe_tree}")
-    entries.extend(
-        (
-            f"tools/runtime-wheels/{path.relative_to(tool_root).as_posix()}",
-            path,
+    for tree in (recipe_tree, tool_root / "licenses"):
+        entries.extend(
+            (
+                f"tools/runtime-wheels/{path.relative_to(tool_root).as_posix()}",
+                path,
+            )
+            for path in tree.rglob("*")
+            if path.is_file()
         )
-        for path in recipe_tree.rglob("*")
-        if path.is_file()
-    )
     entries.extend((name, repo_root / name) for name in RECIPE_REPO_FILES)
     logical_names = [logical for logical, _ in entries]
     if len(logical_names) != len(set(logical_names)):
@@ -943,6 +1344,14 @@ def _parameters() -> dict[str, object]:
         "python_target": PYTHON_TARGET,
         "target_build_python": TARGET_BUILD_PYTHON_VERSION,
         "reproducible_env": REPRODUCIBLE_ENV,
+        "rust": RUST_TOOLCHAIN,
+        "families": FAMILIES,
+        "family_packages": FAMILY_PACKAGES,
+        "repacks": REPACKS,
+        "sdist_wheels": SDIST_WHEELS,
+        "native_roots": NATIVE_ROOTS,
+        "pinned_member_files": PINNED_MEMBER_FILES,
+        "external_runtime_libs": sorted(EXTERNAL_RUNTIME_LIBS),
     }
 
 
@@ -1100,11 +1509,12 @@ def _validate_interpreter_identity(
 def validate_builder_identity(value: object) -> dict[str, object]:
     identity = require_exact_keys(
         value,
-        {"schema", "interpreters", "host", "android", "tools"},
+        {"schema", "interpreters", "host", "android", "rust", "tools"},
         "builder identity",
     )
-    if identity.get("schema") != 2:
+    if identity.get("schema") != BUILDER_IDENTITY_SCHEMA:
         raise RuntimeWheelError("invalid builder identity schema")
+    validate_rust_identity(identity.get("rust"))
     interpreters = require_exact_keys(
         identity.get("interpreters"),
         {"outer", "target"},
@@ -1176,7 +1586,7 @@ def builder_identity() -> dict[str, object]:
     libc_name, libc_version = platform.libc_ver()
     outer = str(Path(sys.executable).resolve(strict=True))
     identity: dict[str, object] = {
-        "schema": 2,
+        "schema": BUILDER_IDENTITY_SCHEMA,
         "interpreters": {
             "outer": _interpreter_identity(outer),
             "target": _interpreter_identity(target_python_executable()),
@@ -1188,6 +1598,7 @@ def builder_identity() -> dict[str, object]:
             "zlib": {"compiled": zlib.ZLIB_VERSION, "runtime": zlib.ZLIB_RUNTIME_VERSION},
         },
         "android": _ndk_identity(),
+        "rust": rust_identity(),
         "tools": {
             "bash": _tool_version("bash", ["bash", "--version"], "bash"),
             "coreutils": _tool_version("coreutils", ["cp", "--version"], "coreutils"),
@@ -1345,6 +1756,8 @@ def stage(
                 temporary / f"source-{name}",
             )
             shutil.copytree(extracted, source_dir / name)
+            if "cargo_vendor" in entry:
+                stage_cargo_vendor(name, entry, downloads, source_dir / name, temporary)
         packages = chaquopy / "server/pypi/packages"
         for recipe_dir in sorted((TOOL_ROOT / "recipes").iterdir()):
             if not recipe_dir.is_dir():
@@ -1359,6 +1772,8 @@ def stage(
             entry = entries[f"python-{abi}"]
             shutil.copy2(downloads / str(entry["filename"]), target_dir)
         patch_builder(chaquopy)
+        patch_builder_rust(chaquopy)
+        patch_builder_cmake(chaquopy)
         normalize_tree_timestamps(chaquopy)
         normalize_tree_timestamps(patchelf)
         patchelf_candidates = [
@@ -1526,24 +1941,145 @@ def _native_identity(path: Path) -> tuple[str, str]:
     return package, abi
 
 
+def _pure_source_name(package: str, entries: dict[str, dict[str, object]]) -> str:
+    return next(
+        name
+        for name, entry in entries.items()
+        if entry.get("kind") in {"prebuilt-wheel", "pure-sdist"}
+        and normalize_package(str(entry.get("package"))) == package
+    )
+
+
 def _expected_license_hashes(package: str) -> tuple[str, set[str]]:
     entries = source_entries()
     if package in COMMON_SPECS:
-        source_name = next(
-            name
-            for name, entry in entries.items()
-            if entry.get("kind") == "prebuilt-wheel" and normalize_package(str(entry.get("package"))) == package
-        )
+        source_name = _pure_source_name(package, entries)
     else:
         source_name = str(NATIVE_SPECS[package]["source"])
     license_value = entries[source_name]["license"]
     assert isinstance(license_value, dict)
     members = license_value["members"]
-    assert isinstance(members, dict)
-    return str(license_value["expression"]), {str(value) for value in members.values()}
+    carried = license_value.get("carried", {})
+    assert isinstance(members, dict) and isinstance(carried, dict)
+    return str(license_value["expression"]), {str(value) for value in (*members.values(), *carried.values())}
+
+
+def _filename_tags(filename: str) -> list[str]:
+    """Expand a wheel filename's compressed tag set (``py2.py3-none-any``)."""
+    python, abi, platform_tag = Path(filename).stem.rsplit("-", 3)[1:]
+    return sorted(
+        f"{interpreter}-{abi_tag}-{platform_value}"
+        for interpreter in python.split(".")
+        for abi_tag in abi.split(".")
+        for platform_value in platform_tag.split(".")
+    )
+
+
+def _repack_excluded(name: str, package: str) -> bool:
+    repack = REPACKS.get(package)
+    if repack is None:
+        return False
+    prefix, excludes = repack
+    if not name.startswith(prefix):
+        return False
+    relative = name[len(prefix) :]
+    return any(relative.startswith(rule) if rule.endswith("/") else relative == rule for rule in excludes)
+
+
+def _record(entries: list[tuple[str, bytes, bool]], record_name: str) -> bytes:
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    for name, data, _ in entries:
+        encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+        writer.writerow((name, f"sha256={encoded}", len(data)))
+    writer.writerow((record_name, "", ""))
+    return output.getvalue().encode("utf-8")
+
+
+def _write_wheel(path: Path, entries: list[tuple[str, bytes, bool]], record_name: str) -> None:
+    """Write members in order, then RECORD, with fixed times and modes."""
+    with zipfile.ZipFile(path, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, data, executable in [*entries, (record_name, _record(entries, record_name), False)]:
+            info = zipfile.ZipInfo(name, WHEEL_DATE_TIME)
+            info.create_system = 3
+            info.external_attr = (0o100755 if executable else 0o100644) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data, compresslevel=9)
+
+
+def repack_wheel(source: Path, output: Path, package: str) -> None:
+    """Publish ``source`` without the members ``REPACKS`` excludes for ``package``."""
+    with zipfile.ZipFile(source) as archive:
+        members = _validated_zip_members(archive, source.name, "wheel")
+        files = [
+            (info.filename, archive.read(info), bool((info.external_attr >> 16) & stat.S_IXUSR))
+            for info in members
+            if not info.is_dir()
+        ]
+    records = [name for name, _, _ in files if name.endswith(".dist-info/RECORD") and name.count("/") == 1]
+    if len(records) != 1:
+        raise RuntimeWheelError(f"{source.name}: wheel must have one RECORD")
+    kept = [entry for entry in files if entry[0] != records[0] and not _repack_excluded(entry[0], package)]
+    if len(kept) == len(files) - 1:
+        raise RuntimeWheelError(f"{source.name}: repack excludes match no member")
+    _write_wheel(output, kept, records[0])
+
+
+def sdist_wheel(sdist: Path, output: Path, package: str, version: str) -> None:
+    """Pack an sdist-only pure package as a ``py3-none-any`` wheel.
+
+    The package directory comes from ``SDIST_WHEELS``, METADATA is the sdist's
+    PKG-INFO, and the licence texts are the ones the repository carries.
+    """
+    prefix = SDIST_WHEELS[package]
+    root, _, package_path = prefix.rstrip("/").partition("/")
+    target_root = package_path.rsplit("/", 1)[-1]
+    entries = source_entries()
+    source_entry = entries[_pure_source_name(package, entries)]
+    with tarfile.open(sdist) as archive:
+        members = sorted(_validated_tar_members(archive, sdist.name), key=lambda member: member.name)
+
+        def read(member: tarfile.TarInfo) -> bytes:
+            stream = archive.extractfile(member)
+            if stream is None:
+                raise RuntimeWheelError(f"{sdist.name}: cannot read {member.name}")
+            with stream:
+                return stream.read()
+
+        metadata = [read(member) for member in members if member.name == f"{root}/PKG-INFO"]
+        files = []
+        for member in members:
+            if not member.isfile() or not member.name.startswith(prefix):
+                continue
+            name = f"{target_root}/{member.name[len(prefix):]}"
+            if not _repack_excluded(name, package):
+                files.append((name, read(member), bool(member.mode & stat.S_IXUSR)))
+    if len(metadata) != 1 or not files:
+        raise RuntimeWheelError(f"{sdist.name}: sdist has no PKG-INFO or package members")
+    dist_info = f"{re.sub(r'[^A-Za-z0-9.]+', '_', package)}-{version}.dist-info"
+    license_value = source_entry["license"]
+    assert isinstance(license_value, dict)
+    carried = license_value.get("carried", {})
+    assert isinstance(carried, dict)
+    files.extend(
+        (f"{dist_info}/{name}", carried_license_path(source_entry, str(name)).read_bytes(), False)
+        for name in sorted(carried)
+    )
+    files.append((f"{dist_info}/METADATA", metadata[0], False))
+    files.append(
+        (
+            f"{dist_info}/WHEEL",
+            b"Wheel-Version: 1.0\nGenerator: anki-miner-runtime-wheels\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
+            False,
+        )
+    )
+    _write_wheel(output, files, f"{dist_info}/RECORD")
 
 
 def _allowed_native_path(package: str, name: str) -> bool:
+    roots = NATIVE_ROOTS.get(package)
+    if roots is not None:
+        return any(name.startswith(root) if root.endswith("/") else name == root for root in roots)
     if package == "chaquopy-libwebp":
         return (
             name.startswith("chaquopy/lib/lib")
@@ -1564,6 +2100,25 @@ def _allowed_native_path(package: str, name: str) -> bool:
     return name in NATIVE_REQUIRED_PATHS[package]
 
 
+def _verify_pinned_members(wheel: str, package: str, files: dict[str, bytes]) -> None:
+    """Members a recipe pins byte for byte, such as opencc's generated dictionaries."""
+    relative = PINNED_MEMBER_FILES.get(package)
+    if relative is None:
+        return
+    document = load_json(TOOL_ROOT / relative, 1)
+    require_exact_keys(document, {"schema", "prefix", "members"}, f"pinned members of {package}")
+    prefix = document["prefix"]
+    pinned = document["members"]
+    if not isinstance(prefix, str) or not prefix.endswith("/") or not isinstance(pinned, dict) or not pinned:
+        raise RuntimeWheelError(f"invalid pinned members of {package}")
+    actual = {
+        name[len(prefix) :]: hashlib.sha256(data).hexdigest() for name, data in files.items() if name.startswith(prefix)
+    }
+    if actual != pinned:
+        differing = sorted(set(actual.items()) ^ set(pinned.items()))
+        raise RuntimeWheelError(f"{wheel}: pinned members differ: {differing[:5]}")
+
+
 def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]]:
     common_package = next(
         (package for package, (_, filename) in COMMON_SPECS.items() if filename == path.name),
@@ -1573,7 +2128,8 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
         package = common_package
         abi: str | None = None
         expected_version = COMMON_SPECS[package][0]
-        expected_tag = "py3-none-any"
+        expected_tag = "-".join(Path(path.name).stem.rsplit("-", 3)[1:])
+        expected_tags = _filename_tags(path.name)
     else:
         package, abi = _native_identity(path)
         expected_version = str(NATIVE_SPECS[package]["version"])
@@ -1581,6 +2137,7 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
             f"{NATIVE_SPECS[package]['python']}-{NATIVE_SPECS[package]['abi']}-"
             f"android_{API_LEVEL}_{abi.replace('-', '_')}"
         )
+        expected_tags = [expected_tag]
     if package in FORBIDDEN_PACKAGE_NAMES or "cp313" in path.name:
         raise RuntimeWheelError(f"forbidden runtime package: {path.name}")
     try:
@@ -1605,7 +2162,7 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
             raise RuntimeWheelError(f"{path.name}: METADATA identity mismatch")
         wheel_metadata = _wheel_message(archive, dist_info, "WHEEL")
         tags = wheel_metadata.get_all("Tag") or []
-        if tags != [expected_tag] or any("cp313" in str(tag) for tag in tags):
+        if sorted(str(tag) for tag in tags) != expected_tags or any("cp313" in str(tag) for tag in tags):
             raise RuntimeWheelError(f"{path.name}: WHEEL tag mismatch")
 
         mandatory: set[str] = set()
@@ -1625,13 +2182,21 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
         folded_names = "\n".join(files).encode("utf-8", "ignore").lower()
         if any(marker.lower() in folded_names for marker in FORBIDDEN_PAYLOAD_MARKERS):
             raise RuntimeWheelError(f"{path.name}: forbidden payload member")
+        excluded = sorted(name for name in files if _repack_excluded(name, package))
+        if excluded:
+            raise RuntimeWheelError(f"{path.name}: repack-excluded members are present: {excluded[:5]}")
+        _verify_pinned_members(path.name, package, files)
+        if abi is not None:
+            home = os.fsencode(Path.home()) + b"/"
+            leaked = sorted(name for name, data in files.items() if not data.startswith(b"\x7fELF") and home in data)
+            if leaked:
+                raise RuntimeWheelError(f"{path.name}: builder home path leaked into {leaked[:5]}")
 
         expression, expected_license_hashes = _expected_license_hashes(package)
         license_entries = [
             {"path": name, "sha256": hashlib.sha256(data).hexdigest()}
             for name, data in sorted(files.items())
-            if dist_info in Path(name).parts
-            and Path(name).name.upper().startswith(("LICENSE", "COPYING", "COPYRIGHT", "NOTICE", "FTL"))
+            if dist_info in Path(name).parts and Path(name).name.upper().startswith(LICENSE_PREFIXES)
         ]
         actual_license_hashes = {str(entry["sha256"]) for entry in license_entries}
         if not expected_license_hashes.issubset(actual_license_hashes):
@@ -1744,6 +2309,104 @@ def _attributions(entries: list[dict[str, object]]) -> dict[str, object]:
     return {"schema": ATTRIBUTION_SCHEMA, "packages": packages}
 
 
+def _families(wheels: dict[str, list[dict[str, object]]]) -> dict[str, dict[str, list[str]]]:
+    """The exact wheel filenames each family's wave vendors, per publication group."""
+    return {
+        family: {
+            group: sorted(
+                str(entry["filename"]) for entry in wheels[group] if family in PACKAGE_FAMILIES[str(entry["package"])]
+            )
+            for group in ("common", *ABIS)
+        }
+        for family in FAMILIES
+    }
+
+
+def _validate_publication_natives(wheels: dict[str, list[dict[str, object]]]) -> None:
+    """Every ABI's natives resolve within Android, libpython and the publication."""
+    checker = _native_artifact_checker()
+    for abi in ABIS:
+        natives = [
+            (
+                str(native["path"]),
+                checker.NativeMetadata(abi, native["soname"], tuple(sorted(native["needed"])), True),
+            )
+            for entry in wheels[abi]
+            for native in entry["native"]
+        ]
+        try:
+            checker.validate_requirement_natives(
+                natives,
+                f"runtime publication ({abi})",
+                external_libraries=EXTERNAL_RUNTIME_LIBS,
+            )
+        except checker.ArtifactError as error:
+            raise RuntimeWheelError(str(error)) from error
+
+
+def ndk_llvm_objdump() -> Path:
+    android_home = os.environ.get("ANDROID_HOME")
+    if not android_home:
+        raise RuntimeWheelError("ANDROID_HOME is required for the arm64 ISA audit")
+    objdump = Path(android_home) / "ndk" / NDK_VERSION / NDK_LLVM_BIN / "llvm-objdump"
+    if not objdump.is_file() or not os.access(objdump, os.X_OK):
+        raise RuntimeWheelError(f"locked NDK llvm-objdump is missing: {objdump}")
+    return objdump
+
+
+def _isa_audit(directory: Path, wheels: dict[str, list[dict[str, object]]]) -> dict[str, object]:
+    """Disassemble every arm64 native; unguarded extension instructions fail the publication."""
+    checker = _native_artifact_checker()
+    objdump = ndk_llvm_objdump()
+    natives: dict[str, object] = {}
+    for entry in wheels["arm64-v8a"]:
+        with zipfile.ZipFile(directory / str(entry["filename"])) as archive:
+            for native in entry["native"]:
+                member = str(native["path"])
+                key = f"{entry['filename']}!{member}"
+                try:
+                    natives[key] = checker.audit_arm64_isa(archive.read(member), member, key, objdump)
+                except checker.ArtifactError as error:
+                    raise RuntimeWheelError(str(error)) from error
+    return {"baseline": checker.ARM64_ISA_BASELINE, "natives": natives}
+
+
+def _validate_isa_audit(value: object, wheels: dict[str, list[dict[str, object]]]) -> None:
+    audit = require_exact_keys(value, {"baseline", "natives"}, "publication ISA audit")
+    natives = audit.get("natives")
+    expected = {f"{entry['filename']}!{native['path']}" for entry in wheels["arm64-v8a"] for native in entry["native"]}
+    if (
+        audit.get("baseline") != _native_artifact_checker().ARM64_ISA_BASELINE
+        or not isinstance(natives, dict)
+        or set(natives) != expected
+    ):
+        raise RuntimeWheelError("publication ISA audit does not cover every arm64 native")
+    for report in natives.values():
+        if (
+            not isinstance(report, dict)
+            or not isinstance(report.get("instructions"), int)
+            or report["instructions"] <= 0
+            or not all(isinstance(count, int) and count > 0 for count in report.values())
+        ):
+            raise RuntimeWheelError("publication ISA audit report is malformed")
+
+
+def _materialize_common(package: str, downloads: Path, staging: Path) -> Path:
+    """Place one pure wheel in the publication: verbatim, repacked, or packed from its sdist."""
+    entries = source_entries()
+    entry = entries[_pure_source_name(package, entries)]
+    version, filename = COMMON_SPECS[package]
+    source = downloads / str(entry["filename"])
+    target = staging / filename
+    if entry["kind"] == "pure-sdist":
+        sdist_wheel(source, target, package, version)
+    elif package in REPACKS:
+        repack_wheel(source, target, package)
+    else:
+        shutil.copy2(source, target)
+    return target
+
+
 def publish(
     stage_a: Path,
     stage_b: Path,
@@ -1772,32 +2435,6 @@ def publish(
             "clean runtime builds are not byte-for-byte reproducible: " + ", ".join(mismatches),
         )
 
-    entries_by_abi: dict[str, list[dict[str, object]]] = {
-        "common": [],
-        **{abi: [] for abi in ABIS},
-    }
-    verified: list[tuple[Path, str, dict[str, object]]] = []
-    for wheel in wheels_a.values():
-        _, abi, entry = verify_runtime_wheel(wheel)
-        assert abi is not None
-        entries_by_abi[abi].append(entry)
-        verified.append((wheel, abi, entry))
-    source_values = source_entries()
-    for package in COMMON_SPECS:
-        source_entry = next(
-            entry
-            for entry in source_values.values()
-            if entry.get("kind") == "prebuilt-wheel" and normalize_package(str(entry.get("package"))) == package
-        )
-        wheel = downloads / str(source_entry["filename"])
-        _, abi, entry = verify_runtime_wheel(wheel)
-        if abi is not None:
-            raise RuntimeWheelError(f"common wheel unexpectedly has an ABI: {wheel.name}")
-        entries_by_abi["common"].append(entry)
-        verified.append((wheel, "common", entry))
-    for values in entries_by_abi.values():
-        values.sort(key=lambda item: str(item["package"]))
-
     output_root.mkdir(parents=True, exist_ok=True)
     target = output_root / f"runtime-wheels-{build}"
     staging = output_root / f".{target.name}.staging"
@@ -1806,9 +2443,34 @@ def publish(
     published_target = False
     try:
         staging.mkdir()
-        for wheel, _, _ in verified:
-            shutil.copy2(wheel, staging / wheel.name)
-        attribution = _attributions([entry for _, _, entry in verified])
+        entries_by_abi: dict[str, list[dict[str, object]]] = {
+            "common": [],
+            **{abi: [] for abi in ABIS},
+        }
+        published: list[dict[str, object]] = []
+        for name, wheel in sorted(wheels_a.items()):
+            package, _ = _native_identity(wheel)
+            if package in REPACKS:
+                repack_wheel(wheel, staging / name, package)
+            else:
+                shutil.copy2(wheel, staging / name)
+            _, abi, entry = verify_runtime_wheel(staging / name)
+            assert abi is not None
+            entries_by_abi[abi].append(entry)
+            published.append(entry)
+        for package in sorted(COMMON_SPECS):
+            wheel = _materialize_common(package, downloads, staging)
+            _, abi, entry = verify_runtime_wheel(wheel)
+            if abi is not None:
+                raise RuntimeWheelError(f"common wheel unexpectedly has an ABI: {wheel.name}")
+            entries_by_abi["common"].append(entry)
+            published.append(entry)
+        for values in entries_by_abi.values():
+            values.sort(key=lambda item: str(item["package"]))
+        _validate_publication_natives(entries_by_abi)
+        isa_audit = _isa_audit(staging, entries_by_abi)
+
+        attribution = _attributions(published)
         attribution_path = staging / "attributions.json"
         attribution_path.write_text(
             json.dumps(attribution, indent=2, sort_keys=True) + "\n",
@@ -1825,7 +2487,7 @@ def publish(
             "python_target": PYTHON_TARGET,
             "target_build_python": TARGET_BUILD_PYTHON_VERSION,
             "recipe_inventory": recipe_inventory(),
-            "sources": source_values,
+            "sources": source_entries(),
             "host_wheels": {str(entry["filename"]): entry["sha256"] for entry in host_entries()},
             "reproducibility": {
                 "stage_manifests": [
@@ -1841,6 +2503,8 @@ def publish(
                 "native_wheels_byte_identical": True,
             },
             "wheels": entries_by_abi,
+            "families": _families(entries_by_abi),
+            "isa_audit": isa_audit,
             "attributions_sha256": digest(attribution_path),
         }
         manifest_path = staging / "manifest.json"
@@ -1877,6 +2541,7 @@ def _publication_summary(
     recipe: str,
     build: str,
     wheels: dict[str, object],
+    families: dict[str, object],
 ) -> dict[str, object]:
     return {
         "schema": PUBLICATION_SCHEMA,
@@ -1886,6 +2551,7 @@ def _publication_summary(
         "ndk": NDK_VERSION,
         "python_target": PYTHON_TARGET,
         "groups": {group: sorted(str(entry["filename"]) for entry in wheels[group]) for group in ("common", *ABIS)},
+        "families": families,
     }
 
 
@@ -1923,6 +2589,8 @@ def verify_publication(
             "host_wheels",
             "reproducibility",
             "wheels",
+            "families",
+            "isa_audit",
             "attributions_sha256",
         },
         "runtime publication manifest",
@@ -2041,6 +2709,11 @@ def verify_publication(
     for group, packages in expected_packages.items():
         if {str(entry["package"]) for entry in wheels[group]} != packages:
             raise RuntimeWheelError(f"publication {group} package set differs")
+    families = _families(wheels)
+    if document.get("families") != families:
+        raise RuntimeWheelError("publication family selection differs from the package families")
+    _validate_publication_natives(wheels)
+    _validate_isa_audit(document.get("isa_audit"), wheels)
 
     attribution_path = manifest_path.parent / "attributions.json"
     if (
@@ -2058,7 +2731,7 @@ def verify_publication(
         or _publication_regular_files(manifest_path.parent) != actual_files
     ):
         raise RuntimeWheelError("publication contains unmanifested or missing files")
-    return _publication_summary(recipe, build, wheels)
+    return _publication_summary(recipe, build, wheels, families)
 
 
 def activate_publication(manifest_path: Path, pointer: Path) -> dict[str, object]:
@@ -2091,10 +2764,26 @@ def activate_publication(manifest_path: Path, pointer: Path) -> dict[str, object
     return verification
 
 
+def build_order() -> list[tuple[str, bool]]:
+    """Recipes in build order, each with whether it is a Python package.
+
+    Shared libraries come first because Python extensions link against them
+    (pillow against libjpeg, lxml against libxml2).
+    """
+    shared = [package for package, spec in NATIVE_SPECS.items() if spec["python"] == "py3"]
+    extensions = [package for package, spec in NATIVE_SPECS.items() if spec["python"] != "py3"]
+    return [(package, False) for package in shared] + [(package, True) for package in extensions]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("recipe-key")
+    subparsers.add_parser("build-order")
+    subparsers.add_parser("rust-bin")
+    vendoring = subparsers.add_parser("vendor")
+    vendoring.add_argument("name")
+    vendoring.add_argument("--downloads", type=Path, required=True)
     subparsers.add_parser("builder-identity")
     subparsers.add_parser("build-key")
     requirements = subparsers.add_parser("host-requirements")
@@ -2134,6 +2823,13 @@ def main() -> int:
         args = parse_args()
         if args.command == "recipe-key":
             print(source_recipe_key())
+        elif args.command == "build-order":
+            print("\n".join(f"{package}\t{'python' if python else 'native'}" for package, python in build_order()))
+        elif args.command == "rust-bin":
+            rust_identity()
+            print(rust_toolchain_bin())
+        elif args.command == "vendor":
+            print(cargo_vendor(args.name, source_entries()[args.name], args.downloads))
         elif args.command == "builder-identity":
             print(json.dumps(builder_identity(), sort_keys=True, separators=(",", ":")))
         elif args.command == "build-key":
