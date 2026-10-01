@@ -60,6 +60,7 @@ import com.ankiminer.android.player.ExoCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.ClipWindowSeconds
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
+import com.ankiminer.android.ui.mining.curationDefinitionMaxHeight
 import com.ankiminer.android.ui.mining.curationMediaMaxHeight
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
@@ -349,6 +350,7 @@ fun VideoMiningScreen(
                         .consumeWindowInsets(scaffoldPadding),
             ) {
                 val mediaMaxHeight = curationMediaMaxHeight(maxHeight)
+                val definitionMaxHeight = curationDefinitionMaxHeight(maxHeight)
                 Column(
                     modifier = Modifier.fillMaxSize().semantics { paneTitle = phaseTitle },
                 ) {
@@ -490,6 +492,7 @@ fun VideoMiningScreen(
                                     sentenceLabel = sentenceLabel,
                                     copiedWord = copiedWord,
                                     copiedSentence = copiedSentence,
+                                    definitionMaxHeight = definitionMaxHeight,
                                 )
                             is MiningRunState.Running ->
                                 progressItems(
@@ -978,6 +981,7 @@ private fun LazyListScope.curationItems(
     sentenceLabel: String,
     copiedWord: String,
     copiedSentence: String,
+    definitionMaxHeight: Dp,
 ) {
     val curation = state.curation ?: return
     val enabled = !state.curationPending && !state.cancelPending
@@ -1104,6 +1108,7 @@ private fun LazyListScope.curationItems(
                             curationRowContainerColor(selected, animateSelection),
                         term = candidate.minedForm,
                         testTag = VideoMiningTestTags.DEFINITION,
+                        maxHeight = definitionMaxHeight,
                     )
                 }
             }

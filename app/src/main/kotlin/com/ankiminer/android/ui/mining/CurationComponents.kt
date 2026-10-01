@@ -745,6 +745,7 @@ internal fun CurationDefinitionPane(
     containerColor: Color,
     term: String,
     testTag: String,
+    maxHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -790,7 +791,7 @@ internal fun CurationDefinitionPane(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .heightIn(min = 96.dp, max = 260.dp)
+                                .heightIn(min = CurationDefinitionMinHeight, max = maxHeight)
                                 .padding(horizontal = AnkiMinerTokens.Space.group),
                         updateKey = definition.matchedTerm,
                     )

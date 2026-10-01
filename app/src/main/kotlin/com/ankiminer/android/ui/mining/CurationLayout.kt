@@ -15,3 +15,10 @@ internal val CurationMediaMinHeight = 96.dp
  */
 internal fun curationMediaMaxHeight(paneHeight: Dp): Dp =
     (paneHeight * CURATION_MEDIA_HEIGHT_FRACTION).coerceAtLeast(CurationMediaMinHeight)
+
+internal val CurationDefinitionMinHeight = 96.dp
+private val CurationDefinitionCap = 260.dp
+
+/** At most half the pane, so the list keeps somewhere to take a swipe. */
+internal fun curationDefinitionMaxHeight(paneHeight: Dp): Dp =
+    (paneHeight * 0.5f).coerceIn(CurationDefinitionMinHeight, CurationDefinitionCap)

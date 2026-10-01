@@ -14,4 +14,11 @@ class CurationLayoutTest {
     fun aShortLandscapePaneStillGetsAViewableFrame() {
         assertEquals(96f, curationMediaMaxHeight(180.dp).value, 0.01f)
     }
+
+    @Test
+    fun theDefinitionNeverTakesMoreThanHalfThePane() {
+        assertEquals(200f, curationDefinitionMaxHeight(400.dp).value, 0.01f)
+        assertEquals(260f, curationDefinitionMaxHeight(914.dp).value, 0.01f)
+        assertEquals(96f, curationDefinitionMaxHeight(150.dp).value, 0.01f)
+    }
 }
