@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 3,
+  "language": "hu",
+  "resources": [
+    {
+      "resourceId": "hu-hu-core-news-md",
+      "kind": "language-data",
+      "displayName": "spaCy hu_core_news_md 3.8.0 pipeline",
+      "importName": "hu_core_news_md",
+      "archive": {
+        "url": "https://huggingface.co/huspacy/hu_core_news_md/resolve/v3.8.0/hu_core_news_md-any-py3-none-any.whl",
+        "sha256": "0fd89c6ccf0efe1d7591910065c3bec4eadb1e25313d6ceea551150832b0f861",
+        "sizeBytes": 127018056,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "hu_core_news_md/",
+        "exclude": [
+          "__init__.py",
+          "edit_tree_lemmatizer.py",
+          "lemma_postprocessing.py",
+          "lookup_lemmatizer.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "hu_core_news_md-3.8.0/config.cfg",
+          "hu_core_news_md-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "hu_core_news_md 3.8.0 (spaCy pipeline)",
+          "copyright": "SzegedAI, MILAB",
+          "license": "cc-by-sa-4.0",
+          "url": "https://github.com/huspacy/huspacy"
+        },
+        {
+          "name": "UD Hungarian Szeged",
+          "copyright": "Richárd Farkas, Katalin Simkó, Zsolt Szántó, Viktor Varga, Veronika Vincze (MTA-SZTE Research Group on Artificial Intelligence)",
+          "license": "CC-BY-NC-SA-3.0",
+          "url": "https://universaldependencies.org/treebanks/hu_szeged/index.html"
+        },
+        {
+          "name": "NYTK-NerKor Corpus",
+          "copyright": "Eszter Simon, Noémi Vadász (Department of Language Technology and Applied Linguistics)",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/nytud/NYTK-NerKor"
+        },
+        {
+          "name": "Szeged NER Corpus",
+          "copyright": "György Szarvas, Richárd Farkas, László Felföldi, András Kocsor, János Csirik (MTA-SZTE Research Group on Artificial Intelligence)",
+          "license": "CC-BY-NC-SA-3.0",
+          "url": "https://rgai.inf.u-szeged.hu/node/130"
+        },
+        {
+          "name": "Hungarian lg Floret vectors",
+          "copyright": "Szeged AI",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://huggingface.co/huspacy/hu_vectors_web_lg"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-hu-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Hungarian-English) 2026-09-20",
+      "slotId": "wty-hu-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/hu/en/wty-hu-en.zip",
+        "sha256": "a6e15735b4f678e49172b44fc4ad8eca7849d7693b4a13dea32652a88ec65fda",
+        "sizeBytes": 13105466,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-hu-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 59,
+        "uncompressedBytes": 166886132,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-hu-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Hungarian)",
+      "sourceId": "opensubtitles-hu",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/hu/hu_50k.txt",
+        "sha256": "b765780a1277c3b1e326205c972b1ea1631732ec54ab489d13d21618ceab4fec",
+        "sizeBytes": 698652,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-hu-en-2026.09.20",
+    "opensubtitles-hu-2018"
+  ]
+}

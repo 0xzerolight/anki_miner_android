@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(30, len(records))
+        self.assertEqual(66, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -96,9 +96,26 @@ class RuntimeHostLaneTests(unittest.TestCase):
     def test_current_runtime_environment_reuses_full_identity_probe(self) -> None:
         provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
         self.assertGreaterEqual(provision.count("verify_runtime_environment"), 3)
-        self.assertIn("pip check || return 1", provision)
+        # pip check still gates the venv; only the dictionaries pymorphy3 declares may be missing.
+        self.assertIn('-m pip check 2>&1)"', provision)
+        self.assertIn('|| [[ "$check_output" == "$ALLOWED_MISSING_REQUIREMENT" ]]', provision)
+        self.assertIn("|| { printf '%s\\n' \"$check_output\" >&2; return 1; }", provision)
+        self.assertIn("    --no-deps \\\n", provision)
         self.assertIn("if verify_runtime_environment", provision)
         self.assertIn("failed verification; rebuilding it", provision)
+
+    def test_health_allows_only_the_same_missing_requirement(self) -> None:
+        provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
+        health = (REPO_ROOT / "scripts/health.sh").read_text(encoding="utf-8")
+        allowed = re.compile(r'^readonly ALLOWED_MISSING_REQUIREMENT="[^"\n]+"$', re.MULTILINE)
+        provision_allowance = allowed.findall(provision)
+        self.assertEqual(len(provision_allowance), 1)
+        # A bare pip check under set -e fails the gate on the dictionaries Android downloads.
+        self.assertEqual(allowed.findall(health), provision_allowance)
+        self.assertNotRegex(health, r'(?m)^PIP_NO_CACHE_DIR=1 "\$runtime_host_python" -m pip check$')
+        self.assertIn('-m pip check 2>&1)"', health)
+        self.assertIn('|| [[ "$runtime_pip_check" == "$ALLOWED_MISSING_REQUIREMENT" ]]', health)
+        self.assertIn("|| fail \"runtime host test environment fails pip check:", health)
 
 
 if __name__ == "__main__":

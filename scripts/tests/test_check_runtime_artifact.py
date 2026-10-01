@@ -533,6 +533,38 @@ class RuntimeArtifactArchiveSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "nested archive"):
                 value.audit()
 
+    def test_a_judged_payload_passes_only_with_its_exact_bytes_and_release(self) -> None:
+        nested = _zip({"nested": b"archive"})
+        licence = b"licence of bundled code\n"
+        judged = {
+            "requests/tests/fixture.npz": ("requests", "1.0", _sha256(nested)),
+            "requests/vendored/LICENSE.txt": ("requests", "1.0", _sha256(licence)),
+        }
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/tests/fixture.npz"] = nested
+            value.common["requests/vendored/LICENSE.txt"] = licence
+            value.write_artifact()
+            self.assertEqual(2, value.audit().license_count)
+
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/tests/fixture.npz"] = _zip({"nested": b"changed"})
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "nested archive"):
+                value.audit()
+
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/vendored/LICENSE.txt"] = b"changed\n"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "outside a top-level dist-info"):
+                value.audit()
+
+        other_release = {path: ("requests", "9.9", digest) for path, (_, _, digest) in judged.items()}
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", other_release):
+            value.common["requests/tests/fixture.npz"] = nested
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "judged payload"):
+                value.audit()
+
     def test_entry_count_and_size_bombs_are_rejected_without_large_fixtures(self) -> None:
         with fixture() as value, mock.patch.object(checker, "MAX_REQUIREMENT_ENTRIES", 2):
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "too many entries"):

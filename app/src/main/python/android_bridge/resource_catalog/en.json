@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 3,
+  "language": "en",
+  "resources": [
+    {
+      "resourceId": "en-en-core-web-sm",
+      "kind": "language-data",
+      "displayName": "spaCy en_core_web_sm 3.8.0 pipeline",
+      "importName": "en_core_web_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+        "sha256": "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85",
+        "sizeBytes": 12806118,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "en_core_web_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "en_core_web_sm-3.8.0/config.cfg",
+          "en_core_web_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "en_core_web_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "OntoNotes 5",
+          "copyright": "Ralph Weischedel, Martha Palmer, Mitchell Marcus, Eduard Hovy, Sameer Pradhan, Lance Ramshaw, Nianwen Xue, Ann Taylor, Jeff Kaufman, Michelle Franchini, Mohammed El-Bachouti, Robert Belvin, Ann Houston",
+          "license": "commercial (licensed by Explosion)",
+          "url": "https://catalog.ldc.upenn.edu/LDC2013T19"
+        },
+        {
+          "name": "ClearNLP Constituent-to-Dependency Conversion",
+          "copyright": "Emory University",
+          "license": "Citation provided for reference, no code packaged with model",
+          "url": "https://github.com/clir/clearnlp-guidelines/blob/master/md/components/dependency_conversion.md"
+        },
+        {
+          "name": "WordNet 3.0",
+          "copyright": "Princeton University",
+          "license": "WordNet 3.0 License",
+          "url": "https://wordnet.princeton.edu/"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-en-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (English) 2026-09-20",
+      "slotId": "wty-en-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/en/en/wty-en-en.zip",
+        "sha256": "53ad4693a2b3c00d1a6722c6c2f3ff388abccd2e1e22ce19ebc5144124afb31d",
+        "sizeBytes": 107649797,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-en-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 70,
+        "uncompressedBytes": 1113640806,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 134217728
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-en-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (English)",
+      "sourceId": "opensubtitles-en",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/en/en_50k.txt",
+        "sha256": "5351ff405b1126ef555791dd4d9798a48e3e9a501a9fc481a9da957752cfb458",
+        "sizeBytes": 622749,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-en-en-2026.09.20",
+    "opensubtitles-en-2018"
+  ]
+}

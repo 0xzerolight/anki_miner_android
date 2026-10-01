@@ -1,0 +1,49 @@
+"""Recommended downloadable Swedish resources (B.6).
+
+**Dictionary — wty-sv-en** (``yomidevs/wiktionary-to-yomitan``, revision
+2026.08.29, hosted on HuggingFace ``daxida/wty-release``; 8,197,851 bytes).
+English Wiktionary's Swedish entries extracted through kaikki.org, CC BY-SA 4.0;
+the zip's ``index.json`` carries ``attribution: https://kaikki.org/`` and
+``sourceLanguage: sv``. Its noun rows carry the gender chips and, on a few, the
+``Grammar-content`` head line (``apa c (plural apor)``) the en/ett hook reads:
+2,636 of 38,241 noun lemma rows in 2026.09.20 have one and 45 name a plural, so
+the profile offers no Plural field.
+Rejected: SAOL/SO (no redistributable machine-readable form). There is no
+monolingual ``wty-sv-sv`` to offer as a manual import: wiktionary-to-yomitan
+builds none (``latest/dict/sv/`` has no ``sv`` target, checked 2026-09-23).
+
+**Frequency — OpenSubtitles 2018** (``hermitdave/FrequencyWords``,
+``content/2018/sv/sv_50k.txt``, 623,913 bytes), content CC BY-SA 4.0: headerless
+``word count`` lines over lowercased surface forms, imported in occurrence mode
+and lemmatised in-app (``lemmatise=True``) before ranking. Not a row: Leipzig
+Corpora (CC BY 4.0) — a surface-keyed RANK list, and rank lists cannot be
+lemma-aggregated, so under the pre-ticked wizard it would put un-lemmatised ranks
+beside the lemmatised list; it stays a documented manual import.
+"""
+
+from __future__ import annotations
+
+from anki_miner.services.resource_catalog import ResourceSpec
+
+SV_CATALOG: tuple[ResourceSpec, ...] = (
+    ResourceSpec(
+        id="wty-sv-en",
+        kind="dict",
+        display_name="Wiktionary (Swedish)",
+        url="https://huggingface.co/datasets/daxida/wty-release/resolve/main/latest/dict/sv/en/wty-sv-en.zip",
+        license_note=(
+            "Wiktionary via kaikki.org, CC BY-SA 4.0; Yomitan build by wiktionary-to-yomitan, "
+            "downloaded from upstream source."
+        ),
+    ),
+    ResourceSpec(
+        id="opensubtitles-sv",
+        kind="freq",
+        display_name="OpenSubtitles 2018 frequency (Swedish)",
+        url="https://raw.githubusercontent.com/hermitdave/FrequencyWords/master/content/2018/sv/sv_50k.txt",
+        license_note=(
+            "FrequencyWords by Hermit Dave, content CC BY-SA 4.0 (OpenSubtitles 2018); downloaded from upstream source."
+        ),
+        lemmatise=True,
+    ),
+)

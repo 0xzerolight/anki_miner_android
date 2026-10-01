@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 3,
+  "language": "el",
+  "resources": [
+    {
+      "resourceId": "el-el-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy el_core_news_sm 3.8.0 pipeline",
+      "importName": "el_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/el_core_news_sm-3.8.0/el_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "18df59b7f099a20d6f7cc1f964a57408a4c1663b73b5110932c1ea24f66e3027",
+        "sizeBytes": 12607208,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "el_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "el_core_news_sm-3.8.0/config.cfg",
+          "el_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "el_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-NC-SA 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Greek GDT v2.8",
+          "copyright": "Prokopidis, Prokopis",
+          "license": "CC BY-NC-SA 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Greek-GDT"
+        },
+        {
+          "name": "Greek NER Corpus (Google Summer of Code 2018)",
+          "copyright": "Giannis Daras",
+          "license": "MIT",
+          "url": "https://github.com/eellak/gsoc2018-spacy"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-el-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Greek-English) 2026-09-20",
+      "slotId": "wty-el-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/el/en/wty-el-en.zip",
+        "sha256": "847d7127bb5c7229b604fc0d3cca073c4b0dd414a5e97bd4e94c02603f46f76f",
+        "sizeBytes": 6033520,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-el-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 16,
+        "uncompressedBytes": 75810782,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-el-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Greek)",
+      "sourceId": "opensubtitles-el",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/el/el_50k.txt",
+        "sha256": "7ec8f6de52c38f36a04add5d1613b116aed576e10c5e3b40d0001e8572de978c",
+        "sizeBytes": 1018575,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-el-en-2026.09.20",
+    "opensubtitles-el-2018"
+  ]
+}

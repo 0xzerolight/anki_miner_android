@@ -58,9 +58,9 @@ def test_malformed_language_values_are_refused(value: object) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["xx", "zh", "ko", "en"])
+@pytest.mark.parametrize("code", ["xx", "zh", "ko"])
 def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
-    # zh/ko/en are desktop languages that are not vendored in this wave: the
+    # zh/ko are desktop languages that are not vendored in this wave: the
     # engine would silently mine them as Japanese, the bridge must not.
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
@@ -70,7 +70,36 @@ def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
 
 def test_every_vendored_language_validates() -> None:
     _runtime_lane()
-    assert _available() == ("ja", "tr", "id", "ar", "th", "fa", "he")
+    assert _available() == (
+        "ja",
+        "en",
+        "ca",
+        "de",
+        "pt",
+        "fr",
+        "es",
+        "it",
+        "nl",
+        "nb",
+        "ro",
+        "el",
+        "fi",
+        "hu",
+        "hr",
+        "sv",
+        "pl",
+        "lt",
+        "da",
+        "tr",
+        "id",
+        "ru",
+        "ar",
+        "th",
+        "fa",
+        "sl",
+        "uk",
+        "he",
+    )
     for code in _available():
         assert languages.validated_language(code) == code
 

@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 3,
+  "language": "es",
+  "resources": [
+    {
+      "resourceId": "es-es-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy es_core_news_sm 3.8.0 pipeline",
+      "importName": "es_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "e451a83d6df79b87e9eed0cb553f03e99e36a3bab18a7b79f0dcfd1fdf875e12",
+        "sizeBytes": 12884212,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "es_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "es_core_news_sm-3.8.0/config.cfg",
+          "es_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "es_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "GNU GPL 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Spanish AnCora v2.8",
+          "copyright": "Martínez Alonso, Héctor; Zeman, Daniel",
+          "license": "GNU GPL 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Spanish-AnCora"
+        },
+        {
+          "name": "WikiNER",
+          "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+          "license": "CC BY 4.0",
+          "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+        },
+        {
+          "name": "spaCy lookups data",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://github.com/explosion/spacy-lookups-data"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-es-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Spanish-English) 2026-09-20",
+      "slotId": "wty-es-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/es/en/wty-es-en.zip",
+        "sha256": "f9bceb1d765b3e45e32dbda909c90cb35315f594aac43d3090c382f8ea22b29f",
+        "sizeBytes": 21731793,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-es-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 64,
+        "uncompressedBytes": 349284185,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-es-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Spanish)",
+      "sourceId": "opensubtitles-es",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/es/es_50k.txt",
+        "sha256": "dcff3ad4316192f4dc4ff7d26e637c6ff314ef1ca0f3f720c5649018a71056c0",
+        "sizeBytes": 658626,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-es-en-2026.09.20",
+    "opensubtitles-es-2018"
+  ]
+}

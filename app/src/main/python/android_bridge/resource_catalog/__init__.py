@@ -25,7 +25,34 @@ CATALOG_SCHEMA_VERSION = 3
 #: Every language with a catalog file, in the order ``resource.catalog`` lists them.
 #: A fixed tuple rather than a directory listing: the packaged tree is read by
 #: path on device, and ``test_resources`` binds this to the files present.
-CATALOG_LANGUAGES: tuple[str, ...] = ("ja", "ar", "fa", "he", "tr")
+CATALOG_LANGUAGES: tuple[str, ...] = (
+    "ja",
+    "ar",
+    "fa",
+    "he",
+    "tr",
+    "en",
+    "ca",
+    "de",
+    "pt",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "nb",
+    "ro",
+    "el",
+    "fi",
+    "hu",
+    "hr",
+    "sv",
+    "pl",
+    "lt",
+    "da",
+    "sl",
+    "ru",
+    "uk",
+)
 _CATALOG_DIR = Path(__file__).parent
 _LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
 _MAX_CATALOG_BYTES = 64 * 1024

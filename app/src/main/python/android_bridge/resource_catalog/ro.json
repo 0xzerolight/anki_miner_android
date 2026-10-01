@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 3,
+  "language": "ro",
+  "resources": [
+    {
+      "resourceId": "ro-ro-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy ro_core_news_sm 3.8.0 pipeline",
+      "importName": "ro_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/ro_core_news_sm-3.8.0/ro_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "3cebfba2437131efe95345adcc7ea2131e4463915652df9099c577e618460cd9",
+        "sizeBytes": 12910222,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "ro_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "ro_core_news_sm-3.8.0/config.cfg",
+          "ro_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "ro_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Romanian RRT v2.8",
+          "copyright": "Barbu Mititelu, Verginica; Irimia, Elena; Perez, Cenel-Augusto; Ion, Radu; Simionescu, Radu; Popel, Martin",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Romanian-RRT"
+        },
+        {
+          "name": "RONEC - the Romanian Named Entity Corpus (ca9ce460)",
+          "copyright": "Dumitrescu, Stefan Daniel; Avram, Andrei-Marius; Morogan, Luciana; Toma; Stefan",
+          "license": "MIT",
+          "url": "https://github.com/dumitrescustefan/ronec"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-ro-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Romanian-English) 2026-09-20",
+      "slotId": "wty-ro-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ro/en/wty-ro-en.zip",
+        "sha256": "07b48d37ab08fa48247cf9f072d93daf2d1f3d93fe37a8f94a5fda355dafd611",
+        "sizeBytes": 12392803,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-ro-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 33,
+        "uncompressedBytes": 177246548,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-ro-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Romanian)",
+      "sourceId": "opensubtitles-ro",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ro/ro_50k.txt",
+        "sha256": "af4d7d1fc980ee7f988a5114dd34478dd5c7abd1e66a45c25a5da330f06faba5",
+        "sizeBytes": 654282,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-ro-en-2026.09.20",
+    "opensubtitles-ro-2018"
+  ]
+}

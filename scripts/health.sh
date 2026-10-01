@@ -149,7 +149,12 @@ expected_runtime_lock="$(sha256sum "$REPO_ROOT/requirements-runtime-host-test.lo
 runtime_lock_marker="$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/runtime-host-tests/.anki-miner-runtime-lock-sha256"
 [[ -f "$runtime_lock_marker" && "$(<"$runtime_lock_marker")" == "$expected_runtime_lock" ]] \
     || fail "runtime host test environment is stale; run scripts/provision-runtime-host-tests.sh"
-PIP_NO_CACHE_DIR=1 "$runtime_host_python" -m pip check
+# pymorphy3's Russian dictionaries are language data on Android, so the lock omits
+# them; provision-runtime-host-tests.sh allows the same single pip check line.
+readonly ALLOWED_MISSING_REQUIREMENT="pymorphy3 2.0.6 requires pymorphy3-dicts-ru, which is not installed."
+runtime_pip_check="$(PIP_NO_CACHE_DIR=1 "$runtime_host_python" -m pip check 2>&1)" \
+    || [[ "$runtime_pip_check" == "$ALLOWED_MISSING_REQUIREMENT" ]] \
+    || fail "runtime host test environment fails pip check: $runtime_pip_check"
 PYTHONDONTWRITEBYTECODE=1 "$runtime_host_python" -m pytest \
     -q "$REPO_ROOT/tests/python/android_bridge"
 PYTHONDONTWRITEBYTECODE=1 "$runtime_host_python" -m compileall \

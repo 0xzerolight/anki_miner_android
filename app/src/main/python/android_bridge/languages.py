@@ -50,6 +50,31 @@ DOWNLOADABLE_DATA_COMPONENTS: frozenset[tuple[str, str]] = frozenset(
     {
         ("ar", "calima_msa"),  # the CAMeL morphology database (a plain zip)
         ("fa", "hazm_data"),  # hazm's five .dat tables (the wheel's data/ directory only)
+        # spaCy pipelines, loaded by path without their package __init__ (languages/_spaced/android_models)
+        ("en", "en_core_web_sm"),
+        ("ca", "ca_core_news_sm"),
+        ("de", "de_core_news_sm"),
+        ("pt", "pt_core_news_sm"),
+        ("fr", "fr_core_news_sm"),
+        ("es", "es_core_news_sm"),
+        ("it", "it_core_news_sm"),
+        ("nl", "nl_core_news_sm"),
+        ("nb", "nb_core_news_sm"),
+        ("ro", "ro_core_news_sm"),
+        ("el", "el_core_news_sm"),
+        ("fi", "fi_core_news_sm"),
+        ("hu", "hu_core_news_md"),
+        ("hr", "hr_core_news_sm"),
+        ("sv", "sv_core_news_sm"),
+        ("pl", "pl_core_news_sm"),
+        ("lt", "lt_core_news_sm"),
+        ("da", "da_core_news_sm"),
+        ("sl", "sl_core_news_sm"),
+        ("ru", "ru_core_news_sm"),
+        ("uk", "uk_core_news_sm"),
+        # pymorphy3's dictionaries (data/ only), passed to the lemmatizer by path
+        ("ru", "pymorphy3_dicts_ru"),
+        ("uk", "pymorphy3_dicts_uk"),
     }
 )
 

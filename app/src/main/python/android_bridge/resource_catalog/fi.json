@@ -1,0 +1,116 @@
+{
+  "schemaVersion": 3,
+  "language": "fi",
+  "resources": [
+    {
+      "resourceId": "fi-fi-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy fi_core_news_sm 3.8.0 pipeline",
+      "importName": "fi_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/fi_core_news_sm-3.8.0/fi_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "5b9bd1496f500c1fac98f5e6a5d3913aa502f188c094ecea191dc6b8a81f418d",
+        "sizeBytes": 14346621,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "fi_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "fi_core_news_sm-3.8.0/config.cfg",
+          "fi_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "fi_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Finnish TDT v2.8",
+          "copyright": "Ginter, Filip; Kanerva, Jenna; Laippala, Veronika; Miekka, Niko; Missilä, Anna; Ojala, Stina; Pyysalo, Sampo",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Finnish-TDT"
+        },
+        {
+          "name": "TurkuONE (ffe2040e)",
+          "copyright": "Jouni Luoma, Li-Hsin Chang, Filip Ginter, Sampo Pyysalo",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/TurkuNLP/turku-one"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-fi-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Finnish-English) 2026-09-20",
+      "slotId": "wty-fi-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/fi/en/wty-fi-en.zip",
+        "sha256": "7e16c3732c7ea62ea164dd5201ae80410b79a152ba5be7034e4f01766bdc2332",
+        "sizeBytes": 43308354,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-fi-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 191,
+        "uncompressedBytes": 568675087,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-fi-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Finnish)",
+      "sourceId": "opensubtitles-fi",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/fi/fi_50k.txt",
+        "sha256": "8bc1d43dd54ea0c4432b1f6ae497759a332e984224819cf8a4f2337681c803b4",
+        "sizeBytes": 691168,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-fi-en-2026.09.20",
+    "opensubtitles-fi-2018"
+  ]
+}
