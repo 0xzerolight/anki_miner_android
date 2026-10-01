@@ -2440,6 +2440,33 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aLanguageSwitchRereadsWhatBelongsToTheLanguageAndJapaneseStaysPut() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(activeLanguage = { language })
+            harness.bridge.clearRequests()
+
+            harness.manager.refreshLanguage()
+
+            // Nothing changed: no operation, no bridge call.
+            assertTrue(harness.bridge.requestTypes.isEmpty())
+            assertEquals(JAPANESE, harness.manager.state.value.language)
+            assertEquals(JAPANESE, harness.manager.state.value.catalog?.language)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            val state = harness.manager.state.value
+            assertEquals("he", state.language)
+            assertEquals("he", state.catalog?.language)
+            assertTrue(
+                harness.bridge.requestsOfType("resource.local.list").single().contains("\"language\":\"he\""),
+            )
+            assertNull(state.activeOperation)
+            assertNull(state.failure)
+        }
+
+    @Test
     fun theRecommendedSetHoldsOneForegroundLeaseAndOneJournalRecord() =
         runTest {
             val harness = Harness(fakePinnedDownloads = true)

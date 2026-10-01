@@ -675,6 +675,8 @@ data class ResourceFailure(
 
 data class ResourceManagerState(
     val startupReadiness: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
+    /** The mining language [catalog] and [knownWords] were last read for. */
+    val language: String = JAPANESE,
     /** The active mining language's catalog. */
     val catalog: ResourceCatalog? = null,
     /** Every language's catalog, Japanese first; empty before the first refresh. */

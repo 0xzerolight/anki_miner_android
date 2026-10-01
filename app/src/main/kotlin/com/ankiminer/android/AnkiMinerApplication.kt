@@ -31,6 +31,7 @@ import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepositor
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.LanguageProfileSource
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.update.DataStoreUpdateCheckRepository
 import com.ankiminer.android.data.update.GitHubUpdateCheckClient
@@ -97,13 +98,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -164,6 +168,22 @@ internal suspend fun refreshAnkiSetupFromSettings(
         return
     }
     refresh(settings)
+}
+
+/**
+ * Re-read the resource state that belongs to the mining [language] whenever it changes, once the
+ * runtime is [idle]: startup recovery finished and no run or resource operation holding it. A
+ * switch made during a run, or before recovery finished, is caught up when the runtime frees up
+ * instead of being lost. [refresh] is a no-op while the state already describes the language, so
+ * the re-checks are cheap.
+ */
+internal suspend fun followMiningLanguage(
+    language: Flow<String>,
+    idle: Flow<Boolean>,
+    refresh: suspend () -> Unit,
+) {
+    combine(language, idle.distinctUntilChanged()) { _, isIdle -> isIdle }
+        .collect { isIdle -> if (isIdle) refresh() }
 }
 
 internal suspend fun runStartupRecoverySequence(
@@ -371,6 +391,13 @@ class AnkiMinerApplication : Application() {
         DataStoreAppSettingsRepository(this)
     }
 
+    /** The mining language as last read from settings; Japanese until the first read lands. */
+    private val miningLanguage: StateFlow<String> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        settingsRepository.settingsOrNull
+            .mapNotNull { it?.language }
+            .stateIn(applicationScope, SharingStarted.Eagerly, LanguageScope.JAPANESE)
+    }
+
     internal val diagnosticsSettings: DiagnosticsSettingsRepository by lazy(
         LazyThreadSafetyMode.SYNCHRONIZED,
     ) {
@@ -439,6 +466,7 @@ class AnkiMinerApplication : Application() {
             documentWriter = resourceDocumentWriter,
             foregroundLease = AndroidResourceForegroundLease(this),
             strings = stringResourceResolver,
+            activeLanguage = { miningLanguage.value },
         )
     }
     internal val resourceStartupReadiness: StateFlow<ResourceStartupReadiness> by lazy(
@@ -655,6 +683,16 @@ class AnkiMinerApplication : Application() {
                 recoverResources = resourceManager::recoverAndRefresh,
                 refreshSetup = ::refreshAnkiSetupAndAwait,
                 refreshAdmission = ::refreshMiningAdmissionAndAwait,
+            )
+        }
+        applicationScope.launch {
+            followMiningLanguage(
+                language = miningLanguage,
+                idle =
+                    combine(resourceManager.state, runtimeWorkCoordinator.activeKind) { resources, work ->
+                        resources.startupReadiness == ResourceStartupReadiness.READY && work == null
+                    },
+                refresh = resourceManager::refreshLanguage,
             )
         }
     }

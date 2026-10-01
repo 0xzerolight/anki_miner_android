@@ -122,6 +122,12 @@ interface ResourceManager {
     /** Absolute path the engine should read for [kind], or null when no file is installed. */
     fun wordListPath(kind: WordListKind): String?
 
+    /**
+     * Re-read what belongs to the active mining language after a switch: its catalog and
+     * known-word counts. A no-op while the state already describes it.
+     */
+    suspend fun refreshLanguage() = Unit
+
     suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind)
 
     suspend fun confirmKnownWordsImport()
@@ -386,6 +392,15 @@ internal class AndroidResourceManager(
                     )
                 }
         }
+    }
+
+    override suspend fun refreshLanguage() {
+        if (mutableState.value.language == activeLanguage()) return
+        runOperation(
+            strings.resolve(R.string.resource_operation_refresh),
+            ResourceOperationPhase.REFRESHING,
+            failureOrigin = ResourceFailureOrigin.SETUP,
+        ) { refreshFromPython() }
     }
 
     override suspend fun installUniDic() {
@@ -2660,12 +2675,14 @@ internal class AndroidResourceManager(
         val catalogs =
             ResourceBridgeCodec.decodeCatalogs(bridge.dispatch(ResourceBridgeCodec.encodeCatalogRequest(), null))
         mutableState.update { state ->
-            state.copy(catalog = catalogs.firstOrNull { it.language == activeLanguage() }, catalogs = catalogs)
+            state.copy(catalog = catalogs.firstOrNull { it.language == state.language }, catalogs = catalogs)
         }
         return catalogs
     }
 
     private fun refreshFromPython() {
+        // Read once: the catalog and the known-word counts both describe it.
+        val language = activeLanguage()
         val catalogs = catalogs()
         val catalog = japaneseCatalog()
         val dictionaries =
@@ -2674,7 +2691,7 @@ internal class AndroidResourceManager(
             ).sortedBy { it.slotId }
         val localResources =
             ResourceBridgeCodec.decodeLocalResourceList(
-                bridge.dispatch(ResourceBridgeCodec.encodeLocalResourceListRequest(language = activeLanguage()), null),
+                bridge.dispatch(ResourceBridgeCodec.encodeLocalResourceListRequest(language = language), null),
             )
         val fatalInventoryFailure =
             when {
@@ -2723,8 +2740,9 @@ internal class AndroidResourceManager(
                     } else {
                         it.startupReadiness
                     },
+                language = language,
                 // A language with no catalog file yet has nothing pinned to offer.
-                catalog = catalogs.firstOrNull { catalog -> catalog.language == activeLanguage() },
+                catalog = catalogs.firstOrNull { catalog -> catalog.language == language },
                 dictionaries = dictionaries,
                 frequencySources = localResources.frequencies.sortedBy { source -> source.sourceId },
                 pitchSources = localResources.pitchSources,
