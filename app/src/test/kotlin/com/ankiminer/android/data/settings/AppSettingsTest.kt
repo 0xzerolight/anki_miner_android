@@ -89,7 +89,7 @@ class AppSettingsTest {
         )
         assertTrue(markers.values.values.all { it == BridgeJsonValue.Text("") })
         val fields = snapshot.settings["anki_fields"] as BridgeJsonValue.ObjectValue
-        assertEquals(18, AnkiFieldKeys.ALL.size)
+        assertEquals(19, AnkiFieldKeys.ALL.size)
         assertEquals(AnkiFieldKeys.ALL.toSet(), fields.values.keys)
         assertTrue(fields.values.values.all { it == BridgeJsonValue.Text("") })
         assertFalse(snapshot.settings.containsKey("max_parallel_workers"))

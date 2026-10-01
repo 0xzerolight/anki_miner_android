@@ -70,6 +70,7 @@ class AnkiFieldAutoMapTest {
                 "frequency_sort" to "",
                 "source" to "",
                 "expression_audio" to "",
+                "sentence_translation" to "",
             )
         assertEquals(expected, map)
         // The plain `sentence` key must land on "Sentence", NOT on "SentenceFurigana" — exact
@@ -77,7 +78,7 @@ class AnkiFieldAutoMapTest {
         assertEquals("Sentence", map["sentence"])
         assertNotEquals("SentenceFurigana", map["sentence"])
         assertEquals("SentenceFurigana", map["sentence_furigana"])
-        // Keys are exactly the 18 logical keys, in ALL order.
+        // Keys are exactly the logical keys, in ALL order.
         assertEquals(AnkiFieldKeys.ALL, map.keys.toList())
     }
 
@@ -175,6 +176,7 @@ class AnkiFieldAutoMapTest {
                 "frequency_sort" to "freqSort",
                 "source" to "miscInfo",
                 "expression_audio" to "wordAudio",
+                "sentence_translation" to "sentenceTranslation",
             )
         assertEquals(expected, map)
     }
@@ -223,5 +225,14 @@ class AnkiFieldAutoMapTest {
 
         assertEquals("Sentence Audio", mapping.getValue("audio"))
         assertEquals("expression_furigana", mapping.getValue("expression_furigana"))
+    }
+
+    @Test
+    fun `a translation field maps to the sentence translation key`() {
+        listOf("Translation", "Sentence Translation", "SentenceMeaning").forEach { name ->
+            val mapping = AnkiFieldAutoMap.autoMap(listOf("Word", name))
+
+            assertEquals(name, name, mapping.getValue("sentence_translation"))
+        }
     }
 }

@@ -1922,6 +1922,7 @@ object BridgeJsonCodec {
             "word", "sentence", "definition", "glossary", "picture", "audio", "expression_furigana",
             "expression_reading", "sentence_furigana", "sentence_reading", "pitch_position", "pitch_category",
             "pitch_graph", "pitch_text", "frequency", "frequency_sort", "source", "expression_audio",
+            "sentence_translation",
         )
     private val MARKER_FIELDS = setOf("word_and_sentence", "click", "sentence", "audio")
 

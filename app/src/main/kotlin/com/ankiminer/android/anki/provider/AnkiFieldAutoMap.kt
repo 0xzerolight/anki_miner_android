@@ -3,13 +3,12 @@ package com.ankiminer.android.anki.provider
 /**
  * Keyword-driven auto-mapping of a note type's field names to the engine's logical field keys.
  *
- * This mirrors the desktop `auto_map_fields` /
- * `_FIELD_KEYWORDS` table in
- * `anki_miner/gui/widgets/panels/anki_settings_panel.py`, plus the setup-wizard's
- * word/sentence special-casing in `.../setup_wizard/pages.py`. It is kept intentionally pure (no
- * Android dependencies) so it can be exercised directly. The two repositories are separate, so
- * nothing mechanically pins [FIELD_KEYWORDS] to desktop `_FIELD_KEYWORDS` — keep them in step by
- * hand when either moves.
+ * This mirrors the engine's `auto_map_fields` / `FIELD_KEYWORDS` in
+ * `anki_miner/services/note_presets.py`, plus the setup-wizard's word/sentence special-casing in
+ * desktop `.../setup_wizard/pages.py`. It is kept intentionally pure (no Android dependencies) so
+ * it can be exercised directly. `tools/engine-sync/tests/test_field_keywords_mirror.py` pins
+ * [FIELD_KEYWORDS] to the vendored table, so an engine re-pin that adds a key fails until it lands
+ * here too.
  *
  * Matching semantics are the desktop ones exactly: a field matches a key when its normalized name
  * (lowercased, with spaces and underscores stripped) is an EXACT element of that key's keyword
@@ -18,15 +17,19 @@ package com.ankiminer.android.anki.provider
  */
 internal object AnkiFieldAutoMap {
     /**
-     * Ported verbatim from desktop `_FIELD_KEYWORDS`. Keys are engine logical field keys; values
+     * Ported verbatim from the engine's `FIELD_KEYWORDS`. Keys are engine logical field keys; values
      * are lowercase/normalized patterns a field name must equal (after normalization) to match.
+     *
+     * The `word` list is never consulted here ([autoMap] pins word to the first field) but is kept
+     * whole, Chinese spellings included, so the mirror test compares the tables verbatim.
      *
      * Card-type marker fields (desktop `_CARD_TYPE_MARKER_DEFAULTS`) are deliberately absent — they
      * are never auto-mapped.
      */
     private val FIELD_KEYWORDS: Map<String, List<String>> =
         linkedMapOf(
-            "word" to listOf("expression", "word", "vocab"),
+            "word" to
+                listOf("expression", "word", "vocab", "hanzi", "simplified", "汉字", "漢字", "中文", "单词", "词语"),
             "sentence" to listOf("sentence", "context", "example"),
             "definition" to listOf("definition", "meaning", "maindefinition"),
             "glossary" to listOf("glossary", "definitions", "dictionary"),
@@ -47,6 +50,7 @@ internal object AnkiFieldAutoMap {
             "frequency" to listOf("frequency", "frequencies", "freq", "rank", "frequencyrank"),
             "frequency_sort" to listOf("freqsort", "frequencysort"),
             "source" to listOf("source", "origin", "miscinfo"),
+            "sentence_translation" to listOf("sentencetranslation", "translation", "sentencemeaning"),
         )
 
     /**
