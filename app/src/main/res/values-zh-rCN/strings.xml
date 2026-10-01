@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">字符数：%1$d</string>
     <string name="reading_paste_truncated">文本已按最大长度截断。</string>
     <string name="reading_paste_clear">清除粘贴的文本</string>
+    <string name="process_text_mine_words">挖词</string>
     <string name="reading_source_access_error">访问已丢失。请重新选择。</string>
     <string name="reading_source_type_error">支持：TXT、EPUB、SRT、ASS、SSA、VTT、MOKURO、ZIP、CBZ。</string>
     <string name="reading_archive_access_error">访问已丢失。请重新选择。</string>

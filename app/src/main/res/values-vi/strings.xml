@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">Ký tự: %1$d</string>
     <string name="reading_paste_truncated">Văn bản đã bị cắt ở độ dài tối đa.</string>
     <string name="reading_paste_clear">Xóa văn bản đã dán</string>
+    <string name="process_text_mine_words">Khai thác từ</string>
     <string name="reading_source_access_error">Mất quyền truy cập. Hãy chọn lại.</string>
     <string name="reading_source_type_error">Được hỗ trợ: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Mất quyền truy cập. Hãy chọn lại.</string>

@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">Символов: %1$d</string>
     <string name="reading_paste_truncated">Текст обрезан до максимальной длины.</string>
     <string name="reading_paste_clear">Очистить вставленный текст</string>
+    <string name="process_text_mine_words">Майнить слова</string>
     <string name="reading_source_access_error">Доступ потерян. Выберите снова.</string>
     <string name="reading_source_type_error">Поддерживаются: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Доступ потерян. Выберите снова.</string>

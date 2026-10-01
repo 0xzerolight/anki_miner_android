@@ -469,6 +469,8 @@ internal fun AnkiMinerApp(
     diagnosticsViewModel: DiagnosticsViewModel,
     notificationRunId: String?,
     onNotificationRunHandled: () -> Unit,
+    sharedText: String?,
+    onSharedTextHandled: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
@@ -577,6 +579,14 @@ internal fun AnkiMinerApp(
         // The process repositories publish their current state synchronously into each ViewModel,
         // so an unmatched ID is stale and must be released.
         onNotificationRunHandled()
+    }
+
+    // Text from another app's selection menu or share sheet waits in Reading -> Text (D8).
+    LaunchedEffect(sharedText) {
+        val text = sharedText ?: return@LaunchedEffect
+        readingViewModel.receiveSharedText(text)
+        navigateTo(AnkiMinerDestination.READING)
+        onSharedTextHandled()
     }
 
     val wizardIsVisible =

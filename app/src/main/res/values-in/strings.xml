@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">Karakter: %1$d</string>
     <string name="reading_paste_truncated">Teks dipotong pada panjang maksimum.</string>
     <string name="reading_paste_clear">Hapus teks yang ditempel</string>
+    <string name="process_text_mine_words">Mining kata</string>
     <string name="reading_source_access_error">Akses hilang. Pilih lagi.</string>
     <string name="reading_source_type_error">Didukung: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Akses hilang. Pilih lagi.</string>

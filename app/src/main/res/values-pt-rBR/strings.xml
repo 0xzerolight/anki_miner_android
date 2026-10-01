@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">Caracteres: %1$d</string>
     <string name="reading_paste_truncated">O texto foi truncado no comprimento máximo.</string>
     <string name="reading_paste_clear">Limpar texto colado</string>
+    <string name="process_text_mine_words">Minerar palavras</string>
     <string name="reading_source_access_error">Acesso perdido. Escolha novamente.</string>
     <string name="reading_source_type_error">Compatíveis: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Acesso perdido. Escolha novamente.</string>

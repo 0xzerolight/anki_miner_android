@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">Zeichen: %1$d</string>
     <string name="reading_paste_truncated">Text wurde auf die maximale Länge gekürzt.</string>
     <string name="reading_paste_clear">Eingefügten Text löschen</string>
+    <string name="process_text_mine_words">Wörter sammeln</string>
     <string name="reading_source_access_error">Zugriff verloren. Erneut auswählen.</string>
     <string name="reading_source_type_error">Unterstützt: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Zugriff verloren. Erneut auswählen.</string>

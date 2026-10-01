@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">文字数: %1$d</string>
     <string name="reading_paste_truncated">上限を超えたテキストは切り詰められました。</string>
     <string name="reading_paste_clear">貼り付けたテキストを消去</string>
+    <string name="process_text_mine_words">単語をマイニング</string>
     <string name="reading_source_access_error">アクセスが失われました。選び直してください。</string>
     <string name="reading_source_type_error">対応形式: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ。</string>
     <string name="reading_archive_access_error">アクセスが失われました。選び直してください。</string>
