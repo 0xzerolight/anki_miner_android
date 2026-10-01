@@ -1055,8 +1055,53 @@ internal val greekCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-el-en-2026.09.20",
+                    displayName = "Wiktionary (Greek-English) 2026-09-20",
+                    slotId = "wty-el-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/el/en/wty-el-en.zip",
+                            sha256 = "847d7127bb5c7229b604fc0d3cca073c4b0dd414a5e97bd4e94c02603f46f76f",
+                            sizeBytes = 6_033_520,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-el-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 16,
+                            uncompressedBytes = 75_810_782,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-el-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Greek)",
+                    sourceId = "opensubtitles-el",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/el/el_50k.txt",
+                            sha256 = "7ec8f6de52c38f36a04add5d1613b116aed576e10c5e3b40d0001e8572de978c",
+                            sizeBytes = 1_018_575,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-el-en-2026.09.20", "opensubtitles-el-2018"),
     )
 
 internal val finnishCatalog =
