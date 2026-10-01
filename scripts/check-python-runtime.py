@@ -22,7 +22,9 @@ EXPECTED_DISTRIBUTIONS = {
     "lxml": "6.1.1",
     "pillow": "12.2.0",
     "pysubs2": "1.8.1",
+    "pythainlp": "5.3.7",
     "requests": "2.34.2",
+    "tzdata": "2026.3",
     "urllib3": "2.7.0",
 }
 
