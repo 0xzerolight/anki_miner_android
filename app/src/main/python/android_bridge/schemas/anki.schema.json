@@ -196,7 +196,7 @@
     "knownVocabularyScope": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "Kotlin scans at most maxScannedNotes notes per page and pages by ascending note ID, so a traversal has no total note ceiling and a collection cannot be too large to scan. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the resume point and immutable run/scope/ordinal binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope and a replay fail closed. fieldOrdinals is part of that immutable scope: each listed note type returns its fields at exactly those ordinals, in order, and every other note returns its first field alone. Kotlin must fail rather than truncate or skip an oversized field value, an ordinal the note does not have, or a note whose values alone exceed the page budget.",
+      "$comment": "Kotlin scans at most maxScannedNotes notes per page and pages by ascending note ID, so a traversal has no total note ceiling and a collection cannot be too large to scan. An excluded deck excludes the entire note when any of its cards is in that deck or a descendant; a parent exclusion therefore covers all subdecks. cursor is null on the first page and otherwise exactly the prior nextCursor. Kotlin retains the resume point and immutable run/scope/ordinal binding behind each opaque one-use token; tokens expire when consumed, on terminal completion, on error, or when the run is cancelled/terminated. A cursor from another run or scope and a replay fail closed. fieldOrdinals is part of that immutable scope: each listed note type returns its fields at exactly those ordinals, in order, and every other note returns its first field alone. Kotlin must fail rather than truncate or skip an oversized or invalid first field. A later projected value is only an expression-field candidate: one over the per-value caps or with an invalid scalar, an ordinal the note does not have, and every later value of a note too wide for an empty page are returned as empty strings instead.",
       "required": ["kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"],
       "properties": {
         "kind": {"const": "knownVocabulary"},
@@ -364,7 +364,7 @@
     "knownNote": {
       "type": "object",
       "additionalProperties": false,
-      "$comment": "fields holds the raw provider values at the request's ordinals for modelId, or the first field alone when the request does not list modelId.",
+      "$comment": "fields holds the raw provider values at the request's ordinals for modelId, or the first field alone when the request does not list modelId. A later value Kotlin cannot carry is an empty string.",
       "required": ["modelId", "fields"],
       "properties": {
         "modelId": {"type": "integer", "minimum": 1},

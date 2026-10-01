@@ -1671,6 +1671,9 @@ def _shared_deck_notes() -> list[tuple[int, list[str]]]:
         _sentence_card("明日は晴れるでしょう。"),
         _migaku("電車が遅れた。", "電車"),
         _core(5, "言葉", "word", "言葉を覚える。"),
+        # Kotlin sends a later field it cannot carry (over the value cap, or missing from the
+        # stored note) as empty; desktop reads past an empty or missing chosen field the same way.
+        _migaku("学生です。", ""),
     ]
 
 
@@ -1727,7 +1730,7 @@ def test_known_vocabulary_reads_the_word_field_of_sentence_and_index_first_note_
     summaries = [record.getMessage() for record in caplog.records if "Anki known words scan" in record.getMessage()]
     assert len(summaries) == 1
     assert "outcome=ok" in summaries[0]
-    assert "notes=15" in summaries[0]
+    assert "notes=16" in summaries[0]
     assert "note_types=4" in summaries[0]
     assert 'expression_fields="Migaku Japanese: Target Word,Core 2000: Vocabulary-Kanji"' in summaries[0]
 

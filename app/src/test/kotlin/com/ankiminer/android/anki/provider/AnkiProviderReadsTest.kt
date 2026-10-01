@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
@@ -1118,11 +1119,53 @@ class AnkiProviderReadsTest {
     }
 
     @Test
-    fun `known vocabulary fails a note that lacks a projected field or cannot fit an empty page`() {
+    fun `known vocabulary reads a widened note's unreadable later fields as empty`() {
+        // A later word-named field is only a candidate: content the per-value contract cannot carry
+        // must not fail every run over one note, as it would if it were the first field.
+        val projection = listOf(KnownFieldOrdinals(NOTE_TYPE_ID, listOf(0, 2, 3, 4, 5)))
+
+        fun page(vararg notes: String): KnownVocabularyResult {
+            val fixture = fixture()
+            fixture.gateway.queryHandler =
+                keysetPageHandler(notes.mapIndexed { index, fields -> index + 1L to fields })
+            return fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(fieldOrdinals = projection))
+            } as KnownVocabularyResult
+        }
+
+        val oversized = "x".repeat(AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES + 1)
+        val result =
+            page(
+                // Stored with fewer fields than its note type: the missing ones read as empty.
+                "only\u001ftwo\u001f単語",
+                // Over the per-value cap, and a lone surrogate: each later value reads as empty.
+                "word\u001fm\u001f$oversized\u001f\uD800\u001f語\u001f",
+                // Five values of 60,000 bytes fit the cap one by one but not an empty page together,
+                // so the note keeps its first field alone.
+                List(6) { "x".repeat(60_000) }.joinToString("\u001f"),
+                // The page goes on past all three.
+                "after",
+            )
+
+        assertEquals(
+            listOf(
+                listOf("only", "単語", "", "", ""),
+                listOf("word", "", "", "語", ""),
+                listOf("x".repeat(60_000), "", "", "", ""),
+                listOf("after", "", "", "", ""),
+            ),
+            result.notes.map(KnownNote::fields),
+        )
+        assertEquals(4, result.scannedNotes)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `known vocabulary still fails a widened note's oversized or invalid first field`() {
         fun failure(fields: String): AnkiReadFailure {
             val fixture = fixture()
             fixture.gateway.queryHandler = keysetPageHandler(listOf(1L to fields))
-            val projection = listOf(KnownFieldOrdinals(NOTE_TYPE_ID, listOf(0, 2, 3, 4, 5)))
+            val projection = listOf(KnownFieldOrdinals(NOTE_TYPE_ID, listOf(0, 1)))
             return assertThrows(AnkiReadFailure::class.java) {
                 fixture.withOwner { owner ->
                     fixture.reads.scanFirstFields(owner, knownRequest(fieldOrdinals = projection))
@@ -1130,10 +1173,9 @@ class AnkiProviderReadsTest {
             }
         }
 
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure("only\u001ftwo").code)
-        // Five values of 60,000 bytes: each is under the per-value cap, together over the page.
-        val wide = List(6) { "x".repeat(60_000) }.joinToString("\u001f")
-        assertEquals(AnkiErrorCode.QUERY_FAILED, failure(wide).code)
+        val oversized = "x".repeat(AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES + 1)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure("$oversized\u001f単語").code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure("\uD800\u001f単語").code)
     }
 
     @Test

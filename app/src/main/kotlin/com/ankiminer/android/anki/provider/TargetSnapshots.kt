@@ -111,13 +111,14 @@ internal object ProviderSnapshotValidation {
     }
 
     /**
-     * The values at [ordinals], which strictly ascend, or null when the note has no field at the
-     * last of them. Only the requested fields are allocated.
+     * The values at [ordinals], which strictly ascend from 0. A field the note does not have (its
+     * stored field list is shorter than its note type's) reads as empty, the way desktop's
+     * resolver skips a row that lacks the chosen field. Only the requested fields are allocated.
      */
     fun fieldsAt(
         raw: String,
         ordinals: List<Int>,
-    ): List<String>? {
+    ): List<String> {
         val result = ArrayList<String>(ordinals.size)
         var ordinal = 0
         var start = 0
@@ -129,7 +130,8 @@ internal object ProviderSnapshotValidation {
             start = separator + 1
             ordinal += 1
         }
-        return if (result.size == ordinals.size) result else null
+        while (result.size < ordinals.size) result += ""
+        return result
     }
 
     /**
@@ -305,6 +307,20 @@ internal object ProviderSnapshotValidation {
             AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
         )
         requireTarget(!snapshot.dynamic)
+    }
+
+    /**
+     * A later projected field's UTF-8 size, or null when it falls outside the per-value contract
+     * [validateFirstField] enforces (an invalid scalar, or over its caps). The known-vocabulary
+     * scan reads such a value as empty instead of failing: only first fields ever could.
+     */
+    fun boundedFieldBytesOrNull(value: String): Int? {
+        val scalarCount = UnicodeContractV151.scalarCount(value) ?: return null
+        val utf8Bytes = UnicodeContractV151.strictUtf8Length(value) ?: return null
+        return utf8Bytes.takeIf {
+            scalarCount <= AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_CODE_POINTS &&
+                utf8Bytes <= AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES
+        }
     }
 
     fun validateFirstField(value: String): Int {

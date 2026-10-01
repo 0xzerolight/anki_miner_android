@@ -403,20 +403,42 @@ internal class AnkiProviderReadService(
                 }
                 val modelId = cursor.positiveLong(ProviderColumn.NOTE_MODEL_ID)
                 val rawFields = cursor.text(ProviderColumn.NOTE_FIELDS)
-                val values =
-                    projections[modelId]?.let { ordinals ->
-                        ProviderSnapshotValidation.fieldsAt(rawFields, ordinals) ?: throw queryFailed()
-                    } ?: listOf(ProviderSnapshotValidation.firstField(rawFields))
-                var noteBytes = 0
-                for (value in values) noteBytes = checkedAdd(noteBytes, validateProviderFirstField(value))
+                val firstField = ProviderSnapshotValidation.firstField(rawFields)
+                // The first field fails the scan when it breaks the per-value contract, as it
+                // always has.
+                val firstBytes = validateProviderFirstField(firstField)
+                var values = listOf(firstField)
+                var noteBytes = firstBytes
+                val ordinals = projections[modelId]
+                if (ordinals != null) {
+                    // A later word-named field is only a candidate, so content the contract cannot
+                    // carry (over its caps, an invalid scalar, a field the note lacks) reads as empty
+                    // and is never chosen, rather than failing every run over one note. Desktop reads
+                    // past such a note the same way.
+                    val widened = ArrayList<String>(ordinals.size)
+                    widened += firstField
+                    for (value in ProviderSnapshotValidation.fieldsAt(rawFields, ordinals).drop(1)) {
+                        val bytes = ProviderSnapshotValidation.boundedFieldBytesOrNull(value)
+                        if (bytes == null) {
+                            widened += ""
+                        } else {
+                            widened += value
+                            noteBytes = checkedAdd(noteBytes, bytes)
+                        }
+                    }
+                    values = widened
+                    if (noteBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
+                        // Too wide for even an empty page: keep the first field alone.
+                        values = listOf(firstField) + List(values.size - 1) { "" }
+                        noteBytes = firstBytes
+                    }
+                }
                 val pageBytes = checkedAdd(totalBytes, noteBytes)
                 if (pageBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
                     // The budget ends the page the way the item count does: the row that did not
                     // fit is not consumed, so the next page's keyset query serves it first with a
-                    // fresh budget. A first field alone always fits an empty page because the
-                    // per-field cap is below the page budget; a widened note that cannot fit even
-                    // an empty page would end every page before it, so it fails instead.
-                    if (scannedNotes == 0) throw queryFailed()
+                    // fresh budget. Every note fits an empty page: a first field alone is under the
+                    // page budget because the per-field cap is, and a wider note is cut to it above.
                     hasMoreAfterPage = true
                     break
                 }
