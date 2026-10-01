@@ -219,6 +219,20 @@ def _is_license_path(path: str) -> bool:
     return basename == "BSD" or basename.startswith(LICENSE_PREFIXES)
 
 
+def _is_package_data_license_path(path: str) -> bool:
+    """A ``LICENSE``/``LICENCE`` file a wheel keeps inside its package, beside the data it covers.
+
+    Narrower than :func:`_is_license_path`: ``FTL``, ``NOTICE`` and the like
+    also name C headers and code (``chaquopy/include/freetype/ftlist.h``).
+    """
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) > 1
+        and not parts[0].endswith(".dist-info")
+        and PurePosixPath(path).name.upper().startswith(("LICENSE", "LICENCE"))
+    )
+
+
 def _is_dist_info_license_path(path: str) -> bool:
     """Return whether a wheel member is an owned dist-info license payload."""
     parts = PurePosixPath(path).parts
@@ -609,6 +623,15 @@ def load_vendored_inventory(
                         ExpectedFile(package, _sha256(data)),
                         label,
                     )
+                elif _is_package_data_license_path(member):
+                    # A licence the wheel keeps beside the data it covers (pycantonese's
+                    # CC BY 4.0 corpora): owned by this wheel, pinned like any other.
+                    inventory.add_file(
+                        inventory.licenses,
+                        member,
+                        ExpectedFile(package, _sha256(data)),
+                        label,
+                    )
                 native_name = _is_native_name(member)
                 native_magic = data.startswith(ELF_MAGIC)
                 if native_name != native_magic:
@@ -839,8 +862,13 @@ def _audit_requirements(
     actual_natives: dict[str, ExpectedFile] = {}
     for path, data in files.items():
         if _is_license_path(path):
-            root, _, _ = _dist_info_identity(path, f"{label}:{path}")
-            owner = root_owners.get(root)
+            if PurePosixPath(path).parts[0].endswith(".dist-info"):
+                root, _, _ = _dist_info_identity(path, f"{label}:{path}")
+                owner = root_owners.get(root)
+            else:
+                # A package-data licence: owned by the wheel the inventory recorded it from.
+                recorded = expected.licenses.get(path)
+                owner = None if recorded is None else recorded.package
             if owner is None:
                 raise RuntimeArtifactError(f"{label}: unowned license payload {path}")
             if len(data) > MAX_LICENSE_SIZE:

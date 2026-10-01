@@ -356,6 +356,32 @@ class RuntimeArtifactInventoryTests(unittest.TestCase):
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "native inventory"):
                 checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
 
+    def test_a_licence_kept_beside_package_data_is_owned_by_its_wheel(self) -> None:
+        with fixture() as value:
+            value.common["requests/data/corpus/LICENSE.txt"] = b"CC BY 4.0 fixture"
+            manifest = _vendored(value)
+            # The vendored wheel carries it too: it is part of the exact inventory.
+            wheel = value.root / "wheels" / "common" / "requests-1.0-py3-none-any.whl"
+            with zipfile.ZipFile(wheel, "a") as archive:
+                archive.writestr("requests/data/corpus/LICENSE.txt", b"CC BY 4.0 fixture")
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+            document["wheels"][0]["sha256"] = _sha256(wheel.read_bytes())
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+
+            result = checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+            self.assertEqual(3, result.license_count)
+
+            value.common["requests/data/corpus/LICENSE.txt"] = b"changed"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "license inventory"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
+            value.common["requests/data/other/LICENSE"] = b"not in any wheel"
+            value.common["requests/data/corpus/LICENSE.txt"] = b"CC BY 4.0 fixture"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "unowned license payload"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
     def test_vendored_natives_obey_the_shared_soname_and_needed_policy(self) -> None:
         cases = {
             "extension module has SONAME": _elf("x86_64", soname="lib_imaging.so"),
