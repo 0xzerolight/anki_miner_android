@@ -27,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.surfaceColorAtElevation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -46,6 +47,8 @@ import com.ankiminer.android.ui.mining.boundedSaveableQuery
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 import com.ankiminer.android.ui.theme.accentTextColor
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal enum class SettingsCategory(
     @param:StringRes val label: Int,
@@ -355,13 +358,24 @@ internal fun LazyListScope.settingsCard(
 }
 
 /**
- * Scrolls [index] to the top and then back by [stickyHeaderPx], so a jump lands below the pinned
- * search and tab strip instead of under it.
+ * Scrolls [index] to the top and then back far enough that it sits below the pinned search and
+ * tab strip instead of under it. A card near the end of the list cannot reach the top, so it is
+ * moved only by what the strip actually covers.
+ *
+ * A jump from another tab or out of a search arrives before this tab's list has been laid out
+ * with its cards, and the strip is still at its search-only height; both are read once the list
+ * holds [index].
  */
 internal suspend fun LazyListState.scrollBelowStickyHeader(
     index: Int,
-    stickyHeaderPx: Int,
+    stickyHeaderPx: () -> Int,
 ) {
+    withTimeoutOrNull(STICKY_JUMP_LAYOUT_TIMEOUT_MILLIS) {
+        snapshotFlow { layoutInfo.totalItemsCount > index }.first { it }
+    }
     scrollToItem(index)
-    if (stickyHeaderPx > 0) scrollBy(-stickyHeaderPx.toFloat())
+    val covered = stickyHeaderPx() - (layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset ?: return)
+    if (covered > 0) scrollBy(-covered.toFloat())
 }
+
+private const val STICKY_JUMP_LAYOUT_TIMEOUT_MILLIS = 1_000L

@@ -539,7 +539,7 @@ private fun SettingsScreen(
         if (index != null) {
             focusManager.clearFocus()
             keyboard?.hide()
-            listStates.getValue(SettingsCategory.ANKI).scrollBelowStickyHeader(index, stickyHeaderPx)
+            listStates.getValue(SettingsCategory.ANKI).scrollBelowStickyHeader(index) { stickyHeaderPx }
             cardIndexRecorder.highlightedKey = NOTE_TYPE_CARD_KEY
             delay(HIGHLIGHT_MILLIS)
             cardIndexRecorder.highlightedKey = null
@@ -577,7 +577,7 @@ private fun SettingsScreen(
             }
         focusManager.clearFocus()
         keyboard?.hide()
-        listStates.getValue(jump.category).scrollBelowStickyHeader(targetIndex, stickyHeaderPx)
+        listStates.getValue(jump.category).scrollBelowStickyHeader(targetIndex) { stickyHeaderPx }
         onCategoryRequestConsumed()
     }
 
@@ -820,7 +820,7 @@ internal fun SettingsSearchJumpHandler(
             }
         onJumpIndexResolved(index)
         if (index != null) {
-            listStates.getValue(entry.category).scrollBelowStickyHeader(index, stickyHeaderPx())
+            listStates.getValue(entry.category).scrollBelowStickyHeader(index, stickyHeaderPx)
             recorder.highlightedKey = entry.cardKey
             delay(HIGHLIGHT_MILLIS)
             recorder.highlightedKey = null
