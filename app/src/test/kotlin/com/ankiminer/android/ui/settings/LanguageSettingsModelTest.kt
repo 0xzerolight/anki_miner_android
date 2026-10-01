@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.compose.runtime.saveable.SaverScope
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.LanguageProfileFixtures
@@ -23,6 +24,24 @@ class LanguageSettingsModelTest {
         assertEquals(NoteTypeRoute.ROUTE, noteTypeRouteAfterSwitch("he", "he", ""))
         // A return visit restores the parked note type.
         assertEquals(NoteTypeRoute.DONE, noteTypeRouteAfterSwitch("ja", "ja", "Lapis"))
+    }
+
+    @Test
+    fun `a note-type jump runs once and not again after the screen is restored`() {
+        val jumps = NoteTypeJumpRequests()
+        assertFalse(jumps.take())
+
+        jumps.request()
+        assertTrue(jumps.take())
+        assertFalse(jumps.take())
+
+        // Returning to Settings or recreating the activity restores the saved counters.
+        val saved = with(NoteTypeJumpRequests.Saver) { SaverScope { true }.save(jumps) }
+        val restored = NoteTypeJumpRequests.Saver.restore(requireNotNull(saved))!!
+        assertFalse(restored.take())
+
+        restored.request()
+        assertTrue(restored.take())
     }
 
     @Test

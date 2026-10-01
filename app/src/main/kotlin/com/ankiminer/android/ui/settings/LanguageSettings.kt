@@ -15,8 +15,13 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
@@ -183,6 +188,41 @@ internal fun LanguageSwitchNoteTypeRoute(
         }
     }
 }
+
+/**
+ * Requests to jump to the note-type card. Each request is taken once: the counters are saved, so a
+ * return to Settings or a recreated activity restores them already handled instead of jumping again.
+ */
+@Stable
+internal class NoteTypeJumpRequests(
+    requested: Int = 0,
+    private var handled: Int = 0,
+) {
+    var requested by mutableIntStateOf(requested)
+        private set
+
+    fun request() {
+        requested += 1
+    }
+
+    fun take(): Boolean {
+        if (handled == requested) return false
+        handled = requested
+        return true
+    }
+
+    internal companion object {
+        val Saver =
+            listSaver<NoteTypeJumpRequests, Int>(
+                save = { listOf(it.requested, it.handled) },
+                restore = { NoteTypeJumpRequests(it[0], it[1]) },
+            )
+    }
+}
+
+@Composable
+internal fun rememberNoteTypeJumpRequests(): NoteTypeJumpRequests =
+    rememberSaveable(saver = NoteTypeJumpRequests.Saver) { NoteTypeJumpRequests() }
 
 /** Slots installed for languages other than [language], by panel, for the cross-language note. */
 internal data class OtherLanguageSlots(

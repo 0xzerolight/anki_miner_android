@@ -18,7 +18,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -503,16 +502,16 @@ private fun SettingsScreen(
     // A switch into a language with no note type is finished on the Anki tab: no run can start
     // until one is picked (config_map refuses a blank note type).
     var pendingLanguageRoute by rememberSaveable { mutableStateOf<String?>(null) }
-    var noteTypeJumps by rememberSaveable { mutableIntStateOf(0) }
+    val noteTypeJumps = rememberNoteTypeJumpRequests()
     LanguageSwitchNoteTypeRoute(
         pending = pendingLanguageRoute,
         language = setup.language,
         noteType = setup.noteType,
-        onRoute = { noteTypeJumps += 1 },
+        onRoute = noteTypeJumps::request,
         onConsumed = { pendingLanguageRoute = null },
     )
-    LaunchedEffect(noteTypeJumps) {
-        if (noteTypeJumps == 0) return@LaunchedEffect
+    LaunchedEffect(noteTypeJumps.requested) {
+        if (!noteTypeJumps.take()) return@LaunchedEffect
         cardIndexRecorder.begin(SettingsCategory.ANKI)
         selectedCategory = SettingsCategory.ANKI
         searchQuery = ""
@@ -630,7 +629,7 @@ private fun SettingsScreen(
                             pendingLanguageRoute = code
                             onDownloadAndSwitchLanguage(code)
                         },
-                        onChooseNoteType = { noteTypeJumps += 1 },
+                        onChooseNoteType = noteTypeJumps::request,
                     ),
             )
         SettingsSearchJumpHandler(
