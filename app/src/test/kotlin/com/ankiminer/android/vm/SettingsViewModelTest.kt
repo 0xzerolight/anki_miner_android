@@ -12,6 +12,7 @@ import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.LanguageInventoryFixtures
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
+import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -1285,6 +1286,35 @@ class SettingsViewModelTest {
             assertFalse(viewModel.switchLanguage("ar"))
             advanceUntilIdle()
 
+            assertEquals("ja", repository.current.language)
+        }
+
+    @Test
+    fun `an open known-words preview blocks a switch, including one after a download`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val preview =
+                KnownWordsImportPreview(
+                    format = "plain",
+                    importedCount = 1,
+                    totalEntries = 1,
+                    isGeneric = true,
+                    sampleWords = listOf("猫"),
+                )
+            val resources = FakeResourceManager(ResourceManagerState(knownWordsImportPreview = preview))
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = resources,
+                    languageProfileSource = {
+                        Result.success(LanguageProfileFixtures.all.map { it.copy(unavailableReason = null) })
+                    },
+                )
+            advanceUntilIdle()
+
+            // Its words would land in the new language's database once confirmed.
+            assertFalse(viewModel.switchLanguage("he"))
+            advanceUntilIdle()
             assertEquals("ja", repository.current.language)
         }
 

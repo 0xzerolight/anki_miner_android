@@ -1556,6 +1556,9 @@ internal class SettingsViewModel(
         // A language whose data is missing, or that this build cannot mine, offers no switch: its
         // runs would all be refused (`language_unavailable` / `unsupported_language`).
         if (profile.unavailableReason != null) return false
+        // An open known-words preview would import into the new language's database once
+        // confirmed. The Language tab blocks the picker too; this covers the post-download switch.
+        if (resources.state.value.knownWordsImportPreview != null) return false
         return save { current -> current.switchLanguage(profile) }
     }
 
