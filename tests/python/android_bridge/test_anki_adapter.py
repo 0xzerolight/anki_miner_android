@@ -1732,7 +1732,13 @@ def test_known_vocabulary_reads_the_word_field_of_sentence_and_index_first_note_
     assert "outcome=ok" in summaries[0]
     assert "notes=16" in summaries[0]
     assert "note_types=4" in summaries[0]
-    assert 'expression_fields="Migaku Japanese: Target Word,Core 2000: Vocabulary-Kanji"' in summaries[0]
+    # Migaku reads Target Word (ordinal 2), Core 2k Vocabulary-Kanji (ordinal 1).
+    assert f"expression_fields={_MIGAKU_ID}:2,{_CORE_2K_ID}:1" in summaries[0]
+    # The diagnostics bundle redacts only the target note type's names, so the receipt names
+    # no note type and no field.
+    for note_type in _SHARED_DECK_NOTE_TYPES:
+        for name in (note_type["name"], *note_type["fieldNames"]):
+            assert name not in summaries[0]
 
 
 def test_known_vocabulary_streams_each_note_type_past_its_sample(

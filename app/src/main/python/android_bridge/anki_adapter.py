@@ -1299,6 +1299,9 @@ class AndroidAnkiAdapter:
             self._callbacks.mark_response_failure()
             raise
 
+        # The bundle redacts only the target note type's names, so this receipt carries none:
+        # model_id:field_ordinal for each note type read from a field other than its first.
+        overrides = resolver.overrides()
         log_summary(
             logger,
             "Anki known words scan",
@@ -1306,7 +1309,11 @@ class AndroidAnkiAdapter:
             notes=notes_read,
             forms=len(existing),
             note_types=len(resolver.chosen),
-            expression_fields=capped(f"{model}: {name}" for model, name in resolver.overrides().items()),
+            expression_fields=capped(
+                f"{model_id}:{note_type.field_names.index(overrides[note_type.name])}"
+                for model_id, note_type in sorted(note_types.items())
+                if overrides.get(note_type.name) in note_type.field_names
+            ),
         )
         self._existing_vocab_cache = existing
         return existing
