@@ -3,7 +3,8 @@ package com.ankiminer.android.localization
 import com.ankiminer.android.R
 
 /**
- * Drops or restates engine presenter notices before they reach the Android result screen.
+ * Drops or restates engine presenter notices, and restates terminal failures, before they reach
+ * the Android result screen.
  *
  * The engine's own strings are vendored and cannot be edited here, so both verdicts are reached at
  * the presenter seam where the localized catalogs live. Anything without a rule passes through
@@ -26,7 +27,25 @@ internal class EngineNoticeRewriter(
         )
     }
 
+    /**
+     * The failure text for a terminal error. `resources_stale` is the engine's schema-staleness gate,
+     * whose own sentence points at desktop Settings paths; the bridge sends only the stale resources'
+     * names, as the engine quoted them, and the sentence comes from the catalogs. Every other code
+     * keeps the bridge's message.
+     */
+    fun terminalMessage(
+        code: String,
+        message: String,
+    ): String =
+        when (code) {
+            RESOURCES_STALE -> strings.resolve(R.string.mining_failure_resources_stale, listOf(message))
+            else -> message
+        }
+
     private companion object {
+        /** Terminal code `mining._exception_terminal` gives a resource-staleness `SetupError`. */
+        const val RESOURCES_STALE = "resources_stale"
+
         /**
          * `EpisodeProcessor` reports a definition miss from two sites: the pre-curation offline
          * existence filter ("Skipped %1 words missing from your offline dictionaries: %2%3"), which

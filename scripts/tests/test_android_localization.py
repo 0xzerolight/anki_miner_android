@@ -406,6 +406,34 @@ class AndroidLocalizationAuditTest(unittest.TestCase):
         self.assertIn("Settings → Resources", replacement)
         self.assertNotIn("Settings → Frequency", replacement)
 
+    def test_stale_resources_terminal_is_said_from_the_catalogs(self) -> None:
+        """The staleness gate's own sentence names desktop Settings paths, so it never crosses.
+
+        The bridge classifies it as ``resources_stale`` and sends only the resource names; the
+        rewriter turns the code into a catalog string, and both mining repositories route every
+        terminal message through it. A bridge that stopped emitting the code, or a repository that
+        stopped asking the rewriter, would put engine English (or bare names) on screen.
+        """
+        mining = (REPO_ROOT / "app/src/main/python/android_bridge/mining.py").read_text(encoding="utf-8")
+        self.assertIn('code = "resources_stale"', mining)
+
+        rewriter = self._rewriter_source()
+        self.assertIn('const val RESOURCES_STALE = "resources_stale"', rewriter)
+        self.assertIn(
+            "RESOURCES_STALE -> strings.resolve(R.string.mining_failure_resources_stale, listOf(message))",
+            rewriter,
+        )
+        sentence = self._source_strings()["mining_failure_resources_stale"]
+        self.assertIn("%1$s", sentence)
+        self.assertIn("Settings → Resources", sentence)
+
+        for relative in (
+            "app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt",
+            "app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt",
+        ):
+            repository = (REPO_ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("noticeRewriter.terminalMessage(it.code, it.message)", repository, relative)
+
     def test_engine_receipt_patterns_still_match_the_vendored_literals(self) -> None:
         """Pin every suppression rule against the string the vendored engine actually renders.
 

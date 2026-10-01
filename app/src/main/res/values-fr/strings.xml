@@ -178,6 +178,7 @@
     <string name="undo_words_failed">Notes supprimées, mais la restauration des mots connus a échoué.</string>
     <string name="mining_notice_no_definition">Aucune entrée de dictionnaire pour %1$d mot(s) : %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Seuil de fréquence ignoré : aucune source de fréquence classée n\'est chargée. Ajoutez-en une dans Paramètres → Ressources.</string>
+    <string name="mining_failure_resources_stale">Après la mise à jour de l\'application, ces ressources doivent être réimportées : %1$s. Réimportez-les dans Paramètres → Ressources.</string>
     <string name="result_metric_created">Créées</string>
     <string name="result_metric_skipped_new">Ignorées / nouvelles</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

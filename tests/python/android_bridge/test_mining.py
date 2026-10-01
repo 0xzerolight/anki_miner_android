@@ -1901,11 +1901,12 @@ def test_offline_dictionary_error_is_reworded_for_android() -> None:
     assert json.loads(other)["payload"]["error"]["message"] == "Something else went wrong"
 
 
-def test_stale_resource_error_points_at_android_resources() -> None:
-    """The staleness gate ends each family's line with a desktop Settings path.
+def test_stale_resource_error_crosses_as_its_own_code_with_only_the_names() -> None:
+    """The staleness gate's sentence ends each line with a desktop Settings path.
 
-    Built with the engine's own formatter, so a re-worded family label or fix
-    path falls back to the verbatim text here instead of being half-rewritten.
+    Kotlin says it from the catalogs for ``resources_stale``, so the message carries
+    only the names the engine quoted. Built with the engine's own formatter, so a
+    re-worded family label or fix path is caught here.
     """
     pytest.importorskip("requests")
     from anki_miner.exceptions import SetupError
@@ -1925,16 +1926,27 @@ def test_stale_resource_error_points_at_android_resources() -> None:
     )
     error = json.loads(terminal)["payload"]["error"]
 
-    assert error["code"] == "setup_incomplete"
-    assert error["message"] == (
-        "Dictionary 'JMdict' needs reimport after the app upgrade — reimport in Settings, under Resources.\n"
-        "Audio packs 'Forvo', 'JPod' need reimport after the app upgrade — reimport in Settings, under Resources."
-    )
-    assert "→" not in error["message"]
+    assert error["code"] == "resources_stale"
+    assert error["message"] == "'JMdict', 'Forvo', 'JPod'"
 
-    # A message that only shares the shape keeps its own text.
+    for family in ("frequency", "pitch"):
+        single = format_stale_family_message(family, ["BCCWJ"])
+        assert mining._stale_resource_names(single) == "'BCCWJ'"
+
+    # A message that only shares the shape stays an ordinary setup failure.
     unrelated = "Dictionary 'JMdict' needs reimport after the app upgrade — somewhere else"
-    assert mining._android_engine_message(unrelated) == unrelated
+    assert mining._stale_resource_names(unrelated) is None
+    _outcome, other = mining._exception_terminal(
+        "run_" + "d" * 32,
+        SetupError(unrelated),
+        cancelled=False,
+        log=mining.logger,
+    )
+    assert json.loads(other)["payload"]["error"] == {
+        "code": "setup_incomplete",
+        "message": unrelated,
+        "faultId": json.loads(other)["payload"]["error"]["faultId"],
+    }
 
 
 def test_setup_errors_are_not_retryable_while_other_engine_failures_are(
@@ -1943,10 +1955,12 @@ def test_setup_errors_are_not_retryable_while_other_engine_failures_are(
     from anki_miner.exceptions import SetupError
     from anki_miner.exceptions.media import SubtitleParseError
 
-    # The Android re-wording imports episode_processor, which needs `requests` and is
-    # therefore unimportable on the host lane. Stubbing it keeps this test about the
-    # classification, which is the part that decides whether the user is offered a Retry.
+    # The Android re-wording and the staleness match import the engine services, which
+    # need `requests`/pysubs2 and are therefore unimportable on the host lane. Stubbing
+    # them keeps this test about the classification, which is the part that decides
+    # whether the user is offered a Retry.
     monkeypatch.setattr(mining, "_android_engine_message", lambda message: message)
+    monkeypatch.setattr(mining, "_stale_resource_names", lambda message: None)
 
     # A tester whose run failed on a missing dictionary pressed Retry and got the same
     # failure back. Setup is the one engine failure retrying cannot clear, so it is the
