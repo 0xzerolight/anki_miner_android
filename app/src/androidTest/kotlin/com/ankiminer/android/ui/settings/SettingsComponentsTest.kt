@@ -498,6 +498,32 @@ class SettingsComponentsTest {
         assertEquals(1, layouts.single().lineCount)
     }
 
+    @Test
+    fun aHoistedOpenMappingShowsTheFieldRows() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                AnkiTargetCard(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L),
+                            availableNoteTypes = listOf(ModelSummary(id = 1L, name = "Basic", fieldNames = listOf("Front", "Back"))),
+                            noteType = "Basic",
+                            fieldMap = mapOf("word" to "Front", "definition" to "Back"),
+                        ),
+                    onSelectNoteType = {},
+                    onSetFieldMapping = { _, _ -> },
+                    onSelectCardType = {},
+                    onSelectCardTypeMarker = {},
+                    onRemapFields = {},
+                    mappingExpanded = true,
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Definition").assertExists()
+    }
+
     private fun setBusyAnkiTarget(
         noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.Verified(1L),
         fieldMap: Map<String, String> = emptyMap(),

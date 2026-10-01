@@ -232,7 +232,7 @@ internal data class OnboardingWizardCallbacks(
     val onSelectDeck: (String) -> Unit = {},
     val onRetryDeckSelection: () -> Unit = {},
     val onSelectNoteType: (String) -> Unit = {},
-    val onCustomizeFields: () -> Unit = {},
+    val onChangeCardFields: () -> Unit = {},
     val onRefresh: () -> Unit = {},
     val onCancelOperation: () -> Unit = {},
     val onRetryResourceFailure: () -> Unit = {},
@@ -255,7 +255,7 @@ internal fun OnboardingWizard(
     onOpenAnkiDroid: () -> Unit,
     onFinished: () -> Unit,
     modifier: Modifier = Modifier,
-    onCustomizeFields: () -> Unit = {},
+    onChangeCardFields: () -> Unit = {},
 ) {
     var step by rememberSaveable { mutableStateOf(WizardStep.LANGUAGE) }
     val inventory by viewModel.inventory.collectAsStateWithLifecycle()
@@ -284,7 +284,7 @@ internal fun OnboardingWizard(
                 onSelectDeck = viewModel::selectDeck,
                 onRetryDeckSelection = viewModel::retryDeckSelection,
                 onSelectNoteType = viewModel::selectNoteType,
-                onCustomizeFields = onCustomizeFields,
+                onChangeCardFields = onChangeCardFields,
                 onRefresh = viewModel::refresh,
                 onCancelOperation = viewModel::cancelOperation,
                 onRetryResourceFailure = viewModel::retryResourceFailure,

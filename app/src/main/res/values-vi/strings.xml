@@ -612,6 +612,7 @@
     <string name="wizard_skip_for_now">Bỏ qua lúc này</string>
     <string name="wizard_next">Tiếp</string>
     <string name="wizard_finish">Hoàn tất</string>
+    <string name="wizard_change_card_fields">Đổi trường của thẻ</string>
     <string name="wizard_language_title">Bạn đang học ngôn ngữ nào?</string>
     <string name="wizard_language_picker">Ngôn ngữ khai thác</string>
     <string name="wizard_language_option_download">%1$s (tải xuống)</string>
@@ -866,7 +867,6 @@
     <string name="b3_wizard_skip_title">Bỏ qua thiết lập?</string>
     <string name="b3_wizard_skip_body">Hoàn tất sau trong Cài đặt › Giao diện › Chạy trình hướng dẫn cài đặt.</string>
     <string name="b3_wizard_confirm_skip">Bỏ qua thiết lập</string>
-    <string name="b3_wizard_customize_fields">Tùy chỉnh trường trong Cài đặt</string>
     <string name="wizard_note_type_help">Loại ghi chú nào cũng dùng được khi các trường đã được ánh xạ. Anki Miner đặt từ vào trường đầu tiên và điền các trường nhận ra theo tên, như Word, Sentence, Reading, Definition, Picture và Audio. Bạn có thể đổi trường nào nhận gì trong Cài đặt › Thẻ &amp; Anki.</string>
     <string name="b3_wizard_ready_title">Sẵn sàng khai thác</string>
     <string name="b3_wizard_incomplete_title">Thiết lập chưa hoàn tất</string>

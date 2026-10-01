@@ -507,7 +507,6 @@ internal fun AnkiMinerApp(
             TesterDiagnosticsBuilder.identity(buildIdentity)
         }
     var wizardRerunRequested by rememberSaveable { mutableStateOf(false) }
-    var wizardRedirectedToSettings by rememberSaveable { mutableStateOf(false) }
     var requestedSettingsCategory by
         rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
     var requestedSettingsItemIndex by rememberSaveable { mutableStateOf(2) }
@@ -572,7 +571,7 @@ internal fun AnkiMinerApp(
         wizardVisible(
             wizardSeen = setup.wizardSeen,
             rerunRequested = wizardRerunRequested,
-            sessionDismissed = wizardDismissedForSession || wizardRedirectedToSettings,
+            sessionDismissed = wizardDismissedForSession,
             completion = setup.wizardCompletion,
         )
     if (wizardIsVisible) {
@@ -683,14 +682,14 @@ internal fun AnkiMinerApp(
                             onOpenAnkiDroid = onOpenAnkiDroid,
                             onFinished = {
                                 wizardRerunRequested = false
-                                wizardRedirectedToSettings = false
                                 if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
                             },
-                            onCustomizeFields = {
+                            onChangeCardFields = {
+                                // Finish's path first, so the wizard does not come back next launch.
                                 wizardRerunRequested = false
-                                wizardRedirectedToSettings = true
+                                if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
                                 requestedSettingsCategory = SettingsCategory.ANKI
-                                requestedSettingsItemIndex = 3
+                                requestedSettingsItemIndex = settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET)
                                 navigateTo(AnkiMinerDestination.SETTINGS)
                             },
                         )

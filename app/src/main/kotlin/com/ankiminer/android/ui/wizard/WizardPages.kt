@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +32,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
 /** Page 1: what the user is learning, plus the one-sentence welcome. Skip ends the page. */
@@ -167,7 +169,6 @@ internal fun WizardAnkiDroidPage(
             WizardAnkiTargetCard(
                 state = state,
                 onSelectNoteType = callbacks.onSelectNoteType,
-                onCustomizeFields = callbacks.onCustomizeFields,
             )
         }
     }
@@ -209,6 +210,10 @@ internal fun WizardReadyPage(
     WizardResourceFailure(state, ResourceFailureOrigin.SETUP, callbacks.onRefresh, callbacks.onDismissFailure)
     if (wizardFinalState(state) == WizardFinalState.READY) {
         Text(stringResource(R.string.wizard_next_step))
+    }
+    // The way to the full field map, from the page that finishes setup instead of mid-way.
+    TextButton(onClick = callbacks.onChangeCardFields, colors = accentTextButtonColors()) {
+        Text(stringResource(R.string.wizard_change_card_fields))
     }
 }
 

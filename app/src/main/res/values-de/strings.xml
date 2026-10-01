@@ -613,6 +613,7 @@
     <string name="wizard_skip_for_now">Vorerst überspringen</string>
     <string name="wizard_next">Weiter</string>
     <string name="wizard_finish">Fertig</string>
+    <string name="wizard_change_card_fields">Kartenfelder ändern</string>
     <string name="wizard_language_title">Was lernen Sie?</string>
     <string name="wizard_language_picker">Mining-Sprache</string>
     <string name="wizard_language_option_download">%1$s (Download)</string>
@@ -868,7 +869,6 @@
     <string name="b3_wizard_skip_title">Einrichtung überspringen?</string>
     <string name="b3_wizard_skip_body">Später unter Einstellungen › UI › Einrichtungsassistent ausführen abschließen.</string>
     <string name="b3_wizard_confirm_skip">Einrichtung überspringen</string>
-    <string name="b3_wizard_customize_fields">Felder in den Einstellungen anpassen</string>
     <string name="wizard_note_type_help">Jeder Notiztyp funktioniert, sobald seine Felder zugeordnet sind. Anki Miner schreibt das Wort in das erste Feld und füllt die Felder, die es am Namen erkennt, etwa Word, Sentence, Reading, Definition, Picture und Audio. Welches Feld was erhält, ändern Sie unter Einstellungen › Karten &amp; Anki.</string>
     <string name="b3_wizard_ready_title">Bereit zum Sammeln</string>
     <string name="b3_wizard_incomplete_title">Einrichtung unvollständig</string>

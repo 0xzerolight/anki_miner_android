@@ -158,6 +158,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 setup,
                 setupViewModel,
                 recorder,
+                expansion,
                 callbacks,
             )
         SettingsCategory.MEDIA ->
@@ -234,6 +235,7 @@ private fun LazyListScope.ankiSettings(
     setup: SetupUiState,
     setupViewModel: SetupViewModel,
     recorder: SettingsCardIndexRecorder,
+    expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
 ) {
     settingsCard(SettingsCategory.ANKI, recorder, "anki-deck-options") {
@@ -262,6 +264,8 @@ private fun LazyListScope.ankiSettings(
             setupViewModel::selectCardType,
             setupViewModel::setCardTypeMarkerField,
             setupViewModel::remapFieldsFromNoteType,
+            mappingExpanded = expansion.isExpanded("anki-target"),
+            onMappingExpandedChange = { expansion.setExpanded("anki-target", it) },
             inlineFailure = {
                 AnkiOriginFailure(
                     setup,

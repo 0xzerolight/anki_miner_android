@@ -113,6 +113,8 @@ internal fun AnkiTargetCard(
     onSelectCardType: (CardType?) -> Unit,
     onSelectCardTypeMarker: (String) -> Unit,
     onRemapFields: () -> Unit,
+    mappingExpanded: Boolean? = null,
+    onMappingExpandedChange: (Boolean) -> Unit = {},
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -149,11 +151,14 @@ internal fun AnkiTargetCard(
                         state.noteTypeStatus is NoteTypeSetupStatus.FieldsMissing ||
                             state.noteTypeStatus is NoteTypeSetupStatus.FieldMapInvalid ||
                             state.noteTypeStatus == NoteTypeSetupStatus.FirstFieldMismatch
-                    var mappingExpanded by
-                        rememberSaveable(state.noteType) { mutableStateOf(false) }
-                    val showMapping = mappingExpanded || mappingBlocked
+                    // Hoistable, so the wizard's "Change card fields" deep link can land on it open.
+                    var ownExpanded by rememberSaveable(state.noteType) { mutableStateOf(false) }
+                    val isExpanded = mappingExpanded ?: ownExpanded
+                    val showMapping = isExpanded || mappingBlocked
                     TextButton(
-                        onClick = { mappingExpanded = !mappingExpanded },
+                        onClick = {
+                            if (mappingExpanded == null) ownExpanded = !isExpanded else onMappingExpandedChange(!isExpanded)
+                        },
                         enabled = !mappingBlocked,
                         modifier =
                             Modifier.semantics {
@@ -322,7 +327,6 @@ private fun cardTypeLabel(cardType: CardType): String =
 internal fun WizardAnkiTargetCard(
     state: SetupUiState,
     onSelectNoteType: (String) -> Unit,
-    onCustomizeFields: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -354,9 +358,6 @@ internal fun WizardAnkiTargetCard(
                         noteTypeStatusText(state.noteTypeStatus),
                         modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                     )
-                }
-                TextButton(onClick = onCustomizeFields, colors = accentTextButtonColors()) {
-                    Text(stringResource(R.string.b3_wizard_customize_fields))
                 }
             }
         }

@@ -437,6 +437,31 @@ class OnboardingWizardBehaviorTest {
         composeRule.runOnIdle { assertEquals(1, finished) }
     }
 
+    @Test
+    fun changeCardFieldsLivesOnTheReadyPageOnly() {
+        var changes = 0
+        var step by mutableStateOf(WizardStep.ANKIDROID)
+        composeRule.setContent {
+            AnkiMinerTheme {
+                OnboardingWizardContent(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L),
+                        ),
+                    step = step,
+                    callbacks = OnboardingWizardCallbacks(onChangeCardFields = { changes += 1 }),
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Customize fields in Settings").assertDoesNotExist()
+        composeRule.onNodeWithText("Change card fields").assertDoesNotExist()
+        composeRule.runOnIdle { step = WizardStep.READY }
+        composeRule.onNodeWithText("Change card fields").performScrollTo().performClick()
+        composeRule.runOnIdle { assertEquals(1, changes) }
+    }
+
     private fun profile(
         code: String,
         native: String,

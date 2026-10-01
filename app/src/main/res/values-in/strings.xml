@@ -612,6 +612,7 @@
     <string name="wizard_skip_for_now">Lewati sekarang</string>
     <string name="wizard_next">Berikutnya</string>
     <string name="wizard_finish">Selesai</string>
+    <string name="wizard_change_card_fields">Ubah kolom kartu</string>
     <string name="wizard_language_title">Bahasa apa yang Anda pelajari?</string>
     <string name="wizard_language_picker">Bahasa mining</string>
     <string name="wizard_language_option_download">%1$s (unduh)</string>
@@ -866,7 +867,6 @@
     <string name="b3_wizard_skip_title">Lewati penyiapan?</string>
     <string name="b3_wizard_skip_body">Selesaikan nanti di Pengaturan › UI › Jalankan wizard penyiapan.</string>
     <string name="b3_wizard_confirm_skip">Lewati penyiapan</string>
-    <string name="b3_wizard_customize_fields">Sesuaikan bidang di Pengaturan</string>
     <string name="wizard_note_type_help">Tipe catatan apa pun bisa dipakai setelah kolomnya dipetakan. Anki Miner menaruh kata di kolom pertama dan mengisi kolom yang dikenalinya dari nama, seperti Word, Sentence, Reading, Definition, Picture, dan Audio. Anda bisa mengubah isi tiap kolom di Pengaturan › Kartu &amp; Anki.</string>
     <string name="b3_wizard_ready_title">Siap untuk mining</string>
     <string name="b3_wizard_incomplete_title">Penyiapan belum lengkap</string>
