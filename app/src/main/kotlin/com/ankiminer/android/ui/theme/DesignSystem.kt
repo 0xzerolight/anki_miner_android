@@ -35,6 +35,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
@@ -48,6 +49,22 @@ import androidx.compose.ui.unit.sp
 
 /** Shared breakpoint used by action groups and other width-sensitive controls. */
 const val CompactLayoutWidthDp = 360
+
+/** Font scale at and above which paired actions stack and the bottom bar drops its labels. */
+internal const val LargeFontScale = 1.3f
+
+/**
+ * The compact breakpoint, read from the window rather than a composable's own width: inside the
+ * 16dp screen inset a 360dp phone measured 328dp, so the most common width always stacked.
+ */
+internal fun compactLayout(
+    windowWidthDp: Int,
+    fontScale: Float,
+): Boolean = windowWidthDp < CompactLayoutWidthDp || fontScale >= LargeFontScale
+
+@Composable
+internal fun isCompactLayout(): Boolean =
+    compactLayout(LocalConfiguration.current.screenWidthDp, LocalDensity.current.fontScale)
 
 /**
  * Named layout and motion values. Spacing mirrors the desktop app's 4/8/12/16/24 scale so the two
@@ -250,19 +267,26 @@ internal fun MetricTile(
 }
 
 /**
- * Places the primary action first and full-width when width is compact or text scale is large.
- * Wider layouts keep actions on one row with the primary action in the trailing position.
+ * Places the primary action first and full-width when the window is compact or text is large.
+ * Wider layouts keep actions on one row with the primary action in the trailing position. An
+ * explicit [stackWidthThreshold] keeps the old local-width rule for the one caller that needs it.
  */
 @Composable
 internal fun AdaptiveActionGroup(
     primary: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
     secondary: (@Composable (Modifier) -> Unit)? = null,
-    stackWidthThreshold: Dp = CompactLayoutWidthDp.dp,
+    stackWidthThreshold: Dp? = null,
 ) {
+    val compact = isCompactLayout()
+    val fontScale = LocalDensity.current.fontScale
     BoxWithConstraints(modifier) {
         val stack =
-            maxWidth < stackWidthThreshold || LocalDensity.current.fontScale >= 1.3f
+            if (stackWidthThreshold == null) {
+                compact
+            } else {
+                maxWidth < stackWidthThreshold || fontScale >= LargeFontScale
+            }
         if (stack) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
@@ -290,25 +314,21 @@ internal fun AdaptivePairedActions(
     second: @Composable (Modifier) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    BoxWithConstraints(modifier) {
-        val stack =
-            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
-        if (stack) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                first(Modifier.fillMaxWidth())
-                second(Modifier.fillMaxWidth())
-            }
-        } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                first(Modifier.weight(1f))
-                second(Modifier.weight(1f))
-            }
+    if (isCompactLayout()) {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            first(Modifier.fillMaxWidth())
+            second(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(
+            modifier = modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            first(Modifier.weight(1f))
+            second(Modifier.weight(1f))
         }
     }
 }

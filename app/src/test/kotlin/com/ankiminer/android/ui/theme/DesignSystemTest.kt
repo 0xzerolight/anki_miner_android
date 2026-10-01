@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.theme
 
 import androidx.compose.ui.graphics.Color
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -161,5 +162,15 @@ class DesignSystemTest {
                 colors.enabledContainer,
             )
         }
+    }
+
+    @Test
+    fun compactLayoutReadsTheWindowWidthNotTheInsetContentWidth() {
+        // A 360dp phone used to measure 328dp inside the 16dp inset and always stacked.
+        assertFalse(compactLayout(windowWidthDp = 360, fontScale = 1.0f))
+        assertFalse(compactLayout(windowWidthDp = 411, fontScale = 1.29f))
+        assertTrue(compactLayout(windowWidthDp = 359, fontScale = 1.0f))
+        assertTrue(compactLayout(windowWidthDp = 320, fontScale = 1.0f))
+        assertTrue(compactLayout(windowWidthDp = 600, fontScale = 1.3f))
     }
 }
