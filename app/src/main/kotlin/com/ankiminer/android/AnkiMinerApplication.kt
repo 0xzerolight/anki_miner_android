@@ -138,8 +138,8 @@ internal suspend fun ResourceManager.snapshotProductionSettings(
         installedPitchIds = installedPitchIds(settings.language),
         installedAudioPackIds = installedAudioPackIds(settings.language),
         availableWordsetIds = bundledWordsetIds(),
-        blacklistPath = wordListPath(WordListKind.BLACKLIST),
-        whitelistPath = wordListPath(WordListKind.WHITELIST),
+        blacklistPath = wordListPath(WordListKind.BLACKLIST, settings.language),
+        whitelistPath = wordListPath(WordListKind.WHITELIST, settings.language),
         // Asked here rather than defaulted in the mapper: a default would silently put every device
         // on the WebP path, which is what shipped and what nobody noticed.
         avifNameable = canNameFilesFor("avif"),

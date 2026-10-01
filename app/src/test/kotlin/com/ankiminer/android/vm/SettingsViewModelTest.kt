@@ -1651,7 +1651,7 @@ class SettingsViewModelTest {
 
         override suspend fun removeWordList(kind: WordListKind) = Unit
 
-        override fun wordListPath(kind: WordListKind): String? = null
+        override fun wordListPath(kind: WordListKind, language: String): String? = null
 
         override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) = Unit
 

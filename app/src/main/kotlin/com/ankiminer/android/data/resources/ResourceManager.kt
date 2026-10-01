@@ -115,16 +115,17 @@ interface ResourceManager {
         format: KnownWordsSourceFormat,
     )
 
+    /** Install [kind] for the active mining language, replacing only that language's list. */
     suspend fun importWordList(uri: String, kind: WordListKind)
 
     suspend fun removeWordList(kind: WordListKind)
 
-    /** Absolute path the engine should read for [kind], or null when no file is installed. */
-    fun wordListPath(kind: WordListKind): String?
+    /** Absolute path a [language] run reads for [kind], or null when that language has none. */
+    fun wordListPath(kind: WordListKind, language: String): String?
 
     /**
-     * Re-read what belongs to the active mining language after a switch: its catalog and
-     * known-word counts. A no-op while the state already describes it.
+     * Re-read what belongs to the active mining language after a switch: its catalog, known-word
+     * counts and word lists. A no-op while the state already describes it.
      */
     suspend fun refreshLanguage() = Unit
 
@@ -249,8 +250,8 @@ internal class AndroidResourceManager(
      * catalog's language and rebuilds for their slot's, whatever this answers.
      */
     private val activeLanguage: () -> String = { JAPANESE },
-    wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
-    resourceDirectorySync: (File) -> Unit = ::syncResourceDirectory,
+    private val wordListMover: (File, File) -> Boolean = { source, target -> source.renameTo(target) },
+    private val resourceDirectorySync: (File) -> Unit = ::syncResourceDirectory,
 ) : ResourceManager {
     private data class ActiveOperation(
         val id: String,
@@ -313,11 +314,17 @@ internal class AndroidResourceManager(
 
     /**
      * Sibling of the staging root, so the retention rename stays on one volume and [clearStaging]
-     * never sweeps a file the engine is expected to keep reading.
+     * never sweeps a file the engine is expected to keep reading. Japanese lists live here, where
+     * every build before languages wrote them; another language's live in its own subdirectory.
      */
     private val wordListRoot = File(stagingRoot.parentFile, "resource-word-lists")
-    private val wordListStore =
-        CrashSafeWordListStore(wordListRoot, wordListMover, resourceDirectorySync)
+
+    private fun wordListDirectory(language: String): File =
+        if (language == JAPANESE) wordListRoot else File(wordListRoot, language)
+
+    private fun wordListStore(language: String) =
+        CrashSafeWordListStore(wordListDirectory(language), wordListMover, resourceDirectorySync)
+
     private var active: ActiveOperation? = null
     private var pendingKnownWordsImport: PendingKnownWordsImport? = null
     private var pendingAudioPackImport: PendingAudioPackImport? = null
@@ -1336,6 +1343,7 @@ internal class AndroidResourceManager(
             failureRetry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
             persistForRecovery = true,
         ) { operation ->
+            val language = activeLanguage()
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -1363,9 +1371,9 @@ internal class AndroidResourceManager(
                             failure,
                         )
                     }
-                val target = wordListStore.publish(staged.file, kind)
+                val target = wordListStore(language).publish(staged.file, kind)
                 staged = null
-                publishWordList(InstalledWordList(kind, entryCount, target.length()))
+                publishWordList(InstalledWordList(kind, entryCount, target.length()), language)
             } finally {
                 staged?.file?.delete()
                 runBlocking { safBroker.releaseReadAccess(retained.uri) }
@@ -1379,23 +1387,27 @@ internal class AndroidResourceManager(
             ResourceOperationPhase.PREPARING,
             failureOrigin = ResourceFailureOrigin.WORD_LIST,
         ) {
-            if (!wordListStore.remove(kind)) {
+            val language = activeLanguage()
+            if (!wordListStore(language).remove(kind)) {
                 throw ResourceDownloadException(
                     "word_list_remove_failed",
                     "Could not remove the word-list file",
                 )
             }
             mutableState.update { state ->
+                if (state.language != language) return@update state
                 state.copy(wordLists = state.wordLists.filterNot { it.kind == kind })
             }
         }
     }
 
-    override fun wordListPath(kind: WordListKind): String? =
-        File(wordListRoot, kind.fileName).takeIf { it.isFile }?.canonicalPath
+    override fun wordListPath(kind: WordListKind, language: String): String? =
+        File(wordListDirectory(language), kind.fileName).takeIf { it.isFile }?.canonicalPath
 
-    private fun publishWordList(installed: InstalledWordList) {
+    /** Shown only while the state is [language]'s; a switch mid-operation re-reads it anyway. */
+    private fun publishWordList(installed: InstalledWordList, language: String) {
         mutableState.update { state ->
+            if (state.language != language) return@update state
             state.copy(
                 wordLists =
                     state.wordLists.filterNot { it.kind == installed.kind } + installed,
@@ -1403,37 +1415,49 @@ internal class AndroidResourceManager(
         }
     }
 
-    /** Re-derive the inventory from disk: nothing about a word list is persisted anywhere else. */
+    /** Complete or roll back an interrupted publish in every language's directory. */
+    private fun recoverWordLists() {
+        wordListStore(JAPANESE).recover()
+        wordListRoot.listFiles()
+            ?.filter { it.isDirectory }
+            ?.forEach { CrashSafeWordListStore(it, wordListMover, resourceDirectorySync).recover() }
+    }
+
     private fun refreshWordLists() {
-        val installed =
-            WordListKind.entries.mapNotNull { kind ->
-                val file = File(wordListRoot, kind.fileName).takeIf { it.isFile } ?: return@mapNotNull null
-                val entryCount =
-                    try {
-                        WordListFileFormat.entryCount(file)
-                    } catch (failure: CharacterCodingException) {
-                        AppLog.w(
-                            LogComponent.RESOURCES,
-                            "word_list.refresh",
-                            failure,
-                            "kind" to kind.name,
-                            "outcome" to "skip",
-                        )
-                        return@mapNotNull null
-                    } catch (failure: IOException) {
-                        AppLog.w(
-                            LogComponent.RESOURCES,
-                            "word_list.refresh",
-                            failure,
-                            "kind" to kind.name,
-                            "outcome" to "skip",
-                        )
-                        return@mapNotNull null
-                    }
-                InstalledWordList(kind, entryCount, file.length())
-            }
+        val installed = readWordLists(mutableState.value.language)
         mutableState.update { it.copy(wordLists = installed) }
     }
+
+    /** Re-derive the inventory from disk: nothing about a word list is persisted anywhere else. */
+    private fun readWordLists(language: String): List<InstalledWordList> =
+        WordListKind.entries.mapNotNull { kind ->
+            val file =
+                File(wordListDirectory(language), kind.fileName).takeIf { it.isFile }
+                    ?: return@mapNotNull null
+            val entryCount =
+                try {
+                    WordListFileFormat.entryCount(file)
+                } catch (failure: CharacterCodingException) {
+                    AppLog.w(
+                        LogComponent.RESOURCES,
+                        "word_list.refresh",
+                        failure,
+                        "kind" to kind.name,
+                        "outcome" to "skip",
+                    )
+                    return@mapNotNull null
+                } catch (failure: IOException) {
+                    AppLog.w(
+                        LogComponent.RESOURCES,
+                        "word_list.refresh",
+                        failure,
+                        "kind" to kind.name,
+                        "outcome" to "skip",
+                    )
+                    return@mapNotNull null
+                }
+            InstalledWordList(kind, entryCount, file.length())
+        }
 
     override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) {
         val format =
@@ -2383,7 +2407,7 @@ internal class AndroidResourceManager(
     }
 
     private fun finishStartupRecovery() {
-        wordListStore.recover()
+        recoverWordLists()
         refreshWordLists()
         discardInstalledCatalogDownloads()
     }
@@ -2681,7 +2705,7 @@ internal class AndroidResourceManager(
     }
 
     private fun refreshFromPython() {
-        // Read once: the catalog and the known-word counts both describe it.
+        // Read once: the catalog, the known-word counts and the word lists all describe it.
         val language = activeLanguage()
         val catalogs = catalogs()
         val catalog = japaneseCatalog()
@@ -2693,6 +2717,8 @@ internal class AndroidResourceManager(
             ResourceBridgeCodec.decodeLocalResourceList(
                 bridge.dispatch(ResourceBridgeCodec.encodeLocalResourceListRequest(language = language), null),
             )
+        // A switch changes which word-list files are the active ones.
+        val wordLists = if (language != mutableState.value.language) readWordLists(language) else null
         val fatalInventoryFailure =
             when {
                 dictionaries.any { !it.isUsable } ->
@@ -2751,6 +2777,7 @@ internal class AndroidResourceManager(
                 wordsets = localResources.wordsets,
                 installedLanguageData = localResources.languageData,
                 installedUniDic = installed,
+                wordLists = wordLists ?: it.wordLists,
             )
         }
         // Publish the invalid inventory so Setup can explain exactly what must be replaced, then

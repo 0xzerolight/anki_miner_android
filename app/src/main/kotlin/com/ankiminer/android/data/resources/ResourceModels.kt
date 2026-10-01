@@ -350,7 +350,8 @@ private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
  * A plain-text word list the engine reads by path at the start of every run.
  *
  * Unlike dictionaries and known words, Python never ingests these into a store of its own, so the
- * imported file is kept rather than deleted once the operation ends.
+ * imported file is kept rather than deleted once the operation ends. Each mining language has its
+ * own pair, as desktop scopes `blacklist_path` and `whitelist_path` per language.
  */
 enum class WordListKind(val fileName: String) {
     BLACKLIST("blacklist.txt"),
@@ -675,7 +676,7 @@ data class ResourceFailure(
 
 data class ResourceManagerState(
     val startupReadiness: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
-    /** The mining language [catalog] and [knownWords] were last read for. */
+    /** The mining language [catalog], [knownWords] and [wordLists] were last read for. */
     val language: String = JAPANESE,
     /** The active mining language's catalog. */
     val catalog: ResourceCatalog? = null,
@@ -690,6 +691,7 @@ data class ResourceManagerState(
     val wordsets: List<BundledWordset> = emptyList(),
     /** Resource ids of the pinned language-data components complete on disk. */
     val installedLanguageData: Set<String> = emptySet(),
+    /** [language]'s own word lists. */
     val wordLists: List<InstalledWordList> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
     val knownWordsImportPreview: KnownWordsImportPreview? = null,

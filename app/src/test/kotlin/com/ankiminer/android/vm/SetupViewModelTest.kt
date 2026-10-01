@@ -1987,7 +1987,7 @@ class SetupViewModelTest {
             wordListRemovals += kind
         }
 
-        override fun wordListPath(kind: WordListKind): String? = null
+        override fun wordListPath(kind: WordListKind, language: String): String? = null
 
         override suspend fun confirmKnownWordsImport() {
             confirmCount += 1

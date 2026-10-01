@@ -35,8 +35,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -780,7 +782,7 @@ class ResourceManagerTest {
                 )
             harness.stager.sourceText = "old\n"
             harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
-            val path = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST))
+            val path = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE))
             assertEquals("old\n", File(path).readText())
 
             harness.stager.sourceText = "new\n"
@@ -803,7 +805,7 @@ class ResourceManagerTest {
 
             assertEquals(
                 "new\n",
-                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST))).readText(),
+                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE))).readText(),
             )
             assertFalse(File(wordListRoot, "blacklist.txt.backup").exists())
             assertFalse(File(wordListRoot, "blacklist.txt.candidate").exists())
@@ -1672,7 +1674,7 @@ class ResourceManagerTest {
             WordListKind.entries.forEach { kind ->
                 val installed = harness.manager.state.value.wordLists.single { it.kind == kind }
                 assertEquals(1, installed.entryCount)
-                val path = requireNotNull(harness.manager.wordListPath(kind))
+                val path = requireNotNull(harness.manager.wordListPath(kind, JAPANESE))
                 assertEquals("\u732b\n", File(path).readText(Charsets.UTF_8))
             }
         }
@@ -2464,6 +2466,79 @@ class ResourceManagerTest {
             )
             assertNull(state.activeOperation)
             assertNull(state.failure)
+        }
+
+    @Test
+    fun replacingHebrewsWordListLeavesJapanesesByteIdentical() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { language })
+            harness.stager.sourceText = "食べる\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            // An upgrading Japanese user keeps the file every earlier build wrote.
+            val japanesePath = File(harness.root, "resource-word-lists/blacklist.txt")
+            assertEquals(
+                japanesePath.canonicalPath,
+                harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE),
+            )
+            val japaneseBytes = japanesePath.readBytes()
+
+            language = "he"
+            harness.manager.refreshLanguage()
+            harness.stager.sourceText = "שלום\nספר\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            harness.stager.sourceText = "מים\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            assertArrayEquals(japaneseBytes, japanesePath.readBytes())
+            val hebrewPath = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "he"))
+            assertEquals("מים\n", File(hebrewPath).readText())
+            assertEquals(1, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
+
+            harness.manager.removeWordList(WordListKind.BLACKLIST)
+
+            assertNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "he"))
+            assertArrayEquals(japaneseBytes, japanesePath.readBytes())
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun switchingLanguageSelectsThatLanguagesWordLists() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { language })
+            harness.stager.sourceText = "食べる\n飲む\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.WHITELIST)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            assertTrue(harness.manager.state.value.wordLists.isEmpty())
+            assertNull(harness.manager.wordListPath(WordListKind.WHITELIST, "he"))
+
+            language = JAPANESE
+            harness.manager.refreshLanguage()
+
+            assertEquals(2, harness.manager.state.value.wordList(WordListKind.WHITELIST)?.entryCount)
+            assertNotNull(harness.manager.wordListPath(WordListKind.WHITELIST, JAPANESE))
+        }
+
+    @Test
+    fun startupCompletesAnInterruptedWordListPublishForEveryLanguage() =
+        runTest {
+            val harness = Harness(autoRecover = false, activeLanguage = { "he" })
+            val hebrewRoot = File(harness.root, "resource-word-lists/he").apply { mkdirs() }
+            File(hebrewRoot, "blacklist.txt.backup").writeText("old\n")
+            File(hebrewRoot, "blacklist.txt.candidate").writeText("new\n")
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                "new\n",
+                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "he"))).readText(),
+            )
+            assertFalse(File(hebrewRoot, "blacklist.txt.backup").exists())
+            assertEquals(1, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
         }
 
     @Test

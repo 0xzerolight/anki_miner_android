@@ -2,6 +2,7 @@ package com.ankiminer.android
 
 import com.ankiminer.android.data.resources.LanguageInventoryFixtures
 import com.ankiminer.android.data.resources.ResourceManagerState
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.LanguageProfileFixtures
 import com.ankiminer.android.data.settings.ResourceChainSelection
@@ -12,6 +13,7 @@ import com.ankiminer.android.vm.SessionResourceManager
 import com.ankiminer.android.vm.SessionSettingsRepository
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -67,11 +69,36 @@ class ProductionSnapshotLanguageTest {
             assertEquals(listOf("wty-he-en"), ids(sent, "dictionary_chain", "dict_id"))
         }
 
+    @Test
+    fun `each language's run reads its own word lists`() =
+        runTest {
+            val paths =
+                mapOf(
+                    (WordListKind.BLACKLIST to "ja") to "/lists/blacklist.txt",
+                    (WordListKind.WHITELIST to "ja") to "/lists/whitelist.txt",
+                    (WordListKind.BLACKLIST to "he") to "/lists/he/blacklist.txt",
+                )
+            val japanese = japaneseUser.copy(useBlacklist = true, useWhitelist = true)
+            val hebrew =
+                japanese.switchLanguage(LanguageProfileFixtures.hebrew).copy(useBlacklist = true, useWhitelist = true)
+
+            val japaneseRun = snapshot(japanese, LanguageInventoryFixtures.mixed, paths)
+            val hebrewRun = snapshot(hebrew, LanguageInventoryFixtures.mixed, paths)
+
+            assertEquals(BridgeJsonValue.Text("/lists/blacklist.txt"), japaneseRun.settings["blacklist_path"])
+            assertEquals(BridgeJsonValue.Text("/lists/whitelist.txt"), japaneseRun.settings["whitelist_path"])
+            assertEquals(BridgeJsonValue.Text("/lists/he/blacklist.txt"), hebrewRun.settings["blacklist_path"])
+            // Hebrew has no whitelist of its own; Japanese's is never borrowed.
+            assertNull(hebrewRun.settings["whitelist_path"])
+            assertEquals(BridgeJsonValue.Bool(false), hebrewRun.settings["use_whitelist"])
+        }
+
     private suspend fun snapshot(
         settings: AppSettings,
         inventory: ResourceManagerState,
+        wordListPaths: Map<Pair<WordListKind, String>, String> = emptyMap(),
     ): MiningConfigSnapshot =
-        SessionResourceManager(inventory)
+        SessionResourceManager(inventory) { kind, language -> wordListPaths[kind to language] }
             .snapshotProductionSettings(SessionSettingsRepository(settings)) { false }
 
     private fun chainIds(snapshot: MiningConfigSnapshot): Set<String> =
