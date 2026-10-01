@@ -502,3 +502,36 @@ def test_the_curation_pane_uses_the_run_languages_lookup_ladder(tmp_path: Path) 
         assert service._lookup is get_profile("he").lookup
     finally:
         service.close()
+
+
+# ---------------------------------------------------------------- Jisho guard
+
+
+def test_a_jisho_entry_under_another_language_is_refused(tmp_path: Path) -> None:
+    """Jisho is Japanese; a Hebrew chain naming it would send Hebrew terms to jisho.org."""
+    _runtime_lane()
+    with pytest.raises(BridgeProtocolError) as refused:
+        _hebrew_config(
+            tmp_path,
+            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": True}],
+        )
+    assert refused.value.code == "invalid_config_field"
+    assert "dictionary_chain.kind" in str(refused.value)
+
+
+def test_a_disabled_jisho_entry_under_another_language_is_refused_too(tmp_path: Path) -> None:
+    _runtime_lane()
+    with pytest.raises(BridgeProtocolError):
+        _hebrew_config(
+            tmp_path,
+            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": False}],
+        )
+
+
+def test_a_hebrew_chain_without_jisho_still_maps(tmp_path: Path) -> None:
+    _runtime_lane()
+    config = _hebrew_config(
+        tmp_path,
+        dictionary_chain=[{"kind": "indexed", "dict_id": "wty-he-en", "enabled": True}],
+    )
+    assert [entry.kind for entry in config.dictionary_chain] == ["indexed"]
