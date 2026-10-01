@@ -28,6 +28,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.SetupUiState
 
 internal data class WordListRemovalConfirmation(
@@ -113,6 +114,7 @@ internal fun WordListImportCard(
                         pendingRemoval = removalConfirmation.cancel().pending
                     },
                     enabled = !state.busy,
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.cancel))
                 }

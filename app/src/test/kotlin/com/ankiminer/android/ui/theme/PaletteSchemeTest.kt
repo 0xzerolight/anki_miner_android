@@ -1,5 +1,7 @@
 package com.ankiminer.android.ui.theme
 
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -196,4 +198,65 @@ class PaletteSchemeTest {
         (first.red - second.red) * (first.red - second.red) +
             (first.green - second.green) * (first.green - second.green) +
             (first.blue - second.blue) * (first.blue - second.blue)
+
+    @Test
+    fun accentTextIsReadableOnEveryPageSurfaceAcrossAllPalettes() {
+        ThemePalettes.all.forEach { palette ->
+            val scheme = palette.toColorScheme()
+            val accent = scheme.accentText()
+            listOf(
+                "background" to scheme.background,
+                "surfaceContainerLowest" to scheme.surfaceContainerLowest,
+                "surfaceContainerLow" to scheme.surfaceContainerLow,
+                "surfaceContainer" to scheme.surfaceContainer,
+                "surfaceContainerHigh" to scheme.surfaceContainerHigh,
+                "surfaceContainerHighest" to scheme.surfaceContainerHighest,
+            ).forEach { (name, surface) ->
+                val ratio = contrastRatio(accent, surface)
+                assertTrue("${palette.key} accent text on $name was $ratio", ratio >= ReadableContrast)
+            }
+        }
+    }
+
+    @Test
+    fun accentTextKeepsAPrimaryThatAlreadyReads() {
+        val scheme = ThemePalettes.Light.toColorScheme().copy(primary = Color(0xFF1B5E20))
+
+        assertEquals(scheme.primary, scheme.accentText())
+    }
+
+    /**
+     * Stands in for Material You and dynamic schemes, which the 29-palette table never produces:
+     * the Material baselines plus a pale and a deep primary that the derivation must still rescue.
+     */
+    @Test
+    fun accentTextAndDisabledOutlineHoldOnMaterialBaselineSchemes() {
+        listOf(
+            "light" to lightColorScheme(),
+            "dark" to darkColorScheme(),
+            "light pale primary" to lightColorScheme(primary = Color(0xFFFFD54F)),
+            "dark deep primary" to darkColorScheme(primary = Color(0xFF311B92)),
+        ).forEach { (name, scheme) ->
+            listOf(
+                scheme.background,
+                scheme.surfaceContainerLowest,
+                scheme.surfaceContainerLow,
+                scheme.surfaceContainer,
+                scheme.surfaceContainerHigh,
+                scheme.surfaceContainerHighest,
+            ).forEach { surface ->
+                val ratio = contrastRatio(scheme.accentText(), surface)
+                assertTrue("$name accent text was $ratio", ratio >= ReadableContrast)
+            }
+            val disabled = disabledActionColorsFor(scheme)
+            assertTrue(
+                "$name disabled outline is not quieter than the enabled one",
+                contrastRatio(disabled.border, scheme.background) < contrastRatio(scheme.outline, scheme.background),
+            )
+            assertTrue(
+                "$name disabled label was ${contrastRatio(disabled.content, disabled.container)}",
+                contrastRatio(disabled.content, disabled.container) >= ReadableContrast,
+            )
+        }
+    }
 }

@@ -43,9 +43,10 @@ internal fun AnkiMinerTheme(
         typography = AnkiMinerTypography,
         shapes = AnkiMinerShapes,
     ) {
+        val accentText = remember(colorScheme) { colorScheme.accentText() }
         CompositionLocalProvider(
-            LocalDisabledActionColors provides
-                disabledActionColorsFor(colorScheme),
+            LocalDisabledActionColors provides disabledActionColorsFor(colorScheme),
+            LocalAccentTextColor provides accentText,
             content = content,
         )
     }

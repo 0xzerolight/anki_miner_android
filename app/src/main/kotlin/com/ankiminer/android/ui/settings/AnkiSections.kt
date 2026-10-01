@@ -40,6 +40,7 @@ import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.DeckChoiceKind
 import com.ankiminer.android.vm.DeckPersistenceStatus
 import com.ankiminer.android.vm.SetupUiState
@@ -159,6 +160,7 @@ internal fun AnkiTargetCard(
                                 stateDescription =
                                     if (showMapping) expandedLabel else collapsedLabel
                             },
+                        colors = accentTextButtonColors(),
                     ) {
                         Text(
                             stringResource(
@@ -354,7 +356,7 @@ internal fun WizardAnkiTargetCard(
                     noteTypeStatusText(state.noteTypeStatus),
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
-                TextButton(onClick = onCustomizeFields) {
+                TextButton(onClick = onCustomizeFields, colors = accentTextButtonColors()) {
                     Text(stringResource(R.string.b3_wizard_customize_fields))
                 }
             }

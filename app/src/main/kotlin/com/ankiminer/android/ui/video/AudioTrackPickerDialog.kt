@@ -22,6 +22,7 @@ import androidx.compose.ui.semantics.Role
 import com.ankiminer.android.R
 import com.ankiminer.android.engine.AudioTrackInfo
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 
 @Composable
@@ -78,6 +79,7 @@ internal fun AudioTrackPickerDialog(
                 TextButton(
                     onClick = onApply,
                     modifier = Modifier.testTag(VideoMiningTestTags.AUDIO_TRACK_PICKER_APPLY),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.audio_tracks_apply))
                 }
@@ -88,6 +90,7 @@ internal fun AudioTrackPickerDialog(
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.testTag(VideoMiningTestTags.AUDIO_TRACK_PICKER_CANCEL),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -95,6 +98,7 @@ internal fun AudioTrackPickerDialog(
                 TextButton(
                     onClick = onDismiss,
                     modifier = Modifier.testTag(VideoMiningTestTags.AUDIO_TRACK_PICKER_CLOSE),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.audio_tracks_close))
                 }

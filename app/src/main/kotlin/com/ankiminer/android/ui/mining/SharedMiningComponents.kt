@@ -78,6 +78,7 @@ import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.MetricTile
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.disabledActionContentColor
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
@@ -479,12 +480,16 @@ internal fun StickyCurationActions(
                         showCancelConfirmation = false
                         onCancel()
                     },
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.cancel_mining_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelConfirmation = false }) {
+                TextButton(
+                    onClick = { showCancelConfirmation = false },
+                    colors = accentTextButtonColors(),
+                ) {
                     Text(stringResource(R.string.cancel_mining_keep))
                 }
             },
@@ -811,6 +816,7 @@ private fun MiningResultSummary(
                 TextButton(
                     onClick = onToggleDetails,
                     modifier = Modifier.align(Alignment.End),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(
                         stringResource(
@@ -838,12 +844,13 @@ internal fun MiningUndoConfirmationDialog(
             TextButton(
                 onClick = onConfirm,
                 modifier = confirmTestTag?.let { Modifier.testTag(it) } ?: Modifier,
+                colors = accentTextButtonColors(),
             ) {
                 Text(stringResource(R.string.undo_confirm_delete))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.cancel))
             }
         },

@@ -23,6 +23,7 @@ import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -83,6 +84,7 @@ import com.ankiminer.android.ui.theme.ScreenTitle
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.UtilityActionButton
+import com.ankiminer.android.ui.theme.accentTextColor
 import com.ankiminer.android.ui.video.TimingPreviewOverlay
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
@@ -403,6 +405,7 @@ internal fun AnkiMinerAppShell(
                                         }
                                     },
                                 alwaysShowLabel = !compact,
+                                colors = NavigationBarItemDefaults.colors(selectedTextColor = accentTextColor()),
                             )
                         }
                     }

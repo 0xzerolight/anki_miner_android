@@ -16,6 +16,33 @@ class ButtonWrapperUsageTest {
         assertEquals(emptyList<String>(), offenders)
     }
 
+    @Test
+    fun everyPlainTextButtonNamesItsColours() {
+        val offenders =
+            uiSources().flatMap { (relative, text) ->
+                RAW_TEXT_BUTTON.findAll(text)
+                    .filter { match -> "colors" !in callArguments(text, match.range.last) }
+                    .map { match -> "$relative:${lineOf(text, match.range.first)}" }
+                    .toList()
+            }
+        assertEquals(emptyList<String>(), offenders)
+    }
+
+    /** The argument list of the call whose `(` sits at [openParen], through its matching `)`. */
+    private fun callArguments(
+        text: String,
+        openParen: Int,
+    ): String {
+        var depth = 0
+        for (index in openParen until text.length) {
+            when (text[index]) {
+                '(' -> depth++
+                ')' -> if (--depth == 0) return text.substring(openParen, index + 1)
+            }
+        }
+        return text.substring(openParen)
+    }
+
     private fun uiSources(): List<Pair<String, String>> {
         val root = locateFromWorkspace("app/src/main/kotlin/com/ankiminer/android/ui")
         return root.walkTopDown()
@@ -36,5 +63,8 @@ class ButtonWrapperUsageTest {
 
         /** The wrapper itself, and the two mining buttons that need colours the wrappers lack. */
         val RAW_OUTLINED_BUTTON_OWNERS = setOf("theme/DesignSystem.kt", "mining/SharedMiningComponents.kt")
+
+        /** The stock TextButton paints `primary`, which is below 4.5:1 as text on several palettes. */
+        val RAW_TEXT_BUTTON = Regex("""(?<![\w.])TextButton\(""")
     }
 }

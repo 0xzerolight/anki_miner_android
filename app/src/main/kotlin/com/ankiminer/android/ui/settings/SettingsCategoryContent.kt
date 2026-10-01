@@ -61,6 +61,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.ThemePalettes
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.FrequencyBandEnd
@@ -1628,7 +1629,7 @@ private fun LazyListScope.diagnosticsSettings(
         }
     }
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "attributions") {
-        TextButton(onClick = callbacks.onAttributions) {
+        TextButton(onClick = callbacks.onAttributions, colors = accentTextButtonColors()) {
             Text(stringResource(R.string.settings_attributions))
         }
     }
@@ -1683,10 +1684,13 @@ internal fun UpdateAvailableActions(
         horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
-        TextButton(onClick = { uriHandler.openUri(available.releasePageUrl) }) {
+        TextButton(
+            onClick = { uriHandler.openUri(available.releasePageUrl) },
+            colors = accentTextButtonColors(),
+        ) {
             Text(stringResource(R.string.settings_update_view_release))
         }
-        TextButton(onClick = onSkip) {
+        TextButton(onClick = onSkip, colors = accentTextButtonColors()) {
             Text(stringResource(R.string.settings_update_skip))
         }
     }

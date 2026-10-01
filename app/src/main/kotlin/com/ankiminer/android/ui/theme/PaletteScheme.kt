@@ -326,3 +326,24 @@ private fun selectionSeparation(
         lerp(surfaceContainerLow, primaryContainer, SelectedRowFraction),
         surfaceContainerLow,
     )
+
+/**
+ * The accent for text drawn on the page: outlined and text button labels, tab labels, links and the
+ * selected navigation label. [ColorScheme.primary] stays the fill colour (DesignSystemTest pins it);
+ * as text it sat below 4.5:1 on several palettes (default Dark 4.00, Light 4.27, Ayu Light 2.16), so
+ * it is nudged toward black or white just far enough to read on every page surface.
+ */
+internal fun ColorScheme.accentText(): Color =
+    pushedToContrast(
+        candidate = primary,
+        backgrounds =
+            listOf(
+                background,
+                surfaceContainerLowest,
+                surfaceContainerLow,
+                surfaceContainer,
+                surfaceContainerHigh,
+                surfaceContainerHighest,
+            ),
+        minimum = ReadableContrast,
+    )

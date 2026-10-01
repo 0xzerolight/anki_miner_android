@@ -116,6 +116,14 @@ internal data class DisabledActionColors(
 internal val LocalDisabledActionColors =
     staticCompositionLocalOf { disabledActionColorsFor(ThemePalettes.Dark.toColorScheme()) }
 
+/** Set by [AnkiMinerTheme] from the active scheme; see [accentText]. */
+internal val LocalAccentTextColor =
+    staticCompositionLocalOf { ThemePalettes.Dark.toColorScheme().accentText() }
+
+/** Text-safe accent for labels drawn on the page. Fills keep `colorScheme.primary`. */
+@Composable
+internal fun accentTextColor(): Color = LocalAccentTextColor.current
+
 private val BaseFontFamily = FontFamily.SansSerif
 
 /** Explicit type scale. System font scaling remains uncapped. */
@@ -416,7 +424,7 @@ internal fun tonalActionButtonColors(): ButtonColors {
 internal fun outlinedActionButtonColors(): ButtonColors {
     val disabled = disabledActionColors()
     return ButtonDefaults.outlinedButtonColors(
-        contentColor = MaterialTheme.colorScheme.primary,
+        contentColor = accentTextColor(),
         disabledContentColor = disabled.content,
     )
 }
@@ -432,6 +440,16 @@ internal fun exitActionButtonColors(isError: Boolean = false): ButtonColors {
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
+        disabledContentColor = disabled.content,
+    )
+}
+
+/** A plain [TextButton] with an accent label that reads on every palette. */
+@Composable
+internal fun accentTextButtonColors(): ButtonColors {
+    val disabled = disabledActionColors()
+    return ButtonDefaults.textButtonColors(
+        contentColor = accentTextColor(),
         disabledContentColor = disabled.content,
     )
 }

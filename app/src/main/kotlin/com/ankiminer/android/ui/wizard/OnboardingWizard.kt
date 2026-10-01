@@ -66,6 +66,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.UtilityActionButton
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
@@ -280,10 +281,14 @@ internal fun OnboardingWizardContent(
                         showSkipConfirmation = false
                         callbacks.onFinished()
                     },
+                    colors = accentTextButtonColors(),
                 ) { Text(stringResource(R.string.b3_wizard_confirm_skip)) }
             },
             dismissButton = {
-                TextButton(onClick = { showSkipConfirmation = false }) {
+                TextButton(
+                    onClick = { showSkipConfirmation = false },
+                    colors = accentTextButtonColors(),
+                ) {
                     Text(stringResource(R.string.cancel))
                 }
             },

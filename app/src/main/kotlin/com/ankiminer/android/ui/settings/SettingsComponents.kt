@@ -84,6 +84,7 @@ import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
 import com.ankiminer.android.vm.PendingResourceDelete
@@ -155,6 +156,7 @@ internal fun CollapsibleSettingGroup(
                     heading()
                     stateDescription = if (showContent) expandedLabel else collapsedLabel
                 },
+        colors = accentTextButtonColors(),
     ) {
         Text(
             stringResource(
@@ -370,7 +372,7 @@ internal fun SettingsSaveStatus(
         ) {
             Text(label, style = MaterialTheme.typography.labelLarge)
             if (state is SettingsSaveState.Failed) {
-                TextButton(onClick = onRetry) {
+                TextButton(onClick = onRetry, colors = accentTextButtonColors()) {
                     Text(stringResource(R.string.b3_retry))
                 }
             }
@@ -398,15 +400,18 @@ internal fun InlineFailureContainer(
             Text(message)
             AdaptiveActionGroup(
                 primary = { actionModifier ->
+                    // On errorContainer: the stock primary label was purple on red and unreadable.
                     TextButton(
                         onClick = onAction,
                         modifier = actionModifier,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer),
                     ) { Text(actionLabel) }
                 },
                 secondary = { actionModifier ->
                     TextButton(
                         onClick = onDismiss,
                         modifier = actionModifier,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.onErrorContainer),
                     ) {
                         Text(stringResource(R.string.b3_dismiss))
                     }
@@ -658,7 +663,7 @@ internal fun ResourceDeleteDialog(
             ) { Text(stringResource(R.string.resource_remove)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) {
+            TextButton(onClick = onDismiss, enabled = !busy, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -722,7 +727,7 @@ internal fun ResourceReplaceDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) {
+            TextButton(onClick = onDismiss, enabled = !busy, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -770,7 +775,7 @@ internal fun AudioPackChoiceDialog(
         },
         confirmButton = {},
         dismissButton = {
-            TextButton(onClick = onDismiss, enabled = !busy) {
+            TextButton(onClick = onDismiss, enabled = !busy, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.cancel))
             }
         },
