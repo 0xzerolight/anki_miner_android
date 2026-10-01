@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(21, len(records))
+        self.assertEqual(24, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -32,8 +32,11 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "certifi": "2026.6.17",
                 "charset-normalizer": "3.4.7",
                 "idna": "3.18",
+                "jieba": "0.42.1",
                 "lxml": "6.1.1",
+                "opencc": "1.4.2",
                 "pillow": "12.2.0",
+                "pypinyin": "0.55.0",
                 "pysubs2": "1.8.1",
                 "pythainlp": "5.3.7",
                 "requests": "2.34.2",
@@ -46,8 +49,11 @@ class RuntimeHostLaneTests(unittest.TestCase):
                     "certifi",
                     "charset-normalizer",
                     "idna",
+                    "jieba",
                     "lxml",
+                    "opencc",
                     "pillow",
+                    "pypinyin",
                     "pysubs2",
                     "pythainlp",
                     "requests",
@@ -71,6 +77,8 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertIn('"$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" -m venv', provision)
         self.assertIn("--only-binary=:all:", provision)
         self.assertIn("--require-hashes", provision)
+        # jieba ships no upstream wheel; its lock hash is the vendored repacked wheel's.
+        self.assertIn('--find-links "$REPO_ROOT/app/wheels/common"', provision)
         self.assertIn("runtime-host-tests/bin/python", health)
         self.assertIn("check-python-runtime.py", health)
         self.assertNotIn("runtime-host-tests/bin", environment)

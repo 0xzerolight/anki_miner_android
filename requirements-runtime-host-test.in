@@ -1,5 +1,6 @@
 # CPython 3.12 bridge test runner and the Android common pip set (pythainlp and
-# tzdata as upstream wheels; app/wheels/common ships pythainlp repacked).
+# tzdata as upstream wheels; app/wheels/common ships pythainlp repacked). jieba
+# has no upstream wheel: the lock pins the repacked app/wheels/common one.
 pytest==9.0.3
 jsonschema==4.26.0
 requests==2.34.2
@@ -12,3 +13,6 @@ idna==3.18
 certifi==2026.6.17
 pythainlp==5.3.7
 tzdata==2026.3
+jieba==0.42.1
+opencc==1.4.2
+pypinyin==0.55.0

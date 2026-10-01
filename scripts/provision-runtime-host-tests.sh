@@ -54,6 +54,9 @@ expected = {
     "idna": "3.18",
     "lxml": "6.1.1",
     "pillow": "12.2.0",
+    "jieba": "0.42.1",
+    "opencc": "1.4.2",
+    "pypinyin": "0.55.0",
     "pysubs2": "1.8.1",
     "pythainlp": "5.3.7",
     "requests": "2.34.2",
@@ -97,6 +100,7 @@ PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --disable-pip-version-check \
     --only-binary=:all: \
     --require-hashes \
+    --find-links "$REPO_ROOT/app/wheels/common" \
     -r "$LOCK_FILE"
 verify_runtime_environment "$staging/bin/python"
 printf '%s\n' "$lock_sha256" >"$staging/$LOCK_MARKER_NAME"
