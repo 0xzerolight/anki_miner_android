@@ -557,14 +557,22 @@ def test_a_hebrew_chain_keeps_the_device_voice_in_its_place(tmp_path: Path) -> N
     )
 
 
-@pytest.mark.parametrize("language", ["he", "ar", "id", "th", "fa"])
-def test_the_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Path, language: str) -> None:
+def test_every_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Path) -> None:
+    """Every vendored profile outside Japanese defaults its word audio to googletts or edgetts."""
     _runtime_lane()
     from anki_miner.config import AudioSourceEntry
+    from anki_miner.languages.registry import available_languages
 
     paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
-    config = map_config_settings({"language": language, "anki_note_type": "Basic"}, paths).engine_config
-    assert config.expression_audio_chain == (AudioSourceEntry(kind="android_tts"),)
+    chains = {
+        language: map_config_settings(
+            {"language": language, "anki_note_type": "Basic"}, paths
+        ).engine_config.expression_audio_chain
+        for language in available_languages()
+        if language != "ja"
+    }
+    assert {"he", "tr", "en", "pt", "sl", "ko", "vi", "yue", "zh"} <= set(chains)
+    assert chains == {language: (AudioSourceEntry(kind="android_tts"),) for language in chains}
 
 
 @pytest.mark.parametrize(
