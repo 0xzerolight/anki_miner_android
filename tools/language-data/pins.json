@@ -570,6 +570,12 @@
             "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
             "license": "MIT",
             "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+          },
+          {
+            "name": "OpenCorpora dictionary revision 417150",
+            "copyright": "OpenCorpora contributors",
+            "license": "CC BY-SA 3.0",
+            "url": "https://opencorpora.org/"
           }
         ]
       }

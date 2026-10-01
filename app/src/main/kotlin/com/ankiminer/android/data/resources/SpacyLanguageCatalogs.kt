@@ -1936,6 +1936,12 @@ internal val russianCatalog =
                                 "MIT",
                                 "https://github.com/no-plagiarism/pymorphy3-dicts",
                             ),
+                            ResourceAttribution(
+                                "OpenCorpora dictionary revision 417150",
+                                "OpenCorpora contributors",
+                                "CC BY-SA 3.0",
+                                "https://opencorpora.org/",
+                            ),
                         ),
                 ),
                 YomitanCatalogResource(
