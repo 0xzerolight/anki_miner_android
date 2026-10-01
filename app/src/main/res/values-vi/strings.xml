@@ -793,6 +793,7 @@
     <string name="settings_backup_import_failed">Không thể đọc cài đặt từ tệp đó.</string>
     <string name="settings_backup_not_a_backup">Tệp đó không phải là tệp cài đặt Anki Miner.</string>
     <string name="settings_backup_too_large">Tệp đó quá lớn để là tệp cài đặt.</string>
+    <string name="settings_backup_unknown_language">Phiên bản này không thể khai thác ngôn ngữ của tệp (%1$s), nên ngôn ngữ khai thác của bạn được giữ nguyên.</string>
     <string name="b3_settings_android_override_state">Ghi đè tùy chỉnh</string>
     <string name="b3_validation_numeric_incomplete">Hoàn tất hoặc xóa số này</string>
     <string name="b3_validation_finite">Nhập số hữu hạn</string>

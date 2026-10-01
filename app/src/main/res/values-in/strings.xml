@@ -793,6 +793,7 @@
     <string name="settings_backup_import_failed">Pengaturan tidak dapat dibaca dari berkas tersebut.</string>
     <string name="settings_backup_not_a_backup">Berkas itu bukan berkas pengaturan Anki Miner.</string>
     <string name="settings_backup_too_large">Berkas itu terlalu besar untuk menjadi berkas pengaturan.</string>
+    <string name="settings_backup_unknown_language">Versi ini tidak dapat melakukan mining untuk bahasa berkas tersebut (%1$s), jadi bahasa mining Anda tetap dipertahankan.</string>
     <string name="b3_settings_android_override_state">Penimpaan khusus</string>
     <string name="b3_validation_numeric_incomplete">Lengkapi atau hapus angka ini</string>
     <string name="b3_validation_finite">Masukkan angka terhingga</string>

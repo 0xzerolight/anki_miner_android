@@ -3,6 +3,7 @@ package com.ankiminer.android.diagnostics.log
 import android.content.Context
 import android.os.Build
 import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.parkedLanguages
 import com.ankiminer.android.media.SafSelectionInventory
 import com.ankiminer.android.media.SafSelectionSlot
 import java.io.File
@@ -363,13 +364,16 @@ internal object RedactionRulesFactory {
                     wholeValueOnly = label.length < MIN_LITERAL_LENGTH,
                 )
             }
-        literal("deck", settings.deckName)
-        settings.excludedDecks.forEach { literal("deck", it) }
-        literal("notetype", settings.noteType)
-        // AppSettings.cardType is a CardType enum whose wire values are code constants, not user
-        // text; cardTypeMarkerField is the note-type field name the user actually chose.
-        literal("field", settings.cardTypeMarkerField)
-        settings.fieldMap.values.forEach { literal("field", it) }
+        // The parked mining languages too: lines logged while one of them was active name its deck.
+        (listOf(settings) + settings.parkedLanguages()).forEach { owner ->
+            literal("deck", owner.deckName)
+            owner.excludedDecks.forEach { literal("deck", it) }
+            literal("notetype", owner.noteType)
+            // AppSettings.cardType is a CardType enum whose wire values are code constants, not
+            // user text; cardTypeMarkerField is the note-type field name the user actually chose.
+            literal("field", owner.cardTypeMarkerField)
+            owner.fieldMap.values.forEach { literal("field", it) }
+        }
         literal("tag", settings.tags)
         replacements.putAll(literals)
         replacements.putAll(boundedLiterals)

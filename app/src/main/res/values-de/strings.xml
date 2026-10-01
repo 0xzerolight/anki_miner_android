@@ -794,6 +794,7 @@
     <string name="settings_backup_import_failed">Einstellungen konnten nicht aus dieser Datei gelesen werden.</string>
     <string name="settings_backup_not_a_backup">Diese Datei ist keine Anki-Miner-Einstellungsdatei.</string>
     <string name="settings_backup_too_large">Diese Datei ist zu groß, um eine Einstellungsdatei zu sein.</string>
+    <string name="settings_backup_unknown_language">Diese Version unterstützt die Sprache der Datei (%1$s) nicht, daher wurde Ihre Mining-Sprache beibehalten.</string>
     <string name="b3_settings_android_override_state">Benutzerdefinierte Überschreibung</string>
     <string name="b3_validation_numeric_incomplete">Vervollständigen oder leeren Sie diese Zahl</string>
     <string name="b3_validation_finite">Geben Sie eine endliche Zahl ein</string>

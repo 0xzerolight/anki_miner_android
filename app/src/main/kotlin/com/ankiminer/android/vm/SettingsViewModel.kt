@@ -18,6 +18,8 @@ import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.InvalidAppSettingCode
 import com.ankiminer.android.data.settings.InvalidAppSettingException
+import com.ankiminer.android.data.settings.LanguageDefaults
+import com.ankiminer.android.data.settings.LanguageProfileSource
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupCodec
@@ -28,8 +30,10 @@ import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.settings.SettingsDocumentWriter
 import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.data.settings.switchLanguage
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.engine.LanguageProfileInfo
 import com.ankiminer.android.localization.LocalizedStringResource
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -102,6 +106,8 @@ internal sealed interface SettingsBackupState {
         val applied: Int,
         val ignored: Int,
         val rejected: Int,
+        /** The file's mining language when this build cannot mine it; the current one was kept. */
+        val unknownLanguage: String? = null,
     ) : SettingsBackupState
 
     data class Failed(
@@ -334,8 +340,10 @@ internal data class SettingsDraft(
             audioBitrateKbps =
                 AppSettingsDraftParser.optionalInt(bitrate)
                     ?.takeUnless { it == EngineDefaults.AUDIO_BITRATE_KBPS },
-            // Blank text inherits the engine default, which is the empty pattern and the empty
-            // replacement — so an explicit empty override would mean exactly the same thing.
+            // Blank text inherits the active language's default. For Japanese that is the empty
+            // pattern and replacement, so an explicit empty override would mean the same thing;
+            // another language can inherit a real pattern (he strips bracketed captions), so a
+            // blank field keeps filtering with it until the filter toggle is turned off.
             subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
             subtitleRegexReplacement = subtitleRegexReplacement.takeIf(String::isNotEmpty),
             useSubtitleRegexFilter = useSubtitleRegex,
@@ -1016,6 +1024,7 @@ internal class SettingsViewModel(
     private val backupWriter: SettingsBackupWriter? =
         documentWriter?.let(::SettingsDocumentWriter),
     private val appVersion: String = "",
+    private val languageProfileSource: LanguageProfileSource? = null,
 ) : ViewModel() {
     private val settings: StateFlow<AppSettings?> =
         repository.settings
@@ -1043,8 +1052,22 @@ internal class SettingsViewModel(
             initiallyLoaded = false,
         )
     val draftState: StateFlow<SettingsDraftState> = draftStore.state
+    private val mutableLanguageProfiles = MutableStateFlow<List<LanguageProfileInfo>>(emptyList())
+
+    /** The vendored mining languages in registry order; empty until the bridge answers. */
+    val languageProfiles: StateFlow<List<LanguageProfileInfo>> = mutableLanguageProfiles.asStateFlow()
+
+    /**
+     * What the active language's unset scoped settings resolve to, and the Anki field keys it maps.
+     * Null until settings load, or while a non-Japanese language's profile has not.
+     */
+    val languageDefaults: StateFlow<LanguageDefaults?> =
+        combine(settings, mutableLanguageProfiles) { persisted, profiles ->
+            persisted?.let { LanguageDefaults.forLanguage(it.language, profiles) }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     init {
+        refreshLanguageProfiles()
         viewModelScope.launch {
             combine(settings, resources.state) { persisted, inventory -> persisted to inventory }
                 .collect { (persisted, inventory) ->
@@ -1328,13 +1351,20 @@ internal class SettingsViewModel(
                     return@launch
                 }
 
+            val minableLanguages = minableLanguages()
             val saveCompletion = CompletableDeferred<Boolean>()
             var report: AppliedSettingsBackup? = null
             val accepted =
                 save(
                     transform = { current ->
                         with(SettingsBackupCodec) {
-                            parsed.applyTo(current, resources.state.value)
+                            parsed.applyTo(
+                                current,
+                                resources.state.value,
+                                // Without the profiles nothing proves another code is minable, so
+                                // only the current language may stay.
+                                knownLanguages = minableLanguages ?: setOf(current.language),
+                            )
                         }
                             .also { report = it }
                             .settings
@@ -1362,12 +1392,53 @@ internal class SettingsViewModel(
                         applied = applied.appliedCount,
                         ignored = applied.ignoredKeys.size,
                         rejected = applied.rejectedKeys.size,
+                        unknownLanguage = applied.unknownLanguage,
                     )
             }
         }
     }
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
+
+    /**
+     * The codes this build can mine: the loaded profiles, or the bridge's answer awaited now when
+     * none have loaded (an import right after a cold start). Null when the bridge cannot answer.
+     */
+    private suspend fun minableLanguages(): Set<String>? {
+        mutableLanguageProfiles.value.takeIf { it.isNotEmpty() }?.let { loaded ->
+            return loaded.mapTo(mutableSetOf(), LanguageProfileInfo::code)
+        }
+        val source = languageProfileSource ?: return null
+        return source.profiles()
+            .onSuccess { mutableLanguageProfiles.value = it }
+            .onFailure { failure ->
+                AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+            }
+            .getOrNull()
+            ?.mapTo(mutableSetOf(), LanguageProfileInfo::code)
+    }
+
+    /** Ask the bridge again, e.g. after a language pack was installed. */
+    fun refreshLanguageProfiles() {
+        val source = languageProfileSource ?: return
+        viewModelScope.launch {
+            source.profiles()
+                .onSuccess { mutableLanguageProfiles.value = it }
+                .onFailure { failure ->
+                    AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+                }
+        }
+    }
+
+    /**
+     * Make [code] the mining language: pending edits are saved to the outgoing language first, then
+     * its scoped settings are parked and the incoming language's come back (or start from its
+     * profile). `false` when settings have not loaded or [code] is not a loaded profile.
+     */
+    fun switchLanguage(code: String): Boolean {
+        val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return false
+        return save { current -> current.switchLanguage(profile) }
+    }
 
     fun retrySave() {
         if (saving.value) return
@@ -1384,6 +1455,7 @@ internal class SettingsViewModel(
         private val documentReader: SettingsDocumentReader? = null,
         private val documentWriter: ResourceDocumentWriter? = null,
         private val appVersion: String = "",
+        private val languageProfileSource: LanguageProfileSource? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -1394,6 +1466,7 @@ internal class SettingsViewModel(
                 documentReader = documentReader,
                 documentWriter = documentWriter,
                 appVersion = appVersion,
+                languageProfileSource = languageProfileSource,
             ) as T
         }
     }

@@ -129,6 +129,7 @@ class MainActivity : ComponentActivity() {
             app.settingsDocumentReader,
             app.resourceDocumentWriter,
             BuildConfig.VERSION_NAME,
+            app.languageProfileSource,
         )
     }
     private val readingViewModelFactory by lazy {

@@ -795,6 +795,7 @@
     <string name="settings_backup_import_failed">Les paramètres n\'ont pas pu être lus depuis ce fichier.</string>
     <string name="settings_backup_not_a_backup">Ce fichier n\'est pas un fichier de paramètres Anki Miner.</string>
     <string name="settings_backup_too_large">Ce fichier est trop volumineux pour être un fichier de paramètres.</string>
+    <string name="settings_backup_unknown_language">Cette version ne peut pas extraire la langue du fichier (%1$s) ; votre langue d\'extraction a donc été conservée.</string>
     <string name="b3_settings_android_override_state">Remplacement personnalisé</string>
     <string name="b3_validation_numeric_incomplete">Renseignez ou effacez ce nombre</string>
     <string name="b3_validation_finite">Saisissez un nombre fini</string>
