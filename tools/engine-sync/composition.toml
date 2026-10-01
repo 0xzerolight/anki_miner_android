@@ -75,9 +75,10 @@ protected_verbatim = [
   "anki_miner.orchestration.episode_processor",
 ]
 
-# Android packages only these third-party import roots. PyQt6 is intentionally
-# absent: its tiny QCoreApplication compatibility module is an overlay and is
-# therefore resolved as local source.
+# Android packages only these third-party import roots. PyQt6 and psutil are
+# intentionally absent: each is a small overlay shim (QCoreApplication, and
+# Process.create_time) listed in local_only_imports, so it resolves as local
+# source.
 allowed_external = [
   "PIL",
   "charset_normalizer",

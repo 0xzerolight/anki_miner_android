@@ -8,8 +8,12 @@ as the app (``run-as``, SELinux domain ``untrusted_app``):
 - ``/proc/stat`` (label ``proc_stat``) and ``/proc/uptime`` are EACCES, so
   psutil's boot time, and with it ``create_time()``, raises AccessDenied;
 - ``/proc/self/stat`` is readable;
-- ``/proc`` is mounted ``hidepid=2``: other apps' PIDs are invisible, which
-  is harmless here because every lock holder runs as this app's UID.
+- ``/proc`` is mounted ``hidepid=2``: a PID this process may not ptrace is
+  invisible and reads as ``NoSuchProcess``, as it does under real psutil.
+  That covers other apps and can cover a second, non-dumpable process of
+  this app, so sharing a UID is not what makes it safe. It is safe because
+  the engine runs in this one process: any other PID in a lockfile is a
+  dead holder.
 
 The boot time therefore comes from clocks instead of files. ``starttime`` in
 ``/proc/<pid>/stat`` counts clock ticks on CLOCK_BOOTTIME (the same clock
