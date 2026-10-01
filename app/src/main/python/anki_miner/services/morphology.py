@@ -10,17 +10,48 @@ Import direction is one-way: ``subtitle_parser`` imports from this module;
 this module must never import ``subtitle_parser``.
 """
 
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Iterator
 
+from anki_miner.languages.token import LanguageToken
 from anki_miner.utils.ja_normalize import is_cjk_ideograph
 from anki_miner.utils.text_utils import hiragana_to_katakana, katakana_to_hiragana
 
 # Batch attested-readings probe (DefinitionService.offline_term_readings):
 # term -> readings, best-first, hiragana-folded. See attest_merged_readings.
 ReadingLookup = Callable[[list[str]], dict[str, list[str]]]
+
+
+# Token attribute guards. A fugashi token whose ``.feature`` lacks a field is a
+# normal OOV shape, so a per-site log line would write one record per token and
+# bury the run. A token of the WRONG KIND, though -- a jieba tag object, a test
+# double built from SimpleNamespace, a language pack whose engine loaded a
+# different token class -- makes EVERY guard below fire and silently empties the
+# parse, which is exactly the "No words found" report that has no other trace.
+# Counting by guard name and emitting the counts once with the parse receipt
+# (``SubtitleParser._log_parse_probe_timing``) separates the two. Increments are
+# plain ``Counter`` bumps: a racing parse can lose one, and a lost count in a
+# diagnostic costs nothing worth a lock on this hot a path.
+_ATTRIBUTE_GUARDS: Counter[str] = Counter()
+
+
+def _guard(name: str) -> None:
+    """Account one ``except AttributeError`` guard firing, by guard name."""
+    _ATTRIBUTE_GUARDS[name] += 1
+
+
+def drain_attribute_guard_counts() -> list[str]:
+    """Return ``name:count`` for every guard that fired, busiest first, and reset.
+
+    Draining rather than reading keeps the counts scoped to one parse, so a
+    receipt reports the file it belongs to instead of the process lifetime.
+    """
+    counts = _ATTRIBUTE_GUARDS.most_common()
+    _ATTRIBUTE_GUARDS.clear()
+    return [f"{name}:{count}" for name, count in counts]
 
 
 @dataclass(frozen=True)
@@ -65,6 +96,16 @@ def resolve_attested_reading(
 # 不可能) — the final chain is still validated and minted by the noun-suffix
 # pass, so nothing unattested survives to the output.
 AttestLookup = Callable[[list[str]], set[str]]
+
+# Folded term -> (content, tags) rows from the enabled offline chain (spec R36).
+# Only the type lives here: the he stage adds the parser's ``form_lookup`` seam
+# that builds one; every other stage passes None in its place.
+FormLookup = Callable[[list[str]], dict[str, list[tuple[str, str]]]]
+
+# A language's parser-side token pass (spec §4.3 item 2(b)): the raw tagger
+# tokens, the parser's memoised attestation probe (None without a dictionary)
+# and a form lookup (None until R36 lands), returning the tokens the line mines.
+TokenPostPass = Callable[[list[Any], AttestLookup | None, FormLookup | None], list[Any]]
 
 _NOMINAL_SUFFIX_POS2 = {"名詞的", "形状詞的", "副詞的"}
 
@@ -176,6 +217,7 @@ def apply_special_readings(tokens: list) -> list:
         try:
             special = resolve_special_reading(tok.surface, next_surface)
         except AttributeError:
+            _guard("apply_special_readings#1")
             special = None
         if special is None:
             out.append(tok)
@@ -185,6 +227,7 @@ def apply_special_readings(tokens: list) -> list:
             pos2 = tok.feature.pos2
             lemma = extract_lemma(tok)
         except AttributeError:
+            _guard("apply_special_readings#2")
             out.append(tok)
             continue
         out.append(
@@ -231,6 +274,7 @@ def extract_lemma(word_token) -> str:
     try:
         lemma = word_token.feature.lemma or word_token.surface
     except AttributeError:
+        _guard("extract_lemma")
         lemma = word_token.surface
 
     # Strip unidic's disambiguator tail: an English gloss
@@ -243,8 +287,10 @@ def extract_lemma(word_token) -> str:
     # Decorated lemmas miss every lemma-fallback lookup (frequency/pitch/offline
     # definition existence) AND block mining_base folds keyed on a clean headword
     # (引ける→引く). Japanese name segments (メル-ビル) end with neither an ASCII
-    # letter nor pos1 and are kept intact.
-    if "-" in lemma:
+    # letter nor pos1 and are kept intact. A duck token from a non-ja tokenizer
+    # carries its FINAL lemma: "well-known", "kupu-kupu", "e-mail" are words, not
+    # UniDic disambiguators, so the strip is UniDic-only (spec S6).
+    if "-" in lemma and not isinstance(word_token, LanguageToken):
         head, _, tail = lemma.partition("-")
         pos1 = getattr(getattr(word_token, "feature", None), "pos1", None)
         is_pos_tail = bool(pos1) and (tail == pos1 or tail.endswith(pos1))
@@ -273,6 +319,7 @@ def extract_orth_base(word_token) -> str:
     try:
         orth_base = word_token.feature.orthBase
     except AttributeError:
+        _guard("extract_orth_base")
         orth_base = None
     if not orth_base:
         return extract_lemma(word_token)
@@ -374,6 +421,7 @@ def extract_reading(word_token) -> str:
     try:
         return str(word_token.feature.kana or word_token.surface)
     except AttributeError:
+        _guard("extract_reading")
         return str(word_token.surface)
 
 
@@ -394,7 +442,7 @@ def iter_token_spans(text: str, tokens: list) -> Iterator[tuple[Any, int, int]]:
     is the single source of truth for that drop-and-consume rule:
     ``parse_subtitle_file``, ``parse_subtitle_file_with_index`` AND
     ``count_lemmas`` must all route through it, or the count-vs-mine
-    sets diverge and the Deck Builder preview over-promises (T-38).
+    sets diverge and a reported occurrence count over-promises (T-38).
     """
     cursor = 0
     for token in tokens:
@@ -637,6 +685,7 @@ def _nominal_suffix_run(tokens: list, start: int) -> list:
             p1 = tokens[start].feature.pos1
             p2 = tokens[start].feature.pos2
         except AttributeError:
+            _guard("_nominal_suffix_run")
             break
         if p1 != "接尾辞" or p2 not in _NOMINAL_SUFFIX_POS2:
             break
@@ -658,6 +707,7 @@ def _nominal_suffix_chain(tokens: list, i: int) -> list:
         if tokens[i].feature.pos1 != "名詞":
             return []
     except AttributeError:
+        _guard("_nominal_suffix_chain")
         return []
     return _nominal_suffix_run(tokens, i + 1)
 
@@ -738,12 +788,14 @@ def _merge_noun_suffixes(tokens: list, attest: AttestLookup | None = None) -> li
             try:
                 head_kana = head.feature.kana or head.surface
             except AttributeError:
+                _guard("_merge_noun_suffixes#1")
                 head_kana = head.surface
             suffix_kanas = []
             for t in chain:
                 try:
                     suffix_kanas.append(t.feature.kana or t.surface)
                 except AttributeError:
+                    _guard("_merge_noun_suffixes#2")
                     suffix_kanas.append(t.surface)
             head_kana_final = special_head if special_head is not None else head_kana
             kana = head_kana_final + "".join(suffix_kanas)
@@ -751,16 +803,19 @@ def _merge_noun_suffixes(tokens: list, attest: AttestLookup | None = None) -> li
             try:
                 head_pos2 = head.feature.pos2 or "普通名詞"
             except AttributeError:
+                _guard("_merge_noun_suffixes#3")
                 head_pos2 = "普通名詞"
             try:
                 head_lemma = extract_lemma(head)
             except AttributeError:
+                _guard("_merge_noun_suffixes#4")
                 head_lemma = head.surface
             suffix_lemmas: list[str] = []
             for t in chain:
                 try:
                     suffix_lemmas.append(extract_lemma(t))
                 except AttributeError:
+                    _guard("_merge_noun_suffixes#5")
                     suffix_lemmas.append(t.surface)
             synthetic = SyntheticToken(
                 surface=surf,
@@ -798,6 +853,7 @@ def _attested_prefix_surfaces(tokens: list, attest: AttestLookup) -> set[str]:
         try:
             head_pos1 = head.feature.pos1
         except AttributeError:
+            _guard("_attested_prefix_surfaces#1")
             i += 1
             continue
         if head_pos1 == "接頭辞" and head.surface in _PREFIX_WHITELIST and i + 1 < n:
@@ -805,6 +861,7 @@ def _attested_prefix_surfaces(tokens: list, attest: AttestLookup) -> set[str]:
             try:
                 root_pos1 = root.feature.pos1
             except AttributeError:
+                _guard("_attested_prefix_surfaces#2")
                 i += 1
                 continue
             if root_pos1 in {"名詞", "形状詞"}:
@@ -852,6 +909,7 @@ def _merge_prefix_compounds(tokens: list, attest: AttestLookup | None = None) ->
         try:
             head_pos1 = head.feature.pos1
         except AttributeError:
+            _guard("_merge_prefix_compounds#1")
             merged.append(head)
             i += 1
             continue
@@ -861,6 +919,7 @@ def _merge_prefix_compounds(tokens: list, attest: AttestLookup | None = None) ->
                 root_pos1 = root.feature.pos1
                 raw_root_pos2 = root.feature.pos2
             except AttributeError:
+                _guard("_merge_prefix_compounds#2")
                 merged.append(head)
                 i += 1
                 continue
@@ -880,18 +939,22 @@ def _merge_prefix_compounds(tokens: list, attest: AttestLookup | None = None) ->
                 try:
                     head_kana = head.feature.kana or head.surface
                 except AttributeError:
+                    _guard("_merge_prefix_compounds#3")
                     head_kana = head.surface
                 try:
                     root_kana = root.feature.kana or root.surface
                 except AttributeError:
+                    _guard("_merge_prefix_compounds#4")
                     root_kana = root.surface
                 try:
                     head_lemma = extract_lemma(head)
                 except AttributeError:
+                    _guard("_merge_prefix_compounds#5")
                     head_lemma = head.surface
                 try:
                     root_lemma = extract_lemma(root)
                 except AttributeError:
+                    _guard("_merge_prefix_compounds#6")
                     root_lemma = root.surface
                 merged.append(
                     SyntheticToken(
@@ -930,6 +993,7 @@ def _merge_verb_nominalizers(tokens: list) -> list:
             head_pos1 = head.feature.pos1
             head_c_form = head.feature.cForm
         except AttributeError:
+            _guard("_merge_verb_nominalizers#1")
             merged.append(head)
             i += 1
             continue
@@ -939,6 +1003,7 @@ def _merge_verb_nominalizers(tokens: list) -> list:
                 suf_pos1 = suffix.feature.pos1
                 suf_pos2 = suffix.feature.pos2
             except AttributeError:
+                _guard("_merge_verb_nominalizers#2")
                 merged.append(head)
                 i += 1
                 continue
@@ -947,10 +1012,12 @@ def _merge_verb_nominalizers(tokens: list) -> list:
                 try:
                     head_kana = head.feature.kana or head.surface
                 except AttributeError:
+                    _guard("_merge_verb_nominalizers#3")
                     head_kana = head.surface
                 try:
                     suf_kana = suffix.feature.kana or suffix.surface
                 except AttributeError:
+                    _guard("_merge_verb_nominalizers#4")
                     suf_kana = suffix.surface
                 merged.append(
                     SyntheticToken(
@@ -1008,6 +1075,12 @@ class TokenInclusionRule:
 
     allowed_pos: frozenset[str]
     excluded_subtypes: frozenset[str]
+    #: Replaces the FINAL script decision of should_include for non-JA
+    #: languages: a pure-hangul word carries no kanji, so the ja ladder would
+    #: mine nothing for Korean. None (the default) keeps the ja path exactly as
+    #: it was - content_gate_ok, the katakana/loanword branches and the has_kanji
+    #: fallback all unchanged.
+    script_gate: Callable[[str], bool] | None = None
 
     def content_gate_ok(self, word_token) -> bool:
         """Content-word gate WITHOUT the final pure-hiragana script decision.
@@ -1053,6 +1126,7 @@ class TokenInclusionRule:
             pos1 = word_token.feature.pos1  # Main POS
             pos2 = word_token.feature.pos2  # Sub POS
         except AttributeError:
+            _guard("content_gate_ok#1")
             return False
 
         # Skip particles, auxiliary verbs, symbols, punctuation
@@ -1077,6 +1151,7 @@ class TokenInclusionRule:
             if not lemma:
                 return False
         except AttributeError:
+            _guard("content_gate_ok#2")
             return False
 
         # Katakana-onomatopoeia REJECTIONS (the ≥2-char katakana ACCEPTANCE is a
@@ -1121,6 +1196,9 @@ class TokenInclusionRule:
         # the script gate on top — no check is duplicated here.
         if not self.content_gate_ok(word_token):
             return False
+
+        if self.script_gate is not None:
+            return self.script_gate(word_token.surface)
 
         surface = word_token.surface
         feature = word_token.feature

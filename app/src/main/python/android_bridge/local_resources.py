@@ -71,9 +71,17 @@ _KNOWN_WORD_LINE_SEPARATORS = frozenset("\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029")
 # The parser already classifies why a file yielded nothing, and desktop shows a
 # different message for each class, so the class has to survive this boundary.
 # "limit_exceeded" is deliberately absent: an oversized file is a retryable size
-# problem, not a "pick a different file" format problem.
+# problem, not a "pick a different file" format problem. "too_large" cannot
+# arrive: the copy is capped at _KNOWN_WORD_FILE_LIMIT, below the parser's cap.
 _KNOWN_WORD_IMPORT_FAILURE_CODES = {
     "unreadable": (
+        "known_words_unreadable",
+        "The selected known-word file could not be read",
+    ),
+    # The parser now tells an OSError ("unreadable") apart from bytes no
+    # encoding in the ladder accepts; both leave the user with a file the app
+    # cannot read, so both keep the one message.
+    "undecodable": (
         "known_words_unreadable",
         "The selected known-word file could not be read",
     ),

@@ -35,7 +35,7 @@ from .protocol import (
     decode_message,
     encode_message,
     normalize_integral_json_number,
-    to_json_value,
+    processing_result_to_json,
 )
 from .unicode_contract import (
     has_leading_or_trailing_python_whitespace,
@@ -914,6 +914,10 @@ def _build_processor(
             # Without this the deinflection resolver fails closed to orth_base
             # and じる/ずる front rewriting silently stops.
             term_rules_lookup=(definition_service.offline_deinflection_terms_exist if has_indexed_dictionary else None),
+            # Read only by a profile's token_post_pass, which ja has none of, so a
+            # ja run is unchanged; passed as desktop passes it so a language that
+            # has one resolves its card fronts.
+            form_lookup=(definition_service.offline_term_rows if has_indexed_dictionary else None),
         )
         word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
         media_extractor = MediaExtractorService(config)
@@ -1147,7 +1151,7 @@ def _result_terminal(run_id: str, result: object) -> tuple[str, str]:
         {
             "runId": run_id,
             "outcome": outcome,
-            "result": to_json_value(result),
+            "result": processing_result_to_json(result),
             "error": terminal_error,
         },
     )
@@ -1171,6 +1175,46 @@ def _android_engine_message(message: str) -> str:
     if message == _OFFLINE_DICTIONARY_REQUIRED_MESSAGE:
         return "No usable offline dictionary is installed. Import one in Settings, under Dictionaries."
     return message
+
+
+def _stale_resource_names(message: str) -> str | None:
+    """The quoted names a resource-staleness ``SetupError`` lists, or None for any other message.
+
+    The staleness gate writes one line per stale family and ends each with a
+    desktop Settings path ("… — Settings → Word Audio → More → Reimport All").
+    Kotlin renders its own localized sentence for the ``resources_stale`` code, so
+    only the names cross, as the engine quoted them. The fixed text around the
+    names comes from re-running the engine's own formatter with sentinel names,
+    so an upstream re-wording stops matching and the message falls back to
+    ``setup_incomplete`` verbatim (visible, and caught by the bridge test).
+    """
+
+    from anki_miner.services.resource_staleness import (
+        _FAMILY_LABELS,
+        format_stale_family_message,
+    )
+
+    sentinel = "'\x00'"
+    shapes: list[tuple[str, str]] = []
+    for family in _FAMILY_LABELS:
+        for count in (1, 2):
+            probe = format_stale_family_message(family, ["\x00"] * count)
+            shapes.append((probe[: probe.index(sentinel)], probe[probe.rindex(sentinel) + len(sentinel) :]))
+    names: list[str] = []
+    for line in message.split("\n"):
+        shape = next(
+            (
+                (head, tail)
+                for head, tail in shapes
+                if len(line) > len(head) + len(tail) and line.startswith(head) and line.endswith(tail)
+            ),
+            None,
+        )
+        if shape is None:
+            return None
+        head, tail = shape
+        names.append(line[len(head) : len(line) - len(tail)])
+    return ", ".join(names)
 
 
 def _exception_terminal(
@@ -1215,8 +1259,15 @@ def _exception_terminal(
         # AnkiMinerException branch, which would otherwise swallow it into engine_error
         # and offer the user a Retry that can never succeed.
         if isinstance(error, SetupError):
-            code = "setup_incomplete"
-            message = _android_engine_message(str(error)) or "Setup is incomplete"
+            stale_names = _stale_resource_names(str(error))
+            if stale_names is not None:
+                # Its own code so Kotlin can say it from the catalogs: the
+                # engine's sentence points at desktop Settings paths.
+                code = "resources_stale"
+                message = stale_names
+            else:
+                code = "setup_incomplete"
+                message = _android_engine_message(str(error)) or "Setup is incomplete"
         elif isinstance(error, AnkiMinerException):
             code = "engine_error"
             message = _android_engine_message(str(error)) or "Mining failed"
@@ -1243,7 +1294,7 @@ def _cleanup_failure_terminal(run_id: str, result: object) -> tuple[str, str]:
         {
             "runId": run_id,
             "outcome": "failed",
-            "result": to_json_value(result),
+            "result": processing_result_to_json(result),
             "error": {
                 "code": "cleanup_failed",
                 "message": "Mining finished but resource cleanup failed",

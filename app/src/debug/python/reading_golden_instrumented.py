@@ -122,9 +122,11 @@ class _DocumentParser:
         self.received_units: list[Any] = []
 
     def parse_text_units(
-        self, units: list[Any], want_line_index: bool
+        self, units: list[Any], want_line_index: bool, *, subtitle_cleanup: bool = False
     ) -> tuple[list[Any], None, collections.Counter[str]]:
-        if want_line_index or [unit.text for unit in units] != ["猫を見る。", "犬もいる。"]:
+        # The processor keys per-cue cleanup on the document kind; a Mokuro
+        # volume must never ask for it.
+        if want_line_index or subtitle_cleanup or [unit.text for unit in units] != ["猫を見る。", "犬もいる。"]:
             raise AssertionError("packaged Mokuro units differ before process_reading")
         self.received_units = list(units)
         word = self._tokenized_word_type(
@@ -160,12 +162,20 @@ class _DefinitionService:
         pairs: list[tuple[str, str | None]],
         progress_callback: object | None,
         fallback_context: dict[str, tuple[str, str | None]],
+        **_kwargs: object,
     ) -> list[str]:
         if progress_callback is not None:
             raise AssertionError("reading replay received unexpected progress")
         self.lookup_pairs = list(pairs)
         self.fallback_context = dict(fallback_context)
         return ['<div class="definition">cat</div>']
+
+    def offline_term_identities(
+        self,
+        pairs: list[tuple[str, str]],
+    ) -> dict[tuple[str, str], set[tuple[str, int, str]]]:
+        """Drives the within-run orthographic alias collapse; empty keeps every candidate."""
+        return {}
 
     def clear_run_cache(self) -> None:
         """Per-run attest-quality cache reset; the engine calls it in ``finally``."""
@@ -182,13 +192,19 @@ class _AnkiService:
         self.last_skipped_duplicates = 0
         self.verified = False
         self.card_snapshot: dict[str, Any] | None = None
+        self.last_created_mined_forms: list[str] = []
+        self.last_created_lemmas: list[str] = []
+
+    def set_cancelled_check(self, cancelled: object) -> None:
+        # _phase5 installs its probe before the batch and clears it after.
+        return None
 
     def verify_card_target(self) -> None:
         self.verified = True
 
     def create_cards_batch(
         self, card_data: list[Any], progress_callback: object | None = None
-    ) -> int:
+    ) -> list[int]:
         if progress_callback is not None or len(card_data) != 1:
             raise AssertionError("reading replay card sink received invalid input")
         from PIL import Image
@@ -222,18 +238,28 @@ class _AnkiService:
             },
         }
         self.last_created_note_ids = [4242]
-        return 1
+        # The processor records known words from what the service confirms and
+        # zips forms with lemmas for whitelist coverage.
+        self.last_created_mined_forms = [payload.word.mined_form for payload in card_data]
+        self.last_created_lemmas = [payload.word.lemma for payload in card_data]
+        # The service contract returns the created ids, not a count.
+        return [4242]
 
 
 def _process_snapshot(document: Any, config: Any) -> dict[str, Any]:
     from anki_miner.models import TokenizedWord
     from anki_miner.orchestration.episode_processor import EpisodeProcessor
     from anki_miner.presenters import NullPresenter
+    from anki_miner.services.known_word_db import KnownWordDB
     from anki_miner.services.word_filter import WordFilterService
 
     parser = _DocumentParser(TokenizedWord)
     definitions = _DefinitionService()
     anki = _AnkiService()
+    # The desktop exporter composes the processor with a known-words database:
+    # mined_forms is its insert receipt, so the fixture freezes a populated list.
+    known_word_db = KnownWordDB(config.known_words_db_path)
+    known_word_db.initialize()
     processor = EpisodeProcessor(
         config=config,
         subtitle_parser=parser,
@@ -242,6 +268,7 @@ def _process_snapshot(document: Any, config: Any) -> dict[str, Any]:
         definition_service=definitions,
         anki_service=anki,
         presenter=NullPresenter(),
+        known_word_db=known_word_db,
     )
     try:
         result = processor.process_reading(document)
@@ -308,7 +335,12 @@ def run(fixture_json: str, expected_home: str) -> str:
 
         config = replace(
             reading_mining._map_config(requests["mokuro"], Path(home)),
-            anki_fields={},
+            # As the desktop exporter maps it: the reading image phase runs only
+            # while the picture field is mapped.
+            anki_fields={"picture": "Picture"},
+            # mined_forms is the insert receipt: a database that outlives the
+            # run would make the next run on this install mismatch.
+            known_words_db_path=root / "known_words.db",
             include_known_words=True,
             bypass_optional_filters=True,
             reading_min_occurrence=1,

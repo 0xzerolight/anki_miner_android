@@ -1,5 +1,6 @@
 package com.ankiminer.android.mining
 
+import com.ankiminer.android.R
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.provider.AnkiCancellation
@@ -381,6 +382,25 @@ class BridgeMiningRepositoryTest {
 
         val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
         assertEquals("setup_incomplete", failed.failure.diagnostic)
+        assertFalse(failed.failure.retryable)
+    }
+
+    @Test
+    fun `a stale resource failure is said from the catalogs, not the engine's desktop path`() {
+        val harness = harness(raisedFailure = true, raisedFailureCode = "resources_stale")
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating = awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, emptyList())
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        // The bridge sends only the stale names in the message; the fake's is "Mining failed".
+        assertEquals("resource:${R.string.mining_failure_resources_stale}:Mining failed", failed.failure.message)
+        assertEquals("resources_stale", failed.failure.diagnostic)
         assertFalse(failed.failure.retryable)
     }
 
@@ -2450,7 +2470,7 @@ class BridgeMiningRepositoryTest {
         const val MAX_RESULT_ERRORS = 256
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
         const val NO_DEFINITION_WARNING = "Skipped 2 words with no definition found: 本好き, 編み"
-        const val RECEIPT_WARNING = "Ambiguous reading review required for 3 word(s); current readings kept"
+        const val RECEIPT_WARNING = "3 word(s) have more than one reading — the parsed reading was kept."
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val FIRST_SELECTION = listOf(CurationSelection(CANDIDATE_ID, SENTENCE_ID))
 

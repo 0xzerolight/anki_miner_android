@@ -2,11 +2,21 @@
 
 import logging
 import unicodedata
+from collections.abc import Callable
 from pathlib import Path
 
 from anki_miner.exceptions import SetupError
+from anki_miner.services.known_words_import import _MAX_IMPORT_BYTES
+from anki_miner.services.reading._util import decode_with_ladder
 
 logger = logging.getLogger(__name__)
+
+#: What ``encodings=None`` decodes with: UTF-8 alone, with the BOM stripped
+#: rather than kept as part of the first entry. Not a ladder — it is the single
+#: encoding this file was read with before any language had one, and it stays
+#: the answer for Japanese, whose ladder cannot be walked first-success (EUC-JP
+#: bytes decode as cp932 without raising, and the mojibake matches nothing).
+_DEFAULT_ENCODINGS = ("utf-8-sig",)
 
 
 class WordListService:
@@ -20,13 +30,32 @@ class WordListService:
         self,
         blacklist_path: Path | None = None,
         whitelist_path: Path | None = None,
+        *,
+        dedup_fold: Callable[[str], str] | None = None,
+        encodings: tuple[str, ...] | None = None,
+        script_check: Callable[[str], bool] | None = None,
     ):
         """Initialize the word list service.
 
         Args:
             blacklist_path: Path to blacklist file, or None to skip.
             whitelist_path: Path to whitelist file, or None to skip.
+            dedup_fold: The mining language's comparison fold (S3), applied to
+                every entry at load and every probe; ``None`` keeps the NFC'd
+                entries and raw probes.
+            encodings: The mining language's ``import_encodings`` ladder — a
+                hand-made list is whatever the user's Notepad writes (GB18030 on
+                a mainland machine, Big5 on a Taiwanese one), and UTF-8 alone
+                dropped the whole file. ``None`` (never ``()``, an EMPTY
+                ladder) is the UTF-8 default above, which is what
+                ``service_factory.import_decode_ladder`` hands over for
+                Japanese.
+            script_check: Validates a single-byte leg of that ladder
+                (``utils.subtitle_encoding.script_check_kwarg``).
         """
+        self._dedup_fold = dedup_fold
+        self._encodings = _DEFAULT_ENCODINGS if encodings is None else encodings
+        self._script_check = script_check
         self._blacklist_path = blacklist_path
         self._whitelist_path = whitelist_path
         self._blacklist: set[str] = set()
@@ -40,14 +69,18 @@ class WordListService:
             SetupError: If a specified file cannot be read.
         """
         if self._blacklist_path is not None:
-            self._blacklist = self._read_word_file(self._blacklist_path)
+            self._blacklist = {self._key(word) for word in self._read_word_file(self._blacklist_path)}
             logger.info("Loaded %d blacklisted words", len(self._blacklist))
 
         if self._whitelist_path is not None:
-            self._whitelist = self._read_word_file(self._whitelist_path)
+            self._whitelist = {self._key(word) for word in self._read_word_file(self._whitelist_path)}
             logger.info("Loaded %d whitelisted words", len(self._whitelist))
 
         self._loaded = True
+
+    def _key(self, word: str) -> str:
+        """The comparison key for an entry or a probe (identity without a fold)."""
+        return word if self._dedup_fold is None else self._dedup_fold(word)
 
     def is_available(self) -> bool:
         """Check if the service has been loaded.
@@ -66,7 +99,7 @@ class WordListService:
         Returns:
             True if the word is blacklisted.
         """
-        return word in self._blacklist
+        return self._key(word) in self._blacklist
 
     def is_whitelisted(self, word: str) -> bool:
         """Check if a word is on the whitelist.
@@ -77,10 +110,21 @@ class WordListService:
         Returns:
             True if the word is whitelisted.
         """
-        return word in self._whitelist
+        return self._key(word) in self._whitelist
 
-    @staticmethod
-    def _read_word_file(path: Path) -> set[str]:
+    def whitelist_entries(self) -> frozenset[str]:
+        """Every whitelist entry as written in the file (NFC, stripped, and folded when the language folds).
+
+        The run-end coverage report diffs this against what got mined; it is
+        the only reason the set is exposed rather than queried one word at a
+        time.
+
+        Returns:
+            The loaded whitelist, empty when none was configured.
+        """
+        return frozenset(self._whitelist)
+
+    def _read_word_file(self, path: Path) -> set[str]:
         """Read a word list file.
 
         Args:
@@ -90,20 +134,35 @@ class WordListService:
             Set of words from the file.
 
         Raises:
-            SetupError: If the file cannot be read.
+            SetupError: If the file cannot be read or decoded.
         """
         if not path.exists():
-            raise SetupError(f"Word list file not found: {path}")
+            # The path is diagnostics, not the sentence (rule 5).
+            logger.warning("Word list file missing: path=%s", path)
+            raise SetupError("Your word list file is missing.")
 
         try:
+            # The picker's "All Files (*)" filter lets a user mis-pick a video,
+            # and a decoded list is four live copies of the file, so stat it
+            # first — the same bound, and the same reason, as the known-words
+            # importer. Raised as an ordinary read failure: the sentence below
+            # is the one the user gets for any list that cannot be read, and
+            # the log line carries the size.
+            if path.stat().st_size > _MAX_IMPORT_BYTES:
+                raise ValueError(f"over the {_MAX_IMPORT_BYTES}-byte word list cap")
+            with path.open("rb") as f:
+                raw = f.read()
+            # Bytes, not text: a hand-made list is whatever the user's editor
+            # wrote, and only the shared ladder decoder knows which leg that is.
+            text, _ = decode_with_ladder(raw, encodings=self._encodings, script_check=self._script_check)
             words: set[str] = set()
-            with path.open("r", encoding="utf-8") as f:
-                for line in f:
-                    stripped = unicodedata.normalize("NFC", line.strip())
-                    if stripped and not stripped.startswith("#"):
-                        words.add(stripped)
+            for line in text.splitlines():
+                stripped = unicodedata.normalize("NFC", line.strip())
+                if stripped and not stripped.startswith("#"):
+                    words.add(stripped)
             return words
         except MemoryError:
             raise
         except Exception as e:
-            raise SetupError(f"Error reading word list file {path}: {e}") from e
+            logger.warning("Word list file unreadable: path=%s exc=%s: %s", path, type(e).__name__, e)
+            raise SetupError("Could not read your word list file.") from e

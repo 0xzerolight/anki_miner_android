@@ -4,6 +4,7 @@ format_version = 1
 # sync tool computes their transitive local-import closure; this is not a list
 # of files to copy by hand.
 roots = [
+  "anki_miner.languages.switching",
   "anki_miner.orchestration.episode_processor",
   "anki_miner.presenters.null_presenter",
   "anki_miner.resources.wordsets",
@@ -18,6 +19,7 @@ roots = [
   "anki_miner.services.frequency.source_importer",
   "anki_miner.services.known_word_db",
   "anki_miner.services.known_words_import",
+  "anki_miner.services.note_presets",
   "anki_miner.services.pitch_accent.legacy_migration",
   "anki_miner.services.pitch_accent.multi_pitch_service",
   "anki_miner.services.pitch_accent.provider",
@@ -55,15 +57,17 @@ overlay_allowlist = [
   "anki_miner/services/known_words_import.py",
   "anki_miner/services/media_extractor.py",
   "anki_miner/services/reading/sentence_splitter.py",
+  "anki_miner/services/sentence_tts_fetcher.py",
   "anki_miner/services/tagger.py",
   "anki_miner/utils/android_fd.py",
   "anki_miner/utils/audio_track_detector.py",
+  "psutil/__init__.py",
 ]
 
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/models/reading.py" = "735603c6246030878d52cf1ad5d5b97bc09b1580", "anki_miner/services/__init__.py" = "6496235f6296d670b905e78cc5284524bc88432c", "anki_miner/services/known_words_import.py" = "a6f17e0a969c95ea77f6a20047e74b68265d02b6", "anki_miner/services/media_extractor.py" = "1e1bb58c3cf714eea2f41bcf76b5813c7083f6f1", "anki_miner/services/reading/sentence_splitter.py" = "203a4397d38d5603b48a2426212e9a4f263dbab0", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "6f2d08cfb425eb3f0465a8072cc17acd7e3b7802" }
+overlay_base_blobs = { "anki_miner/models/reading.py" = "06fcdeac313931b926b2dc60129ec916da8c2550", "anki_miner/services/__init__.py" = "47c287386eedc5ec42feeebd42dbf6bf4f5b33dc", "anki_miner/services/known_words_import.py" = "27e665e30ca2ac7a2cd3dbc8f707aa532dd15697", "anki_miner/services/media_extractor.py" = "91499f32abde84a575e0e35c39963dd9bd574a2b", "anki_miner/services/reading/sentence_splitter.py" = "3e1b7d4cc8e34976fd4c11130eba0e3b2b6a0931", "anki_miner/services/sentence_tts_fetcher.py" = "5e4ecba85e548f0b5d1ccbdabe385231af7cdc20", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "5d9771333de46c24e931c02dd5f34ec7ec73a4fe" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.
@@ -71,9 +75,10 @@ protected_verbatim = [
   "anki_miner.orchestration.episode_processor",
 ]
 
-# Android packages only these third-party import roots. PyQt6 is intentionally
-# absent: its tiny QCoreApplication compatibility module is an overlay and is
-# therefore resolved as local source.
+# Android packages only these third-party import roots. PyQt6 and psutil are
+# intentionally absent: each is a small overlay shim (QCoreApplication, and
+# Process.create_time) listed in local_only_imports, so it resolves as local
+# source.
 allowed_external = [
   "PIL",
   "charset_normalizer",
@@ -84,7 +89,7 @@ allowed_external = [
 
 # Imports under these names must resolve from the overlay. They must never be
 # satisfied by a host/Chaquopy distribution.
-local_only_imports = ["PyQt6"]
+local_only_imports = ["PyQt6", "psutil"]
 
 # Explicit rather than host-derived: an engine resync which adds a stdlib
 # dependency requires a reviewed composition change and behaves identically on
@@ -121,6 +126,7 @@ allowed_stdlib = [
   "posixpath",
   "random",
   "re",
+  "shlex",
   "shutil",
   "sqlite3",
   "stat",
@@ -145,15 +151,35 @@ allowed_stdlib = [
 # These modules and distributions are cut from Android. Prefix matching is
 # segment-aware ("mpv" rejects mpv and mpv.foo, not an unrelated name).
 forbidden_imports = [
+  "ffsubsync",
   "gtts",
   "mpv",
+  "mutagen",
+  "rapidfuzz",
+  "websockets",
   "yt_dlp",
+  "anki_miner.services.audio_condenser",
+  "anki_miner.services.audio_tagger",
+  "anki_miner.services.book_sync",
+  "anki_miner.services.edge_tts_audio_fetcher",
   "anki_miner.services.google_translate_audio_fetcher",
-  "anki_miner.services.sentence_tts_fetcher",
+  "anki_miner.services.mokuro_installer",
   "anki_miner.services.youtube_fetcher",
   "anki_miner.services.ytdlp_updater",
   "anki_miner.utils.mpv_loader",
   "anki_miner.utils.ytdlp_resolver",
+]
+
+# Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
+languages = ["ja"]
+
+# Imported only inside functions, never vendored. ASR and retiming are reached
+# from episode_processor's deferred paths; gui only through languages/ja/text.py's
+# deferred phrase_wrap import, which the desktop GUI alone consumes.
+deferred_unavailable = [
+  "anki_miner.services.asr",
+  "anki_miner.services.subtitle_retimer",
+  "anki_miner.gui",
 ]
 
 [[mapped_assets]]
@@ -166,3 +192,15 @@ destination = "anki_miner/LICENSE"
 [[forbidden_type_checking_exceptions]]
 importer = "anki_miner.orchestration.episode_processor"
 target = "anki_miner.services.youtube_fetcher"
+
+# The language registry and the tagger provider load per-language modules by
+# a code-formatted name; {code} expands over languages and SHARED_PACK_CODES.
+[[dynamic_imports]]
+importer = "anki_miner.languages.registry"
+match = "f'anki_miner.languages.{code}'"
+target = "anki_miner.languages.{code}"
+
+[[dynamic_imports]]
+importer = "anki_miner.languages.tagger_provider"
+match = "f'anki_miner.languages.{language}.tokenizer'"
+target = "anki_miner.languages.{code}.tokenizer"

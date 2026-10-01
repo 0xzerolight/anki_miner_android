@@ -34,6 +34,29 @@ freeze the reviewed overlays. `overlay_base_blobs` still binds each shadow to
 its upstream Git blob, so an `engine.lock` bump fails until the overlay is
 rebased and reviewed.
 
+### Languages, dynamic imports and deferred-unavailable modules
+
+Three optional `composition.toml` keys cover the desktop language registry.
+Each one fails closed, and the manifest records what it resolved; when all
+three are absent, the output and manifest are unchanged.
+
+- `languages = ["ja"]` — mining languages to vendor. Each code must appear in
+  the pinned `AVAILABLE_LANGUAGES` in `anki_miner/languages/__init__.py`, read
+  from the source by AST.
+- `[[dynamic_imports]]` — one table per non-literal `import_module` site, with
+  `importer` (module name), `match` (the `ast.unparse` of the argument at that
+  site) and `target` (a format string such as
+  `"anki_miner.languages.{code}.tokenizer"`). `{code}` expands over
+  `languages` plus `SHARED_PACK_CODES`, and each expanded module that exists is
+  followed as an import from that site, deferred or eager as the site is. A
+  code without that module is skipped, but the target must exist for at least
+  one known code. An undeclared non-literal site and a declaration that matches
+  no site are both errors.
+- `deferred_unavailable = ["anki_miner.gui"]` — module prefixes that are only
+  imported inside functions and never vendored. Such imports are recorded
+  rather than followed. An eager import of one, a selected module under one, or
+  a prefix that nothing imports is an error.
+
 ## Golden derivation
 
 The current complete contract is v2. `run_goldens_v2.py` first verifies the
@@ -135,7 +158,7 @@ resolved directory to the exporter, and records it under the reserved
 `unidic_dicdir` asset name.
 
 `engine-v1.json` is frozen at desktop revision `ba3b3cf`, which predates the
-`ec5e1006` in `engine.lock`. `run_goldens.py` takes its expected revision from
+`a1259f4e` in `engine.lock`. `run_goldens.py` takes its expected revision from
 `--lock`, so reproducing v1 means pointing both `--engine-root` and `--lock` at
 `ba3b3cf`; against the current lock the run fails the revision check. Pass
 `--check` too — `--output` defaults to the committed fixture, so a run without

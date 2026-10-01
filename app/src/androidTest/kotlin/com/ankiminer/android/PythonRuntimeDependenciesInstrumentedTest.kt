@@ -55,6 +55,9 @@ class PythonRuntimeDependenciesInstrumentedTest {
             assertTrue(images.getJSONObject(format).getInt("bytes") > 0)
         }
 
+        val processAge = snapshot.getJSONObject("process_start").getDouble("age_seconds")
+        assertTrue("implausible psutil create_time age $processAge", processAge in 0.0..86_400.0)
+
         val forbidden = snapshot.getJSONObject("forbidden_present")
         listOf("gtts", "unidic", "unidic_lite", "yt_dlp").forEach { packageName ->
             assertFalse("$packageName must not be bundled", forbidden.getBoolean(packageName))

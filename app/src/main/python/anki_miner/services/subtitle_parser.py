@@ -6,12 +6,13 @@ import re
 import time
 from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pysubs2
 
 from anki_miner.config import AnkiMinerConfig
-from anki_miner.exceptions import SubtitleParseError
+from anki_miner.exceptions import SetupError, SubtitleParseError
+from anki_miner.languages.tagger_provider import get_tagger
 from anki_miner.models import LineLemmas, TokenizedWord
 from anki_miner.models.reading import ReadingUnit
 from anki_miner.models.word import resolve_pronoun_fold_reading, select_mined_form
@@ -32,12 +33,15 @@ from anki_miner.services.deinflection import (
 from anki_miner.services.masu_stem_nominalizer import MasuStemNominalizer
 from anki_miner.services.morphology import (
     AttestLookup,
+    FormLookup,
     ReadingLookup,
     SyntheticToken,
     TokenInclusionRule,
+    TokenPostPass,
     _edit_distance,
     apply_special_readings,
     attest_merged_readings,
+    drain_attribute_guard_counts,
     extract_lemma,
     extract_orth_base,
     extract_reading,
@@ -62,8 +66,8 @@ from anki_miner.utils.ja_normalize import (
     normalize_for_tokenization,
     standardize_kanji_variants,
 )
-from anki_miner.utils.logging_ext import log_summary
-from anki_miner.utils.subtitle_encoding import load_with_fallback_encoding
+from anki_miner.utils.logging_ext import capped, log_summary
+from anki_miner.utils.subtitle_encoding import _log_decode, load_with_fallback_encoding, script_check_kwarg
 from anki_miner.utils.text_utils import (
     _format_furigana,
     generate_furigana_from_tokens,
@@ -72,10 +76,13 @@ from anki_miner.utils.text_utils import (
     wrap_target_furigana_from_tokens,
 )
 
+if TYPE_CHECKING:
+    from anki_miner.languages.profile import MinedFormPolicy, ReadingSupport
+
 logger = logging.getLogger(__name__)
 
 # Config fields SubtitleParserService actually reads. Callers that reuse a
-# parser instance across configs (e.g. Deck Builder Phase 2 reusing Phase 1's
+# parser instance across configs (e.g. a later pass reusing an earlier pass's
 # filled per-file tokenization cache) must assert every one of these is
 # untouched, or cached tokenization silently goes stale.
 # ``subtitle_offset`` is deliberately absent: it is a per-CALL argument on the
@@ -89,6 +96,8 @@ PARSE_RELEVANT_CONFIG_FIELDS = (
     "use_subtitle_regex_filter",
     "subtitle_regex_filter",
     "subtitle_regex_replacement",
+    # zh card fronts follow Character Set (the injected mined-form policy).
+    "script_variant",
 )
 
 # Dictionary-attested compound matching (Yomitan longest-match principle):
@@ -102,15 +111,15 @@ COMPOUND_MATCHING = True
 
 # Maximum number of files held simultaneously in the per-instance per-file
 # tokenization cache.  When the cap is hit the least-recently-used entry
-# is evicted so the dict stays bounded while still covering the Deck Builder's
-# Phase-1 → Phase-2 cross-file reuse pattern for any corpus up to this size.
+# is evicted so the dict stays bounded while still covering the Phase-1 →
+# Phase-2 cross-file reuse pattern for any corpus up to this size.
 _LINE_CACHE_MAX_FILES: int = 256
 
 # Bound for the verb-front resolver memo (_front_cache). Each entry is one tiny
 # resolved-form string keyed by (inflected_surface, orth_base, cType); the set
 # of distinct verb/adjective forms in any corpus is small, but a clear-on-cap
-# keeps a whole-corpus Deck Builder run from growing without limit (mirrors the
-# compound matcher's existence cache).
+# keeps a whole-corpus run from growing without limit (mirrors the compound
+# matcher's existence cache).
 _FRONT_CACHE_CAP: int = 200_000
 
 
@@ -119,6 +128,11 @@ _FRONT_CACHE_CAP: int = 200_000
 # purpose — きれい is attested only as 綺麗's READING, so a term-only probe misses it.
 # Maps each queried card front to whether any offline dictionary attests it.
 KanaAttestLookup = Callable[[list[str]], dict[str, bool]]
+
+# Language-specific token-merge pass (languages/ko/predicate_merge.py), called as
+# merge_line(text, tokens, attest). Duck-typed: services keeps no runtime import
+# of languages.
+TokenMerger = Any
 
 # POS backstop for kana recovery: only inflectional content words are recovered
 # from the pure-hiragana script gate. Deliberately EXCLUDES 名詞 — formal nouns
@@ -301,6 +315,16 @@ def _is_all_katakana(surface: str) -> bool:
     return bool(non_ws) and all(_is_katakana_surface_char(c) for c in non_ws)
 
 
+def _token_morph(token: Any) -> str:
+    """A duck token's morphological features, or "" (fugashi nodes have none).
+
+    ``isinstance`` rather than truthiness: a MagicMock token in a test
+    auto-creates a truthy ``morph`` attribute.
+    """
+    morph = getattr(token, "morph", "")
+    return morph if isinstance(morph, str) else ""
+
+
 def _differs_by_okurigana_only(orth_base: str, lemma: str) -> bool:
     """Whether ``orth_base`` is ``lemma`` with only its trailing okurigana changed.
 
@@ -326,6 +350,34 @@ def _differs_by_okurigana_only(orth_base: str, lemma: str) -> bool:
     return _is_pure_hiragana(orth_base[i:]) and _is_pure_hiragana(lemma[i:])
 
 
+def _apply_sami_timing(subs: pysubs2.SSAFile) -> None:
+    """Give a SAMI file one cue per SYNC time, shown until the next SYNC time.
+
+    SAMI states no end: a SYNC's text shows until the next SYNC replaces it,
+    and fansub files clear a cue with an ``&nbsp;`` SYNC. pysubs2 instead makes
+    one event per SYNC and guesses its end (start + 500 ms + 67 ms a
+    character, clamped to the next event's start). The guess cut a Korean line
+    off before its clearing SYNC (2.57 s of a cue shown until 3.5 s), and a
+    bilingual Korean file, which writes each language class (KRCC, ENCC) as
+    its own SYNC at one time, clamped the Korean cue to zero length. Events
+    sharing a start are joined line by line, so the language's bilingual-cue
+    gate can drop the other language's line; each then ends where the next
+    SYNC time begins. The last keeps the latest guess among its events, as
+    nothing follows it.
+    """
+    cues: list[pysubs2.SSAEvent] = []
+    for event in subs.events:
+        if cues and event.start == cues[-1].start:
+            cue = cues[-1]
+            cue.text = "\\N".join(text for text in (cue.text, event.text) if text)
+            cue.end = max(cue.end, event.end)
+            continue
+        if cues:
+            cues[-1].end = event.start
+        cues.append(event)
+    subs.events = cues
+
+
 class SubtitleParserService:
     """Parse subtitles and extract Japanese vocabulary words (stateless service)."""
 
@@ -338,6 +390,19 @@ class SubtitleParserService:
         kana_attest_lookup: KanaAttestLookup | None = None,
         term_common_lookup: TermCommonLookup | None = None,
         term_rules_lookup: TermRulesLookup | None = None,
+        form_lookup: FormLookup | None = None,
+        *,
+        mined_form_policy: "MinedFormPolicy | None" = None,
+        reading_support: "ReadingSupport | None" = None,
+        script_gate: Callable[[str], bool] | None = None,
+        token_merger: "TokenMerger | None" = None,
+        compound_matching: bool = True,
+        token_post_pass: TokenPostPass | None = None,
+        normalize: Callable[[str], str] | None = None,
+        has_target_script: Callable[[str], bool] | None = None,
+        ellipsis_fragment_guard: bool = True,
+        sentence_annotation: bool = True,
+        attested_reading_fallback: bool = False,
     ):
         """Initialize the subtitle parser.
 
@@ -382,6 +447,90 @@ class SubtitleParserService:
                 compound matcher: the morphology merges it serves
                 (noun-suffix/prefix/nominalizer) run regardless.
                 ``None`` keeps parsing byte-identical.
+            mined_form_policy: Optional card-front policy
+                (``languages.profile.MinedFormPolicy``) consulted at the emit
+                site instead of ``models.word.select_mined_form``. ``None`` runs
+                that JA function verbatim, which is what the drift canary pins.
+                Duck-typed: ``services`` keeps no runtime import of
+                ``languages``.
+            reading_support: Optional word-reading provider
+                (``languages.profile.ReadingSupport``) that owns the card's
+                reading fields outright at the emit site. ``None`` — every JA
+                path, since the ja profile's parser factory passes nothing —
+                runs today's JA derivation verbatim. Duck-typed like
+                ``mined_form_policy``.
+            script_gate: Optional final script decision for the inclusion rule
+                (``languages.profile.ScriptSupport.contains_target_script``).
+                ``None`` — every JA path — keeps ``should_include``'s kanji /
+                katakana / loanword ladder exactly as it was; a callable
+                replaces only its last step, which is what lets a pure-hangul
+                Korean word be mined at all.
+            token_merger: Optional language-specific token-merge pass run on the
+                merged stream, right after the JA compound-suffix passes
+                (``languages.ko.predicate_merge.KoreanPredicateMerger``). Called
+                as ``merge_line(text, tokens, attest)`` with the SAME memoised
+                existence probe the compound matcher uses. ``None`` — every JA
+                and ZH path — and any config with no offline dictionary (no
+                probe to pass) skip it entirely, so output stays byte-identical.
+                Duck-typed like ``mined_form_policy``.
+            compound_matching: Whether the dictionary-attested compound matcher
+                may run at all. The matcher joins adjacent tokens with "" and
+                reads UniDic POS names, so a space-delimited language passes
+                ``False`` through its ``create_parser`` (a spaced match would
+                print ``NewYork``), as do zh/yue, whose jieba tags can never
+                equal the UniDic POS the matcher stamps its synthetics with.
+                ``True`` — every ja path, and ko today — keeps the pre-seam gate
+                exactly: built whenever a term lookup is wired.
+            form_lookup: Optional batch read of a term's ``(content, tags)`` rows
+                from the enabled offline chain (spec R36,
+                ``DefinitionService.offline_term_rows``). Handed to
+                ``token_post_pass`` as its third argument and read NOWHERE else
+                in this service, so only a language that injects a post-pass (or
+                whose ``create_parser`` composes it into ``reading_lookup``, as uk
+                does for S24) can reach it: every other path — ja/ko/zh included
+                — is byte-identical whether this is wired or not. Hebrew's
+                ``HebrewLemmaPass`` resolves a card front against the dictionary's
+                own form table, which the existence-only ``term_lookup`` cannot do.
+            token_post_pass: Optional language post-pass over the RAW tagger
+                tokens (spec §4.3 item 2(b): separable-verb reattachment gated on
+                dictionary attestation). Called once per line as
+                ``token_post_pass(raw_tokens, attest, form_lookup)`` — ``attest``
+                is the parser's memoised existence probe and ``form_lookup`` the
+                R36 row read, both None without a dictionary — before every merge
+                pass, and its result IS the line's raw token list. ``None`` —
+                every ja/ko/zh path — runs nothing.
+            normalize: The mining language's text normaliser for cue text and
+                reading units (``LanguageProfile.normalize``), replacing the
+                Japanese pair in :func:`clean_subtitle_text`. ``None`` — every
+                ja/ko parser — keeps the Japanese pair.
+            has_target_script: The mining language's script gate
+                (``LanguageProfile.ScriptSupport.contains_target_script``),
+                which makes :func:`clean_subtitle_text` drop the lines of a
+                multi-line cue written in another script — the English half of
+                a bilingual zh subtitle. ``None`` — every ja/ko path — keeps
+                every physical line of every cue.
+            ellipsis_fragment_guard: Whether the U8 truncation-fragment reject
+                (``_is_ellipsis_truncation_fragment``) runs at all. Both of its
+                signals read Japanese: a severed conjugation is recognised by a
+                unidic ``cForm``, and a single-character surface is a cut word
+                only where words are usually longer. A character-dense language
+                passes ``False`` — 钱…钱不见了… is a line ABOUT 钱 — and the whole
+                guard is skipped, neither half being able to mean for its tokens
+                what it means for unidic's. ``True`` — every ja path — keeps the
+                reject exactly as it was.
+            sentence_annotation: Whether to generate the sentence
+                furigana/reading fields from the token stream. They assume
+                contiguous kana-bearing tokens: for a language with no
+                ``LanguageProfile.sentence_annotator`` they print the sentence
+                with its spaces deleted, so such a factory passes ``False`` and
+                the fields stay empty.
+            attested_reading_fallback: Spec S24. With an injected
+                ``reading_support`` whose ``word_reading`` answers ``""``, take
+                the card front's reading from the dictionary when exactly one
+                attested reading exists (``resolve_attested_reading``): ru/uk's
+                stressed headword (читать). Furigana and ``resolved_reading``
+                stay ``""``. ``False`` — every ja/ko/zh path — leaves the
+                injected branch as it was.
         """
         self.config = config
         # Perf-audit counters (Task 28): cumulative wall-clock spent in offline-
@@ -392,6 +541,38 @@ class SubtitleParserService:
         # parser) and PB7 (threading.local tagger) rewrite decisions.
         self._probe_time_s: float = 0.0
         self._tokenize_time_s: float = 0.0
+        # Card-front policy for the emit site. None ⇒ the JA static runs
+        # verbatim (see _resolve_word_identity); the kana-recovery probe stays
+        # on the static either way.
+        self._mined_form_policy = mined_form_policy
+        # Word-reading provider for the emit site. None ⇒ the JA derivation runs
+        # verbatim (see _emit_word); the ja profile never injects one.
+        self._reading_support = reading_support
+        # Language-specific merge pass for the merged stream (ko: 공부 + 하 →
+        # 공부하다). Runs only when an offline existence probe exists (see
+        # _build_line_state); None ⇒ JA/ZH behaviour verbatim.
+        self._token_merger = token_merger
+        # Language post-pass over the raw tagger tokens (§4.3 item 2(b)); None ⇒
+        # the tagger output is the raw token list, verbatim.
+        self._token_post_pass = token_post_pass
+        # R36's form lookup, read ONLY as the post-pass's third argument: a parser
+        # without a post-pass never touches it, so wiring it changes nothing for
+        # any language but the one whose post-pass asks.
+        self._form_lookup = form_lookup
+        # Cue/unit text normaliser (spec S5); None ⇒ the Japanese pair verbatim.
+        self._normalize = normalize
+        # U8 truncation-fragment reject; False ⇒ skipped outright, both of its
+        # signals being unidic-shaped (see _mine_token).
+        self._ellipsis_fragment_guard = ellipsis_fragment_guard
+        # Bilingual-cue line gate; None ⇒ every physical line of a cue is kept.
+        # Injected once per instance, so the per-FILE line cache below can never
+        # replay line state tokenized under a different gate.
+        self._has_target_script = has_target_script
+        # Sentence furigana/reading generation (spec 6.1 #2); False ⇒ the three
+        # annotation fields stay "".
+        self._sentence_annotation = sentence_annotation
+        # Spec S24: a blank injected reading may take a unique attested dictionary reading.
+        self._attested_reading_fallback = attested_reading_fallback
         self._reading_lookup = reading_lookup
         # Shared process-wide tagger (see services/tagger.py for the single-flight
         # invariant). __init__ may block ~2-3s on the lazy build if a user triggers
@@ -400,11 +581,33 @@ class SubtitleParserService:
         # impact. GUI-thread call sites that only call parse_raw_entries never
         # tokenize, so they don't race the worker thread's .parse() calls on this
         # shared tagger.
-        self.tagger = get_shared_tagger()
+        # get_shared_tagger stays a module attribute: the pre-existing tests patch
+        # THIS name, so the ja branch must keep calling it here.
+        # config_language, never the raw field: the config accepts every code in
+        # _LANGUAGE_CODES, including ones with no registered profile yet, and a
+        # raw read would take an unregistered code straight into get_tagger's
+        # ValueError — out of a constructor every mining path (and the curation
+        # dialog, which builds this service directly) runs through.
+        # Function-local for the same reason as _load_subtitle_file's import: a
+        # module-level registry import here is circular.
+        from anki_miner.languages.registry import config_language
+
+        language = config_language(config)
+        self.tagger = get_shared_tagger() if language == "ja" else get_tagger(language)
+        # The language whose tagger this is - NOT config.language: the two part
+        # ways on the degrade path, and _warn_if_nothing_mined names both.
+        self._tagger_language = language
+        # A whitelisted code with no registered profile degrades to ja above so
+        # Settings still loads; tokenizing it would mine the wrong language.
+        requested = getattr(config, "language", None)
+        self._unavailable_language: str | None = (
+            requested if isinstance(requested, str) and requested != language else None
+        )
         # POS/subtype inclusion gate, snapshotted from the (frozen) config.
         self._inclusion_rule = TokenInclusionRule(
             allowed_pos=frozenset(config.allowed_pos),
             excluded_subtypes=frozenset(config.excluded_subtypes),
+            script_gate=script_gate,
         )
         # Exact-headword existence serves compound/front remap gates; the sibling
         # rules-aware probe serves deinflection overrides. Keeping them distinct
@@ -414,8 +617,8 @@ class SubtitleParserService:
         self._term_rules_lookup = term_rules_lookup
         # Per-instance MEMOIZED existence probe shared by the compound-merge gate
         # (morphology.merge_compound_suffixes) AND the compound matcher: caches
-        # existence per surface so a repeated corpus (count_lemmas / Deck Builder
-        # coverage hot path) probes each distinct surface through the underlying
+        # existence per surface so a repeated corpus (count_lemmas's hot path)
+        # probes each distinct surface through the underlying
         # offline dictionary at most once. None when no dict is wired — the merge
         # passes then run UNGATED, so the no-dict output is byte-identical to the
         # pre-gate behavior (exactly like the matcher's term_lookup gating).
@@ -437,7 +640,7 @@ class SubtitleParserService:
         # a surface's existence is looked up once across the merge gate and the
         # matcher.
         self._compound_matcher: CompoundDictionaryMatcher | None = None
-        if self._attest is not None and COMPOUND_MATCHING:
+        if self._attest is not None and COMPOUND_MATCHING and compound_matching:
             self._compound_matcher = CompoundDictionaryMatcher(self._attest, self._inclusion_rule)
         # Masu-stem nominalization (see services/masu_stem_nominalizer.py).
         # Shares the same memoized probe; None when no dict is wired, so the
@@ -479,14 +682,15 @@ class SubtitleParserService:
         # Per-FILE tokenization cache (distinct lifetime from the per-parse memo
         # caches above): resolved path -> (stat fingerprint, line-state tuples).
         # Filled on the first _iter_parsed_lines pass over a file and reused by
-        # any later pass over the SAME path+mtime_ns+ctime_ns+size (e.g. the
-        # Deck Builder's count_lemmas → parse_subtitle_file double-parse).
+        # any later pass over the SAME path+mtime_ns+ctime_ns+size (e.g. every
+        # mining run's own count_lemmas → parse_subtitle_file double-parse, see
+        # EpisodeProcessor._phase1_parse).
         # Survives across parse_* calls; a fingerprint change invalidates the
         # entry. _reset_caches() does NOT touch this — it is not a per-parse cache.
         #
         # Size-bounded: capped at _LINE_CACHE_MAX_FILES entries via LRU
         # eviction (pop the oldest key when full). Prevents unbounded growth during
-        # large Deck Builder builds while still caching all files touched in Phase 1
+        # a large whole-corpus run while still caching all files touched in Phase 1
         # for Phase 2 reuse when the corpus fits within the cap.
         self._line_cache: dict[
             Path,
@@ -554,7 +758,100 @@ class SubtitleParserService:
             file=subtitle_file,
             tokenize_s=f"{self._tokenize_time_s:.4f}",
             probe_s=f"{self._probe_time_s:.4f}",
+            # Drained here, not logged per site: every `except AttributeError`
+            # in `morphology` is a normal OOV shape one at a time and a
+            # wrong-token-class disaster in bulk (see `_ATTRIBUTE_GUARDS`).
+            guards=capped(drain_attribute_guard_counts(), 10),
         )
+
+    def _require_engine(self) -> None:
+        """Refuse to tokenize a config whose language degraded to ja.
+
+        ``config_language`` maps a whitelisted code with no registered profile
+        to "ja" so Settings and previews keep working, but a mining run on that
+        config tokenized Chinese/Korean text with the Japanese tagger and then
+        reported "No words found in subtitles" - the config's POS whitelist
+        rejects every unidic tag. Raised at the tokenizing entry points, not in
+        ``__init__``: the GUI builds this service for ``parse_raw_entries``
+        previews, which never tokenize and must not fail.
+        """
+        if self._unavailable_language is None:
+            return
+        raise SetupError(
+            f"Mining language {self._unavailable_language!r} is not available in this installation: "
+            "no language profile is registered for it. Install its language pack, or pick another "
+            "mining language in Settings -> Mining Language."
+        )
+
+    def _warn_if_nothing_mined(
+        self, subtitle_file: Path, all_words: list[TokenizedWord], subtitle_offset: float | None
+    ) -> None:
+        """One WARNING naming why a subtitle with lines mined nothing.
+
+        The GUI says "No words found in subtitles" and the run log only
+        ``tokens=0``; the first zh YouTube report (v3.0.0) was undiagnosable
+        from either. Every zero-word outcome reproduced so far has one shape -
+        every tagger token failing ``TokenInclusionRule`` - with three causes
+        that read identically from outside: a POS whitelist belonging to
+        another language's tagger (unidic names against jieba flags), a
+        language ``config_language`` degraded to ja, or text the engine cannot
+        segment (English cues under a Chinese caption code). The mining
+        language, the language whose tagger ran, the whitelist and the tags the
+        tagger actually emitted tell them apart. Replays the line cache the
+        parse just filled, so nothing is re-tokenized; silent when the file had
+        no mineable lines at all (that case is reported upstream).
+        """
+        if all_words:
+            return
+        lines = raw_tokens = 0
+        tags: collections.Counter[str] = collections.Counter()
+        for _text, raw, _merged, _start, _end, _duration in self._iter_parsed_lines(subtitle_file, subtitle_offset):
+            lines += 1
+            raw_tokens += len(raw)
+            tags.update(str(getattr(getattr(token, "feature", None), "pos1", "") or "?") for token in raw)
+        if lines == 0:
+            return
+        logger.warning(
+            "Subtitle parse mined no words: file=%s language=%s tagger_language=%s allowed_pos=%s "
+            "lines=%d raw_tokens=%d top_pos=%s",
+            subtitle_file.name,
+            getattr(self.config, "language", "?"),
+            self._tagger_language,
+            ",".join(sorted(self._inclusion_rule.allowed_pos)),
+            lines,
+            raw_tokens,
+            ",".join(f"{pos}:{count}" for pos, count in tags.most_common(5)),
+        )
+
+    def _tagger(self) -> Any:
+        """The engine, re-acquired when a language switch released it (S23).
+
+        ``release_tagger`` drops the reference so the outgoing language's analyzer can be collected -
+        Arabic's holds ~400 MB. Re-acquiring costs nothing while the provider still caches the engine
+        (and ja's shared tagger is a module singleton); only an evicted language rebuilds.
+        """
+        if self.tagger is None:
+            self.tagger = get_shared_tagger() if self._tagger_language == "ja" else get_tagger(self._tagger_language)
+        return self.tagger
+
+    def release_tagger(self) -> None:
+        """Drop the engine reference; the next parse re-acquires one."""
+        self.tagger = None
+
+    @property
+    def normalize(self) -> Callable[[str], str] | None:
+        """The injected normaliser (None = the Japanese pair). Read by the reading worker."""
+        return self._normalize
+
+    @property
+    def has_target_script(self) -> Callable[[str], bool] | None:
+        """The injected bilingual-cue line gate (None = keep every line). Read by the reading worker."""
+        return self._has_target_script
+
+    @property
+    def token_post_pass(self) -> TokenPostPass | None:
+        """The injected post-pass over raw tagger tokens (None = none). Read by the frequency lemmatiser."""
+        return self._token_post_pass
 
     @property
     def ambiguous_reading_count(self) -> int:
@@ -586,7 +883,7 @@ class SubtitleParserService:
         if s not in self._fg_cache:
             if len(self._fg_cache) >= _FRONT_CACHE_CAP:
                 self._fg_cache.clear()
-            self._fg_cache[s] = generate_furigana(s, self.tagger)
+            self._fg_cache[s] = generate_furigana(s, self._tagger())
         return self._fg_cache[s]
 
     def _reading(self, s: str) -> str:
@@ -594,7 +891,7 @@ class SubtitleParserService:
         if s not in self._rd_cache:
             if len(self._rd_cache) >= _FRONT_CACHE_CAP:
                 self._rd_cache.clear()
-            self._rd_cache[s] = generate_reading(s, self.tagger)
+            self._rd_cache[s] = generate_reading(s, self._tagger())
         return self._rd_cache[s]
 
     def _attested_headword_reading(self, headword: str) -> str | None:
@@ -668,35 +965,70 @@ class SubtitleParserService:
         """Full per-line text pipeline shared by the mining and display paths.
 
         Order: markup strip → JP normalization → per-physical-line annotation
-        strip (always on) → whitespace collapse → ``_apply_text_filter``.
+        strip (always on) → other-script line drop (only where a language
+        injected the gate) → whitespace collapse → ``_apply_text_filter``.
         Applied identically
         by ``_iter_parsed_lines`` (mining) and ``parse_raw_entries`` (display) so
         the shown cue text matches what mining tokenizes. A line that collapses
         to empty is skipped by each caller's existing ``if not text: continue``
         guard.
         """
-        cleaned = clean_subtitle_text(raw_text)
+        cleaned = clean_subtitle_text(raw_text, normalize=self._normalize, has_target_script=self._has_target_script)
         return self._apply_text_filter(cleaned)
 
-    def _load_subs(self, subtitle_file: Path):
+    def _load_subs(self, subtitle_file: Path, *, encodings: tuple[str, ...] | None = None):
         """Load a subtitle file via pysubs2 with normalized error wrapping.
 
         Shared by every public parse_* method so error wrapping stays
         consistent regardless of entry point. The UTF-8 default is tried first
         (the ``pysubs2.load`` seam patched by tests); on a decode failure the
         shared fallback (see utils/subtitle_encoding.py) dispatches on a
-        UTF-16/32 BOM first, then tries cp932, so both UTF-16 and Shift-JIS
-        subtitles parse instead of aborting the episode.
+        UTF-16/32 BOM first, then walks the mining language's own ladder, so
+        both UTF-16 and Shift-JIS subtitles parse instead of aborting the
+        episode. When *encodings* is not None it is passed straight through
+        instead of the profile's ladder; a caller whose file is not in the
+        mining language passes ``encodings=()`` to skip the ladder and rely on
+        the BOM and the detector.
         """
+        # Function-local: languages.profile pulls in services.resource_catalog,
+        # whose package __init__ imports definition_service -> this module, so a
+        # module-level registry import here is a circular one.
+        from anki_miner.languages.registry import config_language, get_profile
+
         try:
             try:
-                return pysubs2.load(str(subtitle_file))
+                subs = pysubs2.load(str(subtitle_file))
             except UnicodeDecodeError as utf8_error:
-                return load_with_fallback_encoding(subtitle_file, utf8_error)
+                profile = get_profile(config_language(self.config))
+                subs = load_with_fallback_encoding(
+                    subtitle_file,
+                    utf8_error,
+                    encodings=profile.import_encodings if encodings is None else encodings,
+                    # An explicit caller ladder (a secondary track, encodings=())
+                    # is not in the mining language, so its script says nothing.
+                    **(script_check_kwarg(profile.import_encodings, profile.script) if encodings is None else {}),
+                )
+            else:
+                # The ladder writes its own receipt only when UTF-8 failed; the
+                # common case must leave the same trail, or a mojibake report cannot
+                # tell "decoded as UTF-8" from "never decoded at all".
+                _log_decode(subtitle_file, bom="-", ladder=(), tried=("utf-8",), chosen="utf-8", level=logging.DEBUG)
+            if subs.format == "sami":
+                _apply_sami_timing(subs)
+            return subs
         except FileNotFoundError as e:
             raise SubtitleParseError(f"Subtitle file not found: {subtitle_file}") from e
         except Exception as e:
-            raise SubtitleParseError(f"Failed to parse subtitle file: {e}") from e
+            # The wrapped message used to carry only str(e), which for a
+            # UnicodeDecodeError names a codec and an offset but not the file —
+            # useless in a batch, where the whole question is which subtitle
+            # failed. The traceback goes with it: this is the terminal boundary
+            # for an unexpected parse failure, and the ladder's own receipt
+            # (utils/subtitle_encoding.py) has already recorded the decode.
+            logger.warning(
+                "Subtitle parse failed: file=%s exc=%s: %s", subtitle_file, type(e).__name__, e, exc_info=True
+            )
+            raise SubtitleParseError(f"Failed to parse subtitle file {subtitle_file}: {type(e).__name__}: {e}") from e
 
     def _resolve_offset(self, subtitle_offset: float | None) -> float:
         """Per-call offset, falling back to the config value when None."""
@@ -743,7 +1075,7 @@ class SubtitleParserService:
         with this call's offset applied.
         A fingerprint mismatch (file edited or replaced between passes)
         invalidates the entry and forces a fresh load + tokenize. The multi-entry
-        cache supports the Deck Builder's Phase-1 (``count_lemmas``) → Phase-2
+        cache supports a Phase-1 (``count_lemmas``) → Phase-2
         (``parse_subtitle_file``) cross-file reuse pattern: every file visited in
         Phase 1 remains cached for Phase 2, eliminating a second full MeCab pass
         over the corpus.
@@ -830,9 +1162,15 @@ class SubtitleParserService:
         text-unit path so per-line tokenization stays in one place.
         """
         tokenize_start = time.perf_counter()
-        raw_tokens = list(self.tagger(text))
+        raw_tokens = list(self._tagger()(text))
         self._tokenize_time_s += time.perf_counter() - tokenize_start
+        if self._token_post_pass is not None:
+            raw_tokens = list(self._token_post_pass(raw_tokens, self._attest, self._form_lookup))
         merged_tokens = self._merge_compound_suffixes(raw_tokens)
+        # Language-specific merge (ko: 공부 + 하 → 공부하다). Placed with the other
+        # merge passes and gated on the same probe; no probe ⇒ no merge.
+        if self._token_merger is not None and self._attest is not None:
+            merged_tokens = self._token_merger.merge_line(text, merged_tokens, self._attest)
         if self._name_matcher is not None:
             merged_tokens = self._name_matcher.merge_line(text, merged_tokens)
         if self._compound_matcher is not None:
@@ -892,13 +1230,22 @@ class SubtitleParserService:
         pronunciation = getattr(word_token.feature, "pron", "")
         if not isinstance(pronunciation, str):
             pronunciation = ""
-        mined = select_mined_form(
-            word_token.feature.pos1,
-            resolved_front,
-            lemma,
-            word_token.surface,
-            pronunciation=pronunciation,
-        )
+        if self._mined_form_policy is None:
+            mined = select_mined_form(
+                word_token.feature.pos1,
+                resolved_front,
+                lemma,
+                word_token.surface,
+                pronunciation=pronunciation,
+            )
+        else:
+            mined = self._mined_form_policy.mined_form(
+                word_token.feature.pos1,
+                resolved_front,
+                lemma,
+                word_token.surface,
+                pronunciation,
+            )
         return lemma, resolved_front, mined, front_overridden
 
     def _apply_single_token_sentence_attestation(
@@ -916,7 +1263,16 @@ class SubtitleParserService:
         propagation is limited to real tokens whose card front equals the exact
         token surface. Expression fields still apply the unique rule to every
         real-token mined form.
+
+        Skipped outright when a ``ReadingSupport`` owns the reading fields: the
+        comparison reading below comes from ``feature.kana``, which is ``""`` by
+        the LanguageToken contract, so every attested headword compared unequal
+        and a multi-reading one was recorded for review the user cannot act on.
+        Nothing is lost — those languages set ``sentence_annotator=None``, so
+        the corrected stream this returns reaches no field.
         """
+        if self._reading_support is not None:
+            return display_tokens
         corrections: dict[tuple[int, int], str] = {}
         for token, (tok_start, tok_end, _), mined in zip(
             included_tokens,
@@ -1012,170 +1368,198 @@ class SubtitleParserService:
             return None
         seen_mined_forms.add(mined)
 
-        # Get reading if available
-        reading = self._extract_reading(word_token)
-        kana_attested = getattr(word_token.feature, "kana_attested", False) is True
-        # Strict ``is True`` (like the is_comment guard above): a MagicMock
-        # token auto-creates a truthy ``compound`` attribute in tests.
-        if getattr(word_token, "compound", False) is True:
-            # Attested span (audit F2): the attestation pass corrected this
-            # token's kana against the dictionary — trust it, folded to
-            # hiragana (the compound-reading convention: curation Reading
-            # column / TSV export show hiragana for compounds). Unattested
-            # span (inflected kind-A: 手っ取り早く is not a headword): try the
-            # HEADWORD's attested reading — the dictionary form the card
-            # front shows — before falling back to the headword re-tokenize
-            # (which re-concatenates per-token kana: 気がする → キガシ,
-            # 手っ取り早い → てっとりはやい instead of てっとりばやい).
-            if kana_attested:
-                reading = katakana_to_hiragana(reading)
-            else:
-                reading = self._attested_headword_reading(lemma) or self._reading(lemma)
-
-        # ExpressionFurigana/Reading match the mined card front (computed above):
-        # orthBase for verbs/adjectives, surface for nouns (see
-        # TokenizedWord.mined_form / select_mined_form for the trade-off).
-        # Set by the two curated-reading-override branches so lemma_reading below
-        # reuses the corrected value even when the lemma spelling diverges.
-        reading_overridden = False
-        if mined == surface and getattr(word_token, "compound", False) is not True:
-            # Single source of truth for the target reading (Task 1.2). When the
-            # card front IS the surface token, keep the context-disambiguated
-            # reading this token already carries instead of re-tokenizing the
-            # surface in isolation: an isolated pass picks a context-free reading
-            # for polyphonic nouns (方 かた/ほう, 中 なか/ちゅう), which would
-            # split the card's ExpressionReading, expression furigana, and the
-            # JPod101/audio-pack identity pair (mined_form + expression_reading)
-            # from what the learner heard. This applies Yomitan's invariant —
-            # one reading flows from the matched headword everywhere, and
-            # anki-note-builder.js `getReading` overrides the parser token
-            # reading with the entry reading (upstream e2ed450) — but inverted:
-            # here the MeCab token IS the trustworthy contextual source, so we
-            # propagate it outward rather than re-derive. ``reading`` here
-            # equals extract_reading(word_token)
-            # (only the compound branch above — excluded by the guard — and the
-            # curated override just below replace it). Compound synthetics carry wrong
-            # concatenated component kana, so they take the else branch and keep
-            # the headword-regenerated reading.
-            expression_reading = katakana_to_hiragana(reading)
-            override = resolve_reading_override(mined, expression_reading)
-            if override is not None:
-                # unidic-lite misreads this spelling in every context (一日→ツイタチ,
-                # 仏→フツ, マズい→マジイ, 込む→ゴム). Take the curated reading and
-                # regenerate ruby from it — a stale per-token furigana would
-                # contradict the corrected reading field (and the corrected value
-                # flows on to the word reading and lemma_reading below).
-                expression_reading = override
-                expression_furigana = _format_furigana(mined, override)
-                reading = hiragana_to_katakana(override)
-                reading_overridden = True
-            else:
-                expression_furigana = generate_furigana_from_tokens([word_token])
-        elif getattr(word_token, "compound", False) is True and kana_attested and mined == surface:
-            # Attested compound whose card front IS the span surface (kind-B, or
-            # a kind-A span appearing UNINFLECTED): the dictionary-corrected kana
-            # IS the expression reading — re-tokenizing ``mined`` would
-            # re-concatenate per-token kana and resurrect the rendaku bug (audit
-            # F2). ``reading`` was folded to hiragana in the compound branch
-            # above. The ``mined == surface`` guard (U6) is load-bearing: an
-            # INFLECTED kind-A span (surface 絶え間なく, mined headword 絶え間ない)
-            # can itself be an attested headword (絶え間なく is a JMdict adverb),
-            # stamping kana_attested on the span — but its attested kana is the
-            # INFLECTED reading (たえまなく), not the headword reading the card
-            # front shows. Such spans (mined != surface) fall through to the
-            # headword-attestation elif below, which yields たえまない.
-            expression_reading = reading
-            expression_furigana = _format_furigana(mined, expression_reading)
-        elif (
-            getattr(word_token, "compound", False) is True
-            and (attested_headword := self._attested_headword_reading(mined)) is not None
-        ):
-            # Inflected kind-A compound (span surface unattested): the mined
-            # card front IS the headword, so its attested reading applies to
-            # the expression fields even though the sentence span keeps its
-            # concat kana (declared residual for sentence ruby only).
-            expression_reading = attested_headword
-            expression_furigana = _format_furigana(mined, expression_reading)
+        if self._reading_support is not None:
+            # An injected ReadingSupport owns the reading fields outright. The
+            # block below is JA-shaped end to end (furigana assembly, attested-
+            # kana recovery, katakana pronoun folds, the lemma-reading retry)
+            # and none of it applies to a duck token whose feature.kana is ""
+            # by the LanguageToken contract.
+            reading = expression_reading = self._reading_support.word_reading(word_token)
+            reconcile = getattr(self._reading_support, "reconcile", None)
+            if reconcile is not None:
+                # Optional support seam (zh): the dictionary and the engine write
+                # the same romanisation, so a single attested reading for this
+                # exact card front outranks the engine's context-free guess.
+                # ``mined``, not the token — the front may be the other script
+                # (銀行 -> 银行) and that is what was probed for.
+                reading = expression_reading = reconcile(mined, expression_reading, self._attested_readings(mined))
+            if not expression_reading and self._attested_reading_fallback and self._reading_lookup is not None:
+                # S24: the profile owns the reading fields but has no reading of its own
+                # (ru stress); a single attested dictionary reading is the card's
+                # stressed headword, several (zamok noun vs zamok verb) leave it blank.
+                expression_reading = resolve_attested_reading("", self._attested_readings(mined)).reading or ""
+            expression_furigana = ""
+            lemma_reading = expression_reading
+            resolved_reading = ""
         else:
-            # Verbs/adjectives mine as orthBase, whose reading is genuinely not
-            # the surface token's kana (蒔い→蒔く); compound synthetics
-            # regenerate from the headword. Both re-derive from ``mined``.
-            expression_reading = self._reading(mined)
-            override = resolve_reading_override(mined, expression_reading)
-            pronoun_reading = resolve_pronoun_fold_reading(surface, mined)
-            if override is not None:
-                # Inflected misread spelling (マズかった→mined マズい→まじい,
-                # 込んだ→mined 込む→ごむ): apply the curated reading and regenerate
-                # ruby from it, mirroring the mined==surface branch above.
-                expression_reading = override
-                expression_furigana = _format_furigana(mined, override)
-                reading_overridden = True
-            elif pronoun_reading is not None:
-                # Katakana 代名詞 folded to kanji by select_mined_form (ワタシ→私,
-                # オマエ→お前): the paired reading is authoritative because
-                # generate_reading gives 私→わたくし and the lemma is 御前→ごぜん.
-                # Regenerate ruby from it, and reading_overridden makes
-                # lemma_reading reuse おまえ instead of the 御前 misreading below.
-                expression_reading = pronoun_reading
-                expression_furigana = _format_furigana(mined, pronoun_reading)
-                reading_overridden = True
+            # Get reading if available
+            reading = self._extract_reading(word_token)
+            kana_attested = getattr(word_token.feature, "kana_attested", False) is True
+            # Strict ``is True`` (like the is_comment guard above): a MagicMock
+            # token auto-creates a truthy ``compound`` attribute in tests.
+            if getattr(word_token, "compound", False) is True:
+                # Attested span (audit F2): the attestation pass corrected this
+                # token's kana against the dictionary — trust it, folded to
+                # hiragana (the compound-reading convention: curation Reading
+                # column / TSV export show hiragana for compounds). Unattested
+                # span (inflected kind-A: 手っ取り早く is not a headword): try the
+                # HEADWORD's attested reading — the dictionary form the card
+                # front shows — before falling back to the headword re-tokenize
+                # (which re-concatenates per-token kana: 気がする → キガシ,
+                # 手っ取り早い → てっとりはやい instead of てっとりばやい).
+                if kana_attested:
+                    reading = katakana_to_hiragana(reading)
+                else:
+                    reading = self._attested_headword_reading(lemma) or self._reading(lemma)
+
+            # ExpressionFurigana/Reading match the mined card front (computed above):
+            # orthBase for verbs/adjectives, surface for nouns (see
+            # TokenizedWord.mined_form / select_mined_form for the trade-off).
+            # Set by the two curated-reading-override branches so lemma_reading below
+            # reuses the corrected value even when the lemma spelling diverges.
+            reading_overridden = False
+            if mined == surface and getattr(word_token, "compound", False) is not True:
+                # Single source of truth for the target reading (Task 1.2). When the
+                # card front IS the surface token, keep the context-disambiguated
+                # reading this token already carries instead of re-tokenizing the
+                # surface in isolation: an isolated pass picks a context-free reading
+                # for polyphonic nouns (方 かた/ほう, 中 なか/ちゅう), which would
+                # split the card's ExpressionReading, expression furigana, and the
+                # JPod101/audio-pack identity pair (mined_form + expression_reading)
+                # from what the learner heard. This applies Yomitan's invariant —
+                # one reading flows from the matched headword everywhere, and
+                # anki-note-builder.js `getReading` overrides the parser token
+                # reading with the entry reading (upstream e2ed450) — but inverted:
+                # here the MeCab token IS the trustworthy contextual source, so we
+                # propagate it outward rather than re-derive. ``reading`` here
+                # equals extract_reading(word_token)
+                # (only the compound branch above — excluded by the guard — and the
+                # curated override just below replace it). Compound synthetics carry wrong
+                # concatenated component kana, so they take the else branch and keep
+                # the headword-regenerated reading.
+                expression_reading = katakana_to_hiragana(reading)
+                override = resolve_reading_override(mined, expression_reading)
+                if override is not None:
+                    # unidic-lite misreads this spelling in every context (一日→ツイタチ,
+                    # 仏→フツ, マズい→マジイ, 込む→ゴム). Take the curated reading and
+                    # regenerate ruby from it — a stale per-token furigana would
+                    # contradict the corrected reading field (and the corrected value
+                    # flows on to the word reading and lemma_reading below).
+                    expression_reading = override
+                    expression_furigana = _format_furigana(mined, override)
+                    reading = hiragana_to_katakana(override)
+                    reading_overridden = True
+                else:
+                    expression_furigana = generate_furigana_from_tokens([word_token])
+            elif getattr(word_token, "compound", False) is True and kana_attested and mined == surface:
+                # Attested compound whose card front IS the span surface (kind-B, or
+                # a kind-A span appearing UNINFLECTED): the dictionary-corrected kana
+                # IS the expression reading — re-tokenizing ``mined`` would
+                # re-concatenate per-token kana and resurrect the rendaku bug (audit
+                # F2). ``reading`` was folded to hiragana in the compound branch
+                # above. The ``mined == surface`` guard (U6) is load-bearing: an
+                # INFLECTED kind-A span (surface 絶え間なく, mined headword 絶え間ない)
+                # can itself be an attested headword (絶え間なく is a JMdict adverb),
+                # stamping kana_attested on the span — but its attested kana is the
+                # INFLECTED reading (たえまなく), not the headword reading the card
+                # front shows. Such spans (mined != surface) fall through to the
+                # headword-attestation elif below, which yields たえまない.
+                expression_reading = reading
+                expression_furigana = _format_furigana(mined, expression_reading)
+            elif (
+                getattr(word_token, "compound", False) is True
+                and (attested_headword := self._attested_headword_reading(mined)) is not None
+            ):
+                # Inflected kind-A compound (span surface unattested): the mined
+                # card front IS the headword, so its attested reading applies to
+                # the expression fields even though the sentence span keeps its
+                # concat kana (declared residual for sentence ruby only).
+                expression_reading = attested_headword
+                expression_furigana = _format_furigana(mined, expression_reading)
             else:
-                expression_furigana = self._furigana(mined)
+                # Verbs/adjectives mine as orthBase, whose reading is genuinely not
+                # the surface token's kana (蒔い→蒔く); compound synthetics
+                # regenerate from the headword. Both re-derive from ``mined``.
+                expression_reading = self._reading(mined)
+                override = resolve_reading_override(mined, expression_reading)
+                pronoun_reading = resolve_pronoun_fold_reading(surface, mined)
+                if override is not None:
+                    # Inflected misread spelling (マズかった→mined マズい→まじい,
+                    # 込んだ→mined 込む→ごむ): apply the curated reading and regenerate
+                    # ruby from it, mirroring the mined==surface branch above.
+                    expression_reading = override
+                    expression_furigana = _format_furigana(mined, override)
+                    reading_overridden = True
+                elif pronoun_reading is not None:
+                    # Katakana 代名詞 folded to kanji by select_mined_form (ワタシ→私,
+                    # オマエ→お前): the paired reading is authoritative because
+                    # generate_reading gives 私→わたくし and the lemma is 御前→ごぜん.
+                    # Regenerate ruby from it, and reading_overridden makes
+                    # lemma_reading reuse おまえ instead of the 御前 misreading below.
+                    expression_reading = pronoun_reading
+                    expression_furigana = _format_furigana(mined, pronoun_reading)
+                    reading_overridden = True
+                else:
+                    expression_furigana = self._furigana(mined)
 
-        # Without a curated override, a real token's contextual reading is
-        # trusted when the exact card-front headword attests it. On mismatch,
-        # one dictionary reading is authoritative; several are unresolved and
-        # recorded for review. This deliberately diverges from Yomitan's
-        # interactive headword selection: bulk mining has no user-selected row,
-        # so it must not guess among homographs by score order or edit distance.
-        if not reading_overridden and not isinstance(word_token, SyntheticToken):
-            resolution = resolve_attested_reading(
-                expression_reading,
-                self._attested_readings(mined),
-            )
-            if resolution.ambiguous:
-                self._ambiguous_readings.add(mined)
-            elif resolution.reading is not None and resolution.reading != expression_reading:
-                expression_reading = resolution.reading
-                expression_furigana = _format_furigana(mined, resolution.reading)
-                reading_overridden = True
-        # Synthetic OOV recovery remains unique-only. Merged compounds have
-        # their own contextual attestation path before expression assembly.
-        elif not is_kana_only(expression_reading):
-            recovered = self._attested_unique_reading(mined)
-            if recovered is not None:
-                expression_reading = recovered
-                expression_furigana = _format_furigana(mined, recovered)
-                reading_overridden = True
+            # Without a curated override, a real token's contextual reading is
+            # trusted when the exact card-front headword attests it. On mismatch,
+            # one dictionary reading is authoritative; several are unresolved and
+            # recorded for review. This deliberately diverges from Yomitan's
+            # interactive headword selection: bulk mining has no user-selected row,
+            # so it must not guess among homographs by score order or edit distance.
+            if not reading_overridden and not isinstance(word_token, SyntheticToken):
+                resolution = resolve_attested_reading(
+                    expression_reading,
+                    self._attested_readings(mined),
+                )
+                if resolution.ambiguous:
+                    self._ambiguous_readings.add(mined)
+                elif resolution.reading is not None and resolution.reading != expression_reading:
+                    expression_reading = resolution.reading
+                    expression_furigana = _format_furigana(mined, resolution.reading)
+                    reading_overridden = True
+            # Synthetic OOV recovery remains unique-only. Merged compounds have
+            # their own contextual attestation path before expression assembly.
+            elif not is_kana_only(expression_reading):
+                recovered = self._attested_unique_reading(mined)
+                if recovered is not None:
+                    expression_reading = recovered
+                    expression_furigana = _format_furigana(mined, recovered)
+                    reading_overridden = True
 
-        # Lemma reading for the JPod101 audio retry: when the mined form
-        # misses, the loop retries with the lemma kanji and needs the lemma's
-        # OWN reading (探す→さがす), not the surface reading (さがし). For
-        # most verb/adjective tokens ``mined`` (orthBase) equals the lemma,
-        # so reuse the value; a kanji-variant divergence (乞う vs 請う)
-        # recomputes the lemma's reading like the surface-mined case. On a curated
-        # reading override the lemma spelling (マズい→不味い) reads the SAME wrong
-        # value in isolation, so reuse the corrected reading rather than recompute.
-        lemma_reading = expression_reading if (mined == lemma or reading_overridden) else self._reading(lemma)
-        # Same recovery for the lemma fallback used by audio and pitch: a
-        # kanji-variant lemma the tokenizer cannot read gets its unique attested
-        # reading, or stays on the surface fallback.
-        if lemma != mined and not is_kana_only(lemma_reading):
-            recovered_lemma = self._attested_unique_reading(lemma)
-            if recovered_lemma is not None:
-                lemma_reading = recovered_lemma
+            # Lemma reading for the JPod101 audio retry: when the mined form
+            # misses, the loop retries with the lemma kanji and needs the lemma's
+            # OWN reading (探す→さがす), not the surface reading (さがし). For
+            # most verb/adjective tokens ``mined`` (orthBase) equals the lemma,
+            # so reuse the value; a kanji-variant divergence (乞う vs 請う)
+            # recomputes the lemma's reading like the surface-mined case. On a curated
+            # reading override the lemma spelling (マズい→不味い) reads the SAME wrong
+            # value in isolation, so reuse the corrected reading rather than recompute.
+            lemma_reading = expression_reading if (mined == lemma or reading_overridden) else self._reading(lemma)
+            # Same recovery for the lemma fallback used by audio and pitch: a
+            # kanji-variant lemma the tokenizer cannot read gets its unique attested
+            # reading, or stays on the surface fallback.
+            if lemma != mined and not is_kana_only(lemma_reading):
+                recovered_lemma = self._attested_unique_reading(lemma)
+                if recovered_lemma is not None:
+                    lemma_reading = recovered_lemma
 
-        # Pitch fallback realignment: when the resolver diverged the front from
-        # the lemma (感じる card, but archaic lemma 感ずる), a lemma-key retry must
-        # keep the front's reading (かんじる), not switch to 感ずる→かんずる.
-        # Empty when no front override fired.
-        resolved_reading = self._reading(mined) if front_overridden else ""
+            # Pitch fallback realignment: when the resolver diverged the front from
+            # the lemma (感じる card, but archaic lemma 感ずる), a lemma-key retry must
+            # keep the front's reading (かんじる), not switch to 感ずる→かんずる.
+            # Empty when no front override fired.
+            resolved_reading = self._reading(mined) if front_overridden else ""
 
         if self.config.bold_target_in_sentence:
             # Bold the full inflected form (verb/adjective + auxiliary
             # chain), not just the stem morpheme: 蒔いた, not 蒔い.
             sentence_bolded = wrap_target_plain(text, tok_start, highlight_end)
-            sentence_furigana_bolded = wrap_target_furigana_from_tokens(text, display_tokens, tok_start, highlight_end)
+            sentence_furigana_bolded = (
+                wrap_target_furigana_from_tokens(text, display_tokens, tok_start, highlight_end)
+                if self._sentence_annotation
+                else ""
+            )
         else:
             sentence_bolded = ""
             sentence_furigana_bolded = ""
@@ -1202,6 +1586,8 @@ class SubtitleParserService:
             highlight_end=highlight_end,
             sentence_bolded=sentence_bolded,
             sentence_furigana_bolded=sentence_furigana_bolded,
+            mined_form_override=mined,
+            morph=_token_morph(word_token),
         )
 
     def _emit_line_words_and_index(
@@ -1300,8 +1686,11 @@ class SubtitleParserService:
             included_spans,
             mined_forms,
         )
-        sentence_furigana = generate_furigana_from_tokens(display_tokens, text=text)
-        sentence_reading = generate_reading_from_tokens(display_tokens)
+        if self._sentence_annotation:
+            sentence_furigana = generate_furigana_from_tokens(display_tokens, text=text)
+            sentence_reading = generate_reading_from_tokens(display_tokens)
+        else:
+            sentence_furigana = sentence_reading = ""
 
         line_lemmas_entry: LineLemmas | None = None
         if collect_index:
@@ -1342,7 +1731,11 @@ class SubtitleParserService:
         return line_words, line_lemmas_entry
 
     def parse_raw_entries(
-        self, subtitle_file: Path, subtitle_offset: float | None = None
+        self,
+        subtitle_file: Path,
+        subtitle_offset: float | None = None,
+        *,
+        encodings: tuple[str, ...] | None = None,
     ) -> list[tuple[float, float, str]]:
         """Parse subtitle file and return raw timing entries without tokenization.
 
@@ -1352,6 +1745,10 @@ class SubtitleParserService:
                 (default) uses ``config.subtitle_offset``. Callers that pair
                 these entries with mined words (line expansion) must pass the
                 offset that parse used, or the two land on different timelines.
+            encodings: Forwarded to ``_load_subs``. ``None`` (default) uses the
+                mining language's own ladder; a caller whose file is not in
+                that language passes ``encodings=()`` to skip the ladder and
+                rely on the BOM and charset detection instead.
 
         Returns:
             List of (start_seconds, end_seconds, text) tuples
@@ -1360,7 +1757,7 @@ class SubtitleParserService:
             SubtitleParseError: If subtitle file cannot be parsed
         """
         offset = self._resolve_offset(subtitle_offset)
-        subs = self._load_subs(subtitle_file)
+        subs = self._load_subs(subtitle_file, encodings=encodings)
 
         entries = []
         for line in subs:
@@ -1391,6 +1788,7 @@ class SubtitleParserService:
         Raises:
             SubtitleParseError: If subtitle file cannot be parsed
         """
+        self._require_engine()
         # Reset per-parse memo caches so a second call on the same instance
         # does not serve entries from a previous parse run.
         self._reset_caches()
@@ -1407,6 +1805,7 @@ class SubtitleParserService:
             all_words.extend(line_words)
 
         self._log_parse_probe_timing(subtitle_file)
+        self._warn_if_nothing_mined(subtitle_file, all_words, subtitle_offset)
         return all_words
 
     def parse_subtitle_file_with_index(
@@ -1438,6 +1837,7 @@ class SubtitleParserService:
         Raises:
             SubtitleParseError: If subtitle file cannot be parsed
         """
+        self._require_engine()
         # Reset per-parse memo caches; see parse_subtitle_file for rationale.
         self._reset_caches()
 
@@ -1454,6 +1854,7 @@ class SubtitleParserService:
             all_words.extend(line_words)
 
         self._log_parse_probe_timing(subtitle_file)
+        self._warn_if_nothing_mined(subtitle_file, all_words, subtitle_offset)
         return all_words, line_index
 
     def parse_text_units(
@@ -1511,6 +1912,7 @@ class SubtitleParserService:
             ``want_line_index`` else ``None``; ``counts`` maps lemma → total
             included occurrences (``count_lemmas`` semantics, no dedup).
         """
+        self._require_engine()
         # Public parse_* convention: reset the per-parse memo caches so a
         # multi-volume queue on one shared processor never serves stale
         # furigana/reading entries and cache growth stays bounded across units.
@@ -1530,8 +1932,13 @@ class SubtitleParserService:
             # was mined (as on the subtitle path). Order mirrors clean_subtitle_text
             # (normalize_for_tokenization then standardize_kanji_variants); the
             # markup strip / regex filter it also runs are applied just below,
-            # subtitle-cue kind only (subtitle_cleanup).
-            text = standardize_kanji_variants(normalize_for_tokenization(unit.text))
+            # subtitle-cue kind only (subtitle_cleanup). An injected normaliser
+            # replaces exactly that pair, as it does in clean_subtitle_text.
+            text = (
+                standardize_kanji_variants(normalize_for_tokenization(unit.text))
+                if self._normalize is None
+                else self._normalize(unit.text)
+            )
             if subtitle_cleanup:
                 # Reading→Subtitles per-cue cleanup remains here for synthetic
                 # ReadingUnit callers and is idempotent when the loader already
@@ -1584,6 +1991,7 @@ class SubtitleParserService:
         Raises:
             SubtitleParseError: If subtitle file cannot be parsed
         """
+        self._require_engine()
         # Unlike the parse_* entry points above, count_lemmas does not call
         # _reset_caches() (it never touches the reading/furigana memos) — but
         # it does tokenize and probe, so it resets the perf counters directly.
@@ -1592,10 +2000,10 @@ class SubtitleParserService:
         for text, _raw_tokens, merged_tokens, *_ in self._iter_parsed_lines(subtitle_file):
             # Spans come from the SAME locator as the mining loops in
             # parse_subtitle_file* — a token mining drops (find == -1),
-            # counting drops too, or the count-vs-mine sets diverge and the
-            # Deck Builder preview over-promises (T-38). The cursor+find and
-            # drop-rule rationale lives on _iter_token_spans; do not inline a
-            # divergent copy here.
+            # counting drops too, or the count-vs-mine sets diverge and a
+            # reported occurrence count over-promises (T-38). The cursor+find
+            # and drop-rule rationale lives on _iter_token_spans; do not
+            # inline a divergent copy here.
             for token, tok_start, tok_end in self._iter_token_spans(text, merged_tokens):
                 if self._mine_token(token, text, tok_start, tok_end, merged_tokens):
                     counts[self._extract_lemma(token)] += 1
@@ -1617,8 +2025,8 @@ class SubtitleParserService:
         ``self._exist_memo`` so a repeated corpus probes each distinct surface at
         most once, and returns the attested subset of ``surfaces``. Shared by the
         morphology compound-merge gate and the compound matcher. Clear-on-cap
-        bounds the memo on whole-corpus Deck Builder runs (mirrors _front_cache /
-        the matcher's existence cache). Only bound to ``self._attest`` when a
+        bounds the memo on whole-corpus runs (mirrors _front_cache / the
+        matcher's existence cache). Only bound to ``self._attest`` when a
         ``term_lookup`` exists; the ``None`` guard is defensive. The returned
         subset comes from a per-call verdict snapshot so a cap clear cannot drop
         a cached hit requested by the current batch.
@@ -1895,8 +2303,8 @@ class SubtitleParserService:
         candidate's functional neighbors.
 
         Two disjoint acceptance paths, each with its own reject layer, plus the
-        dict-free U8 ellipsis truncation-fragment reject
-        (``_is_ellipsis_truncation_fragment``) applied on BOTH:
+        dict-free U8 ellipsis truncation-fragment reject (``_ellipsis_reject``,
+        off for a parser whose factory closed that seam) applied on BOTH:
 
         - ``should_include`` accepts (kanji / katakana loanword): apply ONLY the
           U5 katakana run-fragment guard (``_is_katakana_run_fragment``). The U4
@@ -1916,12 +2324,23 @@ class SubtitleParserService:
         if self._inclusion_rule.should_include(word_token):
             if self._is_katakana_run_fragment(word_token, text, tok_start, tok_end):
                 return False
-            return not self._is_ellipsis_truncation_fragment(word_token, text, tok_start, tok_end)
+            return not self._ellipsis_reject(word_token, text, tok_start, tok_end)
         if not self._recover_kana_content_word(word_token):
             return False
         if self._rejected_by_lexicalized_window(word_token, tokens):
             return False
-        return not self._is_ellipsis_truncation_fragment(word_token, text, tok_start, tok_end)
+        return not self._ellipsis_reject(word_token, text, tok_start, tok_end)
+
+    def _ellipsis_reject(self, word_token, text: str, tok_start: int, tok_end: int) -> bool:
+        """The U8 guard, or ``False`` outright for a parser that closed the seam.
+
+        One place, so the two ``_mine_token`` branches can never disagree about
+        whether the guard runs. ``_is_ellipsis_truncation_fragment`` itself stays
+        the unconditional rule the ja tests call directly.
+        """
+        if not self._ellipsis_fragment_guard:
+            return False
+        return self._is_ellipsis_truncation_fragment(word_token, text, tok_start, tok_end)
 
     def _rejected_by_lexicalized_window(self, word_token, tokens: list) -> bool:
         """Whether a recovered kana fragment sits inside an attested lexicalized expression.

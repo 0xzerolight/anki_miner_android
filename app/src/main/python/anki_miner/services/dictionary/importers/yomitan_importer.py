@@ -3,24 +3,27 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import tempfile
+import time
 import zipfile
+from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Callable
 
-from anki_miner.exceptions import OperationCancelled, SetupError
+from anki_miner.exceptions import SetupError, raise_if_cancelled
 from anki_miner.services._sqlite_index import (
-    prove_owned_slot,
+    language_identity,
+    read_slot_language,
     resolve_auto_store_id,
-    resolve_managed_slot,
     write_ownership_marker,
 )
-from anki_miner.services._staging import promote_staged_dir, repair_managed_slot
+from anki_miner.services._staging import claim_managed_slot, promote_staged_dir, repair_managed_slot
 from anki_miner.services.dictionary.schema_validation import (
     ensure_bank_array,
     is_valid_term_bank_entry,
@@ -45,7 +48,11 @@ from anki_miner.services.dictionary.zip_safety import (
     read_member,
     validate_zip_safe,
 )
+from anki_miner.utils.logging_ext import capped, log_summary
 from anki_miner.utils.slug import slugify
+from anki_miner.utils.timing import timed_phase
+
+logger = logging.getLogger(__name__)
 
 ProgressFn = Callable[[int, int, str], None]
 # (banks_done, bank_total) as each term bank is consumed. Separate from
@@ -72,6 +79,25 @@ _PROGRESS_SCALE = 1000
 # orders of magnitude beyond any legitimate index.json.
 MAX_INDEX_JSON_BYTES = 8 * 1024 * 1024
 
+# How many concrete member identifiers ("term_bank_3.json#41", "svg/x.eps") the
+# single skipped-rows WARNING carries. Enough to see the shape of the problem —
+# one bad bank, one bad media folder — without the line growing with the size of
+# a broken dictionary. A count is the answer to "how many"; the examples are the
+# answer to "which one do I open".
+_SKIP_EXAMPLE_LIMIT = 20
+
+
+def _record_skip(skipped: Counter[str], examples: list[str], kind: str, member: str) -> None:
+    """Count one skipped input under ``kind``, keeping bounded examples.
+
+    Per-row logging is forbidden here: a dictionary with a million malformed
+    rows would write a million lines. Every skip site funnels through this, and
+    the totals are reported once by the caller's summary.
+    """
+    skipped[kind] += 1
+    if len(examples) < _SKIP_EXAMPLE_LIMIT:
+        examples.append(member)
+
 
 class _RenderedGlossaryProbe(HTMLParser):
     def __init__(self) -> None:
@@ -95,11 +121,6 @@ def _has_rendered_glossary_content(content: str) -> bool:
     return probe.has_content
 
 
-def _raise_if_cancelled(cancel_check: Callable[[], bool] | None) -> None:
-    if cancel_check is not None and cancel_check():
-        raise OperationCancelled("Import cancelled")
-
-
 @dataclass(frozen=True)
 class YomitanImportResult:
     dict_id: str
@@ -113,6 +134,11 @@ class YomitanImportResult:
     # (unsupported type / failed image decode), surfaced instead of silently
     # dropped.
     media_warnings: tuple[str, ...] = ()
+    # The dictionary's declared ``sourceLanguage`` (S19) and whether it names a
+    # language other than the one this import is stamped for; surfaced as a
+    # receipt note, never a refusal.
+    source_language: str = ""
+    source_language_mismatch: bool = False
 
 
 def import_yomitan_zip(
@@ -125,6 +151,7 @@ def import_yomitan_zip(
     cancel_check: Callable[[], bool] | None = None,
     dict_id: str | None = None,
     before_promote: Callable[[], None] | None = None,
+    language: str = "ja",
 ) -> YomitanImportResult:
     """Import a Yomitan zip into dest_root/<dict_id>/index.sqlite.
 
@@ -168,6 +195,8 @@ def import_yomitan_zip(
                  comes from the zip title; only the folder name is pinned.
         before_promote: Optional last-moment guard run immediately before the
                         staged directory replaces the managed slot.
+        language: Mining language stamped into the index meta. Defaults to
+                  ``"ja"``, the pre-transition value for every existing caller.
 
     Raises:
         SetupError: On invalid input, format mismatch, or already-exists when
@@ -176,7 +205,8 @@ def import_yomitan_zip(
     if not zip_path.exists():
         raise SetupError(f"Yomitan zip not found: {zip_path}")
 
-    with tempfile.TemporaryDirectory(prefix="anki_miner_yomitan_") as tmp:
+    started_at = time.perf_counter()
+    with timed_phase("yomitan_import", logger), tempfile.TemporaryDirectory(prefix="anki_miner_yomitan_") as tmp:
         tmp_path = Path(tmp)
         if progress:
             progress(0, 0, "Validating archive")
@@ -208,6 +238,12 @@ def import_yomitan_zip(
             raise SetupError(f"Unsupported Yomitan format version {format_version!r}; need format >= 3")
         if not title:
             raise SetupError("index.json missing required 'title'")
+        # Term-bank sequence numbers mean something only in a dictionary that
+        # declares itself sequenced (Yomitan's optional flag, false when absent).
+        # KRDICT declares false yet writes 1 on every row; stored, that number
+        # put every homograph of a word into one render group under one merged
+        # tag line (못: "Noun, ⭐⭐, Adverb, ⭐⭐⭐" over both "nail" and "not").
+        sequenced = index.get("sequenced") is True
 
         # A caller-supplied slot pins the on-disk folder to a stable name; else
         # derive it from title+revision (the historical behavior).
@@ -216,26 +252,19 @@ def import_yomitan_zip(
                 dest_root,
                 _derive_dict_id(title, revision),
                 "dictionary",
-                {"source_name": title, "source_revision": revision},
+                {"source_name": title, "source_revision": revision, **language_identity(language)},
             )
 
-        try:
-            final_path = resolve_managed_slot(dest_root, dict_id)
-        except ValueError as exc:
-            raise SetupError(str(exc)) from exc
+        # Start receipt: the zip the user picked and the slot it lands in. The
+        # pair is what turns "I imported it and got half the entries" into a
+        # file someone can open.
+        log_summary(logger, "Yomitan import", zip=zip_path, dict_id=dict_id, title=title, revision=revision)
 
         # Fail fast on an already-imported dict BEFORE any staging/rendering
         # work (mirrors Yomitan checking dictionaryExists right after reading
         # index.json). The late check below the atomic rename stays as a
         # race backstop. dest_root may not exist yet — .exists() is False then.
-        if os.path.lexists(final_path):
-            if not overwrite:
-                raise SetupError(f"Dictionary '{dict_id}' already exists")
-            if not prove_owned_slot(final_path.parent, dict_id, "dictionary"):
-                raise SetupError(
-                    f"Dictionary '{dict_id}' exists but is not an Anki Miner-managed dictionary; "
-                    "refusing to overwrite it"
-                )
+        final_path = claim_managed_slot(dest_root, dict_id, "dictionary", overwrite=overwrite, noun="Dictionary")
 
         # Enumerate term bank files for progress totals
         term_files = sorted(tmp_path.glob("term_bank_*.json"))
@@ -252,6 +281,10 @@ def import_yomitan_zip(
 
         total_entries = 0
         skipped_malformed = 0
+        # One bucket per malformed-row class, plus bounded example members, so
+        # a reduced import is diagnosable from a single WARNING at the end.
+        skipped: Counter[str] = Counter()
+        skip_examples: list[str] = []
         # Collects dict-internal asset paths (e.g. "sankoku8/svg-accent/X.svg")
         # referenced by `<img>` nodes during structured-content rendering. After
         # rows are inserted we copy each file out of the zip so AnkiService can
@@ -276,7 +309,7 @@ def import_yomitan_zip(
         def rows() -> Any:
             nonlocal total_entries, skipped_malformed, banks_done, files_done, bank_size, bank_yielded
             for term_file in term_files:
-                _raise_if_cancelled(cancel_check)
+                raise_if_cancelled(cancel_check)
                 try:
                     entries = json.loads(term_file.read_text(encoding="utf-8"))
                 except json.JSONDecodeError as e:
@@ -289,12 +322,14 @@ def import_yomitan_zip(
                 banks_done += 1
                 if bank_progress is not None:
                     bank_progress(banks_done, bank_total)
-                for entry in entries:
+                for row_index, entry in enumerate(entries):
                     # Structural gate the loop below implicitly assumes (list of
                     # >= 6 positions, non-blank term). Count skips so a
                     # drastically-reduced import is surfaced, not silent.
+                    member = f"{term_file.name}#{row_index}"
                     if not is_valid_term_bank_entry(entry):
                         skipped_malformed += 1
+                        _record_skip(skipped, skip_examples, "term_bank_arity", member)
                         continue
                     term = str(entry[0]).strip()
                     reading = str(entry[1]) if entry[1] else None
@@ -305,9 +340,10 @@ def import_yomitan_zip(
                     # instead, matching how malformed entries are handled above.
                     try:
                         score = int(entry[4]) if len(entry) > 4 and entry[4] is not None else 0
-                        sequence = int(entry[6]) if len(entry) > 6 and entry[6] is not None else None
+                        sequence = int(entry[6]) if sequenced and len(entry) > 6 and entry[6] is not None else None
                     except (TypeError, ValueError):
                         skipped_malformed += 1
+                        _record_skip(skipped, skip_examples, "term_bank_numeric", member)
                         continue
                     glossary = entry[5] if isinstance(entry[5], list) else [entry[5]]
                     # Yomitan term-bank tag columns: column 3 (entry[2]) is
@@ -336,6 +372,10 @@ def import_yomitan_zip(
                         media_collector=media_paths,
                     )
                     if not _has_rendered_glossary_content(content):
+                        # Not counted into skipped_malformed (the row parsed
+                        # fine, it just renders to nothing), but it is still a
+                        # row the user paid for and did not get.
+                        _record_skip(skipped, skip_examples, "empty_glossary", member)
                         continue
                     total_entries += 1
                     bank_yielded += 1
@@ -375,11 +415,22 @@ def import_yomitan_zip(
                 # that regex.
                 progress(min(cur, total), total, f"Inserted {inserted:,} entries")
 
+        # Import-side key folding MUST match the query side (IndexedDictProvider),
+        # which resolves its DictKeyFolding from the SAME language this import
+        # stamps into meta below. A mismatch is silent: the rows land under keys
+        # no query ever builds, so every lookup misses with no exception and no
+        # log line. The import is function-local because languages/ja/support.py
+        # delegates back into services/dictionary/storage.py — a module-level one
+        # would make that a load-order question for no benefit.
+        from anki_miner.languages.registry import get_profile
+
+        profile = get_profile(language)
         bulk_insert(
             db_path,
             rows(),
             progress=on_insert_progress if progress else None,
             cancel_check=cancel_check,
+            keys=profile.dict_keys,
         )
 
         if progress:
@@ -395,22 +446,29 @@ def import_yomitan_zip(
             # holds 100% while the lookup indexes build instead of dropping
             # back to a busy spinner right after finishing the insert.
             progress(total_files * _PROGRESS_SCALE, total_files * _PROGRESS_SCALE, "Finalizing import")
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check)
 
         # Deferred to here so the load did not maintain two B-trees per insert.
         create_lookup_indexes(db_path)
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check)
 
         # Tag metadata (schema v3): glob tag_bank_*.json + convert any legacy
         # index.json tagMeta so the provider can expand tag names into hover
         # chips. Absent tags simply leave the table empty (italic fallback).
-        tag_metas = _collect_tags(tmp_path, index)
+        tag_metas = _collect_tags(tmp_path, index, skipped, skip_examples)
         if tag_metas:
             write_tags(db_path, tag_metas)
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check)
 
-        media_warnings = _copy_dict_media(tmp_path, staging / "media", media_paths, dict_id=dict_id)
-        _raise_if_cancelled(cancel_check)
+        media_warnings, media_copied = _copy_dict_media(
+            tmp_path,
+            staging / "media",
+            media_paths,
+            dict_id=dict_id,
+            skipped=skipped,
+            skip_examples=skip_examples,
+        )
+        raise_if_cancelled(cancel_check)
 
         meta = {
             "schema_version": str(SCHEMA_VERSION),
@@ -419,6 +477,9 @@ def import_yomitan_zip(
             "source_revision": revision,
             "import_date": datetime.now(UTC).isoformat(),
             "entry_count": str(total_entries),
+            # Mining language this dictionary serves. Read back by the registries
+            # and (Stage 1B) used to skip a mismatched chain entry.
+            "language": language,
         }
         # Attribution metadata (author / attribution / description) shown in the
         # dictionary settings list.
@@ -432,13 +493,13 @@ def import_yomitan_zip(
             meta["styles_css"] = styles_css
 
         write_meta(db_path, meta)
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check)
 
         # Persist the source zip alongside index.sqlite so "Reimport All" can
         # rebuild without the user re-picking the file. Lives in staging so
         # the atomic rename below promotes it together with the index.
         shutil.copy2(zip_path, staging / "source.zip")
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check)
 
         # Move staging into dest_root atomically. final_path was computed up
         # front for the early duplicate check; this late check is the race
@@ -448,7 +509,7 @@ def import_yomitan_zip(
         # Pre-check stays here (the helper owns only the promote skeleton).
         if os.path.lexists(final_path) and not overwrite:
             raise SetupError(f"Dictionary '{dict_id}' already exists")
-        _raise_if_cancelled(cancel_check)
+        raise_if_cancelled(cancel_check)
         promote_staged_dir(
             staging,
             final_path,
@@ -457,6 +518,7 @@ def import_yomitan_zip(
             before_promote=before_promote,
         )
 
+        source_language = _read_source_language(index)
         result = YomitanImportResult(
             dict_id=dict_id,
             source_name=title,
@@ -464,7 +526,34 @@ def import_yomitan_zip(
             entry_count=total_entries,
             skipped_malformed=skipped_malformed,
             media_warnings=tuple(media_warnings),
+            source_language=source_language,
+            source_language_mismatch=declares_other_language(source_language, profile.code, profile.wiktionary_code),
         )
+
+        media_rejected = sum(count for kind, count in skipped.items() if kind.startswith("media_"))
+        log_summary(
+            logger,
+            "Yomitan import done",
+            dict_id=dict_id,
+            entries=total_entries,
+            tags=len(tag_metas),
+            media_copied=media_copied,
+            media_rejected=media_rejected,
+            skipped_malformed=skipped_malformed,
+            elapsed=f"{time.perf_counter() - started_at:.2f}s",
+        )
+        if skipped:
+            # ONE line for the whole import, whatever the row count: the
+            # per-class totals say how bad it is, the examples say where to
+            # look. Ordered highest-count-first so the dominant class leads.
+            log_summary(
+                logger,
+                "Yomitan import skipped rows",
+                level=logging.WARNING,
+                dict_id=dict_id,
+                **dict(skipped.most_common()),
+                first_members=capped(skip_examples, _SKIP_EXAMPLE_LIMIT),
+            )
 
     if progress:
         completed = max(total_entries, 1)
@@ -481,6 +570,9 @@ def repair_yomitan_zip(
     cancel_check: Callable[[], bool] | None = None,
 ) -> YomitanImportResult:
     """Explicitly repair ``dict_id``, retaining an invalid prior slot as quarantine."""
+    # Read the stamp before the rebuild: repair_managed_slot may quarantine the
+    # slot, and a re-import would otherwise fall back to the "ja" default.
+    language = read_slot_language(dest_root / dict_id)
     return repair_managed_slot(
         zip_path,
         dest_root,
@@ -493,8 +585,25 @@ def repair_yomitan_zip(
             overwrite=overwrite,
             cancel_check=cancel_check,
             dict_id=dict_id,
+            language=language,
         ),
     )
+
+
+def declares_other_language(source_language: str, code: str, wiktionary_code: str) -> bool:
+    """Whether an ``index.json`` ``sourceLanguage`` names another language.
+
+    Compares the primary subtag, casefolded, with the active profile's ``code``
+    and ``wiktionary_code`` (an hr import declaring ``sh`` is hr's own). An
+    undeclared language is never a mismatch: most dictionaries declare nothing.
+    """
+    primary = source_language.strip().split("-", 1)[0].casefold()
+    return bool(primary) and primary not in {code, wiktionary_code} - {""}
+
+
+def _read_source_language(index: dict) -> str:
+    value = index.get("sourceLanguage")
+    return value.strip() if isinstance(value, str) else ""
 
 
 # Informational index.json fields surfaced verbatim to the user. Stored when
@@ -517,14 +626,21 @@ def _read_attribution_meta(index: dict) -> dict[str, str]:
     return meta
 
 
-def _collect_tags(zip_root: Path, index: dict) -> list[TagMeta]:
+def _collect_tags(
+    zip_root: Path,
+    index: dict,
+    skipped: Counter[str],
+    skip_examples: list[str],
+) -> list[TagMeta]:
     """Gather tag metadata from ``tag_bank_*.json`` + legacy ``index.json`` tagMeta.
 
     Tag-bank files are read in sorted order and converted first; the legacy
     inline ``tagMeta`` object is appended last so, under ``write_tags``'
     last-wins upsert, an index-level definition overrides a same-named bank one
     (mirrors Yomitan pushing ``_addOldIndexTags`` after the bank tags). A tag
-    that fails structural conversion is skipped, never aborting the import.
+    that fails structural conversion is skipped, never aborting the import —
+    counted into ``skipped`` so a dictionary that lost all its tag chips says so
+    once instead of silently rendering the italic fallback everywhere.
     """
     tags: list[TagMeta] = []
     for tag_file in sorted(zip_root.glob("tag_bank_*.json")):
@@ -533,11 +649,16 @@ def _collect_tags(zip_root: Path, index: dict) -> list[TagMeta]:
         except json.JSONDecodeError as e:
             raise SetupError(f"Invalid {tag_file.name}: {e}") from e
         ensure_bank_array(entries, tag_file.name)
-        for entry in entries:
+        for row_index, entry in enumerate(entries):
             tag = _convert_tag_bank_entry(entry)
-            if tag is not None:
-                tags.append(tag)
-    tags.extend(_convert_old_index_tag_meta(index.get("tagMeta")))
+            if tag is None:
+                _record_skip(skipped, skip_examples, "tag_bank_malformed", f"{tag_file.name}#{row_index}")
+                continue
+            tags.append(tag)
+    index_tags, index_tag_skips = _convert_old_index_tag_meta(index.get("tagMeta"))
+    for name in index_tag_skips:
+        _record_skip(skipped, skip_examples, "index_tag_meta_malformed", f"index.json:tagMeta[{name}]")
+    tags.extend(index_tags)
     return tags
 
 
@@ -567,18 +688,23 @@ def _convert_tag_bank_entry(entry: Any) -> TagMeta | None:
         return None
 
 
-def _convert_old_index_tag_meta(tag_meta: Any) -> list[TagMeta]:
+def _convert_old_index_tag_meta(tag_meta: Any) -> tuple[list[TagMeta], list[str]]:
     """Convert legacy ``index.json`` ``tagMeta`` into :class:`TagMeta` rows.
 
     Ported from Yomitan ``DictionaryImporter._addOldIndexTags`` (upstream
     e2ed450): ``tagMeta`` is an object mapping ``name`` → ``{category, order,
     notes, score}``. Non-dict values are skipped.
+
+    Returns the converted rows and the names of the entries that were dropped,
+    so the caller can count them into its one skip summary.
     """
     if not isinstance(tag_meta, dict):
-        return []
+        return [], []
     out: list[TagMeta] = []
+    dropped: list[str] = []
     for name, value in tag_meta.items():
         if not isinstance(value, dict):
+            dropped.append(str(name))
             continue
         try:
             order = value.get("order")
@@ -593,8 +719,9 @@ def _convert_old_index_tag_meta(tag_meta: Any) -> list[TagMeta]:
                 )
             )
         except (TypeError, ValueError):
+            dropped.append(str(name))
             continue
-    return out
+    return out, dropped
 
 
 # A dictionary `styles.css` is a few KB in practice (Jitendex's is ~6 KB). Cap
@@ -661,7 +788,15 @@ def _image_decodes(path: Path) -> bool:
         return False
 
 
-def _copy_dict_media(zip_root: Path, dest: Path, rel_paths: set[str], *, dict_id: str) -> list[str]:
+def _copy_dict_media(
+    zip_root: Path,
+    dest: Path,
+    rel_paths: set[str],
+    *,
+    dict_id: str,
+    skipped: Counter[str],
+    skip_examples: list[str],
+) -> tuple[list[str], int]:
     """Copy referenced asset files out of the unzipped Yomitan tree.
 
     For each path encountered by the renderer (e.g. `sankoku8/svg-accent/X.svg`),
@@ -674,17 +809,22 @@ def _copy_dict_media(zip_root: Path, dest: Path, rel_paths: set[str], *, dict_id
     that fail a Pillow decode probe (SVG excepted — it is text, not a raster
     Pillow can open), are skipped and reported in the returned warning list
     instead of being copied blindly. Returns the collected warnings (empty on a
-    clean import). The ``media/`` dir is created lazily so a dict whose every
-    referenced asset is bad leaves no empty folder behind.
+    clean import) and how many assets were actually copied; every rejection is
+    also counted into ``skipped`` under its own ``media_*`` class, because a
+    dictionary whose images all vanished imports "successfully" otherwise.
+    The ``media/`` dir is created lazily so a dict whose every referenced asset
+    is bad leaves no empty folder behind.
     """
     warnings: list[str] = []
+    copied = 0
     if not rel_paths:
-        return warnings
+        return warnings, copied
     zip_root_resolved = zip_root.resolve()
     dest_created = False
     for rel in sorted(rel_paths):
         safe = dict_media_safe_basename(rel)
         if safe is None:
+            _record_skip(skipped, skip_examples, "media_unsafe_name", rel)
             continue
         src = zip_root / rel
         # Path traversal guard — the rel string came from inside structured
@@ -693,21 +833,26 @@ def _copy_dict_media(zip_root: Path, dest: Path, rel_paths: set[str], *, dict_id
             src_resolved = src.resolve()
             src_resolved.relative_to(zip_root_resolved)
         except (OSError, ValueError):
+            _record_skip(skipped, skip_examples, "media_outside_zip", rel)
             continue
         if not src_resolved.is_file():
+            _record_skip(skipped, skip_examples, "media_missing", rel)
             continue
         ext = Path(rel).suffix.lower()
         if ext not in _MEDIA_EXTENSION_WHITELIST:
             warnings.append(f'"{rel}" referenced by {dict_id} has an unsupported media type "{ext}"')
+            _record_skip(skipped, skip_examples, "media_unsupported_type", rel)
             continue
         if ext != ".svg" and not _image_decodes(src_resolved):
             warnings.append(f'"{rel}" referenced by {dict_id} failed to decode as an image')
+            _record_skip(skipped, skip_examples, "media_decode_failed", rel)
             continue
         if not dest_created:
             dest.mkdir(parents=True, exist_ok=True)
             dest_created = True
         shutil.copy2(src_resolved, dest / safe)
-    return warnings
+        copied += 1
+    return warnings, copied
 
 
 def _derive_dict_id(title: str, revision: str) -> str:

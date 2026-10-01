@@ -183,6 +183,8 @@
     <string name="undo_failed">Undo failed. No notes were deleted.</string>
     <string name="undo_words_failed">Notes deleted, but the known-words revert failed.</string>
     <string name="mining_notice_no_definition">No dictionary entry for %1$d word(s): %2$s</string>
+    <string name="mining_notice_frequency_cutoff_ignored">Frequency cutoff ignored: no ranked frequency source is loaded. Add one under Settings → Resources.</string>
+    <string name="mining_failure_resources_stale">These resources need reimporting after the app update: %1$s. Reimport them under Settings → Resources.</string>
     <string name="result_metric_created">Created</string>
     <string name="result_metric_skipped_new">Skipped / new</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

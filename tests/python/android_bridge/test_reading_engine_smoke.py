@@ -540,6 +540,7 @@ class _AnkiService:
     def __init__(self) -> None:
         self.last_created_note_ids: list[int] = []
         self.last_created_mined_forms: list[str] = []
+        self.last_created_lemmas: list[str] = []
         self.last_media_store_failures = 0
         self.last_skipped_duplicates = 0
         self.verified = False
@@ -570,6 +571,8 @@ class _AnkiService:
         # The processor now records known words from what the service confirms,
         # not from what it submitted.
         self.last_created_mined_forms = [payload.word.mined_form for payload in self.card_data]
+        # Aligned with the forms: the processor zips the two for whitelist coverage.
+        self.last_created_lemmas = [payload.word.lemma for payload in self.card_data]
         # The service contract returns the created ids; the processor takes
         # len() of this and stamps them onto the result.
         return [4242]

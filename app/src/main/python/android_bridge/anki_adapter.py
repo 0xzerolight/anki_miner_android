@@ -39,6 +39,21 @@ from .unicode_contract import (
 logger = logging.getLogger(__name__)
 
 _JAPANESE_RE = re.compile(r"[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]")
+# What desktop's ``AnkiService._build_note`` hands ``build_note`` for a ja profile.
+# AnkiService derives the five from the profile; ja declares no extra card field,
+# is left-to-right and tags no card language, so they behave exactly like the
+# builder's defaults (content_lang is read only on the rtl branch). Spelled out
+# rather than derived because resolving a profile imports the parser, which the
+# host lane cannot, and because a re-pin that changes ja's derivation must fail
+# the parity test instead of writing different notes. A non-ja profile needs its
+# own derivation before it can reach this adapter.
+_JA_NOTE_BUILDER_KWARGS: Mapping[str, Any] = {
+    "extra_optional_keys": frozenset(),
+    "extra_raw_html_keys": frozenset(),
+    "content_direction": "ltr",
+    "content_lang": "ja",
+    "card_lang": None,
+}
 _NAME_LIMITS = ANKI_LIMITS_V1["names"]
 _SCAN_LIMITS = ANKI_LIMITS_V1["scanFirstFields"]
 _MEDIA_LIMITS = ANKI_LIMITS_V1["storeMedia"]
@@ -644,6 +659,10 @@ class AndroidAnkiAdapter:
         # stopped deriving this from the submitted payloads, so an adapter that
         # leaves it empty silently stops the known-word database recording.
         self.last_created_mined_forms: list[str] = []
+        # Positionally aligned lemmas for the same confirmed notes. The engine
+        # zips the two to count whitelist entries this run mined; a list that is
+        # missing or misaligned counts none.
+        self.last_created_lemmas: list[str] = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
         # Installed and cleared by the engine around create_cards_batch. Kept
@@ -2291,7 +2310,7 @@ class AndroidAnkiAdapter:
         built_fields: list[dict[str, str]] = []
         note_utf8_bytes = 0
         for payload in word_data_list:
-            built = build_note(payload, self.config, intended_stored_files)
+            built = build_note(payload, self.config, intended_stored_files, **_JA_NOTE_BUILDER_KWARGS)
             fields, tags, content_bytes = self._validated_note_content(built.note)
             built_notes.append({"fields": fields, "tags": tags})
             built_fields.append(fields)
@@ -3101,12 +3120,14 @@ class AndroidAnkiAdapter:
         if not word_data_list:
             self.last_created_note_ids = []
             self.last_created_mined_forms = []
+            self.last_created_lemmas = []
             self.last_skipped_duplicates = 0
             self.last_media_store_failures = 0
             return []
 
         self.last_created_note_ids = []
         self.last_created_mined_forms = []
+        self.last_created_lemmas = []
         self.last_skipped_duplicates = 0
         self.last_media_store_failures = 0
         # Desktop deliberately renders HTTP(S) glossary images. Android strips
@@ -3119,6 +3140,7 @@ class AndroidAnkiAdapter:
         all_created_ids: list[int] = []
         created_first_fields: list[str] = []
         created_mined_forms: list[str] = []
+        created_lemmas: list[str] = []
         skipped_duplicates = preflight_plan.skipped_outgoing_duplicates
         total_created = 0
         bold_used = 0
@@ -3261,6 +3283,7 @@ class AndroidAnkiAdapter:
                             item,
                             self.config,
                             stored_card_filenames,
+                            **_JA_NOTE_BUILDER_KWARGS,
                         )
                         if built.used_precomputed_bold:
                             bold_used += 1
@@ -3332,11 +3355,12 @@ class AndroidAnkiAdapter:
                         # The payload's mined_form, not the first field: the
                         # first field is the rendered Expression, and the engine
                         # keys the known-word database on the mined form.
-                        created_mined_forms.extend(
-                            mined_form
-                            for pending in confirmed_notes
-                            if (mined_form := getattr(getattr(pending.payload, "word", None), "mined_form", ""))
-                        )
+                        for pending in confirmed_notes:
+                            word = getattr(pending.payload, "word", None)
+                            mined_form = getattr(word, "mined_form", "")
+                            if mined_form:
+                                created_mined_forms.append(mined_form)
+                                created_lemmas.append(getattr(word, "lemma", ""))
                         if partial_error is not None:
                             _raise_callback_error(partial_error)
 
@@ -3374,6 +3398,7 @@ class AndroidAnkiAdapter:
         finally:
             self.last_created_note_ids = all_created_ids
             self.last_created_mined_forms = created_mined_forms
+            self.last_created_lemmas = created_lemmas
             self.last_skipped_duplicates = skipped_duplicates
             if self._existing_vocab_cache is not None:
                 for first_field in created_first_fields:

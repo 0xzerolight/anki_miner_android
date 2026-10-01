@@ -5,8 +5,8 @@ from __future__ import annotations
 import dataclasses
 import logging
 import unicodedata
-from collections.abc import Mapping, Sequence
-from typing import TYPE_CHECKING, Any, NamedTuple
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, NamedTuple, TypedDict
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.models import LineLemmas, TokenizedWord
@@ -23,10 +23,69 @@ from anki_miner.utils import (
 )
 
 if TYPE_CHECKING:
+    from anki_miner.languages.profile import MinedFormPolicy, ScriptSupport
     from anki_miner.services.word_list_service import WordListService
     from anki_miner.services.wordset_service import WordsetService
 
 logger = logging.getLogger(__name__)
+
+#: The JA script predicates, keyed by the option ids ``JaScriptSupport``
+#: declares. Runs when no ``ScriptSupport`` was injected, so a caller with no
+#: profile in scope keeps the pre-extraction behaviour verbatim.
+_JA_SCRIPT_PREDICATES: dict[str, Callable[[str], bool]] = {
+    "hiragana_only": is_hiragana_only,
+    "katakana_only": is_katakana_only,
+    "mixed_kana_only": is_mixed_kana_only,
+}
+
+
+def _ja_matches(option_id: str, form: str) -> bool:
+    """``ScriptSupport.matches`` for Japanese, without importing ``languages``."""
+    predicate = _JA_SCRIPT_PREDICATES.get(option_id)
+    return False if predicate is None else predicate(form)
+
+
+def _ja_expression_tracks_surface(word: TokenizedWord) -> bool:
+    """Japanese: every POS but 動詞/形容詞 mines its surface as the card front."""
+    return word.pos not in ("動詞", "形容詞")
+
+
+def enabled_script_options(script: ScriptSupport, config: AnkiMinerConfig) -> frozenset[str]:
+    """Option ids this *config* turns on for *script*.
+
+    An option whose ``config_field`` is "" has no switch of its own and is
+    implicit: it fires only when EVERY field-backed option is on. For ja that
+    is ``mixed_kana_only`` when both booleans are set — the pre-extraction
+    three-branch derivation, verbatim. ko's two options are both field-backed;
+    zh declares none, so the set is always empty and the filter is skipped.
+    """
+    options = script.filter_options()
+    field_backed = [opt for opt in options if opt.config_field]
+    enabled = {opt.option_id for opt in field_backed if getattr(config, opt.config_field, False)}
+    if field_backed and len(enabled) == len(field_backed):
+        enabled.update(opt.option_id for opt in options if not opt.config_field)
+    return frozenset(enabled)
+
+
+class ScriptOptionsKwarg(TypedDict, total=False):
+    """The ``enabled_options=`` keyword a filter call is splatted with."""
+
+    enabled_options: frozenset[str]
+
+
+def script_options_kwarg(options: frozenset[str], language: str) -> ScriptOptionsKwarg:
+    """``{"enabled_options": options}``, or nothing at all for the "ja" default.
+
+    ``filter_by_script_type``'s ``None`` path re-derives exactly this set from
+    the two kana booleans, so a ja call site that spells the keyword out and one
+    that omits it are equivalent — and omitting it is what keeps the
+    pre-transition call byte-identical all the way down, including the test
+    doubles that mirror the method's exact signature. Splat this instead of
+    passing ``enabled_options=`` unconditionally. Same shape and same reason as
+    ``services/_sqlite_index.language_kwarg``.
+    """
+    return {} if language == "ja" else {"enabled_options": options}
+
 
 #: Joiner between merged cue texts (Issue #120 line expansion). A space
 #: mirrors _clean_line_text's own physical-line flattening (" ".join), and the
@@ -104,10 +163,58 @@ def _normalize_sentence(text: str) -> str:
     return " ".join(unicodedata.normalize("NFKC", text).split())
 
 
+def whitelisted_keys(front: str, lemma: str, word_list_service: WordListService) -> tuple[str, ...]:
+    """The whitelist entries a word matches: its card front, then its lemma.
+
+    This is the OR alias policy :meth:`WordFilterService.partition_whitelisted`
+    documents, kept in one place so the force-include split and the run-end
+    coverage report can never disagree about what "on the whitelist" means.
+    Strings rather than a ``TokenizedWord``: the processor's result funnel has
+    only Anki's confirmed ``(mined_form, lemma)`` lists to hand it. The strings
+    returned are the entries themselves (the file's own spelling), which is
+    what the report prints back.
+
+    Args:
+        front: The card-front spelling (``TokenizedWord.mined_form``).
+        lemma: The dictionary form.
+        word_list_service: Service providing whitelist lookups.
+
+    Returns:
+        The matched entries, in ``(front, lemma)`` order; empty when neither is
+        on the list.
+    """
+    return tuple(key for key in (front, lemma) if word_list_service.is_whitelisted(key))
+
+
+def whitelist_hits(pairs: Iterable[tuple[str, str]], word_list_service: WordListService) -> frozenset[str]:
+    """Every whitelist entry at least one ``(front, lemma)`` pair matches."""
+    return frozenset(key for front, lemma in pairs for key in whitelisted_keys(front, lemma, word_list_service))
+
+
+def folded_pairs(pairs: Iterable[tuple[str, str]], fold: Callable[[str], str] | None) -> Iterator[tuple[str, str]]:
+    """``(front, lemma)`` pairs under the language's comparison fold (identity for None).
+
+    The run-end whitelist coverage compares folded list entries with these, so a
+    folded list and an unfolded probe can never disagree about coverage.
+    """
+    for front, lemma in pairs:
+        yield (front, lemma) if fold is None else (fold(front), fold(lemma))
+
+
 class WordFilterService:
     """Filter vocabulary words based on various criteria (stateless service)."""
 
-    def __init__(self, config: AnkiMinerConfig, tagger: Any | None = None):
+    def __init__(
+        self,
+        config: AnkiMinerConfig,
+        tagger: Any | None = None,
+        *,
+        mined_form: MinedFormPolicy | None = None,
+        script: ScriptSupport | None = None,
+        dedup_fold: Callable[[str], str] | None = None,
+        expression_tracks_surface: Callable[[TokenizedWord], bool] | None = None,
+        sentence_annotation: bool = True,
+    ):
         """Initialize the word filter service.
 
         Args:
@@ -117,9 +224,41 @@ class WordFilterService:
                 line. Required only when ``config.bold_target_in_sentence``
                 is True AND ``filter_i_plus_one`` is called; otherwise the
                 bolded-field recompute is skipped and the tagger is unused.
+            mined_form: The SAME card-front policy the parser emitted these
+                words with (``languages.profile.MinedFormPolicy``). Read only
+                by ``_line_preserves_mined_form``, which must recompute a
+                candidate line's front with the policy that produced
+                ``word.mined_form``. ``None`` runs the JA static verbatim.
+                Duck-typed: ``services`` keeps no runtime import of
+                ``languages``.
+            script: The active language's ``languages.profile.ScriptSupport``,
+                deciding each script-filter option id in
+                ``filter_by_script_type``. ``None`` runs the JA predicates
+                verbatim. Duck-typed, same as ``mined_form``.
+            dedup_fold: The mining language's comparison fold
+                (``LanguageProfile.dedup_fold``, S3), applied to every probe
+                in ``filter_unknown``; the known sets arrive already folded
+                (known-words DB, Anki boundary). ``None`` keeps raw membership.
+            expression_tracks_surface: Whether a word's card front follows its
+                surface when an i+1 swap moves it to another line. ``None``
+                runs the Japanese literal (動詞/形容詞 keep ``orth_base``). A
+                lemma-fronted language passes ``lambda w: False``: its front
+                never changes with the surface and its reading fields are
+                never regenerated from it.
+            sentence_annotation: Whether a line expansion or a sentence swap
+                regenerates ``sentence_furigana``/``sentence_reading``/
+                ``sentence_furigana_bolded`` with the tagger. ``False`` for a
+                language with no ``LanguageProfile.sentence_annotator``,
+                matching its parser: those generators assume contiguous kana
+                tokens.
         """
         self.config = config
         self.tagger = tagger
+        self._mined_form = mined_form
+        self._script = script
+        self._dedup_fold = dedup_fold
+        self._tracks_surface = expression_tracks_surface or _ja_expression_tracks_surface
+        self._sentence_annotation = sentence_annotation
 
     def filter_unknown(
         self,
@@ -167,14 +306,18 @@ class WordFilterService:
             List of unknown words (``mined_form`` not in existing vocabulary).
         """
         fold_kana = self.config.known_words_match_kana_variants
+        fold = self._dedup_fold
+
+        def _key(form: str) -> str:
+            return form if fold is None else fold(form)
 
         def _is_known(word: TokenizedWord) -> bool:
-            if word.mined_form in existing_vocabulary:
+            if _key(word.mined_form) in existing_vocabulary:
                 return True
             return (
                 fold_kana
                 and word.lemma != word.mined_form
-                and word.lemma in existing_vocabulary
+                and _key(word.lemma) in existing_vocabulary
                 and is_kana_only(word.mined_form)
             )
 
@@ -281,7 +424,8 @@ class WordFilterService:
         (its ``lemma-siblings``), including below an occurrence floor.
         ``all_words`` is already lemma-deduped upstream
         (``SubtitleParserService``), so exactly one word per whitelisted form is
-        moved to ``forced``.
+        moved to ``forced``. The match itself lives in :func:`whitelisted_keys`,
+        shared with the run-end coverage report.
 
         Args:
             words: List of candidate words.
@@ -293,7 +437,7 @@ class WordFilterService:
         forced: list[TokenizedWord] = []
         rest: list[TokenizedWord] = []
         for word in words:
-            if word_list_service.is_whitelisted(word.mined_form) or word_list_service.is_whitelisted(word.lemma):
+            if whitelisted_keys(word.mined_form, word.lemma, word_list_service):
                 forced.append(word)
             else:
                 rest.append(word)
@@ -304,6 +448,8 @@ class WordFilterService:
         words: list[TokenizedWord],
         exclude_hiragana_only: bool = False,
         exclude_katakana_only: bool = False,
+        *,
+        enabled_options: frozenset[str] | None = None,
     ) -> list[TokenizedWord]:
         """Drop words whose card form is written entirely in a single kana script.
 
@@ -327,22 +473,32 @@ class WordFilterService:
             words: Words to filter.
             exclude_hiragana_only: Drop words whose mined form is all hiragana.
             exclude_katakana_only: Drop words whose mined form is all katakana.
+            enabled_options: The option ids to apply, already derived from the
+                active profile by ``enabled_script_options``. ``None`` — the
+                only shape a caller with no profile in scope can pass — falls
+                back to the two booleans through the JA derivation below. An
+                EMPTY set is not ``None``: it means "this language turns none
+                of its options on" and drops nothing.
 
         Returns:
             Filtered list of words.
         """
-        exclude_mixed_kana = exclude_hiragana_only and exclude_katakana_only
-        result = []
-        for word in words:
-            form = word.mined_form
-            if exclude_hiragana_only and is_hiragana_only(form):
-                continue
-            if exclude_katakana_only and is_katakana_only(form):
-                continue
-            if exclude_mixed_kana and is_mixed_kana_only(form):
-                continue
-            result.append(word)
-        return result
+        if enabled_options is None:
+            # ja derivation, byte-identical to the pre-extraction body: mixed
+            # kana is dropped only when BOTH exclusions are on.
+            opts = set()
+            if exclude_hiragana_only:
+                opts.add("hiragana_only")
+            if exclude_katakana_only:
+                opts.add("katakana_only")
+            if exclude_hiragana_only and exclude_katakana_only:
+                opts.add("mixed_kana_only")
+        else:
+            opts = set(enabled_options)
+        if not opts:
+            return list(words)
+        matches: Callable[[str, str], bool] = _ja_matches if self._script is None else self._script.matches
+        return [w for w in words if not any(matches(oid, w.mined_form) for oid in opts)]
 
     def filter_by_wordsets(
         self,
@@ -374,6 +530,7 @@ class WordFilterService:
     def deduplicate_by_sentence(
         self,
         words: list[TokenizedWord],
+        text_of: Callable[[TokenizedWord], str] | None = None,
     ) -> list[TokenizedWord]:
         """Remove words that share a sentence with an already-selected word.
 
@@ -383,14 +540,21 @@ class WordFilterService:
 
         Args:
             words: List of words to deduplicate.
+            text_of: What to read the sentence from. ``None`` (the phase-2
+                call) reads ``word.sentence``. The automatic cue merge passes
+                the merged text a word is about to acquire, so two words on
+                adjacent cues that converge on one sentence dedup against each
+                other before the card exists — the same "one card per sentence"
+                rule, applied to what the card will actually say.
 
         Returns:
             Deduplicated list of words.
         """
+        read = text_of if text_of is not None else (lambda word: word.sentence)
         seen_sentences: set[str] = set()
         result = []
         for word in words:
-            key = _normalize_sentence(word.sentence)
+            key = _normalize_sentence(read(word))
             if key not in seen_sentences:
                 seen_sentences.add(key)
                 result.append(word)
@@ -506,10 +670,9 @@ class WordFilterService:
             result.append(self._swap_word_to_line(word, match))
         return result
 
-    @staticmethod
-    def _line_preserves_mined_form(word: TokenizedWord, line: LineLemmas) -> bool:
+    def _line_preserves_mined_form(self, word: TokenizedWord, line: LineLemmas) -> bool:
         """Whether swapping to ``line`` keeps a surface-mined card front."""
-        if word.pos in ("動詞", "形容詞"):
+        if not self._tracks_surface(word):
             return True
         surface = next(
             (surface for lemma, surface, *_ in line.lemma_spans if lemma == word.lemma),
@@ -522,7 +685,17 @@ class WordFilterService:
         # Thread the word's own pronunciation evidence (S4-01): omitting it takes
         # the no-evidence compatibility path, which folds lexical vowel-tail
         # nouns (舞い → 舞) and wrongly rejects every line for such words.
-        return select_mined_form(word.pos, word.orth_base, word.lemma, surface, word.pronunciation) == word.mined_form
+        #
+        # Compare like with like: the candidate line's form must be recomputed by
+        # the SAME policy that produced word.mined_form. Recomputing with the JA
+        # table while the word carries a profile override rejects EVERY line for a
+        # non-ja word — a Korean VV falls through to `return surface`, which is
+        # never the override — emptying the curator's sentence picker silently.
+        if self._mined_form is None:
+            recomputed = select_mined_form(word.pos, word.orth_base, word.lemma, surface, word.pronunciation)
+        else:
+            recomputed = self._mined_form.mined_form(word.pos, word.orth_base, word.lemma, surface, word.pronunciation)
+        return recomputed == word.mined_form
 
     def _swap_word_to_line(self, word: TokenizedWord, match: LineLemmas) -> TokenizedWord:
         """Rebuild ``word`` as if it had been mined from the ``match`` line.
@@ -574,7 +747,7 @@ class WordFilterService:
         # the original values are kept as a best-effort fallback.
         expr_furigana = word.expression_furigana
         expr_reading = word.expression_reading
-        surface_is_expression = word.pos not in ("動詞", "形容詞")
+        surface_is_expression = self._tracks_surface(word)
         if surface_is_expression and new_surface != word.surface and self.tagger is not None:
             expr_furigana = generate_furigana(new_surface, self.tagger)
             expr_reading = generate_reading(new_surface, self.tagger)
@@ -596,6 +769,11 @@ class WordFilterService:
             sentence_bolded=new_bolded,
             sentence_furigana_bolded=new_furi_bolded,
             sentence_candidates=[],
+            # The intent was counted against the cue this swap leaves behind
+            # (the curator's ± line buttons, or the automatic cue merge's
+            # stamp), so it cannot ride along: the curator re-derives it for
+            # the cue that was actually picked.
+            line_expansion=(0, 0),
         )
 
     def _bolded_pair(self, text: str, start: int, highlight_end: int, end: int) -> tuple[str, str]:
@@ -606,10 +784,8 @@ class WordFilterService:
         ``config.bold_target_in_sentence``, tracked spans, and a tagger.
         """
         bold_end = highlight_end if highlight_end >= 0 else end
-        return (
-            wrap_target_plain(text, start, bold_end),
-            wrap_target_furigana(text, self.tagger, start, bold_end),
-        )
+        furigana_bolded = wrap_target_furigana(text, self.tagger, start, bold_end) if self._sentence_annotation else ""
+        return (wrap_target_plain(text, start, bold_end), furigana_bolded)
 
     def expand_word_lines(
         self,
@@ -659,7 +835,7 @@ class WordFilterService:
         new_start = word.surface_start + shift if word.surface_start >= 0 else -1
         new_end = word.surface_end + shift if word.surface_end >= 0 else -1
         new_highlight = word.highlight_end + shift if word.highlight_end >= 0 else -1
-        if self.tagger is not None:
+        if self.tagger is not None and self._sentence_annotation:
             new_furigana = generate_furigana(window.text, self.tagger)
             new_reading = generate_reading(window.text, self.tagger)
         else:
@@ -725,15 +901,100 @@ class WordFilterService:
                 lines = lines[:max_candidates]
             word.sentence_candidates = [self._swap_word_to_line(word, line) for line in lines]
 
+    def _counts_for_words(self, words: list[TokenizedWord], counts: Mapping[str, int]) -> Mapping[str, int]:
+        """Lemma→count mapping restated over the lemmas ``words`` were mined under.
+
+        The parser counts every occurrence under the lemma it saw, but a
+        spelling the fold merges away never becomes a word of its own: under the
+        zh script fold 頭髮 and 头发 are one word, so mixed-script material split
+        that word's occurrences across two keys and a lookup read only one of
+        them — the curator under-reported and the reading occurrence floor
+        dropped words that had cleared it.
+
+        A mined lemma therefore keeps its OWN count and collects the counts of
+        spellings that fold onto it only when it is the ONLY mined lemma with
+        that key. Summing the fold outright would double the corpus wherever
+        the run kept both spellings as separate cards (Character Set = As
+        written): each card would report the pair's total, and two cards that
+        occur three times and once would both claim four. Two mined spellings
+        can share a key without either being the other's (裏面 and 裡面 both
+        fold to 里面), and crediting an unmined third spelling to both is that
+        same double count one step further out — so it goes to neither.
+
+        Folding happens HERE and never at the count site
+        (``count_lemmas``/``parse_text_units``): the curator dialog's
+        "Occurrences" column (``EpisodeProcessor._run_curation``) reads those
+        Counter keys straight, unfolded. A language with no fold (ja/ko) gets
+        its own mapping back untouched.
+        """
+        fold = self._dedup_fold
+        if fold is None:
+            return counts
+        mined = {word.lemma for word in words}
+        # The one mined lemma holding each key, or None where two of them do.
+        owner: dict[str, str | None] = {}
+        for lemma in mined:
+            key = fold(lemma)
+            owner[key] = None if key in owner else lemma
+        credit: dict[str, int] = {}
+        for lemma, count in counts.items():
+            if lemma in mined:
+                continue
+            claimant = owner.get(fold(lemma))
+            if claimant is not None:
+                credit[claimant] = credit.get(claimant, 0) + count
+        if not credit:
+            return counts
+        return {lemma: counts.get(lemma, 0) + credit.get(lemma, 0) for lemma in mined}
+
     def attach_occurrence_counts(self, words: list[TokenizedWord], counts: Mapping[str, int]) -> None:
         """Set ``word.occurrence_count`` from in-episode lemma counts (Issue #88).
 
         ``counts`` is a lemma→occurrences mapping (e.g. the Counter from
-        ``SubtitleParserService.count_lemmas``). Lemmas absent from the mapping
-        get 0. Mutates ``words`` in place; display/sort-only data for the curator.
+        ``SubtitleParserService.count_lemmas``), restated over the mined lemmas
+        first, so a word that merged two spellings gets the sum of both (see
+        :meth:`_counts_for_words`). Lemmas absent from the mapping get 0.
+        Mutates ``words`` in place; display/sort-only data for the curator.
         """
+        counts = self._counts_for_words(words, counts)
         for word in words:
             word.occurrence_count = counts.get(word.lemma, 0)
+
+    def attach_line_unknown_counts(
+        self,
+        words: list[TokenizedWord],
+        line_index: list[LineLemmas],
+        unknown_lemmas: set[str],
+    ) -> None:
+        """Set ``line_unknown_count`` — distinct unknown lemmas on the word's own line.
+
+        ``unknown_lemmas`` must be the basis :meth:`filter_i_plus_one` counts
+        against (the pre-optional-filter snapshot unioned with the mineable
+        targets), or the curator's column disagrees with the filter: a count of
+        1 is exactly the i+1 condition, which is what makes sorting that column
+        ascending i+1 without i+1's word loss.
+
+        Lines are matched by TEXT, not by time. Both the mining parse and the
+        i+1 swap set ``sentence`` to a line's cleaned text, and two lines with
+        identical text necessarily carry identical lemma sets — so the
+        duplicate-text case ``find_cue_index`` exists to disambiguate cannot
+        change this count, and no timing tie-break is needed.
+
+        Each word's ``sentence_candidates`` are stamped too: the curator
+        repaints the column from the picked variant, and an unstamped variant
+        would blank the cell on the first pick.
+
+        Mutates ``words`` in place; display/sort-only data for the curator.
+        Safe to call with an empty ``line_index``.
+        """
+        if not line_index:
+            return
+        lemmas_by_text = {line.line_text: line.lemmas for line in line_index}
+        for word in words:
+            for variant in (word, *word.sentence_candidates):
+                lemmas = lemmas_by_text.get(variant.sentence)
+                if lemmas is not None:
+                    variant.line_unknown_count = len(lemmas & unknown_lemmas)
 
     def filter_by_episode_count(
         self,
@@ -744,6 +1005,10 @@ class WordFilterService:
         """Filter words by cross-episode appearance count.
 
         Only keeps words that appear in at least `min_appearances` episodes.
+        Counts are restated over the mined lemmas the same way
+        :meth:`attach_occurrence_counts` restates them for the curator's
+        Occurrences column — the floor must not drop a word the column says
+        cleared it.
 
         Args:
             words: List of words to filter.
@@ -756,4 +1021,5 @@ class WordFilterService:
         if min_appearances <= 1:
             return words
 
-        return [word for word in words if cross_episode_counts.get(word.lemma, 0) >= min_appearances]
+        counts = self._counts_for_words(words, cross_episode_counts)
+        return [word for word in words if counts.get(word.lemma, 0) >= min_appearances]

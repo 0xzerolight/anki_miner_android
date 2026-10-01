@@ -67,6 +67,10 @@ def _request(cache_dir: Path | str = "/cache", **overrides: object) -> str:
 def _load_vendored_text_source() -> ModuleType:
     """Load only reading.text_source without importing desktop service deps."""
 
+    # text_source now shares reading._util, whose encoding ladder imports
+    # pysubs2 at module scope, so the loader can no longer run without the
+    # runtime dependencies; the runtime lane carries them.
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
     package_name = "_android_bridge_test_reading"
     reading_root = PROJECT_ROOT / "app/src/main/python/anki_miner/services/reading"
     package = ModuleType(package_name)
@@ -262,6 +266,18 @@ def test_request_rejects_invalid_kind_paths_labels_and_pairing(
 ) -> None:
     with pytest.raises(BridgeProtocolError) as error:
         reading_mining._parse_request(_request(**overrides))
+    assert error.value.code == "invalid_reading_mining_request"
+
+
+def test_request_rejects_the_desktop_only_anki_deck_kind() -> None:
+    """The engine's ReadingSourceRef grew kind "deck" (Reading → Anki Deck, read over AnkiConnect).
+
+    The bridge's kind allowlist is its own table, not that Literal, so the new
+    engine kind stays out until Android has a source for it.
+    """
+    assert "deck" not in reading_mining._SOURCE_SUFFIXES
+    with pytest.raises(BridgeProtocolError) as error:
+        reading_mining._parse_request(_request(sourceKind="deck", sourcePath="/cache/reading-job-v1-a/deck.txt"))
     assert error.value.code == "invalid_reading_mining_request"
 
 

@@ -6,6 +6,7 @@ import ast
 import hashlib
 import json
 import os
+import string
 import subprocess
 import symtable
 import tempfile
@@ -19,7 +20,7 @@ MANIFEST_NAME = ".engine-sync-manifest.json"
 MANIFEST_VERSION = 1
 # Exhaustive destination roots owned by this tool. The previous-manifest guard
 # makes removing a historical root from this declaration an explicit migration.
-MANAGED_ROOTS = frozenset({"PyQt6", "anki_miner"})
+MANAGED_ROOTS = frozenset({"PyQt6", "anki_miner", "psutil"})
 
 
 class EngineSyncError(RuntimeError):
@@ -39,6 +40,27 @@ class AssetMapping:
 
 
 @dataclass(frozen=True)
+class DynamicImport:
+    """A reviewed non-literal ``import_module`` site and the modules it may load."""
+
+    importer: str
+    match: str
+    target: str
+
+
+@dataclass(frozen=True)
+class DynamicExpansion:
+    declaration: DynamicImport
+    modules: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class DeferredUnavailableHit:
+    importer: str
+    module: str
+
+
+@dataclass(frozen=True)
 class Composition:
     path: Path
     roots: tuple[str, ...]
@@ -52,6 +74,9 @@ class Composition:
     forbidden_imports: tuple[str, ...]
     forbidden_type_checking_exceptions: frozenset[TypeCheckingException]
     sha256: str
+    languages: tuple[str, ...] | None = None
+    dynamic_imports: tuple[DynamicImport, ...] = ()
+    deferred_unavailable: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -90,9 +115,12 @@ class EngineSnapshot:
     eager_external_imports: tuple[str, ...]
     deferred_external_imports: tuple[str, ...]
     type_checking_exceptions: tuple[TypeCheckingException, ...]
+    languages: tuple[str, ...] = ()
+    dynamic_imports: tuple[DynamicExpansion, ...] = ()
+    deferred_unavailable_hits: tuple[DeferredUnavailableHit, ...] = ()
 
     def manifest_bytes(self) -> bytes:
-        payload = {
+        payload: dict[str, Any] = {
             "format_version": MANIFEST_VERSION,
             "engine_revision": self.revision,
             "composition_sha256": self.composition_sha256,
@@ -110,6 +138,25 @@ class EngineSnapshot:
                 for path, item in sorted(self.files.items())
             },
         }
+        # Omitted when empty so a composition without these keys keeps the
+        # manifest bytes it had before they existed.
+        if self.languages:
+            payload["languages"] = list(self.languages)
+        if self.dynamic_imports:
+            payload["dynamic_imports"] = [
+                {
+                    "importer": item.declaration.importer,
+                    "match": item.declaration.match,
+                    "target": item.declaration.target,
+                    "modules": list(item.modules),
+                }
+                for item in self.dynamic_imports
+            ]
+        if self.deferred_unavailable_hits:
+            payload["deferred_unavailable"] = [
+                {"importer": hit.importer, "module": hit.module}
+                for hit in self.deferred_unavailable_hits
+            ]
         return _canonical_json(payload)
 
     def expected_files(self) -> dict[str, bytes]:
@@ -151,6 +198,47 @@ def _validate_relative_path(value: str, label: str) -> str:
             f"{label} must be a normalized relative POSIX path: {value!r}"
         )
     return value
+
+
+def _is_module_name(value: str) -> bool:
+    return all(part.isidentifier() for part in value.split("."))
+
+
+def _load_dynamic_imports(data: Mapping[str, Any]) -> tuple[DynamicImport, ...]:
+    entries = data.get("dynamic_imports", [])
+    if not isinstance(entries, list):
+        raise EngineSyncError("dynamic_imports must be an array of tables")
+    declarations: list[DynamicImport] = []
+    for index, entry in enumerate(entries):
+        label = f"dynamic_imports[{index}]"
+        if not isinstance(entry, dict) or set(entry) != {"importer", "match", "target"}:
+            raise EngineSyncError(f"{label} needs exactly importer, match and target")
+        if not all(isinstance(value, str) and value for value in entry.values()):
+            raise EngineSyncError(f"{label} fields must be non-empty strings")
+        target = entry["target"]
+        try:
+            fields = [
+                (name, spec, conversion)
+                for _, name, spec, conversion in string.Formatter().parse(target)
+                if name is not None
+            ]
+        except ValueError as exc:
+            raise EngineSyncError(
+                f"{label}.target is not a format string: {exc}"
+            ) from exc
+        if not fields or any(field != ("code", "", None) for field in fields):
+            raise EngineSyncError(
+                f"{label}.target must use only the {{code}} placeholder, at least once"
+            )
+        if not _is_module_name(target.format(code="code")):
+            raise EngineSyncError(
+                f"{label}.target must be an absolute dotted module name: {target!r}"
+            )
+        declarations.append(DynamicImport(entry["importer"], entry["match"], target))
+    sites = [(item.importer, item.match) for item in declarations]
+    if len(sites) != len(set(sites)):
+        raise EngineSyncError("dynamic_imports contains duplicate importer/match sites")
+    return tuple(declarations)
 
 
 def load_composition(path: Path) -> Composition:
@@ -238,6 +326,12 @@ def load_composition(path: Path) -> Composition:
         raise EngineSyncError(
             "protected_verbatim modules must also be composition roots"
         )
+    languages = _require_string_list(data, "languages") if "languages" in data else None
+    deferred_unavailable = (
+        _require_string_list(data, "deferred_unavailable")
+        if "deferred_unavailable" in data
+        else ()
+    )
     return Composition(
         path=path,
         roots=roots,
@@ -251,6 +345,9 @@ def load_composition(path: Path) -> Composition:
         forbidden_imports=forbidden,
         forbidden_type_checking_exceptions=frozenset(exceptions),
         sha256=_sha256(raw),
+        languages=languages,
+        dynamic_imports=_load_dynamic_imports(data),
+        deferred_unavailable=deferred_unavailable,
     )
 
 
@@ -463,7 +560,21 @@ def _resolve_dynamic_target(module: ModuleFile, target: str) -> str:
     return ".".join(base)
 
 
-def _iter_imports(module: ModuleFile) -> Iterator[ImportRef]:
+def _iter_imports(
+    module: ModuleFile,
+    dynamic_targets: Mapping[str, tuple[str, ...]] | None = None,
+    matched_sites: set[str] | None = None,
+) -> Iterator[ImportRef]:
+    """Yield *module*'s imports.
+
+    ``dynamic_targets`` maps the ``ast.unparse`` of a declared non-literal
+    ``import_module`` argument to the modules it may load; each becomes a ref
+    with the site's own deferred/eager state, and the matched argument is
+    added to ``matched_sites``. Any other non-literal dynamic import is an
+    error.
+    """
+
+    declared_sites = dynamic_targets or {}
     try:
         tree = ast.parse(module.content, filename=module.path)
     except (SyntaxError, ValueError) as exc:
@@ -570,17 +681,31 @@ def _iter_imports(module: ModuleFile) -> Iterator[ImportRef]:
             ):
                 is_dynamic_import = True
             if is_dynamic_import:
-                target = (
-                    node.args[0].value
-                    if node.args and isinstance(node.args[0], ast.Constant)
-                    else None
-                )
-                if not isinstance(target, str) or not target:
+                self._append_dynamic(node)
+            self.generic_visit(node)
+
+        def _append_dynamic(self, node: ast.Call) -> None:
+            argument = node.args[0] if node.args else None
+            if isinstance(argument, ast.Constant):
+                if not isinstance(argument.value, str) or not argument.value:
                     raise EngineSyncError(
                         f"{module.path}:{node.lineno}: dynamic import target must be a non-empty string literal"
                     )
-                self._append(_resolve_dynamic_target(module, target), node.lineno)
-            self.generic_visit(node)
+                self._append(
+                    _resolve_dynamic_target(module, argument.value), node.lineno
+                )
+                return
+            match = ast.unparse(argument) if argument is not None else None
+            targets = declared_sites.get(match) if match is not None else None
+            if targets is None:
+                raise EngineSyncError(
+                    f"{module.path}:{node.lineno}: dynamic import target must be a non-empty string literal"
+                    f" or a declared [[dynamic_imports]] match: {match}"
+                )
+            if matched_sites is not None:
+                matched_sites.add(match)
+            for target in targets:
+                self._append(target, node.lineno)
 
     collector = Collector()
     collector.visit(tree)
@@ -605,6 +730,115 @@ def _module_bound_symbols(module: ModuleFile) -> frozenset[str]:
 
 def _prefix_matches(target: str, prefix: str) -> bool:
     return target == prefix or target.startswith(prefix + ".")
+
+
+def _matching_prefix(target: str, prefixes: tuple[str, ...]) -> str | None:
+    return next(
+        (prefix for prefix in prefixes if _prefix_matches(target, prefix)), None
+    )
+
+
+LANGUAGES_PACKAGE = "anki_miner.languages"
+
+
+def _literal_string_tuple(module: ModuleFile, name: str) -> tuple[str, ...] | None:
+    """Read a module-level ``name = ("a", ...)`` without executing the module."""
+
+    try:
+        tree = ast.parse(module.content, filename=module.path)
+    except (SyntaxError, ValueError) as exc:
+        raise EngineSyncError(f"cannot parse {module.path}: {exc}") from exc
+    values: list[ast.expr | None] = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            bound = node.targets
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            bound = [node.target]
+        else:
+            continue
+        if any(isinstance(target, ast.Name) and target.id == name for target in bound):
+            values.append(None if isinstance(node, ast.AugAssign) else node.value)
+    if not values:
+        return None
+    if len(values) != 1 or values[0] is None:
+        raise EngineSyncError(f"{module.path}: {name} must be bound exactly once")
+    try:
+        value = ast.literal_eval(values[0])
+    except ValueError as exc:
+        raise EngineSyncError(
+            f"{module.path}: {name} must be a literal tuple of strings"
+        ) from exc
+    if not isinstance(value, (tuple, list)) or not all(
+        isinstance(item, str) and item for item in value
+    ):
+        raise EngineSyncError(f"{module.path}: {name} must be a tuple of strings")
+    return tuple(value)
+
+
+def _resolve_languages(
+    composition: Composition, index: Mapping[str, ModuleFile]
+) -> tuple[str, ...]:
+    if composition.languages is None:
+        return ()
+    package = index.get(LANGUAGES_PACKAGE)
+    available = (
+        _literal_string_tuple(package, "AVAILABLE_LANGUAGES") if package else None
+    )
+    if available is None:
+        raise EngineSyncError(
+            f"languages needs a literal AVAILABLE_LANGUAGES in {LANGUAGES_PACKAGE}"
+        )
+    unknown = set(composition.languages) - set(available)
+    if unknown:
+        raise EngineSyncError(
+            "languages not in AVAILABLE_LANGUAGES: " + ", ".join(sorted(unknown))
+        )
+    return tuple(sorted(composition.languages))
+
+
+def _expand_dynamic_imports(
+    composition: Composition,
+    index: Mapping[str, ModuleFile],
+    languages: tuple[str, ...],
+) -> tuple[DynamicExpansion, ...]:
+    """Expand each declaration over ``languages`` and the shared pack codes.
+
+    A selected code may lack the target (ja has no tokenizer module), so an
+    expansion can be empty; the template must still name an existing module
+    for at least one known code, which catches a misspelt target.
+    """
+
+    if not composition.dynamic_imports:
+        return ()
+    package = index.get(LANGUAGES_PACKAGE)
+
+    def read(name: str) -> tuple[str, ...]:
+        return (_literal_string_tuple(package, name) if package else None) or ()
+
+    shared = read("SHARED_PACK_CODES")
+    selected_codes = sorted({*languages, *shared})
+    known_codes = sorted({*read("AVAILABLE_LANGUAGES"), *shared})
+    expansions: list[DynamicExpansion] = []
+    for declaration in composition.dynamic_imports:
+        if not any(
+            declaration.target.format(code=code) in index for code in known_codes
+        ):
+            raise EngineSyncError(
+                f"dynamic import {declaration.importer}: {declaration.target} "
+                "matches no module for any known language or shared pack code"
+            )
+        modules = tuple(
+            name
+            for code in selected_codes
+            if (name := declaration.target.format(code=code)) in index
+        )
+        expansions.append(DynamicExpansion(declaration, modules))
+    return tuple(
+        sorted(
+            expansions,
+            key=lambda item: (item.declaration.importer, item.declaration.match),
+        )
+    )
 
 
 def _parent_modules(module: str, index: Mapping[str, ModuleFile]) -> Iterator[str]:
@@ -675,17 +909,33 @@ def build_snapshot(
                 "review the override before updating its declaration"
             )
 
+    languages = _resolve_languages(composition, index)
+    dynamic_expansions = _expand_dynamic_imports(composition, index, languages)
+    dynamic_sites: dict[str, dict[str, tuple[str, ...]]] = {}
+    for expansion in dynamic_expansions:
+        declaration = expansion.declaration
+        dynamic_sites.setdefault(declaration.importer, {})[
+            declaration.match
+        ] = expansion.modules
+
     selected: set[str] = set()
     pending = list(composition.roots)
     eager_external: set[str] = set()
     deferred_external: set[str] = set()
     used_exceptions: set[TypeCheckingException] = set()
     bound_symbols: dict[str, frozenset[str]] = {}
+    matched_sites: dict[str, set[str]] = {}
+    unavailable_hits: set[DeferredUnavailableHit] = set()
+    used_unavailable: set[str] = set()
 
     while pending:
         module_name = pending.pop()
         if module_name in selected:
             continue
+        if _matching_prefix(module_name, composition.deferred_unavailable):
+            raise EngineSyncError(
+                f"deferred-unavailable module is selected: {module_name}"
+            )
         item = index.get(module_name)
         if item is None:
             raise EngineSyncError(
@@ -697,7 +947,13 @@ def build_snapshot(
             for parent in _parent_modules(module_name, index)
             if parent not in selected
         )
-        refs = list(_iter_imports(item))
+        refs = list(
+            _iter_imports(
+                item,
+                dynamic_sites.get(module_name),
+                matched_sites.setdefault(module_name, set()),
+            )
+        )
         for ref in refs:
             forbidden = next(
                 (
@@ -720,6 +976,25 @@ def build_snapshot(
                     + (" (TYPE_CHECKING)" if ref.type_checking_only else "")
                 )
             if ref.type_checking_only:
+                continue
+            unavailable = _matching_prefix(ref.target, composition.deferred_unavailable)
+            if unavailable is not None:
+                if not ref.deferred:
+                    raise EngineSyncError(
+                        f"{item.path}:{ref.line}: eager import of deferred-unavailable {ref.target}"
+                    )
+                used_unavailable.add(unavailable)
+                # `from pkg.mod import name` also yields pkg.mod.name; record
+                # the module once, not every imported member.
+                if not (
+                    ref.member_candidate
+                    and _matching_prefix(
+                        ref.target.rpartition(".")[0], composition.deferred_unavailable
+                    )
+                ):
+                    unavailable_hits.add(
+                        DeferredUnavailableHit(ref.importer, ref.target)
+                    )
                 continue
             if ref.target in index:
                 pending.append(ref.target)
@@ -756,6 +1031,23 @@ def build_snapshot(
             for item in sorted(unused_exceptions, key=lambda x: (x.importer, x.target))
         )
         raise EngineSyncError(f"unused forbidden TYPE_CHECKING exceptions: {rendered}")
+    unused_dynamic = [
+        expansion.declaration
+        for expansion in dynamic_expansions
+        if expansion.declaration.match
+        not in matched_sites.get(expansion.declaration.importer, ())
+    ]
+    if unused_dynamic:
+        raise EngineSyncError(
+            "unused [[dynamic_imports]] declarations: "
+            + ", ".join(f"{item.importer}: {item.match}" for item in unused_dynamic)
+        )
+    unused_unavailable = set(composition.deferred_unavailable) - used_unavailable
+    if unused_unavailable:
+        raise EngineSyncError(
+            "deferred_unavailable prefixes never reached: "
+            + ", ".join(sorted(unused_unavailable))
+        )
 
     files: dict[str, SnapshotFile] = {}
     used_overlays: set[str] = set()
@@ -794,6 +1086,11 @@ def build_snapshot(
         deferred_external_imports=tuple(sorted(deferred_external)),
         type_checking_exceptions=tuple(
             sorted(used_exceptions, key=lambda item: (item.importer, item.target))
+        ),
+        languages=languages,
+        dynamic_imports=dynamic_expansions,
+        deferred_unavailable_hits=tuple(
+            sorted(unavailable_hits, key=lambda hit: (hit.importer, hit.module))
         ),
     )
 

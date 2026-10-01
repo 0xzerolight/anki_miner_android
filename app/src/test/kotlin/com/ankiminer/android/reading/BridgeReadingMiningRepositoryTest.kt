@@ -315,6 +315,35 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `a stale resource failure is said from the catalogs, not the engine's desktop path`() {
+        val harness =
+            harness(
+                expressionAudioFieldMapped = true,
+                raisedFailure = true,
+                raisedFailureCode = "resources_stale",
+            )
+
+        runBlocking { harness.repository.startReading(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                FIRST_SELECTION,
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        // The bridge sends only the stale names in the message; the fake's is "Mining failed".
+        assertEquals("resource:${R.string.mining_failure_resources_stale}:Mining failed", failed.failure.message)
+        assertEquals("resources_stale", failed.failure.diagnostic)
+        assertFalse(failed.failure.retryable)
+    }
+
+    @Test
     fun `a protocol violation names the callback that raised it`() {
         val harness = harness(expressionAudioFieldMapped = true)
 
@@ -2479,7 +2508,7 @@ class BridgeReadingMiningRepositoryTest {
             """{"schemaVersion":1,"type":"progress.update","payload":{"runId":"$RUN_ID","current":2,"description":"Definition found: $MINED_TERM"}}"""
         const val PRESENTER_WARNING_MESSAGE = "Offline sentence audio is unavailable"
         const val NO_DEFINITION_WARNING = "Skipped 2 words with no definition found: 本好き, 編み"
-        const val RECEIPT_WARNING = "Ambiguous reading review required for 3 word(s); current readings kept"
+        const val RECEIPT_WARNING = "3 word(s) have more than one reading — the parsed reading was kept."
         const val PRESENTER_WARNING_PLACEHOLDER = "__WARNING__"
         val PRESENTER_WARNING =
             """{"schemaVersion":1,"type":"presenter.event","payload":{"runId":"$RUN_ID","kind":"warning","message":"$PRESENTER_WARNING_PLACEHOLDER"}}"""

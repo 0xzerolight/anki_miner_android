@@ -1,0 +1,307 @@
+"""Language post-passes for spaCy languages (spec §4.3) — generic, driven by per-language data.
+
+Item 1 casing (``case_lemma``, ``tagging_copy``); item 2 separable-verb
+reattachment (``SeparableVerbPass``; the tokenizer stash is
+``tokens.to_duck_tokens``); item 3 the enclitic ladder rung (``EncliticRung``);
+the mined-form policy and the Latin lookup ladder (A §4.6, E.2.8).
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
+from types import MappingProxyType
+from typing import TYPE_CHECKING, Any, NamedTuple
+
+from anki_miner.languages._spaced.pos import UPOS_ALLOWED
+
+if TYPE_CHECKING:  # annotation-only: services must not load at profile build
+    from anki_miner.services.morphology import AttestLookup, FormLookup
+
+logger = logging.getLogger(__name__)
+
+EMPTY_MAP: Mapping[str, str] = MappingProxyType({})
+
+#: Curly and modifier apostrophes a subtitle uses where spaCy's English
+#: exceptions expect ``'`` (A.2): ``I’m`` otherwise tags ``’m`` as a VERB.
+APOSTROPHE_FOLD: Mapping[str, str] = MappingProxyType({"’": "'", "‘": "'", "ʼ": "'", "´": "'"})
+
+_LETTER_RUN = re.compile(r"[^\W\d_]+")
+
+
+def case_lemma(lemma: str, pos: str, title_case_pos: frozenset[str] = frozenset()) -> str:
+    """§4.3 item 1: PROPN untouched; a ``title_case_pos`` class capitalised if lowercase; the rest lowered."""
+    if pos == "PROPN":
+        return lemma
+    if pos in title_case_pos:
+        return lemma[:1].upper() + lemma[1:] if lemma[:1].islower() else lemma
+    return lemma.lower()
+
+
+def is_all_caps_cue(text: str) -> bool:
+    """At least two letter runs, some uppercase, no lowercase (``THE END``).
+
+    ``ß`` does not count as lowercase: it has no one-character capital, so a
+    shouted German line keeps it (``ICH WEIß ES NICHT``). Inert without ``ß``.
+    """
+    return (
+        len(_LETTER_RUN.findall(text)) >= 2
+        and any(char.isupper() for char in text)
+        and not any(char.islower() and char != "ß" for char in text)
+    )
+
+
+def tagging_copy(text: str, char_map: Mapping[str, str] = EMPTY_MAP) -> str:
+    """The string the model tags: same length as *text*, always.
+
+    Each ``char_map`` entry is one character for one character, and an
+    all-caps cue is lowercased character-wise only when that keeps the length
+    (``İ`` lowercases to two code points). Surfaces are sliced from the
+    ORIGINAL line by ``tok.idx``, so every offset stays valid (spec §4.2).
+    """
+    copy = "".join(char_map.get(char, char) for char in text) if char_map else text
+    if is_all_caps_cue(copy):
+        lowered = "".join(char.lower() for char in copy)
+        if len(lowered) == len(copy):
+            return lowered
+    return copy
+
+
+#: The classes a capitalised-lemma repair may touch: the card-front classes (a name is never re-lemmatised).
+CAPITALISED_LEMMA_POS: frozenset[str] = frozenset(UPOS_ALLOWED)
+
+#: Lowercased words -> the lemma the model gives each one parsed alone, ``""`` when it has none.
+Lemmatise = Callable[[list[str]], list[str]]
+
+
+def relemmatise_capitalised(
+    doc_tokens: Iterable[Any], lemmatise: Lemmatise, *, pos: frozenset[str] = CAPITALISED_LEMMA_POS
+) -> None:
+    """§4.3 item 1 for a lemmatiser that learned from lowercase words (Ruling S2, variant R); opt-in per language.
+
+    ``sv_core_news_sm`` lemmatises ``huset`` → ``hus`` but leaves a cue-initial ``Huset`` as ``Huset``, and
+    the casing rule only lowers that to ``huset``. A spaCy token whose ``pos_`` is in *pos*, whose first
+    character is uppercase, which is not all caps and whose RAW ``lemma_`` equals its text is lemmatised again
+    from its lowercased text alone; ``lemma_`` is rewritten in place, POS, tag and morph stay the in-context
+    ones, and ``""`` keeps the lemma. The raw lemma is the signal: after ``case_lemma`` a word the model
+    lemmatised by lowercasing it (``Var`` "where" → ``var``) looks the same as a miss. One ``lemmatise`` call
+    per line over the distinct words. UD Swedish Talbanken dev+test: content lemma exact 91.52 → 92.14 %,
+    sentence-initial 73.3 → 86.9 %, PROPN predicted as content unchanged (59 of 278).
+
+    *pos* is the language's set: ro passes ``CAPITALISED_LEMMA_POS | {"AUX"}`` because its tagger maps
+    main-verb ``Vm`` tags to AUX. A language that capitalises its nouns (de ``title_case_pos={"NOUN"}``) must
+    not opt in: ``lemma_ == text`` is then true of every uninflected noun, which is harmless but re-parses one
+    word per noun.
+    """
+    suspects = [
+        tok
+        for tok in doc_tokens
+        if tok.pos_ in pos and tok.text[:1].isupper() and tok.text != tok.text.upper() and tok.lemma_ == tok.text
+    ]
+    if not suspects:
+        return
+    words = list(dict.fromkeys(tok.text.lower() for tok in suspects))
+    lemmas = dict(zip(words, lemmatise(words), strict=True))
+    for tok in suspects:
+        lemma = lemmas[tok.text.lower()]
+        if lemma:
+            tok.lemma_ = lemma
+
+
+class SpacedMinedForm:
+    """MinedFormPolicy: the card front is the (already cased) lemma, for every POS."""
+
+    def mined_form(
+        self,
+        pos: str | None,
+        orth_base: str,
+        lemma: str,
+        surface: str,
+        pronunciation: str | None = None,
+    ) -> str:
+        return lemma or orth_base or surface
+
+    def expression_tracks_surface(self, word: Any) -> bool:
+        """S12 / Stage S D6: a lemma front never follows an i+1 swap's new surface."""
+        return False
+
+    def lookup_alternate(self, word: Any) -> str:
+        """The ``orth_base`` the lookup-miss ladder receives: the token surface (en plan D7a).
+
+        The card front is the lemma, so the default okurigana-safe lemma
+        alternate would hand the ladder the front again and every surface rung
+        (casefolded surface, the es/it enclitic strip) would be unreachable.
+        Read by ``EpisodeProcessor._lookup_alternate`` through ``getattr``.
+        """
+        return str(getattr(word, "surface", "") or "")
+
+
+#: A lookup rung over ``(mined_form, surface)``; ``surface`` may be ``""`` off the mining path.
+Rung = Callable[[str, str], Iterable[str]]
+
+
+class LatinLookupStrategy:
+    """LookupStrategy (A §4.6, E.2.8): surface · casefolded surface · extra rungs · hyphen parts.
+
+    ``word`` is the card front (the lemma, itself probed before this runs);
+    ``orth_base`` is the token surface on the mining path
+    (``SpacedMinedForm.lookup_alternate``) and the lemma or ``""`` elsewhere.
+    ``conditions`` is 0 on every candidate (pure spelling variants). The probe
+    word itself is never emitted and duplicates collapse to their first rung.
+    Candidates are tried in order and the first hit wins, so every rung is
+    already miss-only.
+    """
+
+    def __init__(self, extra_rungs: Sequence[Rung] = ()) -> None:
+        self._extra_rungs = tuple(extra_rungs)
+
+    def candidates(self, word: str, orth_base: str, ctype: str | None) -> list[tuple[str, int]]:
+        del ctype  # duck tokens carry no cType
+        out: list[tuple[str, int]] = []
+        seen = {word}
+
+        def add(text: str) -> None:
+            if text and text not in seen:
+                seen.add(text)
+                out.append((text, 0))
+
+        add(orth_base)
+        add(orth_base.casefold())
+        for rung in self._extra_rungs:
+            for text in rung(word, orth_base):
+                add(text)
+        parts = [part for part in word.split("-") if part]
+        if len(parts) > 1:
+            add(parts[0])
+            add(parts[-1])
+        return out
+
+
+_MIN_ENCLITIC_STEM = 2
+
+
+@dataclass(frozen=True)
+class EncliticRung:
+    """§4.3 item 3: strip a trailing enclitic cluster from the SURFACE; offer the stem and its re-lemmatised forms.
+
+    Lookup only (``conditions=0``); the card front stays the tokenizer's lemma
+    (which may itself be mangled: es ``Dámelo`` lemmatises to ``dámelir``).
+    ``clusters`` is the language's table (es/it); ``relemmatize`` maps a stem
+    to infinitive candidates when the language has a rule for it. With no
+    surface (a caller off the mining path) the mined form is stripped instead.
+    """
+
+    clusters: tuple[str, ...]
+    relemmatize: Callable[[str], Sequence[str]] | None = None
+
+    def __call__(self, word: str, surface: str) -> list[str]:
+        source = (surface or word).casefold()
+        out: list[str] = []
+        for cluster in sorted(set(self.clusters), key=lambda c: (-len(c), c)):
+            if len(source) - len(cluster) >= _MIN_ENCLITIC_STEM and source.endswith(cluster):
+                stem = source[: -len(cluster)]
+                out.append(stem)
+                if self.relemmatize is not None:
+                    out.extend(self.relemmatize(stem))
+        return out
+
+
+#: A language's join candidates for a verb head carrying a stashed separable particle, best first.
+ParticleCandidates = Callable[[Any], Sequence[str]]
+
+
+def particle_plus_lemma(token: Any) -> list[str]:
+    """The default join (§4.3 item 2): the casefolded particle prefixed to the verb lemma."""
+    return [token.feature.particle + token.feature.lemma]
+
+
+class StashedParticle(NamedTuple):
+    """One dependant on a language's particle arc, stashed on its verb head (``tokens.to_duck_tokens``)."""
+
+    #: The casefolded text a join candidate spells.
+    text: str
+    #: The dependant's own token: ``SeparableVerbPass`` demotes it to ``PART`` only when it takes its join.
+    token: Any
+    #: The arc it hangs on (``SeparableVerbPass(attested_only_deps=...)`` reads it).
+    dep: str
+
+
+def stash_particle(head: Any, particle: StashedParticle) -> None:
+    """Add *particle* to *head*'s ``feature.particles``, in line order; ``feature.particle`` is the first one's text.
+
+    ``feature.particle`` is the particle a candidate function spells a join with: the first stashed one here, and
+    each one in turn while ``SeparableVerbPass`` asks for candidates.
+    """
+    stash = getattr(head.feature, "particles", None)
+    if not stash:
+        head.feature.particle = particle.text
+        head.feature.particles = stash = []
+    stash.append(particle)
+
+
+class SeparableVerbPass:
+    """§4.3 item 2(b): join one stashed particle to its verb when the dictionary knows the result.
+
+    A ``token_post_pass`` (Stage S seam), injected by a language's
+    ``parser.py`` through ``create_spaced_parser``. ``candidates`` lists a
+    head's possible joins with one particle, best first; the default is
+    ``particle + lemma``. A language whose lemmatiser already folds particles
+    into lemmas passes its own order (nl: ``dutch_particle_candidates``). One
+    attestation call per line over every head's distinct candidates. Per head
+    the stashed particles are tried in line order and the first attested
+    candidate wins; ``attest is None`` (no offline dictionary wired) takes the
+    first candidate of the first particle that offers one, mirroring the
+    ungated merge passes. A particle on an ``attested_only_deps`` arc joins only
+    when attested: da hangs most particles on ``advmod``, beside every other
+    adverb (``gå ikke``, ``gå nu``).
+
+    Only the particle whose join is taken is demoted to ``PART``, outside every
+    allowed class. Every other stashed dependant keeps the class the tagger gave
+    it, so a join nothing attests loses no word (nl ``op prijs gesteld`` hangs
+    the noun on ``compound:prt``); that case keeps the model's lemma and is
+    logged at debug. The stash is cleared either way, so running the pass twice
+    cannot join twice. The third argument (R36's form lookup) is ignored.
+    """
+
+    def __init__(
+        self, candidates: ParticleCandidates = particle_plus_lemma, *, attested_only_deps: frozenset[str] = frozenset()
+    ) -> None:
+        self._candidates = candidates
+        self._attested_only_deps = attested_only_deps
+
+    def __call__(self, tokens: list[Any], attest: AttestLookup | None, forms: FormLookup | None) -> list[Any]:
+        del forms
+        heads = [token for token in tokens if getattr(token.feature, "particles", None)]
+        if not heads:
+            return tokens
+        options = [[(particle, self._texts(head, particle)) for particle in head.feature.particles] for head in heads]
+        attested: set[str] | None = None
+        if attest is not None:
+            probe = list(dict.fromkeys(text for tried in options for _particle, texts in tried for text in texts))
+            attested = attest(probe) if probe else set()
+        for head, tried in zip(heads, options, strict=True):
+            chosen = next(
+                ((particle, text) for particle, texts in tried if (text := self._choose(particle, texts, attested))),
+                None,
+            )
+            if chosen is None:
+                joins = [text for _particle, texts in tried for text in texts]
+                logger.debug("Separable verb %r not attested; keeping %r", joins, head.feature.lemma)
+            else:
+                particle, head.feature.lemma = chosen
+                particle.token.feature.pos1 = "PART"
+            head.feature.particle = ""
+            head.feature.particles = []
+        return tokens
+
+    def _texts(self, head: Any, particle: StashedParticle) -> list[str]:
+        """The language's candidates for *head* joined with *particle*, duplicates dropped."""
+        head.feature.particle = particle.text
+        return list(dict.fromkeys(self._candidates(head)))
+
+    def _choose(self, particle: StashedParticle, texts: list[str], attested: set[str] | None) -> str:
+        if attested is None:
+            return "" if particle.dep in self._attested_only_deps else next(iter(texts), "")
+        return next((text for text in texts if text in attested), "")

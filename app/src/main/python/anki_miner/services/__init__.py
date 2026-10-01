@@ -24,23 +24,18 @@ from .word_filter import WordFilterService
 
 if TYPE_CHECKING:
     from .anki_service import AnkiService
-    from .export_service import ExportService
     from .subtitle_parser import SubtitleParserService
 
 
 def __getattr__(name: str) -> object:
-    # AnkiService pulls in `requests` at its own module top; ExportService is
-    # lazy alongside it for the same reason. On Android this matters more than
-    # on desktop: `import anki_miner.services` from the bridge, the golden
-    # runners, or a host test lane no longer drags `requests` in.
+    # AnkiService pulls in `requests` at its own module top. On Android this
+    # matters more than on desktop: `import anki_miner.services` from the
+    # bridge, the golden runners, or a host test lane no longer drags
+    # `requests` in.
     if name == "AnkiService":
         from .anki_service import AnkiService
 
         return AnkiService
-    if name == "ExportService":
-        from .export_service import ExportService
-
-        return ExportService
     if name == "SubtitleParserService":
         from .subtitle_parser import SubtitleParserService
 
@@ -54,7 +49,6 @@ __all__ = [
     "MediaExtractorService",
     "DefinitionService",
     "AnkiService",
-    "ExportService",
     "StatsService",
     "IndexedDictProvider",
     "JishoProvider",

@@ -175,6 +175,8 @@
     <string name="undo_failed">復原失敗。沒有刪除任何筆記。</string>
     <string name="undo_words_failed">筆記已刪除，但已知單字的復原失敗。</string>
     <string name="mining_notice_no_definition">%1$d 個單字無字典條目：%2$s</string>
+    <string name="mining_notice_frequency_cutoff_ignored">已忽略頻率門檻：未載入具排名的頻率來源。請於 設定 → 資源 新增。</string>
+    <string name="mining_failure_resources_stale">應用程式更新後，這些資源需要重新匯入：%1$s。請於 設定 → 資源 重新匯入。</string>
     <string name="result_metric_created">已建立</string>
     <string name="result_metric_skipped_new">略過／新增</string>
     <string name="result_metric_skipped_new_value">%1$d／%2$d</string>

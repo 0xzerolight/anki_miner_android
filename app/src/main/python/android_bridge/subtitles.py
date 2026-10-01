@@ -123,9 +123,12 @@ def _preflight_cue_budgets(path: Path) -> str:
         _scan_cue_budgets(path, "cp932")
         return "cp932"
     except UnicodeDecodeError:
-        from anki_miner.utils.subtitle_encoding import _detect_encoding
+        from anki_miner.utils.subtitle_encoding import _detect_encoding, _read_head
 
-        encoding = _detect_encoding(path)
+        # The detector takes the engine's own bounded head, not a path: handed
+        # a path it raised TypeError, so every subtitle that was neither UTF-8
+        # nor cp932 (a UTF-16 or EUC-JP file) failed to show its cues.
+        encoding = _detect_encoding(_read_head(path))
         if encoding is not None:
             try:
                 _scan_cue_budgets(path, encoding)

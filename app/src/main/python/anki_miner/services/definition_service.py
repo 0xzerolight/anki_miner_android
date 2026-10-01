@@ -4,21 +4,68 @@ from __future__ import annotations
 
 import contextlib
 import logging
+from collections import Counter
 from collections.abc import Callable, Iterator
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QCoreApplication
 
 from anki_miner.config import AnkiMinerConfig
+from anki_miner.exceptions import AnkiMinerException
 from anki_miner.interfaces import ProgressCallback
 from anki_miner.services.subtitle_parser import _differs_by_okurigana_only
 from anki_miner.utils.i18n import tr_format
+from anki_miner.utils.logging_ext import capped, log_summary
 
 if TYPE_CHECKING:
     from anki_miner.interfaces import DictionaryProvider
+
+    # TYPE_CHECKING-only on purpose: languages/profile.py imports
+    # services.resource_catalog at module level and languages/ja/support.py
+    # imports THIS module inside its method body, so a runtime import here
+    # would close that cycle. `from __future__ import annotations` keeps the
+    # annotation a string.
+    from anki_miner.languages.profile import LookupStrategy
     from anki_miner.services.dictionary.registry import DictionaryRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _log_provider_failure(
+    provider: DictionaryProvider,
+    operation: str,
+    exc: Exception,
+    *,
+    subject: str | None = None,
+) -> None:
+    """One WARNING naming the provider, its slot on disk and the failing input.
+
+    "Definitions are missing" is unactionable without knowing WHICH dictionary
+    failed and where its index lives: two slots can carry the same display name,
+    and the chain silently continues past the failure. ``dict_id``/``db`` come
+    from the offline provider surface (``IndexedDictProvider``); online and stub
+    providers carry neither and render ``-``.
+
+    A typed :class:`AnkiMinerException` is an anticipated, self-describing
+    failure and gets no traceback (matching ``CancellableWorker.report_failure``);
+    anything else is a bug in a provider and keeps its stack.
+    """
+    logger.warning(
+        "Provider '%s' raised during %s%s; skipping: dict_id=%s db=%s %s: %s",
+        provider.name,
+        operation,
+        f" of '{subject}'" if subject is not None else "",
+        getattr(provider, "dict_id", None) or "-",
+        getattr(provider, "_db_path", None) or "-",
+        type(exc).__name__,
+        exc,
+        # The exception object, not True: this helper runs one frame below the
+        # `except` clause, so relying on the ambient sys.exc_info() would break
+        # the moment a caller logs outside its handler.
+        exc_info=None if isinstance(exc, AnkiMinerException) else exc,
+        # 2, so %(lineno)d resolves to the failing call site, not to this helper.
+        stacklevel=2,
+    )
 
 
 def _word_unique_batches(
@@ -39,6 +86,24 @@ def _word_unique_batches(
             batch.append(pair)
         yield batch
         pending = deferred
+
+
+def _token_kwargs(
+    batch: list[tuple[str, str | None]],
+    lemma_context: dict[str, str] | None,
+    pos_context: dict[str, str] | None,
+) -> dict[str, dict[str, str]]:
+    """The ``lemmas=`` / ``pos=`` kwargs a batch provider's ``lookup_many`` takes for ``batch``.
+
+    Each is passed only when some word of the batch has one, so providers and
+    stubs predating the kwarg keep working (the legacy call shape).
+    """
+    kwargs: dict[str, dict[str, str]] = {}
+    for name, context in (("lemmas", lemma_context), ("pos", pos_context)):
+        scoped = {w: context[w] for w, _ in batch if w in context} if context else {}
+        if scoped:
+            kwargs[name] = scoped
+    return kwargs
 
 
 def collect_dictionary_css_entries(config: AnkiMinerConfig) -> list[tuple[str, str, str]]:
@@ -116,10 +181,12 @@ class DefinitionService:
         providers: list[DictionaryProvider],
         *,
         registry: DictionaryRegistry | None = None,
+        lookup: LookupStrategy | None = None,
     ):
         self.config = config
         self._providers = providers
         self._registry = registry
+        self._lookup = lookup
         self._loaded = False
         # Per-run cache for _provider_attest_quality, keyed on (id(provider),
         # include_readings). See clear_run_cache() for scope/lifetime. Using
@@ -262,46 +329,94 @@ class DefinitionService:
                 _add(result.text, result.conditions)
         return candidates
 
-    def _fallback_lookup_offline(
+    def fallback_candidates(self, word: str, orth_base: str, ctype: str | None) -> list[tuple[str, int]]:
+        """Instance dispatch for the lookup-miss fan-out.
+
+        ``None`` strategy keeps the JA static verbatim, so an unconfigured
+        service (tests, scripts/engine_golden_contract_v2.py) is unchanged.
+        """
+        if self._lookup is None:
+            return self._fallback_candidates(word, orth_base, ctype)
+        return self._lookup.candidates(word, orth_base, ctype)
+
+    def _fallback_hits_offline(
         self,
         word: str,
         orth_base: str,
         ctype: str | None,
         is_cancelled: Callable[[], bool] | None = None,
-    ) -> str | None:
-        """First rules-validated fallback hit across offline providers, else None.
+        pos: str | None = None,
+    ) -> list[str]:
+        """Every offline provider's rules-validated hit for the first candidate any of them answers.
 
         Candidates are tried in priority order (variants, then fewest-step
-        deinflections); for each, offline providers are walked in chain order and
-        the first hit wins (mirrors ``get_definitions_batch`` first-hit-wins).
-        Online providers and providers lacking ``lookup_fallback`` are skipped.
-        Never raises: a provider that throws degrades to "skip + continue".
+        deinflections); for each, offline providers are walked in chain order,
+        and the first candidate with a hit ends the walk, so a deeper candidate
+        never mixes into a nearer one's hits. Online providers and providers
+        lacking ``lookup_fallback`` are skipped. Never raises: a provider that
+        throws degrades to "skip + continue". Cancellation returns the hits so far.
+
+        ``pos`` is the token's part of speech (the batch's ``pos_context``), so a
+        candidate's form row reads only the target rows the profile lets that
+        class read, as the direct lookup does. Passed only when known, the
+        ``_token_kwargs`` convention.
         """
-        candidates = self._fallback_candidates(word, orth_base, ctype)
-        if not candidates:
-            return None
-        for cand_text, cand_conditions in candidates:
+        token_kwargs = {"pos": pos} if pos else {}
+        hits: list[str] = []
+        for cand_text, cand_conditions in self.fallback_candidates(word, orth_base, ctype):
             for provider in self._providers:
                 if is_cancelled is not None and is_cancelled():
-                    return None
+                    return hits
                 if provider.is_online or not provider.is_available():
                     continue
                 fb = getattr(provider, "lookup_fallback", None)
                 if not callable(fb):
                     continue
                 try:
-                    html: str | None = fb(cand_text, cand_conditions)
+                    html: str | None = fb(cand_text, cand_conditions, **token_kwargs)
                 except Exception as e:
-                    logger.warning(
-                        "Provider '%s' raised during lookup_fallback of '%s'; skipping: %s",
-                        provider.name,
-                        cand_text,
-                        e,
-                    )
+                    _log_provider_failure(provider, "lookup_fallback", e, subject=cand_text)
                     continue
                 if html:
-                    return html
-        return None
+                    hits.append(html)
+            if hits:
+                return hits
+        return hits
+
+    def _fallback_lookup_offline(
+        self,
+        word: str,
+        orth_base: str,
+        ctype: str | None,
+        is_cancelled: Callable[[], bool] | None = None,
+        pos: str | None = None,
+    ) -> str | None:
+        """First rules-validated fallback hit across offline providers, else None.
+
+        The first of ``_fallback_hits_offline`` (mirrors ``get_definitions_batch``
+        first-hit-wins).
+        """
+        hits = self._fallback_hits_offline(word, orth_base, ctype, is_cancelled, pos)
+        return hits[0] if hits else None
+
+    def _chain_description(self) -> list[str]:
+        """Render the walked chain as ``name:dict_id:availability`` per provider.
+
+        The receipt has to answer "which dictionaries were actually consulted",
+        which the configured chain alone cannot: a slot whose index is stale or
+        missing reports itself unavailable and is silently skipped, and that is
+        the usual cause of a batch that resolves nothing.
+        """
+        described: list[str] = []
+        for provider in self._providers:
+            try:
+                availability = "y" if provider.is_available() else "n"
+            except Exception:
+                # The receipt is a diagnostic; a provider that cannot even
+                # answer this must not take the batch down with it.
+                availability = "?"
+            described.append(f"{provider.name}:{getattr(provider, 'dict_id', None) or '-'}:{availability}")
+        return described
 
     def get_definitions_batch(
         self,
@@ -311,6 +426,7 @@ class DefinitionService:
         *,
         is_cancelled: Callable[[], bool] | None = None,
         lemma_context: dict[str, str] | None = None,
+        pos_context: dict[str, str] | None = None,
     ) -> list[str | None]:
         """Resolve definitions for a list of ``(word, reading | None)`` pairs,
         preserving first-hit-wins. The reading is a per-word ranking BOOST
@@ -342,6 +458,12 @@ class DefinitionService:
         the folded-reading scan keeps its own lexeme's rows instead of the
         highest-scored same-reading homograph (有/夕/結う). Absent/empty ⇒
         providers are called with the legacy shape, so older stubs keep working.
+
+        ``pos_context`` maps a lookup word to its token's part of speech,
+        forwarded the same way as ``pos=`` for the profile's row rank: a wty
+        verb opens on its verb row, not on the noun row the index put first.
+        The miss ladder hands it to ``lookup_fallback`` for the profile's
+        splice test. Absent/empty ⇒ no ``pos`` kwarg, as with ``lemma_context``.
         """
         if progress_callback:
             progress_callback.on_start(
@@ -363,6 +485,10 @@ class DefinitionService:
         # but the same spelling with two readings must resolve twice.
         resolved: dict[tuple[str, str | None], str] = {}
         remaining = list(dict.fromkeys(words))
+        # Which provider actually produced each hit — the attribution the
+        # "definitions are missing" report needs and the chain order alone
+        # cannot give.
+        hits_by_provider: Counter[str] = Counter()
 
         # NOTE: the two ``except Exception`` clauses below are deliberately broad,
         # not an oversight. This is the never-raises provider boundary: a provider
@@ -383,19 +509,10 @@ class DefinitionService:
                 for batch_index, batch in enumerate(batches):
                     if cancellation_requested():
                         break
-                    # Legacy call shape when no lemma applies to this batch, so
-                    # providers/stubs predating the ``lemmas`` kwarg keep working.
-                    batch_lemmas = (
-                        {w: lemma_context[w] for w, _ in batch if w in lemma_context} if lemma_context else {}
-                    )
                     try:
-                        hits = batch_fn(batch, lemmas=batch_lemmas) if batch_lemmas else batch_fn(batch)
+                        hits = batch_fn(batch, **_token_kwargs(batch, lemma_context, pos_context))
                     except Exception as e:
-                        logger.warning(
-                            "Provider '%s' raised during lookup_many; skipping: %s",
-                            provider.name,
-                            e,
-                        )
+                        _log_provider_failure(provider, "lookup_many", e)
                         still_remaining.extend(batch)
                         for uncalled in batches[batch_index + 1 :]:
                             still_remaining.extend(uncalled)
@@ -405,6 +522,7 @@ class DefinitionService:
                         result = hits.get(word)
                         if result:
                             resolved[pair] = result
+                            hits_by_provider[provider.name] += 1
                         else:
                             still_remaining.append(pair)
                 if cancelled:
@@ -421,16 +539,12 @@ class DefinitionService:
                     try:
                         result = provider.lookup(word)
                     except Exception as e:
-                        logger.warning(
-                            "Provider '%s' raised during lookup of '%s'; skipping: %s",
-                            provider.name,
-                            word,
-                            e,
-                        )
+                        _log_provider_failure(provider, "lookup", e, subject=word)
                         still_remaining.append(pair)
                         continue
                     if result:
                         resolved[pair] = result
+                        hits_by_provider[provider.name] += 1
                     else:
                         still_remaining.append(pair)
                 if cancelled:
@@ -454,9 +568,11 @@ class DefinitionService:
                     orth_base,
                     ctype,
                     is_cancelled,
+                    pos_context.get(word) if pos_context else None,
                 )
                 if html:
                     resolved[pair] = html
+                    hits_by_provider["fallback"] += 1
 
         results: list[str | None] = []
         for i, pair in enumerate(words, 1):
@@ -483,6 +599,26 @@ class DefinitionService:
 
         if progress_callback and not cancellation_requested():
             progress_callback.on_complete()
+
+        # Counted over the returned list, not over the internal ``resolved``
+        # map: duplicate pairs collapse there, so only the output tells the
+        # user how many of the words they asked for actually got a definition.
+        missed_words = list(dict.fromkeys(word for (word, _r), hit in zip(words, results, strict=True) if not hit))
+        resolved_count = sum(1 for hit in results if hit)
+        log_summary(
+            logger,
+            "Definitions batch",
+            requested=len(words),
+            resolved=resolved_count,
+            missed=len(results) - resolved_count,
+            chain=capped(self._chain_description()),
+            hits=capped(f"{name}:{count}" for name, count in hits_by_provider.most_common()),
+        )
+        if missed_words:
+            # DEBUG, and capped: the miss list is the follow-up question after
+            # the counts, and a full-episode miss list would otherwise push the
+            # receipt itself out of a readable log.
+            log_summary(logger, "Definitions missed", level=logging.DEBUG, words=capped(missed_words))
         return results
 
     def has_offline_definitions(self, words: list[str]) -> dict[str, bool]:
@@ -530,11 +666,7 @@ class DefinitionService:
                     # survive; the render-path Rule A/B scope would drop it.
                     hits = batch_fn([(w, None) for w in remaining], scope_homographs=False)
                 except Exception as e:
-                    logger.warning(
-                        "Provider '%s' raised during lookup_many; skipping: %s",
-                        provider.name,
-                        e,
-                    )
+                    _log_provider_failure(provider, "lookup_many", e)
                     continue
                 still_remaining: list[str] = []
                 for word in remaining:
@@ -549,12 +681,7 @@ class DefinitionService:
                     try:
                         result = provider.lookup(word)
                     except Exception as e:
-                        logger.warning(
-                            "Provider '%s' raised during lookup of '%s'; skipping: %s",
-                            provider.name,
-                            word,
-                            e,
-                        )
+                        _log_provider_failure(provider, "lookup", e, subject=word)
                         still_remaining.append(word)
                         continue
                     if result:
@@ -596,11 +723,7 @@ class DefinitionService:
             try:
                 hits = has_terms_fn(remaining)
             except Exception as e:
-                logger.warning(
-                    "Provider '%s' raised during has_terms; skipping: %s",
-                    provider.name,
-                    e,
-                )
+                _log_provider_failure(provider, "has_terms", e)
                 continue
             found.update(hits)
             remaining = [t for t in remaining if t not in hits]
@@ -673,11 +796,44 @@ class DefinitionService:
             try:
                 hits = terms_readings_fn(remaining)
             except Exception as e:
-                logger.warning(
-                    "Provider '%s' raised during terms_readings; skipping: %s",
-                    provider.name,
-                    e,
-                )
+                _log_provider_failure(provider, "terms_readings", e)
+                continue
+            found.update(hits)
+            remaining = [t for t in remaining if t not in hits]
+
+        return found
+
+    def offline_term_rows(self, terms: list[str]) -> dict[str, list[tuple[str, str]]]:
+        """Exact-headword ``(content, tags)`` rows across available OFFLINE providers (spec R36).
+
+        The form-lookup probe a language's token post-pass reads: "what does the dictionary say
+        under this exact headword". Walks the chain exactly like :meth:`offline_term_readings` --
+        offline-only, ``ensure_loaded`` first, per-provider try/except so a provider failure can
+        never raise (or reach the network) from inside subtitle parsing -- with first-provider-wins
+        semantics per term.
+
+        A provider that answers a term with an EMPTY row list is treated as not having answered, so
+        that term stays in ``remaining`` and the next provider is asked. Without that, a chain whose
+        first member is a dictionary for another language would answer every term and silently
+        starve the rest of the chain.
+        """
+        self.ensure_loaded()
+
+        remaining = list(dict.fromkeys(terms))
+        found: dict[str, list[tuple[str, str]]] = {}
+
+        for provider in self._providers:
+            if not remaining:
+                break
+            if provider.is_online or not provider.is_available():
+                continue
+            term_rows_fn = getattr(provider, "term_rows", None)
+            if not callable(term_rows_fn):
+                continue
+            try:
+                hits = {term: rows for term, rows in term_rows_fn(remaining).items() if rows}
+            except Exception as e:
+                _log_provider_failure(provider, "term_rows", e)
                 continue
             found.update(hits)
             remaining = [t for t in remaining if t not in hits]
@@ -707,11 +863,7 @@ class DefinitionService:
             try:
                 hits = exact_sequences_fn(pairs)
             except Exception as e:
-                logger.warning(
-                    "Provider '%s' raised during exact_term_sequences; skipping: %s",
-                    provider.name,
-                    e,
-                )
+                _log_provider_failure(provider, "exact_term_sequences", e)
                 continue
             for (term, reading), sequences in hits.items():
                 identities = found.setdefault((term, reading), set())
@@ -782,7 +934,7 @@ class DefinitionService:
                 try:
                     fresh = fn(missing, include_readings)
                 except Exception as e:
-                    logger.warning("Provider '%s' raised during attest_quality; skipping: %s", provider.name, e)
+                    _log_provider_failure(provider, "attest_quality", e)
             # A provider that raises is cached as an empty verdict for the rest
             # of the episode (sticky): fresh remains {} so .get(w, empty) fills
             # with empty entries. A future provider that raises transiently should
@@ -858,9 +1010,11 @@ class DefinitionService:
         self,
         words: list[tuple[str, str | None]],
         progress_callback: ProgressCallback | None = None,
+        fallback_context: dict[str, tuple[str, str | None]] | None = None,
         *,
         is_cancelled: Callable[[], bool] | None = None,
         lemma_context: dict[str, str] | None = None,
+        pos_context: dict[str, str] | None = None,
     ) -> list[str | None]:
         """Collect glossary HTML for ``(word, reading | None)`` pairs, preserving
         input order. The reading is a per-word ranking BOOST threaded to each
@@ -878,9 +1032,15 @@ class DefinitionService:
         Providers lacking ``lookup_many`` (e.g. legacy offline or online Jisho)
         are consulted per-word, matching the old behaviour.
 
+        ``fallback_context`` is ``get_definitions_batch``'s lookup-miss ladder:
+        a word nothing answered, offline or online, retries the candidates, and
+        every offline provider's hit for the first candidate any of them answers
+        is concatenated. Absent (``None``) ⇒ no ladder.
+
         ``lemma_context`` mirrors ``get_definitions_batch``: word → token lemma,
         forwarded to batch-capable offline providers for the Rule A′ kana-front
         homograph scope; absent/empty keeps the legacy call shape.
+        ``pos_context`` (word → token part of speech) likewise mirrors it.
         """
         if progress_callback:
             progress_callback.on_start(
@@ -923,18 +1083,10 @@ class DefinitionService:
                 for batch in _word_unique_batches(unique_pairs):
                     if cancellation_requested():
                         break
-                    # Same legacy-shape guard as get_definitions_batch.
-                    batch_lemmas = (
-                        {w: lemma_context[w] for w, _ in batch if w in lemma_context} if lemma_context else {}
-                    )
                     try:
-                        provider_results = batch_fn(batch, lemmas=batch_lemmas) if batch_lemmas else batch_fn(batch)
+                        provider_results = batch_fn(batch, **_token_kwargs(batch, lemma_context, pos_context))
                     except Exception as e:
-                        logger.warning(
-                            "Provider '%s' raised during lookup_many; skipping: %s",
-                            provider.name,
-                            e,
-                        )
+                        _log_provider_failure(provider, "lookup_many", e)
                         break
                     for pair in batch:
                         word, _reading = pair
@@ -949,12 +1101,7 @@ class DefinitionService:
                     try:
                         html = provider.lookup(word)
                     except Exception as e:
-                        logger.warning(
-                            "Provider '%s' raised during lookup of '%s'; skipping: %s",
-                            provider.name,
-                            word,
-                            e,
-                        )
+                        _log_provider_failure(provider, "lookup", e, subject=word)
                         continue
                     if html:
                         offline_hits[pair].append(html)
@@ -972,18 +1119,27 @@ class DefinitionService:
                     try:
                         html = provider.lookup(word)
                     except Exception as e:
-                        logger.warning(
-                            "Provider '%s' raised during lookup of '%s'; skipping: %s",
-                            provider.name,
-                            word,
-                            e,
-                        )
+                        _log_provider_failure(provider, "lookup", e, subject=word)
                         continue
                     if html:
                         online_results[pair] = html
                         break
                 else:
                     online_results[pair] = None
+
+        # Miss-only ladder, after the whole chain as in get_definitions_batch.
+        if fallback_context:
+            for pair in unique_pairs:
+                if cancellation_requested():
+                    break
+                word, _reading = pair
+                ctx = fallback_context.get(word)
+                if ctx is None or offline_hits[pair] or online_results.get(pair):
+                    continue
+                orth_base, ctype = ctx
+                offline_hits[pair] = self._fallback_hits_offline(
+                    word, orth_base, ctype, is_cancelled, pos_context.get(word) if pos_context else None
+                )
 
         results: list[str | None] = []
         for i, pair in enumerate(words, 1):
@@ -1015,7 +1171,7 @@ class DefinitionService:
             progress_callback.on_complete()
         return results
 
-    def lookup_all_offline(self, word: str, lemma: str | None = None) -> list[tuple[str, str]]:
+    def lookup_all_offline(self, word: str, lemma: str | None = None, pos: str | None = None) -> list[tuple[str, str]]:
         """Aggregate results from all available OFFLINE providers.
 
         Returns a list of (provider_name, html) tuples for every offline
@@ -1048,31 +1204,31 @@ class DefinitionService:
                 offline stub) keeps the arity-1 ``lookup(word)`` path.
                 ``None``/empty skips the probe entirely, so this is
                 byte-identical to pre-A′ behavior for every existing caller.
+            pos: the token's part of speech, for the profile's row rank
+                (mirrors ``get_definitions_batch``'s ``pos_context``): a wty
+                verb's pane opens on the verb row its card opens on. Routed
+                like ``lemma``, and each is passed to ``lookup_many`` only
+                when set; with neither, ``lookup(word)`` runs as before.
 
         Returns:
             List of (provider_name, html) tuples in provider chain order. Empty
             list if no offline provider returns any (exact or fallback) hit.
         """
         self.ensure_loaded()
-        candidates = self._fallback_candidates(word, "", None)
+        candidates = self.fallback_candidates(word, "", None)
+        pair: list[tuple[str, str | None]] = [(word, None)]
+        token_kwargs = _token_kwargs(pair, {word: lemma} if lemma else None, {word: pos} if pos else None)
+        fallback_kwargs = {"pos": pos} if pos else {}
         out: list[tuple[str, str]] = []
         for p in self._providers:
             if p.is_online or not p.is_available():
                 continue
             seen_html: set[str] = set()
-            batch_fn = getattr(p, "lookup_many", None) if lemma else None
+            batch_fn = getattr(p, "lookup_many", None) if token_kwargs else None
             try:
-                if callable(batch_fn):
-                    html = batch_fn([(word, None)], lemmas={word: lemma}).get(word)
-                else:
-                    html = p.lookup(word)
+                html = batch_fn(pair, **token_kwargs).get(word) if callable(batch_fn) else p.lookup(word)
             except Exception as e:
-                logger.warning(
-                    "Provider '%s' raised during lookup of '%s'; skipping: %s",
-                    p.name,
-                    word,
-                    e,
-                )
+                _log_provider_failure(p, "lookup", e, subject=word)
                 html = None
             if html:
                 out.append((p.name, html))
@@ -1082,14 +1238,9 @@ class DefinitionService:
                 continue
             for cand_text, cand_conditions in candidates:
                 try:
-                    fhtml = fb(cand_text, cand_conditions)
+                    fhtml = fb(cand_text, cand_conditions, **fallback_kwargs)
                 except Exception as e:
-                    logger.warning(
-                        "Provider '%s' raised during lookup_fallback of '%s'; skipping: %s",
-                        p.name,
-                        cand_text,
-                        e,
-                    )
+                    _log_provider_failure(p, "lookup_fallback", e, subject=cand_text)
                     continue
                 if fhtml and fhtml not in seen_html:
                     out.append((p.name, fhtml))

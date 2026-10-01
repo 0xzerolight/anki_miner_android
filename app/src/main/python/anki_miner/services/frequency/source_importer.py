@@ -27,11 +27,11 @@ count first) before storage, so downstream rank filtering/sorting stays correct.
 
 from __future__ import annotations
 
+import json
 import logging
-import os
 import shutil
+import sqlite3
 import tempfile
-import unicodedata
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -39,12 +39,12 @@ from pathlib import Path
 
 from anki_miner.exceptions import OperationCancelled, SetupError
 from anki_miner.services._sqlite_index import (
-    prove_owned_slot,
+    language_identity,
+    read_slot_language,
     resolve_auto_store_id,
-    resolve_managed_slot,
     write_ownership_marker,
 )
-from anki_miner.services._staging import promote_staged_dir, repair_managed_slot
+from anki_miner.services._staging import claim_managed_slot, promote_staged_dir, repair_managed_slot
 from anki_miner.services.frequency import mode_probe, storage
 from anki_miner.services.frequency.csv_parse import (
     _extract_word_rank,
@@ -63,10 +63,21 @@ from anki_miner.services.yomitan_meta_bank import (
     open_yomitan_meta_banks,
 )
 from anki_miner.utils.csv_utils import detect_delimiter
+from anki_miner.utils.logging_ext import capped, log_summary
 from anki_miner.utils.robust_fs import robust_rmtree
 from anki_miner.utils.slug import slugify
 
 logger = logging.getLogger(__name__)
+
+# How many raw rows the one CSV skip WARNING quotes back. A frequency list that
+# drops half its rows to a delimiter or column-order mistake shows the mistake
+# in the first few; a longer list would only push the counts off the line.
+_CSV_SKIP_EXAMPLE_LIMIT = 5
+
+# Terms per lemmatizer call (S17). It bounds how long Cancel and the progress
+# readout wait: hu, the slowest tagger, takes about 10 ms per word, so about
+# 5 s per chunk; most languages finish a chunk in under a second.
+_LEMMATISE_CHUNK = 500
 
 FREQUENCY_SOURCE_SUFFIXES = (".zip", ".csv", ".tsv", ".txt")
 _ZIP_SUFFIXES = frozenset(FREQUENCY_SOURCE_SUFFIXES[:1])
@@ -85,6 +96,20 @@ def _rank_preference(row: tuple[int, str | None]) -> tuple[bool, int]:
     """
     rank, display_value = row
     return (is_kana_usage_display(display_value), rank)
+
+
+def _term_fold(language: str) -> Callable[[str], str]:
+    """The stamped language's index-key fold (S4): NFC for ja/ko/zh.
+
+    Applied to terms and readings before the dedupe key, so rows the fold makes
+    equal collapse exactly as the query side will see them. Function-local
+    import: ``languages.profile`` imports ``services.resource_catalog``, whose
+    package pulls this module back in. The dictionary importer resolves its
+    keys the same way.
+    """
+    from anki_miner.languages.registry import get_profile
+
+    return get_profile(language).dict_keys.fold_term
 
 
 @dataclass(frozen=True)
@@ -122,6 +147,9 @@ def import_frequency_source(
     cancel_check: Callable[[], bool] | None = None,
     overwrite: bool = False,
     before_promote: Callable[[], None] | None = None,
+    language: str = "ja",
+    declared_mode: str = "",
+    lemmatize: Callable[[list[str]], list[str]] | None = None,
 ) -> FreqSourceImportResult:
     """Import ``input_path`` into ``dest_root/<source_id>/index.sqlite``.
 
@@ -143,6 +171,13 @@ def import_frequency_source(
         overwrite: If true, replace an existing same-id source atomically.
         before_promote: Optional last-moment guard run immediately before the
             staged directory replaces the managed slot.
+        language: Mining language stamped into the index meta. Defaults to
+            ``"ja"``, the pre-transition value for every existing caller.
+        declared_mode: A catalogue's ``frequencyMode`` for a CSV that cannot
+            carry one (a caller's declaration beats a header's). Ignored for
+            zips, which declare their own.
+        lemmatize: Maps terms to lemmas; applied only once the source resolved
+            to occurrence counts, which are then summed per lemma (S17).
 
     Raises:
         SetupError: On a missing/unsupported input, or a source that yields zero
@@ -161,6 +196,8 @@ def import_frequency_source(
             cancel_check=cancel_check,
             overwrite=overwrite,
             before_promote=before_promote,
+            language=language,
+            lemmatize=lemmatize,
         )
     if suffix in _CSV_SUFFIXES:
         return _import_csv(
@@ -168,9 +205,13 @@ def import_frequency_source(
             dest_root,
             source_id=source_id,
             source_name=source_name,
+            progress=progress,
             cancel_check=cancel_check,
             overwrite=overwrite,
             before_promote=before_promote,
+            language=language,
+            declared_mode=declared_mode,
+            lemmatize=lemmatize,
         )
     raise SetupError(
         f"Unsupported frequency source '{input_path.name}'. Provide a Yomitan .zip or a .csv/.tsv/.txt rank list."
@@ -185,8 +226,23 @@ def repair_frequency_source(
     source_name: str,
     progress: ProgressFn | None = None,
     cancel_check: Callable[[], bool] | None = None,
+    dicts_root: Path | None = None,
 ) -> FreqSourceImportResult:
-    """Explicitly repair ``source_id``, retaining an invalid prior slot as quarantine."""
+    """Explicitly repair ``source_id``, retaining an invalid prior slot as quarantine.
+
+    ``dicts_root`` is the dictionaries folder a lemmatised list keys its words
+    by (``build_frequency_lemmatizer``); ``None`` keys them by the tagger alone.
+    """
+    # Read the stamp before the rebuild: repair_managed_slot may quarantine the
+    # slot, and a re-import would otherwise fall back to the "ja" default.
+    language = read_slot_language(dest_root / source_id)
+    # The same holds for how the list was built (S17): a rebuild without them
+    # would re-rank a lemmatised list from its raw surface counts.
+    declared_mode, lemmatised = slot_import_options(dest_root / source_id)
+    # Function-local like _term_fold: the lemmatizer resolves the tagger lazily.
+    from anki_miner.services.frequency.lemmatize import build_frequency_lemmatizer
+
+    lemmatize = build_frequency_lemmatizer(language, dicts_root) if lemmatised else None
     return repair_managed_slot(
         input_path,
         dest_root,
@@ -200,8 +256,39 @@ def repair_frequency_source(
             progress=progress,
             cancel_check=cancel_check,
             overwrite=overwrite,
+            language=language,
+            declared_mode=declared_mode,
+            lemmatize=lemmatize,
         ),
     )
+
+
+def slot_import_options(slot_dir: Path) -> tuple[str, bool]:
+    """The declared mode and lemmatisation a slot's import recorded (S17), or ("", False).
+
+    The ``meta.json`` sidecar answers first, fresh or not, as
+    :func:`read_slot_language` reads the stamp: the slot being repaired may be
+    the one whose index is unreadable, and a stale sidecar beside it still
+    holds how the list was built. The sidecar mirrors every meta row, so one
+    without either key records a default import. The index is read only when
+    the sidecar is missing or unreadable. Never raises: with no answer the slot
+    rebuilds the way every pre-S17 import was built.
+    """
+    try:
+        payload = json.loads((slot_dir / "meta.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        payload = None
+    if isinstance(payload, dict):
+        meta = payload
+    else:
+        try:
+            meta = storage.read_meta(slot_dir / "index.sqlite")
+        except (OSError, ValueError, sqlite3.Error) as exc:
+            logger.warning(
+                "Frequency repair could not read the import options of %s (%s)", slot_dir, type(exc).__name__
+            )
+            return "", False
+    return str(meta.get("declared_mode", "")), meta.get("lemmatised") == "1"
 
 
 def _import_zip(
@@ -213,6 +300,8 @@ def _import_zip(
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
     before_promote: Callable[[], None] | None,
+    language: str,
+    lemmatize: Callable[[list[str]], list[str]] | None = None,
 ) -> FreqSourceImportResult:
     with open_yomitan_meta_banks(zip_path, kind="frequency") as banks:
         title = banks.title
@@ -222,7 +311,7 @@ def _import_zip(
             dest_root,
             _derive_source_id(title),
             "frequency",
-            {"source_name": title, "source_revision": revision},
+            {"source_name": title, "source_revision": revision, **language_identity(language)},
         )
 
         # Numeric path: key = (term, reading) -> (best rank, display_value),
@@ -238,6 +327,7 @@ def _import_zip(
         digit_free_count = 0
         total_labelled = 0
         total_considered = 0
+        fold = _term_fold(language)
 
         for bank in banks.iter_banks(progress=progress, cancel_check=cancel_check):
             # Entries are already structurally validated by iter_banks (list,
@@ -245,11 +335,11 @@ def _import_zip(
             for entry in bank:
                 if entry[1] != "freq":
                     continue
-                term = unicodedata.normalize("NFC", str(entry[0]).strip())
+                term = fold(str(entry[0]).strip())
                 data = entry[2]
                 reading = extract_envelope_reading(data)
                 if reading is not None:
-                    reading = unicodedata.normalize("NFC", reading)
+                    reading = fold(reading)
 
                 # Numeric rank via the existing gate (byte-identical to today,
                 # incl. unstripped object-form displayValue); the raw label is
@@ -303,8 +393,20 @@ def _import_zip(
                     f"{skipped_display_only} display-only entries). "
                     "The dictionary may use an unsupported data format."
                 )
-            rows, converted = _iter_rank_rows(ranks, declared_mode)
-            entry_count = len(ranks)
+            rows, converted = _iter_rank_rows(
+                ranks,
+                declared_mode,
+                language,
+                lemmatize=lemmatize,
+                fold_term=fold,
+                progress=progress,
+                cancel_check=cancel_check,
+            )
+            if lemmatize is not None:
+                rows = list(rows)
+                entry_count = len(rows)
+            else:
+                entry_count = len(ranks)
 
         result = _finalize(
             input_path=zip_path,
@@ -322,6 +424,9 @@ def _import_zip(
             cancel_check=cancel_check,
             overwrite=overwrite,
             before_promote=before_promote,
+            language=language,
+            fold_term=fold,
+            lemmatised=lemmatize is not None,
         )
 
     logger.info(
@@ -342,9 +447,13 @@ def _import_csv(
     *,
     source_id: str | None,
     source_name: str | None = None,
+    progress: ProgressFn | None = None,
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
     before_promote: Callable[[], None] | None,
+    language: str,
+    declared_mode: str = "",
+    lemmatize: Callable[[list[str]], list[str]] | None = None,
 ) -> FreqSourceImportResult:
     stem = csv_path.stem
     # Honor an explicit display name (reimport passes the existing meta name);
@@ -355,13 +464,25 @@ def _import_csv(
         dest_root,
         _derive_source_id(stem),
         "frequency",
-        {"source_name": resolved_name, "source_revision": ""},
+        {"source_name": resolved_name, "source_revision": "", **language_identity(language)},
     )
 
     # key = (term, reading) -> rank; first occurrence wins (matches the legacy
     # CSV loader's semantics, which kept the first rank per word). Plain rank
     # lists carry no Yomitan display string, so display_value is always None here.
     ranks: dict[tuple[str, str | None], int] = {}
+    # Counted, never logged per row: a 100k-row list with the wrong delimiter
+    # would otherwise write 100k lines. One class per reason the row was
+    # unusable, plus a few verbatim rows so the mistake is visible.
+    skipped: dict[str, int] = {"short_row": 0, "no_word_rank": 0}
+    skip_examples: list[str] = []
+    fold = _term_fold(language)
+
+    def _skip(kind: str, row: list[str]) -> None:
+        skipped[kind] += 1
+        if len(skip_examples) < _CSV_SKIP_EXAMPLE_LIMIT:
+            skip_examples.append(delimiter.join(row))
+
     try:
         with open(csv_path, encoding="utf-8") as f:
             sample = f.read(4096)
@@ -373,32 +494,46 @@ def _import_csv(
             reader = _csv.reader(f, delimiter=delimiter)
             first_row = True
             word_first = False
-            declared_mode = ""
+            header_mode = ""
             for row in reader:
                 if cancel_check is not None and cancel_check():
                     raise OperationCancelled("Import cancelled")
                 if len(row) < 2:
+                    _skip("short_row", row)
                     continue
                 if first_row:
                     first_row = False
                     if _is_frequency_header(row):
                         word_first = _is_word_first_header(row)
-                        declared_mode = _header_frequency_mode(row)
+                        header_mode = _header_frequency_mode(row)
                         continue
 
                 word, rank = _extract_word_rank(row, word_first=word_first)
                 if not word or rank is None:
+                    _skip("no_word_rank", row)
                     continue
 
                 reading = _csv_reading(row, word)
-                word = unicodedata.normalize("NFC", word)
+                word = fold(word)
                 if reading is not None:
-                    reading = unicodedata.normalize("NFC", reading)
+                    reading = fold(reading)
                 key = (word, reading)
                 if key not in ranks:
                     ranks[key] = rank
     except OSError as e:
         raise SetupError(f"Error reading frequency source '{csv_path.name}': {e}") from e
+
+    total_skipped = sum(skipped.values())
+    if total_skipped:
+        log_summary(
+            logger,
+            "Frequency import skipped rows",
+            level=logging.WARNING,
+            source=csv_path,
+            skipped=total_skipped,
+            **skipped,
+            first_examples=capped(skip_examples, _CSV_SKIP_EXAMPLE_LIMIT),
+        )
 
     if not ranks:
         raise SetupError(
@@ -408,9 +543,23 @@ def _import_csv(
             "Yomitan .zip dictionaries — import one of those instead."
         )
 
-    # An explicit count/rank header is authoritative. Headerless and ambiguous
-    # CSVs still use the statistical probe.
-    rows, converted = _iter_rank_rows(ranks, declared_mode)
+    # A caller's declared mode (a catalogue entry), then an explicit count/rank
+    # header, is authoritative. Headerless and ambiguous CSVs still use the
+    # statistical probe.
+    mode = declared_mode or header_mode
+    rows, converted = _iter_rank_rows(
+        ranks,
+        mode,
+        language,
+        lemmatize=lemmatize,
+        fold_term=fold,
+        progress=progress,
+        cancel_check=cancel_check,
+    )
+    entry_count = len(ranks)
+    if lemmatize is not None:
+        rows = list(rows)
+        entry_count = len(rows)
 
     result = _finalize(
         input_path=csv_path,
@@ -420,12 +569,16 @@ def _import_csv(
         source_revision="",
         fmt="csv",
         rows=rows,
-        entry_count=len(ranks),
+        entry_count=entry_count,
         skipped_display_only=0,
         converted_to_ranks=converted,
         cancel_check=cancel_check,
         overwrite=overwrite,
         before_promote=before_promote,
+        language=language,
+        fold_term=fold,
+        declared_mode=declared_mode,
+        lemmatised=lemmatize is not None,
     )
     logger.info(
         "Imported %d frequency entries from CSV '%s' as source '%s'",
@@ -439,17 +592,38 @@ def _import_csv(
 def _iter_rank_rows(
     ranks: Mapping[tuple[str, str | None], int | tuple[int, str | None]],
     declared_mode: str,
+    source_language: str = "ja",
+    *,
+    lemmatize: Callable[[list[str]], list[str]] | None = None,
+    fold_term: Callable[[str], str] | None = None,
+    progress: ProgressFn | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> tuple[Iterable[storage.FreqRow], bool]:
     """Yield stored rows in stable order, re-ranking occurrence sources.
 
     The dedupe mapping remains necessary, but yielded rows stream into SQLite
     instead of duplicating the entire source in a second list.
+
+    ``source_language`` is the language the import stamps into ``meta.json``; it
+    selects the probe terms, so a source is only ever steered by its own
+    language's list.
+
+    ``lemmatize`` runs only once the source resolved to occurrence counts: the
+    probe votes on surface terms, then counts aggregate under
+    ``fold_term(lemma)`` (see :func:`_aggregate_by_lemma`, which alone uses
+    ``progress`` and ``cancel_check``). Ranks cannot be summed, so a rank
+    source is never lemmatised.
     """
+    # terms_for_language, NOT mode_probe._terms_for: the latter pools every
+    # language's terms for an unknown code, which would let ja decide a ko
+    # source's direction. A language with no table contributes no terms, so
+    # term_values stays empty and probe_direction's own pooling fallback finds
+    # nothing to look up — the decision falls through to rank-based. Widening
+    # this set would re-open exactly that miscall.
     probe_terms = {
         term
         for table in (mode_probe.MORE_COMMON_TERMS, mode_probe.LESS_COMMON_TERMS)
-        for terms in table.values()
-        for term in terms
+        for term in mode_probe.terms_for_language(table, source_language)
     }
     term_values: dict[str, list[int]] = {}
     for (term, _reading), value in ranks.items():
@@ -457,7 +631,15 @@ def _iter_rank_rows(
             rank = value if isinstance(value, int) else value[0]
             term_values.setdefault(term, []).append(rank)
 
-    if mode_probe.resolve_is_occurrence(declared_mode, term_values):
+    if mode_probe.resolve_is_occurrence(declared_mode, term_values, source_language):
+        if lemmatize is not None:
+            ranks = _aggregate_by_lemma(
+                ranks,
+                lemmatize,
+                fold_term or _term_fold(source_language),
+                progress=progress,
+                cancel_check=cancel_check,
+            )
         ordered = sorted(
             ranks.items(),
             key=lambda item: (
@@ -483,6 +665,48 @@ def _iter_rank_rows(
         for (term, reading), value in ordered
     )
     return rows, False
+
+
+def _aggregate_by_lemma(
+    ranks: Mapping[tuple[str, str | None], int | tuple[int, str | None]],
+    lemmatize: Callable[[list[str]], list[str]],
+    fold_term: Callable[[str], str],
+    *,
+    progress: ProgressFn | None = None,
+    cancel_check: Callable[[], bool] | None = None,
+) -> dict[tuple[str, str | None], int]:
+    """Sum occurrence counts per ``(fold_term(lemma), reading)`` (S17).
+
+    A surface-keyed occurrence list ranks an infinitive by its own occurrences
+    only; summing every inflected form under its lemma is what makes
+    ``max_frequency_rank`` mean for an inflecting language what it means for
+    ja's lemma-keyed JPDB.
+
+    The lemmatizer sees the terms in chunks of :data:`_LEMMATISE_CHUNK`, with a
+    progress report after each and a Cancel check before each: a 50,000-word
+    list runs for minutes. Each term is lemmatised on its own, so chunking
+    changes no lemma, and the sum runs over the whole list.
+    """
+    keys = list(ranks)
+    terms = [term for term, _reading in keys]
+    lemmas: list[str] = []
+    for start in range(0, len(terms), _LEMMATISE_CHUNK):
+        if cancel_check is not None and cancel_check():
+            raise OperationCancelled("Import cancelled")
+        chunk = terms[start : start + _LEMMATISE_CHUNK]
+        chunk_lemmas = lemmatize(chunk)
+        if len(chunk_lemmas) != len(chunk):
+            raise SetupError("The lemmatizer returned a different number of lemmas than terms.")
+        lemmas.extend(chunk_lemmas)
+        if progress is not None:
+            progress(len(lemmas), len(terms), "Lemmatising")
+    aggregated: dict[tuple[str, str | None], int] = {}
+    for (term, reading), lemma in zip(keys, lemmas, strict=True):
+        value = ranks[(term, reading)]
+        count = value if isinstance(value, int) else value[0]
+        key = (fold_term(lemma or term), reading)
+        aggregated[key] = aggregated.get(key, 0) + count
+    return aggregated
 
 
 def _csv_reading(row: list[str], word: str) -> str | None:
@@ -525,25 +749,18 @@ def _finalize(
     cancel_check: Callable[[], bool] | None,
     overwrite: bool,
     before_promote: Callable[[], None] | None,
+    language: str,
+    fold_term: Callable[[str], str] | None = None,
+    declared_mode: str = "",
+    lemmatised: bool = False,
 ) -> FreqSourceImportResult:
     """Build the index under a staging dir, then atomically promote it.
 
     Copies the original input alongside ``index.sqlite`` (``source.zip`` /
     ``source.csv``) for later reimport.
     """
-    try:
-        final_path = resolve_managed_slot(dest_root, source_id)
-    except ValueError as exc:
-        raise SetupError(str(exc)) from exc
+    final_path = claim_managed_slot(dest_root, source_id, "frequency", overwrite=overwrite, noun="Frequency source")
     final_path.parent.mkdir(parents=True, exist_ok=True)
-    if os.path.lexists(final_path):
-        if not overwrite:
-            raise SetupError(f"Frequency source '{source_id}' already exists")
-        if not prove_owned_slot(final_path.parent, source_id, "frequency"):
-            raise SetupError(
-                f"Frequency source '{source_id}' exists but is not an Anki Miner-managed frequency source; "
-                "refusing to overwrite it"
-            )
 
     staging = Path(tempfile.mkdtemp(prefix=".staging-", dir=final_path.parent))
     try:
@@ -559,8 +776,16 @@ def _finalize(
             # "1"/"0" (not bool) — read back with an explicit == "1" compare so a
             # stored "0" never coerces truthy (bool("0") is True).
             "is_categorical": "1" if is_categorical else "0",
+            "language": language,
         }
-        storage.build_index(db_path, rows, meta)
+        # How a word-count list was imported (S17), for repair_frequency_source to
+        # replay: a rebuild without them would re-rank a lemmatised list from raw
+        # surface counts. Written only when set, so default imports keep their meta.
+        if declared_mode:
+            meta["declared_mode"] = declared_mode
+        if lemmatised:
+            meta["lemmatised"] = "1"
+        storage.build_index(db_path, rows, meta, fold_term=fold_term)
 
         # Persist the source file so a later "reimport" can rebuild without the
         # user re-picking it (mirrors the dict importer's source.zip).

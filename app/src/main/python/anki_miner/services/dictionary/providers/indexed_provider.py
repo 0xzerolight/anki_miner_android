@@ -8,6 +8,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from anki_miner.services.dictionary.dict_css_scope import scope_dict_css
 from anki_miner.services.dictionary.storage import (
@@ -36,11 +37,17 @@ from anki_miner.services.dictionary.storage import (
     lookup_with_rules as storage_lookup_with_rules,
 )
 from anki_miner.services.dictionary.storage import (
+    term_rows as storage_term_rows,
+)
+from anki_miner.services.dictionary.storage import (
     terms_exist as storage_terms_exist,
 )
 from anki_miner.services.dictionary.storage import (
     terms_readings as storage_terms_readings,
 )
+
+if TYPE_CHECKING:
+    from anki_miner.languages.profile import DictKeyFolding
 
 logger = logging.getLogger(__name__)
 
@@ -75,10 +82,21 @@ class IndexedDictProvider:
     internally via the GIL + sqlite library mutex.
     """
 
-    def __init__(self, dict_id: str, db_path: Path, display_name: str | None = None):
+    def __init__(
+        self,
+        dict_id: str,
+        db_path: Path,
+        display_name: str | None = None,
+        *,
+        keys: DictKeyFolding | None = None,
+    ):
         self.dict_id = dict_id
         self._db_path = db_path
         self._display_name = display_name or dict_id
+        # Import/query key folding for this index. ``None`` = the Japanese pair
+        # every committed index was written with. MUST be the same folding the
+        # importer used: a mismatch returns zero rows and raises nothing.
+        self._keys = keys
         self._conn: sqlite3.Connection | None = None
         # Guards load()'s check-then-set on ``_conn``: PrewarmWorker and the
         # first mining run can both call load() on a never-loaded provider,
@@ -193,7 +211,7 @@ class IndexedDictProvider:
         if self._conn is None:
             return None
         try:
-            return self._render(storage_lookup(self._conn, word))
+            return self._render(storage_lookup(self._conn, word, keys=self._keys))
         except sqlite3.DatabaseError as e:
             logger.warning(
                 "Dictionary '%s' (%s) raised DatabaseError during lookup; treating as miss: %s",
@@ -208,6 +226,7 @@ class IndexedDictProvider:
         pairs: list[tuple[str, str | None]],
         scope_homographs: bool = True,
         lemmas: dict[str, str] | None = None,
+        pos: dict[str, str] | None = None,
     ) -> dict[str, str | None]:
         """Batch lookup over ``(word, reading | None)`` pairs. Each word's
         contextual reading boosts that word's own ranking (``None`` = wildcard).
@@ -220,11 +239,14 @@ class IndexedDictProvider:
         (default) applies the render-path Rule A/A′/B homograph scope; ``False``
         keeps the unfiltered term-OR-reading semantics for the existence/attestation
         probes (see ``DefinitionService.has_offline_definitions``). ``lemmas``
-        (word → token lemma) feeds the Rule A′ kana-front scope."""
+        (word → token lemma) feeds the Rule A′ kana-front scope; ``pos`` (word →
+        token part of speech) feeds the profile's row rank."""
         if self._conn is None:
             return {w: None for w, _ in pairs}
         try:
-            rows_by_word = storage_lookup_many(self._conn, pairs, scope_homographs=scope_homographs, lemmas=lemmas)
+            rows_by_word = storage_lookup_many(
+                self._conn, pairs, scope_homographs=scope_homographs, lemmas=lemmas, keys=self._keys, pos=pos
+            )
         except sqlite3.DatabaseError as e:
             logger.warning(
                 "Dictionary '%s' (%s) raised DatabaseError during lookup_many; treating as all-miss: %s",
@@ -237,7 +259,7 @@ class IndexedDictProvider:
         # requested word (preserving duplicates) for caller convenience.
         return {w: self._render(rows_by_word.get(w, [])) for w, _ in pairs}
 
-    def lookup_fallback(self, word: str, conditions: int) -> str | None:
+    def lookup_fallback(self, word: str, conditions: int, pos: str | None = None) -> str | None:
         """Rules-validated lookup for a deinflection/variant fallback candidate.
 
         Ported from Yomitan ``Translator._matchEntriesToDeinflections``
@@ -252,6 +274,8 @@ class IndexedDictProvider:
         :meth:`lookup`, so a validated fallback hit is byte-identical to a direct
         hit. Optional method (probed via ``getattr`` like ``lookup_many`` /
         ``has_terms``); never raises — a corrupt index degrades to a miss.
+        ``pos`` is the part of speech of the token the candidate came from, for
+        the profile's splice test (see ``storage.lookup_with_rules``).
         """
         if self._conn is None:
             return None
@@ -260,7 +284,7 @@ class IndexedDictProvider:
         from anki_miner.services.deinflection import condition_flags_from_rules, conditions_match
 
         try:
-            rows = storage_lookup_with_rules(self._conn, word)
+            rows = storage_lookup_with_rules(self._conn, word, keys=self._keys, pos=pos)
         except sqlite3.DatabaseError as e:
             logger.warning(
                 "Dictionary '%s' (%s) raised DatabaseError during lookup_fallback; treating as miss: %s",
@@ -286,7 +310,7 @@ class IndexedDictProvider:
         if self._conn is None:
             return set()
         try:
-            return storage_terms_exist(self._conn, terms)
+            return storage_terms_exist(self._conn, terms, keys=self._keys)
         except sqlite3.DatabaseError as e:
             logger.warning(
                 "Dictionary '%s' (%s) raised DatabaseError during has_terms; treating as all-miss: %s",
@@ -295,6 +319,27 @@ class IndexedDictProvider:
                 e,
             )
             return set()
+
+    def term_rows(self, terms: list[str]) -> dict[str, list[tuple[str, str]]]:
+        """Batch exact-headword row probe (R36 form lookup).
+
+        Maps each of ``terms`` that exists as a headword to its ``(content, tags)`` rows, best
+        entry first. A term with no rows is ABSENT from the map, not mapped to ``[]``: the chain
+        walk in ``DefinitionService`` reads that absence as "ask the next provider". Mirrors
+        :meth:`has_terms`: never raises; unavailable or corrupt index degrades to an empty map.
+        """
+        if self._conn is None:
+            return {}
+        try:
+            return storage_term_rows(self._conn, terms, keys=self._keys)
+        except sqlite3.DatabaseError as e:
+            logger.warning(
+                "Dictionary '%s' (%s) raised DatabaseError during term_rows; treating as all-miss: %s",
+                self.dict_id,
+                self._db_path,
+                e,
+            )
+            return {}
 
     def terms_readings(self, terms: list[str]) -> dict[str, list[str]]:
         """Batch attested-readings probe (merged-compound reading attestation).
@@ -330,7 +375,7 @@ class IndexedDictProvider:
         if self._conn is None:
             return {}
         try:
-            return storage_exact_term_sequences(self._conn, pairs)
+            return storage_exact_term_sequences(self._conn, pairs, keys=self._keys)
         except sqlite3.DatabaseError as e:
             logger.warning(
                 "Dictionary '%s' (%s) raised DatabaseError during exact_term_sequences; treating as all-miss: %s",

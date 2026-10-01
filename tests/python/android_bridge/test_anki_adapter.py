@@ -1708,6 +1708,7 @@ def test_adapter_carries_the_anki_service_surface_the_engine_now_calls(
 
     assert callable(adapter.set_cancelled_check)
     assert adapter.last_created_mined_forms == []
+    assert adapter.last_created_lemmas == []
 
     # create_cards_batch calls this on itself with allow_degraded=False.
     vocabulary = inspect.signature(type(adapter).get_existing_vocabulary).parameters
@@ -1727,11 +1728,41 @@ def test_created_mined_forms_record_only_notes_anki_confirmed(
     kotlin = FakeKotlinAnki()
     kotlin.duplicate_fields = ["<b>既存</b>"]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    cat = _card("猫")
+    cat = replace(cat, word=replace(cat.word, lemma="ネコ"))
 
-    adapter.create_cards_batch([_card("既存"), _card("猫")])
+    adapter.create_cards_batch([_card("既存"), cat])
 
     assert adapter.last_created_note_ids == [1000]
     assert adapter.last_created_mined_forms == ["猫"]
+    # Aligned with the forms, lemma for lemma: the engine zips the two to count
+    # the whitelist entries a run mined, and a misaligned pair counts none.
+    assert adapter.last_created_lemmas == ["ネコ"]
+
+
+def test_note_builder_kwargs_match_desktop_anki_service_for_ja(
+    initialized_bridge_home: Path,
+) -> None:
+    """Desktop's AnkiService derives build_note's language kwargs from the profile.
+
+    The adapter spells ja's out; a re-pin that gives ja an extra card field, a
+    direction or a card language would otherwise write different notes here
+    than desktop writes, with nothing failing.
+    """
+    pytest.importorskip("requests")
+    from anki_miner.config import AnkiMinerConfig
+    from anki_miner.services.anki_service import AnkiService
+
+    service = AnkiService(AnkiMinerConfig())
+
+    desktop = {
+        "extra_optional_keys": service._extra_optional_keys,
+        "extra_raw_html_keys": service._extra_raw_html_keys,
+        "content_direction": service._content_direction,
+        "content_lang": service._content_lang,
+        "card_lang": service._card_lang,
+    }
+    assert desktop == anki_adapter_module._JA_NOTE_BUILDER_KWARGS
 
 
 def test_note_building_dedup_and_first_occurrence_semantics_are_python_owned(
@@ -5880,6 +5911,10 @@ def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
     # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
     # item; the partial processor owns no definition service, so stand one in.
     processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
+    # Every result leaving _run_pipeline now passes _stamp_whitelist_coverage,
+    # which asks the config and the word-list service whether a whitelist is on.
+    processor.config = types.SimpleNamespace(use_whitelist=False, bypass_optional_filters=False)
+    processor.word_list_service = None
     run_temp = tmp_path / "partial-run"
 
     def allocate_temp() -> Path:
@@ -5955,6 +5990,10 @@ def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(
     # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
     # item; the partial processor owns no definition service, so stand one in.
     processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
+    # Every result leaving _run_pipeline now passes _stamp_whitelist_coverage,
+    # which asks the config and the word-list service whether a whitelist is on.
+    processor.config = types.SimpleNamespace(use_whitelist=False, bypass_optional_filters=False)
+    processor.word_list_service = None
     run_temp = tmp_path / "cancelled-run"
 
     def allocate_temp() -> Path:

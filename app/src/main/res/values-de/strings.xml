@@ -176,6 +176,8 @@
     <string name="undo_failed">Rückgängig machen fehlgeschlagen. Es wurden keine Notizen gelöscht.</string>
     <string name="undo_words_failed">Notizen gelöscht, aber das Zurücksetzen der bekannten Wörter ist fehlgeschlagen.</string>
     <string name="mining_notice_no_definition">Kein Wörterbucheintrag für %1$d Wort/Wörter: %2$s</string>
+    <string name="mining_notice_frequency_cutoff_ignored">Häufigkeitsgrenze ignoriert: Es ist keine Häufigkeitsquelle mit Rängen geladen. Fügen Sie eine unter Einstellungen → Ressourcen hinzu.</string>
+    <string name="mining_failure_resources_stale">Nach dem App-Update müssen diese Ressourcen erneut importiert werden: %1$s. Importieren Sie sie unter Einstellungen → Ressourcen erneut.</string>
     <string name="result_metric_created">Erstellt</string>
     <string name="result_metric_skipped_new">Übersprungen / neu</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>

@@ -7,13 +7,17 @@ submission, and error recovery; this module owns what goes in each note.
 """
 
 import html
+import logging
 import re
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from anki_miner.config import AnkiMinerConfig
 from anki_miner.models import CardPayload
 from anki_miner.utils.text_utils import strip_format_chars
+
+logger = logging.getLogger(__name__)
 
 # Field keys every config's ``anki_fields`` must contain (AnkiService
 # validates this at construction time).
@@ -27,6 +31,11 @@ REQUIRED_FIELD_KEYS = {
     "sentence_furigana",
 }
 
+# FROZEN LEGACY SET — it never grows again. The ja/ko/zh keys below are here
+# because they predate ``LanguageProfile.extra_card_fields``; a new language
+# declares its card fields on its own profile and ``AnkiService`` threads them
+# into ``build_note`` as ``extra_optional_keys``. Adding a key here instead
+# would make every language pay for it.
 OPTIONAL_FIELD_KEYS = {
     "pitch_position",
     "pitch_category",
@@ -36,6 +45,13 @@ OPTIONAL_FIELD_KEYS = {
     "frequency_sort",
     "source",
     "expression_audio",
+    # Non-ja card hooks (spec 9.3): the mapped field name is the on/off switch,
+    # exactly like frequency/pitch. A ja config never maps them, so the empty-name
+    # skip below leaves every Japanese note byte-identical.
+    "measure_word",
+    "expression_traditional",
+    "expression_pinyin",
+    "hanja",
 }
 
 
@@ -49,6 +65,17 @@ def configured_target_field_names(config: AnkiMinerConfig) -> set[str]:
     return field_names
 
 
+def no_note_type_message() -> str:
+    """The one sentence for a config that names no note type at all.
+
+    A profile can ship without one (zh does), so the first run of a language
+    reaches every note-type check with an empty name. Reporting that as a note
+    type Anki does not have describes a typo nobody made; the step is simply
+    still open. Shared with ``validation_service`` so both surfaces say it once.
+    """
+    return "No note type is chosen yet — pick one in Settings → Cards & Anki."
+
+
 def missing_note_type_message(note_type: str, available: list[str]) -> str:
     """The one sentence every note-type-not-found check raises.
 
@@ -57,21 +84,26 @@ def missing_note_type_message(note_type: str, available: list[str]) -> str:
     identical wording. Lives here rather than in ``anki_service`` because the
     backfill caller is deliberately PyQt-free and cannot import that module.
     """
-    shown = ", ".join(available[:5])
-    more = "..." if len(available) > 5 else ""
-    return f"Note type '{note_type}' not found. Available: {shown}{more}. Check Settings → Anki."
+    # Before the log: nothing is missing when nobody named a note type, and the
+    # warning would report one called '' as absent from the collection.
+    if not note_type:
+        return no_note_type_message()
+    # The list of note types the collection does have is diagnostics, not the
+    # sentence (A8-34): the Settings panel this points at shows the same list
+    # live, so it belongs in the log rather than in a banner summary.
+    logger.warning("Anki note type missing: wanted=%s available=%s", note_type, sorted(available))
+    return f"Note type '{note_type}' is not in Anki — pick one in Settings → Cards & Anki."
 
 
 def missing_fields_message(note_type: str, missing: set[str], actual: set[str]) -> str:
     """The one sentence every field-absent-from-note-type check raises."""
-    shown = ", ".join(sorted(actual)[:5])
-    more = "..." if len(actual) > 5 else ""
-    return (
-        f"Field(s) {', '.join(sorted(missing))} not found on note type "
-        f"'{note_type}'. "
-        f"Available: {shown}{more}. "
-        f"Check Settings → Anki field mapping."
+    logger.warning(
+        "Anki fields missing: note_type=%s missing=%s actual=%s",
+        note_type,
+        sorted(missing),
+        sorted(actual),
     )
+    return f"{', '.join(sorted(missing))} not found on note type '{note_type}' — remap in Settings → Cards & Anki."
 
 
 def field_target_collision_message(note_type: str, targets: list[str]) -> str | None:
@@ -80,10 +112,8 @@ def field_target_collision_message(note_type: str, targets: list[str]) -> str | 
     if not duplicate_targets:
         return None
     shown = ", ".join(sorted(duplicate_targets))
-    return (
-        f"Field(s) {shown} mapped more than once. "
-        f"Map each Anki Miner field to a different field on note type '{note_type}'."
-    )
+    logger.warning("Anki field targets collide: note_type=%s duplicates=%s", note_type, shown)
+    return f"{shown} mapped more than once — give each field a different target in Settings → Cards & Anki."
 
 
 def field_mapping_error(
@@ -101,7 +131,7 @@ def field_mapping_error(
         first_field = ordered_actual[0] if ordered_actual else "(none)"
         return (
             f"Word field '{word_target}' must map to the first field '{first_field}' "
-            f"on note type '{note_type}'. Check Settings → Anki field mapping."
+            f"on note type '{note_type}'. Check Settings → Cards & Anki."
         )
     return None
 
@@ -110,7 +140,13 @@ def field_mapping_error(
 # glossary), NOT html.escape()d by the OPTIONAL pass — escaping would turn the
 # tags into literal text. They follow the skip-when-empty contract: an absent
 # value leaves the field untouched rather than blanking it.
-_RAW_HTML_FIELD_KEYS = ("frequency", "pitch_graph", "pitch_text")
+#
+# FROZEN LEGACY TUPLE, like OPTIONAL_FIELD_KEYS above: it never grows again. A
+# new language's raw-HTML key arrives per call as ``extra_raw_html_keys``, from
+# the ``raw_html=True`` entries of its profile's ``extra_card_fields``. Order is
+# load-bearing — it fixes the note's field order for these keys, so extras are
+# appended after this tuple, never interleaved.
+_RAW_HTML_FIELD_KEYS = ("frequency", "pitch_graph", "pitch_text", "expression_pinyin")
 
 
 # Used to normalize a stored first-field value to the same key Anki dedups on.
@@ -169,7 +205,48 @@ class BuiltNote:
     used_bold_fallback: bool
 
 
-def build_note(item: CardPayload, config: AnkiMinerConfig, stored_files: set[str]) -> BuiltNote:
+def _rtl_wrap(value: str, lang: str) -> str:
+    """Wrap one mined-content field for a right-to-left language (S21).
+
+    ``dir`` sets the paragraph direction, so end punctuation sits on the correct
+    side whatever direction the note type itself uses; ``lang`` (the profile
+    code) lets the card's WebView pick the language's glyph forms -- Persian
+    keheh, yeh and digits rather than the Arabic forms. Anki's duplicate check
+    and ``_strip_for_dedup`` both strip tags, so the dedup key is the bare text
+    either way. An empty value stays empty.
+    """
+    if not value:
+        return value
+    lang_attr = f' lang="{html.escape(lang, quote=True)}"' if lang else ""
+    return f'<div dir="rtl"{lang_attr}>{value}</div>'
+
+
+def _lang_wrap(value: str, lang: str) -> str:
+    """Declare the language of one mined-content field, without touching layout.
+
+    Han unification gives 骨, 直 and 令 a different shape per language, and a
+    reviewer's WebView with no ``lang`` takes them from the first CJK face it
+    finds -- the Japanese one on any machine that also mines Japanese, which is
+    most of them. The tag is what makes the fallback pick Chinese shapes. An
+    empty value or an empty tag is left exactly as it was, and
+    ``_strip_for_dedup`` strips the span like any other markup.
+    """
+    if not value or not lang:
+        return value
+    return f'<span lang="{html.escape(lang, quote=True)}">{value}</span>'
+
+
+def build_note(
+    item: CardPayload,
+    config: AnkiMinerConfig,
+    stored_files: set[str],
+    *,
+    extra_optional_keys: frozenset[str] = frozenset(),
+    extra_raw_html_keys: frozenset[str] = frozenset(),
+    content_direction: str = "ltr",
+    content_lang: str = "",
+    card_lang: Callable[[str, AnkiMinerConfig], str] | None = None,
+) -> BuiltNote:
     """Map one CardPayload to the note dict ``addNotes`` expects.
 
     Args:
@@ -178,6 +255,23 @@ def build_note(item: CardPayload, config: AnkiMinerConfig, stored_files: set[str
         stored_files: Filenames confirmed stored in Anki's media collection;
             media fields only reference files in this set so cards never point
             at missing media.
+        extra_optional_keys: Logical field keys the active language declares
+            beyond the frozen ``OPTIONAL_FIELD_KEYS``, gated identically
+            (mapped name non-empty AND value non-empty, value html.escape()d).
+        extra_raw_html_keys: The subset of those whose value is pre-rendered
+            markup, handled like ``_RAW_HTML_FIELD_KEYS``: emitted verbatim,
+            omitted when empty. Both default empty, so the three-argument call
+            — ja/ko/zh and the frozen engine-goldens exporter — is unchanged.
+        content_direction: The active profile's ``content_style.direction``.
+            ``"rtl"`` wraps the word and sentence fields in
+            ``<div dir="rtl" lang=…>``; anything else leaves every field as
+            before, so the three-argument call is unchanged.
+        content_lang: The profile code written as that wrapper's ``lang``.
+        card_lang: The active profile's ``content_style.card_lang`` — (the text
+            being tagged, config) -> BCP-47 tag. A non-empty tag wraps the
+            sentence in ``<span lang=…>``; ``None`` (every non-Han profile)
+            leaves the note exactly as before. Ignored for an rtl language,
+            whose wrapper already carries a ``lang``.
 
     Returns:
         The note dict plus flags recording whether the bolded-sentence path
@@ -205,12 +299,15 @@ def build_note(item: CardPayload, config: AnkiMinerConfig, stored_files: set[str
     # turn the tags into literal text. Sibling scalar fields (frequency_sort,
     # pitch_position) stay in the escaped OPTIONAL pass — escaping a number/digit
     # string is a no-op.
-    raw_html_values = dict.fromkeys(_RAW_HTML_FIELD_KEYS, "")
+    # Profile-declared raw-HTML keys are appended AFTER the frozen tuple, so a
+    # language that declares none leaves the note's field order untouched.
+    raw_html_keys = _RAW_HTML_FIELD_KEYS + tuple(sorted(extra_raw_html_keys.difference(_RAW_HTML_FIELD_KEYS)))
+    raw_html_values = dict.fromkeys(raw_html_keys, "")
     if extra_fields:
-        for raw_key in _RAW_HTML_FIELD_KEYS:
+        for raw_key in raw_html_keys:
             if raw_key in extra_fields:
                 raw_html_values[raw_key] = extra_fields[raw_key] or ""
-        extra_fields = {k: v for k, v in extra_fields.items() if k not in _RAW_HTML_FIELD_KEYS} or None
+        extra_fields = {k: v for k, v in extra_fields.items() if k not in raw_html_keys} or None
 
     # Build field values (only reference successfully stored media)
     picture_html = ""
@@ -246,15 +343,32 @@ def build_note(item: CardPayload, config: AnkiMinerConfig, stored_files: set[str
     else:
         sentence_furigana_field = html.escape(word.sentence_furigana)
 
+    word_field = html.escape(word.mined_form)
+    if content_direction == "rtl":
+        word_field = _rtl_wrap(word_field, content_lang)
+        sentence_field = _rtl_wrap(sentence_field, content_lang)
+    elif card_lang is not None:
+        # Sentence only. The word field is the one a Chinese note type feeds to
+        # a Pleco/MDBG link or a {{tts}} tag, and the one the known-words scan
+        # and Anki's own duplicate check read back, so it stays plain text; the
+        # sentence is where the Han run long enough to show the wrong glyph
+        # shapes actually lives.
+        # The resolver is asked about the text it will wrap, in its source
+        # spelling: a mined sentence keeps the file's own script whatever the
+        # language's own script setting says, and the escaped/bolded form would
+        # carry markup no script rule can read.
+        sentence_field = _lang_wrap(sentence_field, card_lang(word.sentence, config))
+
     # Build fields, skipping any with empty config mapping
     field_data = {
-        "word": html.escape(word.mined_form),
+        "word": word_field,
         "sentence": sentence_field,
         "definition": definition or "",
         "glossary": glossary_html,
         "frequency": raw_html_values["frequency"],
         "pitch_graph": raw_html_values["pitch_graph"],
         "pitch_text": raw_html_values["pitch_text"],
+        "expression_pinyin": raw_html_values["expression_pinyin"],
         "picture": picture_html,
         "audio": audio_ref,
         "expression_audio": expression_audio_ref,
@@ -262,26 +376,34 @@ def build_note(item: CardPayload, config: AnkiMinerConfig, stored_files: set[str
         "expression_reading": html.escape(word.expression_reading),
         "sentence_furigana": sentence_furigana_field,
         "sentence_reading": html.escape(word.sentence_reading),
+        "sentence_translation": html.escape(word.sentence_translation),
     }
+    # Profile-declared raw-HTML keys only; the four above are already in place
+    # at their frozen positions.
+    for raw_key in raw_html_keys:
+        if raw_key not in field_data:
+            field_data[raw_key] = raw_html_values[raw_key]
     fields = {}
     for key, value in field_data.items():
         anki_field_name = config.anki_fields.get(key, "")
         if not anki_field_name:
             continue
-        # The raw-HTML fields (frequency, pitch_graph, pitch_text) are inserted
+        # The raw-HTML fields (frequency, pitch_graph, pitch_text,
+        # expression_pinyin — tone-coloured spans) are inserted
         # verbatim (like glossary). Unlike the always-emitted fields above they
         # follow the optional gating contract: omit entirely when the value is
         # empty so a word with no data leaves the field untouched rather than
         # blanking it.
-        if key in _RAW_HTML_FIELD_KEYS and not value:
+        if key in raw_html_keys and not value:
             continue
         fields[anki_field_name] = value
 
     # Add optional fields if configured and data available
     if extra_fields:
+        optional_keys = OPTIONAL_FIELD_KEYS | extra_optional_keys
         for key, value in extra_fields.items():
             anki_field_name = config.anki_fields.get(key, "")
-            if key in OPTIONAL_FIELD_KEYS and anki_field_name and value:
+            if key in optional_keys and anki_field_name and value:
                 fields[anki_field_name] = html.escape(str(value))
 
     # JP Mining Note-style card-type marker: stamp a constant "x" into the one
@@ -299,7 +421,7 @@ def build_note(item: CardPayload, config: AnkiMinerConfig, stored_files: set[str
         "fields": fields,
         "tags": config.anki_tags.split(),
     }
-    # Deck Builder: re-card words that already exist elsewhere in the
+    # allow_duplicate_cards: re-card words that already exist elsewhere in the
     # collection. duplicateScope="deck" keeps cross-episode curation's
     # single-carding meaningful within the new deck. Normal mining emits NO
     # options object, so AnkiConnect applies its implicit default (whole
