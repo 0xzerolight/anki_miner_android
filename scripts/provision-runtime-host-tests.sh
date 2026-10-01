@@ -59,6 +59,15 @@ expected = {
     "requests": "2.34.2",
     "tzdata": "2026.3",
     "urllib3": "2.7.0",
+    "click": "8.1.8",
+    "cloudpickle": "3.1.2",
+    "colorama": "0.4.6",
+    "defusedxml": "0.7.1",
+    "joblib": "1.6.0",
+    "nltk": "3.10.3",
+    "regex": "2026.9.10",
+    "tqdm": "4.68.3",
+    "zeyrek": "0.1.3",
 }
 for name, version in expected.items():
     assert importlib.metadata.version(name) == version, (name, version)
