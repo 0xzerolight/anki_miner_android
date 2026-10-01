@@ -1889,8 +1889,53 @@ object FrozenResourceCatalog {
                                 ),
                             ),
                     ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-vi-en-2026.09.20",
+                        displayName = "Wiktionary (Vietnamese-English) 2026-09-20",
+                        slotId = "wty-vi-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/vi/en/wty-vi-en.zip",
+                                sha256 = "c9ee18f4572f2237eb46b280e3965a6b70f06dac55bdf06906c2355b1a3b968b",
+                                sizeBytes = 4_325_049,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-vi-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 7,
+                                uncompressedBytes = 45_628_027,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-vi-word-2026.09.19",
+                        displayName = "OpenSubtitles 2024 word frequency (Vietnamese)",
+                        sourceId = "opensubtitles-vi-word",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
+                                sha256 = "4475a9a3c9ee8247a60f11c9fe395f8212afa86296c296b24c452e111dd8d896",
+                                sizeBytes = 402_194,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("OPUS OpenSubtitles v2024 corpus (Vietnamese)", "P. Lison and J. Tiedemann (2016), OPUS (opus.nlpl.eu); subtitles from opensubtitles.org", "ODC-BY-1.0", "https://opus.nlpl.eu/OpenSubtitles/corpus/version/OpenSubtitles"),
+                                ResourceAttribution("Anki Miner Vietnamese word-frequency build", "Built by Anki Miner's scripts/build_vi_frequency.py (segmented with underthesea)", "ODC-BY-1.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
                 ),
-            recommended = emptyList(),
+            recommended = listOf("wty-vi-en-2026.09.20", "opensubtitles-vi-word-2026.09.19"),
         )
 
     val cantonese =

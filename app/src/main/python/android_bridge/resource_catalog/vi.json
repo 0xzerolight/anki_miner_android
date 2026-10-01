@@ -79,7 +79,72 @@
           "url": "https://github.com/undertheseanlp/underthesea"
         }
       ]
+    },
+    {
+      "resourceId": "wty-vi-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Vietnamese-English) 2026-09-20",
+      "slotId": "wty-vi-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/vi/en/wty-vi-en.zip",
+        "sha256": "c9ee18f4572f2237eb46b280e3965a6b70f06dac55bdf06906c2355b1a3b968b",
+        "sizeBytes": 4325049,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-vi-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 7,
+        "uncompressedBytes": 45628027,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-vi-word-2026.09.19",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2024 word frequency (Vietnamese)",
+      "sourceId": "opensubtitles-vi-word",
+      "archive": {
+        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
+        "sha256": "4475a9a3c9ee8247a60f11c9fe395f8212afa86296c296b24c452e111dd8d896",
+        "sizeBytes": 402194,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "OPUS OpenSubtitles v2024 corpus (Vietnamese)",
+          "copyright": "P. Lison and J. Tiedemann (2016), OPUS (opus.nlpl.eu); subtitles from opensubtitles.org",
+          "license": "ODC-BY-1.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles/corpus/version/OpenSubtitles"
+        },
+        {
+          "name": "Anki Miner Vietnamese word-frequency build",
+          "copyright": "Built by Anki Miner's scripts/build_vi_frequency.py (segmented with underthesea)",
+          "license": "ODC-BY-1.0",
+          "url": "https://github.com/0xzerolight/anki_miner"
+        }
+      ]
     }
   ],
-  "recommended": []
+  "recommended": [
+    "wty-vi-en-2026.09.20",
+    "opensubtitles-vi-word-2026.09.19"
+  ]
 }
