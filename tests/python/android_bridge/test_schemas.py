@@ -116,6 +116,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
             "frequency_sort": "FrequencySort",
             "source": "Source",
             "expression_audio": "ExpressionAudio",
+            "sentence_translation": "Translation",
         },
         "card_type": "word_and_sentence",
         "card_type_marker_fields": {
@@ -147,10 +148,13 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "expression_audio_chain": [{"kind": "pack", "pack_id": "local-audio", "enabled": True}],
         "reading_tts_enabled": True,
         "pitch_category_format": "romaji",
+        "min_frequency_rank": 500,
         "max_frequency_rank": 20000,
+        "frequency_keep_unranked": True,
         "frequency_chain": [{"source_id": "bccwj", "enabled": True}],
         "pitch_chain": [{"source_id": "kanjium", "enabled": True}],
         "use_known_words_db": True,
+        "known_words_match_kana_variants": False,
         "exclude_hiragana_only_words": True,
         "exclude_katakana_only_words": False,
         "blacklist_path": str(home / "blacklist.txt"),
@@ -161,15 +165,16 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "subtitle_regex_replacement": "",
         "use_subtitle_regex_filter": True,
         "bold_target_in_sentence": True,
+        "strict_card_order": True,
         "deduplicate_sentences": True,
         "use_i_plus_one_filter": False,
-        "use_sentence_length_filter": True,
         "max_sentence_duration_seconds": 12.0,
         "max_sentence_chars": 80,
+        "merge_incomplete_cues": True,
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
     }
-    assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled", "use_sentence_length_filter"}
+    assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled"}
     return {"settings": settings, "androidTtsEnabled": True}
 
 
@@ -411,6 +416,8 @@ def test_video_run_schema_requires_boolean_audio_only(
         "payload": {
             "videoPath": "/cache/input.media",
             "subtitlePath": "/cache/subtitle.srt",
+            "secondarySubtitlePath": None,
+            "secondarySubtitleOffsetMs": 0,
             "episodeName": "Episode",
             "seriesName": "Series",
             "sourceLabel": None,
@@ -702,6 +709,8 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
             "knownTotalScannedExcludedRows": 1000000,
             "knownCursorMaxCodePoints": 1024,
             "knownCursorMaxUtf8Bytes": 1024,
+            "noteTypesMaxItems": 1024,
+            "noteTypesMaxUtf8Bytes": 524288,
         },
         "storeMedia": {
             "requestEnvelopeMaxUtf8Bytes": 2097152,
@@ -947,20 +956,53 @@ _ANKI_SCHEMA_LIMIT_BINDINGS: tuple[_LimitBinding, ...] = (
         0,
     ),
     (
+        ("scanFirstFields", "noteTypesMaxItems"),
+        ("$defs", "knownVocabularyScope", "properties", "fieldOrdinals", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "knownFieldOrdinals", "properties", "ordinals", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "knownFieldOrdinals", "properties", "ordinals", "items", "maximum"),
+        -1,
+    ),
+    (
+        ("scanFirstFields", "noteTypesMaxItems"),
+        ("$defs", "noteTypesScope", "properties", "limits", "properties", "maxItems", "const"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "noteTypesMaxUtf8Bytes"),
+        ("$defs", "noteTypesScope", "properties", "limits", "properties", "maxTotalUtf8Bytes", "const"),
+        0,
+    ),
+    (
         ("scanFirstFields", "knownPageMaxItems"),
-        ("$defs", "scanFirstFieldsResult", "properties", "firstFields", "maxItems"),
+        ("$defs", "scanFirstFieldsResult", "properties", "notes", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "knownNote", "properties", "fields", "maxItems"),
         0,
     ),
     (
         ("scanFirstFields", "firstFieldMaxCodePoints"),
-        (
-            "$defs",
-            "scanFirstFieldsResult",
-            "properties",
-            "firstFields",
-            "items",
-            "maxLength",
-        ),
+        ("$defs", "knownNote", "properties", "fields", "items", "maxLength"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "noteTypesMaxItems"),
+        ("$defs", "noteTypesResult", "properties", "noteTypes", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "noteTypeFields", "properties", "fieldNames", "maxItems"),
         0,
     ),
     (
@@ -1433,6 +1475,9 @@ def test_representative_full_config_message_validates_and_maps(
     assert mapped.engine_config.expression_audio_chain[0].kind == "pack"
     assert mapped.engine_config.expression_audio_chain[0].pack_id == "local-audio"
     assert len(mapped.engine_config.expression_audio_chain) == 1
+    assert mapped.engine_config.anki_fields["sentence_translation"] == "Translation"
+    assert mapped.engine_config.min_frequency_rank == 500
+    assert mapped.engine_config.merge_incomplete_cues is True
     assert mapped.android_tts_enabled is True
 
 
@@ -1585,6 +1630,29 @@ def test_curation_schema_accepts_sentence_with_full_page_context(
     ],
 )
 def test_curation_schema_rejects_partial_or_invalid_page_context(
+    schemas: dict[str, dict[str, Any]],
+    sentence_fields: dict[str, Any],
+) -> None:
+    payload = _curation_request_with_sentence_fields(sentence_fields)
+
+    with pytest.raises(ValidationError):
+        Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+def test_curation_schema_accepts_a_sentence_preview(
+    schemas: dict[str, dict[str, Any]],
+) -> None:
+    payload = _curation_request_with_sentence_fields({"linesBefore": 1, "linesAfter": 2, "translation": "A cat."})
+
+    Draft202012Validator(schemas["curation"]).validate(payload)
+
+
+@pytest.mark.parametrize(
+    "sentence_fields",
+    [{"linesBefore": 0}, {"linesAfter": 101}, {"linesAfter": 1.5}, {"translation": ""}, {"translation": None}],
+    ids=["zero-count", "count-over-bound", "fractional-count", "empty-translation", "null-translation"],
+)
+def test_curation_schema_rejects_an_invalid_sentence_preview(
     schemas: dict[str, dict[str, Any]],
     sentence_fields: dict[str, Any],
 ) -> None:
@@ -1786,6 +1854,10 @@ def test_null_or_empty_sentence_id_is_schema_invalid(
         {"settings": {"anki_fields": {"glossary": " Glossary"}}},
         {"settings": {"excluded_decks": [""]}},
         {"settings": {"excluded_decks": ["Known", "Known"]}},
+        {"settings": {"min_frequency_rank": -1}},
+        {"settings": {"merge_incomplete_cues": 1}},
+        {"settings": {"use_sentence_length_filter": True}},
+        {"settings": {"secondary_subtitle_enabled": True}},
     ],
 )
 def test_invalid_config_shapes_are_rejected_by_schema(
@@ -1938,6 +2010,7 @@ def test_selection_clip_window_non_number_is_schema_invalid(
             "scope": {
                 "kind": "knownVocabulary",
                 "excludedDecks": ["Japanese::Known"],
+                "fieldOrdinals": [{"modelId": 1700000000001, "ordinals": [0, 2, 8]}],
                 "cursor": None,
                 "limits": {
                     "maxScannedNotes": 256,
@@ -1971,9 +2044,24 @@ def test_selection_clip_window_non_number_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
-            "firstFields": ["<b>猫</b>", "[sound:dog.mp3]犬"],
+            "notes": [
+                {"modelId": 1, "fields": ["<b>猫</b>"]},
+                {"modelId": 1700000000001, "fields": ["犬が走る。", "[sound:dog.mp3]犬", ""]},
+            ],
             "scannedNotes": 2,
             "nextCursor": {"ordinal": 1, "token": "opaque-page-token"},
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {"kind": "noteTypes", "limits": {"maxItems": 1024, "maxTotalUtf8Bytes": 524288}},
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "noteTypes": [
+                {"modelId": 1700000000001, "name": "Migaku Japanese", "fieldNames": ["Sentence", "Target Word"]},
+            ],
         },
         {
             "runId": "run_" + "a" * 32,

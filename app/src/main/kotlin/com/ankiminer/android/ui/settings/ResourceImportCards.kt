@@ -188,7 +188,7 @@ private fun WordListRow(
                 WordListKind.BLACKLIST -> EngineDefaults.USE_BLACKLIST
                 WordListKind.WHITELIST -> EngineDefaults.USE_WHITELIST
             }
-        NullableToggle(toggleLabel, enabled, engineDefault, onEnabledChange)
+        NullableToggle(toggleLabel, enabled, engineDefault, onChange = onEnabledChange)
     }
     AdaptivePairedActions(
         first = { modifier ->

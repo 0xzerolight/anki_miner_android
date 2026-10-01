@@ -362,6 +362,6 @@ class ProviderQueryCancellationInstrumentedTest {
         val BULK_NOTE_PAGE_QUERY = NOTE_PAGE_QUERY.copy(deadline = ProviderReadDeadline.BULK)
 
         /** Column names the gateway expects back for [NOTE_PAGE_QUERY]'s projection. */
-        val NOTE_PAGE_COLUMNS = arrayOf(FlashCardsContract.Note._ID, FlashCardsContract.Note.FLDS)
+        val NOTE_PAGE_COLUMNS = arrayOf(FlashCardsContract.Note._ID, FlashCardsContract.Note.MID, FlashCardsContract.Note.FLDS)
     }
 }

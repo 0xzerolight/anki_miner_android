@@ -140,7 +140,7 @@ internal fun AnkiTargetCard(
                     val collapsedLabel = stringResource(R.string.disclosure_collapsed)
                     val mappedCount = AnkiFieldKeys.ALL.count { !state.fieldMap[it].isNullOrEmpty() }
                     // Only `word` is actually required, so a partial map is a valid setup. Force the
-                    // mapper open for real blockers only; otherwise 18 dropdowns sit collapsed.
+                    // mapper open for real blockers only; otherwise every dropdown sits collapsed.
                     val mappingBlocked =
                         state.noteTypeStatus is NoteTypeSetupStatus.FieldsMissing ||
                             state.noteTypeStatus is NoteTypeSetupStatus.FieldMapInvalid ||

@@ -39,7 +39,16 @@ data class VideoMiningWireRequest(
     val cacheDir: String,
     val nativeLibraryDir: String,
     val configSnapshot: MiningConfigSnapshot,
-)
+    /** A staged second subtitle track whose lines fill `sentence_translation`; null for none. */
+    val secondarySubtitlePath: String? = null,
+    /** Signed shift of that track, within [SECONDARY_SUBTITLE_OFFSET_MS]; inert without a path. */
+    val secondarySubtitleOffsetMs: Long = 0,
+) {
+    companion object {
+        /** Desktop's subtitle offset spinbox range, ±300 s, in the wire's milliseconds. */
+        val SECONDARY_SUBTITLE_OFFSET_MS = -300_000L..300_000L
+    }
+}
 
 enum class ReadingMiningSourceKind(
     val wireName: String,

@@ -39,11 +39,16 @@ class SettingsBackupCodecTest {
             boldTargetInSentence = true,
             deduplicateSentences = true,
             useIPlusOneFilter = true,
-            useSentenceLengthFilter = true,
             maxSentenceDurationSeconds = 12.0,
             maxSentenceCharacters = 80,
             readingMinimumOccurrence = 2,
             maxFrequencyRank = 30000,
+            minFrequencyRank = 500,
+            frequencyKeepUnranked = true,
+            knownWordsMatchKanaVariants = false,
+            strictCardOrder = true,
+            mergeIncompleteCues = true,
+            secondarySubtitleEnabled = true,
             pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
             maxParallelWorkers = 4,
             dictionarySources = listOf(ResourceChainSelection("jitendex", enabled = true)),
@@ -181,6 +186,98 @@ class SettingsBackupCodecTest {
                 SettingsBackupCodec.NON_PORTABLE_KEY_NAMES
 
         assertEquals(expected, SettingsBackupCodec.portableKeyNames)
+        assertTrue("use_sentence_length" !in SettingsBackupCodec.portableKeyNames)
+    }
+
+    @Test
+    fun `a backup with resources is written as format 4`() {
+        val json = SettingsBackupCodec.encode(populated, "0.7.0", ResourceManagerState())
+
+        assertTrue(json, "\"ankiMinerAndroidSettings\" : 4" in json)
+    }
+
+    @Test
+    fun `a v3 backup with the length toggle absent imports its caps as zero`() {
+        val applied = applyPinEraBackup(toggle = "null")
+
+        assertEquals(0.0, applied.settings.maxSentenceDurationSeconds)
+        assertEquals(0, applied.settings.maxSentenceCharacters)
+        assertEquals(emptyList<String>(), applied.ignoredKeys)
+        assertEquals(emptyList<String>(), applied.rejectedKeys)
+    }
+
+    @Test
+    fun `a v3 backup with the length toggle off imports its caps as zero`() {
+        val applied = applyPinEraBackup(toggle = "false")
+
+        assertEquals(0.0, applied.settings.maxSentenceDurationSeconds)
+        assertEquals(0, applied.settings.maxSentenceCharacters)
+    }
+
+    @Test
+    fun `a v3 backup with the length toggle on keeps its caps`() {
+        val applied = applyPinEraBackup(toggle = "true")
+
+        assertEquals(12.0, applied.settings.maxSentenceDurationSeconds)
+        assertEquals(80, applied.settings.maxSentenceCharacters)
+        assertEquals(emptyList<String>(), applied.ignoredKeys)
+    }
+
+    @Test
+    fun `a v2 backup folds the length toggle the same way`() {
+        val json =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"0.5.0","schemaVersion":2,""" +
+                """"settings":{"use_sentence_length":false,"max_sentence_duration_seconds":12.0,""" +
+                """"max_sentence_characters":80}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings()) }
+
+        assertEquals(0.0, applied.settings.maxSentenceDurationSeconds)
+        assertEquals(0, applied.settings.maxSentenceCharacters)
+    }
+
+    @Test
+    fun `a pin-era file silent on the length toggle applies its caps as written`() {
+        // An absent key keeps the current value, and the current store has no toggle any more.
+        val json =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"0.5.0","schemaVersion":2,""" +
+                """"settings":{"max_sentence_duration_seconds":12.0}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings()) }
+
+        assertEquals(12.0, applied.settings.maxSentenceDurationSeconds)
+    }
+
+    @Test
+    fun `a format 4 backup has no length toggle to honour`() {
+        val json =
+            """{"ankiMinerAndroidSettings":4,"appVersion":"0.7.0","schemaVersion":3,""" +
+                """"settings":{"use_sentence_length":false,"max_sentence_duration_seconds":12.0,""" +
+                """"dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
+                """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+                """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+                """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+
+        val applied =
+            with(SettingsBackupCodec) { parse(json).applyTo(AppSettings(), ResourceManagerState()) }
+
+        assertEquals(12.0, applied.settings.maxSentenceDurationSeconds)
+        assertEquals(listOf("use_sentence_length"), applied.ignoredKeys)
+    }
+
+    /** A format-3 export as the pin-era app wrote it: every portable key present, null when unset. */
+    private fun applyPinEraBackup(toggle: String): AppliedSettingsBackup {
+        val json =
+            """{"ankiMinerAndroidSettings":3,"appVersion":"0.6.0","schemaVersion":2,""" +
+                """"settings":{"use_sentence_length":$toggle,""" +
+                """"max_sentence_duration_seconds":12.0,"max_sentence_characters":80,""" +
+                """"dictionary_sources_v1":null,"frequency_sources_v1":null,""" +
+                """"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+                """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+                """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+        return with(SettingsBackupCodec) {
+            parse(json).applyTo(AppSettings(), ResourceManagerState())
+        }
     }
 
     @Test

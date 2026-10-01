@@ -150,21 +150,21 @@ class SettingsSearchJumpTest {
     fun missingProductionJumpTargetDoesNotScrollToUnrelatedFirstCard() {
         val entry =
             ResolvedSettingsEntry(
-                id = "filtering.missing",
-                category = SettingsCategory.FILTERING,
+                id = "word_filters.missing",
+                category = SettingsCategory.WORD_FILTERS,
                 cardKey = "missing-card",
                 title = "Missing target",
-                breadcrumb = "Filtering",
-                haystack = listOf("missing target", "filtering"),
+                breadcrumb = "Word filters",
+                haystack = listOf("missing target", "word filters"),
             )
         var resolved = false
         var filteringListState: LazyListState? = null
         composeRule.setContent {
             var selectedCategory by rememberSaveable {
-                mutableStateOf(SettingsCategory.FILTERING)
+                mutableStateOf(SettingsCategory.WORD_FILTERS)
             }
             val listStates = rememberSettingsCategoryListStates()
-            filteringListState = listStates.getValue(SettingsCategory.FILTERING)
+            filteringListState = listStates.getValue(SettingsCategory.WORD_FILTERS)
             val recorder = remember { SettingsCardIndexRecorder() }
             SettingsSearchJumpHandler(
                 entries = listOf(entry),
@@ -206,18 +206,18 @@ private fun SettingsSearchJumpFixture(onJumpIndexResolved: (Int?) -> Unit = {}) 
     val recorder =
         remember {
             SettingsCardIndexRecorder().apply {
-                begin(SettingsCategory.FILTERING)
-                record(SettingsCategory.FILTERING, "stale-leading-card")
-                record(SettingsCategory.FILTERING, "filtering-options")
+                begin(SettingsCategory.WORD_FILTERS)
+                record(SettingsCategory.WORD_FILTERS, "stale-leading-card")
+                record(SettingsCategory.WORD_FILTERS, "filtering-options")
             }
         }
     val title = stringResource(R.string.settings_exclude_katakana)
-    val breadcrumb = stringResource(SettingsCategory.FILTERING.label)
+    val breadcrumb = stringResource(SettingsCategory.WORD_FILTERS.label)
     val entries =
         listOf(
             ResolvedSettingsEntry(
-                id = "filtering.exclude_katakana",
-                category = SettingsCategory.FILTERING,
+                id = "word_filters.exclude_katakana",
+                category = SettingsCategory.WORD_FILTERS,
                 cardKey = "filtering-options",
                 title = title,
                 breadcrumb = breadcrumb,
@@ -243,7 +243,7 @@ private fun SettingsSearchJumpFixture(onJumpIndexResolved: (Int?) -> Unit = {}) 
             listStates = listStates,
             header = {},
         ) { category ->
-            if (category == SettingsCategory.FILTERING) {
+            if (category == SettingsCategory.WORD_FILTERS) {
                 settingsCard(category, recorder, "filtering-options") {
                     Text(title)
                 }

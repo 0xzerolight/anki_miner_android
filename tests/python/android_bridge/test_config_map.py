@@ -308,44 +308,10 @@ def test_android_tts_composition_has_no_desktop_network_fetcher_imports() -> Non
     assert all(not any(part in module for part in forbidden) for module in imported_modules)
 
 
-def test_pin_era_snapshot_with_caps_and_no_length_toggle_filters_nothing(tmp_path: Path) -> None:
-    """A stored cap under an absent toggle never filtered, so it must not start now.
-
-    The engine dropped ``use_sentence_length_filter``: a non-zero cap alone turns
-    the filter on. Before, filtering needed the toggle as well, so a snapshot
-    carrying caps but no toggle filtered nothing and must keep filtering nothing.
-    """
+def test_sentence_length_caps_alone_reach_the_engine(tmp_path: Path) -> None:
+    """The engine filters on the caps alone; Kotlin folds the old toggle into them."""
     mapped = map_config_settings(
         {"max_sentence_duration_seconds": 8.5, "max_sentence_chars": 40},
-        _paths(tmp_path),
-    )
-
-    assert mapped.engine_config.max_sentence_duration_seconds == 0.0
-    assert mapped.engine_config.max_sentence_chars == 0
-    assert not hasattr(mapped.engine_config, "use_sentence_length_filter")
-
-
-def test_false_length_toggle_filters_nothing(tmp_path: Path) -> None:
-    mapped = map_config_settings(
-        {
-            "use_sentence_length_filter": False,
-            "max_sentence_duration_seconds": 8.5,
-            "max_sentence_chars": 40,
-        },
-        _paths(tmp_path),
-    )
-
-    assert mapped.engine_config.max_sentence_duration_seconds == 0.0
-    assert mapped.engine_config.max_sentence_chars == 0
-
-
-def test_true_length_toggle_keeps_both_caps(tmp_path: Path) -> None:
-    mapped = map_config_settings(
-        {
-            "use_sentence_length_filter": True,
-            "max_sentence_duration_seconds": 8.5,
-            "max_sentence_chars": 40,
-        },
         _paths(tmp_path),
     )
 
@@ -354,10 +320,62 @@ def test_true_length_toggle_keeps_both_caps(tmp_path: Path) -> None:
     assert not hasattr(mapped.engine_config, "use_sentence_length_filter")
 
 
-def test_length_toggle_must_be_a_boolean(tmp_path: Path) -> None:
+@pytest.mark.parametrize("toggle", [True, False])
+def test_legacy_sentence_length_toggle_is_an_unknown_field(toggle: bool, tmp_path: Path) -> None:
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"use_sentence_length_filter": 1}, _paths(tmp_path))
-    assert error.value.code == "invalid_config_field"
+        map_config_settings(
+            {"use_sentence_length_filter": toggle, "max_sentence_chars": 40},
+            _paths(tmp_path),
+        )
+    assert error.value.code == "unknown_config_field"
+
+
+# A.5's wave-B rows: engine fields Android now sets. ``secondary_subtitle_enabled``
+# is the sixth wave-B row and stays Kotlin-only: the engine never reads it.
+_WAVE_B_FIELDS = {
+    "merge_incomplete_cues": True,
+    "strict_card_order": True,
+    "min_frequency_rank": 500,
+    "frequency_keep_unranked": True,
+    "known_words_match_kana_variants": False,
+}
+
+
+def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
+    from anki_miner.config import AnkiMinerConfig
+
+    exposed = exposed_config_fields()
+    assert set(_WAVE_B_FIELDS) <= exposed
+    assert "secondary_subtitle_enabled" not in exposed
+    assert "use_sentence_length_filter" not in exposed
+    assert len(exposed) == 49
+    assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
+
+
+def test_wave_b_fields_reach_the_engine_config(tmp_path: Path) -> None:
+    from anki_miner.config import AnkiMinerConfig
+
+    defaults = AnkiMinerConfig()
+    assert {name: getattr(defaults, name) for name in _WAVE_B_FIELDS} == {
+        "merge_incomplete_cues": False,
+        "strict_card_order": False,
+        "min_frequency_rank": 0,
+        "frequency_keep_unranked": False,
+        "known_words_match_kana_variants": True,
+    }
+
+    mapped = map_config_settings(dict(_WAVE_B_FIELDS), _paths(tmp_path))
+
+    assert {name: getattr(mapped.engine_config, name) for name in _WAVE_B_FIELDS} == _WAVE_B_FIELDS
+    assert type(mapped.engine_config.min_frequency_rank) is int
+
+
+def test_an_inverted_frequency_band_is_passed_through_like_desktop(tmp_path: Path) -> None:
+    """The engine and desktop's run-file overlay accept any band; only the GUI keeps it ordered."""
+    mapped = map_config_settings({"min_frequency_rank": 9000, "max_frequency_rank": 100}, _paths(tmp_path))
+
+    assert mapped.engine_config.min_frequency_rank == 9000
+    assert mapped.engine_config.max_frequency_rank == 100
 
 
 @pytest.mark.parametrize("stored", [True, False])
@@ -399,6 +417,14 @@ def test_conflicting_tts_aliases_are_rejected(tmp_path: Path) -> None:
         ({"excluded_wordsets": ["../escape"]}, "invalid_config_field"),
         ({"excluded_wordsets": ["surnames", "surnames"]}, "invalid_config_field"),
         ({"frequency_chain": [{"source_id": "../escape"}]}, "invalid_config_field"),
+        ({"min_frequency_rank": -1}, "invalid_config_field"),
+        ({"min_frequency_rank": True}, "invalid_config_field"),
+        ({"min_frequency_rank": 1.5}, "invalid_config_field"),
+        ({"merge_incomplete_cues": 1}, "invalid_config_field"),
+        ({"strict_card_order": "true"}, "invalid_config_field"),
+        ({"frequency_keep_unranked": None}, "invalid_config_field"),
+        ({"known_words_match_kana_variants": 0}, "invalid_config_field"),
+        ({"secondary_subtitle_enabled": True}, "unknown_config_field"),
     ],
 )
 def test_unknown_or_wrongly_typed_settings_fail_closed(
@@ -527,7 +553,7 @@ def test_checked_in_schema_allowlist_matches_mapper() -> None:
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     schema_fields = set(schema["$defs"]["settings"]["properties"])
 
-    assert schema_fields == set(exposed_config_fields()) | {"reading_tts_enabled", "use_sentence_length_filter"}
+    assert schema_fields == set(exposed_config_fields()) | {"reading_tts_enabled"}
 
 
 def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_paths() -> None:

@@ -588,7 +588,7 @@ internal fun UiAuditSettingsFixture(
                 settingsCard(selected, recorder, "audit-resources") {
                     SettingsResourcesFixture(setup)
                 }
-            SettingsCategory.FILTERING -> {
+            SettingsCategory.WORD_FILTERS -> {
                 settingsCard(selected, recorder, "audit-filtering") { SettingsFilteringFixture() }
                 settingsCard(selected, recorder, "audit-known-words") {
                     KnownWordsImportCard(

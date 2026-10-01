@@ -65,10 +65,33 @@ internal enum class SettingsFieldKey {
     MAX_DURATION,
     MAX_CHARACTERS,
     READING_OCCURRENCE,
+    MIN_FREQUENCY,
     MAX_FREQUENCY,
     WORKERS,
     SUBTITLE_REGEX,
     SUBTITLE_REGEX_REPLACEMENT,
+}
+
+/** Which end of the frequency band the user just left; that end wins when the band is ordered. */
+internal enum class FrequencyBandEnd {
+    MIN,
+    MAX,
+}
+
+/** Band text as a rank: blank inherits [default], text that is not a whole number gives null. */
+private fun frequencyBandRank(
+    value: String,
+    default: Int,
+): Int? = if (value.isEmpty()) default else value.toIntOrNull()
+
+/** Both ends set and the minimum above the maximum. 0 is an open end, so it never inverts. */
+private fun frequencyBandInverted(
+    minFrequency: String,
+    maxFrequency: String,
+): Boolean {
+    val low = frequencyBandRank(minFrequency, EngineDefaults.MIN_FREQUENCY_RANK) ?: return false
+    val high = frequencyBandRank(maxFrequency, EngineDefaults.MAX_FREQUENCY_RANK) ?: return false
+    return low > 0 && high > 0 && low > high
 }
 
 internal sealed interface SettingsSaveState {
@@ -186,6 +209,7 @@ internal data class SettingsDraft(
     val maxDuration: String,
     val maxCharacters: String,
     val readingOccurrence: String,
+    val minFrequency: String,
     val maxFrequency: String,
     val workers: String,
     val audioFormat: AudioFormat?,
@@ -200,7 +224,11 @@ internal data class SettingsDraft(
     val boldTarget: Boolean?,
     val deduplicate: Boolean?,
     val iPlusOne: Boolean?,
-    val sentenceLength: Boolean?,
+    val frequencyKeepUnranked: Boolean?,
+    val knownWordsMatchKanaVariants: Boolean?,
+    val strictCardOrder: Boolean?,
+    val mergeIncompleteCues: Boolean?,
+    val secondarySubtitleEnabled: Boolean,
     val pitchFormat: PitchCategoryFormat?,
     val theme: ThemeMode,
     val lightThemeKey: String,
@@ -262,6 +290,10 @@ internal data class SettingsDraft(
                     positive = true,
                 )?.let { put(SettingsFieldKey.READING_OCCURRENCE, it) }
                 validateOptionalInt(
+                    minFrequency,
+                    nonNegative = true,
+                )?.let { put(SettingsFieldKey.MIN_FREQUENCY, it) }
+                validateOptionalInt(
                     maxFrequency,
                     nonNegative = true,
                 )?.let { put(SettingsFieldKey.MAX_FREQUENCY, it) }
@@ -297,6 +329,25 @@ internal data class SettingsDraft(
 
     val numericValuesValid: Boolean
         get() = validation.isEmpty()
+
+    /** Either end of the frequency band is set; 0 on both means no band. */
+    val frequencyBandSet: Boolean
+        get() =
+            (frequencyBandRank(minFrequency, EngineDefaults.MIN_FREQUENCY_RANK) ?: 0) > 0 ||
+                (frequencyBandRank(maxFrequency, EngineDefaults.MAX_FREQUENCY_RANK) ?: 0) > 0
+
+    /**
+     * Desktop's band rule: pushing one end past the other moves the other end with it, so the band
+     * is never inverted. 0 is an open end, not rank zero, so an open end is never dragged along.
+     * Text that is not a whole number is left for validation to report.
+     */
+    fun withOrderedFrequencyBand(edited: FrequencyBandEnd): SettingsDraft {
+        if (!frequencyBandInverted(minFrequency, maxFrequency)) return this
+        return when (edited) {
+            FrequencyBandEnd.MIN -> copy(maxFrequency = minFrequency)
+            FrequencyBandEnd.MAX -> copy(minFrequency = maxFrequency)
+        }
+    }
 
     /**
      * Fields that carry an engine default are prefilled with it, so the value the user never
@@ -348,7 +399,11 @@ internal data class SettingsDraft(
             boldTargetInSentence = boldTarget,
             deduplicateSentences = deduplicate,
             useIPlusOneFilter = iPlusOne,
-            useSentenceLengthFilter = sentenceLength,
+            frequencyKeepUnranked = frequencyKeepUnranked,
+            knownWordsMatchKanaVariants = knownWordsMatchKanaVariants,
+            strictCardOrder = strictCardOrder,
+            mergeIncompleteCues = mergeIncompleteCues,
+            secondarySubtitleEnabled = secondarySubtitleEnabled,
             maxSentenceDurationSeconds =
                 AppSettingsDraftParser.optionalDouble(maxDuration)
                     ?.takeUnless { it == EngineDefaults.MAX_SENTENCE_DURATION_SECONDS },
@@ -358,6 +413,9 @@ internal data class SettingsDraft(
             readingMinimumOccurrence =
                 AppSettingsDraftParser.optionalInt(readingOccurrence)
                     ?.takeUnless { it == EngineDefaults.READING_MINIMUM_OCCURRENCE },
+            minFrequencyRank =
+                AppSettingsDraftParser.optionalInt(minFrequency)
+                    ?.takeUnless { it == EngineDefaults.MIN_FREQUENCY_RANK },
             maxFrequencyRank =
                 AppSettingsDraftParser.optionalInt(maxFrequency)
                     ?.takeUnless { it == EngineDefaults.MAX_FREQUENCY_RANK },
@@ -384,6 +442,20 @@ internal data class SettingsDraft(
      */
     fun toPersistableSettings(base: AppSettings): AppSettings {
         val keepPersistedSubtitleRegexPair = subtitleRegexRejection != null
+        val persistedMinFrequency =
+            inheritedText(base.minFrequencyRank, EngineDefaults.MIN_FREQUENCY_RANK)
+        val persistedMaxFrequency =
+            inheritedText(base.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK)
+        val minFrequencyText =
+            minFrequency.takeIf { SettingsFieldKey.MIN_FREQUENCY !in validation }
+                ?: persistedMinFrequency
+        val maxFrequencyText =
+            maxFrequency.takeIf { SettingsFieldKey.MAX_FREQUENCY !in validation }
+                ?: persistedMaxFrequency
+        // An inverted band drops every ranked word, so it never reaches storage. The UI orders the
+        // band when its field is left; until then the stored band stays as it was, the same way a
+        // field holding unparseable text keeps its stored value.
+        val keepPersistedBand = frequencyBandInverted(minFrequencyText, maxFrequencyText)
         return copy(
             audioPadding =
                 audioPadding.takeIf { SettingsFieldKey.AUDIO_PADDING !in validation }
@@ -442,9 +514,8 @@ internal data class SettingsDraft(
                         base.readingMinimumOccurrence,
                         EngineDefaults.READING_MINIMUM_OCCURRENCE,
                     ),
-            maxFrequency =
-                maxFrequency.takeIf { SettingsFieldKey.MAX_FREQUENCY !in validation }
-                    ?: inheritedText(base.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK),
+            minFrequency = if (keepPersistedBand) persistedMinFrequency else minFrequencyText,
+            maxFrequency = if (keepPersistedBand) persistedMaxFrequency else maxFrequencyText,
             workers =
                 workers.takeIf { SettingsFieldKey.WORKERS !in validation }
                     ?: inheritedText(base.maxParallelWorkers, EngineDefaults.MAX_PARALLEL_WORKERS),
@@ -542,6 +613,8 @@ internal data class SettingsDraft(
                         settings.readingMinimumOccurrence,
                         EngineDefaults.READING_MINIMUM_OCCURRENCE,
                     ),
+                minFrequency =
+                    inheritedText(settings.minFrequencyRank, EngineDefaults.MIN_FREQUENCY_RANK),
                 maxFrequency =
                     inheritedText(settings.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK),
                 workers =
@@ -558,7 +631,11 @@ internal data class SettingsDraft(
                 boldTarget = settings.boldTargetInSentence,
                 deduplicate = settings.deduplicateSentences,
                 iPlusOne = settings.useIPlusOneFilter,
-                sentenceLength = settings.useSentenceLengthFilter,
+                frequencyKeepUnranked = settings.frequencyKeepUnranked,
+                knownWordsMatchKanaVariants = settings.knownWordsMatchKanaVariants,
+                strictCardOrder = settings.strictCardOrder,
+                mergeIncompleteCues = settings.mergeIncompleteCues,
+                secondarySubtitleEnabled = settings.secondarySubtitleEnabled,
                 pitchFormat = settings.pitchCategoryFormat,
                 theme = settings.theme,
                 lightThemeKey = settings.lightThemeKey,
@@ -623,6 +700,7 @@ private fun SettingsDraft.rebaseChangesSince(
                 readingOccurrence,
                 persisted.readingOccurrence,
             ),
+        minFrequency = changedValue(baseline.minFrequency, minFrequency, persisted.minFrequency),
         maxFrequency = changedValue(baseline.maxFrequency, maxFrequency, persisted.maxFrequency),
         workers = changedValue(baseline.workers, workers, persisted.workers),
         audioFormat = changedValue(baseline.audioFormat, audioFormat, persisted.audioFormat),
@@ -643,8 +721,32 @@ private fun SettingsDraft.rebaseChangesSince(
         boldTarget = changedValue(baseline.boldTarget, boldTarget, persisted.boldTarget),
         deduplicate = changedValue(baseline.deduplicate, deduplicate, persisted.deduplicate),
         iPlusOne = changedValue(baseline.iPlusOne, iPlusOne, persisted.iPlusOne),
-        sentenceLength =
-            changedValue(baseline.sentenceLength, sentenceLength, persisted.sentenceLength),
+        frequencyKeepUnranked =
+            changedValue(
+                baseline.frequencyKeepUnranked,
+                frequencyKeepUnranked,
+                persisted.frequencyKeepUnranked,
+            ),
+        knownWordsMatchKanaVariants =
+            changedValue(
+                baseline.knownWordsMatchKanaVariants,
+                knownWordsMatchKanaVariants,
+                persisted.knownWordsMatchKanaVariants,
+            ),
+        strictCardOrder =
+            changedValue(baseline.strictCardOrder, strictCardOrder, persisted.strictCardOrder),
+        mergeIncompleteCues =
+            changedValue(
+                baseline.mergeIncompleteCues,
+                mergeIncompleteCues,
+                persisted.mergeIncompleteCues,
+            ),
+        secondarySubtitleEnabled =
+            changedValue(
+                baseline.secondarySubtitleEnabled,
+                secondarySubtitleEnabled,
+                persisted.secondarySubtitleEnabled,
+            ),
         pitchFormat = changedValue(baseline.pitchFormat, pitchFormat, persisted.pitchFormat),
         theme = changedValue(baseline.theme, theme, persisted.theme),
         lightThemeKey =

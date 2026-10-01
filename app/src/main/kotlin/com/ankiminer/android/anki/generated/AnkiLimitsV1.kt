@@ -140,6 +140,12 @@ internal object AnkiLimitsV1 {
 
         // Manifest: scanFirstFields.knownCursorMaxUtf8Bytes
         const val KNOWN_CURSOR_MAX_UTF8_BYTES: Int = 1024
+
+        // Manifest: scanFirstFields.noteTypesMaxItems
+        const val NOTE_TYPES_MAX_ITEM_COUNT: Int = 1024
+
+        // Manifest: scanFirstFields.noteTypesMaxUtf8Bytes
+        const val NOTE_TYPES_MAX_UTF8_BYTES: Int = 524288
     }
 
     object StoreMedia {

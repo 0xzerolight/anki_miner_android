@@ -19,6 +19,7 @@ import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.diagnostics.log.LogContext
 import com.ankiminer.android.engine.SubtitleCue
+import com.ankiminer.android.engine.VideoMiningWireRequest
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafSelectionInventory
@@ -116,13 +117,20 @@ class MediaMiningViewModel internal constructor(
     timingPreviewCleanupDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val undoManager: MiningRunUndoManager? = null,
     private val audioTrackProbeOpener: AudioTrackProbeOpener? = null,
+    secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
 ) : ViewModel() {
     private val subtitleOffsetDraftKey = "${lane.savedStateKeyPrefix}.subtitleOffsetDraft"
+    private val secondarySubtitleOffsetDraftKey =
+        "${lane.savedStateKeyPrefix}.secondarySubtitleOffsetDraft"
 
     private data class LocalState(
         val video: DocumentSlotState = DocumentSlotState(),
         val subtitle: DocumentSlotState = DocumentSlotState(),
         val subtitleOffsetDraft: String = "",
+        /** Settings toggle, already gated to lanes that have a translation slot. */
+        val secondarySubtitleEnabled: Boolean = false,
+        val secondarySubtitle: DocumentSlotState = DocumentSlotState(),
+        val secondarySubtitleOffsetDraft: String = "",
         val globalSubtitleOffset: Double? = null,
         val audioPaddingSeconds: Double? = null,
         val fieldMap: Map<String, String> = emptyMap(),
@@ -154,6 +162,7 @@ class MediaMiningViewModel internal constructor(
     private enum class DocumentKind {
         VIDEO,
         SUBTITLE,
+        SECONDARY_SUBTITLE,
     }
 
     private data class DefinitionFocusKey(
@@ -175,22 +184,19 @@ class MediaMiningViewModel internal constructor(
         val unavailable: Boolean = false,
     )
 
-    private val restoredSubtitleOffsetDraft =
-        savedStateHandle
-            .get<String>(subtitleOffsetDraftKey)
-            .orEmpty()
-            .takeCodePoints(MAX_SUBTITLE_OFFSET_DRAFT_CODE_POINTS)
-            .also { draft ->
-                if (draft.isEmpty()) {
-                    savedStateHandle.remove<String>(subtitleOffsetDraftKey)
-                } else {
-                    savedStateHandle[subtitleOffsetDraftKey] = draft
-                }
-            }
     private val localState =
         MutableStateFlow(
             LocalState(
-                subtitleOffsetDraft = restoredSubtitleOffsetDraft,
+                subtitleOffsetDraft =
+                    savedOffsetDraft(
+                        subtitleOffsetDraftKey,
+                        savedStateHandle.get<String>(subtitleOffsetDraftKey).orEmpty(),
+                    ),
+                secondarySubtitleOffsetDraft =
+                    savedOffsetDraft(
+                        secondarySubtitleOffsetDraftKey,
+                        savedStateHandle.get<String>(secondarySubtitleOffsetDraftKey).orEmpty(),
+                    ),
             ),
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
@@ -206,8 +212,10 @@ class MediaMiningViewModel internal constructor(
     private var definitionJob: Job? = null
     private var videoDocumentRequest = 0L
     private var subtitleDocumentRequest = 0L
+    private var secondarySubtitleDocumentRequest = 0L
     private var videoDocumentJob: Job? = null
     private var subtitleDocumentJob: Job? = null
+    private var secondarySubtitleDocumentJob: Job? = null
     private val videoSelection =
         SavedDocumentSelectionStore(
             savedStateHandle = savedStateHandle,
@@ -224,6 +232,18 @@ class MediaMiningViewModel internal constructor(
             inventorySlot = lane.subtitleSlot,
             ioDispatcher = selectionIoDispatcher,
         )
+
+    /** Null on lanes without a translation track; every secondary entry point checks it. */
+    private val secondarySubtitleSelection =
+        lane.secondarySubtitleSlot?.let { slot ->
+            SavedDocumentSelectionStore(
+                savedStateHandle = savedStateHandle,
+                keyPrefix = "${lane.savedStateKeyPrefix}.secondarySubtitle",
+                inventory = selectionInventory,
+                inventorySlot = slot,
+                ioDispatcher = selectionIoDispatcher,
+            )
+        }
 
     /** Small app-shell state; progress-only repository updates are filtered before composition. */
     internal val navigationWorkflowState: StateFlow<NavigationWorkflowState> =
@@ -284,6 +304,11 @@ class MediaMiningViewModel internal constructor(
                 subtitle = local.subtitle,
                 subtitleOffsetDraft = local.subtitleOffsetDraft,
                 subtitleOffsetDraftInvalid = local.subtitleOffsetDraftInvalid,
+                secondarySubtitleEnabled = local.secondarySubtitleEnabled,
+                secondarySubtitle = local.secondarySubtitle,
+                secondarySubtitleOffsetDraft = local.secondarySubtitleOffsetDraft,
+                secondarySubtitleOffsetDraftInvalid =
+                    local.secondarySubtitleEnabled && local.secondarySubtitleOffsetMs == null,
                 effectiveSubtitleOffset =
                     local.subtitleOffsetOverride
                         ?: local.globalSubtitleOffset
@@ -329,6 +354,13 @@ class MediaMiningViewModel internal constructor(
             effectiveSubtitleOffset.distinctUntilChanged().collect { offset ->
                 localState.update { local ->
                     local.copy(globalSubtitleOffset = offset?.takeIf { it.isFinite() })
+                }
+            }
+        }
+        if (secondarySubtitleSelection != null) {
+            viewModelScope.launch {
+                secondarySubtitleEnabled.distinctUntilChanged().collect { enabled ->
+                    localState.update { local -> local.copy(secondarySubtitleEnabled = enabled) }
                 }
             }
         }
@@ -428,11 +460,23 @@ class MediaMiningViewModel internal constructor(
         subtitleSelection.restore()?.let { selection ->
             resolveDocument(DocumentKind.SUBTITLE, selection.uri, restoring = true)
         } ?: subtitleSelection.clear()
+        // Restored even while the toggle is off: a hidden pick is kept, as desktop keeps it, but
+        // never sent.
+        secondarySubtitleSelection?.let { store ->
+            store.restore()?.let { selection ->
+                resolveDocument(DocumentKind.SECONDARY_SUBTITLE, selection.uri, restoring = true)
+            } ?: store.clear()
+        }
     }
 
     fun onVideoPicked(uri: String) = resolveDocument(DocumentKind.VIDEO, uri)
 
     fun onSubtitlePicked(uri: String) = resolveDocument(DocumentKind.SUBTITLE, uri)
+
+    fun onSecondarySubtitlePicked(uri: String) {
+        if (secondarySubtitleSelection == null) return
+        resolveDocument(DocumentKind.SECONDARY_SUBTITLE, uri)
+    }
 
     fun clearVideo() {
         if (
@@ -460,7 +504,14 @@ class MediaMiningViewModel internal constructor(
         document?.let(::releaseDocument)
     }
 
-    fun clearSubtitle() {
+    fun clearSubtitle() = clearSubtitleDocument(DocumentKind.SUBTITLE)
+
+    fun clearSecondarySubtitle() {
+        if (secondarySubtitleSelection == null) return
+        clearSubtitleDocument(DocumentKind.SECONDARY_SUBTITLE)
+    }
+
+    private fun clearSubtitleDocument(kind: DocumentKind) {
         if (
             repository.state.value != MiningRunState.Idle ||
             localState.value.pending.start ||
@@ -475,14 +526,28 @@ class MediaMiningViewModel internal constructor(
             LogComponent.UI,
             "command",
             "command" to "source_clear",
-            "source" to "subtitle",
+            "source" to kind.name.lowercase(),
             "outcome" to "ok",
         )
-        subtitleDocumentRequest += 1
-        subtitleDocumentJob?.cancel()
-        val document = localState.value.subtitle.document
-        localState.update { it.copy(subtitle = DocumentSlotState()) }
-        subtitleSelection.clear()
+        when (kind) {
+            DocumentKind.SUBTITLE -> {
+                subtitleDocumentRequest += 1
+                subtitleDocumentJob?.cancel()
+            }
+            DocumentKind.SECONDARY_SUBTITLE -> {
+                secondarySubtitleDocumentRequest += 1
+                secondarySubtitleDocumentJob?.cancel()
+            }
+            DocumentKind.VIDEO -> error("Video has its own clear")
+        }
+        val document = localState.value.document(kind)
+        localState.update { local ->
+            when (kind) {
+                DocumentKind.SECONDARY_SUBTITLE -> local.copy(secondarySubtitle = DocumentSlotState())
+                else -> local.copy(subtitle = DocumentSlotState())
+            }
+        }
+        selectionStore(kind).clear()
         document?.let(::releaseDocument)
     }
 
@@ -495,6 +560,8 @@ class MediaMiningViewModel internal constructor(
                     local.copy(video = local.video.copy(error = null))
                 DocumentSelectionError.SUBTITLE ->
                     local.copy(subtitle = local.subtitle.copy(error = null))
+                DocumentSelectionError.SECONDARY_SUBTITLE ->
+                    local.copy(secondarySubtitle = local.secondarySubtitle.copy(error = null))
             }
         }
     }
@@ -519,6 +586,21 @@ class MediaMiningViewModel internal constructor(
             return
         }
         updateSubtitleOffsetDraft(value)
+    }
+
+    fun setSecondarySubtitleOffsetDraft(value: String) {
+        val local = localState.value
+        if (
+            secondarySubtitleSelection == null ||
+            repository.state.value != MiningRunState.Idle ||
+            local.pending.start ||
+            local.pending.reset ||
+            local.timingPreviewPending ||
+            mutableTimingPreviewState.value != null
+        ) {
+            return
+        }
+        updateSecondarySubtitleOffsetDraft(value)
     }
 
     fun openTimingPreview() {
@@ -722,6 +804,7 @@ class MediaMiningViewModel internal constructor(
                 runtimeWorkState.value != null ||
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
+                (local.secondarySubtitleEnabled && local.secondarySubtitle.isResolving) ||
                 local.pending.start ||
                 local.pending.reset ||
                 local.timingPreviewPending ||
@@ -1060,6 +1143,7 @@ class MediaMiningViewModel internal constructor(
         val runState = repository.state.value
         if (!runState.isTerminal || localState.value.pending.reset) return
         updateSubtitleOffsetDraft("")
+        updateSecondarySubtitleOffsetDraft("")
         localState.update {
             it.copy(
                 pending = it.pending.begin(MiningPendingAction.RESET),
@@ -1252,6 +1336,7 @@ class MediaMiningViewModel internal constructor(
             when (kind) {
                 DocumentKind.VIDEO -> ++videoDocumentRequest
                 DocumentKind.SUBTITLE -> ++subtitleDocumentRequest
+                DocumentKind.SECONDARY_SUBTITLE -> ++secondarySubtitleDocumentRequest
             }
         localState.update { local ->
             when (kind) {
@@ -1259,11 +1344,17 @@ class MediaMiningViewModel internal constructor(
                     local.copy(video = local.video.copy(isResolving = true, error = null))
                 DocumentKind.SUBTITLE ->
                     local.copy(subtitle = local.subtitle.copy(isResolving = true, error = null))
+                DocumentKind.SECONDARY_SUBTITLE ->
+                    local.copy(
+                        secondarySubtitle =
+                            local.secondarySubtitle.copy(isResolving = true, error = null),
+                    )
             }
         }
         when (kind) {
             DocumentKind.VIDEO -> videoDocumentJob?.cancel()
             DocumentKind.SUBTITLE -> subtitleDocumentJob?.cancel()
+            DocumentKind.SECONDARY_SUBTITLE -> secondarySubtitleDocumentJob?.cancel()
         }
         val job =
             viewModelScope.launch {
@@ -1284,6 +1375,12 @@ class MediaMiningViewModel internal constructor(
                                                 null
                                             } else {
                                                 DocumentSelectionError.SUBTITLE
+                                            }
+                                        DocumentKind.SECONDARY_SUBTITLE ->
+                                            if (hasSupportedSubtitleExtension(document.displayName)) {
+                                                null
+                                            } else {
+                                                DocumentSelectionError.SECONDARY_SUBTITLE
                                             }
                                     }
                                 error.also { rejectionError = it } == null
@@ -1327,6 +1424,9 @@ class MediaMiningViewModel internal constructor(
             DocumentKind.SUBTITLE -> {
                 subtitleDocumentJob = job
             }
+            DocumentKind.SECONDARY_SUBTITLE -> {
+                secondarySubtitleDocumentJob = job
+            }
         }
     }
 
@@ -1346,25 +1446,31 @@ class MediaMiningViewModel internal constructor(
         // its grant rather than publishing ownership into an unreachable LocalState.
         videoDocumentRequest += 1
         subtitleDocumentRequest += 1
+        secondarySubtitleDocumentRequest += 1
         timingPreviewOpenJob?.cancel()
         timingPreviewOpenJob = null
         closeTimingPreview()
         val local = localState.value
         val video = local.video.document
         val subtitle = local.subtitle.document
-        val activeOwnershipTransferred =
+        val secondarySubtitle = local.secondarySubtitle.document
+        val transferredInput =
             if (video != null && subtitle != null) {
                 try {
-                    buildVideoInput(local)?.let(repository::detachActiveSources) == true
+                    buildVideoInput(local)?.takeIf(repository::detachActiveSources)
                 } catch (_: RuntimeException) {
-                    false
+                    null
                 }
             } else {
-                false
+                null
             }
-        if (!activeOwnershipTransferred) {
+        if (transferredInput == null) {
             video?.let { safBroker.releaseReadAccessEventually(it.uri) }
             subtitle?.let { safBroker.releaseReadAccessEventually(it.uri) }
+        }
+        // A hidden (toggle off) translation pick was never part of the run, so it is never transferred.
+        if (transferredInput?.secondarySubtitle == null) {
+            secondarySubtitle?.let { safBroker.releaseReadAccessEventually(it.uri) }
         }
         super.onCleared()
     }
@@ -1455,12 +1561,14 @@ class MediaMiningViewModel internal constructor(
         when (kind) {
             DocumentKind.VIDEO -> sequence == videoDocumentRequest
             DocumentKind.SUBTITLE -> sequence == subtitleDocumentRequest
+            DocumentKind.SECONDARY_SUBTITLE -> sequence == secondarySubtitleDocumentRequest
         }
 
     private fun selectionStore(kind: DocumentKind): SavedDocumentSelectionStore =
         when (kind) {
             DocumentKind.VIDEO -> videoSelection
             DocumentKind.SUBTITLE -> subtitleSelection
+            DocumentKind.SECONDARY_SUBTITLE -> requireNotNull(secondarySubtitleSelection)
         }
 
     private fun documentSelectionError(document: SafDocument): DocumentSelectionError? {
@@ -1477,12 +1585,15 @@ class MediaMiningViewModel internal constructor(
             DocumentKind.VIDEO ->
                 copy(video = DocumentSlotState(document = document), audioTrackOverride = null)
             DocumentKind.SUBTITLE -> copy(subtitle = DocumentSlotState(document = document))
+            DocumentKind.SECONDARY_SUBTITLE ->
+                copy(secondarySubtitle = DocumentSlotState(document = document))
         }
 
     private fun LocalState.document(kind: DocumentKind): SafDocument? =
         when (kind) {
             DocumentKind.VIDEO -> video.document
             DocumentKind.SUBTITLE -> subtitle.document
+            DocumentKind.SECONDARY_SUBTITLE -> secondarySubtitle.document
         }
 
     private fun LocalState.withDocumentFailure(kind: DocumentKind): LocalState =
@@ -1501,6 +1612,14 @@ class MediaMiningViewModel internal constructor(
                         subtitle.copy(
                             isResolving = false,
                             error = DocumentSelectionError.SUBTITLE,
+                        ),
+                )
+            DocumentKind.SECONDARY_SUBTITLE ->
+                copy(
+                    secondarySubtitle =
+                        secondarySubtitle.copy(
+                            isResolving = false,
+                            error = DocumentSelectionError.SECONDARY_SUBTITLE,
                         ),
                 )
         }
@@ -1526,29 +1645,72 @@ class MediaMiningViewModel internal constructor(
                             error = error ?: DocumentSelectionError.SUBTITLE,
                         ),
                 )
+            DocumentKind.SECONDARY_SUBTITLE ->
+                copy(
+                    secondarySubtitle =
+                        secondarySubtitle.copy(
+                            isResolving = false,
+                            error = error ?: DocumentSelectionError.SECONDARY_SUBTITLE,
+                        ),
+                )
         }
 
     private fun buildVideoInput(local: LocalState): VideoMiningInput? {
         if (local.subtitleOffsetDraftInvalid) return null
         val video = local.video.document ?: return null
         val subtitle = local.subtitle.document ?: return null
+        // Only an on-screen picker counts: a pick kept while the toggle is off is not sent.
+        val secondary = local.secondarySubtitle.document?.takeIf { local.secondarySubtitleEnabled }
+        val secondaryOffsetMs =
+            if (local.secondarySubtitleEnabled) local.secondarySubtitleOffsetMs ?: return null else 0L
         return VideoMiningInput(
             video = MiningSource(uri = video.uri, displayName = video.displayName),
             subtitle = MiningSource(uri = subtitle.uri, displayName = subtitle.displayName),
             subtitleOffsetOverride = local.subtitleOffsetOverride,
             audioTrackOverride = local.audioTrackOverride,
+            secondarySubtitle =
+                secondary?.let { MiningSource(uri = it.uri, displayName = it.displayName) },
+            secondarySubtitleOffsetMs = if (secondary != null) secondaryOffsetMs else 0L,
         )
     }
 
-    private fun updateSubtitleOffsetDraft(value: String) {
+    /** Bounds [value], mirrors it into SavedState under [key], and returns what was kept. */
+    private fun savedOffsetDraft(
+        key: String,
+        value: String,
+    ): String {
         val bounded = value.takeCodePoints(MAX_SUBTITLE_OFFSET_DRAFT_CODE_POINTS)
         if (bounded.isEmpty()) {
-            savedStateHandle.remove<String>(subtitleOffsetDraftKey)
+            savedStateHandle.remove<String>(key)
         } else {
-            savedStateHandle[subtitleOffsetDraftKey] = bounded
+            savedStateHandle[key] = bounded
         }
+        return bounded
+    }
+
+    private fun updateSubtitleOffsetDraft(value: String) {
+        val bounded = savedOffsetDraft(subtitleOffsetDraftKey, value)
         localState.update { it.copy(subtitleOffsetDraft = bounded) }
     }
+
+    private fun updateSecondarySubtitleOffsetDraft(value: String) {
+        val bounded = savedOffsetDraft(secondarySubtitleOffsetDraftKey, value)
+        localState.update { it.copy(secondarySubtitleOffsetDraft = bounded) }
+    }
+
+    /**
+     * Whole milliseconds within the wire's ±300 s; empty means 0. Null when the text is not one,
+     * which blocks the start only while the field is on screen.
+     */
+    private val LocalState.secondarySubtitleOffsetMs: Long?
+        get() =
+            if (secondarySubtitleOffsetDraft.isEmpty()) {
+                0L
+            } else {
+                secondarySubtitleOffsetDraft
+                    .toLongOrNull()
+                    ?.takeIf { it in VideoMiningWireRequest.SECONDARY_SUBTITLE_OFFSET_MS }
+            }
 
     private val LocalState.subtitleOffsetDraftInvalid: Boolean
         get() = !AppSettingsDraftParser.isOptionalDouble(subtitleOffsetDraft)
@@ -1786,6 +1948,7 @@ class MediaMiningViewModel internal constructor(
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
         private val undoManager: MiningRunUndoManager? = null,
+        private val secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1810,6 +1973,7 @@ class MediaMiningViewModel internal constructor(
                 timingPreviewCleanupDispatcher = timingPreviewCleanupDispatcher,
                 undoManager = undoManager,
                 audioTrackProbeOpener = audioTrackProbeOpener,
+                secondarySubtitleEnabled = secondarySubtitleEnabled,
             ) as T
         }
     }

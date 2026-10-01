@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Untertitel-Timing-Versatz (Sekunden)</string>
     <string name="audio_subtitle_offset_label">Transkript-Timing-Versatz (Sekunden)</string>
     <string name="video_subtitle_offset_placeholder">Aktuellen Standard verwenden (%1$s Sekunden)</string>
+    <string name="video_secondary_subtitle_label">Übersetzungs-Untertitel</string>
+    <string name="video_secondary_subtitle_offset_label">Übersetzungs-Timing-Versatz (Millisekunden)</string>
+    <string name="video_secondary_subtitle_offset_error">Geben Sie eine ganze Zahl von −300000 bis 300000 ein</string>
     <string name="timing_preview_test_action">Timing testen</string>
     <string name="timing_preview_title">Untertitel-Timing testen</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Kein Feld für Wort-Audio zugeordnet. Ordnen Sie „WordAudio“ zu, sonst erhalten Karten keine Aussprache.</string>
     <string name="audio_pack_unusable_warning">Unbrauchbares Audiopaket übersprungen. Erneut importieren unter Einstellungen → Ressourcen.</string>
     <string name="subtitle_file_error">Zugriff verloren. Erneut auswählen.</string>
+    <string name="secondary_subtitle_file_error">Übersetzungs-Untertitel: Zugriff verloren. Erneut auswählen.</string>
     <string name="dismiss_error">Fehler schließen</string>
     <string name="start_mining">Sammeln</string>
     <string name="starting_title">Mining-Durchlauf wird vorbereitet</string>
@@ -649,7 +653,7 @@
     <string name="settings_subtitle_preset_speaker">Sprecherpräfix</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Lehnt die Engine dieses Muster ab, wird der Filter übersprungen.</string>
-    <string name="settings_filtering">Filterung</string>
+    <string name="settings_filtering">Wortfilter</string>
     <string name="settings_search">Einstellungen durchsuchen</string>
     <string name="settings_search_no_results">Keine Einstellung passt dazu.</string>
     <string name="settings_search_clear">Suche löschen</string>
@@ -659,12 +663,26 @@
     <string name="settings_bold_target">Zielwort im Satz fett hervorheben</string>
     <string name="settings_deduplicate">Sätze deduplizieren</string>
     <string name="settings_i_plus_one">i+1-Filter verwenden</string>
-    <string name="settings_sentence_length">Satzlänge begrenzen</string>
-    <string name="settings_max_duration">Maximale Satzdauer (0 = unbegrenzt)</string>
-    <string name="settings_max_characters">Maximale Satzzeichenanzahl (0 = unbegrenzt)</string>
+    <string name="settings_max_duration">Maximale Satzdauer (Sekunden)</string>
+    <string name="settings_max_characters">Maximale Zeichenanzahl pro Satz</string>
     <string name="settings_reading_occurrence">Mindestvorkommen der Lesung</string>
-    <string name="settings_max_frequency">Maximaler Häufigkeitsrang (0 = unbegrenzt)</string>
+    <string name="settings_max_frequency">Maximaler Häufigkeitsrang</string>
     <string name="settings_workers">Parallele Medien-Worker (1–20)</string>
+    <string name="settings_min_frequency">Minimaler Häufigkeitsrang</string>
+    <string name="settings_frequency_band_help">Nur Wörter sammeln, deren Rang in diesem Bereich liegt. Rang 1 ist das häufigste Wort. 0 lässt dieses Ende offen.</string>
+    <string name="settings_frequency_keep_unranked">Wörter einschließen, die in der Häufigkeitsliste fehlen</string>
+    <string name="settings_known_words_match_kana_variants">Kana-Schreibweisen bekannter Wörter als bekannt behandeln</string>
+    <string name="settings_known_words_match_kana_variants_help">Wenn ein Untertitel ein Wort in Kana schreibt (z. B. うなずく) und die Kanji-Wörterbuchform (頷く) bereits in Ihrer Sammlung oder Wortliste bekannter Wörter vorhanden ist, wird es übersprungen, anstatt eine zweite Karte zu erstellen. Kanji-Schreibweisen werden auf diese Weise nie zusammengeführt.</string>
+    <string name="settings_card_creation">Kartenerstellung</string>
+    <string name="settings_strict_card_order">Karten in Erscheinungsreihenfolge erstellen</string>
+    <string name="settings_strict_card_order_help">Fügt Karten in der Reihenfolge zu Anki hinzu, in der die Wörter zum ersten Mal erscheinen. Ist dies aus und „Wörter auf der Whitelist immer sammeln“ an, kommen Wörter auf der Whitelist zuerst.</string>
+    <string name="settings_sentence_options">Satzoptionen</string>
+    <string name="settings_max_duration_help">Verwirft Karten, deren Beispielsatz-Audio länger als diese Anzahl an Sekunden ist. Auf 0 setzen für keine Begrenzung.</string>
+    <string name="settings_max_characters_help">Verwirft Karten, deren Satztext diese Anzahl an Zeichen überschreitet. Auf 0 setzen für keine Begrenzung.</string>
+    <string name="settings_secondary_subtitle">Sekundäre Untertitel</string>
+    <string name="settings_secondary_subtitle_help">Fügt dem Video-Tab eine Auswahl für eine Übersetzungs-Untertitelspur hinzu. Ist das Feld „Sentence translation“ unter Karten &amp; Anki zugeordnet, kommt ihre Zeile auf die Karte.</string>
+    <string name="settings_merge_incomplete_cues">Ganze Sätze über Untertitelzeilen hinweg sammeln</string>
+    <string name="settings_merge_incomplete_cues_help">Verbindet benachbarte Untertitelzeilen, wenn eine Zeile keinen Satz beendet, damit die Karte den ganzen Satz statt eines Fragments enthält. Lesequellen haben keine Untertitel-Zeitstempel und ignorieren dies.</string>
     <string name="settings_no_dictionaries">Kein Wörterbuch installiert.</string>
     <string name="settings_no_frequency_sources">Keine Häufigkeitsquelle installiert.</string>
     <string name="settings_no_audio_packs">Kein Audiopaket installiert.</string>
@@ -682,7 +700,7 @@
     <string name="resource_panel_dictionaries_explanation">Von oben nach unten geprüft; das erste Wörterbuch mit einem Eintrag gewinnt.</string>
     <string name="resource_panel_pitch_heading">Aktive Tonhöhenakzent-Quellen</string>
     <string name="resource_panel_pitch_explanation">Von oben nach unten geprüft; die erste Quelle mit einem Tonhöhenakzent-Eintrag gewinnt.</string>
-    <string name="resource_panel_audio_heading">Aktive Audioquellen</string>
+    <string name="resource_panel_audio_heading">Wort-Audio</string>
     <string name="resource_panel_audio_explanation">Von oben nach unten geprüft; die erste Quelle mit Audio gewinnt.</string>
     <string name="resource_panel_frequency_heading">Aktive Häufigkeitsquellen</string>
     <string name="resource_panel_frequency_explanation">Niedrigster Rang filtert; harmonisches Mittel sortiert. Die Reihenfolge bestimmt nur die Quellenliste der Karte.</string>
@@ -771,12 +789,13 @@
     <string name="anki_setup_schedule_failed">Die Anki-Einrichtung konnte nicht geplant werden</string>
     <string name="notices_title">Drittanbieterhinweise</string>
     <string name="notices_documents_heading">Mitgelieferte Hinweis-Dokumente</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Karten &amp; Anki</string>
     <string name="b3_settings_category_media">Medien</string>
     <string name="b3_settings_category_resources">Ressourcen</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Häufigkeit</string>
-    <string name="b3_settings_category_filtering">Filterung</string>
+    <string name="b3_settings_category_word_filters">Wortfilter</string>
+    <string name="b3_settings_category_sentences">Sätze</string>
     <string name="b3_settings_category_ui">UI</string>
     <string name="b3_settings_category_diagnostics">Diagnose</string>
     <string name="b3_settings_save_pending">Ausstehende Änderungen</string>

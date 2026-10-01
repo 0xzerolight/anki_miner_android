@@ -105,10 +105,12 @@ def _schema_def_for(message_type: str, payload: dict[str, Any]) -> str:
     if message_type == "anki.scanfirstfields.request":
         return "scanFirstFieldsRequest"
     if message_type == "anki.scanfirstfields.result":
-        if "firstFields" in payload:
+        if "notes" in payload:
             return "scanFirstFieldsResult"
         if "rawFirstFieldHits" in payload:
             return "duplicateLookupResult"
+        if "noteTypes" in payload:
+            return "noteTypesResult"
         return "scanFirstFieldsResult"
     try:
         return _SCHEMA_DEFS[message_type]
@@ -137,6 +139,7 @@ def _validate_schema(message_type: str, payload: dict[str, Any]) -> None:
     if message_type == "anki.scanfirstfields.request" and isinstance(payload.get("scope"), dict):
         scope_definition = {
             "knownVocabulary": "knownVocabularyScope",
+            "noteTypes": "noteTypesScope",
             "duplicates": "duplicateScope",
         }.get(payload["scope"].get("kind"))
         if scope_definition is not None:
@@ -265,15 +268,36 @@ def _validate_error_detail(error: dict[str, Any]) -> None:
 def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
     limits = ANKI_LIMITS_V1["scanFirstFields"]
     if response:
-        if "firstFields" in payload:
-            total = sum(
-                _plain_string(
-                    value,
-                    max_scalars=limits["firstFieldMaxCodePoints"],
-                    max_utf8_bytes=limits["firstFieldMaxUtf8Bytes"],
-                )[1]
-                for value in payload["firstFields"]
-            )
+        if "noteTypes" in payload:
+            model_ids: set[int] = set()
+            total = 0
+            for note_type in payload["noteTypes"]:
+                model_id = _positive_long(note_type["modelId"])
+                if model_id in model_ids:
+                    _reject("invalid_value")
+                model_ids.add(model_id)
+                total += _canonical_name(note_type["name"], "model")
+                field_bytes = sum(_canonical_name(name, "field") for name in note_type["fieldNames"])
+                if field_bytes > ANKI_LIMITS_V1["names"]["targetFields"]["maxTotalUtf8Bytes"]:
+                    _reject("invalid_value")
+                total += field_bytes
+            if total > limits["noteTypesMaxUtf8Bytes"]:
+                _reject("invalid_value")
+            return
+        if "notes" in payload:
+            if payload["scannedNotes"] < len(payload["notes"]):
+                _reject("invalid_value")
+            total = 0
+            for note in payload["notes"]:
+                _positive_long(note["modelId"])
+                total += sum(
+                    _plain_string(
+                        value,
+                        max_scalars=limits["firstFieldMaxCodePoints"],
+                        max_utf8_bytes=limits["firstFieldMaxUtf8Bytes"],
+                    )[1]
+                    for value in note["fields"]
+                )
             if total > limits["knownPageMaxUtf8Bytes"]:
                 _reject("invalid_value")
             cursor = payload["nextCursor"]
@@ -307,10 +331,21 @@ def _validate_scan_payload(payload: dict[str, Any], *, response: bool) -> None:
         return
 
     scope = payload["scope"]
+    if scope["kind"] == "noteTypes":
+        return
     if scope["kind"] == "knownVocabulary":
         total = sum(_canonical_name(deck, "deck") for deck in scope["excludedDecks"])
         if total > ANKI_LIMITS_V1["names"]["excludedDecks"]["maxTotalUtf8Bytes"]:
             _reject("invalid_value")
+        projected: set[int] = set()
+        for entry in scope["fieldOrdinals"]:
+            model_id = _positive_long(entry["modelId"])
+            if model_id in projected:
+                _reject("invalid_value")
+            projected.add(model_id)
+            ordinals = [normalize_integral_json_number(ordinal) for ordinal in entry["ordinals"]]
+            if ordinals[0] != 0 or any(left >= right for left, right in zip(ordinals, ordinals[1:], strict=False)):
+                _reject("invalid_value")
         cursor = scope["cursor"]
         if cursor is not None:
             _positive_long(cursor["ordinal"])
@@ -627,6 +662,7 @@ def test_corpus_freezes_all_operation_and_result_variants() -> None:
     accepted_payloads = [case.expectation.payload for case in accepted if case.expectation.payload is not None]
     assert {payload["scope"]["kind"] for payload in accepted_payloads if "scope" in payload} == {
         "knownVocabulary",
+        "noteTypes",
         "duplicates",
     }
     assert {payload["duplicateScope"]["kind"] for payload in accepted_payloads if "duplicateScope" in payload} == {

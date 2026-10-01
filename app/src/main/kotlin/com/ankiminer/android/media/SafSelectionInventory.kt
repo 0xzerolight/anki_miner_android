@@ -9,6 +9,7 @@ import java.util.Locale
 internal enum class SafSelectionSlot(val storageKey: String) {
     VIDEO("video"),
     VIDEO_SUBTITLE("video_subtitle"),
+    VIDEO_SECONDARY_SUBTITLE("video_secondary_subtitle"),
     AUDIO("audio"),
     AUDIO_SUBTITLE("audio_subtitle"),
     READING_SOURCE("reading_source"),
@@ -305,6 +306,7 @@ internal class AndroidSafSelectionInventory(
             setOf(
                 SafSelectionSlot.VIDEO,
                 SafSelectionSlot.VIDEO_SUBTITLE,
+                SafSelectionSlot.VIDEO_SECONDARY_SUBTITLE,
                 SafSelectionSlot.AUDIO,
                 SafSelectionSlot.AUDIO_SUBTITLE,
                 SafSelectionSlot.READING_SOURCE,

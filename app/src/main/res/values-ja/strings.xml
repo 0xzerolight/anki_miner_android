@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">字幕タイミングオフセット（秒）</string>
     <string name="audio_subtitle_offset_label">文字起こしタイミングオフセット（秒）</string>
     <string name="video_subtitle_offset_placeholder">現在の既定値を使用（%1$s秒）</string>
+    <string name="video_secondary_subtitle_label">翻訳字幕</string>
+    <string name="video_secondary_subtitle_offset_label">翻訳タイミングオフセット（ミリ秒）</string>
+    <string name="video_secondary_subtitle_offset_error">−300000〜300000 の整数を入力してください</string>
     <string name="timing_preview_test_action">タイミングをテスト</string>
     <string name="timing_preview_title">字幕タイミングをテスト</string>
     <string name="timing_preview_nudge_earlier">−0.1秒</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">単語音声用のフィールドが対応付けられていません。「WordAudio」を対応付けないとカードに発音が付きません。</string>
     <string name="audio_pack_unusable_warning">使用できない音声パックをスキップしました。設定 → リソース から再インポートしてください。</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
+    <string name="secondary_subtitle_file_error">翻訳字幕：アクセスが失われました。選び直してください。</string>
     <string name="dismiss_error">エラーを閉じる</string>
     <string name="start_mining">マイニング</string>
     <string name="starting_title">マイニングを準備中</string>
@@ -651,7 +655,7 @@
     <string name="settings_subtitle_preset_speaker">話者名の接頭辞</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">エンジンがこのパターンを拒否した場合、フィルターはスキップされます。</string>
-    <string name="settings_filtering">フィルタリング</string>
+    <string name="settings_filtering">単語フィルター</string>
     <string name="settings_search">設定を検索</string>
     <string name="settings_search_no_results">一致する設定はありません。</string>
     <string name="settings_search_clear">検索をクリア</string>
@@ -661,12 +665,26 @@
     <string name="settings_bold_target">例文内の対象語を太字に</string>
     <string name="settings_deduplicate">例文の重複除去</string>
     <string name="settings_i_plus_one">i+1フィルタを使用</string>
-    <string name="settings_sentence_length">例文の長さを制限</string>
-    <string name="settings_max_duration">例文の最大再生時間(0=無制限)</string>
-    <string name="settings_max_characters">例文の最大文字数(0=無制限)</string>
+    <string name="settings_max_duration">例文の最大再生時間(秒)</string>
+    <string name="settings_max_characters">例文の最大文字数</string>
     <string name="settings_reading_occurrence">読書最小出現回数</string>
-    <string name="settings_max_frequency">最大頻度順位(0=無制限)</string>
+    <string name="settings_max_frequency">最大頻度順位</string>
     <string name="settings_workers">並列メディアワーカー数(1〜20)</string>
+    <string name="settings_min_frequency">最小頻度順位</string>
+    <string name="settings_frequency_band_help">頻度順位がこの範囲内の単語のみをマイニングします。順位1が最も一般的な単語です。0にするとその端は制限なしになります。</string>
+    <string name="settings_frequency_keep_unranked">頻度リストにない単語を含める</string>
+    <string name="settings_known_words_match_kana_variants">既知単語のかな表記を既知として扱う</string>
+    <string name="settings_known_words_match_kana_variants_help">字幕が単語をかなで表記していて（例：うなずく）、その漢字の辞書形（頷く）がすでにコレクションまたは既知単語リストにある場合、2枚目のカードを作成せずにスキップします。漢字表記がこの方法で統合されることはありません。</string>
+    <string name="settings_card_creation">カード作成</string>
+    <string name="settings_strict_card_order">登場順にカードを作成</string>
+    <string name="settings_strict_card_order_help">単語が最初に登場した順にカードを Anki に追加します。オフのとき「ホワイトリストの単語は常にマイニング」がオンなら、ホワイトリストの単語が先に追加されます。</string>
+    <string name="settings_sentence_options">例文のオプション</string>
+    <string name="settings_max_duration_help">例文の音声がこの秒数より長いカードを除外します。0にすると制限なしになります。</string>
+    <string name="settings_max_characters_help">例文のテキストがこの文字数を超えるカードを除外します。0にすると制限なしになります。</string>
+    <string name="settings_secondary_subtitle">第2字幕</string>
+    <string name="settings_secondary_subtitle_help">動画タブに翻訳字幕トラックの選択欄を追加します。「カードと Anki」で「Sentence translation」フィールドが対応付けられていれば、翻訳字幕の行がカードに入ります。</string>
+    <string name="settings_merge_incomplete_cues">字幕の行をまたいで文全体をマイニング</string>
+    <string name="settings_merge_incomplete_cues_help">行が文を終えていない場合、隣接する字幕行を結合し、カードに断片ではなく文全体を収録します。読み物ソースには字幕のタイミングがないため、この設定は無視されます。</string>
     <string name="settings_no_dictionaries">辞書がインストールされていません。</string>
     <string name="settings_no_frequency_sources">頻度ソースがインストールされていません。</string>
     <string name="settings_no_audio_packs">音声パックがインストールされていません。</string>
@@ -684,7 +702,7 @@
     <string name="resource_panel_dictionaries_explanation">上から順に試され、項目がある最初の辞書が採用されます。</string>
     <string name="resource_panel_pitch_heading">有効なピッチアクセントソース</string>
     <string name="resource_panel_pitch_explanation">上から順に試され、ピッチ項目がある最初のソースが採用されます。</string>
-    <string name="resource_panel_audio_heading">有効な音声ソース</string>
+    <string name="resource_panel_audio_heading">単語音声</string>
     <string name="resource_panel_audio_explanation">上から順に試され、音声がある最初のソースが採用されます。</string>
     <string name="resource_panel_frequency_heading">有効な頻度ソース</string>
     <string name="resource_panel_frequency_explanation">フィルタリングには最も低い順位、ソートには調和平均を用います。順序が決めるのはカードのソース一覧だけです。</string>
@@ -775,12 +793,13 @@
     <string name="notices_documents_heading">収録されている通知文書</string>
 
     <!-- Batch 3: Settings and wizard -->
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">カードと Anki</string>
     <string name="b3_settings_category_media">メディア</string>
     <string name="b3_settings_category_resources">リソース</string>
     <string name="b3_settings_category_audio">音声</string>
     <string name="b3_settings_category_frequency">頻度</string>
-    <string name="b3_settings_category_filtering">フィルター</string>
+    <string name="b3_settings_category_word_filters">単語フィルター</string>
+    <string name="b3_settings_category_sentences">例文</string>
     <string name="b3_settings_category_ui">表示</string>
     <string name="b3_settings_category_diagnostics">診断</string>
     <string name="b3_settings_save_pending">未保存の変更があります</string>

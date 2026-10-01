@@ -361,8 +361,9 @@ class UiAuditJankFlowTest {
 
         val FULL_SETTINGS_CARD_KEYS =
             mapOf(
-                SettingsCategory.ANKI to listOf("anki-deck-options", "anki-target"),
-                SettingsCategory.MEDIA to listOf("media-options", "subtitle-text"),
+                SettingsCategory.ANKI to
+                    listOf("anki-deck-options", "anki-target", "anki-card-creation"),
+                SettingsCategory.MEDIA to listOf("media-options"),
                 SettingsCategory.RESOURCES to
                     listOf(
                         "dictionary-sources",
@@ -370,7 +371,8 @@ class UiAuditJankFlowTest {
                         "audio-sources",
                         "frequency-sources",
                     ),
-                SettingsCategory.FILTERING to listOf("filtering-options", "word-lists"),
+                SettingsCategory.WORD_FILTERS to listOf("filtering-options", "word-lists"),
+                SettingsCategory.SENTENCES to listOf("subtitle-text", "sentence-options"),
                 SettingsCategory.UI to listOf("ui-options"),
                 SettingsCategory.DIAGNOSTICS to
                     listOf("diagnostic-runtime", "attributions"),

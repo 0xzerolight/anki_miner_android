@@ -52,6 +52,8 @@ def _payload(**overrides: object) -> dict[str, object]:
         "sourceLabel": "Series — Episode 1",
         "audioTrackOverride": None,
         "audioOnly": False,
+        "secondarySubtitlePath": None,
+        "secondarySubtitleOffsetMs": 0,
         "cacheDir": "/cache",
         "nativeLibraryDir": "/native",
         "configSnapshot": {"settings": {}, "androidTtsEnabled": False},
@@ -713,6 +715,8 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
                 "audio_track_override": 2,
                 "source_label_override": "Source",
                 "audio_only": audio_only,
+                "secondary_subtitle_file": Path("/cache/translation.srt"),
+                "secondary_subtitle_offset": -1.25,
                 "cancel_event": cancel_event,
             }
             return result
@@ -739,6 +743,8 @@ def test_process_episode_receives_exact_desktop_contract_and_cleans_lifo(
         source_label="Source",
         audio_track_override=2,
         audio_only=audio_only,
+        secondary_subtitle_path=Path("/cache/translation.srt"),
+        secondary_subtitle_offset=-1.25,
         cache_dir=Path("/cache"),
         native_library_dir=Path("/native"),
         settings={},
@@ -2088,6 +2094,7 @@ def test_engine_composition_seams_still_have_the_parameters_the_bridge_passes() 
         "anki_miner/orchestration/episode_processor.py", "EpisodeProcessor", "process_episode"
     )
     assert "cross_episode_counts" not in episode_params
+    assert {"secondary_subtitle_file", "secondary_subtitle_offset"} <= episode_params
 
     # Renamed upstream when the gate grew past dictionaries.
     _vendored_method_params(
@@ -2130,6 +2137,9 @@ def test_bridge_passes_every_new_engine_seam() -> None:
 
     episode_kwargs = _bridge_call_keywords("_process_episode", "process_episode")
     assert "cross_episode_counts" not in episode_kwargs
+    # Desktop's episode worker passes both on every run; without them the
+    # Translation field stays blank with no error anywhere.
+    assert {"secondary_subtitle_file", "secondary_subtitle_offset"} <= episode_kwargs
 
 
 def test_bridge_passes_every_registry_the_staleness_gate_reads() -> None:
@@ -2347,6 +2357,17 @@ def test_runtime_composition_injects_only_android_video_services(
         ("audioTrackOverride", -1),
         ("audioTrackOverride", True),
         ("audioTrackOverride", 1.5),
+        ("secondarySubtitlePath", ""),
+        ("secondarySubtitlePath", "relative.srt"),
+        ("secondarySubtitlePath", "/cache/translation.txt"),
+        ("secondarySubtitlePath", "/cache/trans\x00lation.srt"),
+        ("secondarySubtitlePath", 7),
+        ("secondarySubtitleOffsetMs", None),
+        ("secondarySubtitleOffsetMs", True),
+        ("secondarySubtitleOffsetMs", 1.5),
+        ("secondarySubtitleOffsetMs", "0"),
+        ("secondarySubtitleOffsetMs", 300_001),
+        ("secondarySubtitleOffsetMs", -300_001),
     ],
 )
 def test_request_rejects_invalid_scalar_fields(field: str, value: object) -> None:
@@ -2414,13 +2435,17 @@ def test_request_requires_exact_fields_and_preserves_fd_paths_and_identity() -> 
         "sourceLabel",
         "audioTrackOverride",
         "audioOnly",
+        "secondarySubtitlePath",
+        "secondarySubtitleOffsetMs",
         "cacheDir",
         "nativeLibraryDir",
         "configSnapshot",
     }
-    del payload["sourceLabel"]
-    with pytest.raises(BridgeProtocolError):
-        mining._parse_request(encode_message("mining.video.run", payload))
+    for required in ("sourceLabel", "secondarySubtitlePath", "secondarySubtitleOffsetMs"):
+        missing = _payload()
+        del missing[required]
+        with pytest.raises(BridgeProtocolError):
+            mining._parse_request(encode_message("mining.video.run", missing))
 
     payload = _payload(unknown=True)
     with pytest.raises(BridgeProtocolError):
@@ -2440,6 +2465,25 @@ def test_request_requires_exact_fields_and_preserves_fd_paths_and_identity() -> 
     assert parsed.source_label is None
     assert parsed.audio_track_override == 2
     assert parsed.audio_only is False
+    assert parsed.secondary_subtitle_path is None
+    assert parsed.secondary_subtitle_offset == 0.0
+
+
+@pytest.mark.parametrize(
+    ("offset_ms", "seconds"),
+    [(-1250, -1.25), (500.0, 0.5), (300_000, 300.0), (-300_000, -300.0)],
+)
+def test_request_stages_the_secondary_subtitle_like_the_primary(offset_ms: object, seconds: float) -> None:
+    parsed = mining._parse_request(
+        _request(
+            secondarySubtitlePath="/cache/job/translation.ASS",
+            secondarySubtitleOffsetMs=offset_ms,
+        )
+    )
+
+    assert parsed.secondary_subtitle_path == Path("/cache/job/translation.ASS")
+    assert parsed.secondary_subtitle_offset == seconds
+    assert type(parsed.secondary_subtitle_offset) is float
 
 
 def test_mining_module_keeps_all_engine_imports_after_bootstrap_and_excludes_cut_modules() -> None:

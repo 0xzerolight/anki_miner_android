@@ -25,6 +25,8 @@ import com.ankiminer.android.anki.protocol.DuplicateNote
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
 import com.ankiminer.android.anki.protocol.FailedMedia
 import com.ankiminer.android.anki.protocol.FailedNote
+import com.ankiminer.android.anki.protocol.KnownFieldOrdinals
+import com.ankiminer.android.anki.protocol.KnownNote
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.KnownVocabularyResult
 import com.ankiminer.android.anki.protocol.KnownVocabularyScope
@@ -35,6 +37,9 @@ import com.ankiminer.android.anki.protocol.MediaPurpose
 import com.ankiminer.android.anki.protocol.MediaStoreRow
 import com.ankiminer.android.anki.protocol.NotAttemptedMedia
 import com.ankiminer.android.anki.protocol.NotAttemptedNote
+import com.ankiminer.android.anki.protocol.NoteTypeFields
+import com.ankiminer.android.anki.protocol.NoteTypesResult
+import com.ankiminer.android.anki.protocol.NoteTypesScope
 import com.ankiminer.android.anki.protocol.RawFirstFieldHit
 import com.ankiminer.android.anki.protocol.ReleaseRunStateRequest
 import com.ankiminer.android.anki.protocol.ReleaseRunStateResult
@@ -922,7 +927,7 @@ class AnkiJsonCodecBoundaryTest {
         }
 
         encode(KnownVocabularyResult(RUN_ID, REQUEST_ID, emptyList(), 0, null))
-        val maximumKnown = List(AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT) { "" }
+        val maximumKnown = knownNotes(List(AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT) { "" })
         encode(
             KnownVocabularyResult(
                 RUN_ID,
@@ -932,8 +937,8 @@ class AnkiJsonCodecBoundaryTest {
                 null,
             ),
         )
-        assertCategory("known first-field N+1", AnkiProtocolCategory.INVALID_VALUE) {
-            val over = maximumKnown + ""
+        assertCategory("known note N+1", AnkiProtocolCategory.INVALID_VALUE) {
+            val over = maximumKnown + knownNotes(listOf(""))
             encode(KnownVocabularyResult(RUN_ID, REQUEST_ID, over, over.size, null))
         }
 
@@ -1017,7 +1022,7 @@ class AnkiJsonCodecBoundaryTest {
     @Test
     fun `response text aggregates and every output envelope use exact UTF-8 ceilings`() {
         val exactKnownBytes =
-            List(4) { "x".repeat(AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES) }
+            knownNotes(List(4) { "x".repeat(AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES) })
         encode(
             KnownVocabularyResult(
                 RUN_ID,
@@ -1028,7 +1033,7 @@ class AnkiJsonCodecBoundaryTest {
             ),
         )
         assertCategory("known byte aggregate N+1", AnkiProtocolCategory.INVALID_VALUE) {
-            val over = exactKnownBytes + "x"
+            val over = exactKnownBytes + knownNotes(listOf("x"))
             encode(KnownVocabularyResult(RUN_ID, REQUEST_ID, over, over.size, null))
         }
 
@@ -1409,8 +1414,19 @@ class AnkiJsonCodecBoundaryTest {
                                         value.string("token"),
                                     )
                                 }
-                            KnownVocabularyScope(scope.strings("excludedDecks"), cursor)
+                            KnownVocabularyScope(
+                                scope.strings("excludedDecks"),
+                                cursor,
+                                scope.array("fieldOrdinals").map { rawEntry ->
+                                    val entry = rawEntry.asObject("field ordinals")
+                                    KnownFieldOrdinals(
+                                        entry.long("modelId"),
+                                        entry.array("ordinals").map { it.asLong("ordinal").toInt() },
+                                    )
+                                },
+                            )
                         }
+                        "noteTypes" -> NoteTypesScope
                         "duplicates" ->
                             DuplicateScanScope(
                                 scope.string("modelName"),
@@ -1523,11 +1539,27 @@ class AnkiJsonCodecBoundaryTest {
                     payload.boolean("deckCreated"),
                 )
             AnkiOperation.SCAN_FIRST_FIELDS.resultType ->
-                if ("firstFields" in payload) {
+                if ("noteTypes" in payload) {
+                    NoteTypesResult(
+                        runId,
+                        requestId,
+                        payload.array("noteTypes").map { rawNoteType ->
+                            val noteType = rawNoteType.asObject("note type")
+                            NoteTypeFields(
+                                noteType.long("modelId"),
+                                noteType.string("name"),
+                                noteType.strings("fieldNames"),
+                            )
+                        },
+                    )
+                } else if ("notes" in payload) {
                     KnownVocabularyResult(
                         runId,
                         requestId,
-                        payload.strings("firstFields"),
+                        payload.array("notes").map { rawNote ->
+                            val note = rawNote.asObject("known note")
+                            KnownNote(note.long("modelId"), note.strings("fields"))
+                        },
                         payload.long("scannedNotes").toInt(),
                         payload["nextCursor"]?.let { rawCursor ->
                             val cursor = rawCursor.asObject("next cursor")
@@ -1785,12 +1817,20 @@ class AnkiJsonCodecBoundaryTest {
             }
             AnkiOperation.SCAN_FIRST_FIELDS.resultType -> {
                 when {
-                    "firstFields" in payload -> {
+                    "notes" in payload -> {
                         requireCorpusKeys(
                             payload,
-                            setOf("runId", "requestId", "firstFields", "scannedNotes", "nextCursor"),
+                            setOf("runId", "requestId", "notes", "scannedNotes", "nextCursor"),
                             AnkiProtocolCategory.INVALID_PAYLOAD,
                             "known-vocabulary result",
+                        )
+                    }
+                    "noteTypes" in payload -> {
+                        requireCorpusKeys(
+                            payload,
+                            setOf("runId", "requestId", "noteTypes"),
+                            AnkiProtocolCategory.INVALID_PAYLOAD,
+                            "note-type result",
                         )
                     }
                     "rawFirstFieldHits" in payload -> {
@@ -2028,8 +2068,16 @@ class AnkiJsonCodecBoundaryTest {
                 ScanFirstFieldsRequest(
                     response.runId,
                     response.requestId,
-                    KnownVocabularyScope(emptyList(), null),
+                    KnownVocabularyScope(
+                        emptyList(),
+                        null,
+                        response.notes
+                            .filter { it.fields.size > 1 }
+                            .distinctBy(KnownNote::modelId)
+                            .map { KnownFieldOrdinals(it.modelId, it.fields.indices.toList()) },
+                    ),
                 )
+            is NoteTypesResult -> ScanFirstFieldsRequest(response.runId, response.requestId, NoteTypesScope)
             is DuplicateLookupResult -> {
                 val candidates =
                     List(response.rawFirstFieldHits.size) { index ->
@@ -2317,7 +2365,9 @@ class AnkiJsonCodecBoundaryTest {
         excludedDecks: List<String> = emptyList(),
         ordinal: String = "1",
     ): String =
-        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":${stringArray(excludedDecks)},"cursor":{"ordinal":$ordinal,"token":"cursor"},"limits":$KNOWN_LIMITS}}"""
+        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":${stringArray(excludedDecks)},"fieldOrdinals":[],"cursor":{"ordinal":$ordinal,"token":"cursor"},"limits":$KNOWN_LIMITS}}"""
+
+    private fun knownNotes(values: List<String>): List<KnownNote> = values.map { KnownNote(1L, listOf(it)) }
 
     private fun duplicatePayload(count: Int): String {
         val candidates =

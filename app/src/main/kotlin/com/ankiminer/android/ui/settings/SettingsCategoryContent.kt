@@ -13,13 +13,16 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -52,6 +55,7 @@ import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
+import com.ankiminer.android.vm.FrequencyBandEnd
 import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsFieldKey
@@ -158,14 +162,20 @@ internal fun LazyListScope.settingsCategoryContent(
                 expansion,
                 callbacks,
             )
-        SettingsCategory.FILTERING ->
-            filteringSettings(
+        SettingsCategory.WORD_FILTERS ->
+            wordFilterSettings(
                 draft,
                 resources,
                 setup,
                 setupViewModel,
                 recorder,
                 callbacks,
+            )
+        SettingsCategory.SENTENCES ->
+            sentencesSettings(
+                draft,
+                recorder,
+                callbacks.onDraftChange,
             )
         SettingsCategory.UI ->
             uiSettings(
@@ -202,46 +212,6 @@ private fun LazyListScope.ankiSettings(
                 maxLines = 2,
                 placeholder = inheritedDefault(EngineDefaults.DECK_NAME),
             )
-            val choices = excludedDeckChoices(setup.availableDeckNames, draft.excludedDecks)
-            CollapsibleSettingGroup(
-                title = stringResource(R.string.settings_excluded_decks),
-                selectedCount = choices.count { it.checked },
-                totalCount = choices.size,
-                // Nothing to collapse, and the only explanation is the error line inside.
-                forceOpen = choices.isEmpty(),
-            ) {
-                if (choices.isEmpty()) {
-                    Text(
-                        stringResource(R.string.settings_no_anki_decks),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    choices.forEach { deck ->
-                        BooleanSetting(
-                            label = deck.name,
-                            detail =
-                                if (deck.discovered) {
-                                    null
-                                } else {
-                                    stringResource(R.string.settings_anki_deck_not_discovered)
-                                },
-                            checked = deck.checked,
-                            onCheckedChange = { checked ->
-                                callbacks.onDraftChange(
-                                    draft.copy(
-                                        excludedDecks =
-                                            if (checked) {
-                                                (draft.excludedDecks + deck.name).distinct()
-                                            } else {
-                                                draft.excludedDecks - deck.name
-                                            },
-                                    ),
-                                )
-                            },
-                        )
-                    }
-                }
-            }
             SettingTextField(
                 value = draft.tags,
                 onChange = { callbacks.onDraftChange(draft.copy(tags = it)) },
@@ -266,6 +236,18 @@ private fun LazyListScope.ankiSettings(
                 )
             },
         )
+    }
+    // After anki-target, so TARGET's deep-link index stays 3, and ahead of the conditional
+    // operation card, which has to trail every unconditional one.
+    settingsCard(SettingsCategory.ANKI, recorder, "anki-card-creation") {
+        SettingsSection(stringResource(R.string.settings_card_creation)) {
+            NullableToggle(
+                stringResource(R.string.settings_strict_card_order),
+                draft.strictCardOrder,
+                EngineDefaults.STRICT_CARD_ORDER,
+            ) { callbacks.onDraftChange(draft.copy(strictCardOrder = it)) }
+            SupportingText(stringResource(R.string.settings_strict_card_order_help))
+        }
     }
     setup.ankiOperation?.let {
         settingsCard(SettingsCategory.ANKI, recorder, "anki-operation") { AnkiOperationCard() }
@@ -381,9 +363,21 @@ internal fun LazyListScope.mediaSettings(
             )
         }
     }
-    // Its own card, after media-options: no failure origin deep-links into MEDIA, so appending here
-    // cannot shift the hardcoded item indices in settingsCardIndexFor.
-    settingsCard(SettingsCategory.MEDIA, recorder, "subtitle-text") {
+}
+
+/**
+ * What the example sentence is and looks like, mirroring desktop's Sentences page: subtitle text
+ * cleanup first, then the sentence rule, the length caps and the sentence formatting rows.
+ *
+ * No failure origin deep-links here. Internal rather than private so the instrumented tests can
+ * compose the real group.
+ */
+internal fun LazyListScope.sentencesSettings(
+    draft: SettingsDraft,
+    recorder: SettingsCardIndexRecorder,
+    onDraftChange: (SettingsDraft) -> Unit,
+) {
+    settingsCard(SettingsCategory.SENTENCES, recorder, "subtitle-text") {
         SettingsSection(stringResource(R.string.settings_subtitle_text)) {
             SettingTextField(
                 value = draft.subtitleRegex,
@@ -446,6 +440,58 @@ internal fun LazyListScope.mediaSettings(
                     ) { Text(label) }
                 }
             }
+        }
+    }
+    settingsCard(SettingsCategory.SENTENCES, recorder, "sentence-options") {
+        SettingsSection(stringResource(R.string.settings_sentence_options)) {
+            NullableToggle(
+                stringResource(R.string.settings_deduplicate),
+                draft.deduplicate,
+                EngineDefaults.DEDUPLICATE_SENTENCES,
+            ) { onDraftChange(draft.copy(deduplicate = it)) }
+            NullableToggle(
+                stringResource(R.string.settings_i_plus_one),
+                draft.iPlusOne,
+                EngineDefaults.USE_I_PLUS_ONE_FILTER,
+            ) { onDraftChange(draft.copy(iPlusOne = it)) }
+            // No master toggle: each cap is off at 0, which its help line says.
+            NumericField(
+                draft.maxDuration,
+                { onDraftChange(draft.copy(maxDuration = it)) },
+                stringResource(R.string.settings_max_duration),
+                error = validationMessage(draft, SettingsFieldKey.MAX_DURATION),
+                imeAction = ImeAction.Next,
+                placeholder = inheritedDefault(EngineDefaults.MAX_SENTENCE_DURATION_SECONDS),
+            )
+            SupportingText(stringResource(R.string.settings_max_duration_help))
+            NumericField(
+                draft.maxCharacters,
+                { onDraftChange(draft.copy(maxCharacters = it)) },
+                stringResource(R.string.settings_max_characters),
+                integer = true,
+                error = validationMessage(draft, SettingsFieldKey.MAX_CHARACTERS),
+                placeholder = inheritedDefault(EngineDefaults.MAX_SENTENCE_CHARACTERS),
+            )
+            SupportingText(stringResource(R.string.settings_max_characters_help))
+            // Android-only: it gates the Video tab's second subtitle picker and never reaches the
+            // engine snapshot, so it has no engine default to inherit.
+            BooleanSetting(
+                label = stringResource(R.string.settings_secondary_subtitle),
+                checked = draft.secondarySubtitleEnabled,
+                onCheckedChange = { onDraftChange(draft.copy(secondarySubtitleEnabled = it)) },
+            )
+            SupportingText(stringResource(R.string.settings_secondary_subtitle_help))
+            NullableToggle(
+                stringResource(R.string.settings_merge_incomplete_cues),
+                draft.mergeIncompleteCues,
+                EngineDefaults.MERGE_INCOMPLETE_CUES,
+            ) { onDraftChange(draft.copy(mergeIncompleteCues = it)) }
+            SupportingText(stringResource(R.string.settings_merge_incomplete_cues_help))
+            NullableToggle(
+                stringResource(R.string.settings_bold_target),
+                draft.boldTarget,
+                EngineDefaults.BOLD_TARGET_IN_SENTENCE,
+            ) { onDraftChange(draft.copy(boldTarget = it)) }
         }
     }
 }
@@ -929,7 +975,7 @@ private fun LazyListScope.frequencySourcesCard(
     }
 }
 
-private fun LazyListScope.filteringSettings(
+private fun LazyListScope.wordFilterSettings(
     draft: SettingsDraft,
     resources: ResourceManagerState,
     setup: SetupUiState,
@@ -937,63 +983,172 @@ private fun LazyListScope.filteringSettings(
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
 ) {
-    settingsCard(SettingsCategory.FILTERING, recorder, "filtering-options") {
+    // First on the tab: the known-words and word-list deep links count on staying at 3 and 4.
+    wordFilterOptions(
+        draft,
+        resources,
+        setup.availableDeckNames,
+        recorder,
+        callbacks.onDraftChange,
+    )
+    settingsCard(SettingsCategory.WORD_FILTERS, recorder, "known-words-import") {
+        KnownWordsImportCard(
+            state = setup,
+            onImport = callbacks.onImportKnownWords,
+            onConfirmImport = setupViewModel::confirmKnownWordsImport,
+            onDismissImport = setupViewModel::dismissKnownWordsImportPreview,
+            onManage = callbacks.onManageKnownWords,
+            inlineFailure = {
+                ResourceOriginFailure(
+                    setup,
+                    setOf(ResourceFailureOrigin.KNOWN_WORDS),
+                    setupViewModel,
+                    callbacks,
+                )
+            },
+        )
+    }
+    settingsCard(SettingsCategory.WORD_FILTERS, recorder, "word-lists") {
+        WordListImportCard(
+            state = setup,
+            blacklistEnabled = draft.useBlacklist,
+            whitelistEnabled = draft.useWhitelist,
+            onImport = callbacks.onImportWordList,
+            onRemove = setupViewModel::removeWordList,
+            onBlacklistEnabledChange = {
+                callbacks.onDraftChange(draft.copy(useBlacklist = it))
+            },
+            onWhitelistEnabledChange = {
+                callbacks.onDraftChange(draft.copy(useWhitelist = it))
+            },
+            inlineFailure = {
+                ResourceOriginFailure(
+                    setup,
+                    setOf(ResourceFailureOrigin.WORD_LIST),
+                    setupViewModel,
+                    callbacks,
+                )
+            },
+        )
+    }
+    setup.lastLocalImport?.let { imported ->
+        settingsCard(SettingsCategory.WORD_FILTERS, recorder, "filtering-import-result") {
+            LocalImportResultCard(imported)
+        }
+    }
+}
+
+/**
+ * Which words get mined, mirroring desktop's Word Filters page: the frequency band, the known-words
+ * rules and excluded decks, the script filters and the reading threshold.
+ *
+ * Internal rather than private so the instrumented tests can compose the real card.
+ */
+internal fun LazyListScope.wordFilterOptions(
+    draft: SettingsDraft,
+    resources: ResourceManagerState,
+    availableDeckNames: List<String>,
+    recorder: SettingsCardIndexRecorder,
+    onDraftChange: (SettingsDraft) -> Unit,
+) {
+    settingsCard(SettingsCategory.WORD_FILTERS, recorder, "filtering-options") {
         SettingsSection(stringResource(R.string.settings_filtering)) {
+            // Two ends of one filter. Desktop keeps the band ordered by moving the other end when
+            // one is pushed past it; here that happens when the field is left rather than on every
+            // keystroke, or typing 5000 into the maximum would first drag the minimum down to 5.
+            FrequencyBandField(
+                value = draft.minFrequency,
+                onChange = { onDraftChange(draft.copy(minFrequency = it)) },
+                label = stringResource(R.string.settings_min_frequency),
+                error = validationMessage(draft, SettingsFieldKey.MIN_FREQUENCY),
+                placeholderValue = EngineDefaults.MIN_FREQUENCY_RANK,
+                testTag = SettingsCategoryTestTags.MIN_FREQUENCY,
+                onLeave = { onDraftChange(draft.withOrderedFrequencyBand(FrequencyBandEnd.MIN)) },
+            )
+            FrequencyBandField(
+                value = draft.maxFrequency,
+                onChange = { onDraftChange(draft.copy(maxFrequency = it)) },
+                label = stringResource(R.string.settings_max_frequency),
+                error = validationMessage(draft, SettingsFieldKey.MAX_FREQUENCY),
+                placeholderValue = EngineDefaults.MAX_FREQUENCY_RANK,
+                testTag = SettingsCategoryTestTags.MAX_FREQUENCY,
+                onLeave = { onDraftChange(draft.withOrderedFrequencyBand(FrequencyBandEnd.MAX)) },
+            )
+            SupportingText(stringResource(R.string.settings_frequency_band_help))
+            // Only means anything while one end is set, which is when desktop enables it too.
+            NullableToggle(
+                stringResource(R.string.settings_frequency_keep_unranked),
+                draft.frequencyKeepUnranked,
+                EngineDefaults.FREQUENCY_KEEP_UNRANKED,
+                enabled = draft.frequencyBandSet,
+            ) { onDraftChange(draft.copy(frequencyKeepUnranked = it)) }
+            HorizontalDivider()
             NullableToggle(
                 stringResource(R.string.settings_known_words),
                 draft.knownWords,
                 EngineDefaults.USE_KNOWN_WORDS_DATABASE,
-            ) { callbacks.onDraftChange(draft.copy(knownWords = it)) }
+            ) { onDraftChange(draft.copy(knownWords = it)) }
+            NullableToggle(
+                stringResource(R.string.settings_known_words_match_kana_variants),
+                draft.knownWordsMatchKanaVariants,
+                EngineDefaults.KNOWN_WORDS_MATCH_KANA_VARIANTS,
+            ) { onDraftChange(draft.copy(knownWordsMatchKanaVariants = it)) }
+            SupportingText(stringResource(R.string.settings_known_words_match_kana_variants_help))
+            // Desktop keeps the excluded decks with the known-words rules: they decide which
+            // cards count as known.
+            val choices = excludedDeckChoices(availableDeckNames, draft.excludedDecks)
+            CollapsibleSettingGroup(
+                title = stringResource(R.string.settings_excluded_decks),
+                selectedCount = choices.count { it.checked },
+                totalCount = choices.size,
+                // Nothing to collapse, and the only explanation is the error line inside.
+                forceOpen = choices.isEmpty(),
+            ) {
+                if (choices.isEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_no_anki_decks),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    choices.forEach { deck ->
+                        BooleanSetting(
+                            label = deck.name,
+                            detail =
+                                if (deck.discovered) {
+                                    null
+                                } else {
+                                    stringResource(R.string.settings_anki_deck_not_discovered)
+                                },
+                            checked = deck.checked,
+                            onCheckedChange = { checked ->
+                                onDraftChange(
+                                    draft.copy(
+                                        excludedDecks =
+                                            if (checked) {
+                                                (draft.excludedDecks + deck.name).distinct()
+                                            } else {
+                                                draft.excludedDecks - deck.name
+                                            },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
             NullableToggle(
                 stringResource(R.string.settings_exclude_hiragana),
                 draft.hiragana,
                 EngineDefaults.EXCLUDE_HIRAGANA_ONLY,
-            ) { callbacks.onDraftChange(draft.copy(hiragana = it)) }
+            ) { onDraftChange(draft.copy(hiragana = it)) }
             NullableToggle(
                 stringResource(R.string.settings_exclude_katakana),
                 draft.katakana,
                 EngineDefaults.EXCLUDE_KATAKANA_ONLY,
-            ) { callbacks.onDraftChange(draft.copy(katakana = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_bold_target),
-                draft.boldTarget,
-                EngineDefaults.BOLD_TARGET_IN_SENTENCE,
-            ) { callbacks.onDraftChange(draft.copy(boldTarget = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_deduplicate),
-                draft.deduplicate,
-                EngineDefaults.DEDUPLICATE_SENTENCES,
-            ) { callbacks.onDraftChange(draft.copy(deduplicate = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_i_plus_one),
-                draft.iPlusOne,
-                EngineDefaults.USE_I_PLUS_ONE_FILTER,
-            ) { callbacks.onDraftChange(draft.copy(iPlusOne = it)) }
-            NullableToggle(
-                stringResource(R.string.settings_sentence_length),
-                draft.sentenceLength,
-                EngineDefaults.USE_SENTENCE_LENGTH_FILTER,
-            ) { callbacks.onDraftChange(draft.copy(sentenceLength = it)) }
-            NumericField(
-                draft.maxDuration,
-                { callbacks.onDraftChange(draft.copy(maxDuration = it)) },
-                stringResource(R.string.settings_max_duration),
-                error = validationMessage(draft, SettingsFieldKey.MAX_DURATION),
-                imeAction = ImeAction.Next,
-                placeholder = inheritedDefault(EngineDefaults.MAX_SENTENCE_DURATION_SECONDS),
-            )
-            NumericField(
-                draft.maxCharacters,
-                { callbacks.onDraftChange(draft.copy(maxCharacters = it)) },
-                stringResource(R.string.settings_max_characters),
-                integer = true,
-                error = validationMessage(draft, SettingsFieldKey.MAX_CHARACTERS),
-                imeAction = ImeAction.Next,
-                placeholder = inheritedDefault(EngineDefaults.MAX_SENTENCE_CHARACTERS),
-            )
+            ) { onDraftChange(draft.copy(katakana = it)) }
             NumericField(
                 draft.readingOccurrence,
-                { callbacks.onDraftChange(draft.copy(readingOccurrence = it)) },
+                { onDraftChange(draft.copy(readingOccurrence = it)) },
                 stringResource(R.string.settings_reading_occurrence),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.READING_OCCURRENCE),
@@ -1001,17 +1156,8 @@ private fun LazyListScope.filteringSettings(
                 placeholder = inheritedDefault(EngineDefaults.READING_MINIMUM_OCCURRENCE),
             )
             NumericField(
-                draft.maxFrequency,
-                { callbacks.onDraftChange(draft.copy(maxFrequency = it)) },
-                stringResource(R.string.settings_max_frequency),
-                integer = true,
-                error = validationMessage(draft, SettingsFieldKey.MAX_FREQUENCY),
-                imeAction = ImeAction.Next,
-                placeholder = inheritedDefault(EngineDefaults.MAX_FREQUENCY_RANK),
-            )
-            NumericField(
                 draft.workers,
-                { callbacks.onDraftChange(draft.copy(workers = it)) },
+                { onDraftChange(draft.copy(workers = it)) },
                 stringResource(R.string.settings_workers),
                 integer = true,
                 error = validationMessage(draft, SettingsFieldKey.WORKERS),
@@ -1041,7 +1187,7 @@ private fun LazyListScope.filteringSettings(
                                 ),
                             checked = wordset.wordsetId in draft.enabledWordsets,
                             onCheckedChange = { checked ->
-                                callbacks.onDraftChange(
+                                onDraftChange(
                                     draft.copy(
                                         enabledWordsets =
                                             if (checked) {
@@ -1059,51 +1205,43 @@ private fun LazyListScope.filteringSettings(
             }
         }
     }
-    settingsCard(SettingsCategory.FILTERING, recorder, "known-words-import") {
-        KnownWordsImportCard(
-            state = setup,
-            onImport = callbacks.onImportKnownWords,
-            onConfirmImport = setupViewModel::confirmKnownWordsImport,
-            onDismissImport = setupViewModel::dismissKnownWordsImportPreview,
-            onManage = callbacks.onManageKnownWords,
-            inlineFailure = {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.KNOWN_WORDS),
-                    setupViewModel,
-                    callbacks,
-                )
-            },
-        )
-    }
-    settingsCard(SettingsCategory.FILTERING, recorder, "word-lists") {
-        WordListImportCard(
-            state = setup,
-            blacklistEnabled = draft.useBlacklist,
-            whitelistEnabled = draft.useWhitelist,
-            onImport = callbacks.onImportWordList,
-            onRemove = setupViewModel::removeWordList,
-            onBlacklistEnabledChange = {
-                callbacks.onDraftChange(draft.copy(useBlacklist = it))
-            },
-            onWhitelistEnabledChange = {
-                callbacks.onDraftChange(draft.copy(useWhitelist = it))
-            },
-            inlineFailure = {
-                ResourceOriginFailure(
-                    setup,
-                    setOf(ResourceFailureOrigin.WORD_LIST),
-                    setupViewModel,
-                    callbacks,
-                )
-            },
-        )
-    }
-    setup.lastLocalImport?.let { imported ->
-        settingsCard(SettingsCategory.FILTERING, recorder, "filtering-import-result") {
-            LocalImportResultCard(imported)
-        }
-    }
+}
+
+/**
+ * One end of the frequency band. [onLeave] puts the band back in order when the field is left:
+ * focus moving on (IME Next, a tap on another field), or the field leaving the screen while it
+ * still has focus — Back closes the keyboard but keeps focus, so a tab switch after it is a leave
+ * that no focus change reports.
+ */
+@Composable
+private fun FrequencyBandField(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    error: String?,
+    placeholderValue: Int,
+    testTag: String,
+    onLeave: () -> Unit,
+) {
+    var focused by remember { mutableStateOf(false) }
+    val leave by rememberUpdatedState(onLeave)
+    DisposableEffect(Unit) { onDispose { if (focused) leave() } }
+    NumericField(
+        value,
+        onChange,
+        label,
+        integer = true,
+        error = error,
+        imeAction = ImeAction.Next,
+        modifier =
+            Modifier
+                .testTag(testTag)
+                .onFocusChanged { state ->
+                    if (focused && !state.isFocused) leave()
+                    focused = state.isFocused
+                },
+        placeholder = inheritedDefault(placeholderValue),
+    )
 }
 
 private fun LazyListScope.uiSettings(

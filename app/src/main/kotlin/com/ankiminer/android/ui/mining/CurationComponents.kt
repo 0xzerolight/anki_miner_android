@@ -54,6 +54,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -866,6 +867,8 @@ internal fun CurationSentenceChoice(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     selectable: Boolean = true,
+    /** The translation track's line, shown under the sentence; null shows none. */
+    translation: String? = null,
 ) {
     val sentenceDescription =
         if (selectable) {
@@ -873,7 +876,7 @@ internal fun CurationSentenceChoice(
         } else {
             // Nothing to instruct with a single sentence: the row is not a control.
             sentence.sentence
-        }
+        }.let { description -> translation?.let { "$description\n$it" } ?: description }
     val sentenceText =
         remember(sentence.sentence, candidate.surface) {
             highlightMinedForm(sentence.sentence, candidate.surface)
@@ -928,6 +931,14 @@ internal fun CurationSentenceChoice(
                         Text(
                             text = sentence.sentenceFurigana,
                             style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    translation?.let { line ->
+                        Text(
+                            text = line,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontStyle = FontStyle.Italic,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

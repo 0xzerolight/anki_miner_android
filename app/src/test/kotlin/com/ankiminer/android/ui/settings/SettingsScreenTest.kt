@@ -10,7 +10,7 @@ class SettingsScreenTest {
         val jump =
             externalSettingsCategoryJump(
                 currentSearchQuery = "katakana",
-                requestedCategory = SettingsCategory.FILTERING,
+                requestedCategory = SettingsCategory.WORD_FILTERS,
                 requestedItemIndex = 4,
             )
 

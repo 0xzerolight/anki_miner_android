@@ -47,8 +47,8 @@ internal class SettingsCardIndexRecorderTest {
 
         recorder.begin(SettingsCategory.MEDIA)
         recorder.record(SettingsCategory.MEDIA, "media")
-        recorder.begin(SettingsCategory.FILTERING)
-        recorder.record(SettingsCategory.FILTERING, "filtering")
+        recorder.begin(SettingsCategory.WORD_FILTERS)
+        recorder.record(SettingsCategory.WORD_FILTERS, "filtering")
 
         assertEquals(2, recorder.indexOf(SettingsCategory.MEDIA, "media"))
     }

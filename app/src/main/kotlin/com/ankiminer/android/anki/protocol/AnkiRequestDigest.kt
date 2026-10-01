@@ -85,6 +85,17 @@ private class CanonicalRequestWriter {
                 stringField("kind", "knownVocabulary")
                 fieldName("excludedDecks", leadingComma = true)
                 stringArray(scope.excludedDecks)
+                fieldName("fieldOrdinals", leadingComma = true)
+                ascii("[")
+                scope.fieldOrdinals.forEachIndexed { index, entry ->
+                    if (index > 0) ascii(",")
+                    ascii("{")
+                    longField("modelId", entry.modelId)
+                    fieldName("ordinals", leadingComma = true)
+                    intArray(entry.ordinals)
+                    ascii("}")
+                }
+                ascii("]")
                 fieldName("cursor", leadingComma = true)
                 if (scope.cursor == null) {
                     ascii("null")
@@ -95,6 +106,8 @@ private class CanonicalRequestWriter {
                     ascii("}")
                 }
             }
+
+            NoteTypesScope -> stringField("kind", "noteTypes")
 
             is DuplicateScanScope -> {
                 stringField("kind", "duplicates")

@@ -89,8 +89,8 @@ private fun externalSettingsTargetCardKey(
         SettingsCategory.RESOURCES to 4 -> "audio-sources"
         SettingsCategory.RESOURCES to 5 -> "frequency-sources"
         SettingsCategory.RESOURCES to 6 -> "dictionary-lookup"
-        SettingsCategory.FILTERING to 3 -> "known-words-import"
-        SettingsCategory.FILTERING to 4 -> "word-lists"
+        SettingsCategory.WORD_FILTERS to 3 -> "known-words-import"
+        SettingsCategory.WORD_FILTERS to 4 -> "word-lists"
         SettingsCategory.DIAGNOSTICS to 3 -> "unidic"
         else -> null
     }

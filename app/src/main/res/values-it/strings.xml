@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Scostamento temporale dei sottotitoli (secondi)</string>
     <string name="audio_subtitle_offset_label">Scostamento temporale della trascrizione (secondi)</string>
     <string name="video_subtitle_offset_placeholder">Usa il valore predefinito corrente (%1$s secondi)</string>
+    <string name="video_secondary_subtitle_label">Sottotitoli di traduzione</string>
+    <string name="video_secondary_subtitle_offset_label">Scostamento temporale della traduzione (millisecondi)</string>
+    <string name="video_secondary_subtitle_offset_error">Inserisci un numero intero da −300000 a 300000</string>
     <string name="timing_preview_test_action">Prova temporizzazione</string>
     <string name="timing_preview_title">Prova temporizzazione dei sottotitoli</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Nessun campo è associato all\'audio della parola. Associa un campo “WordAudio” o le carte non avranno pronuncia.</string>
     <string name="audio_pack_unusable_warning">Pacchetto audio inutilizzabile saltato. Reimportalo in Impostazioni → Risorse.</string>
     <string name="subtitle_file_error">Accesso perso. Scegli di nuovo.</string>
+    <string name="secondary_subtitle_file_error">Sottotitoli di traduzione: accesso perso. Scegli di nuovo.</string>
     <string name="dismiss_error">Ignora errore</string>
     <string name="start_mining">Estrai</string>
     <string name="starting_title">Preparazione dell\'esecuzione di mining</string>
@@ -650,7 +654,7 @@
     <string name="settings_subtitle_preset_speaker">Prefisso del parlante</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Se il motore rifiuta questo pattern, il filtro viene ignorato.</string>
-    <string name="settings_filtering">Filtri</string>
+    <string name="settings_filtering">Filtri delle parole</string>
     <string name="settings_search">Cerca impostazioni</string>
     <string name="settings_search_no_results">Nessuna impostazione corrisponde.</string>
     <string name="settings_search_clear">Cancella ricerca</string>
@@ -660,12 +664,26 @@
     <string name="settings_bold_target">Parola di destinazione in grassetto nella frase</string>
     <string name="settings_deduplicate">Deduplica le frasi</string>
     <string name="settings_i_plus_one">Usa il filtro i+1</string>
-    <string name="settings_sentence_length">Limita la lunghezza delle frasi</string>
-    <string name="settings_max_duration">Durata massima della frase (0 = illimitata)</string>
-    <string name="settings_max_characters">Numero massimo di caratteri della frase (0 = illimitato)</string>
+    <string name="settings_max_duration">Durata massima della frase (secondi)</string>
+    <string name="settings_max_characters">Numero massimo di caratteri della frase</string>
     <string name="settings_reading_occurrence">Occorrenze minime della lettura</string>
-    <string name="settings_max_frequency">Posizione massima nella classifica di frequenza (0 = illimitata)</string>
+    <string name="settings_max_frequency">Posizione massima nella classifica di frequenza</string>
     <string name="settings_workers">Processi multimediali paralleli (1–20)</string>
+    <string name="settings_min_frequency">Posizione minima nella classifica di frequenza</string>
+    <string name="settings_frequency_band_help">Estrai solo le parole la cui posizione in classifica rientra in questa fascia. La posizione 1 è la parola più comune. 0 lascia aperto quell\'estremo.</string>
+    <string name="settings_frequency_keep_unranked">Includi le parole assenti dall\'elenco di frequenza</string>
+    <string name="settings_known_words_match_kana_variants">Considera come conosciute le grafie in kana delle parole conosciute</string>
+    <string name="settings_known_words_match_kana_variants_help">Se un sottotitolo scrive una parola in kana (es. うなずく) e la forma di dizionario in kanji (頷く) è già nella tua collezione o nell\'elenco delle parole conosciute, la parola viene saltata invece di creare una seconda carta. Le grafie in kanji non vengono mai unite in questo modo.</string>
+    <string name="settings_card_creation">Creazione delle carte</string>
+    <string name="settings_strict_card_order">Crea le carte in ordine di comparsa</string>
+    <string name="settings_strict_card_order_help">Aggiunge le carte ad Anki nell\'ordine in cui le parole compaiono per la prima volta. Se questa opzione è disattivata e “Estrai sempre le parole della lista bianca” è attiva, le parole della lista bianca vengono per prime.</string>
+    <string name="settings_sentence_options">Opzioni delle frasi</string>
+    <string name="settings_max_duration_help">Scarta le carte il cui audio della frase di esempio supera questo numero di secondi. Imposta 0 per nessun limite.</string>
+    <string name="settings_max_characters_help">Scarta le carte il cui testo della frase supera questo numero di caratteri. Imposta 0 per nessun limite.</string>
+    <string name="settings_secondary_subtitle">Sottotitoli secondari</string>
+    <string name="settings_secondary_subtitle_help">Aggiunge alla scheda Video un selettore per una traccia di sottotitoli di traduzione. Quando il campo “Sentence translation” è mappato in Carte e Anki, la riga corrispondente va sulla carta.</string>
+    <string name="settings_merge_incomplete_cues">Estrai frasi complete su più righe dei sottotitoli</string>
+    <string name="settings_merge_incomplete_cues_help">Unisce le righe di sottotitoli adiacenti quando una riga non termina una frase, così la carta riporta la frase intera invece di un frammento. Le fonti di lettura non hanno temporizzazione dei sottotitoli e ignorano questa opzione.</string>
     <string name="settings_no_dictionaries">Nessun dizionario installato.</string>
     <string name="settings_no_frequency_sources">Nessuna fonte di frequenza installata.</string>
     <string name="settings_no_audio_packs">Nessun pacchetto audio installato.</string>
@@ -683,7 +701,7 @@
     <string name="resource_panel_dictionaries_explanation">Provati dall\'alto verso il basso; vince il primo dizionario con una voce.</string>
     <string name="resource_panel_pitch_heading">Sorgenti attive di accento tonale</string>
     <string name="resource_panel_pitch_explanation">Provate dall\'alto verso il basso; vince la prima sorgente con una voce di accento tonale.</string>
-    <string name="resource_panel_audio_heading">Sorgenti audio attive</string>
+    <string name="resource_panel_audio_heading">Audio delle parole</string>
     <string name="resource_panel_audio_explanation">Provate dall\'alto verso il basso; vince la prima sorgente con audio.</string>
     <string name="resource_panel_frequency_heading">Sorgenti di frequenza attive</string>
     <string name="resource_panel_frequency_explanation">Il rango più basso filtra; la media armonica ordina. L\'ordine imposta solo l\'elenco delle sorgenti della carta.</string>
@@ -772,12 +790,13 @@
     <string name="anki_setup_schedule_failed">Impossibile pianificare la configurazione di Anki</string>
     <string name="notices_title">Note su terze parti</string>
     <string name="notices_documents_heading">Documenti delle note inclusi</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Carte e Anki</string>
     <string name="b3_settings_category_media">Contenuti multimediali</string>
     <string name="b3_settings_category_resources">Risorse</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frequenza</string>
-    <string name="b3_settings_category_filtering">Filtri</string>
+    <string name="b3_settings_category_word_filters">Filtri delle parole</string>
+    <string name="b3_settings_category_sentences">Frasi</string>
     <string name="b3_settings_category_ui">Interfaccia</string>
     <string name="b3_settings_category_diagnostics">Diagnostica</string>
     <string name="b3_settings_save_pending">Modifiche in sospeso</string>

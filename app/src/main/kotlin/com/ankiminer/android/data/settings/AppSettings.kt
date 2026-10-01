@@ -63,8 +63,8 @@ data class ResourceChainSelection(
  * tags stay explicit because an empty string means no tags, and the Android-owned Anki model
  * contract is always emitted explicitly by the snapshot mapper.
  *
- * [deduplicateSentences] is the one deliberate exception: Android defaults it off while the desktop
- * engine defaults it on. See the field for why.
+ * [deduplicateSentences] is the one deliberate exception: it is always stored and emitted as an
+ * explicit boolean rather than null. See the field for why.
  *
  * Defaults here are NOT the defaults the app reads. [AppSettingsRepository] names every constructor
  * parameter and supplies each value from `decoder.read(key, <literal>, …)`, which returns that
@@ -131,18 +131,34 @@ data class AppSettings(
     val excludeKatakanaOnly: Boolean? = null,
     val boldTargetInSentence: Boolean? = null,
     /**
-     * Off by default on Android, against the desktop engine's `deduplicate_sentences = True`.
-     * The filter keeps only the first word per sentence and runs BEFORE curation, so on a phone —
-     * where curation is the whole interaction — it silently withholds candidates the user never
-     * sees. Keep in sync with the decode fallback in [AppSettingsRepository].
+     * Off by default. Android turned it off while the desktop engine still defaulted
+     * `deduplicate_sentences` to `True`; the engine has since flipped to `False` too. The filter
+     * keeps only the first word per sentence and runs BEFORE curation, so on a phone — where
+     * curation is the whole interaction — it silently withholds candidates the user never sees.
+     * Stored and emitted as an explicit value, never null, so the engine default does not decide
+     * it. Keep in sync with the decode fallback in [AppSettingsRepository].
      */
     val deduplicateSentences: Boolean? = false,
     val useIPlusOneFilter: Boolean? = null,
-    val useSentenceLengthFilter: Boolean? = null,
+    /** Either cap above zero turns the sentence-length filter on; there is no separate toggle. */
     val maxSentenceDurationSeconds: Double? = null,
     val maxSentenceCharacters: Int? = null,
     val readingMinimumOccurrence: Int? = null,
     val maxFrequencyRank: Int? = null,
+    /**
+     * The common end of the frequency band, [maxFrequencyRank] the rare end; zero leaves an end
+     * open. Neither the engine nor the bridge orders the two, so the settings UI has to.
+     */
+    val minFrequencyRank: Int? = null,
+    val frequencyKeepUnranked: Boolean? = null,
+    val knownWordsMatchKanaVariants: Boolean? = null,
+    val strictCardOrder: Boolean? = null,
+    val mergeIncompleteCues: Boolean? = null,
+    /**
+     * Shows the Video tab's second subtitle picker. Kotlin-only: the engine never reads its own
+     * `secondary_subtitle_enabled`, so the snapshot mapper never emits it.
+     */
+    val secondarySubtitleEnabled: Boolean = false,
     val pitchCategoryFormat: PitchCategoryFormat? = null,
     val maxParallelWorkers: Int? = null,
     val dictionarySources: List<ResourceChainSelection> = emptyList(),
@@ -178,11 +194,16 @@ data class AppSettings(
             boldTargetInSentence = null,
             deduplicateSentences = false,
             useIPlusOneFilter = null,
-            useSentenceLengthFilter = null,
             maxSentenceDurationSeconds = null,
             maxSentenceCharacters = null,
             readingMinimumOccurrence = null,
             maxFrequencyRank = null,
+            minFrequencyRank = null,
+            frequencyKeepUnranked = null,
+            knownWordsMatchKanaVariants = null,
+            strictCardOrder = null,
+            mergeIncompleteCues = null,
+            secondarySubtitleEnabled = false,
             pitchCategoryFormat = null,
             maxParallelWorkers = null,
             readingTtsEnabled = false,
@@ -356,6 +377,7 @@ object AppSettingsValidator {
             nonNegative("Maximum sentence characters", it.maxSentenceCharacters)
             positive("Reading minimum occurrence", it.readingMinimumOccurrence)
             nonNegative("Maximum frequency rank", it.maxFrequencyRank)
+            nonNegative("Minimum frequency rank", it.minFrequencyRank)
             it.maxParallelWorkers?.let { workers ->
                 if (workers !in 1..20) {
                     invalid(
@@ -728,13 +750,20 @@ internal object EngineSettingsSnapshotMapper {
         settings.boldTargetInSentence?.let { values["bold_target_in_sentence"] = bool(it) }
         settings.deduplicateSentences?.let { values["deduplicate_sentences"] = bool(it) }
         settings.useIPlusOneFilter?.let { values["use_i_plus_one_filter"] = bool(it) }
-        settings.useSentenceLengthFilter?.let { values["use_sentence_length_filter"] = bool(it) }
         settings.maxSentenceDurationSeconds?.let {
             values["max_sentence_duration_seconds"] = decimal(it)
         }
         settings.maxSentenceCharacters?.let { values["max_sentence_chars"] = integer(it) }
         settings.readingMinimumOccurrence?.let { values["reading_min_occurrence"] = integer(it) }
         settings.maxFrequencyRank?.let { values["max_frequency_rank"] = integer(it) }
+        settings.minFrequencyRank?.let { values["min_frequency_rank"] = integer(it) }
+        settings.frequencyKeepUnranked?.let { values["frequency_keep_unranked"] = bool(it) }
+        settings.knownWordsMatchKanaVariants?.let {
+            values["known_words_match_kana_variants"] = bool(it)
+        }
+        settings.strictCardOrder?.let { values["strict_card_order"] = bool(it) }
+        settings.mergeIncompleteCues?.let { values["merge_incomplete_cues"] = bool(it) }
+        // secondarySubtitleEnabled is deliberately absent: it only gates the Video tab's picker.
         settings.pitchCategoryFormat?.let { values["pitch_category_format"] = text(it.wireValue) }
         settings.maxParallelWorkers?.let { values["max_parallel_workers"] = integer(it) }
         values["excluded_wordsets"] =
