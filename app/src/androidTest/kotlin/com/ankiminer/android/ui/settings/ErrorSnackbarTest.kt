@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -85,5 +86,39 @@ class ErrorSnackbarTest {
             assertEquals(1, viewed)
             assertNotNull(current)
         }
+    }
+
+    @Test
+    fun linkedSnackbarIsNotShownAgainAfterRecreation() {
+        var message by mutableStateOf("Pitch import failed")
+        var suppressed by mutableStateOf(true)
+        val restorationTester = StateRestorationTester(composeRule)
+        restorationTester.setContent {
+            val hostState = remember { SnackbarHostState() }
+            AnkiMinerTheme {
+                MessageSnackbarEffect(
+                    message = message,
+                    hostState = hostState,
+                    actionLabel = "View",
+                    suppressed = suppressed,
+                )
+                Scaffold(snackbarHost = { SnackbarHost(hostState) }) { padding ->
+                    Box(Modifier.fillMaxSize().padding(padding)) {}
+                }
+            }
+        }
+
+        // Seen in place (the user is on the failure's own tab): no snackbar, and none on leaving it.
+        composeRule.onNodeWithText("Pitch import failed").assertDoesNotExist()
+        composeRule.runOnIdle { suppressed = false }
+        composeRule.onNodeWithText("Pitch import failed").assertDoesNotExist()
+
+        // A new failure shows once, and a recreation does not show it again.
+        composeRule.runOnIdle { message = "Dictionary import failed" }
+        composeRule.onNodeWithText("Dictionary import failed").assertIsDisplayed()
+
+        restorationTester.emulateSavedInstanceStateRestore()
+
+        composeRule.onNodeWithText("Dictionary import failed").assertDoesNotExist()
     }
 }

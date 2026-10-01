@@ -1,6 +1,7 @@
 package com.ankiminer.android.ui.settings
 
 import android.content.Context
+import android.text.format.Formatter
 import android.view.MotionEvent
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -26,8 +28,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.InstalledDictionary
+import com.ankiminer.android.data.resources.RequiredDownloads
+import com.ankiminer.android.data.resources.requiredDownloads
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.accentTextColor
 import com.ankiminer.android.vm.SetupUiState
 
@@ -44,25 +48,40 @@ internal fun RecommendedResourcesCard(
     state: SetupUiState,
     onDownload: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
+    uniDicMissing: Boolean = false,
+    title: String = stringResource(R.string.recommended_resources_title),
+    statusOnly: Boolean = false,
+    emphasized: Boolean = false,
 ) {
     val plan = state.recommendedPlan
+    val installed = !uniDicMissing && plan.isSatisfied
     ResourceCard(
-        title = stringResource(R.string.recommended_resources_title),
-        description = stringResource(R.string.recommended_resources_description),
-        installed = plan.isSatisfied,
+        title = title,
+        description = requiredDownloadsSummary(requiredDownloads(plan, uniDicMissing)),
+        installed = installed,
         busy = state.busy,
         action = onDownload,
-        actionEnabled = plan.isActionable,
+        actionEnabled = uniDicMissing || plan.isActionable,
         actionLabel =
             stringResource(
-                if (plan.isSatisfied) {
+                if (installed) {
                     R.string.recommended_resources_installed_action
                 } else {
                     R.string.recommended_resources_download
                 },
             ),
         inlineFailure = inlineFailure,
+        statusOnly = statusOnly,
+        emphasized = emphasized,
     )
+}
+
+/** "JMdict (English) 2026-07-17, JPDB v2.2 Kana Frequency · 24 MB"; empty when nothing is pending. */
+@Composable
+internal fun requiredDownloadsSummary(downloads: RequiredDownloads): String {
+    if (downloads.names.isEmpty()) return ""
+    val size = Formatter.formatShortFileSize(LocalContext.current, downloads.bytes)
+    return downloads.names.joinToString(", ") + " · " + size
 }
 
 /**
@@ -110,7 +129,7 @@ internal fun DictionaryLookupCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            PrimaryActionButton(
+            SecondaryActionButton(
                 onClick = onLookup,
                 enabled = state.lookupSlotId != null && state.lookupTerm.isNotBlank() && !state.busy,
                 modifier = Modifier.fillMaxWidth(),

@@ -1,5 +1,5 @@
 path	lines	reason
-app/src/main/kotlin/com/ankiminer/android/MainActivity.kt	365,367,384,386,410,412	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/MainActivity.kt	406,408,425,427,451,453	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/protocol/AnkiValidators.kt	121	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt	187	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiMediaStaging.kt	271,276,345,416,443,457	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -15,7 +15,7 @@ app/src/main/kotlin/com/ankiminer/android/anki/provider/JournalBackedTargetRecov
 app/src/main/kotlin/com/ankiminer/android/anki/provider/ProviderContract.kt	275	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/ProviderMutationContract.kt	192,212,279,349	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/TargetSnapshots.kt	330,349,367	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/data/anki/AnkiSetupManager.kt	149,200,317,331	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/data/anki/AnkiSetupManager.kt	150,204,321,335	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt	677	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettingsRepository.kt	148,559,568,623,626	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/DiagnosticsSettingsRepository.kt	53,121,128	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -44,4 +44,4 @@ app/src/main/kotlin/com/ankiminer/android/vm/DiagnosticsViewModel.kt	71,95	Exist
 app/src/main/kotlin/com/ankiminer/android/vm/MediaMiningViewModel.kt	1460,1482	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	1103,1266	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	1297,1385	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	448,595,1676	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.
+app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	460,607,1710	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.

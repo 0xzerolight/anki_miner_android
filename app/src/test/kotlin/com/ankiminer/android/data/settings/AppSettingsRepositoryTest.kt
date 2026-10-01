@@ -927,5 +927,20 @@ class AppSettingsRepositoryTest {
             }
     }
 
+    @Test
+    fun `a fresh store follows the system theme and a stored choice survives`() {
+        assertEquals(
+            ThemeMode.SYSTEM,
+            DataStoreAppSettingsRepository.decodePreferences(preferencesOf()).theme,
+        )
+        // Existing users keep their look: every save writes theme_mode.
+        assertEquals(
+            ThemeMode.DARK,
+            DataStoreAppSettingsRepository.decodePreferences(
+                preferencesOf(stringPreferencesKey("theme_mode") to "dark"),
+            ).theme,
+        )
+    }
+
     private object SimulatedInterruption : RuntimeException()
 }

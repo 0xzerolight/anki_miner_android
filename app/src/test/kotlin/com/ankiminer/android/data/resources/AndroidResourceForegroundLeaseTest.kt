@@ -48,6 +48,23 @@ class AndroidResourceForegroundLeaseTest {
         assertEquals(2, starts)
     }
 
+    @Test
+    fun anAdmittedStartIsReportedOnceAndUpdatesAreNot() {
+        var reported = 0
+        val lease =
+            AndroidResourceForegroundLease(
+                startService = {},
+                stopService = {},
+                elapsedMillis = { 0L },
+                onStarted = { reported += 1 },
+            )
+
+        lease.start(progress(ResourceOperationPhase.PREPARING))
+        lease.update(progress(ResourceOperationPhase.IMPORTING))
+
+        assertEquals(1, reported)
+    }
+
     private fun progress(phase: ResourceOperationPhase) =
         ResourceOperationProgress(
             operationId = "resource_fixture",

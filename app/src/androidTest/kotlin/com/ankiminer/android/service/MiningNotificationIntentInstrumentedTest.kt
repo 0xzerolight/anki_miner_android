@@ -2,6 +2,7 @@ package com.ankiminer.android.service
 
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.ankiminer.android.MainActivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -26,5 +27,14 @@ class MiningNotificationIntentInstrumentedTest {
         )
         assertNull(MiningForegroundService.consumeOpenedRunId(retainedActivityIntent))
         assertNull(MiningForegroundService.openedRunId(retainedActivityIntent))
+    }
+
+    @Test
+    fun resourceImportNotificationOpensTheAppWithoutARunPayload() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val intent = ResourceImportForegroundService.openAppIntent(context)
+
+        assertEquals(MainActivity::class.java.name, intent.component?.className)
+        assertNull(MiningForegroundService.consumeOpenedRunId(intent))
     }
 }

@@ -131,3 +131,22 @@ internal fun recommendedResourceTitleRes(resource: CatalogResource): Int {
         is LanguageDataCatalogResource -> R.string.language_data_resource_title
     }
 }
+
+/** What one Download press still fetches, by catalog name and archive size. */
+internal data class RequiredDownloads(
+    val names: List<String>,
+    val bytes: Long,
+)
+
+/**
+ * The tokenizer when this language needs it and it is missing, then the recommended set's pending
+ * members. Built from the plan, so a Thai learner reads about Thai Wiktionary, not JMdict.
+ */
+internal fun requiredDownloads(
+    plan: RecommendedResourcePlan,
+    uniDicMissing: Boolean,
+    uniDic: UniDicCatalogResource = FrozenResourceCatalog.value.unidic,
+): RequiredDownloads {
+    val resources = listOfNotNull(uniDic.takeIf { uniDicMissing }) + plan.pending.map { it.resource }
+    return RequiredDownloads(resources.map { it.displayName }, resources.sumOf { it.archive.sizeBytes })
+}

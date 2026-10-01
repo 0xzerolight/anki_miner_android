@@ -73,7 +73,7 @@ data class ResourceChainSelection(
 data class AppSettings(
     /** The onboarding wizard was offered once and completed or skipped. */
     val setupWizardSeen: Boolean = false,
-    val theme: ThemeMode = ThemeMode.DARK,
+    val theme: ThemeMode = ThemeMode.SYSTEM,
     /** Palette keys from the generated theme table; see `ui/theme/ThemePalette.kt`. */
     val lightThemeKey: String = "light",
     val darkThemeKey: String = "dark",

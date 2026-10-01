@@ -1,5 +1,7 @@
 package com.ankiminer.android.ui.settings
 
+import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -7,6 +9,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class KnownWordsManagerScreenTest {
+    @Test
+    fun anInvalidStoreIsNotDescribedAsEmpty() {
+        // The bridge reports a store that fails its schema check with every count at zero.
+        assertEquals(
+            R.string.known_words_manager_empty,
+            knownWordsEmptyMessage(KnownWordsInventory(0, 0, 0, 0, schemaOk = true)),
+        )
+        assertEquals(
+            R.string.known_words_inventory_invalid,
+            knownWordsEmptyMessage(KnownWordsInventory(0, 0, 0, 0, schemaOk = false)),
+        )
+    }
+
     @Test
     fun nullPageIsLoadingWhileACompletedEmptyPageIsEmpty() {
         val loading =

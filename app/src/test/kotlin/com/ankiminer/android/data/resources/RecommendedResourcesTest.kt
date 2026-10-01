@@ -150,6 +150,17 @@ class RecommendedResourcesTest {
         assertTrue(state.recommendedPlan("xx").items.isEmpty())
     }
 
+    @Test
+    fun requiredDownloadsNameOnlyWhatStillDownloadsAndAddTheTokenizerWhenMissing() {
+        val plan = plan(pitchSources = listOf(pitch(pitchId)))
+        val pending = plan.pending.map { it.resource }
+
+        assertEquals(RequiredDownloads(pending.map { it.displayName }, pending.sumOf { it.archive.sizeBytes }), requiredDownloads(plan, uniDicMissing = false))
+        val withTokenizer = requiredDownloads(plan, uniDicMissing = true)
+        assertEquals(catalog.unidic.displayName, withTokenizer.names.first())
+        assertEquals(pending.sumOf { it.archive.sizeBytes } + catalog.unidic.archive.sizeBytes, withTokenizer.bytes)
+    }
+
     private fun plan(
         dictionaries: List<InstalledDictionary> = emptyList(),
         frequencySources: List<InstalledFrequencySource> = emptyList(),

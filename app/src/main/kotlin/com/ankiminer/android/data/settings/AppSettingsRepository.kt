@@ -374,7 +374,7 @@ class DataStoreAppSettingsRepository internal constructor(
                 AppSettings(
                     setupWizardSeen = decoder.read(Keys.setupWizardSeen, false, { it }),
                     theme =
-                        decoder.read(Keys.themeMode, ThemeMode.DARK, { stored ->
+                        decoder.read(Keys.themeMode, ThemeMode.SYSTEM, { stored ->
                             ThemeMode.entries.singleOrNull { it.wireValue == stored }
                                 ?: invalidStoredPreference()
                         }),

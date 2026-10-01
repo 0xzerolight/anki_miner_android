@@ -85,8 +85,7 @@ class SettingsScreenModelTest {
         assertEquals(5, settingsCardIndexFor(ResourceFailureOrigin.FREQUENCY))
         assertEquals(6, settingsCardIndexFor(ResourceFailureOrigin.DICTIONARY_LOOKUP))
         assertEquals(3, settingsCardIndexFor(ResourceFailureOrigin.KNOWN_WORDS))
-        // Word filters: word-lists sits after known-words-import, ahead of the conditional
-        // filtering-import-result card.
+        // Word filters: word-lists sits after known-words-import.
         assertEquals(4, settingsCardIndexFor(ResourceFailureOrigin.WORD_LIST))
         assertEquals(3, settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET))
     }

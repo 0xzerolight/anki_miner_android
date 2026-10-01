@@ -43,6 +43,25 @@ internal object ThemeSlots {
     const val TABLE_SELECTED_TEXT = "table-selected-text"
 }
 
+/** How a run of palettes is headed in the theme picker. */
+internal enum class ThemePaletteGroupKind {
+    /** The app's own Light and Dark: listed first, with no header. */
+    APP_DEFAULTS,
+
+    /** One upstream theme family, headed by its name. */
+    FAMILY,
+
+    /** Every palette with no family, under one "Other" header. */
+    OTHER,
+}
+
+internal data class ThemePaletteGroup(
+    val kind: ThemePaletteGroupKind,
+    /** The family name for [ThemePaletteGroupKind.FAMILY]; null otherwise. */
+    val family: String?,
+    val palettes: List<ThemePalette>,
+)
+
 internal object ThemePalettes {
     val all: List<ThemePalette> = GeneratedThemePalettes.all
     val byKey: Map<String, ThemePalette> = all.associateBy { it.key }
@@ -52,23 +71,26 @@ internal object ThemePalettes {
     fun requireByKey(key: String): ThemePalette =
         byKey[key] ?: error("Unknown theme key: $key")
 
-    fun grouped(): List<Pair<String?, List<ThemePalette>>> {
-        val groups = mutableListOf<Pair<String?, MutableList<ThemePalette>>>()
-        val familyGroups = mutableMapOf<String, MutableList<ThemePalette>>()
-
+    fun grouped(): List<ThemePaletteGroup> {
+        val defaults = listOf(Light, Dark)
+        val families = linkedMapOf<String, MutableList<ThemePalette>>()
+        val others = mutableListOf<ThemePalette>()
         for (palette in all) {
+            if (palette in defaults) continue
             val family = palette.family
             if (family == null) {
-                groups += null to mutableListOf(palette)
+                others += palette
             } else {
-                val group =
-                    familyGroups.getOrPut(family) {
-                        mutableListOf<ThemePalette>().also { groups += family to it }
-                    }
-                group += palette
+                families.getOrPut(family) { mutableListOf() } += palette
             }
         }
-        return groups.map { (family, palettes) -> family to palettes.toList() }
+        return buildList {
+            add(ThemePaletteGroup(ThemePaletteGroupKind.APP_DEFAULTS, null, defaults))
+            families.forEach { (family, palettes) ->
+                add(ThemePaletteGroup(ThemePaletteGroupKind.FAMILY, family, palettes))
+            }
+            if (others.isNotEmpty()) add(ThemePaletteGroup(ThemePaletteGroupKind.OTHER, null, others))
+        }
     }
 }
 

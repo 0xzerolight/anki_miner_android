@@ -11,6 +11,9 @@ internal object AnkiFieldKeys {
     /** The word/expression key. By contract it maps to the note type's FIRST field (dedup key). */
     const val WORD = "word"
 
+    /** Where a stock two-field note type's second field goes on a fresh pick. */
+    const val DEFINITION = "definition"
+
     /** All 19 logical keys the engine can populate, in a stable order for UI. */
     val ALL: List<String> =
         listOf(

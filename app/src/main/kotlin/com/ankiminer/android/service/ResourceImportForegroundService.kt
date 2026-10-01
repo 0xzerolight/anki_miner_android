@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -12,6 +13,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.ankiminer.android.AnkiMinerApplication
+import com.ankiminer.android.MainActivity
 import com.ankiminer.android.R
 
 internal fun handleResourceImportStopCommand(
@@ -155,11 +157,20 @@ class ResourceImportForegroundService : Service() {
             .setSmallIcon(android.R.drawable.stat_sys_download)
             .setContentTitle(label)
             .setContentText(getString(R.string.resource_import_notification_working))
+            .setContentIntent(openAppPendingIntent())
             .setOngoing(true)
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setProgress(total, completed, total <= 0)
             .build()
+
+    private fun openAppPendingIntent(): PendingIntent =
+        PendingIntent.getActivity(
+            this,
+            OPEN_APP_REQUEST_CODE,
+            openAppIntent(this),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
 
     companion object {
         private const val ACTION_START = "com.ankiminer.android.action.RESOURCE_IMPORT_START"
@@ -170,6 +181,13 @@ class ResourceImportForegroundService : Service() {
         private const val NOTIFICATION_CHANNEL_ID = "resource-import"
         private const val NOTIFICATION_ID = 0x52494D50
         private const val WAKE_LOCK_TAG = "resource-import"
+        private const val OPEN_APP_REQUEST_CODE = 0x52494D51
+
+        /** Brings the running app forward; an import has no run to route to. */
+        internal fun openAppIntent(context: Context): Intent =
+            Intent(context, MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            }
 
         fun startIntent(
             context: Context,

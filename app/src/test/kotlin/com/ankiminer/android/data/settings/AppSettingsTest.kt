@@ -21,8 +21,8 @@ class AppSettingsTest {
     }
 
     @Test
-    fun themeDefaultsToDarkAndWireCodecRoundTripsAllPersistedModes() {
-        assertEquals(ThemeMode.DARK, AppSettings().theme)
+    fun themeDefaultsToSystemAndWireCodecRoundTripsAllPersistedModes() {
+        assertEquals(ThemeMode.SYSTEM, AppSettings().theme)
         assertFalse(AppSettings().setupWizardSeen)
         ThemeMode.entries.forEach { mode ->
             assertEquals(mode, ThemeMode.fromWire(mode.wireValue))

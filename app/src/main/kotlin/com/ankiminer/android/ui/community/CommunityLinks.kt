@@ -1,6 +1,9 @@
 package com.ankiminer.android.ui.community
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -12,9 +15,10 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.links.AppLinks
-import com.ankiminer.android.ui.theme.AdaptivePairedActions
+import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 
 internal object CommunityLinksTestTags {
@@ -30,33 +34,41 @@ internal object CommunityLinksTestTags {
 @Composable
 internal fun CommunityLinks(modifier: Modifier = Modifier) {
     val uriHandler = LocalUriHandler.current
-    AdaptivePairedActions(
-        modifier = modifier,
-        first = { buttonModifier ->
-            SecondaryActionButton(
-                onClick = { uriHandler.openUri(AppLinks.REPOSITORY) },
-                modifier = buttonModifier.testTag(CommunityLinksTestTags.STAR),
-            ) {
-                Text(stringResource(R.string.community_star_project))
-            }
-        },
-        second = { buttonModifier ->
-            SecondaryActionButton(
-                onClick = { uriHandler.openUri(AppLinks.DISCORD_INVITE) },
-                modifier = buttonModifier.testTag(CommunityLinksTestTags.DISCORD),
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_discord),
-                    // Decorative: the label already names the destination.
-                    contentDescription = null,
-                    // Brand blurple in both themes. Tinting it to the button's content colour
-                    // would turn a recognised mark into a generic glyph.
-                    tint = Color.Unspecified,
-                    modifier = Modifier.size(ButtonDefaults.IconSize),
-                )
-                Spacer(Modifier.size(ButtonDefaults.IconSpacing))
-                Text(stringResource(R.string.community_join_discord))
-            }
-        },
-    )
+    // One row at every width and text size (owner decision D10): the pair keeps its header place,
+    // but stacked it cost two full-width rows on small phones and wrapped to uneven heights.
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        SecondaryActionButton(
+            onClick = { uriHandler.openUri(AppLinks.REPOSITORY) },
+            modifier = Modifier.weight(1f).testTag(CommunityLinksTestTags.STAR),
+        ) {
+            Text(
+                stringResource(R.string.community_star_project),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        SecondaryActionButton(
+            onClick = { uriHandler.openUri(AppLinks.DISCORD_INVITE) },
+            modifier = Modifier.weight(1f).testTag(CommunityLinksTestTags.DISCORD),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_discord),
+                // Decorative: the label already names the destination.
+                contentDescription = null,
+                // Brand blurple in both themes. Tinting it to the button's content colour
+                // would turn a recognised mark into a generic glyph.
+                tint = Color.Unspecified,
+                modifier = Modifier.size(ButtonDefaults.IconSize),
+            )
+            Spacer(Modifier.size(ButtonDefaults.IconSpacing))
+            Text(
+                stringResource(R.string.community_join_discord),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }

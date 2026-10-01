@@ -3,7 +3,6 @@ package com.ankiminer.android.ui.theme
 import androidx.compose.ui.graphics.Color
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThemePaletteTableTest {
@@ -31,24 +30,21 @@ class ThemePaletteTableTest {
     }
 
     @Test
-    fun `grouping keeps families together and standalone themes separate`() {
+    fun `grouping lists the app defaults first, then families, then the rest under Other`() {
         val groups = ThemePalettes.grouped()
 
-        assertEquals(29, groups.sumOf { it.second.size })
-        val catppuccin = groups.single { it.first == "Catppuccin" }
+        assertEquals(29, groups.sumOf { it.palettes.size })
+        assertEquals(ThemePaletteGroupKind.APP_DEFAULTS, groups.first().kind)
+        assertEquals(listOf("light", "dark"), groups.first().palettes.map { it.key })
+        val catppuccin = groups.single { it.family == "Catppuccin" }
+        assertEquals(ThemePaletteGroupKind.FAMILY, catppuccin.kind)
         assertEquals(
-            setOf(
-                "catppuccin-frappe",
-                "catppuccin-latte",
-                "catppuccin-macchiato",
-                "catppuccin-mocha",
-            ),
-            catppuccin.second.map { it.key }.toSet(),
+            setOf("catppuccin-frappe", "catppuccin-latte", "catppuccin-macchiato", "catppuccin-mocha"),
+            catppuccin.palettes.map { it.key }.toSet(),
         )
-        assertTrue(
-            groups.any { (family, palettes) ->
-                family == null && palettes.map { it.key } == listOf("nord")
-            },
-        )
+        val other = groups.last()
+        assertEquals(ThemePaletteGroupKind.OTHER, other.kind)
+        assertEquals(listOf("nord", "one-dark", "sakura", "tokyo-night"), other.palettes.map { it.key })
+        assertEquals(1, groups.count { it.kind == ThemePaletteGroupKind.OTHER })
     }
 }

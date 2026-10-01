@@ -10,8 +10,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -46,10 +48,12 @@ import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiRecoveryInventoryStatus
 import com.ankiminer.android.data.resources.InstalledResourceKind
+import com.ankiminer.android.data.resources.InstalledWordList
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
@@ -438,6 +442,86 @@ class SettingsComponentsTest {
 
         composeRule.onNodeWithText("Finishing…").assertIsDisplayed()
         composeRule.onNodeWithText("0 of 0").assertDoesNotExist()
+    }
+
+    @Test
+    fun wordListOffersRemoveOnlyOnceAFileIsImported() {
+        var state by mutableStateOf(SetupUiState(resourceStartup = ResourceStartupReadiness.READY))
+        composeRule.setContent {
+            AnkiMinerTheme {
+                WordListImportCard(
+                    state = state,
+                    blacklistEnabled = null,
+                    whitelistEnabled = null,
+                    onImport = {},
+                    onRemove = {},
+                    onBlacklistEnabledChange = {},
+                    onWhitelistEnabledChange = {},
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(0)
+        composeRule.runOnIdle {
+            state =
+                state.copy(
+                    wordLists = listOf(InstalledWordList(WordListKind.BLACKLIST, entryCount = 12, sizeBytes = 64)),
+                )
+        }
+        composeRule.onAllNodesWithText("Remove").assertCountEquals(1)
+    }
+
+    @Test
+    fun settingFieldLabelStaysOnOneLineAtDoubleFontScale() {
+        composeRule.setContent {
+            val baseDensity = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(baseDensity, 2f)) {
+                AnkiMinerTheme {
+                    Box(Modifier.requiredWidth(320.dp)) {
+                        SettingTextField(
+                            value = "0.3",
+                            onChange = {},
+                            label = "Screenshot offset in seconds",
+                        )
+                    }
+                }
+            }
+        }
+
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule
+            .onNodeWithText("Screenshot offset in seconds", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .config[SemanticsActions.GetTextLayoutResult]
+            .action
+            ?.invoke(layouts)
+        assertEquals(1, layouts.single().lineCount)
+    }
+
+    @Test
+    fun aHoistedOpenMappingShowsTheFieldRows() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                AnkiTargetCard(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L),
+                            availableNoteTypes = listOf(ModelSummary(id = 1L, name = "Basic", fieldNames = listOf("Front", "Back"))),
+                            noteType = "Basic",
+                            fieldMap = mapOf("word" to "Front", "definition" to "Back"),
+                        ),
+                    onSelectNoteType = {},
+                    onSetFieldMapping = { _, _ -> },
+                    onSelectCardType = {},
+                    onSelectCardTypeMarker = {},
+                    onRemapFields = {},
+                    mappingExpanded = true,
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("Definition").assertExists()
     }
 
     private fun setBusyAnkiTarget(

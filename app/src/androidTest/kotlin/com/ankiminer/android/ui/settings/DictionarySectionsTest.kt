@@ -45,6 +45,8 @@ class DictionarySectionsTest {
         composeRule
             .onNodeWithText("Offline dictionary test")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit))
+        composeRule.onNodeWithText("Word").assertExists()
+        composeRule.onNodeWithText("Look up").assertExists()
     }
 
     @Test
@@ -185,5 +187,32 @@ class DictionarySectionsTest {
             backgroundColor = color
             super.setBackgroundColor(color)
         }
+    }
+
+    @Test
+    fun recommendedResourcesCardNamesWhatItWillDownload() {
+        val catalog = FrozenResourceCatalog.value
+        composeRule.setContent {
+            AnkiMinerTheme {
+                RecommendedResourcesCard(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            recommendedPlan =
+                                RecommendedResourcePlan(
+                                    catalog.recommendedResources.map {
+                                        RecommendedResourceItem(it, RecommendedResourceAction.INSTALL)
+                                    },
+                                ),
+                        ),
+                    onDownload = {},
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithText(catalog.recommendedResources.first().displayName, substring = true)
+            .assertIsDisplayed()
+        composeRule.onNodeWithText("up to 163 MiB while importing", substring = true).assertDoesNotExist()
     }
 }

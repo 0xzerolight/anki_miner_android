@@ -168,6 +168,11 @@ internal class MiningReadinessActionTest(
                     MiningReadinessAction.CONNECT_ANKIDROID,
                 ),
                 arrayOf(
+                    "a permanently denied permission opens Android settings",
+                    ready.copy(anki = AnkiProviderReadiness.PermissionDenied, ankiPermissionBlocked = true),
+                    MiningReadinessAction.ALLOW_IN_SETTINGS,
+                ),
+                arrayOf(
                     "unchecked provider checks again",
                     ready.copy(anki = AnkiProviderReadiness.NotChecked),
                     MiningReadinessAction.CHECK_AGAIN,

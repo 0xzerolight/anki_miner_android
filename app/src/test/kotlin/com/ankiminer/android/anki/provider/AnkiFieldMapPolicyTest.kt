@@ -390,4 +390,39 @@ class AnkiFieldMapPolicyTest {
                 )?.get("transliteration"),
         )
     }
+
+    @Test
+    fun `a fresh pick of a stock two field note type sends the definition to its second field`() {
+        val result =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = null,
+                selectedNoteType = "Basic",
+                fieldNames = listOf("Front", "Back"),
+                currentFieldMap = emptyMap(),
+            )
+
+        assertEquals("Front", result.fieldMap["word"])
+        assertEquals("Back", result.fieldMap["definition"])
+    }
+
+    @Test
+    fun `the two field default never takes a second field the user already mapped`() {
+        val result =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = "Old",
+                selectedNoteType = "Basic",
+                fieldNames = listOf("Front", "Back"),
+                currentFieldMap = mapOf("word" to "Front", "sentence" to "Back"),
+            )
+
+        assertEquals("Back", result.fieldMap["sentence"])
+        assertEquals("", result.fieldMap["definition"])
+    }
+
+    @Test
+    fun `remap leaves a two field note type alone`() {
+        val result = AnkiFieldMapPolicy.remap(fieldNames = listOf("Front", "Back"), currentFieldMap = mapOf("word" to "Front"))
+
+        assertEquals("", result.fieldMap["definition"].orEmpty())
+    }
 }

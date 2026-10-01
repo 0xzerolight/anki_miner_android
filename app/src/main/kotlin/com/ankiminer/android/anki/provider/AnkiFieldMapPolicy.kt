@@ -90,6 +90,18 @@ internal object AnkiFieldMapPolicy {
                 usedDestinations += destination
             }
 
+        // A stock two-field note type (Basic's Front/Back, or its localised twin) matches no
+        // keyword past the word, so its second field stayed empty and the first mined card had no
+        // back. Shape, not name: localised stock types call it "Rückseite", "Verso", "背面". Only on
+        // this fresh pick and only into an unowned field, so a user's map is never rewritten.
+        if (fieldNames.size == 2) {
+            val second = fieldNames[1]
+            if (second !in usedDestinations && merged.getValue(AnkiFieldKeys.DEFINITION).isEmpty()) {
+                merged[AnkiFieldKeys.DEFINITION] = second
+                usedDestinations += second
+            }
+        }
+
         val changes =
             (AnkiFieldKeys.ALL + extraKeys).mapNotNull { key ->
                 val previous = currentFieldMap[key].orEmpty()
