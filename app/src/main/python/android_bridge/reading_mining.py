@@ -11,12 +11,14 @@ from pathlib import Path
 from .callbacks import CallbackAdapters
 from .config_map import AndroidPaths, map_config_settings
 from .jobs import JobRegistry, SentencePageContext, registry
+from .languages import JAPANESE, config_language, get_profile, profile_parser, speech_language_for
 from .mining import (
     _build_processor,
     _cleanup_failure_terminal,
     _emit_terminal,
     _ensure_runtime_ready,
     _exception_terminal,
+    _known_words_target,
     _PostProcessCleanupError,
     _result_terminal,
 )
@@ -216,15 +218,49 @@ def _read_staged_text(path: Path) -> str:
         raise _invalid_request("Pasted text must be valid UTF-8") from error
 
 
+def _reading_loader_kwargs(config: object) -> dict[str, object]:
+    """``detector.load``'s language seams for a non-ja run (desktop ``load_reading_source``).
+
+    The run's decode ladder (and the script check its single-byte leg needs),
+    the language's sentence rules, and the normaliser and bilingual-cue gate its
+    parser applies, read off a parser built like the run's. Empty for Japanese,
+    whose call keeps the pre-transition ``detector.load(ref, cancel_check=)``
+    shape: its ladder is the engine default and its parser injects neither
+    seam, and the A.5 sweep proved its rules equal to the loaders' own.
+    """
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return {}
+    from anki_miner.utils.subtitle_encoding import script_check_kwarg
+
+    profile = get_profile(language)
+    parser = profile_parser(config)
+    ladder = profile.import_encodings
+    kwargs: dict[str, object] = {
+        "encodings": ladder,
+        "rules": profile.sentence_rules,
+        **script_check_kwarg(ladder, profile.script),
+    }
+    if parser.normalize is not None:
+        kwargs["normalize"] = parser.normalize
+    if parser.has_target_script is not None:
+        kwargs["has_target_script"] = parser.has_target_script
+    return kwargs
+
+
 def _load_document(
     request: _ReadingRequest,
     cancellation_check: Callable[[], bool] | None = None,
+    *,
+    loader_kwargs: Mapping[str, object] | None = None,
 ) -> object:
     """Call the desktop detector and loader after validating the staged pair.
 
     ``cancellation_check`` is forwarded to the engine loader, which raises
     ``OperationCancelled`` as soon as it observes a request to stop; the loader
-    itself owns the per-kind checkpoints.
+    itself owns the per-kind checkpoints. ``loader_kwargs`` are the run
+    language's seams (``_reading_loader_kwargs``).
     """
 
     if not request.source_path.is_file():
@@ -283,7 +319,7 @@ def _load_document(
             cancellation_check=cancellation_check,
             precount_sentences=request.source_kind in {"txt", "text", "epub", "mokuro"},
         ):
-            document = detector.load(ref, cancel_check=cancellation_check)
+            document = detector.load(ref, cancel_check=cancellation_check, **(loader_kwargs or {}))
     except ReadingUnitLimitExceeded as error:
         raise BridgeProtocolError(
             "reading_source_too_large",
@@ -396,6 +432,7 @@ def _process_reading(
                 run_id=adapters.run_id,
                 cache_dir=Path(config.media_temp_folder).parent,
                 warning_callback=adapters.presenter.show_warning,
+                language=speech_language_for(config_language(config)),
             )
         processor = _build_processor(
             config,
@@ -439,7 +476,7 @@ def run_reading(
     """Run one staged source through desktop ``detect/load/process_reading``."""
 
     request = _parse_request(raw_request)
-    files_dir = _ensure_runtime_ready()
+    files_dir = _ensure_runtime_ready(request.settings)
     from .anki_adapter import AnkiOperationCancelled
 
     owner = job_registry or registry()
@@ -451,9 +488,16 @@ def run_reading(
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
             config = _map_config(request, files_dir)
+            adapters.known_words_target = _known_words_target(config)
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)
-            document = _load_document(request, adapters.cancel_event.is_set)
+            loader_kwargs = _reading_loader_kwargs(config)
+            document = _load_document(
+                request,
+                adapters.cancel_event.is_set,
+                # Omitted for ja, so the call keeps its pre-transition shape.
+                **({"loader_kwargs": loader_kwargs} if loader_kwargs else {}),
+            )
             adapters.sentence_context = _sentence_page_context(document)
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runReading", "Mining was cancelled", False)

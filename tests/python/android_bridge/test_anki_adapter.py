@@ -6039,3 +6039,80 @@ def test_bold_note_builder_diagnostics_match_desktop_behavior(
         ).create_cards_batch([precomputed, fallback])
 
     assert ("bold_target_in_sentence=on: precomputed bold used on 1/2 cards " "(escape fallback: 1)") in caplog.messages
+
+
+# ---------------------------------------------------------------- non-ja language seams
+
+
+def _hebrew_config(home: Path, **changes: object) -> Any:
+    from anki_miner.languages.switching import switch_language
+
+    return replace(
+        switch_language(_config(home), "he"),
+        language_stash={},
+        anki_note_type="Basic",
+        **changes,
+    )
+
+
+def test_hebrew_known_vocabulary_uses_the_hebrew_script_gate_and_fold(
+    initialized_bridge_home: Path,
+) -> None:
+    """Desktop ``AnkiService._collect_first_field_forms``: ``_dedup_key`` then ``_is_target_script``."""
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    from anki_miner.languages.registry import get_profile
+
+    fold = get_profile("he").dedup_fold
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["<b>סֵפֶר</b>", "ילד", "猫", "plain English"]
+    adapter = _adapter(_hebrew_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_existing_vocabulary() == {fold("סֵפֶר"), fold("ילד")}
+
+
+def test_japanese_known_vocabulary_ignores_hebrew_fields(initialized_bridge_home: Path) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_fields = ["ילד", "猫"]
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.get_existing_vocabulary() == {"猫"}
+
+
+def test_note_builder_kwargs_match_desktop_anki_service_for_every_vendored_language(
+    initialized_bridge_home: Path,
+) -> None:
+    """Card fields, direction and language tag: what desktop's AnkiService builds each note with."""
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    pytest.importorskip("requests")
+    from anki_miner.languages.registry import available_languages
+    from anki_miner.languages.switching import switch_language
+    from anki_miner.services.anki_service import AnkiService
+
+    for code in available_languages():
+        config = replace(switch_language(_config(initialized_bridge_home), code), language_stash={})
+        service = AnkiService(config)
+        desktop = {
+            "extra_optional_keys": service._extra_optional_keys,
+            "extra_raw_html_keys": service._extra_raw_html_keys,
+            "content_direction": service._content_direction,
+            "content_lang": service._content_lang,
+            "card_lang": service._card_lang,
+        }
+        assert anki_adapter_module._note_builder_kwargs(config) == desktop, code
+
+
+def test_a_hebrew_note_is_built_right_to_left_with_its_own_card_fields(
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    fields = {"transliteration": "Transliteration"}
+    config = _hebrew_config(initialized_bridge_home)
+    config = replace(config, anki_fields={**dict(config.anki_fields), **fields})
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(config, kotlin)
+
+    adapter.create_cards_batch([_card("ספר")])
+
+    note = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"][0]
+    assert 'dir="rtl"' in note["fields"]["Expression"]
+    assert 'lang="he"' in note["fields"]["Expression"]

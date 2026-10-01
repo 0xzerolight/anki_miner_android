@@ -54,6 +54,35 @@ _JA_NOTE_BUILDER_KWARGS: Mapping[str, Any] = {
     "content_lang": "ja",
     "card_lang": None,
 }
+
+
+def _note_builder_kwargs(config: Any) -> Mapping[str, Any]:
+    """``build_note``'s language kwargs for *config*'s mining language.
+
+    Japanese keeps the spelled-out ``_JA_NOTE_BUILDER_KWARGS`` (no profile
+    import, so the host lane can build ja notes). Any other language derives
+    them exactly as desktop's ``AnkiService.__init__`` does from its profile.
+    """
+
+    from .languages import JAPANESE, config_language, get_profile
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return _JA_NOTE_BUILDER_KWARGS
+    from anki_miner.services.anki_note_builder import _RAW_HTML_FIELD_KEYS, OPTIONAL_FIELD_KEYS
+
+    profile = get_profile(language)
+    declared = frozenset(spec.key for spec in profile.extra_card_fields)
+    return {
+        "extra_optional_keys": declared - OPTIONAL_FIELD_KEYS,
+        "extra_raw_html_keys": frozenset(spec.key for spec in profile.extra_card_fields if spec.raw_html)
+        - frozenset(_RAW_HTML_FIELD_KEYS),
+        "content_direction": profile.content_style.direction,
+        "content_lang": profile.code,
+        "card_lang": profile.content_style.card_lang,
+    }
+
+
 _NAME_LIMITS = ANKI_LIMITS_V1["names"]
 _SCAN_LIMITS = ANKI_LIMITS_V1["scanFirstFields"]
 _MEDIA_LIMITS = ANKI_LIMITS_V1["storeMedia"]
@@ -626,6 +655,24 @@ def _raise_callback_error(error: AnkiCallbackError) -> NoReturn:
     raise AnkiConnectionError(error.message) from error
 
 
+def _vocabulary_seams(config: Any) -> tuple[Callable[[str], str] | None, Callable[[str], bool]]:
+    """The known-vocabulary scan's ``(dedup_fold, is_target_script)`` for *config*'s language.
+
+    Japanese: no fold and ``_JAPANESE_RE``, the codepoint test desktop's
+    ``JaScriptSupport.contains_target_script`` is (A.5). Any other language: its
+    profile's ``dedup_fold`` and ``script.contains_target_script``, so a Hebrew
+    run knows its vocalised Anki fronts and never counts a Japanese note.
+    """
+
+    from .languages import JAPANESE, config_language, get_profile
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return None, lambda text: _JAPANESE_RE.search(text) is not None
+    profile = get_profile(language)
+    return profile.dedup_fold, profile.script.contains_target_script
+
+
 class AndroidAnkiAdapter:
     """Duck-typed replacement for the desktop ``AnkiService`` on Android."""
 
@@ -647,6 +694,11 @@ class AndroidAnkiAdapter:
         validate_anki_request_config(config)
         self.config = config
         self._callbacks = callbacks
+        # Desktop AnkiService's language seams: the note builder's card-field,
+        # direction and language kwargs, and the vocabulary scan's comparison
+        # key (Anki's strip, then the profile's fold) and script gate.
+        self._note_builder_kwargs = _note_builder_kwargs(config)
+        self._dedup_fold, self._is_target_script = _vocabulary_seams(config)
         # The M0 seam can run standalone; the mining composition layer supplies
         # JobHandle.cancel_event.is_set once it owns adapter construction.
         self._cancellation_check = cancellation_check or (lambda: False)
@@ -690,6 +742,10 @@ class AndroidAnkiAdapter:
 
     def __enter__(self) -> AndroidAnkiAdapter:
         return self
+
+    def _dedup_key(self, stripped: str) -> str:
+        """Desktop ``AnkiService._dedup_key`` after its strip: the language fold, when it has one."""
+        return self._dedup_fold(stripped) if stripped and self._dedup_fold is not None else stripped
 
     def __exit__(self, *_: object) -> None:
         self.close()
@@ -1104,8 +1160,8 @@ class AndroidAnkiAdapter:
             while True:
                 raw_fields, _scanned_notes, next_cursor = self._scan_known_vocabulary_page(cursor)
                 for raw in raw_fields:
-                    normalized = _strip_for_dedup(raw)
-                    if normalized and _JAPANESE_RE.search(normalized):
+                    normalized = self._dedup_key(_strip_for_dedup(raw))
+                    if normalized and self._is_target_script(normalized):
                         existing.add(normalized)
                 if next_cursor is None:
                     break
@@ -2310,7 +2366,7 @@ class AndroidAnkiAdapter:
         built_fields: list[dict[str, str]] = []
         note_utf8_bytes = 0
         for payload in word_data_list:
-            built = build_note(payload, self.config, intended_stored_files, **_JA_NOTE_BUILDER_KWARGS)
+            built = build_note(payload, self.config, intended_stored_files, **self._note_builder_kwargs)
             fields, tags, content_bytes = self._validated_note_content(built.note)
             built_notes.append({"fields": fields, "tags": tags})
             built_fields.append(fields)
@@ -3283,7 +3339,7 @@ class AndroidAnkiAdapter:
                             item,
                             self.config,
                             stored_card_filenames,
-                            **_JA_NOTE_BUILDER_KWARGS,
+                            **self._note_builder_kwargs,
                         )
                         if built.used_precomputed_bold:
                             bold_used += 1
@@ -3402,8 +3458,8 @@ class AndroidAnkiAdapter:
             self.last_skipped_duplicates = skipped_duplicates
             if self._existing_vocab_cache is not None:
                 for first_field in created_first_fields:
-                    key = _strip_for_dedup(first_field)
-                    if key and _JAPANESE_RE.search(key):
+                    key = self._dedup_key(_strip_for_dedup(first_field))
+                    if key and self._is_target_script(key):
                         self._existing_vocab_cache.add(key)
 
         if skipped_duplicates:
