@@ -35,6 +35,27 @@
     },
     "th/tzdata": {
       "apk": "time zone package pythainlp imports; ships in the APK beside it (C.1)"
+    },
+    "tr/cloudpickle": {
+      "apk": "joblib's pickler, in the zeyrek closure; ships in the APK (D1)"
+    },
+    "tr/colorama": {
+      "apk": "listed by desktop's Turkish pack; ships in the APK beside nltk (D1)"
+    },
+    "tr/defusedxml": {
+      "apk": "nltk's XML parser; ships in the APK (D1)"
+    },
+    "tr/joblib": {
+      "apk": "nltk dependency; ships in the APK (D1)"
+    },
+    "tr/nltk": {
+      "apk": "engine code zeyrek imports; ships in the APK without its doctests (D1)"
+    },
+    "tr/regex": {
+      "apk": "native extension nltk imports; built for Android and shipped in the APK (D1)"
+    },
+    "tr/zeyrek": {
+      "apk": "engine code: the Turkish morphological analyser, lexicon included, ships in the APK (D1)"
     }
   }
 }

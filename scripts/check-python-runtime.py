@@ -26,6 +26,15 @@ EXPECTED_DISTRIBUTIONS = {
     "requests": "2.34.2",
     "tzdata": "2026.3",
     "urllib3": "2.7.0",
+    "click": "8.1.8",
+    "cloudpickle": "3.1.2",
+    "colorama": "0.4.6",
+    "defusedxml": "0.7.1",
+    "joblib": "1.6.0",
+    "nltk": "3.10.3",
+    "regex": "2026.9.10",
+    "tqdm": "4.68.3",
+    "zeyrek": "0.1.3",
 }
 
 
@@ -68,7 +77,7 @@ def main() -> int:
         raise RuntimeError(f"Pillow codecs are unavailable: {missing_codecs}")
     external_imports = set(manifest["external_imports"]["eager"])
     external_imports.update(manifest["external_imports"]["deferred"])
-    expected_external = {"PIL", "charset_normalizer", "lxml", "pysubs2", "pythainlp", "requests"}
+    expected_external = {"PIL", "charset_normalizer", "lxml", "pysubs2", "pythainlp", "requests", "zeyrek"}
     if external_imports != expected_external:
         raise RuntimeError(
             "neutral engine external imports differ: "

@@ -1511,7 +1511,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, turkish) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1718,6 +1718,61 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = listOf("wty-he-en-2026.09.20", "opensubtitles-he-2018"),
+        )
+
+    val turkish =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "tr",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-tr-en-2026.09.20",
+                        displayName = "Wiktionary (Turkish-English) 2026-09-20",
+                        slotId = "wty-tr-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/tr/en/wty-tr-en.zip",
+                                sha256 = "15ccd82fc6529c295dbab1c0dc82b28cf39dbe41758b90fa57df62f527d9583b",
+                                sizeBytes = 17_504_531,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-tr-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 114,
+                                uncompressedBytes = 325_657_483,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-tr-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Turkish)",
+                        sourceId = "opensubtitles-tr",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/tr/tr_50k.txt",
+                                sha256 = "480192844e7fdfe9591bbf0b9cfbb96ed5751cfbba7024fd45d8cb7508e07d5c",
+                                sizeBytes = 711_935,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-tr-en-2026.09.20", "opensubtitles-tr-2018"),
         )
 
     val arabic =
