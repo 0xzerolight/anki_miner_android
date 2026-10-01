@@ -116,6 +116,7 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
             "frequency_sort": "FrequencySort",
             "source": "Source",
             "expression_audio": "ExpressionAudio",
+            "sentence_translation": "Translation",
         },
         "card_type": "word_and_sentence",
         "card_type_marker_fields": {
@@ -147,10 +148,13 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "expression_audio_chain": [{"kind": "pack", "pack_id": "local-audio", "enabled": True}],
         "reading_tts_enabled": True,
         "pitch_category_format": "romaji",
+        "min_frequency_rank": 500,
         "max_frequency_rank": 20000,
+        "frequency_keep_unranked": True,
         "frequency_chain": [{"source_id": "bccwj", "enabled": True}],
         "pitch_chain": [{"source_id": "kanjium", "enabled": True}],
         "use_known_words_db": True,
+        "known_words_match_kana_variants": False,
         "exclude_hiragana_only_words": True,
         "exclude_katakana_only_words": False,
         "blacklist_path": str(home / "blacklist.txt"),
@@ -161,15 +165,16 @@ def _full_config_payload(home: Path) -> dict[str, Any]:
         "subtitle_regex_replacement": "",
         "use_subtitle_regex_filter": True,
         "bold_target_in_sentence": True,
+        "strict_card_order": True,
         "deduplicate_sentences": True,
         "use_i_plus_one_filter": False,
-        "use_sentence_length_filter": True,
         "max_sentence_duration_seconds": 12.0,
         "max_sentence_chars": 80,
+        "merge_incomplete_cues": True,
         "reading_min_occurrence": 2,
         "max_parallel_workers": 4,
     }
-    assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled", "use_sentence_length_filter"}
+    assert set(settings) == set(exposed_config_fields()) | {"reading_tts_enabled"}
     return {"settings": settings, "androidTtsEnabled": True}
 
 
@@ -1433,6 +1438,9 @@ def test_representative_full_config_message_validates_and_maps(
     assert mapped.engine_config.expression_audio_chain[0].kind == "pack"
     assert mapped.engine_config.expression_audio_chain[0].pack_id == "local-audio"
     assert len(mapped.engine_config.expression_audio_chain) == 1
+    assert mapped.engine_config.anki_fields["sentence_translation"] == "Translation"
+    assert mapped.engine_config.min_frequency_rank == 500
+    assert mapped.engine_config.merge_incomplete_cues is True
     assert mapped.android_tts_enabled is True
 
 
@@ -1786,6 +1794,10 @@ def test_null_or_empty_sentence_id_is_schema_invalid(
         {"settings": {"anki_fields": {"glossary": " Glossary"}}},
         {"settings": {"excluded_decks": [""]}},
         {"settings": {"excluded_decks": ["Known", "Known"]}},
+        {"settings": {"min_frequency_rank": -1}},
+        {"settings": {"merge_incomplete_cues": 1}},
+        {"settings": {"use_sentence_length_filter": True}},
+        {"settings": {"secondary_subtitle_enabled": True}},
     ],
 )
 def test_invalid_config_shapes_are_rejected_by_schema(
