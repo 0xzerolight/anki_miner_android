@@ -33,7 +33,8 @@ from .resource_catalog import LanguageDataResource, find_catalog_resource, load_
 logger = logging.getLogger(__name__)
 
 #: Executable members the extraction never writes (decision 2). A versioned
-#: shared object (``libfoo.so.1``) is caught by the ``.so.`` infix.
+#: shared object (``libfoo.so.1``) is caught by the ``.so.`` infix. Matched on
+#: the lowercased file name, so ``a.PY`` and ``lib.So.1`` are code too.
 _CODE_SUFFIXES = (".py", ".pyc", ".so")
 
 
@@ -42,7 +43,7 @@ def _fail(code: str, message: str) -> BridgeProtocolError:
 
 
 def is_code_member(name: str) -> bool:
-    base = PurePosixPath(name).name
+    base = PurePosixPath(name.replace("\\", "/")).name.lower()
     return base.endswith(_CODE_SUFFIXES) or ".so." in base
 
 

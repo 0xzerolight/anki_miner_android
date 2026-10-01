@@ -105,6 +105,17 @@ def test_the_catalog_language_data_is_exactly_the_downloadable_component_table()
         ("pkg/module.pyc", True),
         ("_native.abi3.so", True),
         ("libs/libfoo.so.1", True),
+        # Case variants: the suffix is code whatever its case.
+        ("a.PY", True),
+        ("a.Py", True),
+        ("pkg/module.PYC", True),
+        ("lib.SO", True),
+        ("lib.So.1", True),
+        # Traversal and absolute spellings are judged by their file name.
+        ("../x.py", True),
+        ("/abs/evil.py", True),
+        ("hazm/data/../../evil.So", True),
+        ("x\\evil.PY", True),
         ("morphology.db", False),
         ("hazm/data/words.dat", False),
         ("LICENSE", False),
@@ -286,7 +297,18 @@ def test_every_data_component_installs_where_the_engine_looks_for_it(
     assert archive.is_file()
 
 
-@pytest.mark.parametrize("member", ["__init__.py", "sub/_speedups.so", "cache/table.cpython-312.pyc"])
+@pytest.mark.parametrize(
+    "member",
+    [
+        "__init__.py",
+        "sub/_speedups.so",
+        "cache/table.cpython-312.pyc",
+        "a.PY",
+        "lib.SO",
+        "libs/lib.So.1",
+        "../x.py",
+    ],
+)
 def test_an_archive_with_a_code_member_is_refused_before_anything_lands(
     home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, member: str
 ) -> None:

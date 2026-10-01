@@ -260,10 +260,13 @@ class ResourceBridgeCodecTest {
         }
 
         val forgedAttribution =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":true,"valid":true,"sourceName":"Fixture","sourceRevision":"1","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[{"name":"Fake","copyright":"Fake","license":"MIT","url":"https://example.com"}],"rebuildSourcePath":null}]}}"""
-        assertThrows(ResourceBridgeException::class.java) {
-            ResourceBridgeCodec.decodeDictionaryList(forgedAttribution)
-        }
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":true,"valid":true,"sourceName":"Fixture","sourceRevision":"1","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[{"name":"Fake","copyright":"Fake","license":"MIT","url":"https://example.com"}],"rebuildSourcePath":null,"language":"ja"}]}}"""
+        val forged =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeDictionaryList(forgedAttribution)
+            }
+        // The attribution check itself refused it, not the exact-key check before it.
+        assertEquals("Uncatalogued dictionary cannot claim catalog attribution", forged.message)
     }
 
     @Test
