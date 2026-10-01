@@ -760,9 +760,11 @@ internal class SetupViewModel(
             val target =
                 launched.target
                     ?: resources.preflightCustomDictionary(source.uri)?.let { derivedSlotId ->
+                        // Slot directories are one namespace across languages, so a slot another
+                        // language holds is taken even though this language's list omits it.
                         ResourceIdentity.customDictionaryTarget(
                             derivedSlotId,
-                            currentState().dictionaries,
+                            resources.state.value.dictionaries,
                         )
                     }
             if (target == null) {

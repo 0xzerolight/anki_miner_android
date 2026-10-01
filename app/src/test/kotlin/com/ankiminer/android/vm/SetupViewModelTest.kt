@@ -102,6 +102,34 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `new custom dictionary skips a slot another language holds`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources =
+                FakeResourceManager().apply {
+                    customDictionaryDerivedSlot = "fixture-dictionary-2026-08"
+                    setInstalledDictionaries(
+                        listOf(installedDictionary("fixture-dictionary-2026-08", "Japanese copy")),
+                    )
+                }
+            val model =
+                viewModel(
+                    repository = FakeSettingsRepository(AppSettings(language = "he")),
+                    setup = FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertTrue(model.beginCustomDictionaryPicker())
+            model.onCustomDictionaryPicked("content://test/fixture.zip")
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://test/fixture.zip", "fixture-dictionary-2026-08-2", false)),
+                resources.customDictionaryImports,
+            )
+        }
+
+    @Test
     fun `per-row custom dictionary replacement pins the installed slot`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources =
