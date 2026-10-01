@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">音声フィールド未対応付け:音声実行では、埋め込みカバーアートのあるファイルの単語のみ保持されます。</string>
     <string name="expression_audio_field_unmapped_warning">単語音声用のフィールドが対応付けられていません。「WordAudio」を対応付けないとカードに発音が付きません。</string>
     <string name="audio_pack_unusable_warning">使用できない音声パックをスキップしました。設定 → リソース から再インポートしてください。</string>
+    <string name="mining_advisory_sentence_audio">例文音声用のフィールドが対応付けられていないため、カードに例文音声が付きません。</string>
+    <string name="mining_advisory_sentence_and_word_audio">例文音声と単語音声のフィールドが対応付けられていないため、カードに音声が付きません。</string>
+    <string name="mining_advisory_map_fields">フィールドを対応付ける</string>
     <string name="subtitle_file_error">アクセスが失われました。選び直してください。</string>
     <string name="subtitle_selection_error_type">字幕ファイルを選択してください（.srt、.ass、.ssa、.vtt）。</string>
     <string name="secondary_subtitle_file_error">翻訳字幕：アクセスが失われました。選び直してください。</string>

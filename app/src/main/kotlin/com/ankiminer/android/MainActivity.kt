@@ -163,6 +163,8 @@ class MainActivity : ComponentActivity() {
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
             undoManager = MiningRunUndoManagerFactory.create(app),
+            fieldMap = app.settingsRepository.settings.map { it.fieldMap },
+            audioPacks = app.activeLanguageAudioPacks(),
         )
     }
 

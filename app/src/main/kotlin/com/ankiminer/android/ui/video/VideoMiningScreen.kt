@@ -79,6 +79,7 @@ import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
 import com.ankiminer.android.ui.mining.MiningFailureCard
 import com.ankiminer.android.ui.mining.MediaMiningLabels
+import com.ankiminer.android.ui.mining.MiningAdvisoryLines
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
 import com.ankiminer.android.ui.mining.MiningResultSource
@@ -151,6 +152,7 @@ fun VideoMiningScreen(
     onDismissAudioTrackPicker: () -> Unit = {},
     onDismissAudioTrackPickerError: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
+    onMapFields: () -> Unit = {},
     labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
     playerFactory: (Context) -> CurationPreviewPlayer =
         LocalMiningContentStyle.current.audioTrackCodes.let { codes ->
@@ -462,6 +464,7 @@ fun VideoMiningScreen(
                                     onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
                                     onStart = onStart,
                                     onReturnToActiveRun = onReturnToActiveRun,
+                                    onMapFields = onMapFields,
                                 )
                             is MiningRunState.Starting ->
                                 progressItems(
@@ -643,6 +646,7 @@ private fun LazyListScope.setupItems(
     onDismissAudioTrackPickerError: () -> Unit,
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
+    onMapFields: () -> Unit,
 ) {
     state.runtimeConflict?.let { conflict ->
         item(key = "setup_conflict", contentType = "header") {
@@ -827,19 +831,11 @@ private fun LazyListScope.setupItems(
     }
     item(key = "start", contentType = "actions") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            if (state.audioFieldUnmapped) {
-                MiningFailureCard(
-                    message = stringResource(R.string.audio_field_unmapped_warning),
-                )
-            }
-            if (state.expressionAudioFieldUnmapped) {
-                MiningFailureCard(
-                    message = stringResource(R.string.expression_audio_field_unmapped_warning),
-                )
-            }
-            if (state.unusableAudioPackInstalled) {
-                MiningFailureCard(
-                    message = stringResource(R.string.audio_pack_unusable_warning),
+            if (state.advisories.any) {
+                MiningAdvisoryLines(
+                    advisories = state.advisories,
+                    onMapFields = onMapFields,
+                    mapFieldsTestTag = VideoMiningTestTags.MAP_FIELDS,
                 )
             }
             PrimaryActionButton(

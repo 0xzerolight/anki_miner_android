@@ -10,6 +10,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.MiningRunUndoManager
 import com.ankiminer.android.data.anki.UndoRunOutcome
 import com.ankiminer.android.data.anki.UndoneRunReceipt
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.dictionary.CurationDefinition
 import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.diagnostics.log.AppLog
@@ -40,6 +41,7 @@ import com.ankiminer.android.ui.mining.completed
 import com.ankiminer.android.ui.mining.defaultCurationDraft
 import com.ankiminer.android.ui.mining.draftFor
 import com.ankiminer.android.ui.mining.forRequest
+import com.ankiminer.android.ui.mining.miningFieldAdvisories
 import com.ankiminer.android.ui.mining.request
 import com.ankiminer.android.ui.mining.toCurationSessionState
 import com.ankiminer.android.ui.reading.CurationPageImageUiState
@@ -82,6 +84,8 @@ class ReadingMiningViewModel internal constructor(
     selectionIoDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val definitionLookup: DefinitionLookupService? = null,
     private val undoManager: MiningRunUndoManager? = null,
+    fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+    audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
 ) : ViewModel() {
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
@@ -96,6 +100,8 @@ class ReadingMiningViewModel internal constructor(
         val pending: MiningPendingState = MiningPendingState(),
         val commandError: ReadingMiningCommandError? = null,
         val undoConfirmationNoteCount: Int? = null,
+        val fieldMap: Map<String, String> = emptyMap(),
+        val audioPacks: List<InstalledAudioPack> = emptyList(),
     )
 
     /**
@@ -221,6 +227,7 @@ class ReadingMiningViewModel internal constructor(
                 pastedText = local.pastedText,
                 pastedTextTruncated = local.pastedTextTruncated,
                 subtitleSeriesName = local.subtitleSeriesName,
+                advisories = miningFieldAdvisories(local.fieldMap, local.audioPacks, audioLane = false),
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -241,6 +248,16 @@ class ReadingMiningViewModel internal constructor(
         )
 
     init {
+        viewModelScope.launch {
+            fieldMap.distinctUntilChanged().collect { currentFieldMap ->
+                localState.update { local -> local.copy(fieldMap = currentFieldMap) }
+            }
+        }
+        viewModelScope.launch {
+            audioPacks.distinctUntilChanged().collect { currentPacks ->
+                localState.update { local -> local.copy(audioPacks = currentPacks) }
+            }
+        }
         viewModelScope.launch {
             repository.state.collect { runState ->
                 if (runState is MiningRunState.Curating) {
@@ -1505,6 +1522,8 @@ class ReadingMiningViewModel internal constructor(
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
         private val undoManager: MiningRunUndoManager? = null,
+        private val fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
+        private val audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1520,6 +1539,8 @@ class ReadingMiningViewModel internal constructor(
                 selectionInventory = selectionInventory,
                 definitionLookup = definitionLookup,
                 undoManager = undoManager,
+                fieldMap = fieldMap,
+                audioPacks = audioPacks,
             ) as T
         }
     }

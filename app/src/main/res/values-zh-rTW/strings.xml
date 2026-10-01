@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">音訊欄位未對應：音訊採集僅保留檔案含內嵌封面圖片的單字。</string>
     <string name="expression_audio_field_unmapped_warning">未對應單字音訊欄位。請對應「WordAudio」，否則卡片沒有發音。</string>
     <string name="audio_pack_unusable_warning">已略過無法使用的音訊包。請於 設定 → 資源 重新匯入。</string>
+    <string name="mining_advisory_sentence_audio">未對應例句音訊欄位，卡片沒有例句音訊。</string>
+    <string name="mining_advisory_sentence_and_word_audio">未對應例句音訊與單字音訊欄位，卡片沒有音訊。</string>
+    <string name="mining_advisory_map_fields">對應欄位</string>
     <string name="subtitle_file_error">存取遺失。請重新選擇。</string>
     <string name="subtitle_selection_error_type">請選擇字幕檔案（.srt、.ass、.ssa、.vtt）。</string>
     <string name="secondary_subtitle_file_error">翻譯字幕：存取遺失。請重新選擇。</string>

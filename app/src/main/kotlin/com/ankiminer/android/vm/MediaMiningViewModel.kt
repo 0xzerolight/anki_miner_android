@@ -54,6 +54,7 @@ import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.ExpansionPreview
 import com.ankiminer.android.ui.mining.clipWindowUiState
 import com.ankiminer.android.ui.mining.expansionPreview
+import com.ankiminer.android.ui.mining.miningFieldAdvisories
 import com.ankiminer.android.ui.mining.MiningPendingAction
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
@@ -313,18 +314,8 @@ class MediaMiningViewModel internal constructor(
                     local.subtitleOffsetOverride
                         ?: local.globalSubtitleOffset
                         ?: ENGINE_DEFAULT_SUBTITLE_OFFSET,
-                audioFieldUnmapped =
-                    lane == MiningLane.AUDIO &&
-                        local.fieldMap["audio"].isNullOrBlank() &&
-                        !local.fieldMap["picture"].isNullOrBlank(),
-                // Not lane-gated: expression audio applies to every mining lane.
-                // Fires only when a usable pack proves the user wants word audio;
-                // with no pack there is no source to warn about.
-                expressionAudioFieldUnmapped =
-                    local.fieldMap["expression_audio"].isNullOrBlank() &&
-                        local.audioPacks.any { it.contentAvailable && it.entryCount > 0 },
-                unusableAudioPackInstalled =
-                    local.audioPacks.any { !(it.contentAvailable && it.entryCount > 0) },
+                advisories =
+                    miningFieldAdvisories(local.fieldMap, local.audioPacks, audioLane = lane == MiningLane.AUDIO),
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,

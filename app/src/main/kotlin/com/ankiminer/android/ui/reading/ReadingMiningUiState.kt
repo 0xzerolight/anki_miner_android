@@ -7,6 +7,7 @@ import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Locale
@@ -84,6 +85,7 @@ data class ReadingMiningUiState(
     val pastedText: String = "",
     val pastedTextTruncated: Boolean = false,
     val subtitleSeriesName: String = "",
+    val advisories: MiningFieldAdvisories = MiningFieldAdvisories(),
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: ReadingCurationUiState? = null,
     val startPending: Boolean = false,

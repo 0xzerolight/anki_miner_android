@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Audiofeld nicht zugeordnet: Ein Audio-Durchlauf behält nur Wörter, deren Datei eingebettetes Coverbild enthält.</string>
     <string name="expression_audio_field_unmapped_warning">Kein Feld für Wort-Audio zugeordnet. Ordnen Sie „WordAudio“ zu, sonst erhalten Karten keine Aussprache.</string>
     <string name="audio_pack_unusable_warning">Unbrauchbares Audiopaket übersprungen. Erneut importieren unter Einstellungen → Ressourcen.</string>
+    <string name="mining_advisory_sentence_audio">Karten erhalten kein Satz-Audio: Dafür ist kein Feld zugeordnet.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Karten erhalten weder Satz- noch Wort-Audio: Für beides ist kein Feld zugeordnet.</string>
+    <string name="mining_advisory_map_fields">Felder zuordnen</string>
     <string name="subtitle_file_error">Zugriff verloren. Erneut auswählen.</string>
     <string name="subtitle_selection_error_type">Wählen Sie eine Untertiteldatei (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Übersetzungs-Untertitel: Zugriff verloren. Erneut auswählen.</string>

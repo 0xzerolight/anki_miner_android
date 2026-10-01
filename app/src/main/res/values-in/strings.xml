@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Bidang audio tidak dipetakan: proses audio hanya mempertahankan kata yang berkasnya memiliki sampul tertanam.</string>
     <string name="expression_audio_field_unmapped_warning">Tidak ada bidang yang dipetakan untuk audio kata. Petakan “WordAudio” atau kartu tidak mendapat pelafalan.</string>
     <string name="audio_pack_unusable_warning">Paket audio yang tidak dapat digunakan dilewati. Impor ulang di Pengaturan → Sumber daya.</string>
+    <string name="mining_advisory_sentence_audio">Kartu tidak mendapat audio kalimat: tidak ada bidang yang dipetakan.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Kartu tidak mendapat audio kalimat maupun kata: tidak ada bidang yang dipetakan.</string>
+    <string name="mining_advisory_map_fields">Petakan bidang</string>
     <string name="subtitle_file_error">Akses hilang. Pilih lagi.</string>
     <string name="subtitle_selection_error_type">Pilih berkas subtitel (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Subtitel terjemahan: akses hilang. Pilih lagi.</string>

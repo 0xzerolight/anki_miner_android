@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Campo Audio sin asignar: una ejecución de audio solo conserva palabras cuyo archivo tenga portada incrustada.</string>
     <string name="expression_audio_field_unmapped_warning">Ningún campo está asignado al audio de palabra. Asigne “WordAudio” o las tarjetas no tendrán pronunciación.</string>
     <string name="audio_pack_unusable_warning">Paquete de audio inservible omitido. Vuelva a importarlo en Ajustes → Recursos.</string>
+    <string name="mining_advisory_sentence_audio">Las tarjetas no tendrán audio de la frase: no hay ningún campo asignado.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Las tarjetas no tendrán audio de la frase ni de la palabra: no hay campos asignados.</string>
+    <string name="mining_advisory_map_fields">Asignar campos</string>
     <string name="subtitle_file_error">Se perdió el acceso. Elija de nuevo.</string>
     <string name="subtitle_selection_error_type">Elija un archivo de subtítulos (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Subtítulos de traducción: se perdió el acceso. Elija de nuevo.</string>

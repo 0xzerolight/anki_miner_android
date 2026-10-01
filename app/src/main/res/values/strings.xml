@@ -78,6 +78,9 @@
     <string name="audio_field_unmapped_warning">Audio field not mapped: an audio run keeps only words whose file has embedded cover art.</string>
     <string name="expression_audio_field_unmapped_warning">No field is mapped for word audio. Map “WordAudio” or cards get no pronunciation.</string>
     <string name="audio_pack_unusable_warning">Unusable audio pack skipped. Re-import under Settings → Resources.</string>
+    <string name="mining_advisory_sentence_audio">Cards get no sentence audio: no field is mapped for it.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Cards get no sentence or word audio: no field is mapped for either.</string>
+    <string name="mining_advisory_map_fields">Map fields</string>
     <string name="subtitle_file_error">Access lost. Choose again.</string>
     <string name="subtitle_selection_error_type">Pick a subtitle file (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Translation subtitles: access lost. Choose again.</string>

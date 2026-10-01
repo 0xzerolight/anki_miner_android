@@ -48,6 +48,8 @@ import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.CurationPageImageTestTags
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import java.io.ByteArrayOutputStream
@@ -227,6 +229,34 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasText(counter))
         composeRule.onNodeWithText(counter).assertExists()
+    }
+
+    @Test
+    fun unmappedAudioIsOneQuietLineWithMapFieldsOnReading() {
+        var mapped = false
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state =
+                        ReadingMiningUiState(
+                            advisories =
+                                MiningFieldAdvisories(sentenceAudio = SentenceAudioAdvisory.UNMAPPED),
+                        ),
+                    onMapFields = { mapped = true },
+                )
+            }
+        }
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.MAP_FIELDS))
+        composeRule
+            .onNodeWithText(context.getString(R.string.mining_advisory_sentence_audio))
+            .assertIsDisplayed()
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(0)
+        composeRule.onNodeWithTag(ReadingMiningTestTags.MAP_FIELDS).performClick()
+        composeRule.runOnIdle { assertTrue(mapped) }
     }
 
     @Test
@@ -1068,6 +1098,7 @@ class ReadingMiningScreenTest {
         onPastedTextChanged: (String) -> Unit = {},
         onStart: () -> Unit = {},
         onMarkCandidateKnown: (String, Boolean) -> Unit = { _, _ -> },
+        onMapFields: () -> Unit = {},
         listState: LazyListState = rememberLazyListState(),
     ) {
         ReadingMiningScreen(
@@ -1093,6 +1124,7 @@ class ReadingMiningScreenTest {
             onCancel = {},
             onRetry = {},
             onReset = {},
+            onMapFields = onMapFields,
             listState = listState,
         )
     }

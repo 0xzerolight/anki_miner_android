@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Champ Audio non mappé : une extraction audio ne conserve que les mots dont le fichier contient une illustration intégrée.</string>
     <string name="expression_audio_field_unmapped_warning">Aucun champ n\'est mappé pour l\'audio du mot. Mappez « WordAudio », sinon les cartes n\'ont pas de prononciation.</string>
     <string name="audio_pack_unusable_warning">Pack audio inutilisable ignoré. Réimportez-le dans Paramètres → Ressources.</string>
+    <string name="mining_advisory_sentence_audio">Les cartes n\'auront pas l\'audio de la phrase : aucun champ n\'est mappé.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Les cartes n\'auront ni l\'audio de la phrase ni celui du mot : aucun champ n\'est mappé.</string>
+    <string name="mining_advisory_map_fields">Mapper les champs</string>
     <string name="subtitle_file_error">Accès perdu. Choisissez de nouveau.</string>
     <string name="subtitle_selection_error_type">Choisissez un fichier de sous-titres (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Sous-titres de traduction : accès perdu. Choisissez de nouveau.</string>

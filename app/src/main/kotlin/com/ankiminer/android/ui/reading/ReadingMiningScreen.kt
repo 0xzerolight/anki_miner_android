@@ -77,6 +77,7 @@ import com.ankiminer.android.ui.mining.minedText
 import com.ankiminer.android.ui.mining.CurationSort
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
+import com.ankiminer.android.ui.mining.MiningAdvisoryLines
 import com.ankiminer.android.ui.mining.MiningFailureCard
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
@@ -133,6 +134,7 @@ fun ReadingMiningScreen(
     onConfirmUndo: () -> Unit = {},
     onDismissUndoConfirmation: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
+    onMapFields: () -> Unit = {},
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
 ) {
@@ -404,6 +406,7 @@ fun ReadingMiningScreen(
                                     onDismissCommandError = onDismissCommandError,
                                     onStart = onStart,
                                     onReturnToActiveRun = onReturnToActiveRun,
+                                    onMapFields = onMapFields,
                                 )
                             is MiningRunState.Starting ->
                                 progressItems(
@@ -559,6 +562,7 @@ private fun LazyListScope.setupItems(
     onDismissCommandError: () -> Unit,
     onStart: () -> Unit,
     onReturnToActiveRun: (() -> Unit)?,
+    onMapFields: () -> Unit,
 ) {
     state.runtimeConflict?.let { conflict ->
         item(key = "reading_setup_conflict", contentType = "header") {
@@ -744,6 +748,13 @@ private fun LazyListScope.setupItems(
     }
     item(key = "reading_start", contentType = "actions") {
         Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+            if (state.advisories.any) {
+                MiningAdvisoryLines(
+                    advisories = state.advisories,
+                    onMapFields = onMapFields,
+                    mapFieldsTestTag = ReadingMiningTestTags.MAP_FIELDS,
+                )
+            }
             PrimaryActionButton(
                 onClick = onStart,
                 enabled = state.canStart,

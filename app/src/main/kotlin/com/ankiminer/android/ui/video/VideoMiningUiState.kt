@@ -13,6 +13,7 @@ import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.ExpansionPreview
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
 
 enum class DocumentSelectionError {
     VIDEO,
@@ -110,9 +111,7 @@ data class VideoMiningUiState(
     val secondarySubtitleOffsetDraft: String = "",
     val secondarySubtitleOffsetDraftInvalid: Boolean = false,
     val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
-    val audioFieldUnmapped: Boolean = false,
-    val expressionAudioFieldUnmapped: Boolean = false,
-    val unusableAudioPackInstalled: Boolean = false,
+    val advisories: MiningFieldAdvisories = MiningFieldAdvisories(),
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: CurationUiState? = null,
     val startPending: Boolean = false,

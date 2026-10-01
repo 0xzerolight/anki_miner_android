@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Trường Audio chưa được ánh xạ: khai thác âm thanh chỉ giữ từ có tệp chứa ảnh bìa nhúng.</string>
     <string name="expression_audio_field_unmapped_warning">Chưa có trường nào được gán cho âm thanh của từ. Gán trường “WordAudio” nếu không thẻ sẽ không có phát âm.</string>
     <string name="audio_pack_unusable_warning">Gói âm thanh không dùng được, đã bỏ qua. Nhập lại trong Cài đặt → Tài nguyên.</string>
+    <string name="mining_advisory_sentence_audio">Thẻ sẽ không có âm thanh câu: chưa có trường nào được gán.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Thẻ sẽ không có âm thanh câu lẫn âm thanh từ: chưa có trường nào được gán.</string>
+    <string name="mining_advisory_map_fields">Gán trường</string>
     <string name="subtitle_file_error">Mất quyền truy cập. Hãy chọn lại.</string>
     <string name="subtitle_selection_error_type">Chọn tệp phụ đề (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Phụ đề bản dịch: mất quyền truy cập. Hãy chọn lại.</string>

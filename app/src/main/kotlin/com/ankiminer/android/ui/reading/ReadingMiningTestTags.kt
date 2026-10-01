@@ -14,6 +14,7 @@ object ReadingMiningTestTags {
     const val PASTE_FROM_CLIPBOARD = "reading_paste_from_clipboard"
     const val SERIES_NAME = "reading_series_name"
     const val START = "reading_start_mining"
+    const val MAP_FIELDS = "reading_map_fields"
     const val PROGRESS = "reading_mining_progress"
     const val SELECT_ALL = "reading_select_all_candidates"
     const val FINISH_CURATION = "reading_finish_curation"

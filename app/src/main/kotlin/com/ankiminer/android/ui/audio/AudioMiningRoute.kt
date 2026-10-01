@@ -18,6 +18,7 @@ internal val AUDIO_MIME_TYPES = arrayOf("audio/*", "application/octet-stream")
 fun AudioMiningRoute(
     viewModel: MediaMiningViewModel,
     onReturnToActiveRun: (() -> Unit)? = null,
+    onMapFields: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -74,6 +75,7 @@ fun AudioMiningRoute(
         onConfirmUndo = viewModel::confirmUndo,
         onDismissUndoConfirmation = viewModel::dismissUndoConfirmation,
         onReturnToActiveRun = onReturnToActiveRun,
+        onMapFields = onMapFields,
         labels = MediaMiningLabels.AUDIO,
         modifier = modifier,
     )

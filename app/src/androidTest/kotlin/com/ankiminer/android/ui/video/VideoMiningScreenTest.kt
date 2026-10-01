@@ -72,6 +72,8 @@ import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
 import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
+import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -2478,6 +2480,33 @@ class VideoMiningScreenTest {
         }
     }
 
+    @Test
+    fun unmappedAudioIsOneQuietLineWithMapFields() {
+        var mapped = false
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    advisories =
+                        MiningFieldAdvisories(
+                            sentenceAudio = SentenceAudioAdvisory.UNMAPPED,
+                            wordAudioUnmapped = true,
+                        ),
+                ),
+            onMapFields = { mapped = true },
+        )
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.MAP_FIELDS))
+        composeRule
+            .onNodeWithText(context.getString(R.string.mining_advisory_sentence_and_word_audio))
+            .assertIsDisplayed()
+        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(0)
+        composeRule.onNodeWithTag(VideoMiningTestTags.MAP_FIELDS).performClick()
+        composeRule.runOnIdle { assertTrue(mapped) }
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
         labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
@@ -2498,6 +2527,7 @@ class VideoMiningScreenTest {
         onCancel: () -> Unit = {},
         onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
         onResetClipWindow: (String) -> Unit = {},
+        onMapFields: () -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
     ) {
         composeRule.setContent {
@@ -2522,6 +2552,7 @@ class VideoMiningScreenTest {
                     onCancel = onCancel,
                     onSetClipWindow = onSetClipWindow,
                     onResetClipWindow = onResetClipWindow,
+                    onMapFields = onMapFields,
                     playerFactory = playerFactory,
                 )
             }
@@ -2564,6 +2595,7 @@ class VideoMiningScreenTest {
         onPickSecondarySubtitle: () -> Unit = {},
         onClearSecondarySubtitle: () -> Unit = {},
         onSecondarySubtitleOffsetDraftChange: (String) -> Unit = {},
+        onMapFields: () -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
         listState: LazyListState = rememberLazyListState(),
     ) {
@@ -2606,6 +2638,7 @@ class VideoMiningScreenTest {
             onRequestUndo = onRequestUndo,
             onConfirmUndo = onConfirmUndo,
             onDismissUndoConfirmation = onDismissUndoConfirmation,
+            onMapFields = onMapFields,
             playerFactory = playerFactory,
             modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
             listState = listState,

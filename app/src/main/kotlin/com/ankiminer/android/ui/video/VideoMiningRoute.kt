@@ -23,6 +23,7 @@ internal val SUBTITLE_MIME_TYPES =
 fun VideoMiningRoute(
     viewModel: MediaMiningViewModel,
     onReturnToActiveRun: (() -> Unit)? = null,
+    onMapFields: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -86,6 +87,7 @@ fun VideoMiningRoute(
         onConfirmUndo = viewModel::confirmUndo,
         onDismissUndoConfirmation = viewModel::dismissUndoConfirmation,
         onReturnToActiveRun = onReturnToActiveRun,
+        onMapFields = onMapFields,
         modifier = modifier,
     )
 }

@@ -14,6 +14,7 @@ object VideoMiningTestTags {
     const val SETUP_HINT = "setup_hint"
     const val TEST_TIMING = "test_timing"
     const val START = "start_mining"
+    const val MAP_FIELDS = "map_fields"
     const val PROGRESS = "mining_progress"
     const val SELECT_ALL = "select_all_candidates"
     const val FINISH_CURATION = "finish_curation"

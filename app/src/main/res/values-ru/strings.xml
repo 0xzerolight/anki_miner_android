@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Поле «Аудио» не сопоставлено: при майнинге аудио сохраняются только слова, чей файл содержит встроенную обложку.</string>
     <string name="expression_audio_field_unmapped_warning">Ни одно поле не сопоставлено с озвучкой слова. Сопоставьте поле «WordAudio», иначе карточки останутся без произношения.</string>
     <string name="audio_pack_unusable_warning">Непригодный аудиопакет пропущен. Импортируйте заново в разделе Настройки → Ресурсы.</string>
+    <string name="mining_advisory_sentence_audio">Карточки останутся без аудио предложения: для него не сопоставлено поле.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Карточки останутся без аудио предложения и слова: поля не сопоставлены.</string>
+    <string name="mining_advisory_map_fields">Сопоставить поля</string>
     <string name="subtitle_file_error">Доступ потерян. Выберите снова.</string>
     <string name="subtitle_selection_error_type">Выберите файл субтитров (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Субтитры перевода: доступ потерян. Выберите снова.</string>

@@ -4,6 +4,7 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewmodel.CreationExtras
+import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.MiningRunUndoManager
@@ -41,6 +42,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
+import com.ankiminer.android.ui.mining.SentenceAudioAdvisory
 import com.ankiminer.android.ui.reading.CurationPageImageUiState
 import com.ankiminer.android.ui.reading.ReadingDocumentSelectionError
 import com.ankiminer.android.ui.reading.ReadingMiningCommandError
@@ -56,6 +58,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -239,6 +242,36 @@ class ReadingMiningViewModelTest {
 
         assertNotNull(factory.create(ReadingMiningViewModel::class.java, CreationExtras.Empty))
     }
+
+    @Test
+    fun advisoriesFollowTheFieldMapAndAudioPacks() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val unmapped =
+                ReadingMiningViewModel(RecordingReadingRepository(), ImmediateSafBroker(), fieldMap = flowOf(emptyMap()))
+            val mapped =
+                ReadingMiningViewModel(
+                    RecordingReadingRepository(),
+                    ImmediateSafBroker(),
+                    fieldMap = flowOf(mapOf("audio" to "Audio")),
+                    audioPacks =
+                        flowOf(
+                            listOf(
+                                InstalledAudioPack(
+                                    "nhk16",
+                                    "nhk16",
+                                    "nhk16",
+                                    entryCount = 100,
+                                    contentAvailable = true,
+                                ),
+                            ),
+                        ),
+                )
+            runCurrent()
+
+            assertEquals(SentenceAudioAdvisory.UNMAPPED, unmapped.uiState.value.advisories.sentenceAudio)
+            assertEquals(SentenceAudioAdvisory.NONE, mapped.uiState.value.advisories.sentenceAudio)
+            assertTrue(mapped.uiState.value.advisories.wordAudioUnmapped)
+        }
 
     @Test
     fun switchingSourceModesPreservesPickedFileAndPasteDraft() =

@@ -71,6 +71,9 @@
     <string name="audio_field_unmapped_warning">Campo de áudio não mapeado: uma execução de áudio mantém apenas palavras cujo arquivo tem capa incorporada.</string>
     <string name="expression_audio_field_unmapped_warning">Nenhum campo está mapeado para o áudio da palavra. Mapeie “WordAudio” ou os cartões ficam sem pronúncia.</string>
     <string name="audio_pack_unusable_warning">Pacote de áudio inutilizável ignorado. Reimporte em Configurações → Recursos.</string>
+    <string name="mining_advisory_sentence_audio">Os cartões ficarão sem áudio da frase: nenhum campo está mapeado.</string>
+    <string name="mining_advisory_sentence_and_word_audio">Os cartões ficarão sem áudio da frase e da palavra: nenhum campo está mapeado.</string>
+    <string name="mining_advisory_map_fields">Mapear campos</string>
     <string name="subtitle_file_error">Acesso perdido. Escolha novamente.</string>
     <string name="subtitle_selection_error_type">Escolha um arquivo de legendas (.srt, .ass, .ssa, .vtt).</string>
     <string name="secondary_subtitle_file_error">Legendas de tradução: acesso perdido. Escolha novamente.</string>
