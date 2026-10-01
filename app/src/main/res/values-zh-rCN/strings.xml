@@ -99,6 +99,7 @@
     <string name="curation_known_pending">已知 · 待确认</string>
     <string name="curation_copy_word">复制单词</string>
     <string name="curation_copy_sentence">复制句子</string>
+    <string name="curation_copy_menu">复制…</string>
     <string name="curation_expand_previous_line">+ 上一行</string>
     <string name="curation_expand_next_line">+ 下一行</string>
     <string name="curation_expand_reset">重置行</string>

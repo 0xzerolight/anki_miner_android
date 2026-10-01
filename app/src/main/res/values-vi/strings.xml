@@ -99,6 +99,7 @@
     <string name="curation_known_pending">Đã biết · chờ xử lý</string>
     <string name="curation_copy_word">Sao chép từ</string>
     <string name="curation_copy_sentence">Sao chép câu</string>
+    <string name="curation_copy_menu">Sao chép…</string>
     <string name="curation_expand_previous_line">+ Dòng trước</string>
     <string name="curation_expand_next_line">+ Dòng sau</string>
     <string name="curation_expand_reset">Đặt lại dòng</string>

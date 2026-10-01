@@ -99,6 +99,7 @@
     <string name="curation_known_pending">Известные · ожидают</string>
     <string name="curation_copy_word">Скопировать слово</string>
     <string name="curation_copy_sentence">Скопировать предложение</string>
+    <string name="curation_copy_menu">Копировать…</string>
     <string name="curation_expand_previous_line">+ Предыдущая строка</string>
     <string name="curation_expand_next_line">+ Следующая строка</string>
     <string name="curation_expand_reset">Сбросить строки</string>

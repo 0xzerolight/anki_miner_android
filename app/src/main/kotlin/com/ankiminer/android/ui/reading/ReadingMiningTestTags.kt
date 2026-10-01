@@ -33,6 +33,9 @@ object ReadingMiningTestTags {
     fun candidateKnown(candidateId: String): String =
         "reading_candidate_known:$candidateId"
 
+    fun candidateCopyMenu(candidateId: String): String =
+        "reading_candidate_copy_menu:$candidateId"
+
     fun candidateCopyWord(candidateId: String): String =
         "reading_candidate_copy_word:$candidateId"
 

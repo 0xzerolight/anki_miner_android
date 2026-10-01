@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.video
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.requiredHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -546,8 +547,8 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandReset("candidate-1")))
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertIsNotEnabled()
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateExpandPrev("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateExpandReset("candidate-1")).assertDoesNotExist()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.expansionPreview("candidate-1"))
             .assertDoesNotExist()
@@ -648,7 +649,7 @@ class VideoMiningScreenTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val initialText = context.getString(R.string.curation_clip_window, 1.0, 3.0, 2.0)
         assertEquals(initialText, clipReadoutText("candidate-1"))
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertDoesNotExist()
 
         composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipSlider("candidate-1")).performTouchInput {
             down(Offset(right - 4f, centerY))
@@ -662,7 +663,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun resetIsDisabledUntilTheWindowIsEdited() {
+    fun clipResetAppearsOnlyOnceTheWindowIsEdited() {
         val request = request()
         setScreen(
             state =
@@ -678,8 +679,8 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipReset("candidate-1")))
-        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertIsNotEnabled()
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.candidateClipSlider("candidate-1")))
+        composeRule.onNodeWithTag(VideoMiningTestTags.candidateClipReset("candidate-1")).assertDoesNotExist()
     }
 
     @Test
@@ -2270,8 +2271,11 @@ class VideoMiningScreenTest {
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(
-                hasTestTag(VideoMiningTestTags.candidateCopySentence(first.candidateId)),
+                hasTestTag(VideoMiningTestTags.candidateCopyMenu(first.candidateId)),
             )
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.candidateCopyMenu(first.candidateId))
+            .performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidateCopySentence(first.candidateId))
             .performClick()
@@ -2373,6 +2377,40 @@ class VideoMiningScreenTest {
         )
         composeRule.onAllNodesWithText("1 occurrence", substring = true).assertCountEquals(2)
         composeRule.onAllNodesWithText("1 occurrences", substring = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun expandedRowLeadsWithTheSentenceThenDefinitionThenTools() {
+        val request = request()
+        val candidateId = request.candidates.first().candidateId
+        composeRule.setContent {
+            AnkiMinerTheme {
+                Box(Modifier.requiredHeight(2400.dp)) {
+                    ScreenUnderTest(
+                        state =
+                            VideoMiningUiState(
+                                runState = MiningRunState.Curating(request),
+                                curation =
+                                    curationState(request, definition = CurationDefinition.Missing).copy(
+                                        player = CurationPlayerUiState("/cache/episode.mkv", emptyList(), false),
+                                        clipWindow = clipWindowState(),
+                                    ),
+                            ),
+                    )
+                }
+            }
+        }
+
+        fun top(tag: String) = composeRule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot.top
+        val sentence =
+            top(VideoMiningTestTags.sentence(candidateId, request.candidates.first().defaultSentenceId))
+        val definition = top(VideoMiningTestTags.DEFINITION)
+        val clip = top(VideoMiningTestTags.candidateClipSlider(candidateId))
+        val known = top(VideoMiningTestTags.candidateKnown(candidateId))
+        assertTrue(
+            "sentence=$sentence definition=$definition clip=$clip known=$known",
+            sentence < definition && definition < clip && clip < known,
+        )
     }
 
     @Test

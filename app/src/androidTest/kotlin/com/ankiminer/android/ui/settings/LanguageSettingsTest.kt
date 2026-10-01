@@ -252,7 +252,6 @@ class LanguageSettingsTest {
                         containerColor = Color.Transparent,
                         selected = true,
                         enabled = true,
-                        isLast = true,
                         testTag = "sentence",
                         onClick = {},
                         selectable = false,

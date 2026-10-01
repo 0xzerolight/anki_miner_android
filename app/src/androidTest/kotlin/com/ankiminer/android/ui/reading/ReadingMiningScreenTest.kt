@@ -544,8 +544,11 @@ class ReadingMiningScreenTest {
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(
-                hasTestTag(ReadingMiningTestTags.candidateCopySentence(first.candidateId)),
+                hasTestTag(ReadingMiningTestTags.candidateCopyMenu(first.candidateId)),
             )
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.candidateCopyMenu(first.candidateId))
+            .performClick()
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.candidateCopySentence(first.candidateId))
             .performClick()

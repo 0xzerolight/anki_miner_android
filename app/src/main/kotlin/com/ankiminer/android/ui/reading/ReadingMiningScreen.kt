@@ -912,55 +912,13 @@ private fun LazyListScope.curationItems(
             )
         }
         if (expanded) {
-            item(
-                key = "reading_actions:${candidate.candidateId}",
-                contentType = "row_actions",
-            ) {
-                CurationRowActions(
-                    containerColor = curationRowContainerColor(selected, animateSelection),
-                    known = known,
-                    enabled = enabled,
-                    knownTestTag = ReadingMiningTestTags.candidateKnown(candidate.candidateId),
-                    copyWordTestTag =
-                        ReadingMiningTestTags.candidateCopyWord(candidate.candidateId),
-                    copySentenceTestTag =
-                        ReadingMiningTestTags.candidateCopySentence(candidate.candidateId),
-                    onToggleKnown = { marked ->
-                        onMarkCandidateKnown(candidate.candidateId, marked)
-                    },
-                    onCopyWord = { copy(wordLabel, candidate.minedForm, copiedWord) },
-                    onCopySentence = {
-                        val chosen =
-                            candidate.sentences.firstOrNull { sentence ->
-                                sentence.sentenceId ==
-                                    curation.sentenceIds[candidate.candidateId]
-                            } ?: candidate.sentences.first()
-                        copy(sentenceLabel, chosen.sentence, copiedSentence)
-                    },
-                )
-            }
-            curation.definition?.let { definition ->
-                item(
-                    key = "reading_definition:${candidate.candidateId}",
-                    contentType = "definition",
-                ) {
-                    CurationDefinitionPane(
-                        definition = definition,
-                        containerColor =
-                            curationRowContainerColor(selected, animateSelection),
-                        term = candidate.minedForm,
-                        testTag = ReadingMiningTestTags.DEFINITION,
-                        maxHeight = definitionMaxHeight,
-                    )
-                }
-            }
             val layout =
                 curationSentenceLayout(
                     candidate = candidate,
                     selectedSentenceId = curation.sentenceIds[candidate.candidateId],
                 )
             if (!layout.disclose) {
-                candidate.sentences.forEachIndexed { index, sentence ->
+                candidate.sentences.forEach { sentence ->
                     val sentenceTestTag =
                         ReadingMiningTestTags.sentence(
                             candidate.candidateId,
@@ -981,14 +939,8 @@ private fun LazyListScope.curationItems(
                             selected =
                                 sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
                             enabled = enabled,
-                            isLast = index == candidate.sentences.lastIndex,
                             testTag = sentenceTestTag,
                             onClick = onClick,
-                            modifier =
-                                Modifier.padding(
-                                    bottom =
-                                        curationGroupGap(last = index == candidate.sentences.lastIndex),
-                                ),
                             selectable = layout.selectable,
                         )
                     }
@@ -1005,7 +957,6 @@ private fun LazyListScope.curationItems(
                             curationRowContainerColor(selected, animateSelection),
                         selected = true,
                         enabled = enabled,
-                        isLast = false,
                         testTag = ReadingMiningTestTags.chosenSentence(candidate.candidateId),
                         onClick = {
                             onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
@@ -1022,17 +973,12 @@ private fun LazyListScope.curationItems(
                         containerColor =
                             curationRowContainerColor(selected, animateSelection),
                         enabled = enabled,
-                        isLast = !alternativesOpen,
                         testTag = ReadingMiningTestTags.alternativesToggle(candidate.candidateId),
                         onToggle = onToggleAlternatives,
-                        modifier =
-                            Modifier.padding(
-                                bottom = curationGroupGap(last = !alternativesOpen),
-                            ),
                     )
                 }
                 if (alternativesOpen) {
-                    layout.alternatives.forEachIndexed { index, sentence ->
+                    layout.alternatives.forEach { sentence ->
                         item(
                             key = "reading_sentence:${candidate.candidateId}:${sentence.sentenceId}",
                             contentType = "sentence",
@@ -1044,7 +990,6 @@ private fun LazyListScope.curationItems(
                                     curationRowContainerColor(selected, animateSelection),
                                 selected = false,
                                 enabled = enabled,
-                                isLast = index == layout.alternatives.lastIndex,
                                 testTag =
                                     ReadingMiningTestTags.sentence(
                                         candidate.candidateId,
@@ -1053,17 +998,54 @@ private fun LazyListScope.curationItems(
                                 onClick = {
                                     onSelectSentence(candidate.candidateId, sentence.sentenceId)
                                 },
-                                modifier =
-                                    Modifier.padding(
-                                        bottom =
-                                            curationGroupGap(
-                                                last = index == layout.alternatives.lastIndex,
-                                            ),
-                                    ),
                             )
                         }
                     }
                 }
+            }
+            curation.definition?.let { definition ->
+                item(
+                    key = "reading_definition:${candidate.candidateId}",
+                    contentType = "definition",
+                ) {
+                    CurationDefinitionPane(
+                        definition = definition,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
+                        term = candidate.minedForm,
+                        testTag = ReadingMiningTestTags.DEFINITION,
+                        maxHeight = definitionMaxHeight,
+                    )
+                }
+            }
+            item(
+                key = "reading_actions:${candidate.candidateId}",
+                contentType = "row_actions",
+            ) {
+                CurationRowActions(
+                    containerColor = curationRowContainerColor(selected, animateSelection),
+                    known = known,
+                    enabled = enabled,
+                    knownTestTag = ReadingMiningTestTags.candidateKnown(candidate.candidateId),
+                    copyMenuTestTag = ReadingMiningTestTags.candidateCopyMenu(candidate.candidateId),
+                    copyWordTestTag =
+                        ReadingMiningTestTags.candidateCopyWord(candidate.candidateId),
+                    copySentenceTestTag =
+                        ReadingMiningTestTags.candidateCopySentence(candidate.candidateId),
+                    onToggleKnown = { marked ->
+                        onMarkCandidateKnown(candidate.candidateId, marked)
+                    },
+                    onCopyWord = { copy(wordLabel, candidate.minedForm, copiedWord) },
+                    onCopySentence = {
+                        val chosen =
+                            candidate.sentences.firstOrNull { sentence ->
+                                sentence.sentenceId ==
+                                    curation.sentenceIds[candidate.candidateId]
+                            } ?: candidate.sentences.first()
+                        copy(sentenceLabel, chosen.sentence, copiedSentence)
+                    },
+                    modifier = Modifier.padding(bottom = curationGroupGap(last = true)),
+                )
             }
         }
     }

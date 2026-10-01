@@ -99,6 +99,7 @@
     <string name="curation_known_pending">Connu · en attente</string>
     <string name="curation_copy_word">Copier le mot</string>
     <string name="curation_copy_sentence">Copier la phrase</string>
+    <string name="curation_copy_menu">Copier…</string>
     <string name="curation_expand_previous_line">+ Ligne précédente</string>
     <string name="curation_expand_next_line">+ Ligne suivante</string>
     <string name="curation_expand_reset">Réinitialiser les lignes</string>

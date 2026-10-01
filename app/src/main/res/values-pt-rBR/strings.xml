@@ -99,6 +99,7 @@
     <string name="curation_known_pending">Conhecida · pendente</string>
     <string name="curation_copy_word">Copiar palavra</string>
     <string name="curation_copy_sentence">Copiar frase</string>
+    <string name="curation_copy_menu">Copiar…</string>
     <string name="curation_expand_previous_line">+ Linha anterior</string>
     <string name="curation_expand_next_line">+ Próxima linha</string>
     <string name="curation_expand_reset">Redefinir linhas</string>

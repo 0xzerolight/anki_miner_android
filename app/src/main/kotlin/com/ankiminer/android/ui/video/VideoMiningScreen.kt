@@ -1035,28 +1035,120 @@ private fun LazyListScope.curationItems(
             )
         }
         if (expanded) {
-            item(key = "actions:${candidate.candidateId}", contentType = "row_actions") {
-                CurationRowActions(
-                    containerColor = curationRowContainerColor(selected, animateSelection),
-                    known = known,
-                    enabled = enabled,
-                    knownTestTag = VideoMiningTestTags.candidateKnown(candidate.candidateId),
-                    copyWordTestTag = VideoMiningTestTags.candidateCopyWord(candidate.candidateId),
-                    copySentenceTestTag =
-                        VideoMiningTestTags.candidateCopySentence(candidate.candidateId),
-                    onToggleKnown = { marked ->
-                        onMarkCandidateKnown(candidate.candidateId, marked)
-                    },
-                    onCopyWord = { copy(wordLabel, candidate.minedForm, copiedWord) },
-                    onCopySentence = {
-                        val chosen =
-                            candidate.sentences.firstOrNull { sentence ->
-                                sentence.sentenceId ==
-                                    curation.sentenceIds[candidate.candidateId]
-                            } ?: candidate.sentences.first()
-                        copy(sentenceLabel, chosen.sentence, copiedSentence)
-                    },
+            val layout =
+                curationSentenceLayout(
+                    candidate = candidate,
+                    selectedSentenceId = curation.sentenceIds[candidate.candidateId],
                 )
+            if (!layout.disclose) {
+                candidate.sentences.forEach { sentence ->
+                    val sentenceTestTag =
+                        VideoMiningTestTags.sentence(
+                            candidate.candidateId,
+                            sentence.sentenceId,
+                        )
+                    val onClick = {
+                        onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                    }
+                    val chosen = sentence.sentenceId == curation.sentenceIds[candidate.candidateId]
+                    item(
+                        key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                        contentType = "sentence",
+                    ) {
+                        CurationSentenceChoice(
+                            candidate = candidate,
+                            sentence = sentence,
+                            containerColor =
+                                curationRowContainerColor(selected, animateSelection),
+                            selected = chosen,
+                            enabled = enabled,
+                            testTag = sentenceTestTag,
+                            onClick = onClick,
+                            selectable = layout.selectable,
+                            translation =
+                                if (chosen) {
+                                    sentence.translationFor(curation.lineExpansions[candidate.candidateId])
+                                } else {
+                                    sentence.translation
+                                },
+                        )
+                    }
+                }
+            } else {
+                item(
+                    key = "chosen:${candidate.candidateId}",
+                    contentType = "sentence",
+                ) {
+                    CurationSentenceChoice(
+                        candidate = candidate,
+                        sentence = layout.chosen,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
+                        selected = true,
+                        enabled = enabled,
+                        testTag = VideoMiningTestTags.chosenSentence(candidate.candidateId),
+                        onClick = {
+                            onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
+                        },
+                        translation =
+                            layout.chosen.translationFor(curation.lineExpansions[candidate.candidateId]),
+                    )
+                }
+                item(
+                    key = "alts:${candidate.candidateId}",
+                    contentType = "alternatives_toggle",
+                ) {
+                    CurationAlternativesToggle(
+                        alternativeCount = layout.alternatives.size,
+                        expanded = alternativesOpen,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
+                        enabled = enabled,
+                        testTag = VideoMiningTestTags.alternativesToggle(candidate.candidateId),
+                        onToggle = onToggleAlternatives,
+                    )
+                }
+                if (alternativesOpen) {
+                    layout.alternatives.forEach { sentence ->
+                        item(
+                            key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
+                            contentType = "sentence",
+                        ) {
+                            CurationSentenceChoice(
+                                candidate = candidate,
+                                sentence = sentence,
+                                containerColor =
+                                    curationRowContainerColor(selected, animateSelection),
+                                selected = false,
+                                enabled = enabled,
+                                testTag =
+                                    VideoMiningTestTags.sentence(
+                                        candidate.candidateId,
+                                        sentence.sentenceId,
+                                    ),
+                                onClick = {
+                                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
+                                },
+                                translation = sentence.translation,
+                            )
+                        }
+                    }
+                }
+            }
+            curation.definition?.let { definition ->
+                item(
+                    key = "definition:${candidate.candidateId}",
+                    contentType = "definition",
+                ) {
+                    CurationDefinitionPane(
+                        definition = definition,
+                        containerColor =
+                            curationRowContainerColor(selected, animateSelection),
+                        term = candidate.minedForm,
+                        testTag = VideoMiningTestTags.DEFINITION,
+                        maxHeight = definitionMaxHeight,
+                    )
+                }
             }
             if (curation.player != null) {
                 item(
@@ -1103,140 +1195,30 @@ private fun LazyListScope.curationItems(
                     )
                 }
             }
-            curation.definition?.let { definition ->
-                item(
-                    key = "definition:${candidate.candidateId}",
-                    contentType = "definition",
-                ) {
-                    CurationDefinitionPane(
-                        definition = definition,
-                        containerColor =
-                            curationRowContainerColor(selected, animateSelection),
-                        term = candidate.minedForm,
-                        testTag = VideoMiningTestTags.DEFINITION,
-                        maxHeight = definitionMaxHeight,
-                    )
-                }
-            }
-            val layout =
-                curationSentenceLayout(
-                    candidate = candidate,
-                    selectedSentenceId = curation.sentenceIds[candidate.candidateId],
+            item(key = "actions:${candidate.candidateId}", contentType = "row_actions") {
+                CurationRowActions(
+                    containerColor = curationRowContainerColor(selected, animateSelection),
+                    known = known,
+                    enabled = enabled,
+                    knownTestTag = VideoMiningTestTags.candidateKnown(candidate.candidateId),
+                    copyMenuTestTag = VideoMiningTestTags.candidateCopyMenu(candidate.candidateId),
+                    copyWordTestTag = VideoMiningTestTags.candidateCopyWord(candidate.candidateId),
+                    copySentenceTestTag =
+                        VideoMiningTestTags.candidateCopySentence(candidate.candidateId),
+                    onToggleKnown = { marked ->
+                        onMarkCandidateKnown(candidate.candidateId, marked)
+                    },
+                    onCopyWord = { copy(wordLabel, candidate.minedForm, copiedWord) },
+                    onCopySentence = {
+                        val chosen =
+                            candidate.sentences.firstOrNull { sentence ->
+                                sentence.sentenceId ==
+                                    curation.sentenceIds[candidate.candidateId]
+                            } ?: candidate.sentences.first()
+                        copy(sentenceLabel, chosen.sentence, copiedSentence)
+                    },
+                    modifier = Modifier.padding(bottom = curationGroupGap(last = true)),
                 )
-            if (!layout.disclose) {
-                candidate.sentences.forEachIndexed { index, sentence ->
-                    val sentenceTestTag =
-                        VideoMiningTestTags.sentence(
-                            candidate.candidateId,
-                            sentence.sentenceId,
-                        )
-                    val onClick = {
-                        onSelectSentence(candidate.candidateId, sentence.sentenceId)
-                    }
-                    val chosen = sentence.sentenceId == curation.sentenceIds[candidate.candidateId]
-                    item(
-                        key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
-                        contentType = "sentence",
-                    ) {
-                        CurationSentenceChoice(
-                            candidate = candidate,
-                            sentence = sentence,
-                            containerColor =
-                                curationRowContainerColor(selected, animateSelection),
-                            selected = chosen,
-                            enabled = enabled,
-                            isLast = index == candidate.sentences.lastIndex,
-                            testTag = sentenceTestTag,
-                            onClick = onClick,
-                            modifier =
-                                Modifier.padding(
-                                    bottom =
-                                        curationGroupGap(last = index == candidate.sentences.lastIndex),
-                                ),
-                            selectable = layout.selectable,
-                            translation =
-                                if (chosen) {
-                                    sentence.translationFor(curation.lineExpansions[candidate.candidateId])
-                                } else {
-                                    sentence.translation
-                                },
-                        )
-                    }
-                }
-            } else {
-                item(
-                    key = "chosen:${candidate.candidateId}",
-                    contentType = "sentence",
-                ) {
-                    CurationSentenceChoice(
-                        candidate = candidate,
-                        sentence = layout.chosen,
-                        containerColor =
-                            curationRowContainerColor(selected, animateSelection),
-                        selected = true,
-                        enabled = enabled,
-                        isLast = false,
-                        testTag = VideoMiningTestTags.chosenSentence(candidate.candidateId),
-                        onClick = {
-                            onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
-                        },
-                        translation =
-                            layout.chosen.translationFor(curation.lineExpansions[candidate.candidateId]),
-                    )
-                }
-                item(
-                    key = "alts:${candidate.candidateId}",
-                    contentType = "alternatives_toggle",
-                ) {
-                    CurationAlternativesToggle(
-                        alternativeCount = layout.alternatives.size,
-                        expanded = alternativesOpen,
-                        containerColor =
-                            curationRowContainerColor(selected, animateSelection),
-                        enabled = enabled,
-                        isLast = !alternativesOpen,
-                        testTag = VideoMiningTestTags.alternativesToggle(candidate.candidateId),
-                        onToggle = onToggleAlternatives,
-                        modifier =
-                            Modifier.padding(
-                                bottom = curationGroupGap(last = !alternativesOpen),
-                            ),
-                    )
-                }
-                if (alternativesOpen) {
-                    layout.alternatives.forEachIndexed { index, sentence ->
-                        item(
-                            key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
-                            contentType = "sentence",
-                        ) {
-                            CurationSentenceChoice(
-                                candidate = candidate,
-                                sentence = sentence,
-                                containerColor =
-                                    curationRowContainerColor(selected, animateSelection),
-                                selected = false,
-                                enabled = enabled,
-                                isLast = index == layout.alternatives.lastIndex,
-                                testTag =
-                                    VideoMiningTestTags.sentence(
-                                        candidate.candidateId,
-                                        sentence.sentenceId,
-                                    ),
-                                onClick = {
-                                    onSelectSentence(candidate.candidateId, sentence.sentenceId)
-                                },
-                                modifier =
-                                    Modifier.padding(
-                                        bottom =
-                                            curationGroupGap(
-                                                last = index == layout.alternatives.lastIndex,
-                                            ),
-                                    ),
-                                translation = sentence.translation,
-                            )
-                        }
-                    }
-                }
             }
         }
     }

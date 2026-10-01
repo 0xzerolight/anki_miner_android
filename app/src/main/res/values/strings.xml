@@ -106,6 +106,7 @@
     <string name="curation_known_pending">Known · pending</string>
     <string name="curation_copy_word">Copy word</string>
     <string name="curation_copy_sentence">Copy sentence</string>
+    <string name="curation_copy_menu">Copy…</string>
     <string name="curation_expand_previous_line">+ Previous line</string>
     <string name="curation_expand_next_line">+ Next line</string>
     <string name="curation_expand_reset">Reset lines</string>

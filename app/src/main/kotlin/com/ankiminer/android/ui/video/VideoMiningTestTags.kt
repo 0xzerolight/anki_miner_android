@@ -50,6 +50,8 @@ object VideoMiningTestTags {
 
     fun candidateKnown(candidateId: String): String = "candidate_known:$candidateId"
 
+    fun candidateCopyMenu(candidateId: String): String = "candidate_copy_menu:$candidateId"
+
     fun candidateCopyWord(candidateId: String): String = "candidate_copy_word:$candidateId"
 
     fun candidateCopySentence(candidateId: String): String =

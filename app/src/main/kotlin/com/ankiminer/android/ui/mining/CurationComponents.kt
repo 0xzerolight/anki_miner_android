@@ -563,6 +563,7 @@ internal fun CurationRowActions(
     known: Boolean,
     enabled: Boolean,
     knownTestTag: String,
+    copyMenuTestTag: String,
     copyWordTestTag: String,
     copySentenceTestTag: String,
     onToggleKnown: (Boolean) -> Unit,
@@ -570,10 +571,13 @@ internal fun CurationRowActions(
     onCopySentence: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    var copyMenuOpen by remember { mutableStateOf(false) }
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
+        // Last part of an expanded group: it closes the card.
+        shape = RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp),
     ) {
         Column {
             HorizontalDivider()
@@ -601,21 +605,33 @@ internal fun CurationRowActions(
                         ),
                     )
                 }
-                TextButton(
-                    onClick = onCopyWord,
-                    enabled = enabled,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(copyWordTestTag),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(stringResource(R.string.curation_copy_word))
-                }
-                TextButton(
-                    onClick = onCopySentence,
-                    enabled = enabled,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(copySentenceTestTag),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(stringResource(R.string.curation_copy_sentence))
+                Box {
+                    TextButton(
+                        onClick = { copyMenuOpen = true },
+                        enabled = enabled,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(copyMenuTestTag),
+                        colors = accentTextButtonColors(),
+                    ) {
+                        Text(stringResource(R.string.curation_copy_menu))
+                    }
+                    DropdownMenu(expanded = copyMenuOpen, onDismissRequest = { copyMenuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.curation_copy_word)) },
+                            onClick = {
+                                copyMenuOpen = false
+                                onCopyWord()
+                            },
+                            modifier = Modifier.testTag(copyWordTestTag),
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.curation_copy_sentence)) },
+                            onClick = {
+                                copyMenuOpen = false
+                                onCopySentence()
+                            },
+                            modifier = Modifier.testTag(copySentenceTestTag),
+                        )
+                    }
                 }
             }
         }
@@ -700,13 +716,15 @@ internal fun CurationExpansionControls(
                 ) {
                     Text(stringResource(R.string.curation_expand_next_line))
                 }
-                TextButton(
-                    onClick = onReset,
-                    enabled = enabled && expanded,
-                    modifier = Modifier.heightIn(min = 48.dp).testTag(resetTestTag),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(stringResource(R.string.curation_expand_reset))
+                if (expanded) {
+                    TextButton(
+                        onClick = onReset,
+                        enabled = enabled,
+                        modifier = Modifier.heightIn(min = 48.dp).testTag(resetTestTag),
+                        colors = accentTextButtonColors(),
+                    ) {
+                        Text(stringResource(R.string.curation_expand_reset))
+                    }
                 }
             }
         }
@@ -849,7 +867,6 @@ internal fun CurationSentenceChoice(
     containerColor: Color,
     selected: Boolean,
     enabled: Boolean,
-    isLast: Boolean,
     testTag: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -872,12 +889,7 @@ internal fun CurationSentenceChoice(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape =
-            if (isLast) {
-                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-            } else {
-                RoundedCornerShape(0.dp)
-            },
+        shape = RoundedCornerShape(0.dp),
     ) {
         Column {
             HorizontalDivider()
@@ -947,7 +959,6 @@ internal fun CurationAlternativesToggle(
     expanded: Boolean,
     containerColor: Color,
     enabled: Boolean,
-    isLast: Boolean,
     testTag: String,
     onToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -970,12 +981,7 @@ internal fun CurationAlternativesToggle(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
         contentColor = MaterialTheme.colorScheme.onSurface,
-        shape =
-            if (isLast) {
-                RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-            } else {
-                RoundedCornerShape(0.dp)
-            },
+        shape = RoundedCornerShape(0.dp),
     ) {
         Column {
             HorizontalDivider()
