@@ -65,6 +65,10 @@ _BOOL_FIELDS = frozenset(
         "use_i_plus_one_filter",
         "screenshot_animated",
         "screenshot_animated_match_audio",
+        "merge_incomplete_cues",
+        "strict_card_order",
+        "frequency_keep_unranked",
+        "known_words_match_kana_variants",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
@@ -80,6 +84,9 @@ _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
 }
 _INT_RANGES: Mapping[str, tuple[int | None, int | None]] = {
     "audio_bitrate": (1, None),
+    # The two ends of one band; 0 leaves that end open. The engine takes any
+    # pair, so an inverted band is the settings screen's to prevent, as on desktop.
+    "min_frequency_rank": (0, None),
     "max_frequency_rank": (0, None),
     "max_sentence_chars": (0, None),
     "reading_min_occurrence": (1, None),
@@ -118,15 +125,6 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
 # never assigned to AnkiMinerConfig, because that would build the desktop
 # Google/Papago sentence-TTS chain.
 _LEGACY_ANDROID_TTS_FIELD = "reading_tts_enabled"
-# Compatibility-only input while the Android settings still carry the toggle.
-# The engine dropped the field: a non-zero cap alone now turns the sentence
-# length filter on. Before that, filtering ran only when this toggle was true AND
-# a cap was set, so a stored cap under an absent or false toggle filtered
-# nothing. Both caps are zeroed unless the toggle is present and true, which
-# keeps every stored snapshot mining exactly what it mined before.
-_LEGACY_ANDROID_SENTENCE_LENGTH_FIELD = "use_sentence_length_filter"
-_SENTENCE_LENGTH_CAPS_OFF: Mapping[str, object] = {"max_sentence_duration_seconds": 0.0, "max_sentence_chars": 0}
-_LEGACY_ANDROID_FIELDS = frozenset({_LEGACY_ANDROID_TTS_FIELD, _LEGACY_ANDROID_SENTENCE_LENGTH_FIELD})
 _ANDROID_BUNDLED_WORDSETS = frozenset({"surnames", "given-names", "place-names", "org-product"})
 
 
@@ -533,7 +531,7 @@ def map_config_settings(
 
     if not isinstance(settings, Mapping) or any(not isinstance(key, str) for key in settings):
         raise BridgeProtocolError("invalid_config_snapshot", "settings must be a JSON object")
-    unknown = set(settings) - _EXPOSED_CONFIG_FIELDS - _LEGACY_ANDROID_FIELDS
+    unknown = set(settings) - _EXPOSED_CONFIG_FIELDS - {_LEGACY_ANDROID_TTS_FIELD}
     if unknown:
         raise BridgeProtocolError(
             "unknown_config_field",
@@ -551,9 +549,6 @@ def map_config_settings(
             "androidTtsEnabled conflicts with legacy reading_tts_enabled",
         )
     ephemeral_tts = android_tts_enabled if android_tts_enabled is not None else (legacy_tts or False)
-    length_filter_on = _LEGACY_ANDROID_SENTENCE_LENGTH_FIELD in settings and _boolean(
-        _LEGACY_ANDROID_SENTENCE_LENGTH_FIELD, settings[_LEGACY_ANDROID_SENTENCE_LENGTH_FIELD]
-    )
 
     require_initialized(paths.files_dir)
 
@@ -568,7 +563,7 @@ def map_config_settings(
     base = AnkiMinerConfig()
     updates: dict[str, object] = {}
     for field_name, value in settings.items():
-        if field_name in _LEGACY_ANDROID_FIELDS:
+        if field_name == _LEGACY_ANDROID_TTS_FIELD:
             continue
         if field_name in _STRING_FIELDS:
             updates[field_name] = (
@@ -605,9 +600,6 @@ def map_config_settings(
             updates[field_name] = _expression_audio_chain(value, AudioSourceEntry)
         else:  # pragma: no cover - guarded by the allowlist union
             raise BridgeProtocolError("unknown_config_field", field_name)
-
-    if not length_filter_on:
-        updates.update(_SENTENCE_LENGTH_CAPS_OFF)
 
     # These overrides are deliberately applied after user settings.
     updates.update(_android_path_overrides(paths))

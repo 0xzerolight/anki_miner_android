@@ -173,7 +173,9 @@
           "description": "Legacy Android-only alias; never assigned to the engine config"
         },
         "pitch_category_format": {"enum": ["jp", "romaji"]},
+        "min_frequency_rank": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
         "max_frequency_rank": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "frequency_keep_unranked": {"type": "boolean"},
         "frequency_chain": {
           "type": "array",
           "uniqueItems": true,
@@ -186,6 +188,7 @@
           "items": {"$ref": "#/$defs/pitchSource"}
         },
         "use_known_words_db": {"type": "boolean"},
+        "known_words_match_kana_variants": {"type": "boolean"},
         "exclude_hiragana_only_words": {"type": "boolean"},
         "exclude_katakana_only_words": {"type": "boolean"},
         "blacklist_path": {"$ref": "#/$defs/absolutePathOrNull"},
@@ -196,14 +199,12 @@
         "subtitle_regex_replacement": {"type": "string"},
         "use_subtitle_regex_filter": {"type": "boolean"},
         "bold_target_in_sentence": {"type": "boolean"},
+        "strict_card_order": {"type": "boolean"},
         "deduplicate_sentences": {"type": "boolean"},
         "use_i_plus_one_filter": {"type": "boolean"},
-        "use_sentence_length_filter": {
-          "type": "boolean",
-          "description": "Legacy Android-only toggle; never assigned to the engine config. Unless it is present and true, both sentence-length caps are forced to 0"
-        },
         "max_sentence_duration_seconds": {"type": "number", "minimum": 0},
         "max_sentence_chars": {"type": "integer", "minimum": 0, "maximum": 9223372036854775807},
+        "merge_incomplete_cues": {"type": "boolean"},
         "reading_min_occurrence": {"type": "integer", "minimum": 1, "maximum": 9223372036854775807},
         "max_parallel_workers": {"type": "integer", "minimum": 1, "maximum": 32}
       }

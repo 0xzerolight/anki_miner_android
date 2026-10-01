@@ -22,7 +22,7 @@ def _bootstrap_mapper(initialized_bridge_home: Path) -> None:
     assert Path(os.environ["ANKI_MINER_HOME"]).resolve() == initialized_bridge_home.resolve()
 
 
-# The exact wire shape the Kotlin EngineSettingsSnapshotMapper emits: all 18 logical keys are
+# The exact wire shape the Kotlin EngineSettingsSnapshotMapper emits: all 19 logical keys are
 # always present, the seven required keys carry the user's field names, every optional key is
 # present but blank rather than absent (so no key can inherit a desktop default via overlay).
 _USER_FIELD_MAP = {
@@ -44,13 +44,17 @@ _USER_FIELD_MAP = {
     "frequency": "",
     "frequency_sort": "",
     "source": "",
+    "sentence_translation": "",
 }
 
 
-def test_user_field_map_covers_all_eighteen_logical_keys() -> None:
-    # Pins the fixture to the 18-key contract shared with AnkiFieldKeys.ALL, so a drift in either
+def test_user_field_map_covers_every_logical_key() -> None:
+    # Pins the fixture to the 19-key contract shared with AnkiFieldKeys.ALL, so a drift in either
     # side surfaces here rather than silently narrowing the round-trip below.
-    assert len(_USER_FIELD_MAP) == 18
+    from anki_miner.config import AnkiMinerConfig
+
+    assert len(_USER_FIELD_MAP) == 19
+    assert set(_USER_FIELD_MAP) == set(AnkiMinerConfig().anki_fields)
 
 
 def test_empty_note_type_snapshot_is_rejected_fail_closed(tmp_path: Path) -> None:
@@ -93,10 +97,8 @@ def test_user_note_type_with_partial_field_map_round_trips(tmp_path: Path) -> No
     # desktop default for a key the user left unmapped.
     assert config.anki_fields["glossary"] == ""
     assert config.anki_fields["pitch_text"] == ""
-    # Every supplied value round-trips verbatim. The one key beyond the 18 is the engine's own
-    # sentence_translation, whose default is blank, so the overlay adds a field that writes nothing
-    # until Kotlin maps it.
-    assert dict(config.anki_fields) == {**_USER_FIELD_MAP, "sentence_translation": ""}
+    # Every supplied value round-trips verbatim.
+    assert dict(config.anki_fields) == _USER_FIELD_MAP
 
 
 def test_user_note_type_partial_field_map_passes_request_config_validation() -> None:
