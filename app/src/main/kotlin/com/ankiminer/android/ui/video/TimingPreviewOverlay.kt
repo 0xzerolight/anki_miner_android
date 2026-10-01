@@ -18,7 +18,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,7 +47,7 @@ import com.ankiminer.android.ui.mining.TimingPreviewState
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
-import com.ankiminer.android.ui.theme.outlinedActionButtonColors
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -179,7 +178,7 @@ internal fun TimingPreviewOverlay(
                     }
                 }
                 item(key = "toggle") {
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = {
                             val updated = state.toggleUnshifted()
                             onToggleUnshifted()
@@ -189,8 +188,6 @@ internal fun TimingPreviewOverlay(
                             Modifier
                                 .fillMaxWidth()
                                 .testTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE),
-                        colors = outlinedActionButtonColors(),
-                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(stringResource(R.string.timing_preview_toggle_unshifted))
                     }
@@ -217,7 +214,7 @@ internal fun TimingPreviewOverlay(
                     items = state.cues,
                     key = { index, _ -> index },
                 ) { index, cue ->
-                    OutlinedButton(
+                    SecondaryActionButton(
                         onClick = {
                             onSelectCue(index)
                             if (seekable == true) {
@@ -228,8 +225,6 @@ internal fun TimingPreviewOverlay(
                             Modifier
                                 .fillMaxWidth()
                                 .testTag(VideoMiningTestTags.timingPreviewCue(index)),
-                        colors = outlinedActionButtonColors(),
-                        shape = MaterialTheme.shapes.small,
                     ) {
                         Text(cue.text)
                     }
@@ -239,14 +234,12 @@ internal fun TimingPreviewOverlay(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
-                OutlinedButton(
+                SecondaryActionButton(
                     onClick = onCancel,
                     modifier =
                         Modifier
                             .weight(1f)
                             .testTag(VideoMiningTestTags.TIMING_PREVIEW_CANCEL),
-                    colors = outlinedActionButtonColors(),
-                    shape = MaterialTheme.shapes.small,
                 ) {
                     Text(stringResource(R.string.timing_preview_cancel))
                 }
@@ -322,11 +315,9 @@ private fun NudgeButton(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(
+    SecondaryActionButton(
         onClick = onClick,
         modifier = modifier.testTag(testTag),
-        colors = outlinedActionButtonColors(),
-        shape = MaterialTheme.shapes.small,
     ) {
         Text(label)
     }

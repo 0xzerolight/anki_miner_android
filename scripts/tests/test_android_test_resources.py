@@ -66,6 +66,50 @@ class AndroidTestResourceTest(unittest.TestCase):
             self.assertIn("emulator is running", result.stderr)
             self.assertFalse((Path(temporary.name) / "gradle-ran").exists())
 
+    def _emulator_is_running(self, command_line: str) -> bool:
+        temporary, bin_dir, environment = self._fixture()
+        with temporary:
+            self._script(bin_dir / "adb", "echo 'List of devices attached'\n")
+            # Match the guard's -f pattern against one recorded command line.
+            (Path(temporary.name) / "processes").write_text(f"{command_line}\n", encoding="utf-8")
+            self._script(bin_dir / "pgrep", 'grep -Eq -- "$2" "$FAKE_ROOT/processes"\n')
+            result = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    'source "$1"; anki_miner_emulator_is_running',
+                    "resource-test",
+                    str(RESOURCE_SCRIPT),
+                ],
+                check=False,
+                capture_output=True,
+                env=environment,
+                text=True,
+            )
+            return result.returncode == 0
+
+    def test_emulator_guard_matches_android_emulator_processes(self) -> None:
+        for command_line in (
+            "emulator -avd anki_miner_api26 -port 5558 -no-window",
+            "/opt/sdk/emulator/emulator -avd anki_miner_api26",
+            "/opt/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64 -netdelay none -avd anki_miner_api26",
+            "/opt/sdk/emulator/qemu/linux-x86_64/qemu-system-x86_64-headless -port 5558",
+            "/elsewhere/qemu-system-aarch64 -avd anki_miner_api36",
+        ):
+            with self.subTest(command_line=command_line):
+                self.assertTrue(self._emulator_is_running(command_line))
+
+    def test_emulator_guard_ignores_host_vms_and_mentions(self) -> None:
+        for command_line in (
+            "/usr/bin/qemu-system-x86_64 -name guest=win11,debug-threads=on -S -machine q35",
+            "qemu-system-x86_64 -m 4096 -drive file=disk.img",
+            "bash -c until adb -s emulator-5558 shell true; do sleep 1; done",
+            "bash scripts/emulator.sh --lane api26 --headless",
+            "grep qemu-system emulator log",
+        ):
+            with self.subTest(command_line=command_line):
+                self.assertFalse(self._emulator_is_running(command_line))
+
     def test_connected_boundary_rejects_a_running_gradle_process(self) -> None:
         temporary, bin_dir, environment = self._fixture()
         with temporary:

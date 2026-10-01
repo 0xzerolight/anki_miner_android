@@ -52,6 +52,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.accentTextColor
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.disabledActionContentColor
 import com.ankiminer.android.ui.theme.selectedRowContainer
@@ -430,7 +431,7 @@ private fun MoveButton(
         shape = MaterialTheme.shapes.small,
         colors =
             IconButtonDefaults.outlinedIconButtonColors(
-                contentColor = MaterialTheme.colorScheme.primary,
+                contentColor = accentTextColor(),
                 disabledContentColor = disabledActionContentColor(),
             ),
         border = actionBorder(enabled = enabled),

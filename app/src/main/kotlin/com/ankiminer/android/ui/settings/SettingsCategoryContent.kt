@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -62,6 +61,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.ThemePalettes
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.FrequencyBandEnd
@@ -1601,12 +1601,11 @@ private fun LazyListScope.diagnosticsSettings(
             )
             // diagnostics.txt already carries the bounded report, and the share sheet can save
             // this same ZIP, so separate text-share and SAF-save routes would duplicate delivery.
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = callbacks.onShareDiagnosticsBundle,
                 enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
                     diagnosticsExport !is DiagnosticsExportState.Ready,
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
             ) {
                 Text(stringResource(R.string.settings_share_diagnostics_bundle))
             }
@@ -1630,7 +1629,7 @@ private fun LazyListScope.diagnosticsSettings(
         }
     }
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "attributions") {
-        TextButton(onClick = callbacks.onAttributions) {
+        TextButton(onClick = callbacks.onAttributions, colors = accentTextButtonColors()) {
             Text(stringResource(R.string.settings_attributions))
         }
     }
@@ -1685,10 +1684,13 @@ internal fun UpdateAvailableActions(
         horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
-        TextButton(onClick = { uriHandler.openUri(available.releasePageUrl) }) {
+        TextButton(
+            onClick = { uriHandler.openUri(available.releasePageUrl) },
+            colors = accentTextButtonColors(),
+        ) {
             Text(stringResource(R.string.settings_update_view_release))
         }
-        TextButton(onClick = onSkip) {
+        TextButton(onClick = onSkip, colors = accentTextButtonColors()) {
             Text(stringResource(R.string.settings_update_skip))
         }
     }

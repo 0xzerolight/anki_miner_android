@@ -42,6 +42,7 @@ import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
 
@@ -212,10 +213,14 @@ internal fun KnownWordsManagerScreen(
                         pendingResetName = null
                         callbacks.onReset(scope)
                     },
+                    colors = accentTextButtonColors(),
                 ) { Text(stringResource(R.string.confirm)) }
             },
             dismissButton = {
-                TextButton(onClick = { pendingResetName = null }) {
+                TextButton(
+                    onClick = { pendingResetName = null },
+                    colors = accentTextButtonColors(),
+                ) {
                     Text(stringResource(R.string.cancel))
                 }
             },

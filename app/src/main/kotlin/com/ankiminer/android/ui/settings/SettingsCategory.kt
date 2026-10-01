@@ -43,6 +43,7 @@ import com.ankiminer.android.ui.community.CommunityLinks
 import com.ankiminer.android.ui.mining.boundedSaveableQuery
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
+import com.ankiminer.android.ui.theme.accentTextColor
 
 internal enum class SettingsCategory(
     @param:StringRes val label: Int,
@@ -266,6 +267,8 @@ internal fun SettingsCategoryLayout(
                             Tab(
                                 selected = selectedCategory == category,
                                 onClick = { onSelectedCategory(category) },
+                                selectedContentColor = accentTextColor(),
+                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                                 text = {
                                     Text(
                                         text = stringResource(category.label),

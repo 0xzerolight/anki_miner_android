@@ -78,8 +78,10 @@ import com.ankiminer.android.ui.theme.ExitActionButton
 import com.ankiminer.android.ui.theme.MetricTile
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.actionBorder
 import com.ankiminer.android.ui.theme.disabledActionContentColor
+import com.ankiminer.android.ui.theme.isCompactLayout
 import com.ankiminer.android.ui.theme.outlinedActionButtonColors
 import kotlinx.coroutines.launch
 
@@ -479,12 +481,16 @@ internal fun StickyCurationActions(
                         showCancelConfirmation = false
                         onCancel()
                     },
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.cancel_mining_confirm))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCancelConfirmation = false }) {
+                TextButton(
+                    onClick = { showCancelConfirmation = false },
+                    colors = accentTextButtonColors(),
+                ) {
                     Text(stringResource(R.string.cancel_mining_keep))
                 }
             },
@@ -499,53 +505,46 @@ internal fun SourcesCard(
 ) {
     // Dividers already group these rows; a border around them only added a second edge inside the
     // list's own inset.
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val stack =
-            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
-        Column {
-            sources.forEachIndexed { index, source ->
-                // "No file selected" is no longer drawn; it stays here so the empty slot is
-                // still announced.
-                val emptyState = stringResource(R.string.no_file_selected)
-                val rowState =
-                    if (source.document == null) {
-                        Modifier.semantics { stateDescription = emptyState }
-                    } else {
-                        Modifier
-                    }
-                if (stack) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(AnkiMinerTokens.Space.content).then(rowState),
-                        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-                    ) {
+    val stack = isCompactLayout()
+    Column(modifier.fillMaxWidth()) {
+        sources.forEachIndexed { index, source ->
+            // "No file selected" is no longer drawn; it stays here so the empty slot is
+            // still announced.
+            val emptyState = stringResource(R.string.no_file_selected)
+            val rowState =
+                if (source.document == null) {
+                    Modifier.semantics { stateDescription = emptyState }
+                } else {
+                    Modifier
+                }
+            if (stack) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(AnkiMinerTokens.Space.content).then(rowState),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                ) {
+                    Text(
+                        text = source.label,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    SourceSupportingContent(source)
+                    SourceRowActions(source = source)
+                }
+            } else {
+                ListItem(
+                    modifier = Modifier.fillMaxWidth().then(rowState),
+                    supportingContent = { SourceSupportingContent(source) },
+                    trailingContent = {
+                        SourceRowActions(source = source)
+                    },
+                    headlineContent = {
                         Text(
                             text = source.label,
                             style = MaterialTheme.typography.titleMedium,
                         )
-                        SourceSupportingContent(source)
-                        SourceRowActions(
-                            source = source,
-                            stack = true,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                } else {
-                    ListItem(
-                        modifier = Modifier.fillMaxWidth().then(rowState),
-                        supportingContent = { SourceSupportingContent(source) },
-                        trailingContent = {
-                            SourceRowActions(source = source, stack = false)
-                        },
-                        headlineContent = {
-                            Text(
-                                text = source.label,
-                                style = MaterialTheme.typography.titleMedium,
-                            )
-                        },
-                    )
-                }
-                if (index != sources.lastIndex) HorizontalDivider()
+                    },
+                )
             }
+            if (index != sources.lastIndex) HorizontalDivider()
         }
     }
 }
@@ -580,27 +579,30 @@ private fun SourceSupportingContent(source: MiningSourceItem) {
 @Composable
 private fun SourceRowActions(
     source: MiningSourceItem,
-    stack: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val actionEnabled = source.enabled && !source.isResolving
-    val pickButton: @Composable (Modifier) -> Unit = { actionModifier ->
-        // The visible label is a bare verb; the target lives in semantics so a screen reader still
-        // distinguishes "Choose video" from "Choose subtitles".
-        val pickDescription =
-            stringResource(
-                if (source.document == null) {
-                    R.string.choose_file_description
-                } else {
-                    R.string.replace_file_description
-                },
-                source.label,
-            )
+    // The visible label is a bare verb; the target lives in semantics so a screen reader still
+    // distinguishes "Choose video" from "Choose subtitles".
+    val pickDescription =
+        stringResource(
+            if (source.document == null) {
+                R.string.choose_file_description
+            } else {
+                R.string.replace_file_description
+            },
+            source.label,
+        )
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
+    ) {
         OutlinedButton(
             onClick = source.onPick,
             enabled = actionEnabled,
             modifier =
-                actionModifier
+                Modifier
                     .testTag(source.pickTestTag)
                     .semantics { contentDescription = pickDescription },
             colors = outlinedActionButtonColors(),
@@ -614,59 +616,24 @@ private fun SourceRowActions(
                 ),
             )
         }
-    }
-    if (stack) {
-        Column(
-            modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-        ) {
-            pickButton(Modifier.fillMaxWidth())
-            if (source.document != null) {
-                SecondaryActionButton(
-                    onClick = source.onClear,
-                    enabled = actionEnabled,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .testTag(source.clearTestTag),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_remove),
-                        contentDescription = null,
-                    )
-                    Text(
-                        text = stringResource(R.string.remove_file),
-                        modifier = Modifier.padding(start = AnkiMinerTokens.Space.related),
-                    )
-                }
-            }
-        }
-    } else {
-        Row(
-            modifier = modifier,
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
-        ) {
-            pickButton(Modifier)
-            if (source.document != null) {
-                IconButton(
-                    onClick = source.onClear,
-                    enabled = actionEnabled,
-                    modifier =
-                        Modifier
-                            .size(48.dp)
-                            .testTag(source.clearTestTag),
-                    colors =
-                        IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.error,
-                            disabledContentColor = disabledActionContentColor(),
-                        ),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_remove),
-                        contentDescription = stringResource(R.string.remove_file),
-                    )
-                }
+        if (source.document != null) {
+            IconButton(
+                onClick = source.onClear,
+                enabled = actionEnabled,
+                modifier =
+                    Modifier
+                        .size(48.dp)
+                        .testTag(source.clearTestTag),
+                colors =
+                    IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                        disabledContentColor = disabledActionContentColor(),
+                    ),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_remove),
+                    contentDescription = stringResource(R.string.remove_file),
+                )
             }
         }
     }
@@ -811,6 +778,7 @@ private fun MiningResultSummary(
                 TextButton(
                     onClick = onToggleDetails,
                     modifier = Modifier.align(Alignment.End),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(
                         stringResource(
@@ -838,12 +806,13 @@ internal fun MiningUndoConfirmationDialog(
             TextButton(
                 onClick = onConfirm,
                 modifier = confirmTestTag?.let { Modifier.testTag(it) } ?: Modifier,
+                colors = accentTextButtonColors(),
             ) {
                 Text(stringResource(R.string.undo_confirm_delete))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.cancel))
             }
         },

@@ -247,7 +247,13 @@ internal fun ThemePalette.toColorScheme(): ColorScheme {
     )
 }
 
-/** Derives disabled action colors from a complete scheme, including runtime dynamic schemes. */
+/**
+ * Derives disabled action colours from a complete scheme, including runtime dynamic schemes.
+ *
+ * The label stays readable so a disabled control can still be read, but its outline is the quiet
+ * [ColorScheme.outlineVariant]: drawn in the label colour, disabled Test timing, Audio tracks and the
+ * Resources arrows were the brightest controls on their screens.
+ */
 internal fun disabledActionColorsFor(scheme: ColorScheme): DisabledActionColors {
     val background = scheme.background
     val container =
@@ -263,7 +269,7 @@ internal fun disabledActionColorsFor(scheme: ColorScheme): DisabledActionColors 
         )
     return DisabledActionColors(
         content = content,
-        border = content,
+        border = scheme.outlineVariant,
         container = container,
         enabledContainer = scheme.primary,
     )
@@ -319,4 +325,25 @@ private fun selectionSeparation(
     contrastRatio(
         lerp(surfaceContainerLow, primaryContainer, SelectedRowFraction),
         surfaceContainerLow,
+    )
+
+/**
+ * The accent for text drawn on the page: outlined and text button labels, tab labels, links and the
+ * selected navigation label. [ColorScheme.primary] stays the fill colour (DesignSystemTest pins it);
+ * as text it sat below 4.5:1 on several palettes (default Dark 4.00, Light 4.27, Ayu Light 2.16), so
+ * it is nudged toward black or white just far enough to read on every page surface.
+ */
+internal fun ColorScheme.accentText(): Color =
+    pushedToContrast(
+        candidate = primary,
+        backgrounds =
+            listOf(
+                background,
+                surfaceContainerLowest,
+                surfaceContainerLow,
+                surfaceContainer,
+                surfaceContainerHigh,
+                surfaceContainerHighest,
+            ),
+        minimum = ReadableContrast,
     )

@@ -29,6 +29,7 @@ import com.ankiminer.android.data.resources.ResourceAttribution
 import com.ankiminer.android.ui.links.AppLinks
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SectionTitle
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 
 @Composable
 internal fun AttributionScreen(
@@ -80,7 +81,10 @@ internal fun AttributionScreen(
                 Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     CardHeading(stringResource(R.string.attribution_icon_title))
                     Text(stringResource(R.string.attribution_icon_text))
-                    TextButton(onClick = { uriHandler.openUri(SHIPPORI_URL) }) {
+                    TextButton(
+                        onClick = { uriHandler.openUri(SHIPPORI_URL) },
+                        colors = accentTextButtonColors(),
+                    ) {
                         Text(SHIPPORI_URL, style = MaterialTheme.typography.bodySmall)
                     }
                 }
@@ -153,7 +157,10 @@ internal fun AttributionScreen(
                     Text(stringResource(R.string.privacy_local_processing))
                     Text(stringResource(R.string.privacy_network_processing))
                     Text(stringResource(R.string.privacy_retention))
-                    TextButton(onClick = { uriHandler.openUri(AppLinks.PRIVACY_POLICY) }) {
+                    TextButton(
+                        onClick = { uriHandler.openUri(AppLinks.PRIVACY_POLICY) },
+                        colors = accentTextButtonColors(),
+                    ) {
                         Text(stringResource(R.string.privacy_open_policy))
                     }
                 }
@@ -164,10 +171,13 @@ internal fun AttributionScreen(
             OutlinedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
                     CardHeading(stringResource(R.string.source_notices_title))
-                    TextButton(onClick = onOpenNotices) {
+                    TextButton(onClick = onOpenNotices, colors = accentTextButtonColors()) {
                         Text(stringResource(R.string.source_open_notices))
                     }
-                    TextButton(onClick = { uriHandler.openUri(AppLinks.REPOSITORY) }) {
+                    TextButton(
+                        onClick = { uriHandler.openUri(AppLinks.REPOSITORY) },
+                        colors = accentTextButtonColors(),
+                    ) {
                         Text(stringResource(R.string.source_open_repository))
                     }
                 }
@@ -296,7 +306,10 @@ private fun AttributionGroup(title: String, entries: List<ResourceAttribution>) 
                 )
                 Text(entry.copyright)
                 Text(stringResource(R.string.attribution_license, entry.license))
-                TextButton(onClick = { uriHandler.openUri(entry.url) }) {
+                TextButton(
+                    onClick = { uriHandler.openUri(entry.url) },
+                    colors = accentTextButtonColors(),
+                ) {
                     Text(entry.url, style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -313,7 +326,7 @@ private fun LicenseLinkCard(
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             CardHeading(title)
             Text(stringResource(R.string.attribution_license_in_notices))
-            TextButton(onClick = onOpenNotices) {
+            TextButton(onClick = onOpenNotices, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.source_open_notices))
             }
         }

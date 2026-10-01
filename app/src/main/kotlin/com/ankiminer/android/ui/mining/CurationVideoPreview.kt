@@ -50,6 +50,7 @@ import com.ankiminer.android.player.PreviewFailure
 import com.ankiminer.android.player.currentCue
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ChevronGlyph
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import kotlinx.coroutines.delay
 
 object CurationPlayerTestTags {
@@ -191,6 +192,7 @@ private fun PreviewFailureShutter(
                 TextButton(
                     onClick = onRetry,
                     modifier = Modifier.testTag(CurationPlayerTestTags.RETRY),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.curation_preview_retry))
                 }

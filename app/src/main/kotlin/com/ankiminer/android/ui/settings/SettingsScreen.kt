@@ -40,6 +40,7 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.ui.mining.RuntimeConflictNotice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.DiagnosticsViewModel
@@ -833,12 +834,16 @@ internal fun SettingsResetConfirmationHost(
                                 .confirmDispatching(onRestoreMiningDefaults)
                         pendingActionName = next.pendingAction?.name
                     },
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(settingsResetLabel(action)))
                 }
             },
             dismissButton = {
-                TextButton(onClick = { pendingActionName = null }) {
+                TextButton(
+                    onClick = { pendingActionName = null },
+                    colors = accentTextButtonColors(),
+                ) {
                     Text(stringResource(R.string.cancel))
                 }
             },

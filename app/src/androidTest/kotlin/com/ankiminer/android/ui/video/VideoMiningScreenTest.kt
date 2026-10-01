@@ -20,6 +20,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasNoClickAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -166,6 +167,10 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_VIDEO).assertIsNotEnabled()
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SUBTITLE).assertIsNotEnabled()
         composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_SUBTITLE).assertIsNotEnabled()
+        // 320dp is compact: Replace and the trash icon still share one row instead of stacking.
+        val pick = composeRule.onNodeWithTag(VideoMiningTestTags.PICK_VIDEO).getUnclippedBoundsInRoot()
+        val clear = composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_VIDEO).getUnclippedBoundsInRoot()
+        assertTrue("Replace and remove must share a row", clear.top < pick.bottom && pick.top < clear.bottom)
         // START is asserted last: scrolling to it can dispose the slot actions above.
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)

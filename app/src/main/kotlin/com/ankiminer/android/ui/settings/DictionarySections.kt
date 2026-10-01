@@ -28,6 +28,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.accentTextColor
 import com.ankiminer.android.vm.SetupUiState
 
 /**
@@ -180,7 +181,7 @@ internal fun DictionaryHtml(
     webViewFactory: (Context) -> WebView = { context -> DictionaryWebView(context) },
 ) {
     val scheme = MaterialTheme.colorScheme
-    val themedHtml = themedDictionaryHtml(html, scheme.surface, scheme.onSurface, scheme.primary)
+    val themedHtml = themedDictionaryHtml(html, scheme.surface, scheme.onSurface, accentTextColor())
     val surfaceArgb = scheme.surface.toArgb()
     AndroidView(
         modifier = modifier,

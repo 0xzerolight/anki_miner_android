@@ -32,6 +32,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ThemePalette
 import com.ankiminer.android.ui.theme.ThemePalettes
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
 import com.ankiminer.android.ui.theme.toColorScheme
 
@@ -92,7 +93,7 @@ internal fun ThemePickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = onDismiss, colors = accentTextButtonColors()) {
                 Text(stringResource(R.string.settings_theme_picker_close))
             }
         },

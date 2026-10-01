@@ -70,6 +70,7 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ChevronGlyph
 import com.ankiminer.android.ui.theme.CompactOutlinedTextField
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.selectedRowContainer
 
 internal const val CURATION_SEARCH_TEST_TAG = "curation_search"
@@ -613,6 +614,7 @@ internal fun CurationRowActions(
                     onClick = { onToggleKnown(!known) },
                     enabled = enabled,
                     modifier = Modifier.heightIn(min = 48.dp).testTag(knownTestTag),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(
                         stringResource(
@@ -628,6 +630,7 @@ internal fun CurationRowActions(
                     onClick = onCopyWord,
                     enabled = enabled,
                     modifier = Modifier.heightIn(min = 48.dp).testTag(copyWordTestTag),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.curation_copy_word))
                 }
@@ -635,6 +638,7 @@ internal fun CurationRowActions(
                     onClick = onCopySentence,
                     enabled = enabled,
                     modifier = Modifier.heightIn(min = 48.dp).testTag(copySentenceTestTag),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.curation_copy_sentence))
                 }
@@ -709,6 +713,7 @@ internal fun CurationExpansionControls(
                     onClick = onExpandPrev,
                     enabled = enabled && preview.canExpandPrev,
                     modifier = Modifier.heightIn(min = 48.dp).testTag(expandPrevTestTag),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.curation_expand_previous_line))
                 }
@@ -716,6 +721,7 @@ internal fun CurationExpansionControls(
                     onClick = onExpandNext,
                     enabled = enabled && preview.canExpandNext,
                     modifier = Modifier.heightIn(min = 48.dp).testTag(expandNextTestTag),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.curation_expand_next_line))
                 }
@@ -723,6 +729,7 @@ internal fun CurationExpansionControls(
                     onClick = onReset,
                     enabled = enabled && expanded,
                     modifier = Modifier.heightIn(min = 48.dp).testTag(resetTestTag),
+                    colors = accentTextButtonColors(),
                 ) {
                     Text(stringResource(R.string.curation_expand_reset))
                 }
