@@ -2347,6 +2347,20 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.UNDO).assertDoesNotExist()
     }
 
+    @Test
+    fun aWordSeenOnceReadsOneOccurrence() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = null),
+                ),
+        )
+        composeRule.onAllNodesWithText("1 occurrence", substring = true).assertCountEquals(2)
+        composeRule.onAllNodesWithText("1 occurrences", substring = true).assertCountEquals(0)
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
         onPickVideo: () -> Unit = {},

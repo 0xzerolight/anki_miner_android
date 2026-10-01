@@ -154,7 +154,9 @@
     <string name="candidate_part_of_speech_unknown">Jenis kata tidak diketahui</string>
     <string name="candidate_frequency_compact">Frek. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Frek. —</string>
-    <string name="candidate_occurrences_compact">%1$d kemunculan</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="other">%1$d kemunculan</item>
+    </plurals>
     <string name="sentence_selection_description">Gunakan kalimat: %1$s</string>
     <string name="success_title">Mining selesai</string>
     <string name="cancelled_title">Mining dibatalkan</string>

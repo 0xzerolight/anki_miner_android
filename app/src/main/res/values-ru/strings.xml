@@ -157,7 +157,12 @@
     <string name="candidate_part_of_speech_unknown">Неизвестная часть речи</string>
     <string name="candidate_frequency_compact">Част. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Част. —</string>
-    <string name="candidate_occurrences_compact">Вхожд. %1$d</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="one">%1$d вхождение</item>
+        <item quantity="few">%1$d вхождения</item>
+        <item quantity="many">%1$d вхождений</item>
+        <item quantity="other">%1$d вхождения</item>
+    </plurals>
     <string name="sentence_selection_description">Использовать предложение: %1$s</string>
     <string name="success_title">Майнинг завершён</string>
     <string name="cancelled_title">Майнинг отменён</string>

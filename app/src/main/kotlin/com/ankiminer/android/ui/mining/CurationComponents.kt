@@ -393,8 +393,9 @@ internal fun rememberCurationCandidateRowTexts(
                         resources.getString(R.string.candidate_frequency_compact, rank)
                     } ?: resources.getString(R.string.candidate_frequency_unknown_compact)
                 val occurrences =
-                    resources.getString(
-                        R.string.candidate_occurrences_compact,
+                    resources.getQuantityString(
+                        R.plurals.candidate_occurrences_compact,
+                        candidate.occurrenceCount.coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
                         candidate.occurrenceCount,
                     )
                 put(

@@ -155,7 +155,10 @@
     <string name="candidate_part_of_speech_unknown">Unbekannte Wortart</string>
     <string name="candidate_frequency_compact">Häuf. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Häuf. —</string>
-    <string name="candidate_occurrences_compact">%1$d Vorkommen</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="one">%1$d Vorkommen</item>
+        <item quantity="other">%1$d Vorkommen</item>
+    </plurals>
     <string name="sentence_selection_description">Satz verwenden: %1$s</string>
     <string name="success_title">Mining abgeschlossen</string>
     <string name="cancelled_title">Mining abgebrochen</string>

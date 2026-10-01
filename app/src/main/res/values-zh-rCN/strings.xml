@@ -154,7 +154,9 @@
     <string name="candidate_part_of_speech_unknown">未知词性</string>
     <string name="candidate_frequency_compact">词频 %1$d</string>
     <string name="candidate_frequency_unknown_compact">词频 —</string>
-    <string name="candidate_occurrences_compact">出现 %1$d 次</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="other">出现 %1$d 次</item>
+    </plurals>
     <string name="sentence_selection_description">使用句子：%1$s</string>
     <string name="success_title">挖词完成</string>
     <string name="cancelled_title">已取消挖词</string>

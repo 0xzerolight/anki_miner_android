@@ -156,7 +156,11 @@
     <string name="candidate_part_of_speech_unknown">Categoría gramatical desconocida</string>
     <string name="candidate_frequency_compact">Frec. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Frec. —</string>
-    <string name="candidate_occurrences_compact">%1$d apariciones</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="one">%1$d aparición</item>
+        <item quantity="many">%1$d apariciones</item>
+        <item quantity="other">%1$d apariciones</item>
+    </plurals>
     <string name="sentence_selection_description">Usar oración: %1$s</string>
     <string name="success_title">Minería completada</string>
     <string name="cancelled_title">Minería cancelada</string>

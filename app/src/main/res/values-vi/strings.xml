@@ -154,7 +154,9 @@
     <string name="candidate_part_of_speech_unknown">Không rõ từ loại</string>
     <string name="candidate_frequency_compact">Tần suất %1$d</string>
     <string name="candidate_frequency_unknown_compact">Tần suất —</string>
-    <string name="candidate_occurrences_compact">%1$d lần xuất hiện</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="other">%1$d lần xuất hiện</item>
+    </plurals>
     <string name="sentence_selection_description">Dùng câu: %1$s</string>
     <string name="success_title">Hoàn tất khai thác</string>
     <string name="cancelled_title">Đã hủy khai thác</string>

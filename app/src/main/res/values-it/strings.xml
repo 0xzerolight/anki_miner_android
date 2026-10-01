@@ -156,7 +156,11 @@
     <string name="candidate_part_of_speech_unknown">Parte del discorso sconosciuta</string>
     <string name="candidate_frequency_compact">Freq. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Freq. —</string>
-    <string name="candidate_occurrences_compact">%1$d occorrenze</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="one">%1$d occorrenza</item>
+        <item quantity="many">%1$d occorrenze</item>
+        <item quantity="other">%1$d occorrenze</item>
+    </plurals>
     <string name="sentence_selection_description">Usa frase: %1$s</string>
     <string name="success_title">Mining completato</string>
     <string name="cancelled_title">Mining annullato</string>

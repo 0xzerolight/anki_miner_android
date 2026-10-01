@@ -156,7 +156,11 @@
     <string name="candidate_part_of_speech_unknown">Partie du discours inconnue</string>
     <string name="candidate_frequency_compact">Fréq. %1$d</string>
     <string name="candidate_frequency_unknown_compact">Fréq. —</string>
-    <string name="candidate_occurrences_compact">%1$d occurrences</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="one">%1$d occurrence</item>
+        <item quantity="many">%1$d occurrences</item>
+        <item quantity="other">%1$d occurrences</item>
+    </plurals>
     <string name="sentence_selection_description">Utiliser la phrase : %1$s</string>
     <string name="success_title">Extraction terminée</string>
     <string name="cancelled_title">Extraction annulée</string>

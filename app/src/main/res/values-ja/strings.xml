@@ -154,7 +154,9 @@
     <string name="candidate_part_of_speech_unknown">品詞不明</string>
     <string name="candidate_frequency_compact">頻度 %1$d</string>
     <string name="candidate_frequency_unknown_compact">頻度 —</string>
-    <string name="candidate_occurrences_compact">%1$d 回出現</string>
+    <plurals name="candidate_occurrences_compact">
+        <item quantity="other">%1$d 回出現</item>
+    </plurals>
     <string name="sentence_selection_description">例文を使用: %1$s</string>
     <string name="success_title">マイニング完了</string>
     <string name="cancelled_title">マイニングをキャンセルしました</string>
