@@ -4,6 +4,7 @@ format_version = 1
 # sync tool computes their transitive local-import closure; this is not a list
 # of files to copy by hand.
 roots = [
+  "anki_miner.languages.fa.data",
   "anki_miner.languages.switching",
   "anki_miner.orchestration.episode_processor",
   "anki_miner.presenters.null_presenter",
@@ -39,6 +40,10 @@ roots = [
 ]
 
 assets = [
+  "anki_miner/languages/fa/data/colloquial.tsv",
+  "anki_miner/languages/fa/data/compound_verbs.tsv",
+  "anki_miner/languages/fa/data/preferred_present_stems.tsv",
+  "anki_miner/languages/fa/data/verb_first.tsv",
   "anki_miner/resources/wordsets/LICENSE.txt",
   "anki_miner/resources/wordsets/given-names.txt",
   "anki_miner/resources/wordsets/org-product.txt",
@@ -84,6 +89,7 @@ allowed_external = [
   "charset_normalizer",
   "lxml",
   "pysubs2",
+  "pythainlp",
   "requests",
 ]
 
@@ -104,6 +110,7 @@ allowed_stdlib = [
   "concurrent",
   "contextlib",
   "contextvars",
+  "copy",
   "csv",
   "dataclasses",
   "datetime",
@@ -123,6 +130,7 @@ allowed_stdlib = [
   "math",
   "os",
   "pathlib",
+  "platform",
   "posixpath",
   "random",
   "re",
@@ -130,8 +138,10 @@ allowed_stdlib = [
   "shutil",
   "sqlite3",
   "stat",
+  "string",
   "subprocess",
   "sys",
+  "tarfile",
   "tempfile",
   "threading",
   "time",
@@ -171,7 +181,7 @@ forbidden_imports = [
 ]
 
 # Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
-languages = ["ja"]
+languages = ["ja", "he", "id", "ar", "fa", "th"]
 
 # Imported only inside functions, never vendored. ASR and retiming are reached
 # from episode_processor's deferred paths; gui only through languages/ja/text.py's
@@ -193,8 +203,9 @@ destination = "anki_miner/LICENSE"
 importer = "anki_miner.orchestration.episode_processor"
 target = "anki_miner.services.youtube_fetcher"
 
-# The language registry and the tagger provider load per-language modules by
-# a code-formatted name; {code} expands over languages and SHARED_PACK_CODES.
+# The language registry, the tagger provider and the pack-manifest loader load
+# per-language modules by a code-formatted name; {code} expands over languages
+# and SHARED_PACK_CODES.
 [[dynamic_imports]]
 importer = "anki_miner.languages.registry"
 match = "f'anki_miner.languages.{code}'"
@@ -204,3 +215,10 @@ target = "anki_miner.languages.{code}"
 importer = "anki_miner.languages.tagger_provider"
 match = "f'anki_miner.languages.{language}.tokenizer'"
 target = "anki_miner.languages.{code}.tokenizer"
+
+# load_pack() builds f"{package}.pack" in a local variable before importing it.
+# ja, he and id ship no pack.py; ar, fa and th do.
+[[dynamic_imports]]
+importer = "anki_miner.services.language_pack_installer"
+match = "module_name"
+target = "anki_miner.languages.{code}.pack"
