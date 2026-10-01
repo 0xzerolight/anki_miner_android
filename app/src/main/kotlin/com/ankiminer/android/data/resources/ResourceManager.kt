@@ -407,6 +407,9 @@ internal class AndroidResourceManager(
             strings.resolve(R.string.resource_operation_refresh),
             ResourceOperationPhase.REFRESHING,
             failureOrigin = ResourceFailureOrigin.SETUP,
+            // The follower runs on the idle edge, which an operation reaches when it releases its
+            // work lease, still holding the lock. Giving up here would leave the switch unapplied.
+            waitForMutex = true,
         ) { refreshFromPython() }
     }
 
