@@ -51,14 +51,22 @@ class LanguageSmokeInstrumentedTest {
         val harness = languageSmokeHarness()
         val codes = harness["CI_CODES"]!!.asList().map { it.toString() }
         val failures = mutableListOf<String>()
-        for (code in codes) {
+        fun smokeCase(label: String, call: () -> PyObject) {
             try {
-                val result = JSONObject(harness.callAttr("smoke", code).toString())
+                val result = JSONObject(call().toString())
                 recordLanguageSmoke("tokens", result)
                 languageSmokeMismatch(result)?.let(failures::add)
             } catch (error: Exception) {
-                failures += "$code: ${error.javaClass.simpleName}: ${error.message}"
+                failures += "$label: ${error.javaClass.simpleName}: ${error.message}"
             }
+        }
+        for (code in codes) {
+            smokeCase(code) { harness.callAttr("smoke", code) }
+            // jieba's dictionary proves itself above; OpenCC and pypinyin only through this case,
+            // which reads their data files as Chaquopy extracted them from the APK.
+            if (code == "zh") smokeCase("zh traditional") { harness.callAttr("zh_package_data") }
+            // The rest of the lane runs in this process: do not leave jieba's trie resident.
+            harness.callAttr("evict", code)
         }
         assertTrue(failures.joinToString("\n"), failures.isEmpty())
 
