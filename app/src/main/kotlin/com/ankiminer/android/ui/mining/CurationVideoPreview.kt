@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -130,11 +129,7 @@ fun CurationVideoPreview(
                     Box(
                         modifier =
                             Modifier
-                                .fillMaxWidth()
-                                // After fillMaxWidth so the cap gives way on height and the frame
-                                // letterboxes inside it.
-                                .heightIn(max = maxSurfaceHeight)
-                                .aspectRatio(VIDEO_ASPECT_RATIO)
+                                .cappedAspectRatio(VIDEO_ASPECT_RATIO, maxSurfaceHeight)
                                 .background(Color.Black)
                                 .testTag(CurationPlayerTestTags.SURFACE),
                     ) {

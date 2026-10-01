@@ -4,9 +4,7 @@ import android.util.LruCache
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -118,17 +116,10 @@ private val HighlightStrokeWidth = 2.5.dp
 private const val FALLBACK_ASPECT_RATIO = 3f / 4f
 
 
-// fillMaxWidth MUST run before heightIn/aspectRatio: it locks width to an exact constraint so
-// aspectRatio, seeing a capped maxHeight from heightIn, can only give way on height — producing a
-// capped box instead of one that silently ignores the cap and grows past it.
 private fun Modifier.paneContentSize(
     aspectRatio: Float,
     maxHeight: Dp,
-): Modifier =
-    this
-        .fillMaxWidth()
-        .heightIn(max = maxHeight)
-        .aspectRatio(aspectRatio)
+): Modifier = cappedAspectRatio(aspectRatio, maxHeight)
 
 /**
  * The mokuro page a focused curation word came from, with the mokuro text block (speech bubble)

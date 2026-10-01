@@ -1,7 +1,13 @@
 package com.ankiminer.android.ui.mining
 
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.min
+import kotlin.math.roundToInt
 
 /** Share of the curation pane a video frame or manga page may take; the rest stays the word list. */
 internal const val CURATION_MEDIA_HEIGHT_FRACTION = 0.35f
@@ -15,6 +21,32 @@ internal val CurationMediaMinHeight = 96.dp
  */
 internal fun curationMediaMaxHeight(paneHeight: Dp): Dp =
     (paneHeight * CURATION_MEDIA_HEIGHT_FRACTION).coerceAtLeast(CurationMediaMinHeight)
+
+/**
+ * Full width at [aspectRatio], but never taller than [maxHeight]; the content letterboxes inside.
+ *
+ * `fillMaxWidth().heightIn(max).aspectRatio()` does not do this: when no size satisfies both the
+ * exact width and the cap, `aspectRatio` falls back to the unconstrained full-width size and the
+ * surface draws past the cap.
+ */
+internal fun Modifier.cappedAspectRatio(
+    aspectRatio: Float,
+    maxHeight: Dp,
+): Modifier =
+    fillMaxWidth().layout { measurable, constraints ->
+        val cap = if (maxHeight == Dp.Unspecified) Constraints.Infinity else maxHeight.roundToPx()
+        val width =
+            if (constraints.hasBoundedWidth) {
+                constraints.maxWidth
+            } else {
+                (cap * aspectRatio).roundToInt()
+            }
+        val height =
+            min((width / aspectRatio).roundToInt(), cap)
+                .coerceIn(constraints.minHeight, constraints.maxHeight)
+        val placeable = measurable.measure(Constraints.fixed(width, height))
+        layout(width, height) { placeable.place(0, 0) }
+    }
 
 internal val CurationDefinitionMinHeight = 96.dp
 private val CurationDefinitionCap = 260.dp
