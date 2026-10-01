@@ -145,32 +145,35 @@ def test_config_map_refuses_a_malformed_language(tmp_path: Path) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["he", "id", "th", "ar", "fa", "tr", "ko"])
-def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(code: str, tmp_path: Path) -> None:
+def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(tmp_path: Path) -> None:
+    """Every vendored profile, so a newly vendored language's defaults drift here first."""
     _runtime_lane()
     from anki_miner.languages.registry import get_profile
     from anki_miner.languages.switching import LANGUAGE_SCOPED_FIELDS
 
-    config = map_config_settings({"language": code, **_NOTE_TYPE}, _paths(tmp_path)).engine_config
-    profile = get_profile(code)
+    for code in _available():
+        if code == "ja":
+            continue
+        config = map_config_settings({"language": code, **_NOTE_TYPE}, _paths(tmp_path)).engine_config
+        profile = get_profile(code)
 
-    assert config.language == code
-    assert dict(config.language_stash) == {}
-    for name in LANGUAGE_SCOPED_FIELDS:
-        actual = getattr(config, name)
-        expected = profile.scoped_defaults[name]
-        if name == "anki_note_type":
-            assert actual == "Basic"
-        elif name == "expression_audio_chain":
-            # The profile's default network voice is a cut kind: the device voice stands in.
-            assert [entry.kind for entry in actual] == ["android_tts"]
-        elif name == "anki_fields":
-            assert dict(actual) == dict(expected)
-        else:
-            assert actual == expected, name
-    # Nothing Japanese-shaped leaks in: no jmdict/Jisho chain, no Lapis, no ja POS gate.
-    assert config.dictionary_chain == ()
-    assert "名詞" not in config.allowed_pos
+        assert config.language == code
+        assert dict(config.language_stash) == {}, code
+        for name in LANGUAGE_SCOPED_FIELDS:
+            actual = getattr(config, name)
+            expected = profile.scoped_defaults[name]
+            if name == "anki_note_type":
+                assert actual == "Basic", code
+            elif name == "expression_audio_chain":
+                # The profile's default network voice is a cut kind: the device voice stands in.
+                assert [entry.kind for entry in actual] == ["android_tts"], code
+            elif name == "anki_fields":
+                assert dict(actual) == dict(expected), code
+            else:
+                assert actual == expected, (code, name)
+        # Nothing Japanese-shaped leaks in: no jmdict/Jisho chain, no Lapis, no ja POS gate.
+        assert config.dictionary_chain == (), code
+        assert "名詞" not in config.allowed_pos, code
 
 
 def test_a_non_ja_snapshot_without_a_note_type_is_refused(tmp_path: Path) -> None:
@@ -240,30 +243,30 @@ def test_scoped_defaults_cover_every_android_scoped_field() -> None:
         assert set(LANGUAGE_SCOPED_FIELDS) - set(wire) == {"downloader_subtitle_langs", "downloader_audio_lang"}
 
 
-@pytest.mark.parametrize("code", ["ja", "he", "id", "th", "ar", "fa", "tr"])
-def test_scoped_defaults_round_trip_through_config_map(code: str, tmp_path: Path) -> None:
+def test_scoped_defaults_round_trip_through_config_map(tmp_path: Path) -> None:
     """Kotlin stores scopedDefaults and sends them back: config_map must rebuild the profile's values."""
     _runtime_lane()
     from anki_miner.languages.registry import get_profile
     from anki_miner.languages.switching import LANGUAGE_SCOPED_FIELDS
 
-    profile = get_profile(code)
-    wire = languages.scoped_defaults_wire(profile)
-    settings = {**wire, "language": code}
-    if not settings["anki_note_type"]:
-        settings.update(_NOTE_TYPE)
-    config = map_config_settings(settings, _paths(tmp_path)).engine_config
+    for code in _available():
+        profile = get_profile(code)
+        wire = languages.scoped_defaults_wire(profile)
+        settings = {**wire, "language": code}
+        if not settings["anki_note_type"]:
+            settings.update(_NOTE_TYPE)
+        config = map_config_settings(settings, _paths(tmp_path)).engine_config
 
-    for name in set(LANGUAGE_SCOPED_FIELDS) & set(wire):
-        actual = getattr(config, name)
-        expected = profile.scoped_defaults[name]
-        if name == "anki_note_type" and not expected:
-            continue
-        if name == "expression_audio_chain":
-            expected = tuple(entry for entry in expected if entry.kind == "pack")
-        if name == "anki_fields":
-            actual, expected = dict(actual), dict(expected)
-        assert actual == expected, name
+        for name in set(LANGUAGE_SCOPED_FIELDS) & set(wire):
+            actual = getattr(config, name)
+            expected = profile.scoped_defaults[name]
+            if name == "anki_note_type" and not expected:
+                continue
+            if name == "expression_audio_chain":
+                expected = tuple(entry for entry in expected if entry.kind == "pack")
+            if name == "anki_fields":
+                actual, expected = dict(actual), dict(expected)
+            assert actual == expected, (code, name)
 
 
 def test_ja_scoped_defaults_carry_the_desktop_ja_values() -> None:
