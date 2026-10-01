@@ -129,12 +129,13 @@ class RecommendedResourcesTest {
         val data = persian.languageData.single()
 
         val missing = recommendedResourcePlan(persian, emptyList(), emptyList(), emptyList())
-        assertEquals(listOf(data.resourceId), missing.items.map { it.resource.resourceId })
-        assertEquals(RecommendedResourceAction.INSTALL, missing.items.single().action)
+        assertEquals(listOf(data.resourceId) + persian.recommended, missing.items.map { it.resource.resourceId })
+        assertEquals(RecommendedResourceAction.INSTALL, missing.items.first().action)
 
         val installed =
             recommendedResourcePlan(persian, emptyList(), emptyList(), emptyList(), setOf(data.resourceId))
-        assertTrue(installed.isSatisfied)
+        assertEquals(RecommendedResourceAction.SKIP, installed.items.first().action)
+        assertEquals(persian.recommended, installed.pending.map { it.resource.resourceId })
     }
 
     @Test

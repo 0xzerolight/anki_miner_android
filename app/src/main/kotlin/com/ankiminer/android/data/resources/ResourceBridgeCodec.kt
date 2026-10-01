@@ -1843,7 +1843,52 @@ object FrozenResourceCatalog {
                                 ),
                             ),
                     ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-fa-en-2026.09.20",
+                        displayName = "Wiktionary (Persian-English) 2026-09-20",
+                        slotId = "wty-fa-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/fa/en/wty-fa-en.zip",
+                                sha256 = "28231d44d3dc2ce127d3bd1e4dae1f252d304c3fbe9218f1212a98ab73b12ba1",
+                                sizeBytes = 3_328_547,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-fa-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 9,
+                                uncompressedBytes = 37_260_443,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-fa-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Persian)",
+                        sourceId = "opensubtitles-fa",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/fa/fa_50k.txt",
+                                sha256 = "96ea178f77022cdb2d358feb75a4fc474754daa224a4beba296ad777a514bdf7",
+                                sizeBytes = 764_003,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
                 ),
-            recommended = emptyList(),
+            recommended = listOf("wty-fa-en-2026.09.20", "opensubtitles-fa-2018"),
         )
 }
