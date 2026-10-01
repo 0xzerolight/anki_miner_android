@@ -17,6 +17,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Hebrew, Arabic and Persian text reads right to left in curation, definitions and pasted Reading text.**
 - **Recommended dictionaries and frequency lists for Hebrew, Arabic, Persian, Indonesian and Thai (Settings -> Resources).**
 - **Outside Japanese, words no audio pack has are spoken by the device's offline text-to-speech voice (Settings -> Resources -> Word audio).** The card shows whether the device has a voice for the language.
+- **"Mine words" in other apps' text selection menu, and plain-text sharing to Anki Miner.** The text waits in Reading -> Text until you tap Mine.
+- **A notice when a run finishes or stops while Anki Miner is in the background.** Tapping it opens the run's tab.
+- **Finish (N) on multi-page curation.** It mines the words picked so far and skips the remaining pages.
+- **A Paste button for Reading -> Text.**
 
 ### Changed
 
@@ -38,6 +42,19 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Jisho is offered only while mining Japanese.** A settings backup cannot turn it on for another language.
 - **Japanese words, sentences and definitions in curation and Reading use Japanese character shapes.** On a phone set to another language some kanji used to show their Chinese forms.
 - **The APK is about twice the size, roughly 110 MB.** The new languages' tokenizers ship in the app; their models and dictionaries still download only for the language you pick.
+- **The setup wizard has desktop's four pages: Language, Downloads, AnkiDroid and Ready.** One tap on Downloads fetches UniDic and the dictionaries, the AnkiDroid page connects and picks the deck and note type, and Back is the arrow at the top.
+- **Video, Audio and Reading keep their inputs on one screen.** Mine, or the progress bar and Cancel, sits in a bar at the bottom; the result line and Undo appear under the inputs, and Mine starts the next run.
+- **Results lead with how many notes were added to which deck, then Undo.** The rest is under Details.
+- **Curation has one header row with a select-all checkbox and the run's total.** Candidates sit as flush rows, and the open row shows the sentence and definition first, with the frame or page inline.
+- **Fresh installs follow the system light or dark mode (Settings -> UI).** A theme you already chose stays.
+- **The theme picker lists the app's own themes first and the rest under Other (Settings -> UI).**
+- **Settings show import tools, reorder arrows and Remove only when they can act, and search hides the tabs.**
+- **The mining tabs' setup notice counts what is left and installs a dictionary in place.** Continue setup reopens the wizard on the first unfinished page.
+- **Notification permission is asked when a download or run first needs it, not at launch.**
+- **The progress notification shows the step and the same whole-run bar as the app.**
+- **One quiet Map fields line on the mining tabs when sentence audio has no card field.**
+- **File pickers open in the folder of the file picked beside them.**
+- **A stock two-field note type gets Definition on its Back field when first picked (Settings -> Cards & Anki).**
 
 ### Removed
 
@@ -51,6 +68,18 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The update check's status no longer goes stale (Settings -> Diagnostics).** A rare race could show the check running after it finished, keeping Check now disabled, or idle while it ran.
 - **A word whose only card is in an excluded deck gets a new card (Settings -> Word filters).** It used to reach curation and then be skipped as already in Anki. As on desktop, a word is now skipped only when a deck outside the exclusions knows it.
 - **Known words come from the word field of note types that do not start with it, such as Migaku (sentence first) and Core 2k/6k (index first).** Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
+- **After a permanent AnkiDroid permission denial, setup offers Allow in Android settings.** It used to keep asking through a dialog Android no longer shows.
+- **AnkiDroid setup says what to do in one plain sentence instead of the raw provider error.**
+- **A setup failure's snackbar shows once, and not on a screen that already shows the failure.**
+- **Undo survives Android closing Anki Miner in the background.**
+- **A run Android stopped in the background says so instead of reporting a crash.**
+- **Tapping the import notification opens the app.**
+- **Accent text and disabled buttons stay readable on every theme.**
+- **At large text, field labels stay on one line and the bottom navigation shows icons only.**
+- **Curation says "1 occurrence", caps the frame's height, hands the swipe back to the list at the definition's edge, and styles definitions as the card does.**
+- **The timing preview stays clear of the system bars (Video tab).**
+- **The Audio tab calls its subtitle file Subtitles, and a wrong subtitle file type names the accepted formats.**
+- **The community links in the Settings header stay on one line.**
 
 ## [1.1.0] - 2026-09-08
 
