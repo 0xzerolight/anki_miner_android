@@ -31,24 +31,27 @@ def _jsonl(name: str) -> list[dict]:
     return [json.loads(line) for line in lines if line and not line.startswith("#")]
 
 
-@pytest.fixture(scope="module")
-def korean_home(initialized_bridge_home: Path, tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
-    """An app home whose ``language_packs/ko/kiwipiepy_model`` is the lane's real model."""
+@pytest.fixture
+def korean_home(initialized_bridge_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
+    """An app home whose ``language_packs/ko/kiwipiepy_model`` is the lane's real model.
+
+    Function-scoped: the home patch must end with the test that asked for it, or
+    a later test that expects no model would see this one.
+    """
 
     del initialized_bridge_home
     from anki_miner.config import paths
     from anki_miner.languages import tagger_provider
 
     model = Path(importlib.metadata.distribution("kiwipiepy-model").locate_file("kiwipiepy_model"))
-    home = tmp_path_factory.mktemp("korean-home")
+    home = tmp_path / "korean-home"
     component = home / "language_packs" / "ko" / "kiwipiepy_model"
     component.parent.mkdir(parents=True)
     component.symlink_to(model, target_is_directory=True)
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(paths, "ANKI_MINER_HOME", home)
-        tagger_provider.evict("ko")
-        yield home
-        tagger_provider.evict("ko")
+    monkeypatch.setattr(paths, "ANKI_MINER_HOME", home)
+    tagger_provider.evict("ko")
+    yield home
+    tagger_provider.evict("ko")
 
 
 def _tokens(text: str) -> list[list[str]]:
