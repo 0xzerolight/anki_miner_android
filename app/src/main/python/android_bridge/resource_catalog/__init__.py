@@ -25,7 +25,40 @@ CATALOG_SCHEMA_VERSION = 3
 #: Every language with a catalog file, in the order ``resource.catalog`` lists them.
 #: A fixed tuple rather than a directory listing: the packaged tree is read by
 #: path on device, and ``test_resources`` binds this to the files present.
-CATALOG_LANGUAGES: tuple[str, ...] = ("ja", "ar", "fa", "he", "id", "th")
+CATALOG_LANGUAGES: tuple[str, ...] = (
+    "ja",
+    "ar",
+    "fa",
+    "he",
+    "id",
+    "th",
+    "tr",
+    "en",
+    "ca",
+    "de",
+    "pt",
+    "fr",
+    "es",
+    "it",
+    "nl",
+    "nb",
+    "ro",
+    "el",
+    "fi",
+    "hu",
+    "hr",
+    "sv",
+    "pl",
+    "lt",
+    "da",
+    "sl",
+    "ru",
+    "uk",
+    "ko",
+    "vi",
+    "yue",
+    "zh",
+)
 _CATALOG_DIR = Path(__file__).parent
 _LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
 _MAX_CATALOG_BYTES = 64 * 1024
@@ -39,8 +72,10 @@ _PITCH_FORMATS = frozenset({"zip", "csv", "tsv"})
 _LOCAL_ARCHIVE_LIMIT = 512 * 1024 * 1024
 _LOCAL_TEXT_LIMIT = 64 * 1024 * 1024
 _MAX_RECOMMENDED = 8
-#: Pack artifact kinds a data-only component may use. An sdist is code by nature.
-_LANGUAGE_DATA_FORMATS = frozenset({"zip", "wheel"})
+#: Pack artifact kinds a data-only component may use. An sdist carries its package's
+#: ``__init__.py``: the entry's ``exclude`` names every such member, and the install
+#: pre-filter refuses the archive if one is left (``language_data``).
+_LANGUAGE_DATA_FORMATS = frozenset({"zip", "wheel", "sdist"})
 #: Mirrors the vendored ``pack_installer.MAX_ARTIFACT_BYTES``.
 _LANGUAGE_DATA_ARCHIVE_LIMIT = 200 * 1024 * 1024
 _IMPORT_NAME_RE = re.compile(r"[a-z_][a-z0-9_]{0,63}")

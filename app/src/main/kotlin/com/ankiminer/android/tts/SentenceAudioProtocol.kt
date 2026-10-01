@@ -150,7 +150,7 @@ internal object SentenceAudioBridgeCodec {
     private const val MAX_JSON_TOKENS = 64L
     private val runIdPattern = Regex("run_[0-9a-f]{32}")
     private val requestIdPattern = Regex("tts_[0-9a-f]{32}")
-    private val languagePattern = Regex("[a-z]{2,3}")
+    private val languagePattern = Regex("[a-z]{2,3}(-[A-Z]{2})?")
 
     private val factory: JsonFactory =
         JsonFactoryBuilder()

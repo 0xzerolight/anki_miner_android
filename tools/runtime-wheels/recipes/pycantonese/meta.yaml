@@ -1,0 +1,19 @@
+package:
+  name: pycantonese
+  version: "5.0.0"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/pycantonese
+
+requirements:
+  build:
+    - rust
+    - maturin 1.15.0
+  host:
+    - python
+
+about:
+  license_file: LICENSE.txt

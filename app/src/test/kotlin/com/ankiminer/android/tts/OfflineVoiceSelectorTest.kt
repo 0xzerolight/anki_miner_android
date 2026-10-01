@@ -79,6 +79,31 @@ class OfflineVoiceSelectorTest {
     }
 
     @Test
+    fun aRegionalTagPrefersItsRegionAndFallsBackToAnother() {
+        val voices =
+            listOf(
+                voice("brazilian", "pt-BR", quality = 500),
+                voice("european", "pt-PT", quality = 300),
+            )
+
+        assertEquals("european", selectOfflineVoice(voices, "pt-PT"))
+        assertEquals("brazilian", selectOfflineVoice(voices, "pt-BR"))
+        assertEquals("brazilian", selectOfflineVoice(voices.take(1), "pt-PT"))
+    }
+
+    @Test
+    fun cantoneseAndMandarinVoicesAnswerTheirOwnCodes() {
+        val voices =
+            listOf(
+                voice("mandarin", "zh-CN", quality = 500),
+                voice("cantonese", "yue-HK", quality = 300),
+            )
+
+        assertEquals("cantonese", selectOfflineVoice(voices, "yue"))
+        assertEquals("mandarin", selectOfflineVoice(voices, "zh"))
+    }
+
+    @Test
     fun legacyLanguageCodesMatchTheirCurrentCodesBothWays() {
         assertEquals("legacy-hebrew", selectOfflineVoice(listOf(voice("legacy-hebrew", "iw-IL")), "he"))
         assertEquals("hebrew", selectOfflineVoice(listOf(voice("hebrew", "he-IL")), "iw"))

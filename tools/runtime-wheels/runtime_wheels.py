@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import base64
 import csv
+import gzip
 import hashlib
 import importlib.util
 import io
@@ -38,10 +39,36 @@ PYTHON_TARGET = "3.12.12-0"
 TARGET_BUILD_PYTHON_VERSION = "3.12.13"
 TARGET_BUILD_PYTHON_ENV = "ANKI_MINER_CHAQUOPY_BUILD_PYTHON"
 STAGE_SCHEMA = 1
-PUBLICATION_SCHEMA = 1
+PUBLICATION_SCHEMA = 2
 ATTRIBUTION_SCHEMA = 1
 HOST_LOCK_SCHEMA = 2
+BUILDER_IDENTITY_SCHEMA = 3
 SOURCE_DATE_EPOCH = "1704067200"
+WHEEL_DATE_TIME = (2024, 1, 1, 0, 0, 0)
+
+# Rust recipes build with this toolchain only. rustup provisions it
+# (`rustup toolchain install 1.98.0 --profile minimal --target
+# aarch64-linux-android --target x86_64-linux-android`) but never runs during a
+# build: the builder puts the toolchain's own bin/ on PATH and verifies it.
+RUST_TOOLCHAIN = {
+    "release": "1.98.0",
+    "commit_hash": "88d9e12ae178fab0fb5cc050a94da85685d449ea",
+    "host": "x86_64-unknown-linux-gnu",
+    "targets": {"arm64-v8a": "aarch64-linux-android", "x86_64": "x86_64-linux-android"},
+}
+RUSTUP_HOME_ENV = "ANKI_MINER_RUSTUP_HOME"
+# Shipped beside the runtime publication by tools/wheels (chaquopy-libcxx);
+# C++ extensions here link it, and Chaquopy records the requirement.
+EXTERNAL_RUNTIME_LIBS = frozenset({"libc++_shared.so"})
+
+FAMILIES = {
+    "base": "tokenizer-neutral runtime: requests, pysubs2, Pillow, lxml",
+    "f1": "Turkish (tr): zeyrek over nltk and regex",
+    "f2": "spaCy languages, Russian and Ukrainian (pymorphy3)",
+    "f3": "Korean (ko): kiwipiepy",
+    "f4": "Vietnamese (vi): underthesea; Cantonese (yue): pycantonese over rustling",
+    "f5": "Chinese (zh): jieba, pypinyin and opencc",
+}
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
     "PYTHONHASHSEED": "0",
@@ -60,6 +87,51 @@ COMMON_SPECS = {
     "urllib3": ("2.7.0", "urllib3-2.7.0-py3-none-any.whl"),
     "idna": ("3.18", "idna-3.18-py3-none-any.whl"),
     "certifi": ("2026.6.17", "certifi-2026.6.17-py3-none-any.whl"),
+    # F1: zeyrek and its nltk closure (click, joblib, tqdm and colorama are
+    # nltk's; cloudpickle is joblib's).
+    "click": ("8.1.8", "click-8.1.8-py3-none-any.whl"),
+    "cloudpickle": ("3.1.2", "cloudpickle-3.1.2-py3-none-any.whl"),
+    "colorama": ("0.4.6", "colorama-0.4.6-py2.py3-none-any.whl"),
+    "defusedxml": ("0.7.1", "defusedxml-0.7.1-py2.py3-none-any.whl"),
+    "joblib": ("1.6.0", "joblib-1.6.0-py3-none-any.whl"),
+    "nltk": ("3.10.3", "nltk-3.10.3-py3-none-any.whl"),
+    "tqdm": ("4.68.3", "tqdm-4.68.3-py3-none-any.whl"),
+    "zeyrek": ("0.1.3", "zeyrek-0.1.3-py2.py3-none-any.whl"),
+    # F2: the spaCy stack's pure closure, including what desktop's base bundle
+    # hides (packaging, typing-extensions, rich, pygments and friends).
+    "annotated-doc": ("0.0.4", "annotated_doc-0.0.4-py3-none-any.whl"),
+    "annotated-types": ("0.8.0", "annotated_types-0.8.0-py3-none-any.whl"),
+    "anyio": ("4.14.0", "anyio-4.14.0-py3-none-any.whl"),
+    "catalogue": ("2.0.10", "catalogue-2.0.10-py3-none-any.whl"),
+    "cloudpathlib": ("0.25.0", "cloudpathlib-0.25.0-py3-none-any.whl"),
+    "confection": ("1.3.3", "confection-1.3.3-py3-none-any.whl"),
+    "dawg2-python": ("0.9.0", "dawg2_python-0.9.0-py3-none-any.whl"),
+    "h11": ("0.16.0", "h11-0.16.0-py3-none-any.whl"),
+    "httpcore": ("1.0.9", "httpcore-1.0.9-py3-none-any.whl"),
+    "httpx": ("0.28.1", "httpx-0.28.1-py3-none-any.whl"),
+    "jinja2": ("3.1.6", "jinja2-3.1.6-py3-none-any.whl"),
+    "markdown-it-py": ("4.2.0", "markdown_it_py-4.2.0-py3-none-any.whl"),
+    "mdurl": ("0.1.2", "mdurl-0.1.2-py3-none-any.whl"),
+    "packaging": ("26.2", "packaging-26.2-py3-none-any.whl"),
+    "pydantic": ("2.13.5", "pydantic-2.13.5-py3-none-any.whl"),
+    "pygments": ("2.20.0", "pygments-2.20.0-py3-none-any.whl"),
+    "pymorphy3": ("2.0.6", "pymorphy3-2.0.6-py3-none-any.whl"),
+    "rich": ("15.0.0", "rich-15.0.0-py3-none-any.whl"),
+    "shellingham": ("1.5.4", "shellingham-1.5.4-py2.py3-none-any.whl"),
+    "smart-open": ("8.0.1", "smart_open-8.0.1-py3-none-any.whl"),
+    "spacy-legacy": ("3.0.12", "spacy_legacy-3.0.12-py2.py3-none-any.whl"),
+    "spacy-loggers": ("1.0.5", "spacy_loggers-1.0.5-py3-none-any.whl"),
+    "typer": ("0.26.7", "typer-0.26.7-py3-none-any.whl"),
+    "typing-extensions": ("4.15.0", "typing_extensions-4.15.0-py3-none-any.whl"),
+    "typing-inspection": ("0.4.4", "typing_inspection-0.4.4-py3-none-any.whl"),
+    "wasabi": ("1.1.3", "wasabi-1.1.3-py3-none-any.whl"),
+    "weasel": ("1.0.0", "weasel-1.0.0-py3-none-any.whl"),
+    "wrapt": ("2.4.1", "wrapt-2.4.1-py3-none-any.whl"),
+    # F4: underthesea's tokenize and tag path imports joblib and cloudpickle.
+    "underthesea": ("9.5.0", "underthesea-9.5.0-py3-none-any.whl"),
+    # F5: jieba ships only an sdist, packed here as a pure wheel.
+    "jieba": ("0.42.1", "jieba-0.42.1-py3-none-any.whl"),
+    "pypinyin": ("0.55.0", "pypinyin-0.55.0-py2.py3-none-any.whl"),
 }
 
 NATIVE_SPECS = {
@@ -112,6 +184,118 @@ NATIVE_SPECS = {
         "abi": "cp312",
         "source": "lxml",
     },
+    "regex": {
+        "version": "2026.9.10",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "regex",
+    },
+    "blis": {
+        "version": "1.3.3",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "blis",
+    },
+    "cymem": {
+        "version": "2.0.13",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "cymem",
+    },
+    "markupsafe": {
+        "version": "3.0.3",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "markupsafe",
+    },
+    "murmurhash": {
+        "version": "1.0.15",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "murmurhash",
+    },
+    "numpy": {
+        "version": "2.5.0",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "numpy",
+    },
+    "preshed": {
+        "version": "3.0.13",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "preshed",
+    },
+    "pydantic-core": {
+        "version": "2.46.5",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "pydantic-core",
+    },
+    "spacy": {
+        "version": "3.8.14",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "spacy",
+    },
+    "srsly": {
+        "version": "2.5.3",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "srsly",
+    },
+    "thinc": {
+        "version": "8.3.13",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "thinc",
+    },
+    "kiwipiepy": {
+        "version": "0.23.2",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "kiwipiepy",
+    },
+    "pycantonese": {
+        "version": "5.0.0",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "pycantonese",
+    },
+    "rustling": {
+        "version": "0.9.0",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "rustling",
+    },
+    "underthesea-core": {
+        "version": "3.3.2",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "underthesea-core",
+    },
+    "opencc": {
+        "version": "1.4.2",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "opencc",
+    },
 }
 
 SOURCE_SPECS = {
@@ -132,6 +316,61 @@ SOURCE_SPECS = {
     "python-x86_64": ("python-target", None, None),
     "requests": ("prebuilt-wheel", "requests", "2.34.2"),
     "urllib3": ("prebuilt-wheel", "urllib3", "2.7.0"),
+    "click": ("prebuilt-wheel", "click", "8.1.8"),
+    "cloudpickle": ("prebuilt-wheel", "cloudpickle", "3.1.2"),
+    "colorama": ("prebuilt-wheel", "colorama", "0.4.6"),
+    "defusedxml": ("prebuilt-wheel", "defusedxml", "0.7.1"),
+    "joblib": ("prebuilt-wheel", "joblib", "1.6.0"),
+    "nltk": ("prebuilt-wheel", "nltk", "3.10.3"),
+    "regex": ("runtime-source", "regex", "2026.9.10"),
+    "tqdm": ("prebuilt-wheel", "tqdm", "4.68.3"),
+    "zeyrek": ("prebuilt-wheel", "zeyrek", "0.1.3"),
+    "annotated-doc": ("prebuilt-wheel", "annotated-doc", "0.0.4"),
+    "annotated-types": ("prebuilt-wheel", "annotated-types", "0.8.0"),
+    "anyio": ("prebuilt-wheel", "anyio", "4.14.0"),
+    "catalogue": ("prebuilt-wheel", "catalogue", "2.0.10"),
+    "cloudpathlib": ("prebuilt-wheel", "cloudpathlib", "0.25.0"),
+    "confection": ("prebuilt-wheel", "confection", "1.3.3"),
+    "dawg2-python": ("prebuilt-wheel", "dawg2-python", "0.9.0"),
+    "h11": ("prebuilt-wheel", "h11", "0.16.0"),
+    "httpcore": ("prebuilt-wheel", "httpcore", "1.0.9"),
+    "httpx": ("prebuilt-wheel", "httpx", "0.28.1"),
+    "jinja2": ("prebuilt-wheel", "jinja2", "3.1.6"),
+    "markdown-it-py": ("prebuilt-wheel", "markdown-it-py", "4.2.0"),
+    "mdurl": ("prebuilt-wheel", "mdurl", "0.1.2"),
+    "packaging": ("prebuilt-wheel", "packaging", "26.2"),
+    "pydantic": ("prebuilt-wheel", "pydantic", "2.13.5"),
+    "pygments": ("prebuilt-wheel", "pygments", "2.20.0"),
+    "pymorphy3": ("prebuilt-wheel", "pymorphy3", "2.0.6"),
+    "rich": ("prebuilt-wheel", "rich", "15.0.0"),
+    "shellingham": ("prebuilt-wheel", "shellingham", "1.5.4"),
+    "smart-open": ("prebuilt-wheel", "smart-open", "8.0.1"),
+    "spacy-legacy": ("prebuilt-wheel", "spacy-legacy", "3.0.12"),
+    "spacy-loggers": ("prebuilt-wheel", "spacy-loggers", "1.0.5"),
+    "typer": ("prebuilt-wheel", "typer", "0.26.7"),
+    "typing-extensions": ("prebuilt-wheel", "typing-extensions", "4.15.0"),
+    "typing-inspection": ("prebuilt-wheel", "typing-inspection", "0.4.4"),
+    "wasabi": ("prebuilt-wheel", "wasabi", "1.1.3"),
+    "weasel": ("prebuilt-wheel", "weasel", "1.0.0"),
+    "wrapt": ("prebuilt-wheel", "wrapt", "2.4.1"),
+    "blis": ("runtime-source", "blis", "1.3.3"),
+    "cymem": ("runtime-source", "cymem", "2.0.13"),
+    "markupsafe": ("runtime-source", "markupsafe", "3.0.3"),
+    "murmurhash": ("runtime-source", "murmurhash", "1.0.15"),
+    "numpy": ("runtime-source", "numpy", "2.5.0"),
+    "preshed": ("runtime-source", "preshed", "3.0.13"),
+    "pydantic-core": ("runtime-source", "pydantic-core", "2.46.5"),
+    "spacy": ("runtime-source", "spacy", "3.8.14"),
+    "srsly": ("runtime-source", "srsly", "2.5.3"),
+    "thinc": ("runtime-source", "thinc", "8.3.13"),
+    "kiwipiepy": ("runtime-source", "kiwipiepy", "0.23.2"),
+    "pycantonese": ("runtime-source", "pycantonese", "5.0.0"),
+    "rustling": ("runtime-source", "rustling", "0.9.0"),
+    "underthesea": ("prebuilt-wheel", "underthesea", "9.5.0"),
+    "underthesea-core": ("runtime-source", "underthesea-core", "3.3.2"),
+    "jieba": ("pure-sdist", "jieba", "0.42.1"),
+    "opencc": ("runtime-source", "opencc", "1.4.2"),
+    "pypinyin": ("prebuilt-wheel", "pypinyin", "0.55.0"),
 }
 
 HOST_REQUIREMENTS = {
@@ -145,6 +384,29 @@ HOST_REQUIREMENTS = {
     "packaging==26.2": {"outer"},
     "pip==25.1.1": {"outer", "target"},
     "pybind11==3.0.1": {"target"},
+    # Rust (maturin), CMake and meson recipes install these in their build env.
+    "cmake==4.4.3": {"target"},
+    "maturin==1.15.0": {"target"},
+    "meson==1.12.1": {"target"},
+    "meson-python==0.22.0": {"target"},
+    "ninja==1.13.2": {"target"},
+    "pyproject-metadata==0.12.1": {"target"},
+    # The spaCy stack's Cython builds read these for headers and .pxd files.
+    "annotated-types==0.8.0": {"target"},
+    "blis==1.3.3": {"target"},
+    "catalogue==2.0.10": {"target"},
+    "confection==1.3.3": {"target"},
+    "cymem==2.0.13": {"target"},
+    "murmurhash==1.0.15": {"target"},
+    "numpy==2.5.0": {"target"},
+    "preshed==3.0.13": {"target"},
+    "pydantic-core==2.46.5": {"target"},
+    "pydantic==2.13.5": {"target"},
+    "srsly==2.5.3": {"target"},
+    "thinc==8.3.13": {"target"},
+    "typing-extensions==4.15.0": {"target"},
+    "typing-inspection==0.4.4": {"target"},
+    "wasabi==1.1.3": {"target"},
     "pyelftools==0.32": {"outer"},
     "pyproject-hooks==1.2.0": {"outer"},
     "PyYAML==6.0.2": {"outer"},
@@ -168,6 +430,109 @@ MANDATORY_DEPENDENCIES = {
     "chaquopy-libxslt": {"chaquopy-libxml2"},
     "pillow": {"chaquopy-libjpeg", "chaquopy-freetype", "chaquopy-libwebp"},
     "lxml": {"chaquopy-libxml2", "chaquopy-libxslt"},
+    "click": {"colorama", "importlib-metadata"},
+    "cloudpickle": set(),
+    "colorama": set(),
+    "defusedxml": set(),
+    "joblib": {"cloudpickle"},
+    "nltk": {"click", "defusedxml", "joblib", "regex", "tqdm"},
+    "regex": set(),
+    "tqdm": {"colorama"},
+    "zeyrek": {"nltk"},
+    "annotated-doc": set(),
+    "annotated-types": set(),
+    "anyio": {"exceptiongroup", "idna", "typing-extensions"},
+    "catalogue": {"typing-extensions", "zipp"},
+    "cloudpathlib": {"typing-extensions"},
+    "confection": {"typing-extensions"},
+    "dawg2-python": {"typing-extensions"},
+    "h11": set(),
+    "httpcore": {"certifi", "h11"},
+    "httpx": {"anyio", "certifi", "httpcore", "idna"},
+    "jinja2": {"markupsafe"},
+    "markdown-it-py": {"mdurl"},
+    "mdurl": set(),
+    "packaging": set(),
+    "pydantic": {"annotated-types", "pydantic-core", "typing-extensions", "typing-inspection"},
+    "pygments": set(),
+    "pymorphy3": {"dawg2-python", "pymorphy3-dicts-ru", "setuptools"},
+    "rich": {"markdown-it-py", "pygments"},
+    "shellingham": set(),
+    "smart-open": {"wrapt"},
+    "spacy-legacy": set(),
+    "spacy-loggers": set(),
+    "typer": {"annotated-doc", "colorama", "rich", "shellingham"},
+    "typing-extensions": set(),
+    "typing-inspection": {"typing-extensions"},
+    "wasabi": {"colorama", "typing-extensions"},
+    "weasel": {
+        "cloudpathlib",
+        "confection",
+        "httpx",
+        "packaging",
+        "pydantic",
+        "smart-open",
+        "srsly",
+        "typer",
+        "wasabi",
+    },
+    "wrapt": set(),
+    "blis": {"numpy"},
+    "cymem": {"chaquopy-libcxx"},
+    "markupsafe": set(),
+    "murmurhash": {"chaquopy-libcxx"},
+    "numpy": {"chaquopy-libcxx"},
+    "preshed": {"chaquopy-libcxx", "cymem", "murmurhash"},
+    "pydantic-core": {"typing-extensions"},
+    "spacy": {
+        "catalogue",
+        "chaquopy-libcxx",
+        "confection",
+        "cymem",
+        "jinja2",
+        "murmurhash",
+        "numpy",
+        "packaging",
+        "preshed",
+        "pydantic",
+        "requests",
+        "setuptools",
+        "spacy-legacy",
+        "spacy-loggers",
+        "srsly",
+        "thinc",
+        "tqdm",
+        "typer",
+        "wasabi",
+        "weasel",
+    },
+    "srsly": {"catalogue", "chaquopy-libcxx"},
+    "thinc": {
+        "blis",
+        "catalogue",
+        "chaquopy-libcxx",
+        "confection",
+        "cymem",
+        "murmurhash",
+        "numpy",
+        "packaging",
+        "preshed",
+        "pydantic",
+        "setuptools",
+        "srsly",
+        "wasabi",
+    },
+    # numpy is declared but never imported by Kiwi().tokenize; the model is
+    # downloaded data. Chaquopy installs with --no-deps.
+    "kiwipiepy": {"chaquopy-libcxx", "dataclasses", "kiwipiepy-model", "numpy", "tqdm"},
+    "pycantonese": {"rustling"},
+    "rustling": set(),
+    # Only underthesea-core and joblib are imported on the tokenize and tag path.
+    "underthesea": {"click", "huggingface-hub", "joblib", "pyyaml", "requests", "tqdm", "underthesea-core"},
+    "underthesea-core": set(),
+    "jieba": set(),
+    "opencc": {"chaquopy-libcxx"},
+    "pypinyin": {"argparse", "enum34", "typing"},
 }
 
 NATIVE_REQUIRED_PATHS = {
@@ -185,6 +550,22 @@ NATIVE_REQUIRED_PATHS = {
     },
     "pillow": {"PIL/_imaging.so", "PIL/_imagingft.so"},
     "lxml": {"lxml/etree.so", "lxml/objectify.so"},
+    "regex": {"regex/_regex.so"},
+    "blis": {"blis/cy.so", "blis/py.so"},
+    "cymem": {"cymem/cymem.so"},
+    "markupsafe": {"markupsafe/_speedups.so"},
+    "murmurhash": {"murmurhash/mrmr.so"},
+    "numpy": {"numpy/_core/_multiarray_umath.so"},
+    "preshed": {"preshed/maps.so"},
+    "pydantic-core": {"pydantic_core/_pydantic_core.so"},
+    "spacy": {"spacy/tokenizer.so", "spacy/vocab.so"},
+    "srsly": {"srsly/ujson/ujson.so"},
+    "thinc": {"thinc/backends/numpy_ops.so"},
+    "kiwipiepy": {"_kiwipiepy.so"},
+    "pycantonese": {"pycantonese/_rust.so"},
+    "rustling": {"rustling/_lib_name.so"},
+    "underthesea-core": {"underthesea_core/underthesea_core.so"},
+    "opencc": {"opencc/clib/opencc_clib.so"},
 }
 
 REQUIRED_NEEDED = {
@@ -206,6 +587,23 @@ REQUIRED_NEEDED = {
         "libxslt.so",
         "libexslt.so",
     },
+    "regex": {"libpython3.12.so"},
+    "blis": {"libpython3.12.so"},
+    "cymem": {"libc++_shared.so", "libpython3.12.so"},
+    "markupsafe": {"libpython3.12.so"},
+    "murmurhash": {"libc++_shared.so", "libpython3.12.so"},
+    "numpy": {"libc++_shared.so", "libpython3.12.so"},
+    "preshed": {"libc++_shared.so", "libpython3.12.so"},
+    "pydantic-core": {"libpython3.12.so"},
+    "spacy": {"libc++_shared.so", "libpython3.12.so"},
+    "srsly": {"libc++_shared.so", "libpython3.12.so"},
+    "thinc": {"libc++_shared.so", "libpython3.12.so"},
+    # Kiwi's bundled cpuinfo logs through liblog.
+    "kiwipiepy": {"libc++_shared.so", "liblog.so", "libpython3.12.so"},
+    "pycantonese": {"libpython3.12.so"},
+    "rustling": {"libpython3.12.so"},
+    "underthesea-core": {"libpython3.12.so"},
+    "opencc": {"libc++_shared.so", "libpython3.12.so"},
 }
 
 ANDROID_SYSTEM_LIBS = {
@@ -231,6 +629,168 @@ RUNTIME_NATIVE_LIBS = {
     "libxslt.so",
 }
 
+# The packages each family's wave vendors into app/wheels. A package may serve
+# several families; every published package belongs to at least one.
+FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
+    "base": (
+        "certifi",
+        "chaquopy-freetype",
+        "chaquopy-libjpeg",
+        "chaquopy-libwebp",
+        "chaquopy-libxml2",
+        "chaquopy-libxslt",
+        "charset-normalizer",
+        "idna",
+        "lxml",
+        "pillow",
+        "pysubs2",
+        "requests",
+        "urllib3",
+    ),
+    "f1": (
+        "click",
+        "cloudpickle",
+        "colorama",
+        "defusedxml",
+        "joblib",
+        "nltk",
+        "regex",
+        "tqdm",
+        "zeyrek",
+    ),
+    "f2": (
+        "annotated-doc",
+        "annotated-types",
+        "anyio",
+        "blis",
+        "catalogue",
+        "click",
+        "cloudpathlib",
+        "confection",
+        "cymem",
+        "dawg2-python",
+        "h11",
+        "httpcore",
+        "httpx",
+        "jinja2",
+        "markdown-it-py",
+        "markupsafe",
+        "mdurl",
+        "murmurhash",
+        "numpy",
+        "packaging",
+        "preshed",
+        "pydantic",
+        "pydantic-core",
+        "pygments",
+        "pymorphy3",
+        "rich",
+        "shellingham",
+        "smart-open",
+        "spacy",
+        "spacy-legacy",
+        "spacy-loggers",
+        "srsly",
+        "thinc",
+        "tqdm",
+        "typer",
+        "typing-extensions",
+        "typing-inspection",
+        "wasabi",
+        "weasel",
+        "wrapt",
+    ),
+    "f3": ("kiwipiepy", "tqdm"),
+    "f4": ("cloudpickle", "joblib", "pycantonese", "rustling", "underthesea", "underthesea-core"),
+    "f5": ("jieba", "opencc", "pypinyin"),
+}
+PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
+    package: tuple(family for family, packages in FAMILY_PACKAGES.items() if package in packages)
+    for package in sorted({package for packages in FAMILY_PACKAGES.values() for package in packages})
+}
+# Members dropped when a wheel is repacked for publication: (package
+# directory, excludes). Excludes follow desktop pack.py: an entry ending in "/"
+# drops that subtree, any other entry exactly one file.
+REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
+    # nltk's doctest suite: 1.6 MB the tr path never imports.
+    "nltk": ("nltk/", ("test/",)),
+    # Desktop yue/pack.py: the CTCPC and Common Voice training corpora, the
+    # GPL-3 CantoMap data and the training scripts never ship. The segmenter
+    # and tagger models are downloaded instead (language data
+    # yue-pycantonese-models); the engine override loads them by path.
+    "pycantonese": (
+        "pycantonese/",
+        (
+            "data/ctcpc/",
+            "data/cantomap/",
+            "data/common_voice/",
+            "word_segmentation/train_segmenter.py",
+            "pos_tagging/train_tagger.py",
+            "word_segmentation/segmenter.fb.zst",
+            "pos_tagging/tagger.fb.zst",
+        ),
+    ),
+    # Desktop vi/pack.py: what the tokenize and tag path never imports. The
+    # two CRF models are downloaded instead (language data
+    # vi-underthesea-models); the engine override loads them by path.
+    "underthesea": (
+        "underthesea/",
+        (
+            "address/",
+            "agent/",
+            "models/dependency_parser.py",
+            "modules/",
+            "pipeline/dependency_parse/",
+            "pipeline/translate/",
+            "pipeline/tts/",
+            "trainers/",
+            "utils/",
+            "pipeline/word_tokenize/models/",
+            "pipeline/pos_tag/models/",
+        ),
+    ),
+    # Desktop zh/pack.py: the .p pickles are Jython-only fallbacks, lac_small/
+    # an unrelated model, and analyse/idf.txt is only read by jieba.analyse.
+    "jieba": (
+        "jieba/",
+        (
+            "lac_small/",
+            "analyse/idf.txt",
+            "posseg/char_state_tab.p",
+            "posseg/prob_emit.p",
+            "posseg/prob_start.p",
+            "posseg/prob_trans.p",
+            "finalseg/prob_emit.p",
+            "finalseg/prob_start.p",
+            "finalseg/prob_trans.p",
+        ),
+    ),
+}
+# Pure packages published only as an sdist: the member prefix that becomes the
+# wheel's package directory. The wheel carries the sdist's PKG-INFO as METADATA.
+# licenses/jieba/LICENSE is fxsjy/jieba's LICENSE at tag v0.42.1 (1e20c89b).
+SDIST_WHEELS: dict[str, str] = {
+    "jieba": "jieba-0.42.1/jieba/",
+}
+# Native payload locations for packages with more than their required modules:
+# an entry ending in "/" admits any .so below it, any other entry one path.
+NATIVE_ROOTS: dict[str, tuple[str, ...]] = {
+    "numpy": ("numpy/",),
+    "preshed": ("preshed/",),
+    "spacy": ("spacy/",),
+    "srsly": ("srsly/",),
+    "thinc": ("thinc/",),
+}
+# Members whose bytes are pinned by a recipe-side JSON file:
+# {"prefix": "...", "members": {"path": "sha256"}}. The wheel must carry
+# exactly these members below the prefix.
+PINNED_MEMBER_FILES: dict[str, str] = {
+    "opencc": "recipes/opencc/share-opencc.json",
+}
+
+OPTIONAL_SOURCE_KEYS = {"cargo_manifest", "cargo_vendor", "git_commit"}
+LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")
+
 FORBIDDEN_PACKAGE_NAMES = {
     "unidic",
     "unidic-lite",
@@ -248,7 +808,9 @@ FORBIDDEN_PAYLOAD_MARKERS = (
     b"yt_dlp",
     b"gtts",
 )
-BUILD_PATH_MARKERS = (b"/home/", b"/tmp/", b"/Users/", b"C:\\")
+# POSIX build roots only: the builder is Linux, and drive-letter byte pairs
+# such as b"C:\\" occur as ordinary x86_64 machine code in Rust extensions.
+BUILD_PATH_MARKERS = (b"/home/", b"/tmp/", b"/Users/")
 
 RECIPE_FILES = (
     "build-runtime-wheels.sh",
@@ -315,13 +877,23 @@ def load_json(path: Path, expected_schema: int) -> dict[str, object]:
 
 
 def _validate_license(value: object, label: str) -> dict[str, object]:
-    license_value = require_exact_keys(value, {"expression", "members"}, label)
+    """Validate a locked licence: archive members, plus texts the repository carries.
+
+    ``carried`` names licence files committed beside the recipe (natives) or
+    under ``licenses/<package>/`` (pure wheels), for texts an upstream archive
+    omits. Both maps pin each file's SHA-256.
+    """
+    keys = {"expression", "members", "carried"} if isinstance(value, dict) and "carried" in value else None
+    license_value = require_exact_keys(value, keys or {"expression", "members"}, label)
     expression = license_value.get("expression")
     members = license_value.get("members")
+    carried = license_value.get("carried", {})
     if not isinstance(expression, str) or not expression.strip():
         raise RuntimeWheelError(f"{label} has no license expression")
-    if not isinstance(members, dict) or not members:
+    if not isinstance(members, dict) or not isinstance(carried, dict) or not (members or carried):
         raise RuntimeWheelError(f"{label} has no license members")
+    if keys is not None and not carried:
+        raise RuntimeWheelError(f"{label} has an empty carried licence map")
     for member, sha256 in members.items():
         if (
             not isinstance(member, str)
@@ -330,7 +902,41 @@ def _validate_license(value: object, label: str) -> dict[str, object]:
             or KEY_PATTERN.fullmatch(sha256) is None
         ):
             raise RuntimeWheelError(f"{label} has an unsafe license member")
+    for name, sha256 in carried.items():
+        if (
+            not isinstance(name, str)
+            or Path(name).name != name
+            or not name.upper().startswith(LICENSE_PREFIXES)
+            or not isinstance(sha256, str)
+            or KEY_PATTERN.fullmatch(sha256) is None
+        ):
+            raise RuntimeWheelError(f"{label} has an unsafe carried licence")
     return license_value
+
+
+def _validate_source_extras(entry: dict[str, object], label: str) -> None:
+    """Validate the optional cargo vendor and git commit pins of a source."""
+    if "cargo_vendor" in entry or "cargo_manifest" in entry:
+        vendor = require_exact_keys(entry.get("cargo_vendor"), {"filename", "sha256"}, f"{label} cargo vendor")
+        manifest = entry.get("cargo_manifest")
+        filename = vendor.get("filename")
+        sha256 = vendor.get("sha256")
+        if (
+            entry.get("kind") != "runtime-source"
+            or not isinstance(manifest, str)
+            or not _is_safe_archive_name(manifest)
+            or Path(manifest).name != "Cargo.toml"
+            or not isinstance(filename, str)
+            or Path(filename).name != filename
+            or not filename.endswith("-cargo-vendor.tar.gz")
+            or not isinstance(sha256, str)
+            or KEY_PATTERN.fullmatch(sha256) is None
+        ):
+            raise RuntimeWheelError(f"{label} has an unsafe cargo vendor pin")
+    if "git_commit" in entry:
+        commit = entry.get("git_commit")
+        if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+            raise RuntimeWheelError(f"{label} has an invalid git commit pin")
 
 
 def source_entries() -> dict[str, dict[str, object]]:
@@ -348,6 +954,8 @@ def source_entries() -> dict[str, dict[str, object]]:
             base_keys.add("license")
         if package is not None:
             base_keys.update({"package", "version"})
+        if isinstance(raw_entry, dict):
+            base_keys.update(set(raw_entry) & OPTIONAL_SOURCE_KEYS)
         entry = require_exact_keys(raw_entry, base_keys, f"source lock entry {name}")
         filename = entry.get("filename")
         sha256 = entry.get("sha256")
@@ -370,12 +978,20 @@ def source_entries() -> dict[str, dict[str, object]]:
             raise RuntimeWheelError(f"source identity mismatch: {name}")
         if "license" in entry:
             _validate_license(entry.get("license"), f"source license {name}")
+        _validate_source_extras(entry, f"source lock entry {name}")
         result[name] = entry
     prebuilt = {
         normalize_package(str(entry["package"])): str(entry["filename"])
         for entry in result.values()
         if entry["kind"] == "prebuilt-wheel"
     }
+    prebuilt.update(
+        {
+            normalize_package(str(entry["package"])): COMMON_SPECS[normalize_package(str(entry["package"]))][1]
+            for entry in result.values()
+            if entry["kind"] == "pure-sdist" and normalize_package(str(entry["package"])) in COMMON_SPECS
+        }
+    )
     if prebuilt != {name: filename for name, (_, filename) in COMMON_SPECS.items()}:
         raise RuntimeWheelError("prebuilt common wheel inventory differs from the contract")
     return result
@@ -465,13 +1081,151 @@ def _download(url: str, target: Path, expected: str) -> None:
             temporary.unlink()
 
 
+def rustup_home() -> Path:
+    value = os.environ.get(RUSTUP_HOME_ENV) or os.environ.get("RUSTUP_HOME")
+    return Path(value) if value else Path.home() / ".rustup"
+
+
+def rust_toolchain_bin(home: Path | None = None) -> Path:
+    toolchain = f"{RUST_TOOLCHAIN['release']}-{RUST_TOOLCHAIN['host']}"
+    return (home or rustup_home()) / "toolchains" / toolchain / "bin"
+
+
+def validate_rust_identity(value: object) -> dict[str, object]:
+    identity = require_exact_keys(value, {"release", "commit_hash", "host", "targets"}, "Rust toolchain identity")
+    expected = {
+        "release": RUST_TOOLCHAIN["release"],
+        "commit_hash": RUST_TOOLCHAIN["commit_hash"],
+        "host": RUST_TOOLCHAIN["host"],
+        "targets": sorted(RUST_TOOLCHAIN["targets"].values()),
+    }
+    if identity != expected:
+        raise RuntimeWheelError(f"Rust toolchain differs from the pinned toolchain: {identity}")
+    return identity
+
+
+def rust_identity(home: Path | None = None) -> dict[str, object]:
+    """Identify the pinned toolchain by rustc's own report, without calling rustup."""
+    bin_dir = rust_toolchain_bin(home)
+    rustc = bin_dir / "rustc"
+    if not rustc.is_file() or not os.access(rustc, os.X_OK):
+        raise RuntimeWheelError(
+            f"pinned Rust toolchain is missing: {bin_dir}; run `rustup toolchain install "
+            f"{RUST_TOOLCHAIN['release']} --profile minimal --target aarch64-linux-android "
+            "--target x86_64-linux-android`",
+        )
+    environment = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+    report = subprocess.run([str(rustc), "-vV"], check=True, capture_output=True, text=True, env=environment)
+    fields = dict(line.split(": ", 1) for line in report.stdout.splitlines() if ": " in line)
+    sysroot = subprocess.run(
+        [str(rustc), "--print", "sysroot"],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    ).stdout.strip()
+    return validate_rust_identity(
+        {
+            "release": fields.get("release"),
+            "commit_hash": fields.get("commit-hash"),
+            "host": fields.get("host"),
+            "targets": sorted(
+                triple
+                for triple in RUST_TOOLCHAIN["targets"].values()
+                if (Path(sysroot) / "lib/rustlib" / triple / "lib").is_dir()
+            ),
+        },
+    )
+
+
+def deterministic_tar(root: Path, arcname: str, output: Path) -> None:
+    """Pack ``root`` as ``arcname/...`` with sorted members and fixed metadata."""
+    epoch = int(SOURCE_DATE_EPOCH)
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        paths = sorted(root.rglob("*"), key=lambda path: path.relative_to(root).as_posix())
+        for path in [root, *paths]:
+            if path.is_symlink():
+                raise RuntimeWheelError(f"vendored tree contains a symlink: {path}")
+            relative = path.relative_to(root).as_posix()
+            info = tarfile.TarInfo(arcname if relative == "." else f"{arcname}/{relative}")
+            info.mtime = epoch
+            info.uid = info.gid = 0
+            info.uname = info.gname = ""
+            if path.is_dir():
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                archive.addfile(info)
+            else:
+                data = path.read_bytes()
+                info.size = len(data)
+                info.mode = 0o755 if os.access(path, os.X_OK) else 0o644
+                archive.addfile(info, io.BytesIO(data))
+    with (
+        output.open("wb") as raw,
+        gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=9) as stream,
+    ):
+        stream.write(buffer.getvalue())
+
+
+def cargo_vendor(name: str, entry: dict[str, object], downloads: Path) -> Path:
+    """Regenerate a locked ``cargo vendor`` tarball; the only networked Rust step.
+
+    The tarball is a derived input: cargo fetches each crate the sdist's
+    Cargo.lock names and re-verifies its checksum, and the packed tree must hash
+    to the lock. Builds then run offline against it.
+    """
+    vendor = entry["cargo_vendor"]
+    assert isinstance(vendor, dict)
+    sdist = downloads / str(entry["filename"])
+    verify_file(sdist, str(entry["sha256"]))
+    rust_identity()
+    bin_dir = rust_toolchain_bin()
+    output = downloads / str(vendor["filename"])
+    with tempfile.TemporaryDirectory(prefix=f".{name}-vendor-", dir=downloads) as temporary:
+        work = Path(temporary)
+        source = safe_extract(sdist, work / "sdist")
+        environment = {
+            **os.environ,
+            "CARGO_HOME": str(work / "cargo-home"),
+            "PATH": f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+            "RUSTUP_HOME": str(rustup_home()),
+        }
+        subprocess.run(
+            [
+                str(bin_dir / "cargo"),
+                "vendor",
+                "--locked",
+                "--versioned-dirs",
+                "--quiet",
+                "--manifest-path",
+                str(source / str(entry["cargo_manifest"])),
+                str(work / "vendor"),
+            ],
+            check=True,
+            env=environment,
+            stdout=subprocess.DEVNULL,
+        )
+        partial = work / output.name
+        deterministic_tar(work / "vendor", "vendor", partial)
+        if digest(partial) != vendor["sha256"]:
+            raise RuntimeWheelError(f"{name}: regenerated cargo vendor tree differs from the lock")
+        os.replace(partial, output)
+    return output
+
+
 def fetch_inputs(downloads: Path, wheelhouse: Path) -> None:
-    for entry in source_entries().values():
+    for name, entry in source_entries().items():
         _download(
             str(entry["url"]),
             downloads / str(entry["filename"]),
             str(entry["sha256"]),
         )
+        vendor = entry.get("cargo_vendor")
+        if isinstance(vendor, dict):
+            vendor_path = downloads / str(vendor["filename"])
+            if not vendor_path.is_file() or digest(vendor_path) != vendor["sha256"]:
+                cargo_vendor(name, entry, downloads)
     for entry in host_entries():
         _download(
             str(entry["url"]),
@@ -603,6 +1357,22 @@ def _archive_member_bytes(path: Path, member_name: str) -> bytes:
     raise RuntimeWheelError(f"unsupported archive: {path}")
 
 
+def carried_license_path(entry: dict[str, object], name: str, tool_root: Path = TOOL_ROOT) -> Path:
+    """Where the repository carries a licence text that a source archive omits."""
+    package = normalize_package(str(entry["package"]))
+    if entry.get("kind") == "runtime-source":
+        return tool_root / "recipes" / package / name
+    return tool_root / "licenses" / package / name
+
+
+def verify_git_archive_commit(path: Path, commit: str) -> None:
+    """A git-archive tarball names its commit in the pax global header."""
+    with tarfile.open(path) as archive:
+        _validated_tar_members(archive, path.name)
+        if archive.pax_headers.get("comment") != commit:
+            raise RuntimeWheelError(f"{path.name}: archive is not git commit {commit}")
+
+
 def verify_source_archive(path: Path, entry: dict[str, object]) -> None:
     verify_file(path, str(entry["sha256"]))
     license_value = entry.get("license")
@@ -613,7 +1383,26 @@ def verify_source_archive(path: Path, entry: dict[str, object]) -> None:
             data = _archive_member_bytes(path, str(name))
             if hashlib.sha256(data).hexdigest() != expected:
                 raise RuntimeWheelError(f"{path.name}: license member hash mismatch: {name}")
-    elif zipfile.is_zipfile(path):
+        carried = license_value.get("carried", {})
+        assert isinstance(carried, dict)
+        for name, expected in carried.items():
+            verify_file(carried_license_path(entry, str(name)), str(expected))
+        if not members:
+            _validate_archive(path)
+    else:
+        _validate_archive(path)
+    vendor = entry.get("cargo_vendor")
+    if isinstance(vendor, dict):
+        vendor_path = path.parent / str(vendor["filename"])
+        verify_file(vendor_path, str(vendor["sha256"]))
+        _validate_archive(vendor_path)
+    commit = entry.get("git_commit")
+    if isinstance(commit, str):
+        verify_git_archive_commit(path, commit)
+
+
+def _validate_archive(path: Path) -> None:
+    if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
             _validated_zip_members(archive, path.name, "archive")
     elif tarfile.is_tarfile(path):
@@ -907,6 +1696,106 @@ def patch_builder(chaquopy: Path) -> None:
     )
 
 
+CARGO_SOURCE_REPLACEMENT = """\
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
+"""
+
+
+def patch_builder_rust(chaquopy: Path) -> None:
+    """Make Chaquopy's Rust support offline, pinned, 16 KiB aligned and path-neutral."""
+    builder = chaquopy / "server/pypi/build-wheel.py"
+    _replace(
+        builder,
+        '        run(f"rustup target add {tool_prefix}")\n',
+        '        sysroot = run("rustc --print sysroot", capture_output=True).stdout.strip()\n'
+        '        if not isdir(f"{sysroot}/lib/rustlib/{tool_prefix}/lib"):\n'
+        '            raise CommandError(f"Rust std for {tool_prefix} is not installed")\n'
+        # PyO3 links abi3 extensions for Android with -lpython3. Chaquopy's
+        # libpython3.12.so has no SONAME, so a symlink would leak libpython3.so
+        # into DT_NEEDED; a linker script resolves it to the real library.
+        '        libpython3 = f"{self.host_env}/chaquopy/lib/libpython3.so"\n'
+        "        if self.needs_python and not os.path.lexists(libpython3):\n"
+        '            with open(libpython3, "w") as script:\n'
+        '                script.write(f"INPUT(-lpython{self.python})\\n")\n'
+        # Version-specific (non-abi3) PyO3 crates cannot cross-compile without
+        # the target's sysconfigdata, which Chaquopy's 3.12 target lacks.
+        # Synthesise the keys PyO3 and maturin read.
+        "        if self.needs_python:\n"
+        '            cross_dir = ensure_dir(f"{self.build_dir}/pyo3-cross")\n'
+        '            nodot = self.python.replace(".", "")\n'
+        "            build_time_vars = {\n"
+        '                "ABIFLAGS": "", "EXT_SUFFIX": f".cpython-{nodot}-{tool_prefix}.so",\n'
+        '                "LDVERSION": self.python, "LIBDIR": f"{self.host_env}/chaquopy/lib",\n'
+        '                "MULTIARCH": tool_prefix, "Py_DEBUG": 0, "Py_ENABLE_SHARED": 1,\n'
+        '                "Py_GIL_DISABLED": 0, "SIZEOF_VOID_P": 8,\n'
+        '                "SOABI": f"cpython-{nodot}-{tool_prefix}", "VERSION": self.python,\n'
+        "            }\n"
+        '            with open(f"{cross_dir}/_sysconfigdata__android_{tool_prefix}.py", "w") as f:\n'
+        '                f.write(f"build_time_vars = {build_time_vars!r}\\n")\n'
+        '            env["PYO3_CROSS_LIB_DIR"] = cross_dir\n',
+    )
+    # maturin's CycloneDX SBOM lists the statically linked crates (kept for
+    # attribution) under absolute paths; `wheel pack` regenerates RECORD.
+    _replace(
+        builder,
+        '        info_dir = assert_isdir(f"{tmp_dir}/{self.name_version}.dist-info")\n',
+        '        info_dir = assert_isdir(f"{tmp_dir}/{self.name_version}.dist-info")\n'
+        '        sbom_dir = f"{info_dir}/sboms"\n'
+        "        if exists(sbom_dir):\n"
+        '            stage_root = os.environ["ANKI_MINER_RUNTIME_STAGE_ROOT"]\n'
+        "            for name in sorted(os.listdir(sbom_dir)):\n"
+        "                sbom = Path(sbom_dir, name)\n"
+        '                sbom.write_text(sbom.read_text().replace(stage_root, "/anki-miner-runtime"))\n',
+    )
+    _replace(
+        builder,
+        '"RUSTFLAGS": f"-C linker={env[\'CC\']} -L native={self.host_env}/chaquopy/lib",',
+        '"RUSTFLAGS": (f"-C linker={env[\'CC\']} -L native={self.host_env}/chaquopy/lib "\n'
+        '                          + os.environ["ANKI_MINER_RUSTFLAGS"]),',
+    )
+
+
+def patch_builder_cmake(chaquopy: Path) -> None:
+    """Point CMake at the NDK binutils.
+
+    Chaquopy's toolchain file names no strip, ar or ranlib, so CMake falls back
+    to the host's /usr/bin/strip, which cannot read Android ELF.
+    """
+    _replace(
+        chaquopy / "server/pypi/build-wheel.py",
+        "                set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)\n",
+        "                set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)\n"
+        "\n"
+        "                # Anki Miner: NDK binutils instead of the host's.\n"
+        "                set(CMAKE_AR {env['AR']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_NM {env['NM']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_RANLIB {env['RANLIB']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_READELF {env['READELF']} CACHE FILEPATH \"\")\n"
+        "                set(CMAKE_STRIP {env['STRIP']} CACHE FILEPATH \"\")\n",
+    )
+
+
+def stage_cargo_vendor(name: str, entry: dict[str, object], downloads: Path, source: Path, scratch: Path) -> None:
+    """Unpack a locked vendor tree beside the crate and point cargo at it."""
+    vendor = entry["cargo_vendor"]
+    assert isinstance(vendor, dict)
+    crate_root = (source / str(entry["cargo_manifest"])).parent
+    vendored = safe_extract(downloads / str(vendor["filename"]), scratch / f"vendor-{name}")
+    if vendored.name != "vendor" or (crate_root / "vendor").exists():
+        raise RuntimeWheelError(f"{name}: cargo vendor tree cannot be staged")
+    shutil.copytree(vendored, crate_root / "vendor")
+    config = crate_root / ".cargo/config.toml"
+    config.parent.mkdir(exist_ok=True)
+    existing = config.read_text(encoding="utf-8") if config.exists() else ""
+    if "[source." in existing:
+        raise RuntimeWheelError(f"{name}: sdist already configures cargo sources")
+    config.write_text(existing + ("\n" if existing else "") + CARGO_SOURCE_REPLACEMENT, encoding="utf-8")
+
+
 def recipe_path_entries(
     tool_root: Path = TOOL_ROOT,
     repo_root: Path = ROOT,
@@ -915,14 +1804,15 @@ def recipe_path_entries(
     recipe_tree = tool_root / "recipes"
     if not recipe_tree.is_dir():
         raise RuntimeWheelError(f"recipe tree is missing: {recipe_tree}")
-    entries.extend(
-        (
-            f"tools/runtime-wheels/{path.relative_to(tool_root).as_posix()}",
-            path,
+    for tree in (recipe_tree, tool_root / "licenses"):
+        entries.extend(
+            (
+                f"tools/runtime-wheels/{path.relative_to(tool_root).as_posix()}",
+                path,
+            )
+            for path in tree.rglob("*")
+            if path.is_file()
         )
-        for path in recipe_tree.rglob("*")
-        if path.is_file()
-    )
     entries.extend((name, repo_root / name) for name in RECIPE_REPO_FILES)
     logical_names = [logical for logical, _ in entries]
     if len(logical_names) != len(set(logical_names)):
@@ -943,6 +1833,14 @@ def _parameters() -> dict[str, object]:
         "python_target": PYTHON_TARGET,
         "target_build_python": TARGET_BUILD_PYTHON_VERSION,
         "reproducible_env": REPRODUCIBLE_ENV,
+        "rust": RUST_TOOLCHAIN,
+        "families": FAMILIES,
+        "family_packages": FAMILY_PACKAGES,
+        "repacks": REPACKS,
+        "sdist_wheels": SDIST_WHEELS,
+        "native_roots": NATIVE_ROOTS,
+        "pinned_member_files": PINNED_MEMBER_FILES,
+        "external_runtime_libs": sorted(EXTERNAL_RUNTIME_LIBS),
     }
 
 
@@ -1100,11 +1998,12 @@ def _validate_interpreter_identity(
 def validate_builder_identity(value: object) -> dict[str, object]:
     identity = require_exact_keys(
         value,
-        {"schema", "interpreters", "host", "android", "tools"},
+        {"schema", "interpreters", "host", "android", "rust", "tools"},
         "builder identity",
     )
-    if identity.get("schema") != 2:
+    if identity.get("schema") != BUILDER_IDENTITY_SCHEMA:
         raise RuntimeWheelError("invalid builder identity schema")
+    validate_rust_identity(identity.get("rust"))
     interpreters = require_exact_keys(
         identity.get("interpreters"),
         {"outer", "target"},
@@ -1176,7 +2075,7 @@ def builder_identity() -> dict[str, object]:
     libc_name, libc_version = platform.libc_ver()
     outer = str(Path(sys.executable).resolve(strict=True))
     identity: dict[str, object] = {
-        "schema": 2,
+        "schema": BUILDER_IDENTITY_SCHEMA,
         "interpreters": {
             "outer": _interpreter_identity(outer),
             "target": _interpreter_identity(target_python_executable()),
@@ -1188,6 +2087,7 @@ def builder_identity() -> dict[str, object]:
             "zlib": {"compiled": zlib.ZLIB_VERSION, "runtime": zlib.ZLIB_RUNTIME_VERSION},
         },
         "android": _ndk_identity(),
+        "rust": rust_identity(),
         "tools": {
             "bash": _tool_version("bash", ["bash", "--version"], "bash"),
             "coreutils": _tool_version("coreutils", ["cp", "--version"], "coreutils"),
@@ -1345,6 +2245,8 @@ def stage(
                 temporary / f"source-{name}",
             )
             shutil.copytree(extracted, source_dir / name)
+            if "cargo_vendor" in entry:
+                stage_cargo_vendor(name, entry, downloads, source_dir / name, temporary)
         packages = chaquopy / "server/pypi/packages"
         for recipe_dir in sorted((TOOL_ROOT / "recipes").iterdir()):
             if not recipe_dir.is_dir():
@@ -1359,6 +2261,8 @@ def stage(
             entry = entries[f"python-{abi}"]
             shutil.copy2(downloads / str(entry["filename"]), target_dir)
         patch_builder(chaquopy)
+        patch_builder_rust(chaquopy)
+        patch_builder_cmake(chaquopy)
         normalize_tree_timestamps(chaquopy)
         normalize_tree_timestamps(patchelf)
         patchelf_candidates = [
@@ -1526,24 +2430,162 @@ def _native_identity(path: Path) -> tuple[str, str]:
     return package, abi
 
 
+def _pure_source_name(package: str, entries: dict[str, dict[str, object]]) -> str:
+    return next(
+        name
+        for name, entry in entries.items()
+        if entry.get("kind") in {"prebuilt-wheel", "pure-sdist"}
+        and normalize_package(str(entry.get("package"))) == package
+    )
+
+
 def _expected_license_hashes(package: str) -> tuple[str, set[str]]:
     entries = source_entries()
     if package in COMMON_SPECS:
-        source_name = next(
-            name
-            for name, entry in entries.items()
-            if entry.get("kind") == "prebuilt-wheel" and normalize_package(str(entry.get("package"))) == package
-        )
+        source_name = _pure_source_name(package, entries)
     else:
         source_name = str(NATIVE_SPECS[package]["source"])
     license_value = entries[source_name]["license"]
     assert isinstance(license_value, dict)
     members = license_value["members"]
-    assert isinstance(members, dict)
-    return str(license_value["expression"]), {str(value) for value in members.values()}
+    carried = license_value.get("carried", {})
+    assert isinstance(members, dict) and isinstance(carried, dict)
+    return str(license_value["expression"]), {str(value) for value in (*members.values(), *carried.values())}
+
+
+def _filename_tags(filename: str) -> list[str]:
+    """Expand a wheel filename's compressed tag set (``py2.py3-none-any``)."""
+    python, abi, platform_tag = Path(filename).stem.rsplit("-", 3)[1:]
+    return sorted(
+        f"{interpreter}-{abi_tag}-{platform_value}"
+        for interpreter in python.split(".")
+        for abi_tag in abi.split(".")
+        for platform_value in platform_tag.split(".")
+    )
+
+
+def _exclude_matches(rule: str, name: str, prefix: str) -> bool:
+    if not name.startswith(prefix):
+        return False
+    relative = name[len(prefix) :]
+    return relative.startswith(rule) if rule.endswith("/") else relative == rule
+
+
+def _repack_excluded(name: str, package: str) -> bool:
+    repack = REPACKS.get(package)
+    if repack is None:
+        return False
+    prefix, excludes = repack
+    return any(_exclude_matches(rule, name, prefix) for rule in excludes)
+
+
+def _require_every_exclude(source: str, package: str, names: list[str]) -> None:
+    """A stale exclude is an upstream layout change; fail rather than ship it unnoticed."""
+    prefix, excludes = REPACKS[package]
+    stale = [rule for rule in excludes if not any(_exclude_matches(rule, name, prefix) for name in names)]
+    if stale:
+        raise RuntimeWheelError(f"{source}: repack excludes match no member: {stale}")
+
+
+def _record(entries: list[tuple[str, bytes, bool]], record_name: str) -> bytes:
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    for name, data, _ in entries:
+        encoded = base64.urlsafe_b64encode(hashlib.sha256(data).digest()).rstrip(b"=").decode()
+        writer.writerow((name, f"sha256={encoded}", len(data)))
+    writer.writerow((record_name, "", ""))
+    return output.getvalue().encode("utf-8")
+
+
+def _write_wheel(path: Path, entries: list[tuple[str, bytes, bool]], record_name: str) -> None:
+    """Write members in order, then RECORD, with fixed times and modes."""
+    with zipfile.ZipFile(path, "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name, data, executable in [*entries, (record_name, _record(entries, record_name), False)]:
+            info = zipfile.ZipInfo(name, WHEEL_DATE_TIME)
+            info.create_system = 3
+            info.external_attr = (0o100755 if executable else 0o100644) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data, compresslevel=9)
+
+
+def repack_wheel(source: Path, output: Path, package: str) -> None:
+    """Publish ``source`` without the members ``REPACKS`` excludes for ``package``."""
+    with zipfile.ZipFile(source) as archive:
+        members = _validated_zip_members(archive, source.name, "wheel")
+        files = [
+            (info.filename, archive.read(info), bool((info.external_attr >> 16) & stat.S_IXUSR))
+            for info in members
+            if not info.is_dir()
+        ]
+    records = [name for name, _, _ in files if name.endswith(".dist-info/RECORD") and name.count("/") == 1]
+    if len(records) != 1:
+        raise RuntimeWheelError(f"{source.name}: wheel must have one RECORD")
+    _require_every_exclude(source.name, package, [name for name, _, _ in files])
+    kept = [entry for entry in files if entry[0] != records[0] and not _repack_excluded(entry[0], package)]
+    _write_wheel(output, kept, records[0])
+
+
+def sdist_wheel(sdist: Path, output: Path, package: str, version: str) -> None:
+    """Pack an sdist-only pure package as a ``py3-none-any`` wheel.
+
+    The package directory comes from ``SDIST_WHEELS``, METADATA is the sdist's
+    PKG-INFO, and the licence texts are the ones the repository carries.
+    """
+    prefix = SDIST_WHEELS[package]
+    root, _, package_path = prefix.rstrip("/").partition("/")
+    target_root = package_path.rsplit("/", 1)[-1]
+    entries = source_entries()
+    source_entry = entries[_pure_source_name(package, entries)]
+    with tarfile.open(sdist) as archive:
+        members = sorted(_validated_tar_members(archive, sdist.name), key=lambda member: member.name)
+
+        def read(member: tarfile.TarInfo) -> bytes:
+            stream = archive.extractfile(member)
+            if stream is None:
+                raise RuntimeWheelError(f"{sdist.name}: cannot read {member.name}")
+            with stream:
+                return stream.read()
+
+        metadata = [read(member) for member in members if member.name == f"{root}/PKG-INFO"]
+        if package in REPACKS:
+            _require_every_exclude(
+                sdist.name,
+                package,
+                [f"{target_root}/{member.name[len(prefix):]}" for member in members if member.name.startswith(prefix)],
+            )
+        files = []
+        for member in members:
+            if not member.isfile() or not member.name.startswith(prefix):
+                continue
+            name = f"{target_root}/{member.name[len(prefix):]}"
+            if not _repack_excluded(name, package):
+                files.append((name, read(member), bool(member.mode & stat.S_IXUSR)))
+    if len(metadata) != 1 or not files:
+        raise RuntimeWheelError(f"{sdist.name}: sdist has no PKG-INFO or package members")
+    dist_info = f"{re.sub(r'[^A-Za-z0-9.]+', '_', package)}-{version}.dist-info"
+    license_value = source_entry["license"]
+    assert isinstance(license_value, dict)
+    carried = license_value.get("carried", {})
+    assert isinstance(carried, dict)
+    files.extend(
+        (f"{dist_info}/{name}", carried_license_path(source_entry, str(name)).read_bytes(), False)
+        for name in sorted(carried)
+    )
+    files.append((f"{dist_info}/METADATA", metadata[0], False))
+    files.append(
+        (
+            f"{dist_info}/WHEEL",
+            b"Wheel-Version: 1.0\nGenerator: anki-miner-runtime-wheels\nRoot-Is-Purelib: true\nTag: py3-none-any\n\n",
+            False,
+        )
+    )
+    _write_wheel(output, files, f"{dist_info}/RECORD")
 
 
 def _allowed_native_path(package: str, name: str) -> bool:
+    roots = NATIVE_ROOTS.get(package)
+    if roots is not None:
+        return any(name.startswith(root) if root.endswith("/") else name == root for root in roots)
     if package == "chaquopy-libwebp":
         return (
             name.startswith("chaquopy/lib/lib")
@@ -1564,6 +2606,25 @@ def _allowed_native_path(package: str, name: str) -> bool:
     return name in NATIVE_REQUIRED_PATHS[package]
 
 
+def _verify_pinned_members(wheel: str, package: str, files: dict[str, bytes]) -> None:
+    """Members a recipe pins byte for byte, such as opencc's generated dictionaries."""
+    relative = PINNED_MEMBER_FILES.get(package)
+    if relative is None:
+        return
+    document = load_json(TOOL_ROOT / relative, 1)
+    require_exact_keys(document, {"schema", "prefix", "members"}, f"pinned members of {package}")
+    prefix = document["prefix"]
+    pinned = document["members"]
+    if not isinstance(prefix, str) or not prefix.endswith("/") or not isinstance(pinned, dict) or not pinned:
+        raise RuntimeWheelError(f"invalid pinned members of {package}")
+    actual = {
+        name[len(prefix) :]: hashlib.sha256(data).hexdigest() for name, data in files.items() if name.startswith(prefix)
+    }
+    if actual != pinned:
+        differing = sorted(set(actual.items()) ^ set(pinned.items()))
+        raise RuntimeWheelError(f"{wheel}: pinned members differ: {differing[:5]}")
+
+
 def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]]:
     common_package = next(
         (package for package, (_, filename) in COMMON_SPECS.items() if filename == path.name),
@@ -1573,7 +2634,8 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
         package = common_package
         abi: str | None = None
         expected_version = COMMON_SPECS[package][0]
-        expected_tag = "py3-none-any"
+        expected_tag = "-".join(Path(path.name).stem.rsplit("-", 3)[1:])
+        expected_tags = _filename_tags(path.name)
     else:
         package, abi = _native_identity(path)
         expected_version = str(NATIVE_SPECS[package]["version"])
@@ -1581,6 +2643,7 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
             f"{NATIVE_SPECS[package]['python']}-{NATIVE_SPECS[package]['abi']}-"
             f"android_{API_LEVEL}_{abi.replace('-', '_')}"
         )
+        expected_tags = [expected_tag]
     if package in FORBIDDEN_PACKAGE_NAMES or "cp313" in path.name:
         raise RuntimeWheelError(f"forbidden runtime package: {path.name}")
     try:
@@ -1605,7 +2668,7 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
             raise RuntimeWheelError(f"{path.name}: METADATA identity mismatch")
         wheel_metadata = _wheel_message(archive, dist_info, "WHEEL")
         tags = wheel_metadata.get_all("Tag") or []
-        if tags != [expected_tag] or any("cp313" in str(tag) for tag in tags):
+        if sorted(str(tag) for tag in tags) != expected_tags or any("cp313" in str(tag) for tag in tags):
             raise RuntimeWheelError(f"{path.name}: WHEEL tag mismatch")
 
         mandatory: set[str] = set()
@@ -1625,13 +2688,21 @@ def verify_runtime_wheel(path: Path) -> tuple[str, str | None, dict[str, object]
         folded_names = "\n".join(files).encode("utf-8", "ignore").lower()
         if any(marker.lower() in folded_names for marker in FORBIDDEN_PAYLOAD_MARKERS):
             raise RuntimeWheelError(f"{path.name}: forbidden payload member")
+        excluded = sorted(name for name in files if _repack_excluded(name, package))
+        if excluded:
+            raise RuntimeWheelError(f"{path.name}: repack-excluded members are present: {excluded[:5]}")
+        _verify_pinned_members(path.name, package, files)
+        if abi is not None:
+            home = os.fsencode(Path.home()) + b"/"
+            leaked = sorted(name for name, data in files.items() if not data.startswith(b"\x7fELF") and home in data)
+            if leaked:
+                raise RuntimeWheelError(f"{path.name}: builder home path leaked into {leaked[:5]}")
 
         expression, expected_license_hashes = _expected_license_hashes(package)
         license_entries = [
             {"path": name, "sha256": hashlib.sha256(data).hexdigest()}
             for name, data in sorted(files.items())
-            if dist_info in Path(name).parts
-            and Path(name).name.upper().startswith(("LICENSE", "COPYING", "COPYRIGHT", "NOTICE", "FTL"))
+            if dist_info in Path(name).parts and Path(name).name.upper().startswith(LICENSE_PREFIXES)
         ]
         actual_license_hashes = {str(entry["sha256"]) for entry in license_entries}
         if not expected_license_hashes.issubset(actual_license_hashes):
@@ -1744,6 +2815,100 @@ def _attributions(entries: list[dict[str, object]]) -> dict[str, object]:
     return {"schema": ATTRIBUTION_SCHEMA, "packages": packages}
 
 
+def _families(wheels: dict[str, list[dict[str, object]]]) -> dict[str, dict[str, list[str]]]:
+    """The exact wheel filenames each family's wave vendors, per publication group."""
+    return {
+        family: {
+            group: sorted(
+                str(entry["filename"]) for entry in wheels[group] if family in PACKAGE_FAMILIES[str(entry["package"])]
+            )
+            for group in ("common", *ABIS)
+        }
+        for family in FAMILIES
+    }
+
+
+def _validate_publication_natives(wheels: dict[str, list[dict[str, object]]]) -> None:
+    """Every ABI's natives resolve within Android, libpython and the publication."""
+    checker = _native_artifact_checker()
+    for abi in ABIS:
+        natives = [
+            (
+                str(native["path"]),
+                checker.NativeMetadata(abi, native["soname"], tuple(sorted(native["needed"])), True),
+            )
+            for entry in wheels[abi]
+            for native in entry["native"]
+        ]
+        try:
+            checker.validate_requirement_natives(
+                natives,
+                f"runtime publication ({abi})",
+                external_libraries=EXTERNAL_RUNTIME_LIBS,
+            )
+        except checker.ArtifactError as error:
+            raise RuntimeWheelError(str(error)) from error
+
+
+def _isa_audit(directory: Path, wheels: dict[str, list[dict[str, object]]]) -> dict[str, object]:
+    """Disassemble every arm64 native; unguarded extension instructions fail the publication."""
+    checker = _native_artifact_checker()
+    natives: dict[str, object] = {}
+    try:
+        objdump = checker.default_llvm_objdump()
+        for entry in wheels["arm64-v8a"]:
+            with zipfile.ZipFile(directory / str(entry["filename"])) as archive:
+                for native in entry["native"]:
+                    member = str(native["path"])
+                    key = f"{entry['filename']}!{member}"
+                    natives[key] = checker.audit_arm64_isa(
+                        archive.read(member),
+                        str(entry["filename"]),
+                        member,
+                        key,
+                        objdump,
+                    )
+    except checker.ArtifactError as error:
+        raise RuntimeWheelError(str(error)) from error
+    return {"baseline": checker.ARM64_ISA_BASELINE, "natives": natives}
+
+
+def _validate_isa_audit(value: object, wheels: dict[str, list[dict[str, object]]]) -> None:
+    audit = require_exact_keys(value, {"baseline", "natives"}, "publication ISA audit")
+    natives = audit.get("natives")
+    expected = {f"{entry['filename']}!{native['path']}" for entry in wheels["arm64-v8a"] for native in entry["native"]}
+    if (
+        audit.get("baseline") != _native_artifact_checker().ARM64_ISA_BASELINE
+        or not isinstance(natives, dict)
+        or set(natives) != expected
+    ):
+        raise RuntimeWheelError("publication ISA audit does not cover every arm64 native")
+    for report in natives.values():
+        if (
+            not isinstance(report, dict)
+            or not isinstance(report.get("instructions"), int)
+            or report["instructions"] <= 0
+            or not all(isinstance(count, int) and count > 0 for count in report.values())
+        ):
+            raise RuntimeWheelError("publication ISA audit report is malformed")
+
+
+def _materialize_common(package: str, downloads: Path, staging: Path) -> Path:
+    """Place one pure wheel in the publication: verbatim, repacked, or packed from its sdist."""
+    entries = source_entries()
+    entry = entries[_pure_source_name(package, entries)]
+    version, filename = COMMON_SPECS[package]
+    source = downloads / str(entry["filename"])
+    target = staging / filename
+    if entry["kind"] == "pure-sdist":
+        sdist_wheel(source, target, package, version)
+    elif package in REPACKS:
+        repack_wheel(source, target, package)
+    else:
+        shutil.copy2(source, target)
+    return target
+
+
 def publish(
     stage_a: Path,
     stage_b: Path,
@@ -1772,32 +2937,6 @@ def publish(
             "clean runtime builds are not byte-for-byte reproducible: " + ", ".join(mismatches),
         )
 
-    entries_by_abi: dict[str, list[dict[str, object]]] = {
-        "common": [],
-        **{abi: [] for abi in ABIS},
-    }
-    verified: list[tuple[Path, str, dict[str, object]]] = []
-    for wheel in wheels_a.values():
-        _, abi, entry = verify_runtime_wheel(wheel)
-        assert abi is not None
-        entries_by_abi[abi].append(entry)
-        verified.append((wheel, abi, entry))
-    source_values = source_entries()
-    for package in COMMON_SPECS:
-        source_entry = next(
-            entry
-            for entry in source_values.values()
-            if entry.get("kind") == "prebuilt-wheel" and normalize_package(str(entry.get("package"))) == package
-        )
-        wheel = downloads / str(source_entry["filename"])
-        _, abi, entry = verify_runtime_wheel(wheel)
-        if abi is not None:
-            raise RuntimeWheelError(f"common wheel unexpectedly has an ABI: {wheel.name}")
-        entries_by_abi["common"].append(entry)
-        verified.append((wheel, "common", entry))
-    for values in entries_by_abi.values():
-        values.sort(key=lambda item: str(item["package"]))
-
     output_root.mkdir(parents=True, exist_ok=True)
     target = output_root / f"runtime-wheels-{build}"
     staging = output_root / f".{target.name}.staging"
@@ -1806,9 +2945,34 @@ def publish(
     published_target = False
     try:
         staging.mkdir()
-        for wheel, _, _ in verified:
-            shutil.copy2(wheel, staging / wheel.name)
-        attribution = _attributions([entry for _, _, entry in verified])
+        entries_by_abi: dict[str, list[dict[str, object]]] = {
+            "common": [],
+            **{abi: [] for abi in ABIS},
+        }
+        published: list[dict[str, object]] = []
+        for name, wheel in sorted(wheels_a.items()):
+            package, _ = _native_identity(wheel)
+            if package in REPACKS:
+                repack_wheel(wheel, staging / name, package)
+            else:
+                shutil.copy2(wheel, staging / name)
+            _, abi, entry = verify_runtime_wheel(staging / name)
+            assert abi is not None
+            entries_by_abi[abi].append(entry)
+            published.append(entry)
+        for package in sorted(COMMON_SPECS):
+            wheel = _materialize_common(package, downloads, staging)
+            _, abi, entry = verify_runtime_wheel(wheel)
+            if abi is not None:
+                raise RuntimeWheelError(f"common wheel unexpectedly has an ABI: {wheel.name}")
+            entries_by_abi["common"].append(entry)
+            published.append(entry)
+        for values in entries_by_abi.values():
+            values.sort(key=lambda item: str(item["package"]))
+        _validate_publication_natives(entries_by_abi)
+        isa_audit = _isa_audit(staging, entries_by_abi)
+
+        attribution = _attributions(published)
         attribution_path = staging / "attributions.json"
         attribution_path.write_text(
             json.dumps(attribution, indent=2, sort_keys=True) + "\n",
@@ -1825,7 +2989,7 @@ def publish(
             "python_target": PYTHON_TARGET,
             "target_build_python": TARGET_BUILD_PYTHON_VERSION,
             "recipe_inventory": recipe_inventory(),
-            "sources": source_values,
+            "sources": source_entries(),
             "host_wheels": {str(entry["filename"]): entry["sha256"] for entry in host_entries()},
             "reproducibility": {
                 "stage_manifests": [
@@ -1841,6 +3005,8 @@ def publish(
                 "native_wheels_byte_identical": True,
             },
             "wheels": entries_by_abi,
+            "families": _families(entries_by_abi),
+            "isa_audit": isa_audit,
             "attributions_sha256": digest(attribution_path),
         }
         manifest_path = staging / "manifest.json"
@@ -1877,6 +3043,7 @@ def _publication_summary(
     recipe: str,
     build: str,
     wheels: dict[str, object],
+    families: dict[str, object],
 ) -> dict[str, object]:
     return {
         "schema": PUBLICATION_SCHEMA,
@@ -1886,6 +3053,7 @@ def _publication_summary(
         "ndk": NDK_VERSION,
         "python_target": PYTHON_TARGET,
         "groups": {group: sorted(str(entry["filename"]) for entry in wheels[group]) for group in ("common", *ABIS)},
+        "families": families,
     }
 
 
@@ -1923,6 +3091,8 @@ def verify_publication(
             "host_wheels",
             "reproducibility",
             "wheels",
+            "families",
+            "isa_audit",
             "attributions_sha256",
         },
         "runtime publication manifest",
@@ -2041,6 +3211,11 @@ def verify_publication(
     for group, packages in expected_packages.items():
         if {str(entry["package"]) for entry in wheels[group]} != packages:
             raise RuntimeWheelError(f"publication {group} package set differs")
+    families = _families(wheels)
+    if document.get("families") != families:
+        raise RuntimeWheelError("publication family selection differs from the package families")
+    _validate_publication_natives(wheels)
+    _validate_isa_audit(document.get("isa_audit"), wheels)
 
     attribution_path = manifest_path.parent / "attributions.json"
     if (
@@ -2058,7 +3233,7 @@ def verify_publication(
         or _publication_regular_files(manifest_path.parent) != actual_files
     ):
         raise RuntimeWheelError("publication contains unmanifested or missing files")
-    return _publication_summary(recipe, build, wheels)
+    return _publication_summary(recipe, build, wheels, families)
 
 
 def activate_publication(manifest_path: Path, pointer: Path) -> dict[str, object]:
@@ -2091,10 +3266,26 @@ def activate_publication(manifest_path: Path, pointer: Path) -> dict[str, object
     return verification
 
 
+def build_order() -> list[tuple[str, bool]]:
+    """Recipes in build order, each with whether it is a Python package.
+
+    Shared libraries come first because Python extensions link against them
+    (pillow against libjpeg, lxml against libxml2).
+    """
+    shared = [package for package, spec in NATIVE_SPECS.items() if spec["python"] == "py3"]
+    extensions = [package for package, spec in NATIVE_SPECS.items() if spec["python"] != "py3"]
+    return [(package, False) for package in shared] + [(package, True) for package in extensions]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("recipe-key")
+    subparsers.add_parser("build-order")
+    subparsers.add_parser("rust-bin")
+    vendoring = subparsers.add_parser("vendor")
+    vendoring.add_argument("name")
+    vendoring.add_argument("--downloads", type=Path, required=True)
     subparsers.add_parser("builder-identity")
     subparsers.add_parser("build-key")
     requirements = subparsers.add_parser("host-requirements")
@@ -2134,6 +3325,13 @@ def main() -> int:
         args = parse_args()
         if args.command == "recipe-key":
             print(source_recipe_key())
+        elif args.command == "build-order":
+            print("\n".join(f"{package}\t{'python' if python else 'native'}" for package, python in build_order()))
+        elif args.command == "rust-bin":
+            rust_identity()
+            print(rust_toolchain_bin())
+        elif args.command == "vendor":
+            print(cargo_vendor(args.name, source_entries()[args.name], args.downloads))
         elif args.command == "builder-identity":
             print(json.dumps(builder_identity(), sort_keys=True, separators=(",", ":")))
         elif args.command == "build-key":

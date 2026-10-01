@@ -17,8 +17,10 @@ from email.policy import compat32
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 
+import check_native_artifacts as native_policy
+
 SUPPORTED_ABIS = {"arm64-v8a": 183, "x86_64": 62}
-RUNTIME_SCHEMA = 1
+RUNTIME_SCHEMA = 2
 S1A_SCHEMA = 2
 KEY_PATTERN = re.compile(r"[0-9a-f]{64}")
 PACKAGE_PATTERN = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?")
@@ -37,7 +39,44 @@ ELF_MAGIC = b"\x7fELF"
 ALLOWED_COMPRESSION = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
 NESTED_ARCHIVE_SUFFIXES = (".aab", ".apk", ".imy", ".whl", ".zip")
 ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
-LICENSE_PREFIXES = ("LICENSE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")
+#: Judged exceptions: exact path -> (distribution, version, SHA-256) of a file a pinned release
+#: ships that a payload rule would refuse. numpy 2.5.0 carries two ``.npz`` test fixtures (ZIP
+#: files nothing on device opens) and three licence texts of bundled code inside its package;
+#: typer 0.26.7 carries the licence of the click code it vendors. Another release, a changed
+#: byte or any other path falls under the rule again.
+JUDGED_PAYLOADS: dict[str, tuple[str, str, str]] = {
+    "numpy/lib/tests/data/py2-objarr.npz": (
+        "numpy",
+        "2.5.0",
+        "c68d771c14f415b159daabd9cf42d61836f74ae40049269787baca7d57098f1e",
+    ),
+    "numpy/lib/tests/data/py3-objarr.npz": (
+        "numpy",
+        "2.5.0",
+        "bd5465f7f359effabe86376e52bf185a7cd1cbc1123659af30f95a4920baf5f9",
+    ),
+    "numpy/_core/include/numpy/random/LICENSE.txt": (
+        "numpy",
+        "2.5.0",
+        "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+    ),
+    "numpy/ma/LICENSE": (
+        "numpy",
+        "2.5.0",
+        "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+    ),
+    "numpy/random/LICENSE.md": (
+        "numpy",
+        "2.5.0",
+        "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+    ),
+    "typer/_click/LICENSE.txt": (
+        "typer",
+        "0.26.7",
+        "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d",
+    ),
+}
+LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")
 
 FORBIDDEN_PACKAGE_PREFIXES = ("gtts", "pyqt6", "unidic", "yt-dlp")
 S1A_ONLY_PACKAGES = {
@@ -100,6 +139,7 @@ class ExpectedInventory:
     distributions: dict[str, str] = field(default_factory=dict)
     natives: dict[str, ExpectedFile] = field(default_factory=dict)
     licenses: dict[str, ExpectedFile] = field(default_factory=dict)
+    native_metadata: dict[str, native_policy.NativeMetadata] = field(default_factory=dict)
 
     def add_distribution(self, package: str, version: str, label: str) -> None:
         normalized = normalize_package(package)
@@ -125,6 +165,29 @@ class ExpectedInventory:
             self.add_file(self.natives, path, expected, label)
         for path, expected in other.licenses.items():
             self.add_file(self.licenses, path, expected, label)
+        self.native_metadata.update(other.native_metadata)
+
+    def validate_natives(self, abi: str, label: str) -> None:
+        """Apply the shared SONAME and DT_NEEDED rules to every selected native."""
+        if set(self.native_metadata) != set(self.natives):
+            raise RuntimeArtifactError(f"{label}: native metadata does not cover every native payload")
+        try:
+            native_policy.validate_requirement_natives(
+                sorted(self.native_metadata.items()),
+                f"{label} ({abi})",
+            )
+        except native_policy.ArtifactError as error:
+            raise RuntimeArtifactError(str(error)) from error
+
+
+def _manifest_native_metadata(raw: dict[str, object], abi: str, label: str) -> native_policy.NativeMetadata:
+    needed = raw.get("needed")
+    soname = raw.get("soname")
+    if not isinstance(needed, list) or not all(isinstance(value, str) for value in needed):
+        raise RuntimeArtifactError(f"{label}: native dependencies are malformed")
+    if soname is not None and not isinstance(soname, str):
+        raise RuntimeArtifactError(f"{label}: native SONAME is malformed")
+    return native_policy.NativeMetadata(abi, soname, tuple(sorted(needed)), True)
 
 
 @dataclass(frozen=True)
@@ -191,6 +254,20 @@ def _safe_manifest_path(value: object, label: str) -> str:
 def _is_license_path(path: str) -> bool:
     basename = PurePosixPath(path).name.upper()
     return basename == "BSD" or basename.startswith(LICENSE_PREFIXES)
+
+
+def _is_package_data_license_path(path: str) -> bool:
+    """A ``LICENSE``/``LICENCE`` file a wheel keeps inside its package, beside the data it covers.
+
+    Narrower than :func:`_is_license_path`: ``FTL``, ``NOTICE`` and the like
+    also name C headers and code (``chaquopy/include/freetype/ftlist.h``).
+    """
+    parts = PurePosixPath(path).parts
+    return (
+        len(parts) > 1
+        and not parts[0].endswith(".dist-info")
+        and PurePosixPath(path).name.upper().startswith(("LICENSE", "LICENCE"))
+    )
 
 
 def _is_dist_info_license_path(path: str) -> bool:
@@ -328,13 +405,7 @@ def _runtime_entry_inventory(
         native_abi = raw_native.get("abi")
         if group == "common" or native_abi != abi:
             raise RuntimeArtifactError(f"{label}: native ABI differs from {abi}")
-        if not isinstance(raw_native.get("needed"), list) or not all(
-            isinstance(value, str) for value in raw_native["needed"]
-        ):
-            raise RuntimeArtifactError(f"{label}: native dependencies are malformed")
-        soname = raw_native.get("soname")
-        if soname is not None and not isinstance(soname, str):
-            raise RuntimeArtifactError(f"{label}: native SONAME is malformed")
+        inventory.native_metadata[path] = _manifest_native_metadata(raw_native, abi, label)
         inventory.add_file(
             inventory.natives,
             path,
@@ -420,13 +491,7 @@ def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
         native_hash = _require_hash(raw_elf.get("sha256"), label)
         if native_path != expected_native_path or raw_elf.get("abi") != abi:
             raise RuntimeArtifactError(f"{label}: native path or ABI differs")
-        if not isinstance(raw_elf.get("needed"), list) or not all(
-            isinstance(value, str) for value in raw_elf["needed"]
-        ):
-            raise RuntimeArtifactError(f"{label}: native dependencies are malformed")
-        soname = raw_elf.get("soname")
-        if soname is not None and not isinstance(soname, str):
-            raise RuntimeArtifactError(f"{label}: native SONAME is malformed")
+        inventory.native_metadata[native_path] = _manifest_native_metadata(raw_elf, abi, label)
         inventory.add_file(
             inventory.natives,
             native_path,
@@ -457,8 +522,48 @@ def load_s1a_inventory(manifest: Path, abi: str) -> ExpectedInventory:
     return inventory
 
 
-def load_vendored_inventory(manifest: Path, abi: str) -> ExpectedInventory:
-    """Load exact package inventory from Gradle-verified vendored wheels."""
+def _inspect_vendored_native(
+    data: bytes,
+    wheel: str,
+    member: str,
+    abi: str,
+    label: str,
+    llvm_objdump: Path | None,
+) -> native_policy.NativeMetadata:
+    """Parse a wheel native's ELF and, on arm64, audit its instruction set."""
+    logical = f"{label}!{member}"
+    try:
+        metadata = native_policy.parse_elf(
+            data,
+            logical,
+            native_policy.Inspection({abi}, ()),
+            require_et_dyn=True,
+            inspect_dynamic=True,
+        )
+        if abi == "arm64-v8a":
+            assert llvm_objdump is not None
+            native_policy.audit_arm64_isa(data, wheel, member, logical, llvm_objdump)
+    except native_policy.ArtifactError as error:
+        raise RuntimeArtifactError(str(error)) from error
+    return metadata
+
+
+def load_vendored_inventory(
+    manifest: Path,
+    abi: str,
+    llvm_objdump: Path | None = None,
+) -> ExpectedInventory:
+    """Load exact package inventory from Gradle-verified vendored wheels.
+
+    Every selected native is parsed and held to the shared SONAME and DT_NEEDED
+    rules; on arm64 each one also passes the ISA audit, which needs the NDK's
+    llvm-objdump (``llvm_objdump``, or located from ``ANDROID_HOME``).
+    """
+    if abi == "arm64-v8a" and llvm_objdump is None:
+        try:
+            llvm_objdump = native_policy.default_llvm_objdump()
+        except native_policy.ArtifactError as error:
+            raise RuntimeArtifactError(str(error)) from error
     resolved, document = _read_manifest(manifest, "vendored wheel manifest")
     if document.get("schema") != 1 or set(document) != {"schema", "wheels"}:
         raise RuntimeArtifactError("unsupported vendored wheel manifest schema")
@@ -555,6 +660,17 @@ def load_vendored_inventory(manifest: Path, abi: str) -> ExpectedInventory:
                         ExpectedFile(package, _sha256(data)),
                         label,
                     )
+                elif _is_package_data_license_path(member) and member not in JUDGED_PAYLOADS:
+                    # A licence the wheel keeps beside the data it covers (pycantonese's
+                    # CC BY 4.0 corpora): owned by this wheel, pinned like any other.
+                    # A judged licence text is pinned by JUDGED_PAYLOADS instead and is
+                    # left out of the licence inventory on both sides.
+                    inventory.add_file(
+                        inventory.licenses,
+                        member,
+                        ExpectedFile(package, _sha256(data)),
+                        label,
+                    )
                 native_name = _is_native_name(member)
                 native_magic = data.startswith(ELF_MAGIC)
                 if native_name != native_magic:
@@ -567,6 +683,14 @@ def load_vendored_inventory(manifest: Path, abi: str) -> ExpectedInventory:
                         raise RuntimeArtifactError(
                             f"{label}: native payload {member} is {native_abi}, expected {abi}",
                         )
+                    inventory.native_metadata[member] = _inspect_vendored_native(
+                        data,
+                        filename,
+                        member,
+                        abi,
+                        f"{label}: {path}",
+                        llvm_objdump,
+                    )
                     inventory.add_file(
                         inventory.natives,
                         member,
@@ -575,6 +699,7 @@ def load_vendored_inventory(manifest: Path, abi: str) -> ExpectedInventory:
                     )
     if not inventory.distributions:
         raise RuntimeArtifactError("vendored wheel manifest has no selected wheels")
+    inventory.validate_natives(abi, "vendored wheels")
     return inventory
 
 
@@ -722,6 +847,7 @@ def _audit_requirements(
             max_total_size=MAX_REQUIREMENT_TOTAL_SIZE,
         )
         files: dict[str, bytes] = {}
+        judged: dict[str, tuple[str, str]] = {}
         for path, info in infos.items():
             if info.is_dir():
                 continue
@@ -732,7 +858,10 @@ def _audit_requirements(
                 MAX_REQUIREMENT_ENTRY_SIZE,
             )
             lower = path.casefold()
-            if lower.endswith(NESTED_ARCHIVE_SUFFIXES) or data.startswith(ZIP_MAGICS):
+            allowance = JUDGED_PAYLOADS.get(path)
+            if allowance is not None and allowance[2] == _sha256(data):
+                judged[path] = allowance[:2]
+            if (lower.endswith(NESTED_ARCHIVE_SUFFIXES) or data.startswith(ZIP_MAGICS)) and path not in judged:
                 raise RuntimeArtifactError(f"{label}: nested archive payload {path}")
             _check_module_boundary(path, s1a_enabled)
             files[path] = data
@@ -765,6 +894,10 @@ def _audit_requirements(
         actual_distributions[package] = version
         root_owners[root] = package
 
+    for path, (package, version) in judged.items():
+        if actual_distributions.get(package) != version:
+            raise RuntimeArtifactError(f"{label}: judged payload {path} needs {package} {version}")
+
     if actual_distributions != expected.distributions:
         raise RuntimeArtifactError(
             f"{label}: distribution inventory differs: "
@@ -775,9 +908,14 @@ def _audit_requirements(
     actual_licenses: dict[str, ExpectedFile] = {}
     actual_natives: dict[str, ExpectedFile] = {}
     for path, data in files.items():
-        if _is_license_path(path):
-            root, _, _ = _dist_info_identity(path, f"{label}:{path}")
-            owner = root_owners.get(root)
+        if _is_license_path(path) and path not in judged:
+            if PurePosixPath(path).parts[0].endswith(".dist-info"):
+                root, _, _ = _dist_info_identity(path, f"{label}:{path}")
+                owner = root_owners.get(root)
+            else:
+                # A package-data licence: owned by the wheel the inventory recorded it from.
+                recorded = expected.licenses.get(path)
+                owner = None if recorded is None else recorded.package
             if owner is None:
                 raise RuntimeArtifactError(f"{label}: unowned license payload {path}")
             if len(data) > MAX_LICENSE_SIZE:
@@ -911,6 +1049,7 @@ def audit_artifact(
             load_s1a_inventory(s1a_manifest, allowed_abi),
             "runtime and S1a manifests",
         )
+    expected.validate_natives(allowed_abi, "runtime manifest natives")
     return _audit_artifact_inventory(
         artifact,
         expected,
@@ -923,10 +1062,11 @@ def audit_vendored_artifact(
     artifact: Path,
     vendored_manifest: Path,
     allowed_abi: str,
+    llvm_objdump: Path | None = None,
 ) -> AuditResult:
     return _audit_artifact_inventory(
         artifact,
-        load_vendored_inventory(vendored_manifest, allowed_abi),
+        load_vendored_inventory(vendored_manifest, allowed_abi, llvm_objdump),
         allowed_abi,
         s1a_enabled=True,
     )
@@ -947,6 +1087,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         required=True,
     )
     parser.add_argument("--s1a-manifest", type=Path)
+    parser.add_argument(
+        "--llvm-objdump",
+        type=Path,
+        help="NDK llvm-objdump for the arm64 ISA audit (default: located from ANDROID_HOME)",
+    )
     arguments = parser.parse_args(argv)
     if len(arguments.allow_abi) != 1:
         parser.error("--allow-abi must be supplied exactly once")
@@ -964,6 +1109,7 @@ def main(argv: list[str] | None = None) -> int:
                 arguments.artifact,
                 arguments.vendored_manifest,
                 arguments.allow_abi,
+                arguments.llvm_objdump,
             )
         else:
             result = audit_artifact(

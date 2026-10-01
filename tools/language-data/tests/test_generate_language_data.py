@@ -81,9 +81,55 @@ class GenerateLanguageDataTest(unittest.TestCase):
         # generate_entries raises on an unclassified component or a stale pin.
         entries = generator.generate_entries(REPO_ROOT)
         self.assertEqual(
-            {"ar": ["calima_msa"], "fa": ["hazm_data"]},
+            {
+                "ar": ["calima_msa"],
+                "fa": ["hazm_data"],
+                "en": ["en_core_web_sm"],
+                "ca": ["ca_core_news_sm"],
+                "de": ["de_core_news_sm"],
+                "pt": ["pt_core_news_sm"],
+                "fr": ["fr_core_news_sm"],
+                "es": ["es_core_news_sm"],
+                "it": ["it_core_news_sm"],
+                "nl": ["nl_core_news_sm"],
+                "nb": ["nb_core_news_sm"],
+                "ro": ["ro_core_news_sm"],
+                "el": ["el_core_news_sm"],
+                "fi": ["fi_core_news_sm"],
+                "hu": ["hu_core_news_md"],
+                "hr": ["hr_core_news_sm"],
+                "sv": ["sv_core_news_sm"],
+                "pl": ["pl_core_news_sm"],
+                "lt": ["lt_core_news_sm"],
+                "da": ["da_core_news_sm"],
+                "sl": ["sl_core_news_sm"],
+                "ru": ["ru_core_news_sm", "pymorphy3_dicts_ru"],
+                "uk": ["uk_core_news_sm", "pymorphy3_dicts_uk"],
+                "ko": ["kiwipiepy_model"],
+                "vi": ["underthesea_models"],
+                "yue": ["pycantonese_models"],
+            },
             {code: [entry["importName"] for entry in items] for code, items in entries.items()},
         )
+
+    def test_every_split_model_is_stripped_from_the_apk_wheel(self) -> None:
+        """A split component's models are downloaded, so its APK wheel must not carry them too."""
+        sys.path.insert(0, str(REPO_ROOT / "tools" / "runtime-wheels"))
+        import runtime_wheels
+
+        pins = json.loads((REPO_ROOT / generator.PINS_PATH).read_text(encoding="utf-8"))["components"]
+        splits = {key: pin["split"]["data"] for key, pin in pins.items() if "split" in pin}
+        self.assertEqual({"vi/underthesea", "yue/pycantonese"}, set(splits))
+        for key, data in splits.items():
+            with self.subTest(component=key):
+                package = key.split("/", 1)[1]
+                prefix, excludes = runtime_wheels.REPACKS[runtime_wheels.normalize_package(package)]
+                for sentinel in data["sentinels"]:
+                    member = data["memberPrefix"] + sentinel
+                    self.assertTrue(member.startswith(prefix), member)
+                    self.assertTrue(
+                        any(runtime_wheels._exclude_matches(rule, member, prefix) for rule in excludes), member
+                    )
 
     def test_a_data_component_becomes_a_catalog_entry_copied_from_its_manifest(self) -> None:
         self.assertEqual(
@@ -150,11 +196,98 @@ class GenerateLanguageDataTest(unittest.TestCase):
         self._write_pins({"xx/xx_data": {"apk": "engine code"}})
         self.assertEqual([], generator.drift(self.repo))
 
+    def test_an_sdist_lists_the_code_members_it_drops_after_the_vendored_excludes(self) -> None:
+        self._write_pack(kind="sdist", extra='exclude=("notes/",),')
+        self._write_pins({"xx/xx_data": {"data": {**self._data_pin(), "dropCode": ["__init__.py", "_version.py"]}}})
+
+        generator.refresh(self.repo)
+
+        (entry,) = self._catalog("xx")["resources"]
+        self.assertEqual("sdist", entry["archive"]["format"])
+        self.assertEqual(["notes/", "__init__.py", "_version.py"], entry["install"]["exclude"])
+
+    def test_drop_code_cannot_name_data(self) -> None:
+        for drop in (["table.dat"], ["notes/"], "__init__.py"):
+            with self.subTest(drop=drop):
+                self._write_pins({"xx/xx_data": {"data": {**self._data_pin(), "dropCode": drop}}})
+                with self.assertRaisesRegex(generator.GenerationError, "dropCode"):
+                    generator.drift(self.repo)
+
     def test_a_component_shaped_like_code_cannot_be_data(self) -> None:
-        for kind, extra in (("sdist", ""), ("zip", 'root_members=("_native.",),')):
+        for kind, extra in (("tar.gz", ""), ("zip", 'root_members=("_native.",),')):
             with self.subTest(kind=kind, extra=extra):
                 self._write_pack(kind=kind, extra=extra)
                 with self.assertRaises(generator.GenerationError):
+                    generator.drift(self.repo)
+
+    def _split_pin(self, **overrides: object) -> dict:
+        data = {
+            "importName": "xx_models",
+            "sha256": self.sha,
+            "sizeBytes": 4321,
+            "displayName": "XX models",
+            "memberPrefix": "pkg/models/",
+            "exclude": ["__init__.py"],
+            "sentinels": ["model.bin"],
+            "innerSha256": [{"path": "model.bin", "sha256": "c" * 64}],
+            "attribution": [
+                {"name": "XX", "copyright": "XX authors", "license": "MIT", "url": "https://example.invalid/"}
+            ],
+            **overrides,
+        }
+        return {"split": {"apk": "engine code ships in the APK", "data": data}}
+
+    def test_a_split_component_downloads_its_models_under_their_own_name(self) -> None:
+        self._write_pack(kind="wheel")
+        self._write_pins({"xx/xx_data": self._split_pin()})
+
+        generator.refresh(self.repo)
+
+        (entry,) = self._catalog("xx")["resources"]
+        self.assertEqual(("xx-xx-models", "xx_models"), (entry["resourceId"], entry["importName"]))
+        self.assertEqual(
+            {"url": "https://example.invalid/xx-data.zip", "sha256": self.sha, "sizeBytes": 4321, "format": "wheel"},
+            entry["archive"],
+        )
+        self.assertEqual(
+            {
+                "memberPrefix": "pkg/models/",
+                "exclude": ["__init__.py"],
+                "sentinels": ["model.bin"],
+                "innerSha256": [{"path": "model.bin", "sha256": "c" * 64}],
+            },
+            entry["install"],
+        )
+
+    def test_a_split_component_picks_one_per_platform_artifact(self) -> None:
+        text = (
+            _PACK_TEMPLATE.format(sha=self.sha, kind="wheel", extra="")
+            .replace(
+                "    universal=ArtifactSpec(",
+                '    per_platform={("linux", "aarch64"): ArtifactSpec(',
+            )
+            .replace("    ),\n)\n\nPACK", "    )},\n)\n\nPACK")
+        )
+        (self.repo / generator.LANGUAGES_PATH / "xx" / "pack.py").write_text(text, encoding="utf-8")
+        self._write_pins({"xx/xx_data": self._split_pin(platform=["linux", "aarch64"])})
+        generator.refresh(self.repo)
+        self.assertEqual(self.sha, self._catalog("xx")["resources"][0]["archive"]["sha256"])
+
+        self._write_pins({"xx/xx_data": self._split_pin(platform=["linux", "x86_64"])})
+        with self.assertRaisesRegex(generator.GenerationError, "no artifact"):
+            generator.drift(self.repo)
+
+    def test_a_split_pin_is_checked_like_a_data_pin(self) -> None:
+        self._write_pack(kind="wheel")
+        for pin, message in (
+            (self._split_pin(sha256="b" * 64), "re-measure"),
+            (self._split_pin(importName="xx_data"), "import name of their own"),
+            (self._split_pin(sentinels=[]), "sentinels"),
+            ({"split": {"apk": " ", "data": self._split_pin()["split"]["data"]}}, "reason"),
+        ):
+            with self.subTest(message=message):
+                self._write_pins({"xx/xx_data": pin})
+                with self.assertRaisesRegex(generator.GenerationError, message):
                     generator.drift(self.repo)
 
     def test_the_vendored_thai_manifest_reads_as_syntax(self) -> None:
@@ -163,6 +296,23 @@ class GenerateLanguageDataTest(unittest.TestCase):
         names = [component["import_name"] for component in pack["components"]]
         self.assertEqual(["pythainlp", "tzdata"], names)
         self.assertIn("corpus/wordnet_th.db", pack["components"][0]["universal"]["exclude"])
+
+    def test_the_vendored_chinese_manifest_expands_its_opencc_helper(self) -> None:
+        pack = generator.read_pack(REPO_ROOT / generator.LANGUAGES_PATH / "zh" / "pack.py")
+
+        names = [component["import_name"] for component in pack["components"]]
+        self.assertEqual(["jieba", "pypinyin", "opencc", "opencc", "opencc", "opencc"], names)
+        opencc_312 = pack["components"][3]
+        self.assertEqual((3, 12), opencc_312["abi"])
+        linux = opencc_312["per_platform"][("linux", "x86_64")]
+        self.assertEqual("d90a8b76ea5d1f425a4f2eb16114cb33abd29a73c6a4ec367361c61b1c059a10", linux["sha256"])
+        self.assertEqual(("clib/bin/", "clib/include/"), linux["exclude"])
+
+    def test_a_helper_that_does_more_than_return_fails(self) -> None:
+        path = self.repo / generator.LANGUAGES_PATH / "xx" / "pack.py"
+        path.write_text("def _make(name):\n    print(name)\n    return name\n\nPACK = _make('x')\n", encoding="utf-8")
+        with self.assertRaisesRegex(generator.GenerationError, "only return"):
+            generator.read_pack(path)
 
     def test_check_exits_non_zero_on_drift(self) -> None:
         self.assertEqual(1, generator.main(["--repo-root", str(self.repo), "--check"]))

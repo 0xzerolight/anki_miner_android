@@ -13,15 +13,21 @@ import zipfile
 from argparse import Namespace
 from io import BytesIO
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
+import check_native_artifacts as native_checker  # noqa: E402
 from check_native_artifacts import (  # noqa: E402
     ArtifactError,
     Inspection,
+    NativeMetadata,
+    audit_arm64_isa,
+    default_llvm_objdump,
     inspect_artifact,
     inspect_zip,
+    validate_requirement_natives,
 )
 
 
@@ -1128,6 +1134,253 @@ class NativeArtifactTest(unittest.TestCase):
             self.assertIn("--require-s1a", forwarded)
             self.assertIn("--s1a-manifest", forwarded)
             self.assertIn(str(root / "manifest.json"), forwarded)
+
+
+def native(soname: str | None, *needed: str, has_dynamic: bool = True) -> NativeMetadata:
+    return NativeMetadata("arm64-v8a", soname, tuple(sorted(needed)), has_dynamic)
+
+
+class RequirementNativePolicyTest(unittest.TestCase):
+    def test_extension_modules_and_shared_libraries_resolve_within_the_publication(self) -> None:
+        validate_requirement_natives(
+            [
+                ("chaquopy/lib/libxml2.so", native("libxml2.so", "libc.so", "libz.so")),
+                ("lxml/etree.so", native(None, "libc.so", "libpython3.12.so", "libxml2.so")),
+                (
+                    "_kiwipiepy.so",
+                    native(None, "libc++_shared.so", "liblog.so"),
+                ),
+            ],
+            "fixture",
+            external_libraries=frozenset({"libc++_shared.so"}),
+        )
+
+    def test_extension_module_with_soname_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ArtifactError, "extension module has SONAME 'lib_kiwipiepy.so'"):
+            validate_requirement_natives([("_kiwipiepy.so", native("lib_kiwipiepy.so", "libc.so"))], "fixture")
+
+    def test_shared_library_soname_must_be_its_file_name(self) -> None:
+        for soname in (None, "libother.so"):
+            with self.subTest(soname=soname), self.assertRaisesRegex(ArtifactError, "SONAME is"):
+                validate_requirement_natives([("chaquopy/lib/libxml2.so", native(soname, "libc.so"))], "fixture")
+
+    def test_needed_outside_system_python_and_publication_is_rejected(self) -> None:
+        cases = (
+            [("regex/_regex.so", native(None, "libc.so", "libpython3.so"))],
+            [("numpy/_core/_multiarray_umath.so", native(None, "libc++_shared.so"))],
+            [("lxml/etree.so", native(None, "libxml2.so"))],
+        )
+        for natives in cases:
+            with self.subTest(natives=natives), self.assertRaisesRegex(ArtifactError, "DT_NEEDED outside"):
+                validate_requirement_natives(natives, "fixture")
+
+    def test_native_without_dynamic_section_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ArtifactError, "no PT_DYNAMIC"):
+            validate_requirement_natives([("regex/_regex.so", native(None, has_dynamic=False))], "fixture")
+
+    def test_artifact_rejects_requirement_extension_with_soname(self) -> None:
+        common = {
+            "kiwipiepy-0.23.2.dist-info/METADATA": b"Name: kiwipiepy\n",
+            "_kiwipiepy.so": dynamic_elf(soname="lib_kiwipiepy.so", needed=("libc.so",)),
+        }
+        payload = archive(
+            {
+                "assets/chaquopy/requirements-common.imy": archive(common),
+                "assets/chaquopy/requirements-x86_64.imy": archive({}),
+            }
+        )
+        with self.assertRaisesRegex(ArtifactError, "extension module has SONAME"):
+            self.inspect_complete_policy(payload)
+
+    def test_artifact_rejects_requirement_needed_outside_the_set(self) -> None:
+        common = {"regex/_regex.so": dynamic_elf(soname=None, needed=("libc.so", "libevil.so"))}
+        payload = archive({"assets/chaquopy/requirements-common.imy": archive(common)})
+        with self.assertRaisesRegex(ArtifactError, r"DT_NEEDED outside .*libevil\.so"):
+            self.inspect_complete_policy(payload)
+
+    def test_runtime_elf_outside_requirements_keeps_its_own_dynamic_names(self) -> None:
+        payload = archive({"lib/x86_64/libanki_miner_mecab.so": dynamic_elf(soname="x", needed=("libevil.so",))})
+        self.assertEqual(1, self.inspect_complete_policy(payload).elf_count)
+
+    @staticmethod
+    def inspect_complete_policy(payload: bytes) -> Inspection:
+        with tempfile.TemporaryDirectory() as temporary:
+            artifact = Path(temporary) / "fixture.apk"
+            artifact.write_bytes(payload)
+            return inspect_artifact(
+                Namespace(
+                    artifact=artifact,
+                    allow_abi=["x86_64"],
+                    forbid_entry=[],
+                    require_entry=[],
+                    require_app_imy=False,
+                    reject_base_unidic=False,
+                    require_s1a=False,
+                    s1a_manifest=None,
+                )
+            )
+
+
+# Canned two-pass disassembly: each row is (address, +all text, ARMv8.0 text).
+OUTLINE_ATOMIC = [
+    (0x100, "bti c", "hint #0x22"),
+    (0x104, "adrp x16, 0x4000 <x>", "adrp x16, 0x4000 <x>"),
+    (0x108, "ldrb w16, [x16, #0x900]", "ldrb w16, [x16, #0x900]"),
+    (0x10C, "cbz w16, 0x118 <x+0x18>", "cbz w16, 0x118 <x+0x18>"),
+    (0x110, "casal x0, x1, [x2]", "<unknown>"),
+    (0x114, "ret", "ret"),
+    (0x118, "mov x16, x0", "mov x16, x0"),
+    (0x11C, "ldaxr x0, [x2]", "ldaxr x0, [x2]"),
+    (0x120, "cmp x0, x16", "cmp x0, x16"),
+    (0x124, "b.ne 0x130 <x+0x30>", "b.ne 0x130 <x+0x30>"),
+    (0x128, "stlxr w17, x1, [x2]", "stlxr w17, x1, [x2]"),
+    (0x12C, "cbnz w17, 0x11c <x+0x1c>", "cbnz w17, 0x11c <x+0x1c>"),
+    (0x130, "ret", "ret"),
+]
+UNWIND_MTE_LOOP = [
+    (0x200, "tbz w23, #0x0, 0x238 <y+0x38>", "tbz w23, #0x0, 0x238 <y+0x38>"),
+    (0x204, "ldurb w8, [x29, #-0x54]", "ldurb w8, [x29, #-0x54]"),
+    (0x208, "cbz w8, 0x238 <y+0x38>", "cbz w8, 0x238 <y+0x38>"),
+    (0x20C, "ldr x8, [x19, #0xf8]", "ldr x8, [x19, #0xf8]"),
+    (0x210, "and x8, x8, #0xfffffffffffffff0", "and x8, x8, #0xfffffffffffffff0"),
+    (0x214, "cmp x8, x22", "cmp x8, x22"),
+    (0x218, "b.hs 0x238 <y+0x38>", "b.hs 0x238 <y+0x38>"),
+    (0x21C, "stg x8, [x8]", "<unknown>"),
+]
+NUMPY = ("numpy-2.5.0-0-cp312-cp312-android_26_arm64_v8a.whl", "numpy/_core/_multiarray_umath.so")
+PYCANTONESE = ("pycantonese-5.0.0-0-cp312-cp312-android_26_arm64_v8a.whl", "pycantonese/_rust.so")
+FP16 = [(0x10, "fmaxnm v20.8h, v0.8h, v4.8h", "<unknown>"), (0x14, "fcmp h3, h3", "<unknown>")]
+RUST = [
+    (0x10, "aese v0.16b, v1.16b", "<unknown>"),
+    (0x14, "crc32x w8, w8, x13", "<unknown>"),
+    (0x18, "mrs x8, DIT", "mrs x8, S3_3_C4_C2_5"),
+    (0x1C, "sb", "msr S0_3_C3_C0_7, xzr"),
+]
+JUDGED = {
+    ("numpy-2.5.0", NUMPY[1]): {"fp16": 2},
+    ("pycantonese-5.0.0", PYCANTONESE[1]): {"crc": 1, "crypto": 1, "sb": 1, "sysreg:DIT": 1},
+}
+
+
+class Arm64IsaAuditTest(unittest.TestCase):
+    def audit(
+        self,
+        rows: list[tuple[int, str, str]],
+        module: tuple[str, str] = ("pkg-1.0-0-cp312-cp312-android_26_arm64_v8a.whl", "pkg/module.so"),
+    ) -> dict[str, int]:
+        wheel, member = module
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            listing = root / "listing.json"
+            listing.write_text(json.dumps(rows), encoding="utf-8")
+            objdump = root / "llvm-objdump"
+            objdump.write_text(
+                f"#!{sys.executable}\n"
+                "import json, sys\n"
+                f"rows = json.load(open({str(listing)!r}))\n"
+                "full = '--mattr=+all' in sys.argv\n"
+                "print('payload.so:\\tfile format elf64-littleaarch64\\n')\n"
+                "print('Disassembly of section .text:\\n')\n"
+                "for address, plus_all, baseline in rows:\n"
+                "    print(f'  {address:x}: \\t' + (plus_all if full else baseline).replace(' ', '\\t', 1))\n",
+                encoding="utf-8",
+            )
+            objdump.chmod(0o755)
+            return audit_arm64_isa(b"\x7fELF fixture", wheel, member, f"fixture!{member}", objdump)
+
+    def test_plain_armv8_code_and_hint_space_pass(self) -> None:
+        report = self.audit([(0x10, "add x0, x0, #0x1", "add x0, x0, #0x1"), (0x14, "paciasp", "hint #0x19")])
+        self.assertEqual({"instructions": 2}, report)
+
+    def test_outline_atomics_and_libunwind_mte_loop_are_guarded(self) -> None:
+        report = self.audit(OUTLINE_ATOMIC + UNWIND_MTE_LOOP)
+        self.assertEqual({"instructions": 21, "lse": 1, "mte": 1}, report)
+
+    def test_unguarded_extensions_are_rejected(self) -> None:
+        cases = {
+            "lse": [(0x10, "ldadd x0, x0, [x1]", "<unknown>")],
+            "mte": [(0x10, "stg x8, [x8]", "<unknown>")],
+            "isa:sdot": [(0x10, "sdot v0.4s, v1.16b, v2.16b", "<unknown>")],
+            "isa:smmla": [(0x10, "smmla v0.4s, v1.16b, v2.16b", "<unknown>")],
+            "isa:ld1w": [(0x10, "ld1w { z0.s }, p0/z, [x0]", "<unknown>")],
+            "fp16": [(0x10, "fadd h0, h1, h2", "<unknown>")],
+            "fhm": [(0x10, "fmlal v0.4s, v1.4h, v2.4h", "<unknown>")],
+            "crc": [(0x10, "crc32x w8, w8, x13", "<unknown>")],
+            "crypto": [(0x10, "aese v0.16b, v1.16b", "<unknown>")],
+            "sysreg:DIT": [(0x10, "msr DIT, #0x1", "msr S0_3_C4_C1_2, xzr")],
+            "sb": [(0x10, "sb", "msr S0_3_C3_C0_7, xzr")],
+        }
+        for kind, rows in cases.items():
+            with self.subTest(kind=kind), self.assertRaisesRegex(ArtifactError, f"unguarded arm64 {kind} "):
+                self.audit(rows)
+
+    def test_atomic_guard_must_be_the_outline_helper_shape(self) -> None:
+        def replace(address: int, text: str) -> list[tuple[int, str, str]]:
+            return [row if row[0] != address else (address, text, text) for row in OUTLINE_ATOMIC]
+
+        cases = {
+            "backward branch": replace(0x10C, "cbz w16, 0x100 <x>"),
+            "other register": replace(0x108, "ldrb w17, [x16, #0x900]"),
+            "flag not from adrp": replace(0x104, "add x16, x19, #0x8"),
+        }
+        for label, rows in cases.items():
+            with self.subTest(label=label), self.assertRaisesRegex(ArtifactError, "unguarded arm64 lse"):
+                self.audit(rows)
+
+    def test_atomic_needs_its_ll_sc_fallback(self) -> None:
+        no_store = [row for row in OUTLINE_ATOMIC if row[0] != 0x128]
+        truncated = OUTLINE_ATOMIC[:6]
+        for label, rows in (("no store-exclusive", no_store), ("stream ends", truncated)):
+            with self.subTest(label=label), self.assertRaisesRegex(ArtifactError, "no LL/SC fallback"):
+                self.audit(rows)
+        far = OUTLINE_ATOMIC[:6] + [(0x118 + 4 * index, "nop", "nop") for index in range(16)]
+        with self.assertRaisesRegex(ArtifactError, "no LL/SC fallback"):
+            self.audit(far)
+
+    def test_judged_kinds_need_the_judged_release_module_and_counts(self) -> None:
+        with mock.patch.dict(native_checker.ARM64_GUARDED_KINDS, JUDGED, clear=True):
+            self.assertEqual({"instructions": 2, "fp16": 2}, self.audit(FP16, NUMPY))
+            expected = {"instructions": 4, "crc": 1, "crypto": 1, "sb": 1, "sysreg:DIT": 1}
+            self.assertEqual(expected, self.audit(RUST, PYCANTONESE))
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fp16"):
+                self.audit(FP16, ("spacy-3.8.14-0-cp312-cp312-android_26_arm64_v8a.whl", "spacy/tokenizer.so"))
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 crypto"):
+                self.audit(RUST, NUMPY)
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fhm"):
+                self.audit([(0x10, "fmlal v0.4s, v1.4h, v2.4h", "<unknown>")], NUMPY)
+
+    def test_a_version_bump_or_count_change_forces_a_new_audit(self) -> None:
+        with mock.patch.dict(native_checker.ARM64_GUARDED_KINDS, JUDGED, clear=True):
+            bumped = ("numpy-2.5.1-0-cp312-cp312-android_26_arm64_v8a.whl", NUMPY[1])
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 fp16"):
+                self.audit(FP16, bumped)
+            with self.assertRaisesRegex(ArtifactError, r"counts changed from \{'fp16': 2\} to \{'fp16': 1\}"):
+                self.audit(FP16[:1], NUMPY)
+            extra = [*FP16, (0x18, "fadd h0, h1, h2", "<unknown>")]
+            with self.assertRaisesRegex(ArtifactError, "counts changed"):
+                self.audit(extra, NUMPY)
+
+    def test_shipped_allowances_pin_the_judged_publication_counts(self) -> None:
+        self.assertEqual(
+            {
+                ("numpy-2.5.0", "numpy/_core/_multiarray_umath.so"): {"fp16": 3039},
+                ("pycantonese-5.0.0", "pycantonese/_rust.so"): {"crc": 24, "crypto": 178, "sb": 1, "sysreg:DIT": 10},
+                ("rustling-0.9.0", "rustling/_lib_name.so"): {"crc": 30, "crypto": 234, "sb": 1, "sysreg:DIT": 10},
+            },
+            native_checker.ARM64_GUARDED_KINDS,
+        )
+
+    def test_shipped_libcxx_passes_with_the_real_ndk_objdump(self) -> None:
+        try:
+            objdump = default_llvm_objdump()
+        except ArtifactError as error:
+            self.skipTest(str(error))
+        wheel = SCRIPTS_DIR.parent / "app/wheels/arm64-v8a/chaquopy_libcxx-190000-0-py3-none-android_26_arm64_v8a.whl"
+        with zipfile.ZipFile(wheel) as source:
+            data = source.read("chaquopy/lib/libc++_shared.so")
+        report = audit_arm64_isa(data, wheel.name, "chaquopy/lib/libc++_shared.so", wheel.name, objdump)
+        self.assertEqual({"lse", "mte", "instructions"}, set(report))
+        self.assertGreater(report["lse"], 0)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,278 @@
+{"command": "python tests/python/android_bridge/languages/fixtures/export_desktop_tokens.py --code tr --package zeyrek --package nltk --package regex --output tests/python/android_bridge/languages/fixtures/tr/tokens.jsonl", "provenance": "desktop anki_miner a1259f4e5b8f97385660389eef6d76fb403c1e38 (tools/engine-sync/engine.lock), desktop import path", "python": "3.12.13", "versions": {"nltk": "3.10.3", "regex": "2026.9.10", "zeyrek": "0.1.3"}}
+{"text": "Öğrenci dün ilginç bir kitap okudu.", "tokens": [["Öğrenci", "NOUN", "", "öğrenci", ["NOUN"]], ["dün", "ADV", "", "dün", ["ADV", "NOUN"]], ["ilginç", "ADJ", "", "ilginç", ["ADJ"]], ["bir", "DET", "", "bir", ["DET", "ADJ", "NUM", "ADV"]], ["kitap", "NOUN", "", "kitap", ["NOUN"]], ["okudu", "VERB", "", "okumak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Öğrenci dün ilginç bir kitap okudu.", "tokens": [["Öğrenci", "NOUN", "", "öğrenci", ["NOUN"]], ["dün", "ADV", "", "dün", ["ADV", "NOUN"]], ["ilginç", "ADJ", "", "ilginç", ["ADJ"]], ["bir", "DET", "", "bir", ["DET", "ADJ", "NUM", "ADV"]], ["kitap", "NOUN", "", "kitap", ["NOUN"]], ["okudu", "VERB", "", "okumak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Annem her sabah bize kahvaltı hazırlıyor.", "tokens": [["Annem", "NOUN", "", "anne", ["NOUN"]], ["her", "DET", "", "her", ["DET", "ADJ"]], ["sabah", "ADV", "", "sabah", ["ADV", "NOUN"]], ["bize", "PRON", "Pers", "biz", ["PRON", "NOUN"]], ["kahvaltı", "NOUN", "", "kahvaltı", ["NOUN"]], ["hazırlıyor", "VERB", "", "hazırlamak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Yarın akşam sinemaya gitmek istiyorum.", "tokens": [["Yarın", "ADV", "", "yarın", ["ADV", "NOUN"]], ["akşam", "NOUN", "Time", "akşam", ["NOUN"]], ["sinemaya", "NOUN", "", "sinema", ["NOUN"]], ["gitmek", "VERB", "", "gitmek", ["VERB"]], ["istiyorum", "VERB", "", "istemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bu kitapları kütüphaneden aldım.", "tokens": [["Bu", "DET", "", "bu", ["DET", "PRON"]], ["kitapları", "NOUN", "", "kitap", ["NOUN"]], ["kütüphaneden", "NOUN", "", "kütüphane", ["NOUN"]], ["aldım", "VERB", "", "almak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Neden bana hiç yazmadın.", "tokens": [["Neden", "ADV", "", "neden", ["ADV", "NOUN"]], ["bana", "PRON", "Pers", "ben", ["PRON"]], ["hiç", "ADV", "", "hiç", ["ADV", "NOUN"]], ["yazmadın", "VERB", "", "yazmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kapıyı kapatır mısın lütfen.", "tokens": [["Kapıyı", "NOUN", "", "kapı", ["NOUN"]], ["kapatır", "VERB", "", "kapatmak", ["VERB"]], ["mısın", "PART", "", "mı", ["PART"]], ["lütfen", "ADV", "", "lütfen", ["ADV"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Çocuklar bahçede top oynuyorlar.", "tokens": [["Çocuklar", "NOUN", "", "çocuk", ["NOUN", "ADJ"]], ["bahçede", "NOUN", "", "bahçe", ["NOUN"]], ["top", "ADJ", "", "top", ["ADJ", "ADV", "NOUN"]], ["oynuyorlar", "VERB", "", "oynamak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bu şehirde çok güzel evler var.", "tokens": [["Bu", "DET", "", "bu", ["DET", "PRON"]], ["şehirde", "NOUN", "", "şehir", ["NOUN"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["güzel", "ADJ", "", "güzel", ["ADJ", "ADV", "NOUN"]], ["evler", "NOUN", "", "ev", ["NOUN"]], ["var", "ADJ", "", "var", ["ADJ", "NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Sana söylediğim her şeyi unuttun mu.", "tokens": [["Sana", "PRON", "Pers", "sen", ["PRON"]], ["söylediğim", "VERB", "", "söylemek", ["VERB"]], ["her", "DET", "", "her", ["DET", "ADJ"]], ["şeyi", "NOUN", "", "şey", ["NOUN"]], ["unuttun", "VERB", "", "unutmak", ["VERB"]], ["mu", "PART", "", "mu", ["PART", "X"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kardeşim bu yıl üniversiteden mezun oldu.", "tokens": [["Kardeşim", "NOUN", "", "kardeş", ["NOUN", "ADJ"]], ["bu", "DET", "", "bu", ["DET", "PRON"]], ["yıl", "NOUN", "Time", "yıl", ["NOUN"]], ["üniversiteden", "NOUN", "", "üniversite", ["NOUN"]], ["mezun", "ADJ", "", "mezun", ["ADJ"]], ["oldu", "VERB", "", "olmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Havalar soğuyunca dışarı çıkmıyoruz.", "tokens": [["Havalar", "NOUN", "", "hava", ["NOUN", "ADJ"]], ["soğuyunca", "VERB", "", "soğumak", ["VERB"]], ["dışarı", "ADP", "PCAbl", "dışarı", ["ADP", "ADV", "NOUN"]], ["çıkmıyoruz", "VERB", "", "çıkmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Doktor hastaya ilacını vaktinde almasını söyledi.", "tokens": [["Doktor", "NOUN", "", "doktor", ["NOUN"]], ["hastaya", "ADJ", "", "hasta", ["ADJ"]], ["ilacını", "NOUN", "", "ilaç", ["NOUN"]], ["vaktinde", "ADV", "", "vaktinde", ["ADV"]], ["almasını", "VERB", "", "almak", ["VERB"]], ["söyledi", "VERB", "", "söylemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Telefonumu evde unutmuşum.", "tokens": [["Telefonumu", "NOUN", "", "telefon", ["NOUN"]], ["evde", "NOUN", "", "ev", ["NOUN"]], ["unutmuşum", "VERB", "", "unutmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Gözlerin çok yorgun görünüyor.", "tokens": [["Gözlerin", "NOUN", "", "göz", ["NOUN"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["yorgun", "ADJ", "", "yorgun", ["ADJ"]], ["görünüyor", "VERB", "", "görünmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bu sorunun cevabını bilmiyorum.", "tokens": [["Bu", "DET", "", "bu", ["DET", "PRON"]], ["sorunun", "NOUN", "", "soru", ["NOUN"]], ["cevabını", "NOUN", "", "cevap", ["NOUN"]], ["bilmiyorum", "VERB", "", "bilmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Arabayla gelirsen daha kolay olur.", "tokens": [["Arabayla", "NOUN", "", "araba", ["NOUN", "ADJ"]], ["gelirsen", "VERB", "", "gelmek", ["VERB"]], ["daha", "ADV", "", "daha", ["ADV", "NOUN"]], ["kolay", "ADJ", "", "kolay", ["ADJ", "ADV", "NOUN"]], ["olur", "ADJ", "", "olur", ["ADJ", "NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Onunla konuşmak için buraya geldim.", "tokens": [["Onunla", "PRON", "Pers", "o", ["PRON"]], ["konuşmak", "VERB", "", "konuşmak", ["VERB"]], ["için", "ADP", "PCGen", "için", ["ADP"]], ["buraya", "NOUN", "", "bura", ["NOUN"]], ["geldim", "VERB", "", "gelmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Akşam yemeğinden sonra biraz yürüyelim.", "tokens": [["Akşam", "NOUN", "Time", "akşam", ["NOUN"]], ["yemeğinden", "NOUN", "", "yemek", ["NOUN"]], ["sonra", "ADP", "PCAbl", "sonra", ["ADP", "ADV", "NOUN"]], ["biraz", "ADJ", "", "biraz", ["ADJ", "ADV"]], ["yürüyelim", "VERB", "", "yürümek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Yeni işinde çok mutlu olduğunu duydum.", "tokens": [["Yeni", "ADJ", "", "yeni", ["ADJ", "ADV"]], ["işinde", "NOUN", "", "iş", ["NOUN"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["mutlu", "ADJ", "", "mutlu", ["ADJ"]], ["olduğunu", "VERB", "", "olmak", ["VERB"]], ["duydum", "VERB", "", "duymak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kış gelmeden önce odun toplamalıyız.", "tokens": [["Kış", "ADV", "Time", "kış", ["ADV", "NOUN"]], ["gelmeden", "VERB", "", "gelmek", ["VERB"]], ["önce", "ADP", "PCAbl", "önce", ["ADP", "ADV", "NOUN"]], ["odun", "ADJ", "", "odun", ["ADJ", "NOUN"]], ["toplamalıyız", "VERB", "", "toplamak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bütün gece yağmur yağdı ve yollar kapandı.", "tokens": [["Bütün", "ADJ", "", "bütün", ["ADJ", "NOUN"]], ["gece", "ADV", "", "gece", ["ADV", "NOUN"]], ["yağmur", "NOUN", "", "yağmur", ["NOUN"]], ["yağdı", "VERB", "", "yağmak", ["VERB"]], ["ve", "CCONJ", "", "ve", ["CCONJ"]], ["yollar", "NOUN", "", "yol", ["NOUN"]], ["kapandı", "VERB", "", "kapanmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Eskiden burada küçük bir köprü vardı.", "tokens": [["Eskiden", "ADV", "", "eskiden", ["ADV"]], ["burada", "NOUN", "", "bura", ["NOUN"]], ["küçük", "ADJ", "", "küçük", ["ADJ", "NOUN"]], ["bir", "DET", "", "bir", ["DET", "ADJ", "NUM", "ADV"]], ["köprü", "NOUN", "", "köprü", ["NOUN"]], ["vardı", "VERB", "", "varmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kız kardeşim resim yapmayı çok seviyor.", "tokens": [["Kız", "NOUN", "", "kız", ["NOUN", "INTJ"]], ["kardeşim", "NOUN", "", "kardeş", ["NOUN", "ADJ"]], ["resim", "NOUN", "", "resim", ["NOUN"]], ["yapmayı", "VERB", "", "yapmak", ["VERB"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["seviyor", "VERB", "", "sevmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Paranı nereye harcadığını bana anlat.", "tokens": [["Paranı", "NOUN", "", "para", ["NOUN"]], ["nereye", "PRON", "Ques", "nere", ["PRON"]], ["harcadığını", "VERB", "", "harcamak", ["VERB"]], ["bana", "PRON", "Pers", "ben", ["PRON"]], ["anlat", "VERB", "", "anlatmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Yorgunum ama işimi bitirmem lazım.", "tokens": [["Yorgunum", "ADJ", "", "yorgun", ["ADJ"]], ["ama", "CCONJ", "", "ama", ["CCONJ", "ADJ"]], ["işimi", "NOUN", "", "iş", ["NOUN"]], ["bitirmem", "VERB", "", "bitirmek", ["VERB"]], ["lazım", "ADJ", "", "lazım", ["ADJ"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Pencereden denizi seyretmeyi severim.", "tokens": [["Pencereden", "NOUN", "", "pencere", ["NOUN"]], ["denizi", "NOUN", "", "deniz", ["NOUN"]], ["seyretmeyi", "VERB", "", "seyretmek", ["VERB"]], ["severim", "VERB", "", "sevmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Öğretmenimiz bize zor sorular sordu.", "tokens": [["Öğretmenimiz", "NOUN", "", "öğretmen", ["NOUN"]], ["bize", "PRON", "Pers", "biz", ["PRON", "NOUN"]], ["zor", "ADJ", "", "zor", ["ADJ", "ADV", "NOUN"]], ["sorular", "NOUN", "", "soru", ["NOUN"]], ["sordu", "VERB", "", "sormak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bunu yapabileceğini hiç düşünmemiştim.", "tokens": [["Bunu", "PRON", "Demons", "bu", ["PRON"]], ["yapabileceğini", "VERB", "", "yapmak", ["VERB"]], ["hiç", "ADV", "", "hiç", ["ADV", "NOUN"]], ["düşünmemiştim", "VERB", "", "düşünmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Mutfakta sıcak çay ve taze ekmek var.", "tokens": [["Mutfakta", "NOUN", "", "mutfak", ["NOUN"]], ["sıcak", "ADJ", "", "sıcak", ["ADJ", "NOUN"]], ["çay", "NOUN", "", "çay", ["NOUN"]], ["ve", "CCONJ", "", "ve", ["CCONJ"]], ["taze", "ADJ", "", "taze", ["ADJ", "NOUN"]], ["ekmek", "NOUN", "", "ekmek", ["NOUN", "VERB"]], ["var", "ADJ", "", "var", ["ADJ", "NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Otobüs durağında seni bekleyeceğim.", "tokens": [["Otobüs", "NOUN", "", "otobüs", ["NOUN"]], ["durağında", "NOUN", "", "durak", ["NOUN"]], ["seni", "PRON", "Pers", "sen", ["PRON"]], ["bekleyeceğim", "VERB", "", "beklemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kediler genellikle balık yemeyi sever.", "tokens": [["Kediler", "NOUN", "", "kedi", ["NOUN"]], ["genellikle", "ADV", "", "genellikle", ["ADV"]], ["balık", "NOUN", "", "balık", ["NOUN"]], ["yemeyi", "VERB", "", "yemek", ["VERB"]], ["sever", "ADJ", "", "sever", ["ADJ"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Babam gazeteyi okurken kahve içer.", "tokens": [["Babam", "NOUN", "", "baba", ["NOUN", "ADJ"]], ["gazeteyi", "NOUN", "", "gazete", ["NOUN"]], ["okurken", "VERB", "", "okumak", ["VERB"]], ["kahve", "NOUN", "", "kahve", ["NOUN"]], ["içer", "VERB", "", "içmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Tatilde deniz kenarında dinlenmek istiyoruz.", "tokens": [["Tatilde", "NOUN", "", "tatil", ["NOUN"]], ["deniz", "NOUN", "", "deniz", ["NOUN"]], ["kenarında", "NOUN", "", "kenar", ["NOUN"]], ["dinlenmek", "VERB", "", "dinlenmek", ["VERB"]], ["istiyoruz", "VERB", "", "istemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kimse bana doğruyu söylemedi.", "tokens": [["Kimse", "PRON", "Quant", "kimse", ["PRON", "NOUN"]], ["bana", "PRON", "Pers", "ben", ["PRON"]], ["doğruyu", "NOUN", "", "doğru", ["NOUN", "ADJ"]], ["söylemedi", "VERB", "", "söylemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Dağların arkasında güneş batıyordu.", "tokens": [["Dağların", "NOUN", "", "dağ", ["NOUN"]], ["arkasında", "NOUN", "", "arka", ["NOUN", "ADJ"]], ["güneş", "NOUN", "", "güneş", ["NOUN"]], ["batıyordu", "VERB", "", "batmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bu elbiseyi nereden aldın çok yakışmış.", "tokens": [["Bu", "DET", "", "bu", ["DET", "PRON"]], ["elbiseyi", "NOUN", "", "elbise", ["NOUN"]], ["nereden", "PRON", "Ques", "nere", ["PRON"]], ["aldın", "VERB", "", "almak", ["VERB"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["yakışmış", "VERB", "", "yakışmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Sınavdan önce iyice çalışmalısın.", "tokens": [["Sınavdan", "NOUN", "", "sınav", ["NOUN"]], ["önce", "ADP", "PCAbl", "önce", ["ADP", "ADV", "NOUN"]], ["iyice", "ADJ", "", "iyi", ["ADJ", "NOUN"]], ["çalışmalısın", "VERB", "", "çalışmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Arkadaşlarımla sahilde yürüyüş yaptık.", "tokens": [["Arkadaşlarımla", "NOUN", "", "arkadaş", ["NOUN"]], ["sahilde", "NOUN", "", "sahil", ["NOUN"]], ["yürüyüş", "VERB", "", "yürümek", ["VERB"]], ["yaptık", "VERB", "", "yapmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Hemen eve dönmemiz gerekiyor.", "tokens": [["Hemen", "ADJ", "", "hemen", ["ADJ", "ADV"]], ["eve", "NOUN", "", "ev", ["NOUN"]], ["dönmemiz", "NOUN", "", "dönme", ["NOUN", "ADJ"]], ["gerekiyor", "VERB", "", "gerekmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Soğuk suyla yüzünü yıka.", "tokens": [["Soğuk", "ADJ", "", "soğuk", ["ADJ", "ADV", "NOUN"]], ["suyla", "NOUN", "", "su", ["NOUN"]], ["yüzünü", "NOUN", "", "yüz", ["NOUN", "NUM"]], ["yıka", "VERB", "", "yıkamak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Işıkları kapatmayı unutma.", "tokens": [["Işıkları", "NOUN", "", "ışık", ["NOUN"]], ["kapatmayı", "VERB", "", "kapatmak", ["VERB"]], ["unutma", "VERB", "", "unutmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "İnsanlar artık birbirine güvenmiyor.", "tokens": [["İnsanlar", "NOUN", "", "insan", ["NOUN", "ADJ"]], ["artık", "ADJ", "", "artık", ["ADJ", "ADV", "NOUN"]], ["birbirine", "PRON", "Quant", "birbiri", ["PRON"]], ["güvenmiyor", "VERB", "", "güvenmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Uçağımız iki saat gecikecek.", "tokens": [["Uçağımız", "NOUN", "", "uçak", ["NOUN"]], ["iki", "NUM", "Card", "iki", ["NUM"]], ["saat", "NOUN", "", "saat", ["NOUN"]], ["gecikecek", "VERB", "", "gecikmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kitabın son sayfasını okuyamadım.", "tokens": [["Kitabın", "NOUN", "", "kitap", ["NOUN"]], ["son", "ADJ", "", "son", ["ADJ", "NUM", "NOUN"]], ["sayfasını", "NOUN", "", "sayfa", ["NOUN"]], ["okuyamadım", "VERB", "", "okumak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Seni çok özledim.", "tokens": [["Seni", "PRON", "Pers", "sen", ["PRON"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["özledim", "VERB", "", "özlemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bunu bana neden daha önce söylemedin.", "tokens": [["Bunu", "PRON", "Demons", "bu", ["PRON"]], ["bana", "PRON", "Pers", "ben", ["PRON"]], ["neden", "ADV", "", "neden", ["ADV", "NOUN"]], ["daha", "ADV", "", "daha", ["ADV", "NOUN"]], ["önce", "ADP", "PCAbl", "önce", ["ADP", "ADV", "NOUN"]], ["söylemedin", "VERB", "", "söylemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Onlar yarın sabah yola çıkacaklar.", "tokens": [["Onlar", "PRON", "Pers", "o", ["PRON", "ADJ"]], ["yarın", "ADV", "", "yarın", ["ADV", "NOUN"]], ["sabah", "ADV", "", "sabah", ["ADV", "NOUN"]], ["yola", "NOUN", "", "yol", ["NOUN"]], ["çıkacaklar", "NOUN", "", "çıkacak", ["NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kapıda biri seni bekliyor.", "tokens": [["Kapıda", "NOUN", "", "kapı", ["NOUN"]], ["biri", "PRON", "Quant", "biri", ["PRON"]], ["seni", "PRON", "Pers", "sen", ["PRON"]], ["bekliyor", "VERB", "", "beklemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bana biraz su verir misin.", "tokens": [["Bana", "PRON", "Pers", "ben", ["PRON"]], ["biraz", "ADJ", "", "biraz", ["ADJ", "ADV"]], ["su", "NOUN", "", "su", ["NOUN"]], ["verir", "VERB", "", "vermek", ["VERB"]], ["misin", "PART", "", "mi", ["PART", "NOUN", "X"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Sana bir sır vereceğim ama kimseye söyleme.", "tokens": [["Sana", "PRON", "Pers", "sen", ["PRON"]], ["bir", "DET", "", "bir", ["DET", "ADJ", "NUM", "ADV"]], ["sır", "NOUN", "", "sır", ["NOUN"]], ["vereceğim", "VERB", "", "vermek", ["VERB"]], ["ama", "CCONJ", "", "ama", ["CCONJ", "ADJ"]], ["kimseye", "PRON", "Quant", "kimse", ["PRON", "NOUN"]], ["söyleme", "NOUN", "", "söylem", ["NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kardeşinin doğum günü için pasta aldık.", "tokens": [["Kardeşinin", "NOUN", "", "kardeş", ["NOUN", "ADJ"]], ["doğum", "NOUN", "", "doğum", ["NOUN"]], ["günü", "NOUN", "", "günü", ["NOUN"]], ["için", "ADP", "PCGen", "için", ["ADP"]], ["pasta", "NOUN", "", "pasta", ["NOUN"]], ["aldık", "VERB", "", "almak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bu yolda araba kullanmak çok tehlikeli.", "tokens": [["Bu", "DET", "", "bu", ["DET", "PRON"]], ["yolda", "NOUN", "", "yol", ["NOUN"]], ["araba", "ADJ", "", "araba", ["ADJ", "NOUN"]], ["kullanmak", "VERB", "", "kullanmak", ["VERB"]], ["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]], ["tehlikeli", "NOUN", "", "tehlike", ["NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Dün gece kötü bir rüya gördüm.", "tokens": [["Dün", "ADV", "", "dün", ["ADV", "NOUN"]], ["gece", "ADV", "", "gece", ["ADV", "NOUN"]], ["kötü", "ADJ", "", "kötü", ["ADJ", "ADV"]], ["bir", "DET", "", "bir", ["DET", "ADJ", "NUM", "ADV"]], ["rüya", "NOUN", "", "rüya", ["NOUN"]], ["gördüm", "VERB", "", "görmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Onu tanıyor musun.", "tokens": [["Onu", "PRON", "Pers", "o", ["PRON", "ADJ"]], ["tanıyor", "VERB", "", "tanımak", ["VERB"]], ["musun", "PART", "", "mu", ["PART", "X"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Hava kararmadan eve varmalıyız.", "tokens": [["Hava", "ADJ", "", "hava", ["ADJ", "NOUN"]], ["kararmadan", "VERB", "", "kararmak", ["VERB"]], ["eve", "NOUN", "", "ev", ["NOUN"]], ["varmalıyız", "VERB", "", "varmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Kahvemi şekersiz içerim.", "tokens": [["Kahvemi", "NOUN", "", "kahve", ["NOUN"]], ["şekersiz", "NOUN", "", "şeker", ["NOUN", "ADJ"]], ["içerim", "VERB", "", "içmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Beni bu kadar kızdırma.", "tokens": [["Beni", "PRON", "Pers", "ben", ["PRON", "NOUN"]], ["bu", "DET", "", "bu", ["DET", "PRON"]], ["kadar", "ADP", "PCDat", "kadar", ["ADP", "NOUN"]], ["kızdırma", "VERB", "", "kızmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Sokakta oynayan çocukları gördün mü.", "tokens": [["Sokakta", "NOUN", "", "sokak", ["NOUN"]], ["oynayan", "VERB", "", "oynamak", ["VERB"]], ["çocukları", "NOUN", "", "çocuk", ["NOUN", "ADJ"]], ["gördün", "VERB", "", "görmek", ["VERB"]], ["mü", "PART", "", "mü", ["PART"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Size yardım edebilir miyim.", "tokens": [["Size", "PRON", "Pers", "siz", ["PRON"]], ["yardım", "NOUN", "", "yardım", ["NOUN"]], ["edebilir", "VERB", "", "etmek", ["VERB"]], ["miyim", "PART", "", "mi", ["PART", "NOUN", "X"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Hastaneye gitmen gerekiyor.", "tokens": [["Hastaneye", "NOUN", "", "hastane", ["NOUN"]], ["gitmen", "VERB", "", "gitmek", ["VERB"]], ["gerekiyor", "VERB", "", "gerekmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Dışarıda kar yağıyor sıkı.", "tokens": [["Dışarıda", "NOUN", "", "dışarı", ["NOUN"]], ["kar", "NOUN", "", "kar", ["NOUN"]], ["yağıyor", "VERB", "", "yağmak", ["VERB"]], ["sıkı", "ADJ", "", "sıkı", ["ADJ", "ADV", "NOUN"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Bütün gün evde oturup televizyon izledik.", "tokens": [["Bütün", "ADJ", "", "bütün", ["ADJ", "NOUN"]], ["gün", "NOUN", "Time", "gün", ["NOUN"]], ["evde", "NOUN", "", "ev", ["NOUN"]], ["oturup", "VERB", "", "oturmak", ["VERB"]], ["televizyon", "NOUN", "", "televizyon", ["NOUN"]], ["izledik", "VERB", "", "izlemek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Sabahları koşmayı alışkanlık haline getirdim.", "tokens": [["Sabahları", "ADV", "", "sabahları", ["ADV"]], ["koşmayı", "VERB", "", "koşmak", ["VERB"]], ["alışkanlık", "ADJ", "", "alışkan", ["ADJ"]], ["haline", "NOUN", "", "hal", ["NOUN"]], ["getirdim", "VERB", "", "getirmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Geç kaldığım için özür dilerim.", "tokens": [["Geç", "ADJ", "", "geç", ["ADJ", "ADV"]], ["kaldığım", "VERB", "", "kalmak", ["VERB"]], ["için", "ADP", "PCGen", "için", ["ADP"]], ["özür", "NOUN", "", "özür", ["NOUN"]], ["dilerim", "VERB", "", "dilmek", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "Anahtarlarımı bulamıyorum.", "tokens": [["Anahtarlarımı", "NOUN", "", "anahtar", ["NOUN", "ADJ"]], ["bulamıyorum", "VERB", "", "bulmak", ["VERB"]], [".", "PUNCT", "", ".", []]]}
+{"text": "bir", "tokens": [["bir", "DET", "", "bir", ["DET", "ADJ", "NUM", "ADV"]]]}
+{"text": "bu", "tokens": [["bu", "DET", "", "bu", ["DET", "PRON"]]]}
+{"text": "ne", "tokens": [["ne", "CCONJ", "", "ne", ["CCONJ", "ADJ", "ADV", "PRON", "NOUN", "INTJ", "X"]]]}
+{"text": "ve", "tokens": [["ve", "CCONJ", "", "ve", ["CCONJ"]]]}
+{"text": "için", "tokens": [["için", "ADP", "PCGen", "için", ["ADP"]]]}
+{"text": "mi", "tokens": [["mi", "PART", "", "mi", ["PART", "NOUN", "X"]]]}
+{"text": "de", "tokens": [["de", "CCONJ", "", "de", ["CCONJ", "NOUN"]]]}
+{"text": "o", "tokens": [["o", "DET", "", "o", ["DET", "ADJ", "PRON", "INTJ"]]]}
+{"text": "ben", "tokens": [["ben", "PRON", "Pers", "ben", ["PRON", "NOUN"]]]}
+{"text": "çok", "tokens": [["çok", "DET", "", "çok", ["DET", "ADP", "ADJ", "ADV"]]]}
+{"text": "ama", "tokens": [["ama", "CCONJ", "", "ama", ["CCONJ", "ADJ"]]]}
+{"text": "evet", "tokens": [["evet", "ADV", "", "evet", ["ADV", "INTJ"]]]}
+{"text": "var", "tokens": [["var", "ADJ", "", "var", ["ADJ", "NOUN"]]]}
+{"text": "da", "tokens": [["da", "CCONJ", "", "da", ["CCONJ"]]]}
+{"text": "mı", "tokens": [["mı", "PART", "", "mı", ["PART"]]]}
+{"text": "değil", "tokens": [["değil", "CCONJ", "", "değil", ["CCONJ", "VERB"]]]}
+{"text": "şey", "tokens": [["şey", "NOUN", "", "şey", ["NOUN"]]]}
+{"text": "hayır", "tokens": [["hayır", "ADJ", "", "hayır", ["ADJ", "ADV", "NOUN", "INTJ"]]]}
+{"text": "daha", "tokens": [["daha", "ADV", "", "daha", ["ADV", "NOUN"]]]}
+{"text": "sen", "tokens": [["sen", "PRON", "Pers", "sen", ["PRON"]]]}
+{"text": "kadar", "tokens": [["kadar", "ADP", "PCDat", "kadar", ["ADP", "NOUN"]]]}
+{"text": "bana", "tokens": [["bana", "PRON", "Pers", "ben", ["PRON"]]]}
+{"text": "gibi", "tokens": [["gibi", "ADP", "PCGen", "gibi", ["ADP"]]]}
+{"text": "yok", "tokens": [["yok", "CCONJ", "", "yok", ["CCONJ", "ADJ", "ADV", "NOUN"]]]}
+{"text": "bunu", "tokens": [["bunu", "PRON", "Demons", "bu", ["PRON"]]]}
+{"text": "onu", "tokens": [["onu", "PRON", "Pers", "o", ["PRON", "ADJ"]]]}
+{"text": "iyi", "tokens": [["iyi", "ADJ", "", "iyi", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "tamam", "tokens": [["tamam", "ADJ", "", "tamam", ["ADJ", "INTJ"]]]}
+{"text": "beni", "tokens": [["beni", "PRON", "Pers", "ben", ["PRON", "NOUN"]]]}
+{"text": "seni", "tokens": [["seni", "PRON", "Pers", "sen", ["PRON"]]]}
+{"text": "her", "tokens": [["her", "DET", "", "her", ["DET", "ADJ"]]]}
+{"text": "benim", "tokens": [["benim", "PRON", "Pers", "ben", ["PRON", "NOUN"]]]}
+{"text": "sana", "tokens": [["sana", "PRON", "Pers", "sen", ["PRON"]]]}
+{"text": "ki", "tokens": [["ki", "CCONJ", "", "ki", ["CCONJ"]]]}
+{"text": "ya", "tokens": [["ya", "CCONJ", "", "ya", ["CCONJ", "INTJ"]]]}
+{"text": "neden", "tokens": [["neden", "ADV", "", "neden", ["ADV", "NOUN"]]]}
+{"text": "zaman", "tokens": [["zaman", "NOUN", "Time", "zaman", ["NOUN"]]]}
+{"text": "sadece", "tokens": [["sadece", "ADV", "", "sadece", ["ADV"]]]}
+{"text": "senin", "tokens": [["senin", "PRON", "Pers", "sen", ["PRON"]]]}
+{"text": "burada", "tokens": [["burada", "NOUN", "", "bura", ["NOUN"]]]}
+{"text": "olduğunu", "tokens": [["olduğunu", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "nasıl", "tokens": [["nasıl", "ADJ", "", "nasıl", ["ADJ", "ADV"]]]}
+{"text": "hiç", "tokens": [["hiç", "ADV", "", "hiç", ["ADV", "NOUN"]]]}
+{"text": "sonra", "tokens": [["sonra", "ADP", "PCAbl", "sonra", ["ADP", "ADV", "NOUN"]]]}
+{"text": "şimdi", "tokens": [["şimdi", "ADV", "", "şimdi", ["ADV", "NOUN"]]]}
+{"text": "en", "tokens": [["en", "ADV", "", "en", ["ADV", "NOUN"]]]}
+{"text": "öyle", "tokens": [["öyle", "ADJ", "", "öyle", ["ADJ", "ADV", "INTJ"]]]}
+{"text": "mu", "tokens": [["mu", "PART", "", "mu", ["PART", "X"]]]}
+{"text": "şu", "tokens": [["şu", "DET", "", "şu", ["DET", "ADJ", "PRON"]]]}
+{"text": "misin", "tokens": [["misin", "PART", "", "mi", ["PART", "NOUN", "X"]]]}
+{"text": "önce", "tokens": [["önce", "ADP", "PCAbl", "önce", ["ADP", "ADV", "NOUN"]]]}
+{"text": "biraz", "tokens": [["biraz", "ADJ", "", "biraz", ["ADJ", "ADV"]]]}
+{"text": "hadi", "tokens": [["hadi", "INTJ", "", "hadi", ["INTJ"]]]}
+{"text": "güzel", "tokens": [["güzel", "ADJ", "", "güzel", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "musun", "tokens": [["musun", "PART", "", "mu", ["PART", "X"]]]}
+{"text": "oldu", "tokens": [["oldu", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "yani", "tokens": [["yani", "CCONJ", "", "yani", ["CCONJ", "ADV"]]]}
+{"text": "böyle", "tokens": [["böyle", "ADJ", "", "böyle", ["ADJ", "ADV"]]]}
+{"text": "ona", "tokens": [["ona", "PRON", "Pers", "o", ["PRON", "ADJ"]]]}
+{"text": "İyi", "tokens": [["İyi", "ADJ", "", "iyi", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "lütfen", "tokens": [["lütfen", "ADV", "", "lütfen", ["ADV"]]]}
+{"text": "onun", "tokens": [["onun", "PRON", "Pers", "o", ["PRON", "ADJ"]]]}
+{"text": "bile", "tokens": [["bile", "CCONJ", "", "bile", ["CCONJ", "ADV"]]]}
+{"text": "bak", "tokens": [["bak", "VERB", "", "bakmak", ["VERB"]]]}
+{"text": "çünkü", "tokens": [["çünkü", "CCONJ", "", "çünkü", ["CCONJ"]]]}
+{"text": "peki", "tokens": [["peki", "ADV", "", "peki", ["ADV"]]]}
+{"text": "eğer", "tokens": [["eğer", "CCONJ", "", "eğer", ["CCONJ"]]]}
+{"text": "artık", "tokens": [["artık", "ADJ", "", "artık", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "gerçekten", "tokens": [["gerçekten", "ADV", "", "gerçekten", ["ADV"]]]}
+{"text": "geri", "tokens": [["geri", "ADJ", "", "geri", ["ADJ", "ADV", "NOUN", "INTJ"]]]}
+{"text": "biliyorum", "tokens": [["biliyorum", "VERB", "", "bilmek", ["VERB"]]]}
+{"text": "istiyorum", "tokens": [["istiyorum", "VERB", "", "istemek", ["VERB"]]]}
+{"text": "kim", "tokens": [["kim", "CCONJ", "", "kim", ["CCONJ", "PRON"]]]}
+{"text": "olarak", "tokens": [["olarak", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "başka", "tokens": [["başka", "ADP", "PCAbl", "başka", ["ADP", "ADJ"]]]}
+{"text": "belki", "tokens": [["belki", "CCONJ", "", "belki", ["CCONJ", "ADV"]]]}
+{"text": "tek", "tokens": [["tek", "ADJ", "", "tek", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "doğru", "tokens": [["doğru", "ADP", "PCDat", "doğru", ["ADP", "ADJ", "NOUN"]]]}
+{"text": "büyük", "tokens": [["büyük", "ADJ", "", "büyük", ["ADJ", "NOUN"]]]}
+{"text": "olan", "tokens": [["olan", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "biri", "tokens": [["biri", "PRON", "Quant", "biri", ["PRON"]]]}
+{"text": "olur", "tokens": [["olur", "ADJ", "", "olur", ["ADJ", "NOUN"]]]}
+{"text": "buraya", "tokens": [["buraya", "NOUN", "", "bura", ["NOUN"]]]}
+{"text": "bay", "tokens": [["bay", "ADJ", "", "bay", ["ADJ", "NOUN"]]]}
+{"text": "olacak", "tokens": [["olacak", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "adam", "tokens": [["adam", "NOUN", "", "adam", ["NOUN"]]]}
+{"text": "ile", "tokens": [["ile", "CCONJ", "", "ile", ["CCONJ", "ADP"]]]}
+{"text": "hiçbir", "tokens": [["hiçbir", "DET", "", "hiçbir", ["DET"]]]}
+{"text": "biz", "tokens": [["biz", "PRON", "Pers", "biz", ["PRON", "NOUN"]]]}
+{"text": "yardım", "tokens": [["yardım", "NOUN", "", "yardım", ["NOUN"]]]}
+{"text": "demek", "tokens": [["demek", "ADV", "", "demek", ["ADV", "VERB"]]]}
+{"text": "hey", "tokens": [["hey", "INTJ", "", "hey", ["INTJ"]]]}
+{"text": "sanırım", "tokens": [["sanırım", "VERB", "", "sanmak", ["VERB"]]]}
+{"text": "bilmiyorum", "tokens": [["bilmiyorum", "VERB", "", "bilmek", ["VERB"]]]}
+{"text": "bunun", "tokens": [["bunun", "PRON", "Demons", "bu", ["PRON"]]]}
+{"text": "tüm", "tokens": [["tüm", "DET", "", "tüm", ["DET", "ADJ", "NOUN"]]]}
+{"text": "teşekkürler", "tokens": [["teşekkürler", "NOUN", "", "teşekkür", ["NOUN"]]]}
+{"text": "fazla", "tokens": [["fazla", "ADP", "PCAbl", "fazla", ["ADP", "ADJ", "ADV"]]]}
+{"text": "yeni", "tokens": [["yeni", "ADJ", "", "yeni", ["ADJ", "ADV"]]]}
+{"text": "gün", "tokens": [["gün", "NOUN", "Time", "gün", ["NOUN"]]]}
+{"text": "ederim", "tokens": [["ederim", "VERB", "", "etmek", ["VERB"]]]}
+{"text": "nerede", "tokens": [["nerede", "ADV", "", "nerede", ["ADV", "INTJ"]]]}
+{"text": "tanrım", "tokens": [["tanrım", "NOUN", "", "tanrı", ["NOUN"]]]}
+{"text": "şeyi", "tokens": [["şeyi", "NOUN", "", "şey", ["NOUN"]]]}
+{"text": "merhaba", "tokens": [["merhaba", "NOUN", "", "merhaba", ["NOUN", "INTJ"]]]}
+{"text": "efendim", "tokens": [["efendim", "INTJ", "", "efendim", ["INTJ"]]]}
+{"text": "orada", "tokens": [["orada", "NOUN", "", "ora", ["NOUN"]]]}
+{"text": "son", "tokens": [["son", "ADJ", "", "son", ["ADJ", "NUM", "NOUN"]]]}
+{"text": "kötü", "tokens": [["kötü", "ADJ", "", "kötü", ["ADJ", "ADV"]]]}
+{"text": "şeyler", "tokens": [["şeyler", "NOUN", "", "şey", ["NOUN"]]]}
+{"text": "gece", "tokens": [["gece", "ADV", "", "gece", ["ADV", "NOUN"]]]}
+{"text": "biliyor", "tokens": [["biliyor", "VERB", "", "bilmek", ["VERB"]]]}
+{"text": "sorun", "tokens": [["sorun", "NOUN", "", "sorun", ["NOUN"]]]}
+{"text": "iki", "tokens": [["iki", "NUM", "Card", "iki", ["NUM"]]]}
+{"text": "harika", "tokens": [["harika", "ADJ", "", "harika", ["ADJ", "INTJ"]]]}
+{"text": "gerek", "tokens": [["gerek", "ADJ", "", "gerek", ["ADJ", "NOUN"]]]}
+{"text": "tam", "tokens": [["tam", "ADJ", "", "tam", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "İşte", "tokens": [["İşte", "ADV", "", "işte", ["ADV"]]]}
+{"text": "bütün", "tokens": [["bütün", "ADJ", "", "bütün", ["ADJ", "NOUN"]]]}
+{"text": "diye", "tokens": [["diye", "ADP", "PCNom", "diye", ["ADP"]]]}
+{"text": "hemen", "tokens": [["hemen", "ADJ", "", "hemen", ["ADJ", "ADV"]]]}
+{"text": "siz", "tokens": [["siz", "PRON", "Pers", "siz", ["PRON"]]]}
+{"text": "üzgünüm", "tokens": [["üzgünüm", "ADJ", "", "üzgün", ["ADJ"]]]}
+{"text": "ol", "tokens": [["ol", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "olabilir", "tokens": [["olabilir", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "olsun", "tokens": [["olsun", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "küçük", "tokens": [["küçük", "ADJ", "", "küçük", ["ADJ", "NOUN"]]]}
+{"text": "size", "tokens": [["size", "PRON", "Pers", "siz", ["PRON"]]]}
+{"text": "yüzden", "tokens": [["yüzden", "NOUN", "", "yüz", ["NOUN", "NUM"]]]}
+{"text": "bayan", "tokens": [["bayan", "NOUN", "", "bayan", ["NOUN", "INTJ"]]]}
+{"text": "aynı", "tokens": [["aynı", "ADJ", "", "aynı", ["ADJ"]]]}
+{"text": "teşekkür", "tokens": [["teşekkür", "NOUN", "", "teşekkür", ["NOUN"]]]}
+{"text": "hakkında", "tokens": [["hakkında", "ADV", "", "hakkında", ["ADV"]]]}
+{"text": "tabii", "tokens": [["tabii", "ADJ", "", "tabii", ["ADJ", "ADV"]]]}
+{"text": "gel", "tokens": [["gel", "VERB", "", "gelmek", ["VERB"]]]}
+{"text": "onları", "tokens": [["onları", "PRON", "Pers", "o", ["PRON"]]]}
+{"text": "kendi", "tokens": [["kendi", "PRON", "Reflex", "kendi", ["PRON"]]]}
+{"text": "kız", "tokens": [["kız", "NOUN", "", "kız", ["NOUN", "INTJ"]]]}
+{"text": "devam", "tokens": [["devam", "NOUN", "", "devam", ["NOUN", "INTJ"]]]}
+{"text": "bize", "tokens": [["bize", "PRON", "Pers", "biz", ["PRON", "NOUN"]]]}
+{"text": "oluyor", "tokens": [["oluyor", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "ver", "tokens": [["ver", "VERB", "", "vermek", ["VERB"]]]}
+{"text": "izin", "tokens": [["izin", "NOUN", "", "izin", ["NOUN"]]]}
+{"text": "iş", "tokens": [["iş", "NOUN", "", "iş", ["NOUN"]]]}
+{"text": "bizi", "tokens": [["bizi", "PRON", "Pers", "biz", ["PRON", "NOUN"]]]}
+{"text": "buna", "tokens": [["buna", "PRON", "Demons", "bu", ["PRON"]]]}
+{"text": "anne", "tokens": [["anne", "NOUN", "", "anne", ["NOUN"]]]}
+{"text": "selam", "tokens": [["selam", "NOUN", "", "selam", ["NOUN"]]]}
+{"text": "vardı", "tokens": [["vardı", "VERB", "", "varmak", ["VERB"]]]}
+{"text": "geldi", "tokens": [["geldi", "VERB", "", "gelmek", ["VERB"]]]}
+{"text": "bizim", "tokens": [["bizim", "PRON", "Pers", "biz", ["PRON", "NOUN"]]]}
+{"text": "sizi", "tokens": [["sizi", "PRON", "Pers", "siz", ["PRON"]]]}
+{"text": "dur", "tokens": [["dur", "VERB", "", "durmak", ["VERB"]]]}
+{"text": "kimse", "tokens": [["kimse", "PRON", "Quant", "kimse", ["PRON", "NOUN"]]]}
+{"text": "göre", "tokens": [["göre", "ADP", "PCDat", "göre", ["ADP"]]]}
+{"text": "asla", "tokens": [["asla", "ADV", "", "asla", ["ADV"]]]}
+{"text": "özür", "tokens": [["özür", "NOUN", "", "özür", ["NOUN"]]]}
+{"text": "seninle", "tokens": [["seninle", "PRON", "Pers", "sen", ["PRON"]]]}
+{"text": "baba", "tokens": [["baba", "ADJ", "", "baba", ["ADJ", "NOUN"]]]}
+{"text": "değilim", "tokens": [["değilim", "VERB", "", "değil", ["VERB"]]]}
+{"text": "aslında", "tokens": [["aslında", "ADV", "", "aslında", ["ADV"]]]}
+{"text": "önemli", "tokens": [["önemli", "NOUN", "", "önem", ["NOUN"]]]}
+{"text": "tekrar", "tokens": [["tekrar", "ADV", "", "tekrar", ["ADV", "NOUN"]]]}
+{"text": "git", "tokens": [["git", "VERB", "", "gitmek", ["VERB"]]]}
+{"text": "yoksa", "tokens": [["yoksa", "CCONJ", "", "yoksa", ["CCONJ"]]]}
+{"text": "hala", "tokens": [["hala", "ADV", "", "hala", ["ADV", "NOUN"]]]}
+{"text": "işte", "tokens": [["işte", "ADV", "", "işte", ["ADV"]]]}
+{"text": "oh", "tokens": [["oh", "INTJ", "", "oh", ["INTJ"]]]}
+{"text": "benimle", "tokens": [["benimle", "PRON", "Pers", "ben", ["PRON", "NOUN"]]]}
+{"text": "içinde", "tokens": [["içinde", "ADV", "", "içinde", ["ADV"]]]}
+{"text": "mısın", "tokens": [["mısın", "PART", "", "mı", ["PART"]]]}
+{"text": "yine", "tokens": [["yine", "ADV", "", "yine", ["ADV"]]]}
+{"text": "mü", "tokens": [["mü", "PART", "", "mü", ["PART"]]]}
+{"text": "bence", "tokens": [["bence", "ADV", "", "bence", ["ADV"]]]}
+{"text": "şekilde", "tokens": [["şekilde", "NOUN", "", "şekil", ["NOUN"]]]}
+{"text": "olmak", "tokens": [["olmak", "VERB", "", "olmak", ["VERB"]]]}
+{"text": "bugün", "tokens": [["bugün", "ADV", "", "bugün", ["ADV", "NOUN"]]]}
+{"text": "söyle", "tokens": [["söyle", "VERB", "", "söylemek", ["VERB"]]]}
+{"text": "birlikte", "tokens": [["birlikte", "ADP", "PCIns", "birlikte", ["ADP", "ADV"]]]}
+{"text": "olmaz", "tokens": [["olmaz", "ADJ", "", "olmaz", ["ADJ", "NOUN"]]]}
+{"text": "pekala", "tokens": [["pekala", "ADJ", "", "pekala", ["ADJ", "ADV"]]]}
+{"text": "uzun", "tokens": [["uzun", "ADJ", "", "uzun", ["ADJ", "ADV"]]]}
+{"text": "lazım", "tokens": [["lazım", "ADJ", "", "lazım", ["ADJ"]]]}
+{"text": "biliyorsun", "tokens": [["biliyorsun", "VERB", "", "bilmek", ["VERB"]]]}
+{"text": "zaten", "tokens": [["zaten", "ADV", "", "zaten", ["ADV"]]]}
+{"text": "para", "tokens": [["para", "NOUN", "", "para", ["NOUN"]]]}
+{"text": "ilk", "tokens": [["ilk", "ADJ", "", "ilk", ["ADJ", "ADV", "NOUN"]]]}
+{"text": "geliyor", "tokens": [["geliyor", "VERB", "", "gelmek", ["VERB"]]]}
+{"text": "onunla", "tokens": [["onunla", "PRON", "Pers", "o", ["PRON"]]]}
+{"text": "gerçek", "tokens": [["gerçek", "ADJ", "", "gerçek", ["ADJ", "NOUN"]]]}
+{"text": "dostum", "tokens": [["dostum", "NOUN", "", "dost", ["NOUN", "ADJ"]]]}
+{"text": "al", "tokens": [["al", "ADJ", "", "al", ["ADJ", "NOUN"]]]}
+{"text": "bakalım", "tokens": [["bakalım", "VERB", "", "bakmak", ["VERB"]]]}
+{"text": "onlar", "tokens": [["onlar", "PRON", "Pers", "o", ["PRON", "ADJ"]]]}
+{"text": "haydi", "tokens": [["haydi", "ADV", "", "haydi", ["ADV", "INTJ"]]]}
+{"text": "birkaç", "tokens": [["birkaç", "DET", "", "birkaç", ["DET", "ADJ"]]]}
+{"text": "emin", "tokens": [["emin", "ADJ", "", "emin", ["ADJ", "NOUN"]]]}
+{"text": "üç", "tokens": [["üç", "NUM", "Card", "üç", ["NUM"]]]}
+{"text": "herkes", "tokens": [["herkes", "PRON", "Quant", "herkes", ["PRON"]]]}
+{"text": "dakika", "tokens": [["dakika", "ADV", "", "dakika", ["ADV", "NOUN"]]]}
+{"text": "söyledi", "tokens": [["söyledi", "VERB", "", "söylemek", ["VERB"]]]}
+{"text": "istiyorsun", "tokens": [["istiyorsun", "VERB", "", "istemek", ["VERB"]]]}
+{"text": "pek", "tokens": [["pek", "ADJ", "", "pek", ["ADJ", "ADV"]]]}
+{"text": "ister", "tokens": [["ister", "CCONJ", "", "ister", ["CCONJ", "NOUN"]]]}
+{"text": "saat", "tokens": [["saat", "NOUN", "", "saat", ["NOUN"]]]}
+{"text": "yapıyorsun", "tokens": [["yapıyorsun", "VERB", "", "yapmak", ["VERB"]]]}
+{"text": "eve", "tokens": [["eve", "NOUN", "", "ev", ["NOUN"]]]}
+{"text": "yıl", "tokens": [["yıl", "NOUN", "Time", "yıl", ["NOUN"]]]}
+{"text": "miyim", "tokens": [["miyim", "PART", "", "mi", ["PART", "NOUN", "X"]]]}
+{"text": "çocuk", "tokens": [["çocuk", "ADJ", "", "çocuk", ["ADJ", "NOUN"]]]}
+{"text": "yer", "tokens": [["yer", "NOUN", "", "yer", ["NOUN"]]]}

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 3,
+  "language": "uk",
+  "resources": [
+    {
+      "resourceId": "uk-uk-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy uk_core_news_sm 3.8.0 pipeline",
+      "importName": "uk_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/uk_core_news_sm-3.8.0/uk_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "d20adb50b42c0dcfdedf4994dabcb96789a64983a9ab560d0c6c38a59e8efb58",
+        "sizeBytes": 14908659,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "uk_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "uk_core_news_sm-3.8.0/config.cfg",
+          "uk_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "uk_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "Ukr-Synth (e5d9eaf3)",
+          "copyright": "Volodymyr Kurnosov",
+          "license": "MIT",
+          "url": "https://huggingface.co/datasets/ukr-models/Ukr-Synth"
+        }
+      ]
+    },
+    {
+      "resourceId": "uk-pymorphy3-dicts-uk",
+      "kind": "language-data",
+      "displayName": "pymorphy3 Ukrainian dictionaries 2.4.1.1.1663094765",
+      "importName": "pymorphy3_dicts_uk",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/60/1a/310e767e0dd9ad414c11f9b969735b8e7af90c38b7372ebc3a086f3c1249/pymorphy3_dicts_uk-2.4.1.1.1663094765-py2.py3-none-any.whl",
+        "sha256": "6af1e389b69e7e90ef7d50b20e3955a0c78383317a15d9ade5979f1536354733",
+        "sizeBytes": 8201207,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pymorphy3_dicts_uk/",
+        "exclude": [
+          "__init__.py",
+          "version.py"
+        ],
+        "sentinels": [
+          "data/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "pymorphy3-dicts-uk 2.4.1.1.1663094765 (OpenCorpora-format dictionaries)",
+          "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
+          "license": "GPL-3.0",
+          "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-uk-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Ukrainian-English) 2026-09-20",
+      "slotId": "wty-uk-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/uk/en/wty-uk-en.zip",
+        "sha256": "294fcdc761a196468c5b85af297ba42dd8f8981ae35db9afacd68f83d67fcea5",
+        "sizeBytes": 9780617,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-uk-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 22,
+        "uncompressedBytes": 103256330,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 67108864
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-uk-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Ukrainian)",
+      "sourceId": "opensubtitles-uk",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/uk/uk_50k.txt",
+        "sha256": "881686fe66a168b79f6a9ee2f6cbbf944cfb12bfb7040913ef535cb29bd86ec9",
+        "sizeBytes": 887259,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-uk-en-2026.09.20",
+    "opensubtitles-uk-2018"
+  ]
+}

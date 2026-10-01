@@ -24,8 +24,9 @@ readonly note_delete_removes_test="com.ankiminer.android.anki.provider.ContentRe
 readonly note_delete_missing_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_missing_note_still_reports_request_count"
 # Hosted emulator images carry no offline TextToSpeech voices, so device-voice synthesis is local only.
 readonly device_voice_test="com.ankiminer.android.tts.DeviceVoiceSynthesisInstrumentedTest#anInstalledOfflineVoiceSpeaksAHebrewWord"
-# The ar and fa language smoke needs the pinned language-data archives pushed to the device and
-# selected by -e ankiMinerLanguageDataDir; hosted runners carry neither, so it stays UNEXECUTED.
+# The smoke for languages that read downloaded data (ar, fa, the spaCy codes, ko, vi, yue) needs the
+# pinned archives pushed to the device and selected by -e ankiMinerLanguageDataDir; hosted runners
+# carry neither, so it stays UNEXECUTED.
 readonly language_data_smoke_test="com.ankiminer.android.LanguageDataSmokeInstrumentedTest#downloadedLanguageDataTokenisesAndRecordsPeakPss"
 readonly ui_audit_tests=(
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop"

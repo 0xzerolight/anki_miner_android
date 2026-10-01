@@ -58,10 +58,10 @@ def test_malformed_language_values_are_refused(value: object) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["xx", "zh", "ko", "en"])
+@pytest.mark.parametrize("code", ["xx", "eo"])
 def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
-    # zh/ko/en are desktop languages that are not vendored in this wave: the
-    # engine would silently mine them as Japanese, the bridge must not.
+    # Every desktop language is vendored now; xx and eo are no desktop language
+    # at all: the engine would silently mine them as Japanese, the bridge must not.
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
         languages.validated_language(code)
@@ -70,7 +70,40 @@ def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
 
 def test_every_vendored_language_validates() -> None:
     _runtime_lane()
-    assert _available() == ("ja", "id", "ar", "th", "fa", "he")
+    assert _available() == (
+        "ja",
+        "ko",
+        "zh",
+        "en",
+        "ca",
+        "de",
+        "pt",
+        "fr",
+        "es",
+        "it",
+        "nl",
+        "nb",
+        "ro",
+        "el",
+        "fi",
+        "hu",
+        "hr",
+        "sv",
+        "pl",
+        "lt",
+        "da",
+        "tr",
+        "id",
+        "ru",
+        "ar",
+        "th",
+        "fa",
+        "sl",
+        "uk",
+        "vi",
+        "yue",
+        "he",
+    )
     for code in _available():
         assert languages.validated_language(code) == code
 
@@ -102,7 +135,7 @@ def test_explicit_japanese_maps_exactly_like_an_absent_language(tmp_path: Path) 
 def test_config_map_refuses_an_unavailable_language(tmp_path: Path) -> None:
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"language": "zh", **_NOTE_TYPE}, _paths(tmp_path))
+        map_config_settings({"language": "eo", **_NOTE_TYPE}, _paths(tmp_path))
     assert error.value.code == "unsupported_language"
 
 
@@ -112,32 +145,35 @@ def test_config_map_refuses_a_malformed_language(tmp_path: Path) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["he", "id", "th", "ar", "fa"])
-def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(code: str, tmp_path: Path) -> None:
+def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(tmp_path: Path) -> None:
+    """Every vendored profile, so a newly vendored language's defaults drift here first."""
     _runtime_lane()
     from anki_miner.languages.registry import get_profile
     from anki_miner.languages.switching import LANGUAGE_SCOPED_FIELDS
 
-    config = map_config_settings({"language": code, **_NOTE_TYPE}, _paths(tmp_path)).engine_config
-    profile = get_profile(code)
+    for code in _available():
+        if code == "ja":
+            continue
+        config = map_config_settings({"language": code, **_NOTE_TYPE}, _paths(tmp_path)).engine_config
+        profile = get_profile(code)
 
-    assert config.language == code
-    assert dict(config.language_stash) == {}
-    for name in LANGUAGE_SCOPED_FIELDS:
-        actual = getattr(config, name)
-        expected = profile.scoped_defaults[name]
-        if name == "anki_note_type":
-            assert actual == "Basic"
-        elif name == "expression_audio_chain":
-            # The profile's default network voice is a cut kind: the device voice stands in.
-            assert [entry.kind for entry in actual] == ["android_tts"]
-        elif name == "anki_fields":
-            assert dict(actual) == dict(expected)
-        else:
-            assert actual == expected, name
-    # Nothing Japanese-shaped leaks in: no jmdict/Jisho chain, no Lapis, no ja POS gate.
-    assert config.dictionary_chain == ()
-    assert "名詞" not in config.allowed_pos
+        assert config.language == code
+        assert dict(config.language_stash) == {}, code
+        for name in LANGUAGE_SCOPED_FIELDS:
+            actual = getattr(config, name)
+            expected = profile.scoped_defaults[name]
+            if name == "anki_note_type":
+                assert actual == "Basic", code
+            elif name == "expression_audio_chain":
+                # The profile's default network voice is a cut kind: the device voice stands in.
+                assert [entry.kind for entry in actual] == ["android_tts"], code
+            elif name == "anki_fields":
+                assert dict(actual) == dict(expected), code
+            else:
+                assert actual == expected, (code, name)
+        # Nothing Japanese-shaped leaks in: no jmdict/Jisho chain, no Lapis, no ja POS gate.
+        assert config.dictionary_chain == (), code
+        assert "名詞" not in config.allowed_pos, code
 
 
 def test_a_non_ja_snapshot_without_a_note_type_is_refused(tmp_path: Path) -> None:
@@ -207,30 +243,30 @@ def test_scoped_defaults_cover_every_android_scoped_field() -> None:
         assert set(LANGUAGE_SCOPED_FIELDS) - set(wire) == {"downloader_subtitle_langs", "downloader_audio_lang"}
 
 
-@pytest.mark.parametrize("code", ["ja", "he", "id", "th", "ar", "fa"])
-def test_scoped_defaults_round_trip_through_config_map(code: str, tmp_path: Path) -> None:
+def test_scoped_defaults_round_trip_through_config_map(tmp_path: Path) -> None:
     """Kotlin stores scopedDefaults and sends them back: config_map must rebuild the profile's values."""
     _runtime_lane()
     from anki_miner.languages.registry import get_profile
     from anki_miner.languages.switching import LANGUAGE_SCOPED_FIELDS
 
-    profile = get_profile(code)
-    wire = languages.scoped_defaults_wire(profile)
-    settings = {**wire, "language": code}
-    if not settings["anki_note_type"]:
-        settings.update(_NOTE_TYPE)
-    config = map_config_settings(settings, _paths(tmp_path)).engine_config
+    for code in _available():
+        profile = get_profile(code)
+        wire = languages.scoped_defaults_wire(profile)
+        settings = {**wire, "language": code}
+        if not settings["anki_note_type"]:
+            settings.update(_NOTE_TYPE)
+        config = map_config_settings(settings, _paths(tmp_path)).engine_config
 
-    for name in set(LANGUAGE_SCOPED_FIELDS) & set(wire):
-        actual = getattr(config, name)
-        expected = profile.scoped_defaults[name]
-        if name == "anki_note_type" and not expected:
-            continue
-        if name == "expression_audio_chain":
-            expected = tuple(entry for entry in expected if entry.kind == "pack")
-        if name == "anki_fields":
-            actual, expected = dict(actual), dict(expected)
-        assert actual == expected, name
+        for name in set(LANGUAGE_SCOPED_FIELDS) & set(wire):
+            actual = getattr(config, name)
+            expected = profile.scoped_defaults[name]
+            if name == "anki_note_type" and not expected:
+                continue
+            if name == "expression_audio_chain":
+                expected = tuple(entry for entry in expected if entry.kind == "pack")
+            if name == "anki_fields":
+                actual, expected = dict(actual), dict(expected)
+            assert actual == expected, (code, name)
 
 
 def test_ja_scoped_defaults_carry_the_desktop_ja_values() -> None:
@@ -370,12 +406,26 @@ def test_hebrew_profile_entry_describes_an_rtl_language_with_its_own_card_fields
     assert defaults["allowed_pos"] == ["WORD", "NOUN", "VERB", "ADJ", "ADV"]
 
 
-@pytest.mark.parametrize("code", ["ar", "fa"])
-def test_a_language_waiting_for_its_data_pack_reports_a_download_reason(code: str) -> None:
+def test_a_regional_varietys_run_speaks_with_that_regions_voice() -> None:
+    """Desktop ``pt_gtts_lang``: European Portuguese speaks pt-PT, Brazilian the Brazilian voice."""
+    _runtime_lane()
+    from anki_miner.languages.registry import get_profile
+
+    assert languages.speech_language_for("pt", "pt") == "pt-PT"
+    assert languages.speech_language_for("pt", "br") == "pt-BR"
+    assert languages.speech_language_for("pt") == "pt"
+    assert languages.speech_language(get_profile("pt")) == "pt"
+    assert languages.speech_language_for("zh", "traditional") == "zh"
+    assert languages.speech_language_for("yue") == "yue"
+    assert languages.speech_language_for("ja") == "ja"
+
+
+@pytest.mark.parametrize(("code", "direction"), [("ar", "rtl"), ("fa", "rtl"), ("ko", "ltr")])
+def test_a_language_waiting_for_its_data_pack_reports_a_download_reason(code: str, direction: str) -> None:
     _runtime_lane()
     entry = _profiles()[code]
     assert entry["unavailableReason"] == "language_data_required"
-    assert entry["contentDirection"] == "rtl"
+    assert entry["contentDirection"] == direction
 
 
 def test_installed_data_clears_the_reason(initialized_bridge_home: Path) -> None:
@@ -441,7 +491,42 @@ def test_every_vendored_pack_component_is_downloadable_data_or_ships_in_the_apk(
                 assert find_spec(component.import_name) is None, key
             else:
                 assert find_spec(component.import_name) is not None, f"{key} is neither data nor bundled"
-    assert seen >= languages.DOWNLOADABLE_DATA_COMPONENTS
+    split = set(languages.SPLIT_DATA_COMPONENTS)
+    assert seen >= languages.DOWNLOADABLE_DATA_COMPONENTS - split
+    # Split models are no pack component: the component they come from ships in the APK.
+    assert {(code, source) for (code, _), source in languages.SPLIT_DATA_COMPONENTS.items()} <= seen - split
+    assert not split & seen
+
+
+@pytest.mark.parametrize("code", ["vi", "yue"])
+def test_split_models_gate_the_language_until_they_are_installed(
+    code: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine finds vi/yue code importable from the APK; only the bridge sees the missing models."""
+    _runtime_lane()
+    from android_bridge.resource_catalog import load_resource_catalog
+    from anki_miner.config import paths
+
+    monkeypatch.setattr(paths, "ANKI_MINER_HOME", tmp_path)
+    profile = languages.get_profile(code)
+    assert profile.unavailable_reason() is None
+    assert languages.unavailable_reason_code(profile) == "language_data_required"
+
+    (entry,) = load_resource_catalog(code).language_data
+    directory = tmp_path / "language_packs" / code / entry.import_name
+    for sentinel in entry.install.sentinels:
+        (directory / sentinel).parent.mkdir(parents=True, exist_ok=True)
+        (directory / sentinel).write_bytes(b"model")
+
+    assert languages.unavailable_reason_code(profile) is None
+
+
+def test_the_engine_overrides_read_the_split_models_the_catalog_installs() -> None:
+    _runtime_lane()
+    from anki_miner.languages.vi import tokenizer as vi_tokenizer
+    from anki_miner.languages.yue import tokenizer as yue_tokenizer
+
+    assert {("vi", vi_tokenizer.MODEL_DATA), ("yue", yue_tokenizer.MODEL_DATA)} == set(languages.SPLIT_DATA_COMPONENTS)
 
 
 def test_the_bridge_never_puts_downloaded_packs_on_sys_path() -> None:

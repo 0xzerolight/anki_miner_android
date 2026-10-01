@@ -1,0 +1,150 @@
+{
+  "schemaVersion": 3,
+  "language": "vi",
+  "resources": [
+    {
+      "resourceId": "vi-underthesea-models",
+      "kind": "language-data",
+      "displayName": "underthesea 9.5.0 Vietnamese word segmentation and POS models",
+      "importName": "underthesea_models",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl",
+        "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+        "sizeBytes": 7273326,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "underthesea/pipeline/",
+        "exclude": [
+          "__init__.py",
+          "chunking/",
+          "classification/",
+          "dependency_parse/",
+          "ipa/",
+          "lang_detect/",
+          "ner/",
+          "pos_tag/__init__.py",
+          "pos_tag/model_crf.py",
+          "pos_tag/models/pos_crf_vlsp2013_20230303/test_output.txt",
+          "pos_tag/pos_crf_2017_10_11.bin",
+          "pos_tag/tagged_feature.py",
+          "sent_tokenize/",
+          "sentiment/",
+          "text_normalize/",
+          "translate/",
+          "tts/",
+          "word_tokenize/__init__.py",
+          "word_tokenize/regex_tokenize.py"
+        ],
+        "sentinels": [
+          "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+          "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+          "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+          "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+          "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+          "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin"
+        ],
+        "innerSha256": [
+          {
+            "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+            "sha256": "c3a64c64349f1d73304f89babacaa8f8cd6078b1ec1a1b2c104e9e411ac1d2c3"
+          },
+          {
+            "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+            "sha256": "cf93263c7c7973bf50122b0be76a394443ff61be00c1368713dee1b7d5b8a435"
+          },
+          {
+            "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+            "sha256": "ec8c62b3881c6682c18959988e1fe08800cc835777778845bded470ca02745d9"
+          },
+          {
+            "path": "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+            "sha256": "f79566ee0bfcf2584fb89ae656c62cc7d40ad6c272482cf51740b8635e50d930"
+          },
+          {
+            "path": "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+            "sha256": "00be4922c973cdf9738421e353ea1ac13f314105916c9e1b8e834bbb66412450"
+          },
+          {
+            "path": "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+            "sha256": "56e4888920e456e5a96c5a0b263c952f6286eedb98228b41dbda99e692132bfa"
+          }
+        ]
+      },
+      "attribution": [
+        {
+          "name": "underthesea 9.5.0 CRF models ws_crf_vlsp2013_20230727 and pos_crf_vlsp2013_20230303 (trained on VLSP 2013)",
+          "copyright": "Vu Anh and the underthesea contributors",
+          "license": "Apache-2.0",
+          "url": "https://github.com/undertheseanlp/underthesea"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-vi-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Vietnamese-English) 2026-09-20",
+      "slotId": "wty-vi-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/vi/en/wty-vi-en.zip",
+        "sha256": "c9ee18f4572f2237eb46b280e3965a6b70f06dac55bdf06906c2355b1a3b968b",
+        "sizeBytes": 4325049,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-vi-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 7,
+        "uncompressedBytes": 45628027,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-vi-word-2026.09.19",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2024 word frequency (Vietnamese)",
+      "sourceId": "opensubtitles-vi-word",
+      "archive": {
+        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
+        "sha256": "4475a9a3c9ee8247a60f11c9fe395f8212afa86296c296b24c452e111dd8d896",
+        "sizeBytes": 402194,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "OPUS OpenSubtitles v2024 corpus (Vietnamese)",
+          "copyright": "P. Lison and J. Tiedemann (2016), OPUS (opus.nlpl.eu); subtitles from opensubtitles.org",
+          "license": "ODC-BY-1.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles/corpus/version/OpenSubtitles"
+        },
+        {
+          "name": "Anki Miner Vietnamese word-frequency build",
+          "copyright": "Built by Anki Miner's scripts/build_vi_frequency.py (segmented with underthesea)",
+          "license": "ODC-BY-1.0",
+          "url": "https://github.com/0xzerolight/anki_miner"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-vi-en-2026.09.20",
+    "opensubtitles-vi-word-2026.09.19"
+  ]
+}

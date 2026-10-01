@@ -24,13 +24,14 @@ private const val LANGUAGE_CODES_ARGUMENT = "ankiMinerLanguageSmokeCodes"
 private const val PSS_SAMPLE_INTERVAL_MS = 200L
 
 /**
- * Local only (UNEXECUTED on the CI lane): the languages whose tagger reads downloaded data.
+ * Local only (UNEXECUTED on the CI lane): the languages whose tagger reads downloaded data
+ * (the harness's `LOCAL_CODES`).
  *
- * Push the pinned archives first, then select the directory:
- * `adb push morphology_db_calima-msa-r13-0.4.0.zip hazm-0.12.1-py3-none-any.whl
- * /data/local/tmp/anki-miner-language-data/` and
- * `-e ankiMinerLanguageDataDir /data/local/tmp/anki-miner-language-data`.
- * Each archive installs through the production bridge path; the test logs tokens and peak PSS.
+ * Push each code's pinned archives under their catalog URL names first, then select the directory:
+ * `adb push morphology_db_calima-msa-r13-0.4.0.zip /data/local/tmp/anki-miner-language-data/` (and
+ * so on) and `-e ankiMinerLanguageDataDir /data/local/tmp/anki-miner-language-data`. Each archive
+ * installs through the production bridge path; the test logs tokens and peak PSS, then deletes the
+ * code's installed data.
  */
 @RunWith(AndroidJUnit4::class)
 class LanguageDataSmokeInstrumentedTest {
@@ -43,7 +44,7 @@ class LanguageDataSmokeInstrumentedTest {
         val archiveDir = arguments.getString(LANGUAGE_DATA_DIR_ARGUMENT)
         assumeTrue("needs pushed language-data archives", archiveDir != null)
         val harness = languageSmokeHarness()
-        val localCodes = harness["LOCAL_RESOURCES"]!!.asMap().keys.map { it.toString() }
+        val localCodes = harness["LOCAL_CODES"]!!.asList().map { it.toString() }
         val codes =
             arguments.getString(LANGUAGE_CODES_ARGUMENT)
                 ?.split(',')
@@ -53,13 +54,16 @@ class LanguageDataSmokeInstrumentedTest {
         assertTrue("unknown local codes: $codes", codes.isNotEmpty() && localCodes.containsAll(codes))
         val failures = mutableListOf<String>()
         for (code in codes) {
-            val archive = File(context.cacheDir, harness.callAttr("archive_name", code).toString())
+            val archives = File(context.cacheDir, "language-smoke-$code")
             try {
-                copyFromShell("$archiveDir/${archive.name}", archive)
+                archives.mkdirs()
+                for (name in harness.callAttr("archive_names", code).asList()) {
+                    copyFromShell("$archiveDir/$name", File(archives, name.toString()))
+                }
                 val baselineKib = Debug.getPss()
                 val (result, peakKib) =
                     sampledPeakPss {
-                        harness.callAttr("install", code, archive.absolutePath)
+                        harness.callAttr("install", code, archives.absolutePath)
                         JSONObject(harness.callAttr("smoke", code).toString())
                     }
                 recordLanguageSmoke(
@@ -74,11 +78,11 @@ class LanguageDataSmokeInstrumentedTest {
                         .put("abi", android.os.Build.SUPPORTED_ABIS.first()),
                 )
                 languageSmokeMismatch(result)?.let(failures::add)
-                harness.callAttr("evict", code)
             } catch (error: Exception) {
                 failures += "$code: ${error.javaClass.simpleName}: ${error.message}"
             } finally {
-                archive.delete()
+                runCatching { harness.callAttr("uninstall", code) }
+                archives.deleteRecursively()
             }
         }
         assertTrue(failures.joinToString("\n"), failures.isEmpty())

@@ -174,9 +174,9 @@ also be run directly.
 | `verify_chaquopy_build_python.py` | `describe` or `verify` the pinned build interpreter against `chaquopy-build-python.lock.json`. |
 | `check-python-runtime.py` | Imports the whole Android Python runtime and asserts the expected version and distribution set. |
 | `check-native-artifact.sh` | Wrapper for `check_native_artifacts.py`; `--help` lists the gate options. |
-| `check_native_artifacts.py` | Recursive ELF/ABI/alignment gate over APKs, AABs, nested ZIPs and Chaquopy IMYs. |
+| `check_native_artifacts.py` | Recursive ELF/ABI/alignment gate over APKs, AABs, nested ZIPs and Chaquopy IMYs; holds every requirement `.so` to the SONAME and `DT_NEEDED` rules, and owns the arm64 ISA audit. |
 | `check_native_elf.py` | Same ELF parser on a raw executable before packaging; used by `tools/ffmpeg/build.sh`. |
-| `check_runtime_artifact.py` | Audits packaged Chaquopy requirements against the verified wheel manifests. |
+| `check_runtime_artifact.py` | Audits packaged Chaquopy requirements against the verified wheel manifests; on arm64 it runs the ISA audit over every wheel native, using the NDK's `llvm-objdump`. |
 | `android-sdk-packages.lock` | Pinned SDK package paths, revisions and `package.xml` locations. |
 | `chaquopy-build-python.lock.json` | Pinned build-interpreter archive, hashes and install layout. |
 

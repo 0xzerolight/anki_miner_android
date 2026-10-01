@@ -3,6 +3,21 @@
   "wheels": [
     {
       "abi": "arm64-v8a",
+      "filename": "blis-1.3.3-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause",
+      "package": "blis",
+      "path": "arm64-v8a/blis-1.3.3-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "45a9b629f49a0dd0eb7ef0dd5a400d54cb6b28fc5c28a4febdb2b5daa2aea136",
+      "source": {
+        "filename": "blis-1.3.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "034d4560ff3cc43e8aa37e188451b0440e3261d989bb8a42ceee865607715ecd",
+        "url": "https://files.pythonhosted.org/packages/d0/d0/d8cc8c9a4488a787e7fa430f6055e5bd1ddb22c340a751d9e901b82e2efe/blis-1.3.3.tar.gz"
+      },
+      "version": "1.3.3"
+    },
+    {
+      "abi": "arm64-v8a",
       "filename": "chaquopy_freetype-2.14.1-0-py3-none-android_26_arm64_v8a.whl",
       "license": "FTL",
       "package": "chaquopy-freetype",
@@ -37,7 +52,7 @@
       "license": "BSD-3-Clause AND IJG AND Zlib",
       "package": "chaquopy-libjpeg",
       "path": "arm64-v8a/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_arm64_v8a.whl",
-      "sha256": "7f2194917bfc8d3e9353948927494c6c1fd1c686150c28f3d81056582a0f3621",
+      "sha256": "b06fbfba1072b3aa3b9250be1b5f6a7d703f7b27bdafcb4e5fc34618308b024b",
       "source": {
         "filename": "libjpeg-turbo-1.5.3.tar.gz",
         "kind": "runtime-source",
@@ -108,6 +123,21 @@
     },
     {
       "abi": "arm64-v8a",
+      "filename": "cymem-2.0.13-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "cymem",
+      "path": "arm64-v8a/cymem-2.0.13-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "fb7477538f3c3204146300521bbc7c443219d55a4230f9d58c67645a93340035",
+      "source": {
+        "filename": "cymem-2.0.13.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "1c91a92ae8c7104275ac26bd4d29b08ccd3e7faff5893d3858cb6fadf1bc1588",
+        "url": "https://files.pythonhosted.org/packages/c0/8f/2f0fbb32535c3731b7c2974c569fb9325e0a38ed5565a08e1139a3b71e82/cymem-2.0.13.tar.gz"
+      },
+      "version": "2.0.13"
+    },
+    {
+      "abi": "arm64-v8a",
       "filename": "fugashi-1.5.2-0-cp312-cp312-android_26_arm64_v8a.whl",
       "license": "MIT AND BSD-3-Clause",
       "package": "fugashi",
@@ -120,6 +150,21 @@
         "url": "https://files.pythonhosted.org/packages/source/f/fugashi/fugashi-1.5.2.tar.gz"
       },
       "version": "1.5.2"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "kiwipiepy-0.23.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "LGPL-3.0-or-later AND BSD-2-Clause AND Apache-2.0 AND MIT AND MPL-2.0",
+      "package": "kiwipiepy",
+      "path": "arm64-v8a/kiwipiepy-0.23.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "e70dc464849a1b1a8c76eb17b0b46c5580cbff13c165f3acb17b2cb14ce8bd96",
+      "source": {
+        "filename": "kiwipiepy-0.23.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "632d627531ceaf4b55bd5c01d50eebdae0253c79c2c8a3f682f2e68492f36198",
+        "url": "https://files.pythonhosted.org/packages/c6/3f/b317dfd0085341a8e2b24fa8eddd7e709b07a91e6bcf20b8d8952ca26a03/kiwipiepy-0.23.2.tar.gz"
+      },
+      "version": "0.23.2"
     },
     {
       "abi": "arm64-v8a",
@@ -138,6 +183,66 @@
     },
     {
       "abi": "arm64-v8a",
+      "filename": "markupsafe-3.0.3-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause",
+      "package": "markupsafe",
+      "path": "arm64-v8a/markupsafe-3.0.3-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "fa0de8e143b4bda86d0728fa64b70a9a2dd98330db6c671cd7eb47d0a38e3c70",
+      "source": {
+        "filename": "markupsafe-3.0.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698",
+        "url": "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz"
+      },
+      "version": "3.0.3"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "murmurhash-1.0.15-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "murmurhash",
+      "path": "arm64-v8a/murmurhash-1.0.15-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "80150af9bf324ebaaea2a396929c85424326620f52df25cbf459f71203818814",
+      "source": {
+        "filename": "murmurhash-1.0.15.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "58e2b27b7847f9e2a6edf10b47a8c8dd70a4705f45dccb7bf76aeadacf56ba01",
+        "url": "https://files.pythonhosted.org/packages/23/2e/88c147931ea9725d634840d538622e94122bceaf346233349b7b5c62964b/murmurhash-1.0.15.tar.gz"
+      },
+      "version": "1.0.15"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "numpy-2.5.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "package": "numpy",
+      "path": "arm64-v8a/numpy-2.5.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "1630aa380b91da0b9cecd3a9007b938de301bee7c2e8f4f0a41f653c090cc814",
+      "source": {
+        "filename": "numpy-2.5.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "5a129578019311b6e56bdd714250f19b518f7dceeeb8d1af5490f4942d3f891c",
+        "url": "https://files.pythonhosted.org/packages/e7/05/3d27272d30698dc0ecb7fdfaa41ad70303b444f81722bb99bce1d818638a/numpy-2.5.0.tar.gz"
+      },
+      "version": "2.5.0"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "opencc-1.4.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "Apache-2.0 AND (BSD-2-Clause OR LGPL-2.1-or-later) AND BSD-3-Clause AND MIT",
+      "package": "opencc",
+      "path": "arm64-v8a/opencc-1.4.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "6403e41ab7acbb19424ab4797a07532c232ffa9149d4b343676b651340945bd7",
+      "source": {
+        "filename": "opencc-1.4.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "47977905f131d7d9cfcec29fba5d841154907e1da73103105a4a68744e0f4f1a",
+        "url": "https://files.pythonhosted.org/packages/e0/12/09e62f051af1de7ca84be1d69154bd0514416ef72237e2081584cc268bc9/opencc-1.4.2.tar.gz"
+      },
+      "version": "1.4.2"
+    },
+    {
+      "abi": "arm64-v8a",
       "filename": "pillow-12.2.0-0-cp312-cp312-android_26_arm64_v8a.whl",
       "license": "MIT-CMU",
       "package": "pillow",
@@ -150,6 +255,201 @@
         "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz"
       },
       "version": "12.2.0"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "preshed-3.0.13-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "preshed",
+      "path": "arm64-v8a/preshed-3.0.13-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "6b7292405f66cad2d42459675067aba89b51636c1ebba24279e803d3bf421d4a",
+      "source": {
+        "filename": "preshed-3.0.13.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "d75f718bbfd97e992f7827e0fa7faf6a91bdd9c922d5baa4b50d62731396cb89",
+        "url": "https://files.pythonhosted.org/packages/43/75/fe6b7bbd0dea530a001b0e24c331b21a0be2786e402abf3c57f5dce43d4b/preshed-3.0.13.tar.gz"
+      },
+      "version": "3.0.13"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "pycantonese-5.0.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "pycantonese",
+      "path": "arm64-v8a/pycantonese-5.0.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "0d61e8c6f6f0527062cb8e878a2312f60047e98c4bde2e653f5bb590918468e0",
+      "source": {
+        "filename": "pycantonese-5.0.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "8655ba3cd891b528d6b070245abed55b20a08d673f1056fcf9afad0adbc47c1d",
+        "url": "https://files.pythonhosted.org/packages/09/09/32e8000e39eb9ff034e1d55a86536a14abab90f2f4df176129fd90c43c29/pycantonese-5.0.0.tar.gz"
+      },
+      "version": "5.0.0"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "pydantic_core-2.46.5-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "pydantic-core",
+      "path": "arm64-v8a/pydantic_core-2.46.5-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "cdaadf4ce3b2803b44b3e6ac4358d1399e0e171c917531a4e19fedb3e8140c60",
+      "source": {
+        "filename": "pydantic_core-2.46.5.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "10416c15b8839ecc4ef4d0885da76da6fd0f67333a0eb8aff6d93c4b8f2910fc",
+        "url": "https://files.pythonhosted.org/packages/af/f9/8a06bea35ef8daf588f707784c973a7046e0034c8d8cfb08828eeffb8b75/pydantic_core-2.46.5.tar.gz"
+      },
+      "version": "2.46.5"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "regex-2026.9.10-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "Apache-2.0 AND CNRI-Python",
+      "package": "regex",
+      "path": "arm64-v8a/regex-2026.9.10-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "68c83b81afc25f0e21b18765a624a587dd58bd8efbe50648a94aa872b8638049",
+      "source": {
+        "filename": "regex-2026.9.10.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "1e321e2c84f0e52c457f5ea5944f796d6e8e09cb99738ea98dcc1bfe402a128d",
+        "url": "https://files.pythonhosted.org/packages/b9/5c/f403115361de25809e8f785686ec7096e30fef73be9ae35aa51da4e80abb/regex-2026.9.10.tar.gz"
+      },
+      "version": "2026.9.10"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "rustling-0.9.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "rustling",
+      "path": "arm64-v8a/rustling-0.9.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "f98f18b7a11545686cdb675260c447160de1f9ffff59e470fa86aa2c16285e22",
+      "source": {
+        "filename": "rustling-0.9.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "c698de9a650d6675673f1ead4743a86eb6de0d42c82be479f036a395bf4f27c6",
+        "url": "https://files.pythonhosted.org/packages/98/7c/c7324e7d463e31d313160e8f54273e3729482b3851ac344867612cdbc5f1/rustling-0.9.0.tar.gz"
+      },
+      "version": "0.9.0"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "spacy-3.8.14-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "spacy",
+      "path": "arm64-v8a/spacy-3.8.14-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "f53229c3906202325a2ce334f6cc3d5a2d451da5cf66f63a4c6096334ec0972a",
+      "source": {
+        "filename": "spaCy-release-v3.8.14.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "ad0ea4e15153de6703a1a77f22c34bdbf105b9362ccde4f4789e02dc9abcb538",
+        "url": "https://github.com/explosion/spaCy/archive/refs/tags/release-v3.8.14.tar.gz"
+      },
+      "version": "3.8.14"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "srsly-2.5.3-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT AND BSD-3-Clause AND Apache-2.0",
+      "package": "srsly",
+      "path": "arm64-v8a/srsly-2.5.3-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "2e2dc4e4d2e4dd4c89ed94fdff0a4a5b0a2282a5e33de938ed2eb17147d2ad84",
+      "source": {
+        "filename": "srsly-2.5.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "08f98dbecbff3a31466c4ae7c833131f59d3655a0ad8ac749e6e2c149e2b0680",
+        "url": "https://files.pythonhosted.org/packages/2b/db/f794f219a6c788b881252d2536a8c4a97d2bdaadc690391e1cb53d123d71/srsly-2.5.3.tar.gz"
+      },
+      "version": "2.5.3"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "thinc-8.3.13-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "thinc",
+      "path": "arm64-v8a/thinc-8.3.13-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "240cb0dcd8b60a329b9308af42f32dfaf786b604d49c24f110639207faf7dd61",
+      "source": {
+        "filename": "thinc-8.3.13.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "68e658549fc1eb3ff92aed5147fcbb9c15d6e9cc0e623b4d0998d16522ffb4f9",
+        "url": "https://files.pythonhosted.org/packages/13/46/76df95f2c327f9a9cef30c1523bf285627897097163584dcf5f77b2ebce2/thinc-8.3.13.tar.gz"
+      },
+      "version": "8.3.13"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "underthesea_core-3.3.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "Apache-2.0",
+      "package": "underthesea-core",
+      "path": "arm64-v8a/underthesea_core-3.3.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "b09fdf34c527672f0b2309b9fdc147c2ba9fa1bbd61aa43530d56fe123cd1710",
+      "source": {
+        "filename": "underthesea_core-3.3.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "7019f8f6d13f14556c032c63a9e5f77e107426654edce5e92d6513bb8ee8141a",
+        "url": "https://files.pythonhosted.org/packages/f1/62/a67e1ce6a0a7cf5a050d5debe3f4e1dad511bdf625fc4b169721c27da4be/underthesea_core-3.3.2.tar.gz"
+      },
+      "version": "3.3.2"
+    },
+    {
+      "abi": "common",
+      "filename": "annotated_doc-0.0.4-py3-none-any.whl",
+      "license": "MIT",
+      "package": "annotated-doc",
+      "path": "common/annotated_doc-0.0.4-py3-none-any.whl",
+      "sha256": "571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320",
+      "source": {
+        "filename": "annotated_doc-0.0.4-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320",
+        "url": "https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl"
+      },
+      "version": "0.0.4"
+    },
+    {
+      "abi": "common",
+      "filename": "annotated_types-0.8.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "annotated-types",
+      "path": "common/annotated_types-0.8.0-py3-none-any.whl",
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "source": {
+        "filename": "annotated_types-0.8.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+        "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl"
+      },
+      "version": "0.8.0"
+    },
+    {
+      "abi": "common",
+      "filename": "anyio-4.14.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "anyio",
+      "path": "common/anyio-4.14.0-py3-none-any.whl",
+      "sha256": "dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9",
+      "source": {
+        "filename": "anyio-4.14.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9",
+        "url": "https://files.pythonhosted.org/packages/ba/16/9826f089383c593cdfc4a6e5aca94d9e91ae1692c57af82c3b2aa5e810f7/anyio-4.14.0-py3-none-any.whl"
+      },
+      "version": "4.14.0"
+    },
+    {
+      "abi": "common",
+      "filename": "catalogue-2.0.10-py3-none-any.whl",
+      "license": "MIT",
+      "package": "catalogue",
+      "path": "common/catalogue-2.0.10-py3-none-any.whl",
+      "sha256": "58c2de0020aa90f4a2da7dfad161bf7b3b054c86a5f09fcedc0b2b740c109a9f",
+      "source": {
+        "filename": "catalogue-2.0.10-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "58c2de0020aa90f4a2da7dfad161bf7b3b054c86a5f09fcedc0b2b740c109a9f",
+        "url": "https://files.pythonhosted.org/packages/9e/96/d32b941a501ab566a16358d68b6eb4e4acc373fab3c3c4d7d9e649f7b4bb/catalogue-2.0.10-py3-none-any.whl"
+      },
+      "version": "2.0.10"
     },
     {
       "abi": "common",
@@ -183,6 +483,156 @@
     },
     {
       "abi": "common",
+      "filename": "click-8.1.8-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "click",
+      "path": "common/click-8.1.8-py3-none-any.whl",
+      "sha256": "63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2",
+      "source": {
+        "filename": "click-8.1.8-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2",
+        "url": "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl"
+      },
+      "version": "8.1.8"
+    },
+    {
+      "abi": "common",
+      "filename": "cloudpathlib-0.25.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "cloudpathlib",
+      "path": "common/cloudpathlib-0.25.0-py3-none-any.whl",
+      "sha256": "8faef3ed3a0dd71d134e8617b4fdc5ce56a12a6b485c080cfe80106e5f1d1f5d",
+      "source": {
+        "filename": "cloudpathlib-0.25.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "8faef3ed3a0dd71d134e8617b4fdc5ce56a12a6b485c080cfe80106e5f1d1f5d",
+        "url": "https://files.pythonhosted.org/packages/37/f9/9084c945d0b3ef8f129b4f0dd21baec759761a337902b70f17a3945015dd/cloudpathlib-0.25.0-py3-none-any.whl"
+      },
+      "version": "0.25.0"
+    },
+    {
+      "abi": "common",
+      "filename": "cloudpickle-3.1.2-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "cloudpickle",
+      "path": "common/cloudpickle-3.1.2-py3-none-any.whl",
+      "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
+      "source": {
+        "filename": "cloudpickle-3.1.2-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
+        "url": "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl"
+      },
+      "version": "3.1.2"
+    },
+    {
+      "abi": "common",
+      "filename": "colorama-0.4.6-py2.py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "colorama",
+      "path": "common/colorama-0.4.6-py2.py3-none-any.whl",
+      "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+      "source": {
+        "filename": "colorama-0.4.6-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+        "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl"
+      },
+      "version": "0.4.6"
+    },
+    {
+      "abi": "common",
+      "filename": "confection-1.3.3-py3-none-any.whl",
+      "license": "MIT",
+      "package": "confection",
+      "path": "common/confection-1.3.3-py3-none-any.whl",
+      "sha256": "b9fef9ee84b237ef4611ec3eb5797b70e13063e6310ad9f15536373f5e313c82",
+      "source": {
+        "filename": "confection-1.3.3-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "b9fef9ee84b237ef4611ec3eb5797b70e13063e6310ad9f15536373f5e313c82",
+        "url": "https://files.pythonhosted.org/packages/8d/e4/d66708bdf0d92fb4d49b22cdff4b10cec38aca5dcd7e81d909bb55c65cd7/confection-1.3.3-py3-none-any.whl"
+      },
+      "version": "1.3.3"
+    },
+    {
+      "abi": "common",
+      "filename": "dawg2_python-0.9.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "dawg2-python",
+      "path": "common/dawg2_python-0.9.0-py3-none-any.whl",
+      "sha256": "4fab6fc097bd176cd783cd8421b757348ea5a460789e53b0f6bb64831380bab5",
+      "source": {
+        "filename": "dawg2_python-0.9.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "4fab6fc097bd176cd783cd8421b757348ea5a460789e53b0f6bb64831380bab5",
+        "url": "https://files.pythonhosted.org/packages/84/3b/7fb4c1a8df59cb80f5f7ecb9646280e000f9ba2ccff8710205dc9aa4604f/dawg2_python-0.9.0-py3-none-any.whl"
+      },
+      "version": "0.9.0"
+    },
+    {
+      "abi": "common",
+      "filename": "defusedxml-0.7.1-py2.py3-none-any.whl",
+      "license": "PSF-2.0",
+      "package": "defusedxml",
+      "path": "common/defusedxml-0.7.1-py2.py3-none-any.whl",
+      "sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "source": {
+        "filename": "defusedxml-0.7.1-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+        "url": "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl"
+      },
+      "version": "0.7.1"
+    },
+    {
+      "abi": "common",
+      "filename": "h11-0.16.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "h11",
+      "path": "common/h11-0.16.0-py3-none-any.whl",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "source": {
+        "filename": "h11-0.16.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+        "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl"
+      },
+      "version": "0.16.0"
+    },
+    {
+      "abi": "common",
+      "filename": "httpcore-1.0.9-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "httpcore",
+      "path": "common/httpcore-1.0.9-py3-none-any.whl",
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+      "source": {
+        "filename": "httpcore-1.0.9-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+        "url": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl"
+      },
+      "version": "1.0.9"
+    },
+    {
+      "abi": "common",
+      "filename": "httpx-0.28.1-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "httpx",
+      "path": "common/httpx-0.28.1-py3-none-any.whl",
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+      "source": {
+        "filename": "httpx-0.28.1-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+        "url": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl"
+      },
+      "version": "0.28.1"
+    },
+    {
+      "abi": "common",
       "filename": "idna-3.18-py3-none-any.whl",
       "license": "BSD-3-Clause",
       "package": "idna",
@@ -195,6 +645,171 @@
         "url": "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl"
       },
       "version": "3.18"
+    },
+    {
+      "abi": "common",
+      "filename": "jieba-0.42.1-py3-none-any.whl",
+      "license": "MIT",
+      "package": "jieba",
+      "path": "common/jieba-0.42.1-py3-none-any.whl",
+      "sha256": "7661f537d851e66c7b21d7b48e69f845b69f23f66ffeb72608611f6601f467ee",
+      "source": {
+        "filename": "jieba-0.42.1.tar.gz",
+        "kind": "pure-sdist",
+        "sha256": "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2",
+        "url": "https://files.pythonhosted.org/packages/c6/cb/18eeb235f833b726522d7ebed54f2278ce28ba9438e3135ab0278d9792a2/jieba-0.42.1.tar.gz"
+      },
+      "version": "0.42.1"
+    },
+    {
+      "abi": "common",
+      "filename": "jinja2-3.1.6-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "jinja2",
+      "path": "common/jinja2-3.1.6-py3-none-any.whl",
+      "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+      "source": {
+        "filename": "jinja2-3.1.6-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+        "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl"
+      },
+      "version": "3.1.6"
+    },
+    {
+      "abi": "common",
+      "filename": "joblib-1.6.0-py3-none-any.whl",
+      "license": "BSD-3-Clause",
+      "package": "joblib",
+      "path": "common/joblib-1.6.0-py3-none-any.whl",
+      "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba",
+      "source": {
+        "filename": "joblib-1.6.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba",
+        "url": "https://files.pythonhosted.org/packages/18/53/84099323c2ec4be98d935f63c033ac4151ee83836ca1050ede3b3aadf155/joblib-1.6.0-py3-none-any.whl"
+      },
+      "version": "1.6.0"
+    },
+    {
+      "abi": "common",
+      "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "markdown-it-py",
+      "path": "common/markdown_it_py-4.2.0-py3-none-any.whl",
+      "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+      "source": {
+        "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+        "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl"
+      },
+      "version": "4.2.0"
+    },
+    {
+      "abi": "common",
+      "filename": "mdurl-0.1.2-py3-none-any.whl",
+      "license": "MIT",
+      "package": "mdurl",
+      "path": "common/mdurl-0.1.2-py3-none-any.whl",
+      "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+      "source": {
+        "filename": "mdurl-0.1.2-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+        "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl"
+      },
+      "version": "0.1.2"
+    },
+    {
+      "abi": "common",
+      "filename": "nltk-3.10.3-py3-none-any.whl",
+      "license": "Apache-2.0",
+      "package": "nltk",
+      "path": "common/nltk-3.10.3-py3-none-any.whl",
+      "sha256": "2f69dd8a6158e19dc9f8f24a9838c380f3d1a68cd4581b680d26f838ad5903e2",
+      "source": {
+        "filename": "nltk-3.10.3-py3-none-any.whl",
+        "kind": "repacked-wheel",
+        "sha256": "ff9598a8e20518ee0d557745890cc4435b9578489e2dcbc69c4f81fa060caf7c",
+        "url": "https://files.pythonhosted.org/packages/b6/6d/ebd2af4640b12168fdf0cb74b6118df2f32a2f62ec7e0c06fbfd80706639/nltk-3.10.3-py3-none-any.whl"
+      },
+      "version": "3.10.3"
+    },
+    {
+      "abi": "common",
+      "filename": "packaging-26.2-py3-none-any.whl",
+      "license": "Apache-2.0 OR BSD-2-Clause",
+      "package": "packaging",
+      "path": "common/packaging-26.2-py3-none-any.whl",
+      "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+      "source": {
+        "filename": "packaging-26.2-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+        "url": "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl"
+      },
+      "version": "26.2"
+    },
+    {
+      "abi": "common",
+      "filename": "pydantic-2.13.5-py3-none-any.whl",
+      "license": "MIT",
+      "package": "pydantic",
+      "path": "common/pydantic-2.13.5-py3-none-any.whl",
+      "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+      "source": {
+        "filename": "pydantic-2.13.5-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+        "url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl"
+      },
+      "version": "2.13.5"
+    },
+    {
+      "abi": "common",
+      "filename": "pygments-2.20.0-py3-none-any.whl",
+      "license": "BSD-2-Clause",
+      "package": "pygments",
+      "path": "common/pygments-2.20.0-py3-none-any.whl",
+      "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+      "source": {
+        "filename": "pygments-2.20.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+        "url": "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl"
+      },
+      "version": "2.20.0"
+    },
+    {
+      "abi": "common",
+      "filename": "pymorphy3-2.0.6-py3-none-any.whl",
+      "license": "MIT",
+      "package": "pymorphy3",
+      "path": "common/pymorphy3-2.0.6-py3-none-any.whl",
+      "sha256": "0254317c02ce3ea17e080b7fc9d675e44662b3a5296bae68605b7a41d25b36c3",
+      "source": {
+        "filename": "pymorphy3-2.0.6-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "0254317c02ce3ea17e080b7fc9d675e44662b3a5296bae68605b7a41d25b36c3",
+        "url": "https://files.pythonhosted.org/packages/18/4b/59bac03278033e293d1405ed42fb6c6252c25f40c50f509c615caeaa3b71/pymorphy3-2.0.6-py3-none-any.whl"
+      },
+      "version": "2.0.6"
+    },
+    {
+      "abi": "common",
+      "filename": "pypinyin-0.55.0-py2.py3-none-any.whl",
+      "license": "MIT",
+      "package": "pypinyin",
+      "path": "common/pypinyin-0.55.0-py2.py3-none-any.whl",
+      "sha256": "d53b1e8ad2cdb815fb2cb604ed3123372f5a28c6f447571244aca36fc62a286f",
+      "source": {
+        "filename": "pypinyin-0.55.0-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "d53b1e8ad2cdb815fb2cb604ed3123372f5a28c6f447571244aca36fc62a286f",
+        "url": "https://files.pythonhosted.org/packages/b9/7b/4cabc76fcc21c3c7d5c671d8783984d30ac9d3bb387c4ba784fca3cdfa3a/pypinyin-0.55.0-py2.py3-none-any.whl"
+      },
+      "version": "0.55.0"
     },
     {
       "abi": "common",
@@ -243,6 +858,141 @@
     },
     {
       "abi": "common",
+      "filename": "rich-15.0.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "rich",
+      "path": "common/rich-15.0.0-py3-none-any.whl",
+      "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
+      "source": {
+        "filename": "rich-15.0.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
+        "url": "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl"
+      },
+      "version": "15.0.0"
+    },
+    {
+      "abi": "common",
+      "filename": "shellingham-1.5.4-py2.py3-none-any.whl",
+      "license": "ISC",
+      "package": "shellingham",
+      "path": "common/shellingham-1.5.4-py2.py3-none-any.whl",
+      "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686",
+      "source": {
+        "filename": "shellingham-1.5.4-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686",
+        "url": "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl"
+      },
+      "version": "1.5.4"
+    },
+    {
+      "abi": "common",
+      "filename": "smart_open-8.0.1-py3-none-any.whl",
+      "license": "MIT",
+      "package": "smart-open",
+      "path": "common/smart_open-8.0.1-py3-none-any.whl",
+      "sha256": "3e97f90e92a952cb57863dfe132082c400a52eeeb27c067692fb51dbcc5b0089",
+      "source": {
+        "filename": "smart_open-8.0.1-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "3e97f90e92a952cb57863dfe132082c400a52eeeb27c067692fb51dbcc5b0089",
+        "url": "https://files.pythonhosted.org/packages/c3/96/325b8c507ccecc50421fecc0345a502ee6e4a44785af3c4e6ecbadad624a/smart_open-8.0.1-py3-none-any.whl"
+      },
+      "version": "8.0.1"
+    },
+    {
+      "abi": "common",
+      "filename": "spacy_legacy-3.0.12-py2.py3-none-any.whl",
+      "license": "MIT",
+      "package": "spacy-legacy",
+      "path": "common/spacy_legacy-3.0.12-py2.py3-none-any.whl",
+      "sha256": "476e3bd0d05f8c339ed60f40986c07387c0a71479245d6d0f4298dbd52cda55f",
+      "source": {
+        "filename": "spacy_legacy-3.0.12-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "476e3bd0d05f8c339ed60f40986c07387c0a71479245d6d0f4298dbd52cda55f",
+        "url": "https://files.pythonhosted.org/packages/c3/55/12e842c70ff8828e34e543a2c7176dac4da006ca6901c9e8b43efab8bc6b/spacy_legacy-3.0.12-py2.py3-none-any.whl"
+      },
+      "version": "3.0.12"
+    },
+    {
+      "abi": "common",
+      "filename": "spacy_loggers-1.0.5-py3-none-any.whl",
+      "license": "MIT",
+      "package": "spacy-loggers",
+      "path": "common/spacy_loggers-1.0.5-py3-none-any.whl",
+      "sha256": "196284c9c446cc0cdb944005384270d775fdeaf4f494d8e269466cfa497ef645",
+      "source": {
+        "filename": "spacy_loggers-1.0.5-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "196284c9c446cc0cdb944005384270d775fdeaf4f494d8e269466cfa497ef645",
+        "url": "https://files.pythonhosted.org/packages/33/78/d1a1a026ef3af911159398c939b1509d5c36fe524c7b644f34a5146c4e16/spacy_loggers-1.0.5-py3-none-any.whl"
+      },
+      "version": "1.0.5"
+    },
+    {
+      "abi": "common",
+      "filename": "tqdm-4.68.3-py3-none-any.whl",
+      "license": "MPL-2.0 AND MIT",
+      "package": "tqdm",
+      "path": "common/tqdm-4.68.3-py3-none-any.whl",
+      "sha256": "39832cc2def2789a6f29df83f172db7416cea70052c0907a57801c5f2fdccb03",
+      "source": {
+        "filename": "tqdm-4.68.3-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "39832cc2def2789a6f29df83f172db7416cea70052c0907a57801c5f2fdccb03",
+        "url": "https://files.pythonhosted.org/packages/d8/8e/bb97bb0c71802080bfc8952937d174e49cfc50de5c951dd47b2496f0dcdb/tqdm-4.68.3-py3-none-any.whl"
+      },
+      "version": "4.68.3"
+    },
+    {
+      "abi": "common",
+      "filename": "typer-0.26.7-py3-none-any.whl",
+      "license": "MIT",
+      "package": "typer",
+      "path": "common/typer-0.26.7-py3-none-any.whl",
+      "sha256": "5c87cfbc5d34491c5346ebf49c23e18d56ccb863268d3a8d592b26087c2f5e58",
+      "source": {
+        "filename": "typer-0.26.7-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "5c87cfbc5d34491c5346ebf49c23e18d56ccb863268d3a8d592b26087c2f5e58",
+        "url": "https://files.pythonhosted.org/packages/24/25/2201973529af2c954de0bb725323c3aaed6d7f0ceee8f550dec9185df013/typer-0.26.7-py3-none-any.whl"
+      },
+      "version": "0.26.7"
+    },
+    {
+      "abi": "common",
+      "filename": "typing_extensions-4.15.0-py3-none-any.whl",
+      "license": "PSF-2.0",
+      "package": "typing-extensions",
+      "path": "common/typing_extensions-4.15.0-py3-none-any.whl",
+      "sha256": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+      "source": {
+        "filename": "typing_extensions-4.15.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+        "url": "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl"
+      },
+      "version": "4.15.0"
+    },
+    {
+      "abi": "common",
+      "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+      "license": "MIT",
+      "package": "typing-inspection",
+      "path": "common/typing_inspection-0.4.4-py3-none-any.whl",
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "source": {
+        "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+        "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl"
+      },
+      "version": "0.4.4"
+    },
+    {
+      "abi": "common",
       "filename": "tzdata-2026.3-py2.py3-none-any.whl",
       "license": "Apache-2.0",
       "package": "tzdata",
@@ -258,6 +1008,21 @@
     },
     {
       "abi": "common",
+      "filename": "underthesea-9.5.0-py3-none-any.whl",
+      "license": "Apache-2.0",
+      "package": "underthesea",
+      "path": "common/underthesea-9.5.0-py3-none-any.whl",
+      "sha256": "5bb9e203fb6ba9724f2e4123212d8ecff6452da2f159cd2e9728655240dfbfe4",
+      "source": {
+        "filename": "underthesea-9.5.0-py3-none-any.whl",
+        "kind": "repacked-wheel",
+        "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+        "url": "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl"
+      },
+      "version": "9.5.0"
+    },
+    {
+      "abi": "common",
       "filename": "urllib3-2.7.0-py3-none-any.whl",
       "license": "MIT",
       "package": "urllib3",
@@ -270,6 +1035,81 @@
         "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl"
       },
       "version": "2.7.0"
+    },
+    {
+      "abi": "common",
+      "filename": "wasabi-1.1.3-py3-none-any.whl",
+      "license": "MIT",
+      "package": "wasabi",
+      "path": "common/wasabi-1.1.3-py3-none-any.whl",
+      "sha256": "f76e16e8f7e79f8c4c8be49b4024ac725713ab10cd7f19350ad18a8e3f71728c",
+      "source": {
+        "filename": "wasabi-1.1.3-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "f76e16e8f7e79f8c4c8be49b4024ac725713ab10cd7f19350ad18a8e3f71728c",
+        "url": "https://files.pythonhosted.org/packages/06/7c/34330a89da55610daa5f245ddce5aab81244321101614751e7537f125133/wasabi-1.1.3-py3-none-any.whl"
+      },
+      "version": "1.1.3"
+    },
+    {
+      "abi": "common",
+      "filename": "weasel-1.0.0-py3-none-any.whl",
+      "license": "MIT",
+      "package": "weasel",
+      "path": "common/weasel-1.0.0-py3-none-any.whl",
+      "sha256": "89518acee027f49d743126c3502d35e6dd14f5768be5c37c9af47c171b6005cc",
+      "source": {
+        "filename": "weasel-1.0.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "89518acee027f49d743126c3502d35e6dd14f5768be5c37c9af47c171b6005cc",
+        "url": "https://files.pythonhosted.org/packages/0a/07/57ebf7a6798b016c064bd0ca81b4c6a99daa4dc377b898bc7b41eb6b5af0/weasel-1.0.0-py3-none-any.whl"
+      },
+      "version": "1.0.0"
+    },
+    {
+      "abi": "common",
+      "filename": "wrapt-2.4.1-py3-none-any.whl",
+      "license": "BSD-2-Clause",
+      "package": "wrapt",
+      "path": "common/wrapt-2.4.1-py3-none-any.whl",
+      "sha256": "1e84ec5d89a0a07a0ef6bcd343f5c8ecdc95601d71de3058cdc63274e86c193c",
+      "source": {
+        "filename": "wrapt-2.4.1-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "1e84ec5d89a0a07a0ef6bcd343f5c8ecdc95601d71de3058cdc63274e86c193c",
+        "url": "https://files.pythonhosted.org/packages/4f/a2/edcfc8d9a30375791b775715f8501364588f65b494ec4f6930568a19e765/wrapt-2.4.1-py3-none-any.whl"
+      },
+      "version": "2.4.1"
+    },
+    {
+      "abi": "common",
+      "filename": "zeyrek-0.1.3-py2.py3-none-any.whl",
+      "license": "MIT",
+      "package": "zeyrek",
+      "path": "common/zeyrek-0.1.3-py2.py3-none-any.whl",
+      "sha256": "23649bb49322a52d1e94959029b047fa4037bc540762819feb1096aa976b25b5",
+      "source": {
+        "filename": "zeyrek-0.1.3-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "23649bb49322a52d1e94959029b047fa4037bc540762819feb1096aa976b25b5",
+        "url": "https://files.pythonhosted.org/packages/7f/5b/76970fab035d2e2649ba06af037c394b9690d0e07a8faf53817ccccb3951/zeyrek-0.1.3-py2.py3-none-any.whl"
+      },
+      "version": "0.1.3"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "blis-1.3.3-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "BSD-3-Clause",
+      "package": "blis",
+      "path": "x86_64/blis-1.3.3-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "7dbb7f270160a843a56475003280072ea92cb1413f8c56f96a6618055d0134b8",
+      "source": {
+        "filename": "blis-1.3.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "034d4560ff3cc43e8aa37e188451b0440e3261d989bb8a42ceee865607715ecd",
+        "url": "https://files.pythonhosted.org/packages/d0/d0/d8cc8c9a4488a787e7fa430f6055e5bd1ddb22c340a751d9e901b82e2efe/blis-1.3.3.tar.gz"
+      },
+      "version": "1.3.3"
     },
     {
       "abi": "x86_64",
@@ -307,7 +1147,7 @@
       "license": "BSD-3-Clause AND IJG AND Zlib",
       "package": "chaquopy-libjpeg",
       "path": "x86_64/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_x86_64.whl",
-      "sha256": "467b22c9ccdef80b44dbbc2744a02da414b5721e12f7da8809c48a643609531a",
+      "sha256": "b41778ce9f5aa38a80c30eb6120b2d18804bd826df6d2edd2ae3ec55a5f02483",
       "source": {
         "filename": "libjpeg-turbo-1.5.3.tar.gz",
         "kind": "runtime-source",
@@ -378,6 +1218,21 @@
     },
     {
       "abi": "x86_64",
+      "filename": "cymem-2.0.13-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "cymem",
+      "path": "x86_64/cymem-2.0.13-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "70ab8df57c7b07903d597207731633429d3667e6016901e080fc9f6bcabe7b6e",
+      "source": {
+        "filename": "cymem-2.0.13.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "1c91a92ae8c7104275ac26bd4d29b08ccd3e7faff5893d3858cb6fadf1bc1588",
+        "url": "https://files.pythonhosted.org/packages/c0/8f/2f0fbb32535c3731b7c2974c569fb9325e0a38ed5565a08e1139a3b71e82/cymem-2.0.13.tar.gz"
+      },
+      "version": "2.0.13"
+    },
+    {
+      "abi": "x86_64",
       "filename": "fugashi-1.5.2-0-cp312-cp312-android_26_x86_64.whl",
       "license": "MIT AND BSD-3-Clause",
       "package": "fugashi",
@@ -390,6 +1245,21 @@
         "url": "https://files.pythonhosted.org/packages/source/f/fugashi/fugashi-1.5.2.tar.gz"
       },
       "version": "1.5.2"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "kiwipiepy-0.23.2-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "LGPL-3.0-or-later AND BSD-2-Clause AND Apache-2.0 AND MIT AND MPL-2.0",
+      "package": "kiwipiepy",
+      "path": "x86_64/kiwipiepy-0.23.2-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "9f7463f719e4babc1fe7ef76b5e80b4ddcd5a9c4435c0c39b1db33702295e8ae",
+      "source": {
+        "filename": "kiwipiepy-0.23.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "632d627531ceaf4b55bd5c01d50eebdae0253c79c2c8a3f682f2e68492f36198",
+        "url": "https://files.pythonhosted.org/packages/c6/3f/b317dfd0085341a8e2b24fa8eddd7e709b07a91e6bcf20b8d8952ca26a03/kiwipiepy-0.23.2.tar.gz"
+      },
+      "version": "0.23.2"
     },
     {
       "abi": "x86_64",
@@ -408,6 +1278,66 @@
     },
     {
       "abi": "x86_64",
+      "filename": "markupsafe-3.0.3-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "BSD-3-Clause",
+      "package": "markupsafe",
+      "path": "x86_64/markupsafe-3.0.3-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "b82d03192a514b0c8332217aca87788ffd1181adbfcf94dd9bd4638636b5ae66",
+      "source": {
+        "filename": "markupsafe-3.0.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698",
+        "url": "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz"
+      },
+      "version": "3.0.3"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "murmurhash-1.0.15-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "murmurhash",
+      "path": "x86_64/murmurhash-1.0.15-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "a743ec015da32cac9d83406573d7c098ce2e0c8aeebb946ec8b31556d1370dd8",
+      "source": {
+        "filename": "murmurhash-1.0.15.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "58e2b27b7847f9e2a6edf10b47a8c8dd70a4705f45dccb7bf76aeadacf56ba01",
+        "url": "https://files.pythonhosted.org/packages/23/2e/88c147931ea9725d634840d538622e94122bceaf346233349b7b5c62964b/murmurhash-1.0.15.tar.gz"
+      },
+      "version": "1.0.15"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "numpy-2.5.0-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+      "package": "numpy",
+      "path": "x86_64/numpy-2.5.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "dca029917ca39559bfa4a61b2a56e14e7a07df44fd286881ec6fa308e53fcdff",
+      "source": {
+        "filename": "numpy-2.5.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "5a129578019311b6e56bdd714250f19b518f7dceeeb8d1af5490f4942d3f891c",
+        "url": "https://files.pythonhosted.org/packages/e7/05/3d27272d30698dc0ecb7fdfaa41ad70303b444f81722bb99bce1d818638a/numpy-2.5.0.tar.gz"
+      },
+      "version": "2.5.0"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "opencc-1.4.2-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "Apache-2.0 AND (BSD-2-Clause OR LGPL-2.1-or-later) AND BSD-3-Clause AND MIT",
+      "package": "opencc",
+      "path": "x86_64/opencc-1.4.2-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "7c703f989aaaa8e8d50b65f20d6c247f9c404a12e8fac79dcdc13b84414518ae",
+      "source": {
+        "filename": "opencc-1.4.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "47977905f131d7d9cfcec29fba5d841154907e1da73103105a4a68744e0f4f1a",
+        "url": "https://files.pythonhosted.org/packages/e0/12/09e62f051af1de7ca84be1d69154bd0514416ef72237e2081584cc268bc9/opencc-1.4.2.tar.gz"
+      },
+      "version": "1.4.2"
+    },
+    {
+      "abi": "x86_64",
       "filename": "pillow-12.2.0-0-cp312-cp312-android_26_x86_64.whl",
       "license": "MIT-CMU",
       "package": "pillow",
@@ -420,6 +1350,141 @@
         "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz"
       },
       "version": "12.2.0"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "preshed-3.0.13-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "preshed",
+      "path": "x86_64/preshed-3.0.13-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "c7c968adfdcfae567b9cea310f7d73021603331c0fffcd513573df503dce7b6b",
+      "source": {
+        "filename": "preshed-3.0.13.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "d75f718bbfd97e992f7827e0fa7faf6a91bdd9c922d5baa4b50d62731396cb89",
+        "url": "https://files.pythonhosted.org/packages/43/75/fe6b7bbd0dea530a001b0e24c331b21a0be2786e402abf3c57f5dce43d4b/preshed-3.0.13.tar.gz"
+      },
+      "version": "3.0.13"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "pycantonese-5.0.0-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "pycantonese",
+      "path": "x86_64/pycantonese-5.0.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "35616f1f640677496da9310c7044e21da74582b00c501e12014f1b6cf21460b2",
+      "source": {
+        "filename": "pycantonese-5.0.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "8655ba3cd891b528d6b070245abed55b20a08d673f1056fcf9afad0adbc47c1d",
+        "url": "https://files.pythonhosted.org/packages/09/09/32e8000e39eb9ff034e1d55a86536a14abab90f2f4df176129fd90c43c29/pycantonese-5.0.0.tar.gz"
+      },
+      "version": "5.0.0"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "pydantic_core-2.46.5-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "pydantic-core",
+      "path": "x86_64/pydantic_core-2.46.5-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "2f3569047ca8887265cdfd75d51c0f1f55ea52c7a432439b41a3982108e1b706",
+      "source": {
+        "filename": "pydantic_core-2.46.5.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "10416c15b8839ecc4ef4d0885da76da6fd0f67333a0eb8aff6d93c4b8f2910fc",
+        "url": "https://files.pythonhosted.org/packages/af/f9/8a06bea35ef8daf588f707784c973a7046e0034c8d8cfb08828eeffb8b75/pydantic_core-2.46.5.tar.gz"
+      },
+      "version": "2.46.5"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "regex-2026.9.10-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "Apache-2.0 AND CNRI-Python",
+      "package": "regex",
+      "path": "x86_64/regex-2026.9.10-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "f2b6ee5a273e6c55761192544ff8e941062bb270ffe3b9e1e89690a9e07a4444",
+      "source": {
+        "filename": "regex-2026.9.10.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "1e321e2c84f0e52c457f5ea5944f796d6e8e09cb99738ea98dcc1bfe402a128d",
+        "url": "https://files.pythonhosted.org/packages/b9/5c/f403115361de25809e8f785686ec7096e30fef73be9ae35aa51da4e80abb/regex-2026.9.10.tar.gz"
+      },
+      "version": "2026.9.10"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "rustling-0.9.0-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "rustling",
+      "path": "x86_64/rustling-0.9.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "455634380291ff033eb4f0daffcfa3510075f5d04708d2f6da783e0ee08fda56",
+      "source": {
+        "filename": "rustling-0.9.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "c698de9a650d6675673f1ead4743a86eb6de0d42c82be479f036a395bf4f27c6",
+        "url": "https://files.pythonhosted.org/packages/98/7c/c7324e7d463e31d313160e8f54273e3729482b3851ac344867612cdbc5f1/rustling-0.9.0.tar.gz"
+      },
+      "version": "0.9.0"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "spacy-3.8.14-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "spacy",
+      "path": "x86_64/spacy-3.8.14-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "7b3c1b7aed9908c63f536eed699bef94e64a5cfe62a30aeb2b9e0f65cd4e6fe8",
+      "source": {
+        "filename": "spaCy-release-v3.8.14.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "ad0ea4e15153de6703a1a77f22c34bdbf105b9362ccde4f4789e02dc9abcb538",
+        "url": "https://github.com/explosion/spaCy/archive/refs/tags/release-v3.8.14.tar.gz"
+      },
+      "version": "3.8.14"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "srsly-2.5.3-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT AND BSD-3-Clause AND Apache-2.0",
+      "package": "srsly",
+      "path": "x86_64/srsly-2.5.3-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "cad77b263f79be252d23cdc9b1d0d2168d80018200e073aca6f522b3cd1358a9",
+      "source": {
+        "filename": "srsly-2.5.3.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "08f98dbecbff3a31466c4ae7c833131f59d3655a0ad8ac749e6e2c149e2b0680",
+        "url": "https://files.pythonhosted.org/packages/2b/db/f794f219a6c788b881252d2536a8c4a97d2bdaadc690391e1cb53d123d71/srsly-2.5.3.tar.gz"
+      },
+      "version": "2.5.3"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "thinc-8.3.13-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "thinc",
+      "path": "x86_64/thinc-8.3.13-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "bdc38113467b4b0e5128231a077d58899809a33e34d61ff190effcf84d24ea6a",
+      "source": {
+        "filename": "thinc-8.3.13.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "68e658549fc1eb3ff92aed5147fcbb9c15d6e9cc0e623b4d0998d16522ffb4f9",
+        "url": "https://files.pythonhosted.org/packages/13/46/76df95f2c327f9a9cef30c1523bf285627897097163584dcf5f77b2ebce2/thinc-8.3.13.tar.gz"
+      },
+      "version": "8.3.13"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "underthesea_core-3.3.2-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "Apache-2.0",
+      "package": "underthesea-core",
+      "path": "x86_64/underthesea_core-3.3.2-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "eabc2b7fc24e504e3c66e227fc5dbe3b6b2e92db05d603aec543f1d1655f447e",
+      "source": {
+        "filename": "underthesea_core-3.3.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "7019f8f6d13f14556c032c63a9e5f77e107426654edce5e92d6513bb8ee8141a",
+        "url": "https://files.pythonhosted.org/packages/f1/62/a67e1ce6a0a7cf5a050d5debe3f4e1dad511bdf625fc4b169721c27da4be/underthesea_core-3.3.2.tar.gz"
+      },
+      "version": "3.3.2"
     }
   ]
 }

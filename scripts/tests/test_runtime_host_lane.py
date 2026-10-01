@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(21, len(records))
+        self.assertEqual(80, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -31,13 +31,25 @@ class RuntimeHostLaneTests(unittest.TestCase):
             {
                 "certifi": "2026.6.17",
                 "charset-normalizer": "3.4.7",
+                "cloudpickle": "3.1.2",
                 "idna": "3.18",
+                "jieba": "0.42.1",
+                "joblib": "1.6.0",
+                "kiwipiepy": "0.23.2",
+                "kiwipiepy-model": "0.23.0",
                 "lxml": "6.1.1",
+                "opencc": "1.4.2",
                 "pillow": "12.2.0",
+                "pycantonese": "5.0.0",
+                "pypinyin": "0.55.0",
                 "pysubs2": "1.8.1",
                 "pythainlp": "5.3.7",
                 "requests": "2.34.2",
+                "rustling": "0.9.0",
+                "tqdm": "4.68.3",
                 "tzdata": "2026.3",
+                "underthesea": "9.5.0",
+                "underthesea-core": "3.3.2",
                 "urllib3": "2.7.0",
             },
             {
@@ -45,13 +57,25 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 for name in (
                     "certifi",
                     "charset-normalizer",
+                    "cloudpickle",
                     "idna",
+                    "jieba",
+                    "joblib",
+                    "kiwipiepy",
+                    "kiwipiepy-model",
                     "lxml",
+                    "opencc",
                     "pillow",
+                    "pycantonese",
+                    "pypinyin",
                     "pysubs2",
                     "pythainlp",
                     "requests",
+                    "rustling",
+                    "tqdm",
                     "tzdata",
+                    "underthesea",
+                    "underthesea-core",
                     "urllib3",
                 )
             },
@@ -71,6 +95,10 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertIn('"$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" -m venv', provision)
         self.assertIn("--only-binary=:all:", provision)
         self.assertIn("--require-hashes", provision)
+        # The model is published as an sdist alone; nothing else may build from source.
+        self.assertEqual(["--no-binary=kiwipiepy-model"], re.findall(r"--no-binary\S*", provision))
+        # jieba ships no upstream wheel; its lock hash is the vendored repacked wheel's.
+        self.assertIn('--find-links "$REPO_ROOT/app/wheels/common"', provision)
         self.assertIn("runtime-host-tests/bin/python", health)
         self.assertIn("check-python-runtime.py", health)
         self.assertNotIn("runtime-host-tests/bin", environment)
@@ -96,9 +124,26 @@ class RuntimeHostLaneTests(unittest.TestCase):
     def test_current_runtime_environment_reuses_full_identity_probe(self) -> None:
         provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
         self.assertGreaterEqual(provision.count("verify_runtime_environment"), 3)
-        self.assertIn("pip check || return 1", provision)
+        # pip check still gates the venv; only the dictionaries pymorphy3 declares may be missing.
+        self.assertIn('-m pip check 2>&1)"', provision)
+        self.assertIn('|| [[ "$check_output" == "$ALLOWED_MISSING_REQUIREMENT" ]]', provision)
+        self.assertIn("|| { printf '%s\\n' \"$check_output\" >&2; return 1; }", provision)
+        self.assertIn("    --no-deps \\\n", provision)
         self.assertIn("if verify_runtime_environment", provision)
         self.assertIn("failed verification; rebuilding it", provision)
+
+    def test_health_allows_only_the_same_missing_requirement(self) -> None:
+        provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
+        health = (REPO_ROOT / "scripts/health.sh").read_text(encoding="utf-8")
+        allowed = re.compile(r'^readonly ALLOWED_MISSING_REQUIREMENT="[^"\n]+"$', re.MULTILINE)
+        provision_allowance = allowed.findall(provision)
+        self.assertEqual(len(provision_allowance), 1)
+        # A bare pip check under set -e fails the gate on the dictionaries Android downloads.
+        self.assertEqual(allowed.findall(health), provision_allowance)
+        self.assertNotRegex(health, r'(?m)^PIP_NO_CACHE_DIR=1 "\$runtime_host_python" -m pip check$')
+        self.assertIn('-m pip check 2>&1)"', health)
+        self.assertIn('|| [[ "$runtime_pip_check" == "$ALLOWED_MISSING_REQUIREMENT" ]]', health)
+        self.assertIn('|| fail "runtime host test environment fails pip check:', health)
 
 
 if __name__ == "__main__":

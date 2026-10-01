@@ -42,7 +42,17 @@ LANGUAGE_UNSUPPORTED = "language_unsupported"
 
 _LANGUAGE_CODE_RE = re.compile(r"^[a-z]{2,3}$")
 
-#: The pack components Android downloads, as ``(language, import_name)``. Data
+#: Models Android downloads apart from a pack component whose code ships in the
+#: APK: the APK wheel is repacked without them, and an engine override loads them
+#: by path. ``(language, import name) -> the vendored component they come from``;
+#: the catalog entry (``tools/language-data/pins.json`` ``split``) says which
+#: members of that component's own pinned archive they are.
+SPLIT_DATA_COMPONENTS: Mapping[tuple[str, str], str] = {
+    ("vi", "underthesea_models"): "underthesea",  # the two CRF models
+    ("yue", "pycantonese_models"): "pycantonese",  # the segmenter and tagger models
+}
+
+#: The language data Android downloads, as ``(language, import_name)``. Data
 #: only (decision 2): every other component a vendored pack declares is code,
 #: which ships in the APK or not at all. ``test_languages`` pins the split, so a
 #: newly vendored pack fails there until each of its components is classified.
@@ -50,6 +60,33 @@ DOWNLOADABLE_DATA_COMPONENTS: frozenset[tuple[str, str]] = frozenset(
     {
         ("ar", "calima_msa"),  # the CAMeL morphology database (a plain zip)
         ("fa", "hazm_data"),  # hazm's five .dat tables (the wheel's data/ directory only)
+        # spaCy pipelines, loaded by path without their package __init__ (languages/_spaced/android_models)
+        ("en", "en_core_web_sm"),
+        ("ca", "ca_core_news_sm"),
+        ("de", "de_core_news_sm"),
+        ("pt", "pt_core_news_sm"),
+        ("fr", "fr_core_news_sm"),
+        ("es", "es_core_news_sm"),
+        ("it", "it_core_news_sm"),
+        ("nl", "nl_core_news_sm"),
+        ("nb", "nb_core_news_sm"),
+        ("ro", "ro_core_news_sm"),
+        ("el", "el_core_news_sm"),
+        ("fi", "fi_core_news_sm"),
+        ("hu", "hu_core_news_md"),
+        ("hr", "hr_core_news_sm"),
+        ("sv", "sv_core_news_sm"),
+        ("pl", "pl_core_news_sm"),
+        ("lt", "lt_core_news_sm"),
+        ("da", "da_core_news_sm"),
+        ("sl", "sl_core_news_sm"),
+        ("ru", "ru_core_news_sm"),
+        ("uk", "uk_core_news_sm"),
+        # pymorphy3's dictionaries (data/ only), passed to the lemmatizer by path
+        ("ru", "pymorphy3_dicts_ru"),
+        ("uk", "pymorphy3_dicts_uk"),
+        ("ko", "kiwipiepy_model"),  # the Kiwi model files (the sdist minus its two .py files)
+        *SPLIT_DATA_COMPONENTS,
     }
 )
 
@@ -153,6 +190,25 @@ def profile_parser(config: object) -> Any:
     return get_profile(language).create_parser(config)
 
 
+def release_other_taggers(language: str) -> None:
+    """Evict every cached tagger except *language*'s, before work in *language* builds its own.
+
+    Desktop releases the outgoing language's engine on every durable switch
+    (``language_switch.commit_language_change``, S23: Arabic's holds ~400 MB). An
+    Android switch only saves settings, so the bridge does it where a language's
+    tagger is about to be built: run, cue-view and lemmatisation admission. As on
+    desktop, a parser still holding a tagger keeps it alive until it lets go, ja's
+    shared tagger outlives its cache entry, and module-level engine state (jieba's
+    dictionary, underthesea's and pycantonese's models) is not freed.
+    """
+
+    from anki_miner.languages import tagger_provider
+
+    released = [code for code in tuple(tagger_provider._TAGGERS) if code != language and tagger_provider.evict(code)]
+    if released:
+        logger.info("Released the cached taggers of %s before %s work", ",".join(released), language)
+
+
 def config_language(config: object) -> str:
     """The mining language a mapped engine config carries (``"ja"`` for test doubles)."""
 
@@ -196,22 +252,36 @@ def requires_unidic(code: str) -> bool:
     return code == JAPANESE
 
 
-def speech_language(profile: Any) -> str:
-    """The BCP-47 tag Android TextToSpeech speaks *profile*'s text in.
+#: The voice a regional variety speaks with, by profile code and ``script_variant``.
+#: Desktop's ``pt_gtts_lang`` picks Google's European voice (``pt-PT``) for the
+#: ``pt`` variety and its Brazilian one (``pt``) otherwise.
+_REGIONAL_SPEECH_TAGS: Mapping[str, Mapping[str, str]] = {"pt": {"br": "pt-BR", "pt": "pt-PT"}}
 
-    The profile code itself for every vendored language. A language whose voice
-    depends on its regional variety (pt) or script (zh) has to extend this when
-    it is vendored: desktop resolves those through ``AudioDefaults.gtts_lang``,
-    whose codes are Google's (``iw`` for Hebrew), not BCP-47.
+
+def speech_language(profile: Any) -> str:
+    """The BCP-47 language Android TextToSpeech speaks *profile*'s text in.
+
+    The profile code itself for every vendored language; a run narrows a regional
+    variety's voice through :func:`speech_language_for`. Desktop resolves voices
+    through ``AudioDefaults.gtts_lang``, whose codes are Google's (``iw`` for
+    Hebrew), not BCP-47. zh needs no region: desktop speaks both scripts with one
+    Mandarin voice (``gtts_lang`` ``zh-CN``), and ``zh`` is Android's Mandarin
+    locale (``Locale.CHINESE``). yue is Android's Cantonese language (``yue-HK``
+    voices).
     """
 
     return str(profile.code)
 
 
-def speech_language_for(language: str) -> str:
-    """:func:`speech_language` for a validated code; Japanese needs no profile import."""
+def speech_language_for(language: str, script_variant: str = "") -> str:
+    """The run's voice tag for a validated code: :func:`speech_language`, narrowed
+    to the variety's region where the voice depends on it (``pt-PT``). Japanese
+    needs no profile import."""
 
-    return JAPANESE if language == JAPANESE else speech_language(get_profile(language))
+    if language == JAPANESE:
+        return JAPANESE
+    code = speech_language(get_profile(language))
+    return _REGIONAL_SPEECH_TAGS.get(code, {}).get(script_variant, code)
 
 
 def _missing_components_are_data(code: str) -> bool:
@@ -235,6 +305,22 @@ def _missing_components_are_data(code: str) -> bool:
     return bool(missing) and all((code, name) in DOWNLOADABLE_DATA_COMPONENTS for name in missing)
 
 
+def _missing_split_data(code: str) -> list[str]:
+    """The split models *code* needs that are not installed.
+
+    The engine's own probe cannot see them: it finds the component's code
+    importable from the APK and answers that the language can mine.
+    """
+
+    from .language_data import data_component_path
+
+    return [
+        name
+        for language, name in sorted(SPLIT_DATA_COMPONENTS)
+        if language == code and data_component_path(language, name) is None
+    ]
+
+
 def unavailable_reason_code(profile: Any) -> str | None:
     """Why *profile* cannot mine on this device, as an Android reason code; None when it can.
 
@@ -245,9 +331,13 @@ def unavailable_reason_code(profile: Any) -> str | None:
 
     probe = profile.unavailable_reason
     reason = probe() if probe is not None else None
-    if not reason:
-        return None
-    code = LANGUAGE_DATA_REQUIRED if _missing_components_are_data(profile.code) else LANGUAGE_UNSUPPORTED
+    if reason:
+        code = LANGUAGE_DATA_REQUIRED if _missing_components_are_data(profile.code) else LANGUAGE_UNSUPPORTED
+    else:
+        missing = _missing_split_data(profile.code)
+        if not missing:
+            return None
+        code, reason = LANGUAGE_DATA_REQUIRED, f"missing language data: {', '.join(missing)}"
     logger.info(
         "language_unavailable outcome=skip language=%s reason_code=%s detail=%s",
         profile.code,

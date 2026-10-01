@@ -6,12 +6,14 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 
 ### Added
 
+- **Korean mining.** The Kiwi tokenizer ships in the app; its 88 MB model and the recommended KRDICT Korean-English dictionary download for the language.
 - **Translation subtitles (Video tab).** With Settings -> Sentences -> Secondary subtitles on, a second subtitle file and its timing offset fill the Sentence translation field mapped under Settings -> Cards & Anki.
 - **Frequency band minimum (Settings -> Word filters).** "Minimum frequency rank" skips words more common than it, and "Include words missing from the frequency list" keeps unranked words while either end is set.
 - **"Treat kana spellings of known words as known" (Settings -> Word filters).** On by default, as before; it can now be turned off.
 - **"Mine full sentences across subtitle lines" (Settings -> Sentences).** Joins subtitle lines that do not end a sentence, so the card gets the whole sentence. Off by default; Reading sources ignore it.
 - **"Create cards in order of appearance" (Settings -> Cards & Anki).** Cards follow the order the words first appear even with "Always mine whitelisted words" on, which otherwise puts whitelisted words first.
 - **Mining in Hebrew, Indonesian, Arabic, Persian and Thai (Settings -> Language).** Each language keeps its own dictionaries, filters, deck and card fields. Arabic and Persian offer "Download and switch" for their language data. After a switch the Cards & Anki tab opens on the note type to pick, and the field map lists the language's own fields, such as Hebrew's transliteration.
+- **Mining in Turkish, English, Catalan, German, Portuguese, French, Spanish, Italian, Dutch, Norwegian Bokmål, Romanian, Greek, Finnish, Hungarian, Croatian, Swedish, Polish, Lithuanian, Danish, Slovenian, Russian, Ukrainian, Vietnamese, Cantonese and Chinese (Settings -> Language).** Each has recommended dictionaries and frequency lists; all but Turkish and Chinese offer "Download and switch" for their language data.
 - **Hebrew, Arabic and Persian text reads right to left in curation, definitions and pasted Reading text.**
 - **Recommended dictionaries and frequency lists for Hebrew, Arabic, Persian, Indonesian and Thai (Settings -> Resources).**
 - **Outside Japanese, words no audio pack has are spoken by the device's offline text-to-speech voice (Settings -> Resources -> Word audio).** The card shows whether the device has a voice for the language.
@@ -35,6 +37,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Importing a dictionary whose own data names another language says so (Settings -> Resources).** It is still imported.
 - **Jisho is offered only while mining Japanese.** A settings backup cannot turn it on for another language.
 - **Japanese words, sentences and definitions in curation and Reading use Japanese character shapes.** On a phone set to another language some kanji used to show their Chinese forms.
+- **The APK is about twice the size, roughly 110 MB.** The new languages' tokenizers ship in the app; their models and dictionaries still download only for the language you pick.
 
 ### Removed
 

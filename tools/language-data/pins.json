@@ -15,6 +15,192 @@
         ]
       }
     },
+    "ca/ca_core_news_sm": {
+      "data": {
+        "sha256": "e214211aa8da91c24ebdc453c2aa5f54fac09f44e01e65bcbdd3b0a5cb94d809",
+        "sizeBytes": 19566606,
+        "displayName": "spaCy ca_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "ca_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "GNU GPL 3.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Catalan AnCora v2.8",
+            "copyright": "Martínez Alonso, Héctor; Pascual, Elena; Zeman, Daniel",
+            "license": "GNU GPL 3.0",
+            "url": "https://github.com/UniversalDependencies/UD_Catalan-AnCora"
+          },
+          {
+            "name": "UD Catalan AnCora v2.8 + NER v3.2.9",
+            "copyright": "Carlos Rodríguez-Penagos and Carme Armentano-Oller",
+            "license": "CC BY 4.0",
+            "url": "https://github.com/TeMU-BSC/spacy/releases/tag/3.2.9"
+          },
+          {
+            "name": "Catalan Lemmatizer",
+            "copyright": "Text Mining Unit, Barcelona Supercomputing Center",
+            "license": "CC0",
+            "url": "https://github.com/explosion/spacy-lookups-data"
+          }
+        ]
+      }
+    },
+    "da/da_core_news_sm": {
+      "data": {
+        "sha256": "8caeb4dc26f56de8abcf70399b202a0b2223d38664b1a59f1cb8db0000808bc9",
+        "sizeBytes": 12378278,
+        "displayName": "spaCy da_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "da_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Danish DDT v2.8",
+            "copyright": "Johannsen, Anders; Martínez Alonso, Héctor; Plank, Barbara",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Danish-DDT"
+          },
+          {
+            "name": "DaNE",
+            "copyright": "Rasmus Hvingelby, Amalie B. Pauli, Maria Barrett, Christina Rosted, Lasse M. Lidegaard, Anders Søgaard",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/alexandrainst/danlp/blob/master/docs/datasets.md"
+          }
+        ]
+      }
+    },
+    "de/de_core_news_sm": {
+      "data": {
+        "sha256": "fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7",
+        "sizeBytes": 14639490,
+        "displayName": "spaCy de_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "de_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "TIGER Corpus",
+            "copyright": "Brants, Sabine, Stefanie Dipper, Peter Eisenberg, Silvia Hansen, Esther König, Wolfgang Lezius, Christian Rohrer, George Smith, and Hans Uszkoreit",
+            "license": "commercial (licensed by Explosion)",
+            "url": "https://www.ims.uni-stuttgart.de/forschung/ressourcen/korpora/tiger.html"
+          },
+          {
+            "name": "Tiger2Dep",
+            "copyright": "Wolfgang Seeker",
+            "license": "Citation provided for reference, no code packaged with model",
+            "url": "https://www.ims.uni-stuttgart.de/forschung/ressourcen/werkzeuge/tiger2dep/"
+          },
+          {
+            "name": "WikiNER",
+            "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+            "license": "CC BY 4.0",
+            "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+          }
+        ]
+      }
+    },
+    "el/el_core_news_sm": {
+      "data": {
+        "sha256": "18df59b7f099a20d6f7cc1f964a57408a4c1663b73b5110932c1ea24f66e3027",
+        "sizeBytes": 12607208,
+        "displayName": "spaCy el_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "el_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-NC-SA 3.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Greek GDT v2.8",
+            "copyright": "Prokopidis, Prokopis",
+            "license": "CC BY-NC-SA 3.0",
+            "url": "https://github.com/UniversalDependencies/UD_Greek-GDT"
+          },
+          {
+            "name": "Greek NER Corpus (Google Summer of Code 2018)",
+            "copyright": "Giannis Daras",
+            "license": "MIT",
+            "url": "https://github.com/eellak/gsoc2018-spacy"
+          }
+        ]
+      }
+    },
+    "en/en_core_web_sm": {
+      "data": {
+        "sha256": "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85",
+        "sizeBytes": 12806118,
+        "displayName": "spaCy en_core_web_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "en_core_web_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "OntoNotes 5",
+            "copyright": "Ralph Weischedel, Martha Palmer, Mitchell Marcus, Eduard Hovy, Sameer Pradhan, Lance Ramshaw, Nianwen Xue, Ann Taylor, Jeff Kaufman, Michelle Franchini, Mohammed El-Bachouti, Robert Belvin, Ann Houston",
+            "license": "commercial (licensed by Explosion)",
+            "url": "https://catalog.ldc.upenn.edu/LDC2013T19"
+          },
+          {
+            "name": "ClearNLP Constituent-to-Dependency Conversion",
+            "copyright": "Emory University",
+            "license": "Citation provided for reference, no code packaged with model",
+            "url": "https://github.com/clir/clearnlp-guidelines/blob/master/md/components/dependency_conversion.md"
+          },
+          {
+            "name": "WordNet 3.0",
+            "copyright": "Princeton University",
+            "license": "WordNet 3.0 License",
+            "url": "https://wordnet.princeton.edu/"
+          }
+        ]
+      }
+    },
+    "es/es_core_news_sm": {
+      "data": {
+        "sha256": "e451a83d6df79b87e9eed0cb553f03e99e36a3bab18a7b79f0dcfd1fdf875e12",
+        "sizeBytes": 12884212,
+        "displayName": "spaCy es_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "es_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "GNU GPL 3.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Spanish AnCora v2.8",
+            "copyright": "Martínez Alonso, Héctor; Zeman, Daniel",
+            "license": "GNU GPL 3.0",
+            "url": "https://github.com/UniversalDependencies/UD_Spanish-AnCora"
+          },
+          {
+            "name": "WikiNER",
+            "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+            "license": "CC BY 4.0",
+            "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+          },
+          {
+            "name": "spaCy lookups data",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://github.com/explosion/spacy-lookups-data"
+          }
+        ]
+      }
+    },
     "fa/hazm_data": {
       "data": {
         "sha256": "91507896f5b77dcfe26c710b457801e1204ab0d86dcb756a7ab5912719108db0",
@@ -30,11 +216,668 @@
         ]
       }
     },
+    "fi/fi_core_news_sm": {
+      "data": {
+        "sha256": "5b9bd1496f500c1fac98f5e6a5d3913aa502f188c094ecea191dc6b8a81f418d",
+        "sizeBytes": 14346621,
+        "displayName": "spaCy fi_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "fi_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Finnish TDT v2.8",
+            "copyright": "Ginter, Filip; Kanerva, Jenna; Laippala, Veronika; Miekka, Niko; Missilä, Anna; Ojala, Stina; Pyysalo, Sampo",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Finnish-TDT"
+          },
+          {
+            "name": "TurkuONE (ffe2040e)",
+            "copyright": "Jouni Luoma, Li-Hsin Chang, Filip Ginter, Sampo Pyysalo",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/TurkuNLP/turku-one"
+          }
+        ]
+      }
+    },
+    "fr/fr_core_news_sm": {
+      "data": {
+        "sha256": "7d6ad14cd5078e53147bfbf70fb9d433c6a3865b695fda2657140bbc59a27e29",
+        "sizeBytes": 16271721,
+        "displayName": "spaCy fr_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "fr_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "LGPL-LR",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD French Sequoia v2.8",
+            "copyright": "Candito, Marie; Seddah, Djamé; Perrier, Guy; Guillaume, Bruno",
+            "license": "LGPL-LR",
+            "url": "https://github.com/UniversalDependencies/UD_French-Sequoia"
+          },
+          {
+            "name": "WikiNER",
+            "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+            "license": "CC BY 4.0",
+            "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+          },
+          {
+            "name": "spaCy lookups data",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://github.com/explosion/spacy-lookups-data"
+          }
+        ]
+      }
+    },
+    "hr/hr_core_news_sm": {
+      "data": {
+        "sha256": "393ad455bba13536e6fb257bce2b5ef0253f41c1fb5249d8c16dde6cf116d196",
+        "sizeBytes": 13187227,
+        "displayName": "spaCy hr_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "hr_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "Training corpus hr500k 1.0",
+            "copyright": "Ljubešić, Nikola ; Agić, Željko ; Klubička, Filip ; Batanović, Vuk and Erjavec, Tomaž",
+            "license": "CC BY-SA 4.0",
+            "url": "https://hdl.handle.net/11356/1183"
+          }
+        ]
+      }
+    },
+    "hu/hu_core_news_md": {
+      "data": {
+        "sha256": "0fd89c6ccf0efe1d7591910065c3bec4eadb1e25313d6ceea551150832b0f861",
+        "sizeBytes": 127018056,
+        "displayName": "spaCy hu_core_news_md 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "hu_core_news_md 3.8.0 (spaCy pipeline)",
+            "copyright": "SzegedAI, MILAB",
+            "license": "cc-by-sa-4.0",
+            "url": "https://github.com/huspacy/huspacy"
+          },
+          {
+            "name": "UD Hungarian Szeged",
+            "copyright": "Richárd Farkas, Katalin Simkó, Zsolt Szántó, Viktor Varga, Veronika Vincze (MTA-SZTE Research Group on Artificial Intelligence)",
+            "license": "CC-BY-NC-SA-3.0",
+            "url": "https://universaldependencies.org/treebanks/hu_szeged/index.html"
+          },
+          {
+            "name": "NYTK-NerKor Corpus",
+            "copyright": "Eszter Simon, Noémi Vadász (Department of Language Technology and Applied Linguistics)",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/nytud/NYTK-NerKor"
+          },
+          {
+            "name": "Szeged NER Corpus",
+            "copyright": "György Szarvas, Richárd Farkas, László Felföldi, András Kocsor, János Csirik (MTA-SZTE Research Group on Artificial Intelligence)",
+            "license": "CC-BY-NC-SA-3.0",
+            "url": "https://rgai.inf.u-szeged.hu/node/130"
+          },
+          {
+            "name": "Hungarian lg Floret vectors",
+            "copyright": "Szeged AI",
+            "license": "CC-BY-SA-4.0",
+            "url": "https://huggingface.co/huspacy/hu_vectors_web_lg"
+          }
+        ]
+      }
+    },
+    "it/it_core_news_sm": {
+      "data": {
+        "sha256": "3f617bf9a8ae0418953cf1fbf014e10272684c4229e882a7fd748b637d0100bf",
+        "sizeBytes": 13030943,
+        "displayName": "spaCy it_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "it_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-NC-SA 3.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Italian ISDT v2.8",
+            "copyright": "Bosco, Cristina; Lenci, Alessandro; Montemagni, Simonetta; Simi, Maria",
+            "license": "CC BY-NC-SA 3.0",
+            "url": "https://github.com/UniversalDependencies/UD_Italian-ISDT"
+          },
+          {
+            "name": "WikiNER",
+            "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+            "license": "CC BY 4.0",
+            "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+          }
+        ]
+      }
+    },
+    "ko/kiwipiepy": {
+      "apk": "engine code: the kiwipiepy wheel (its _kiwipiepy extension built for Android) ships in the APK (D3)"
+    },
+    "ko/kiwipiepy_model": {
+      "data": {
+        "sha256": "498a22f5585e6c4a162423d7557eb3ee3f71cddc6e0aeb2650c50467e85933e2",
+        "sizeBytes": 87976912,
+        "displayName": "Kiwi 0.23.0 Korean morphological model",
+        "dropCode": [
+          "__init__.py",
+          "_version.py"
+        ],
+        "attribution": [
+          {
+            "name": "kiwipiepy_model 0.23.0 (Kiwi)",
+            "copyright": "bab2min (Minchul Lee); model files for kiwipiepy",
+            "license": "LGPL-3.0",
+            "url": "https://github.com/bab2min/Kiwi"
+          }
+        ]
+      }
+    },
+    "lt/lt_core_news_sm": {
+      "data": {
+        "sha256": "c1f709112fd01771c10fbd2fe7e01d9d65712c8bccd9171065a29f91c9dc151e",
+        "sizeBytes": 13246100,
+        "displayName": "spaCy lt_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "lt_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Lithuanian ALKSNIS v2.8",
+            "copyright": "Utka, Andrius; Rimkutė, Erika; Bielinskienė, Agnė; Kovalevskaitė, Jolanta; Boizou, Loïc; Aleksandravičiūtė, Gabrielė; Brokaitė, Kristina; Zeman, Daniel; Perkova, Natalia; Griciūtė, Bernadeta",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Lithuanian-ALKSNIS"
+          },
+          {
+            "name": "TokenMill NER Corpus",
+            "copyright": "TokenMill",
+            "license": "commercial (licensed by Explosion)",
+            "url": "https://www.tokenmill.lt"
+          }
+        ]
+      }
+    },
+    "nb/nb_core_news_sm": {
+      "data": {
+        "sha256": "086f2cfcc1568b2ee49a2ab297f7910f2645ae6892f2d5d15d8b077f5d0bd773",
+        "sizeBytes": 12488349,
+        "displayName": "spaCy nb_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "nb_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Norwegian Bokmaal v2.8",
+            "copyright": "Øvrelid, Lilja; Jørgensen, Fredrik; Hohle, Petter",
+            "license": "Public Domain (CC0)",
+            "url": "https://github.com/UniversalDependencies/UD_Norwegian-Bokmaal"
+          },
+          {
+            "name": "NorNE: Norwegian Named Entities (commit: bd311de5)",
+            "copyright": "Language Technology Group (University of Oslo)",
+            "license": "Public Domain (CC0)",
+            "url": "https://github.com/ltgoslo/norne"
+          }
+        ]
+      }
+    },
+    "nl/nl_core_news_sm": {
+      "data": {
+        "sha256": "a76978477821f213ca76a46c686df1b1d41462905d4868bc53eac086adca8b7e",
+        "sizeBytes": 12825227,
+        "displayName": "spaCy nl_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "nl_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Dutch LassySmall v2.8",
+            "copyright": "Bouma, Gosse; van Noord, Gertjan",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Dutch-LassySmall"
+          },
+          {
+            "name": "Dutch NER Annotations for UD LassySmall",
+            "copyright": "NLP Town",
+            "license": "CC BY-SA 4.0",
+            "url": "https://nlp.town"
+          },
+          {
+            "name": "UD Dutch Alpino v2.8",
+            "copyright": "Zeman, Daniel; Žabokrtský, Zdeněk; Bouma, Gosse; van Noord, Gertjan",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Dutch-Alpino"
+          }
+        ]
+      }
+    },
+    "pl/pl_core_news_sm": {
+      "data": {
+        "sha256": "9b536db854b0cdb9132a74f68b392b8112ab6030f971bb03282462362a940dbb",
+        "sizeBytes": 20213213,
+        "displayName": "spaCy pl_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "pl_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "GNU GPL 3.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Polish PDB v2.8",
+            "copyright": "Wróblewska, Alina; Zeman, Daniel; Mašek, Jan; Rosa, Rudolf",
+            "license": "GNU GPL 3.0",
+            "url": "https://github.com/UniversalDependencies/UD_Polish-PDB/"
+          },
+          {
+            "name": "National Corpus of Polish",
+            "copyright": "Mirosław Bańko, Rafał L. Górski, Barbara Lewandowska-Tomaszczyk, Marek Łaziński, Piotr Pęzik, Adam Przepiórkowski",
+            "license": "GNU GPL 3.0",
+            "url": "https://nkjp.pl/"
+          }
+        ]
+      }
+    },
+    "pt/pt_core_news_sm": {
+      "data": {
+        "sha256": "c304fa04db3af73cd08a250feacf560506e15a2ec2469bd1b09f06847f6b455c",
+        "sizeBytes": 12985007,
+        "displayName": "spaCy pt_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "pt_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Portuguese Bosque v2.8",
+            "copyright": "Rademaker, Alexandre; Freitas, Cláudia; de Souza, Elvis; Silveira, Aline; Cavalcanti, Tatiana; Evelyn, Wograine; Rocha, Luisa; Soares-Bastos, Isabela; Bick, Eckhard; Chalub, Fabricio; Paulino-Passos, Guilherme; Real, Livy; de Paiva, Valeria; Zeman, Daniel; Popel, Martin; Mareček, David; Silveira, Natalia; Martins, André",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Portuguese-Bosque"
+          },
+          {
+            "name": "WikiNER",
+            "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+            "license": "CC BY 4.0",
+            "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+          }
+        ]
+      }
+    },
+    "ro/ro_core_news_sm": {
+      "data": {
+        "sha256": "3cebfba2437131efe95345adcc7ea2131e4463915652df9099c577e618460cd9",
+        "sizeBytes": 12910222,
+        "displayName": "spaCy ro_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "ro_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Romanian RRT v2.8",
+            "copyright": "Barbu Mititelu, Verginica; Irimia, Elena; Perez, Cenel-Augusto; Ion, Radu; Simionescu, Radu; Popel, Martin",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Romanian-RRT"
+          },
+          {
+            "name": "RONEC - the Romanian Named Entity Corpus (ca9ce460)",
+            "copyright": "Dumitrescu, Stefan Daniel; Avram, Andrei-Marius; Morogan, Luciana; Toma; Stefan",
+            "license": "MIT",
+            "url": "https://github.com/dumitrescustefan/ronec"
+          }
+        ]
+      }
+    },
+    "ru/dawg_python": {
+      "apk": "engine code: the dawg2-python wheel pymorphy3 reads its dictionaries with ships in the APK (spaCy family)"
+    },
+    "ru/pymorphy3": {
+      "apk": "engine code: the pymorphy3 wheel ships in the APK (spaCy family); only its dictionaries are downloaded"
+    },
+    "ru/pymorphy3_dicts_ru": {
+      "data": {
+        "sha256": "718bac64c73c10c16073a199402657283d9b64c04188b694f6d3e9b0d85440f4",
+        "sizeBytes": 8442043,
+        "displayName": "pymorphy3 Russian dictionaries 2.4.417150.4580142",
+        "attribution": [
+          {
+            "name": "pymorphy3-dicts-ru 2.4.417150.4580142 (OpenCorpora-format dictionaries)",
+            "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
+            "license": "MIT",
+            "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+          },
+          {
+            "name": "OpenCorpora dictionary revision 417150",
+            "copyright": "OpenCorpora contributors",
+            "license": "CC BY-SA 3.0",
+            "url": "https://opencorpora.org/"
+          }
+        ]
+      }
+    },
+    "ru/ru_core_news_sm": {
+      "data": {
+        "sha256": "69978d47b43e2c4f329bebdb155e8e9d3861bba1a58ba25551419dae7d7e07fc",
+        "sizeBytes": 15259622,
+        "displayName": "spaCy ru_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "ru_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "Nerus",
+            "copyright": "Alexander Kukushkin",
+            "license": "MIT",
+            "url": "https://github.com/natasha/nerus"
+          }
+        ]
+      }
+    },
+    "sl/sl_core_news_sm": {
+      "data": {
+        "sha256": "d6d11f38c917d59b0fe52a15da09963bdc8011d2be288f75371e734065b6911c",
+        "sizeBytes": 13643819,
+        "displayName": "spaCy sl_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "sl_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Slovenian SSJ v2.11",
+            "copyright": "Dobrovoljc, Kaja; Erjavec, Tomaž; Krek, Simon",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Slovenian-SSJ"
+          },
+          {
+            "name": "Training corpus SUK 1.0",
+            "copyright": "Arhar Holdt, Špela; Krek, Simon; Dobrovoljc, Kaja; Erjavec, Tomaž; Gantar, Polona; Čibej, Jaka; Pori, Eva; Terčon, Luka; Munda, Tina; Žitnik, Slavko; Robida, Nejc; Blagus, Neli; Može, Sara; Ledinek, Nina; Holz, Nanika; Zupan, Katja; Kuzman, Taja; Kavčič, Teja; Škrjanec, Iza; Marko, Dafne; Jezeršek, Lucija; Zajc, Anja",
+            "license": "CC BY-SA 4.0",
+            "url": "https://www.clarin.si/repository/xmlui/handle/11356/1747"
+          }
+        ]
+      }
+    },
+    "sv/sv_core_news_sm": {
+      "data": {
+        "sha256": "be4929fb30523dca0b6672f999cdbf4d64f165419f1eed0014ca3a36599b8b4d",
+        "sizeBytes": 12741934,
+        "displayName": "spaCy sv_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "sv_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "CC BY-SA 4.0",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "UD Swedish Talbanken v2.8",
+            "copyright": "Nivre, Joakim; Smith, Aaron",
+            "license": "CC BY-SA 4.0",
+            "url": "https://github.com/UniversalDependencies/UD_Swedish-Talbanken"
+          },
+          {
+            "name": "Stockholm-Umeå Corpus (SUC) v3.0",
+            "copyright": "Språkbanken",
+            "license": "CC BY 4.0",
+            "url": "https://huggingface.co/datasets/KBLab/sucx3_ner"
+          }
+        ]
+      }
+    },
     "th/pythainlp": {
       "apk": "engine code: the repacked pythainlp wheel ships in the APK (C.1), corpora and all"
     },
     "th/tzdata": {
       "apk": "time zone package pythainlp imports; ships in the APK beside it (C.1)"
+    },
+    "tr/cloudpickle": {
+      "apk": "joblib's pickler, in the zeyrek closure; ships in the APK (D1)"
+    },
+    "tr/colorama": {
+      "apk": "listed by desktop's Turkish pack; ships in the APK beside nltk (D1)"
+    },
+    "tr/defusedxml": {
+      "apk": "nltk's XML parser; ships in the APK (D1)"
+    },
+    "tr/joblib": {
+      "apk": "nltk dependency; ships in the APK (D1)"
+    },
+    "tr/nltk": {
+      "apk": "engine code zeyrek imports; ships in the APK without its doctests (D1)"
+    },
+    "tr/regex": {
+      "apk": "native extension nltk imports; built for Android and shipped in the APK (D1)"
+    },
+    "tr/zeyrek": {
+      "apk": "engine code: the Turkish morphological analyser, lexicon included, ships in the APK (D1)"
+    },
+    "uk/dawg_python": {
+      "apk": "engine code: the dawg2-python wheel pymorphy3 reads its dictionaries with ships in the APK (spaCy family)"
+    },
+    "uk/pymorphy3": {
+      "apk": "engine code: the pymorphy3 wheel ships in the APK (spaCy family); only its dictionaries are downloaded"
+    },
+    "uk/pymorphy3_dicts_uk": {
+      "data": {
+        "sha256": "6af1e389b69e7e90ef7d50b20e3955a0c78383317a15d9ade5979f1536354733",
+        "sizeBytes": 8201207,
+        "displayName": "pymorphy3 Ukrainian dictionaries 2.4.1.1.1663094765",
+        "attribution": [
+          {
+            "name": "pymorphy3-dicts-uk 2.4.1.1.1663094765 (OpenCorpora-format dictionaries)",
+            "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
+            "license": "GPL-3.0",
+            "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+          }
+        ]
+      }
+    },
+    "uk/uk_core_news_sm": {
+      "data": {
+        "sha256": "d20adb50b42c0dcfdedf4994dabcb96789a64983a9ab560d0c6c38a59e8efb58",
+        "sizeBytes": 14908659,
+        "displayName": "spaCy uk_core_news_sm 3.8.0 pipeline",
+        "attribution": [
+          {
+            "name": "uk_core_news_sm 3.8.0 (spaCy pipeline)",
+            "copyright": "Explosion",
+            "license": "MIT",
+            "url": "https://explosion.ai"
+          },
+          {
+            "name": "Ukr-Synth (e5d9eaf3)",
+            "copyright": "Volodymyr Kurnosov",
+            "license": "MIT",
+            "url": "https://huggingface.co/datasets/ukr-models/Ukr-Synth"
+          }
+        ]
+      }
+    },
+    "vi/cloudpickle": {
+      "apk": "engine code: joblib imports it; ships in the APK"
+    },
+    "vi/joblib": {
+      "apk": "engine code: underthesea loads its models with joblib; ships in the APK"
+    },
+    "vi/underthesea": {
+      "split": {
+        "apk": "engine code: underthesea ships in the APK, repacked without the two CRF model directories (tools/runtime-wheels REPACKS)",
+        "data": {
+          "importName": "underthesea_models",
+          "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+          "sizeBytes": 7273326,
+          "displayName": "underthesea 9.5.0 Vietnamese word segmentation and POS models",
+          "memberPrefix": "underthesea/pipeline/",
+          "exclude": [
+            "__init__.py",
+            "chunking/",
+            "classification/",
+            "dependency_parse/",
+            "ipa/",
+            "lang_detect/",
+            "ner/",
+            "pos_tag/__init__.py",
+            "pos_tag/model_crf.py",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/test_output.txt",
+            "pos_tag/pos_crf_2017_10_11.bin",
+            "pos_tag/tagged_feature.py",
+            "sent_tokenize/",
+            "sentiment/",
+            "text_normalize/",
+            "translate/",
+            "tts/",
+            "word_tokenize/__init__.py",
+            "word_tokenize/regex_tokenize.py"
+          ],
+          "sentinels": [
+            "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+            "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+            "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin"
+          ],
+          "innerSha256": [
+            {
+              "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+              "sha256": "c3a64c64349f1d73304f89babacaa8f8cd6078b1ec1a1b2c104e9e411ac1d2c3"
+            },
+            {
+              "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+              "sha256": "cf93263c7c7973bf50122b0be76a394443ff61be00c1368713dee1b7d5b8a435"
+            },
+            {
+              "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+              "sha256": "ec8c62b3881c6682c18959988e1fe08800cc835777778845bded470ca02745d9"
+            },
+            {
+              "path": "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+              "sha256": "f79566ee0bfcf2584fb89ae656c62cc7d40ad6c272482cf51740b8635e50d930"
+            },
+            {
+              "path": "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+              "sha256": "00be4922c973cdf9738421e353ea1ac13f314105916c9e1b8e834bbb66412450"
+            },
+            {
+              "path": "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+              "sha256": "56e4888920e456e5a96c5a0b263c952f6286eedb98228b41dbda99e692132bfa"
+            }
+          ],
+          "attribution": [
+            {
+              "name": "underthesea 9.5.0 CRF models ws_crf_vlsp2013_20230727 and pos_crf_vlsp2013_20230303 (trained on VLSP 2013)",
+              "copyright": "Vu Anh and the underthesea contributors",
+              "license": "Apache-2.0",
+              "url": "https://github.com/undertheseanlp/underthesea"
+            }
+          ]
+        }
+      }
+    },
+    "vi/underthesea_core": {
+      "apk": "engine code: underthesea's Rust extension, built for Android and shipped in the APK"
+    },
+    "yue/pycantonese": {
+      "split": {
+        "apk": "engine code: pycantonese and its Rust core ship in the APK, repacked without the segmenter and tagger models (tools/runtime-wheels REPACKS); its jyutping tables stay in the APK because import pycantonese reads them",
+        "data": {
+          "importName": "pycantonese_models",
+          "platform": [
+            "linux",
+            "aarch64"
+          ],
+          "sha256": "609d14a588cb0b39fe1644347609677dbda77e25978dfd34f1f9de455f88637b",
+          "sizeBytes": 42602997,
+          "displayName": "PyCantonese 5.0.0 word segmentation and POS models",
+          "memberPrefix": "pycantonese/",
+          "exclude": [
+            "__init__.py",
+            "_punctuation_marks.py",
+            "_rust.abi3.so",
+            "_rust.pyi",
+            "corpus.py",
+            "data/",
+            "jyutping/",
+            "parsing.py",
+            "pos_tagging/__init__.py",
+            "pos_tagging/hkcancor_to_ud.py",
+            "pos_tagging/tagger.py",
+            "pos_tagging/train_tagger.py",
+            "py.typed",
+            "search.py",
+            "stop_words.py",
+            "util.py",
+            "word_segmentation/__init__.py",
+            "word_segmentation/segmenter.py",
+            "word_segmentation/train_segmenter.py"
+          ],
+          "sentinels": [
+            "word_segmentation/segmenter.fb.zst",
+            "pos_tagging/tagger.fb.zst"
+          ],
+          "innerSha256": [
+            {
+              "path": "word_segmentation/segmenter.fb.zst",
+              "sha256": "b959a829908a22ea3efe2f89a01d8d9cdc79b0a8ca803fc47c33c136ca1f289f"
+            },
+            {
+              "path": "pos_tagging/tagger.fb.zst",
+              "sha256": "8d260b964d415ce24d9c21aab660cbf9675b83836b8873ef99bae32f45dfca24"
+            }
+          ],
+          "attribution": [
+            {
+              "name": "PyCantonese 5.0.0 segmenter and tagger models (trained on HKCanCor, rime-cantonese, Common Voice and CTCPC data)",
+              "copyright": "Copyright (c) 2014-2026 Jackson L. Lee",
+              "license": "MIT",
+              "url": "https://github.com/jacksonllee/pycantonese"
+            }
+          ]
+        }
+      }
+    },
+    "yue/rustling": {
+      "apk": "engine code: the Rust segmenter and tagger pycantonese calls, built for Android and shipped in the APK"
+    },
+    "zh/jieba": {
+      "apk": "engine code: the repacked jieba wheel (dict.txt included) ships in the APK (D5)"
+    },
+    "zh/opencc": {
+      "apk": "engine code: the cross-built opencc wheel and its dictionaries ship in the APK (D5); one entry covers desktop's per-CPython siblings"
+    },
+    "zh/pypinyin": {
+      "apk": "engine code: the pypinyin wheel ships in the APK (D5)"
     }
   }
 }

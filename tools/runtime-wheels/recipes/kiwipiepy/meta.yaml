@@ -1,0 +1,31 @@
+# The sdist strips the licence files of the third-party code Kiwi links
+# statically. The texts beside this file come from the submodule commits that
+# Kiwi 693d6f2e (kiwipiepy v0.23.2's Kiwi) pins; Chaquopy copies them into the
+# wheel's dist-info:
+#   LICENSE.cpuinfo        pytorch/cpuinfo@05dd959f LICENSE (BSD-2-Clause)
+#   LICENSE.streamvbyte    fast-pack/streamvbyte@862c2e7a LICENSE (Apache-2.0)
+#   LICENSE.cpp-btree      bab2min/cpp-btree@226ce3ae LICENSE (Apache-2.0)
+#   LICENSE.nlohmann-json  nlohmann/json@55f93686 LICENSE.MIT (MIT)
+#   COPYING.eigen-MPL2     libeigen/eigen@3147391d COPYING.MPL2 (MPL-2.0)
+# mimalloc is compiled out (KIWI_USE_MIMALLOC=0); googletest and tclap are not
+# linked into the extension.
+package:
+  name: kiwipiepy
+  version: "0.23.2"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/kiwipiepy
+
+requirements:
+  build:
+    - cmake 4.4.3
+    - setuptools 78.1.1
+    - wheel 0.45.1
+  host:
+    - python
+
+about:
+  license_file: LICENSE.txt

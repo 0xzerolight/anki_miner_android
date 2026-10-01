@@ -37,9 +37,16 @@ python3.13 "$SCRIPT_DIR/verify_chaquopy_build_python.py" verify \
 exec {runtime_lock_fd}>"$runtime_lock"
 flock --exclusive "$runtime_lock_fd"
 
+# pymorphy3 declares the Russian dictionaries as a dependency; Android downloads
+# them as language data (decision 2), so the lock omits them and installs with
+# --no-deps, as Chaquopy does. That is the one requirement allowed to be missing.
+readonly ALLOWED_MISSING_REQUIREMENT="pymorphy3 2.0.6 requires pymorphy3-dicts-ru, which is not installed."
+
 verify_runtime_environment() {
-    local python_command="$1"
-    PIP_NO_CACHE_DIR=1 "$python_command" -m pip check || return 1
+    local python_command="$1" check_output
+    check_output="$(PIP_NO_CACHE_DIR=1 "$python_command" -m pip check 2>&1)" \
+        || [[ "$check_output" == "$ALLOWED_MISSING_REQUIREMENT" ]] \
+        || { printf '%s\n' "$check_output" >&2; return 1; }
     "$python_command" -I -c '
 import importlib.metadata
 import importlib.util
@@ -51,14 +58,32 @@ assert platform.python_version() == "3.12.13"
 expected = {
     "certifi": "2026.6.17",
     "charset-normalizer": "3.4.7",
+    "click": "8.1.8",
+    "cloudpickle": "3.1.2",
+    "colorama": "0.4.6",
+    "defusedxml": "0.7.1",
     "idna": "3.18",
+    "jieba": "0.42.1",
+    "joblib": "1.6.0",
+    "kiwipiepy": "0.23.2",
+    "kiwipiepy-model": "0.23.0",
     "lxml": "6.1.1",
+    "nltk": "3.10.3",
+    "opencc": "1.4.2",
     "pillow": "12.2.0",
+    "pycantonese": "5.0.0",
+    "pypinyin": "0.55.0",
     "pysubs2": "1.8.1",
     "pythainlp": "5.3.7",
+    "regex": "2026.9.10",
     "requests": "2.34.2",
+    "rustling": "0.9.0",
+    "tqdm": "4.68.3",
     "tzdata": "2026.3",
+    "underthesea": "9.5.0",
+    "underthesea-core": "3.3.2",
     "urllib3": "2.7.0",
+    "zeyrek": "0.1.3",
 }
 for name, version in expected.items():
     assert importlib.metadata.version(name) == version, (name, version)
@@ -96,7 +121,10 @@ trap cleanup EXIT
 PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --disable-pip-version-check \
     --only-binary=:all: \
+    --no-binary=kiwipiepy-model \
     --require-hashes \
+    --no-deps \
+    --find-links "$REPO_ROOT/app/wheels/common" \
     -r "$LOCK_FILE"
 verify_runtime_environment "$staging/bin/python"
 printf '%s\n' "$lock_sha256" >"$staging/$LOCK_MARKER_NAME"

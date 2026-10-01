@@ -1,0 +1,184 @@
+{
+  "schemaVersion": 3,
+  "language": "ru",
+  "resources": [
+    {
+      "resourceId": "ru-ru-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy ru_core_news_sm 3.8.0 pipeline",
+      "importName": "ru_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/ru_core_news_sm-3.8.0/ru_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "69978d47b43e2c4f329bebdb155e8e9d3861bba1a58ba25551419dae7d7e07fc",
+        "sizeBytes": 15259622,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "ru_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "ru_core_news_sm-3.8.0/config.cfg",
+          "ru_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "ru_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "Nerus",
+          "copyright": "Alexander Kukushkin",
+          "license": "MIT",
+          "url": "https://github.com/natasha/nerus"
+        }
+      ]
+    },
+    {
+      "resourceId": "ru-pymorphy3-dicts-ru",
+      "kind": "language-data",
+      "displayName": "pymorphy3 Russian dictionaries 2.4.417150.4580142",
+      "importName": "pymorphy3_dicts_ru",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/b0/67/469e9e52d046863f5959928794d3067d455a77f580bf4a662630a43eb426/pymorphy3_dicts_ru-2.4.417150.4580142-py2.py3-none-any.whl",
+        "sha256": "718bac64c73c10c16073a199402657283d9b64c04188b694f6d3e9b0d85440f4",
+        "sizeBytes": 8442043,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pymorphy3_dicts_ru/",
+        "exclude": [
+          "__init__.py",
+          "version.py"
+        ],
+        "sentinels": [
+          "data/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "pymorphy3-dicts-ru 2.4.417150.4580142 (OpenCorpora-format dictionaries)",
+          "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
+          "license": "MIT",
+          "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+        },
+        {
+          "name": "OpenCorpora dictionary revision 417150",
+          "copyright": "OpenCorpora contributors",
+          "license": "CC BY-SA 3.0",
+          "url": "https://opencorpora.org/"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-ru-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Russian-English) 2026-09-20",
+      "slotId": "wty-ru-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ru/en/wty-ru-en.zip",
+        "sha256": "3503b90bfd005a50e49580a3b52c4b07047e605b822b14d56c3e45687350a0cf",
+        "sizeBytes": 26133529,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-ru-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 64,
+        "uncompressedBytes": 289865117,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 67108864
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opr-ru-en-2026.03.01",
+      "kind": "yomitan-dictionary",
+      "displayName": "OpenRussian (Russian-English) 2026-03-01",
+      "slotId": "opr-ru-en",
+      "archive": {
+        "url": "https://github.com/ImenaOphelia/openrussian-to-yomitan/releases/download/v2026.03.01/opr-ru-en.zip",
+        "sha256": "8f95d7179a04878c307be65d10e58202e6decc8553eff799635597d44cb0fbd5",
+        "sizeBytes": 28179164,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "opr-ru-en",
+        "revision": "2026.03.01",
+        "format": 3,
+        "memberCount": 70,
+        "uncompressedBytes": 559774019,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "OpenRussian.org",
+          "copyright": "OpenRussian.org contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.openrussian.org/"
+        },
+        {
+          "name": "openrussian-to-yomitan",
+          "copyright": "ImenaOphelia (Yomitan build of OpenRussian.org data)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/ImenaOphelia/openrussian-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-ru-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Russian)",
+      "sourceId": "opensubtitles-ru",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ru/ru_50k.txt",
+        "sha256": "6095f507cc167488ec66ada5a85ac50433503a08ad24a07c6eabdf54352c4e7f",
+        "sizeBytes": 998861,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-ru-en-2026.09.20",
+    "opr-ru-en-2026.03.01",
+    "opensubtitles-ru-2018"
+  ]
+}

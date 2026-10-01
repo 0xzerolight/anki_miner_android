@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 3,
+  "language": "ca",
+  "resources": [
+    {
+      "resourceId": "ca-ca-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy ca_core_news_sm 3.8.0 pipeline",
+      "importName": "ca_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/ca_core_news_sm-3.8.0/ca_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "e214211aa8da91c24ebdc453c2aa5f54fac09f44e01e65bcbdd3b0a5cb94d809",
+        "sizeBytes": 19566606,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "ca_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "ca_core_news_sm-3.8.0/config.cfg",
+          "ca_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "ca_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "GNU GPL 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Catalan AnCora v2.8",
+          "copyright": "Martínez Alonso, Héctor; Pascual, Elena; Zeman, Daniel",
+          "license": "GNU GPL 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Catalan-AnCora"
+        },
+        {
+          "name": "UD Catalan AnCora v2.8 + NER v3.2.9",
+          "copyright": "Carlos Rodríguez-Penagos and Carme Armentano-Oller",
+          "license": "CC BY 4.0",
+          "url": "https://github.com/TeMU-BSC/spacy/releases/tag/3.2.9"
+        },
+        {
+          "name": "Catalan Lemmatizer",
+          "copyright": "Text Mining Unit, Barcelona Supercomputing Center",
+          "license": "CC0",
+          "url": "https://github.com/explosion/spacy-lookups-data"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-ca-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Catalan-English) 2026-09-20",
+      "slotId": "wty-ca-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ca/en/wty-ca-en.zip",
+        "sha256": "adcdae56d10932ceab99c2d4d411a011368b2aab8049af141967e52e56a207be",
+        "sizeBytes": 4639237,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-ca-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 15,
+        "uncompressedBytes": 64964990,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-ca-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Catalan)",
+      "sourceId": "opensubtitles-ca",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ca/ca_50k.txt",
+        "sha256": "3140bdce43ae1cd40b2dfa2ec1291f4917f477ff7d0573e4b77c6f1bc1d3ffad",
+        "sizeBytes": 564792,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-ca-en-2026.09.20",
+    "opensubtitles-ca-2018"
+  ]
+}

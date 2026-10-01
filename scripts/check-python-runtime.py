@@ -16,16 +16,45 @@ from pathlib import Path
 from PIL import features
 
 EXPECTED_DISTRIBUTIONS = {
+    "blis": "1.3.3",
     "certifi": "2026.6.17",
     "charset-normalizer": "3.4.7",
+    "click": "8.1.8",
+    "cloudpickle": "3.1.2",
+    "colorama": "0.4.6",
+    "cymem": "2.0.13",
+    "defusedxml": "0.7.1",
     "idna": "3.18",
+    "jieba": "0.42.1",
+    "joblib": "1.6.0",
+    "kiwipiepy": "0.23.2",
+    "kiwipiepy-model": "0.23.0",
     "lxml": "6.1.1",
+    "markupsafe": "3.0.3",
+    "murmurhash": "1.0.15",
+    "nltk": "3.10.3",
+    "numpy": "2.5.0",
+    "opencc": "1.4.2",
     "pillow": "12.2.0",
+    "preshed": "3.0.13",
+    "pycantonese": "5.0.0",
+    "pydantic-core": "2.46.5",
+    "pymorphy3": "2.0.6",
+    "pypinyin": "0.55.0",
     "pysubs2": "1.8.1",
     "pythainlp": "5.3.7",
+    "regex": "2026.9.10",
     "requests": "2.34.2",
+    "rustling": "0.9.0",
+    "spacy": "3.8.14",
+    "srsly": "2.5.3",
+    "thinc": "8.3.13",
+    "tqdm": "4.68.3",
     "tzdata": "2026.3",
+    "underthesea": "9.5.0",
+    "underthesea-core": "3.3.2",
     "urllib3": "2.7.0",
+    "zeyrek": "0.1.3",
 }
 
 
@@ -68,7 +97,26 @@ def main() -> int:
         raise RuntimeError(f"Pillow codecs are unavailable: {missing_codecs}")
     external_imports = set(manifest["external_imports"]["eager"])
     external_imports.update(manifest["external_imports"]["deferred"])
-    expected_external = {"PIL", "charset_normalizer", "lxml", "pysubs2", "pythainlp", "requests"}
+    expected_external = {
+        "PIL",
+        "charset_normalizer",
+        "jieba",
+        "kiwipiepy",
+        "lxml",
+        "numpy",
+        "opencc",
+        "pycantonese",
+        "pypinyin",
+        "pysubs2",
+        "pythainlp",
+        "requests",
+        "spacy",
+        "spacy_legacy",
+        "srsly",
+        "thinc",
+        "underthesea",
+        "zeyrek",
+    }
     if external_imports != expected_external:
         raise RuntimeError(
             "neutral engine external imports differ: "

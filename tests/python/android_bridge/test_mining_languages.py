@@ -96,8 +96,26 @@ def test_a_run_in_a_language_waiting_for_its_data_is_refused_before_admission() 
 def test_an_unvendored_language_is_refused_before_admission() -> None:
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
-        mining._ensure_runtime_ready({"language": "zh"})
+        mining._ensure_runtime_ready({"language": "eo"})
     assert error.value.code == "unsupported_language"
+
+
+def test_admitting_a_run_releases_every_other_languages_tagger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Desktop S23: a switch evicts the outgoing engine; Android's switch only saves settings.
+
+    So the run's admission is where the bridge lets the last language's engine go,
+    or every language mined in the process would stay resident.
+    """
+    _runtime_lane()
+    from anki_miner.languages import tagger_provider
+
+    monkeypatch.setattr(tagger_provider, "_TAGGERS", {})
+    tagger_provider.get_tagger("he")
+    tagger_provider.get_tagger("id")
+
+    mining._ensure_runtime_ready({"language": "id"})
+
+    assert set(tagger_provider._TAGGERS) == {"id"}
 
 
 # ---------------------------------------------------------------- composition
@@ -414,12 +432,28 @@ def test_hebrew_workbench_cues_need_no_japanese_tokenizer(tmp_path: Path) -> Non
     assert hebrew["payload"]["cues"][0]["start"] == 1.0
 
 
+def test_workbench_cues_release_every_other_languages_tagger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cue view builds its language's tagger, so it lets the last language's go first."""
+    _runtime_lane()
+    from anki_miner.languages import tagger_provider
+
+    monkeypatch.setattr(tagger_provider, "_TAGGERS", {})
+    tagger_provider.get_tagger("id")
+    subtitle = tmp_path / "episode.srt"
+    subtitle.write_text(_HEBREW_SRT, encoding="utf-8")
+
+    hebrew = _cues({"runId": None, "subtitlePath": str(subtitle), "language": "he"})
+
+    assert hebrew["type"] == "subtitle.cues.result", hebrew
+    assert set(tagger_provider._TAGGERS) == {"he"}
+
+
 def test_workbench_cues_refuse_an_unavailable_language(tmp_path: Path) -> None:
     _runtime_lane()
     subtitle = tmp_path / "episode.srt"
     subtitle.write_text(_HEBREW_SRT, encoding="utf-8")
 
-    response = _cues({"runId": None, "subtitlePath": str(subtitle), "language": "zh"})
+    response = _cues({"runId": None, "subtitlePath": str(subtitle), "language": "eo"})
 
     assert response["payload"]["code"] == "unsupported_language"
 
@@ -485,7 +519,7 @@ def test_audio_track_auto_pick_follows_the_mining_language(monkeypatch: pytest.M
 
 def test_audio_tracks_refuse_an_unavailable_language(monkeypatch: pytest.MonkeyPatch) -> None:
     _runtime_lane()
-    response = _tracks(monkeypatch, language="zh")
+    response = _tracks(monkeypatch, language="eo")
     assert response["payload"]["code"] == "unsupported_language"
 
 
@@ -557,14 +591,22 @@ def test_a_hebrew_chain_keeps_the_device_voice_in_its_place(tmp_path: Path) -> N
     )
 
 
-@pytest.mark.parametrize("language", ["he", "ar", "id", "th", "fa"])
-def test_the_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Path, language: str) -> None:
+def test_every_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Path) -> None:
+    """Every vendored profile outside Japanese defaults its word audio to googletts or edgetts."""
     _runtime_lane()
     from anki_miner.config import AudioSourceEntry
+    from anki_miner.languages.registry import available_languages
 
     paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
-    config = map_config_settings({"language": language, "anki_note_type": "Basic"}, paths).engine_config
-    assert config.expression_audio_chain == (AudioSourceEntry(kind="android_tts"),)
+    chains = {
+        language: map_config_settings(
+            {"language": language, "anki_note_type": "Basic"}, paths
+        ).engine_config.expression_audio_chain
+        for language in available_languages()
+        if language != "ja"
+    }
+    assert {"he", "tr", "en", "pt", "sl", "ko", "vi", "yue", "zh"} <= set(chains)
+    assert chains == {language: (AudioSourceEntry(kind="android_tts"),) for language in chains}
 
 
 @pytest.mark.parametrize(
@@ -641,6 +683,51 @@ def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(
     assert silent is not None
     assert [member._fetcher for member in silent._fetchers] == [pack]
     silent.close()
+
+
+@pytest.mark.parametrize(("variety", "tag"), [("pt", "pt-PT"), ("br", "pt-BR")])
+def test_a_portuguese_run_speaks_with_its_varietys_voice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    variety: str,
+    tag: str,
+) -> None:
+    _runtime_lane()
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    class NoPacks:
+        packs: dict[str, object] = {}
+
+        def __init__(self, root: object) -> None:
+            pass
+
+        def load(self) -> None:
+            pass
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            return []
+
+    monkeypatch.setattr("anki_miner.services.audio_packs.registry.AudioPackRegistry", NoPacks)
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    config = map_config_settings(
+        {
+            "language": "pt",
+            "anki_note_type": "Basic",
+            "script_variant": variety,
+            "anki_fields": {"expression_audio": "WordAudio"},
+        },
+        paths,
+    ).engine_config
+    chain = mining._build_expression_audio_source_chain(
+        config,
+        tts_callbacks=object(),
+        run_id="run_00000000000000000000000000000000",
+    )
+    assert chain is not None
+    (voice,) = chain._fetchers
+    assert isinstance(voice, AndroidWordAudioFetcher)
+    assert voice.media_name("livro", "").startswith(f"androidtts_{tag}_")
+    chain.close()
 
 
 def test_the_processor_hands_the_runs_callbacks_to_the_device_voice(

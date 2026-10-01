@@ -60,13 +60,14 @@ def test_fetch_sends_strict_correlated_request_and_returns_verified_private_wav(
     assert request.payload["language"] == "ja"
 
 
-def test_fetch_asks_for_the_run_languages_voice(tmp_path: Path) -> None:
+@pytest.mark.parametrize(("language", "sentence"), [("he", "הילד קרא ספר."), ("pt-PT", "O rapaz leu um livro.")])
+def test_fetch_asks_for_the_run_languages_voice(tmp_path: Path, language: str, sentence: str) -> None:
     callbacks = ResultCallbacks(tmp_path)
-    fetcher = AndroidSentenceAudioFetcher(callbacks, RUN_ID, tmp_path, language="he")
+    fetcher = AndroidSentenceAudioFetcher(callbacks, RUN_ID, tmp_path, language=language)
 
-    assert fetcher.fetch("הילד קרא ספר.", lambda: False) is not None
+    assert fetcher.fetch(sentence, lambda: False) is not None
     request = decode_envelope(callbacks.requests[0], expected_type="tts.sentence.request")
-    assert request.payload["language"] == "he"
+    assert request.payload["language"] == language
 
 
 @pytest.mark.parametrize("outcome", ["unavailable", "failed"])

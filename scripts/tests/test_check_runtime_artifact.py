@@ -20,9 +20,15 @@ SCRIPTS_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 import check_runtime_artifact as checker  # noqa: E402
+from test_check_native_artifacts import dynamic_elf  # noqa: E402
 
 RUNTIME_BUILD_KEY = "a" * 64
 S1A_BUILD_KEY = "b" * 64
+S1A_DYNAMIC = {
+    "chaquopy-libcxx": ("libc++_shared.so", ("libc.so", "libdl.so")),
+    "chaquopy-libmecab": ("libmecab.so.2", ("libc++_shared.so", "libc.so")),
+    "fugashi": (None, ("libc.so", "libmecab.so.2", "libpython3.12.so")),
+}
 
 
 def _sha256(data: bytes) -> str:
@@ -33,13 +39,21 @@ def _metadata(name: str, version: str, *, extra: str = "") -> bytes:
     return ("Metadata-Version: 2.1\n" f"Name: {name}\n" f"Version: {version}\n" f"{extra}\n").encode()
 
 
-def _elf(abi: str, marker: bytes = b"") -> bytes:
-    data = bytearray(64)
-    data[:4] = b"\x7fELF"
-    data[4] = 2
-    data[5] = 1
-    struct.pack_into("<H", data, 18, checker.SUPPORTED_ABIS[abi])
-    return bytes(data) + marker
+def _elf(
+    abi: str,
+    marker: bytes = b"",
+    *,
+    soname: str | None = None,
+    needed: tuple[str, ...] = ("libc.so",),
+) -> bytes:
+    """A minimal 16 KiB-aligned shared object; ``marker`` only changes its hash."""
+    return dynamic_elf(machine=checker.SUPPORTED_ABIS[abi], soname=soname, needed=needed) + marker
+
+
+def _four_kib_aligned(elf: bytes) -> bytes:
+    data = bytearray(elf)
+    struct.pack_into("<Q", data, 64 + 48, 4 * 1024)  # The first PT_LOAD's p_align.
+    return bytes(data)
 
 
 def _zip(entries: dict[str, bytes] | list[tuple[str, bytes]]) -> bytes:
@@ -156,7 +170,8 @@ class ArtifactFixture:
     def _s1a_entries(self, abi: str, *, install: bool) -> list[dict[str, object]]:
         result: list[dict[str, object]] = []
         for package, (wheel_name, version, tags, native_path) in checker.S1A_SPECS.items():
-            native = _elf(abi, package.encode())
+            soname, needed = S1A_DYNAMIC[package]
+            native = _elf(abi, package.encode(), soname=soname, needed=needed)
             license_name = "BSD" if package == "chaquopy-libmecab" else "LICENSE"
             dist_name = wheel_name
             license_path = f"{dist_name}-{version}.dist-info/{license_name}"
@@ -173,10 +188,10 @@ class ArtifactFixture:
                     "licenses": [{"path": license_path, "sha256": _sha256(license_data)}],
                     "elf": {
                         "abi": abi,
-                        "needed": ["libc.so"],
+                        "needed": list(needed),
                         "path": native_path,
                         "sha256": _sha256(native),
-                        "soname": None,
+                        "soname": soname,
                     },
                 }
             )
@@ -277,6 +292,13 @@ class ArtifactFixture:
         return manifest
 
 
+def _vendored(value: ArtifactFixture) -> Path:
+    """Move the fixture to the wheel licence layout and write its vendored manifest."""
+    value.common["requests-1.0.dist-info/licenses/LICENSE"] = value.common.pop("requests-1.0.dist-info/LICENSE")
+    value.write_artifact()
+    return value.write_vendored_manifest()
+
+
 @contextmanager
 def fixture(**kwargs: object):
     with tempfile.TemporaryDirectory() as temporary:
@@ -332,6 +354,97 @@ class RuntimeArtifactInventoryTests(unittest.TestCase):
             value.common["PIL/_imaging.so"] = _elf(value.abi, b"changed after wheel verification")
             value.write_artifact()
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "native inventory"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
+    def test_a_licence_kept_beside_package_data_is_owned_by_its_wheel(self) -> None:
+        with fixture() as value:
+            value.common["requests/data/corpus/LICENSE.txt"] = b"CC BY 4.0 fixture"
+            manifest = _vendored(value)
+            # The vendored wheel carries it too: it is part of the exact inventory.
+            wheel = value.root / "wheels" / "common" / "requests-1.0-py3-none-any.whl"
+            with zipfile.ZipFile(wheel, "a") as archive:
+                archive.writestr("requests/data/corpus/LICENSE.txt", b"CC BY 4.0 fixture")
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+            document["wheels"][0]["sha256"] = _sha256(wheel.read_bytes())
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+
+            result = checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+            self.assertEqual(3, result.license_count)
+
+            value.common["requests/data/corpus/LICENSE.txt"] = b"changed"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "license inventory"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
+            value.common["requests/data/other/LICENSE"] = b"not in any wheel"
+            value.common["requests/data/corpus/LICENSE.txt"] = b"CC BY 4.0 fixture"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "unowned license payload"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
+    def test_a_judged_licence_inside_a_vendored_wheel_stays_out_of_both_inventories(self) -> None:
+        # numpy and typer keep judged licence texts inside their packages: the vendored
+        # inventory must not expect what the packaged audit skips.
+        licence = b"licence of bundled code\n"
+        judged = {"requests/vendored/LICENSE.txt": ("requests", "1.0", _sha256(licence))}
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/vendored/LICENSE.txt"] = licence
+            manifest = _vendored(value)
+            wheel = value.root / "wheels" / "common" / "requests-1.0-py3-none-any.whl"
+            with zipfile.ZipFile(wheel, "a") as archive:
+                archive.writestr("requests/vendored/LICENSE.txt", licence)
+            document = json.loads(manifest.read_text(encoding="utf-8"))
+            document["wheels"][0]["sha256"] = _sha256(wheel.read_bytes())
+            manifest.write_text(json.dumps(document), encoding="utf-8")
+
+            result = checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+            self.assertEqual(2, result.license_count)
+
+            value.common["requests/vendored/LICENSE.txt"] = b"changed\n"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "unowned license payload"):
+                checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
+    def test_vendored_natives_obey_the_shared_soname_and_needed_policy(self) -> None:
+        cases = {
+            "extension module has SONAME": _elf("x86_64", soname="lib_imaging.so"),
+            "DT_NEEDED outside": _elf("x86_64", needed=("libc.so", "libjpeg.so.8")),
+            "alignment": _four_kib_aligned(_elf("x86_64")),
+        }
+        for message, native in cases.items():
+            with self.subTest(message=message), fixture() as value:
+                value.common["PIL/_imaging.so"] = native
+                manifest = _vendored(value)
+                with self.assertRaisesRegex(checker.RuntimeArtifactError, message):
+                    checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
+
+    def test_vendored_arm64_natives_pass_the_isa_audit(self) -> None:
+        with fixture(abi="arm64-v8a") as value:
+            manifest = _vendored(value)
+            with tempfile.TemporaryDirectory() as temporary:
+                objdump = Path(temporary) / "llvm-objdump"
+                objdump.write_text(
+                    f"#!{sys.executable}\n"
+                    "import sys\n"
+                    "plus_all = '--mattr=+all' in sys.argv\n"
+                    "print('  10: \\tadd\\tx0, x0, #0x1')\n"
+                    "print('  14: \\t' + ('sdot\\tv0.4s, v1.16b, v2.16b' if plus_all else '<unknown>'))\n",
+                    encoding="utf-8",
+                )
+                objdump.chmod(0o755)
+                with self.assertRaisesRegex(checker.RuntimeArtifactError, "unguarded arm64 isa:sdot"):
+                    checker.audit_vendored_artifact(value.artifact, manifest, value.abi, objdump)
+                objdump.write_text(
+                    f"#!{sys.executable}\nprint('  10: \\tadd\\tx0, x0, #0x1')\n",
+                    encoding="utf-8",
+                )
+                result = checker.audit_vendored_artifact(value.artifact, manifest, value.abi, objdump)
+                self.assertEqual(1, result.native_count)
+
+    def test_vendored_arm64_audit_requires_the_ndk_objdump(self) -> None:
+        with fixture(abi="arm64-v8a") as value, mock.patch.dict(os.environ, {"ANDROID_HOME": value.root.as_posix()}):
+            manifest = _vendored(value)
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "llvm-objdump"):
                 checker.audit_vendored_artifact(value.artifact, manifest, value.abi)
 
     def test_distribution_identity_must_be_exact(self) -> None:
@@ -467,6 +580,38 @@ class RuntimeArtifactArchiveSafetyTests(unittest.TestCase):
             value.common["payload.zip"] = _zip({"nested": b"archive"})
             value.write_artifact()
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "nested archive"):
+                value.audit()
+
+    def test_a_judged_payload_passes_only_with_its_exact_bytes_and_release(self) -> None:
+        nested = _zip({"nested": b"archive"})
+        licence = b"licence of bundled code\n"
+        judged = {
+            "requests/tests/fixture.npz": ("requests", "1.0", _sha256(nested)),
+            "requests/vendored/LICENSE.txt": ("requests", "1.0", _sha256(licence)),
+        }
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/tests/fixture.npz"] = nested
+            value.common["requests/vendored/LICENSE.txt"] = licence
+            value.write_artifact()
+            self.assertEqual(2, value.audit().license_count)
+
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/tests/fixture.npz"] = _zip({"nested": b"changed"})
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "nested archive"):
+                value.audit()
+
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", judged):
+            value.common["requests/vendored/LICENSE.txt"] = b"changed\n"
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "unowned license payload"):
+                value.audit()
+
+        other_release = {path: ("requests", "9.9", digest) for path, (_, _, digest) in judged.items()}
+        with fixture() as value, mock.patch.object(checker, "JUDGED_PAYLOADS", other_release):
+            value.common["requests/tests/fixture.npz"] = nested
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, "judged payload"):
                 value.audit()
 
     def test_entry_count_and_size_bombs_are_rejected_without_large_fixtures(self) -> None:

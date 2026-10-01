@@ -127,7 +127,7 @@ def test_an_unavailable_language_import_is_refused(home: Path, tmp_path: Path) -
     source.write_text("word,rank\n猫,10\n", encoding="utf-8")
 
     with pytest.raises(BridgeProtocolError) as error:
-        local_resources.import_frequency(_frequency_request(source, language="zh"))
+        local_resources.import_frequency(_frequency_request(source, language="eo"))
 
     assert error.value.code == "unsupported_language"
     assert not (home / "freqs" / "hebrew-freq").exists()
@@ -172,6 +172,26 @@ def test_a_lemmatising_language_rebuild_replays_its_recorded_options(
     assert calls[0]["declared_mode"] == "occurrence"
     assert callable(calls[0]["lemmatize"])
     assert built == [("he", home / "dicts")]
+
+
+def test_lemmatising_a_list_releases_every_other_languages_tagger(
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Desktop S23 at the lemmatiser: "Download and switch" builds the incoming language's tagger."""
+    import anki_miner.services.frequency.lemmatize as lemmatize
+    from anki_miner.languages import tagger_provider
+
+    monkeypatch.setattr(tagger_provider, "_TAGGERS", {})
+    tagger_provider.get_tagger("id")
+    monkeypatch.setattr(lemmatize, "manual_import_lemmatizer", lambda language, dicts_root=None: list)
+    source = tmp_path / "frequency.csv"
+    source.write_text("word,rank\nספר,10\n", encoding="utf-8")
+
+    local_resources.import_frequency(_frequency_request(source, language="he"))
+
+    assert "id" not in tagger_provider._TAGGERS
 
 
 def test_a_new_list_for_a_lemmatising_language_is_lemmatised(

@@ -1,0 +1,18 @@
+package:
+  name: preshed
+  version: "3.0.13"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/preshed
+
+requirements:
+  build:
+    - cython 3.2.4
+  host:
+    - python
+
+about:
+  license_file: LICENSE

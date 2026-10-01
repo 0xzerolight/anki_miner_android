@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 3,
+  "language": "de",
+  "resources": [
+    {
+      "resourceId": "de-de-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy de_core_news_sm 3.8.0 pipeline",
+      "importName": "de_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7",
+        "sizeBytes": 14639490,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "de_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "de_core_news_sm-3.8.0/config.cfg",
+          "de_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "de_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "TIGER Corpus",
+          "copyright": "Brants, Sabine, Stefanie Dipper, Peter Eisenberg, Silvia Hansen, Esther König, Wolfgang Lezius, Christian Rohrer, George Smith, and Hans Uszkoreit",
+          "license": "commercial (licensed by Explosion)",
+          "url": "https://www.ims.uni-stuttgart.de/forschung/ressourcen/korpora/tiger.html"
+        },
+        {
+          "name": "Tiger2Dep",
+          "copyright": "Wolfgang Seeker",
+          "license": "Citation provided for reference, no code packaged with model",
+          "url": "https://www.ims.uni-stuttgart.de/forschung/ressourcen/werkzeuge/tiger2dep/"
+        },
+        {
+          "name": "WikiNER",
+          "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+          "license": "CC BY 4.0",
+          "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-de-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (German-English) 2026-09-20",
+      "slotId": "wty-de-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/de/en/wty-de-en.zip",
+        "sha256": "0fec270f324df4b0ecd96666e196eb42462d5e75e243c6a507c0ac3f9dc36893",
+        "sizeBytes": 17104879,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-de-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 28,
+        "uncompressedBytes": 222319274,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 67108864
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-de-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (German)",
+      "sourceId": "opensubtitles-de",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/de/de_50k.txt",
+        "sha256": "d9e50546fd7e8b6fe6542a2b33c51d1331092b2a3916ec09f80d97856068705b",
+        "sizeBytes": 662497,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-de-en-2026.09.20",
+    "opensubtitles-de-2018"
+  ]
+}
