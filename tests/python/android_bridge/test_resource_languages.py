@@ -396,3 +396,42 @@ def test_known_words_preview_reads_with_the_languages_ladder(home: Path, tmp_pat
     )
 
     assert preview.payload["sampleWords"] == ["ספר"]
+
+
+# ---------------------------------------------------------------- inventory stamps
+
+
+def _listed_local(**payload: object) -> dict:
+    return decode_envelope(local_resources.list_local_resources(payload), expected_type="resource.local.listed").payload
+
+
+def test_every_inventory_reports_each_slots_language_stamp(home: Path, tmp_path: Path) -> None:
+    """Kotlin offers a chain only the active language's slots; the stamp is how it tells them apart."""
+    he_list = tmp_path / "he.csv"
+    he_list.write_text("word,rank\nספר,10\n", encoding="utf-8")
+    ja_list = tmp_path / "ja.csv"
+    ja_list.write_text("word,rank\n猫,10\n", encoding="utf-8")
+    local_resources.import_frequency(_frequency_request(he_list, language="he"))
+    local_resources.import_frequency({**_frequency_request(ja_list), "operationId": "ja-op", "sourceId": "ja-freq"})
+    _import_dictionary(_hebrew_dictionary(tmp_path / "hebrew.zip"), language="he")
+
+    listed = _listed_local(language="he")
+    dictionaries = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
+
+    assert {item["sourceId"]: item["language"] for item in listed["frequencies"]} == {
+        "hebrew-freq": "he",
+        "ja-freq": "ja",
+    }
+    assert [(item["slotId"], item["language"]) for item in dictionaries.payload["dictionaries"]] == [
+        ("hebrew-dict", "he")
+    ]
+
+
+def test_an_unreadable_or_unstamped_slot_reports_japanese(home: Path) -> None:
+    slot = home / "dicts" / "broken"
+    slot.mkdir(parents=True)
+    (slot / "index.sqlite").write_bytes(b"not sqlite")
+
+    listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
+
+    assert listed.payload["dictionaries"][0]["language"] == "ja"

@@ -106,6 +106,21 @@ def _fail(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
 
 
+_STAMP_RE = re.compile(r"[a-z]{2,3}")
+
+
+def _inventory_language(stamp: object) -> str:
+    """A slot's language stamp as inventory reports it.
+
+    Unstamped (every pre-transition slot) is Japanese, exactly as the engine
+    registries read it. A malformed stamp matches no language's chain in the
+    engine either; it is reported as Japanese rather than failing the whole
+    inventory Kotlin decodes.
+    """
+
+    return stamp if isinstance(stamp, str) and _STAMP_RE.fullmatch(stamp) else "ja"
+
+
 def _exact(payload: Mapping[str, object], keys: set[str], *, code: str) -> None:
     if set(payload) != keys:
         raise _fail(code, f"Expected payload fields: {sorted(keys)!r}")
@@ -2236,6 +2251,7 @@ def _invalid_dictionary_payload(
         # rebuild source for it would re-import into a slot whose state is
         # unknown instead of steering the user to an explicit replace.
         "rebuildSourcePath": None,
+        "language": _inventory_language(None),
     }
 
 
@@ -2339,6 +2355,7 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
         "rebuildSourcePath": _dictionary_rebuild_source_path(slot),
+        "language": _inventory_language(values.get("language")),
     }
 
 

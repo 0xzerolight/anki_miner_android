@@ -68,7 +68,11 @@ object ResourceBridgeCodec {
 
     fun encodeDictionaryListRequest(): String = encode("resource.dictionary.list") {}
 
-    fun encodeLocalResourceListRequest(): String = encode("resource.local.list") {}
+    /** [language] picks whose known-words file the counts describe; every slot is listed regardless. */
+    fun encodeLocalResourceListRequest(language: String = JAPANESE): String {
+        requireLanguage(language)
+        return encode("resource.local.list") { generator -> generator.writeStringField("language", language) }
+    }
 
     fun encodeDictionaryPreflightRequest(
         operation: String,
@@ -141,7 +145,9 @@ object ResourceBridgeCodec {
         selectedSlotId: String,
         overwrite: Boolean,
         catalogResourceId: String?,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(selectedSlotId)
@@ -153,6 +159,7 @@ object ResourceBridgeCodec {
             generator.writeBooleanField("overwrite", overwrite)
             if (catalogResourceId == null) generator.writeNullField("catalogResourceId")
             else generator.writeStringField("catalogResourceId", catalogResourceId)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -163,7 +170,9 @@ object ResourceBridgeCodec {
         sourceName: String,
         sourceFormat: FrequencySourceFormat,
         overwrite: Boolean,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(sourceId)
@@ -175,6 +184,7 @@ object ResourceBridgeCodec {
             generator.writeStringField("sourceName", sourceName)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
             generator.writeBooleanField("overwrite", overwrite)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -185,7 +195,9 @@ object ResourceBridgeCodec {
         sourceName: String,
         sourceFormat: PitchAccentSourceFormat,
         overwrite: Boolean,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(sourceId)
@@ -197,6 +209,7 @@ object ResourceBridgeCodec {
             generator.writeStringField("sourceName", sourceName)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
             generator.writeBooleanField("overwrite", overwrite)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -221,7 +234,9 @@ object ResourceBridgeCodec {
         packId: String,
         packPath: String,
         overwrite: Boolean,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(packId)
@@ -233,6 +248,7 @@ object ResourceBridgeCodec {
             generator.writeStringField("packId", packId)
             generator.writeStringField("packPath", packPath)
             generator.writeBooleanField("overwrite", overwrite)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -240,13 +256,16 @@ object ResourceBridgeCodec {
         operation: String,
         sourcePath: String,
         sourceFormat: KnownWordsSourceFormat,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         return encode("resource.knownwords.import") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("sourcePath", sourcePath)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -254,13 +273,16 @@ object ResourceBridgeCodec {
         operation: String,
         sourcePath: String,
         sourceFormat: KnownWordsSourceFormat,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         return encode("resource.knownwords.preview") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("sourcePath", sourcePath)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -269,7 +291,9 @@ object ResourceBridgeCodec {
         query: String,
         offset: Int,
         limit: Int,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         require(query.toByteArray(Charsets.UTF_8).size <= 1024 && '\u0000' !in query)
         require(offset >= 0)
@@ -279,10 +303,12 @@ object ResourceBridgeCodec {
             generator.writeStringField("query", query)
             generator.writeNumberField("offset", offset)
             generator.writeNumberField("limit", limit)
+            generator.writeStringField("language", language)
         }
     }
 
-    fun encodeKnownWordsRemoveRequest(operation: String, words: List<String>): String {
+    fun encodeKnownWordsRemoveRequest(operation: String, words: List<String>, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         require(words.size in 1..MAX_KNOWN_WORDS_MUTATION && words.distinct().size == words.size)
         require(
@@ -297,11 +323,13 @@ object ResourceBridgeCodec {
             generator.writeArrayFieldStart("words")
             words.forEach(generator::writeString)
             generator.writeEndArray()
+            generator.writeStringField("language", language)
         }
     }
 
     /** Mirrors encodeKnownWordsRemoveRequest: same bounds, distinct wire type and payload. */
-    fun encodeMinedWordsRemoveRequest(operation: String, words: List<String>): String {
+    fun encodeMinedWordsRemoveRequest(operation: String, words: List<String>, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         require(words.size in 1..MAX_KNOWN_WORDS_MUTATION && words.distinct().size == words.size)
         require(
@@ -316,21 +344,26 @@ object ResourceBridgeCodec {
             generator.writeArrayFieldStart("words")
             words.forEach(generator::writeString)
             generator.writeEndArray()
+            generator.writeStringField("language", language)
         }
     }
 
-    fun encodeKnownWordsResetRequest(operation: String, scope: KnownWordsResetScope): String {
+    fun encodeKnownWordsResetRequest(operation: String, scope: KnownWordsResetScope, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         return encode("resource.knownwords.reset") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("scope", scope.wireValue)
+            generator.writeStringField("language", language)
         }
     }
 
-    fun encodeKnownWordsExportRequest(operation: String): String {
+    fun encodeKnownWordsExportRequest(operation: String, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         return encode("resource.knownwords.export") { generator ->
             generator.writeStringField("operationId", operation)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -1084,6 +1117,7 @@ object ResourceBridgeCodec {
                 "catalogResourceId",
                 "attribution",
                 "rebuildSourcePath",
+                "language",
             ),
             "installed dictionary",
         )
@@ -1104,6 +1138,7 @@ object ResourceBridgeCodec {
             catalogResourceId = nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
             attribution = attributions(value.getValue("attribution"), allowEmpty = true),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
+            language = slotLanguage(value.getValue("language")),
         )
         if (!installed.occupied || installed.valid != installed.schemaOk) {
             invalid("Dictionary occupancy or validity flags are inconsistent")
@@ -1143,6 +1178,7 @@ object ResourceBridgeCodec {
                 "schemaVersion",
                 "isCategorical",
                 "rebuildSourcePath",
+                "language",
             ),
             "installed frequency source",
         )
@@ -1155,6 +1191,7 @@ object ResourceBridgeCodec {
             schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
             isCategorical = bool(value.getValue("isCategorical"), "isCategorical"),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
+            language = slotLanguage(value.getValue("language")),
         )
     }
 
@@ -1171,6 +1208,7 @@ object ResourceBridgeCodec {
                 "schemaOk",
                 "schemaVersion",
                 "rebuildSourcePath",
+                "language",
             ),
             "installed pitch source",
         )
@@ -1183,6 +1221,7 @@ object ResourceBridgeCodec {
             schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
             schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
+            language = slotLanguage(value.getValue("language")),
         )
     }
 
@@ -1190,7 +1229,7 @@ object ResourceBridgeCodec {
         val value = objectValue(raw, "installed audio pack")
         exact(
             value,
-            setOf("packId", "sourceName", "format", "entryCount", "contentAvailable"),
+            setOf("packId", "sourceName", "format", "entryCount", "contentAvailable", "language"),
             "installed audio pack",
         )
         return InstalledAudioPack(
@@ -1199,6 +1238,7 @@ object ResourceBridgeCodec {
             format = boundedText(value.getValue("format"), "format", 64),
             entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
             contentAvailable = bool(value.getValue("contentAvailable"), "contentAvailable"),
+            language = slotLanguage(value.getValue("language")),
         )
     }
 
@@ -1399,6 +1439,11 @@ object ResourceBridgeCodec {
         array(value, context).map { boundedText(it, "$context item", maxItemBytes, allowEmpty = true) }
 
     private fun requireOperationId(value: String): String = value.also { require(operationId.matches(it)) }
+
+    private fun requireLanguage(value: String): String = value.also { require(languageCode.matches(it)) }
+
+    private fun slotLanguage(value: BridgeJsonValue): String =
+        text(value, "language").also { if (!languageCode.matches(it)) invalid("Slot language stamp is invalid") }
 
     private fun requireSlotId(value: String): String = value.also { if (!slotId.matches(it)) invalid("Invalid dictionary slot") }
 

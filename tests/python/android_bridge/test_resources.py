@@ -1373,6 +1373,7 @@ def test_dictionary_inventory_does_not_follow_slot_or_sidecar_symlinks(
             "catalogResourceId": None,
             "attribution": [],
             "rebuildSourcePath": None,
+            "language": "ja",
         }
     ]
 
@@ -1993,6 +1994,7 @@ def test_frequency_import_is_indexed_inventory_visible_and_no_replace_by_default
             "schemaVersion": 3,
             "isCategorical": False,
             "rebuildSourcePath": str(home / "freqs" / "fixture-freq" / "source.csv"),
+            "language": "ja",
         }
     ]
 
@@ -2238,6 +2240,7 @@ def test_v018_pitch_csv_is_migrated_without_removing_released_files(
             "schemaOk": True,
             "schemaVersion": 3,
             "rebuildSourcePath": str(home / "pitch" / "legacy-pitch" / "source.csv"),
+            "language": "ja",
         }
     ]
     migrated = home / "pitch" / "legacy-pitch" / "index.sqlite"
@@ -2304,6 +2307,7 @@ def test_pitch_csv_import_publishes_its_own_slot_and_inventory(
             # The persisted copy keeps the *input* suffix, which is not the
             # reported format: this fixture is imported from a .tsv.
             "rebuildSourcePath": str(home / "pitch" / "fixture-pitch" / "source.tsv"),
+            "language": "ja",
         }
     ]
 
@@ -2336,6 +2340,7 @@ def test_malformed_pitch_slot_is_exposed_for_same_id_replacement(
             "schemaOk": False,
             "schemaVersion": 0,
             "rebuildSourcePath": None,
+            "language": "ja",
         }
     ]
 
@@ -3231,6 +3236,7 @@ def test_audio_pack_zip_is_private_self_contained_and_inventory_visible(
             "format": "ajt",
             "entryCount": 1,
             "contentAvailable": True,
+            "language": "ja",
         }
     ]
 
@@ -3274,6 +3280,7 @@ def test_audio_inventory_surfaces_corrupt_slot_for_replace_and_delete(
             "format": "unknown",
             "entryCount": 0,
             "contentAvailable": False,
+            "language": "ja",
         }
     ]
 
@@ -3560,6 +3567,7 @@ def test_import_android_audio_db_registers_metadata_only_pack(
             "format": "android_db",
             "entryCount": 1,
             "contentAvailable": True,
+            "language": "ja",
         }
     ]
 

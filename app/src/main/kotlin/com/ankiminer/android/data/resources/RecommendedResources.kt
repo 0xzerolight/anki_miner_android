@@ -73,8 +73,10 @@ internal fun recommendedResourcePlan(
                         when {
                             slot == null -> RecommendedResourceAction.INSTALL
                             // Deliberately not keyed on catalogResourceId: a healthy custom import
-                            // owning the slot is the user's choice and must not be overwritten.
-                            slot.isChainEligible -> RecommendedResourceAction.SKIP
+                            // owning the slot is the user's choice and must not be overwritten. A
+                            // slot stamped for another language is not in this language's chain.
+                            slot.isChainEligible && slot.language == catalog?.language ->
+                                RecommendedResourceAction.SKIP
                             // An unusable occupied slot already fails startup, and the recommended
                             // set is the recovery path, so it repairs rather than refuses.
                             else -> RecommendedResourceAction.REPLACE
@@ -82,11 +84,11 @@ internal fun recommendedResourcePlan(
                     }
                     is FrequencyCatalogResource -> {
                         val source = frequencySources.firstOrNull { it.sourceId == resource.sourceId }
-                        localAction(source?.schemaOk, source?.entryCount)
+                        localAction(source?.schemaOk, source?.entryCount, source?.language == catalog?.language)
                     }
                     is PitchCatalogResource -> {
                         val source = pitchSources.firstOrNull { it.sourceId == resource.sourceId }
-                        localAction(source?.schemaOk, source?.entryCount)
+                        localAction(source?.schemaOk, source?.entryCount, source?.language == catalog?.language)
                     }
                     is UniDicCatalogResource ->
                         error("UniDic has its own install path and must not be recommended")
@@ -98,10 +100,11 @@ internal fun recommendedResourcePlan(
 private fun localAction(
     schemaOk: Boolean?,
     entryCount: Long?,
+    sameLanguage: Boolean,
 ): RecommendedResourceAction =
     when {
         schemaOk == null -> RecommendedResourceAction.INSTALL
-        schemaOk && (entryCount ?: 0L) > 0L -> RecommendedResourceAction.SKIP
+        schemaOk && sameLanguage && (entryCount ?: 0L) > 0L -> RecommendedResourceAction.SKIP
         else -> RecommendedResourceAction.REPLACE
     }
 

@@ -208,6 +208,8 @@ data class InstalledDictionary(
     val attribution: List<ResourceAttribution>,
     /** See [InstalledFrequencySource.rebuildSourcePath]. */
     val rebuildSourcePath: String?,
+    /** The mining language the slot was imported for; unstamped legacy slots are Japanese. */
+    val language: String = JAPANESE,
 ) {
     val isUsable: Boolean
         get() = occupied && valid && schemaOk
@@ -391,6 +393,8 @@ data class InstalledFrequencySource(
      * user re-picking the original file; null means the slot is unrecoverable.
      */
     val rebuildSourcePath: String?,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 data class ImportedPitchSource(
@@ -414,6 +418,8 @@ data class InstalledPitchSource(
     val schemaVersion: Long,
     /** See [InstalledFrequencySource.rebuildSourcePath]. */
     val rebuildSourcePath: String?,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 /**
@@ -444,6 +450,8 @@ data class InstalledAudioPack(
     val format: String,
     val entryCount: Long,
     val contentAvailable: Boolean,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 data class ImportedKnownWords(

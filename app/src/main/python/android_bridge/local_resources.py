@@ -2165,6 +2165,7 @@ def _invalid_pitch_inventory_entry(source_id: str) -> dict[str, object]:
         # An entry only reaches here when its index could not be read at all,
         # which is the "missing" case, not the rebuildable "stale" one.
         "rebuildSourcePath": None,
+        "language": core._inventory_language(None),
     }
 
 
@@ -2307,6 +2308,7 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaOk": version == core._PITCH_SCHEMA_VERSION,
                 "schemaVersion": max(version, 0),
                 "rebuildSourcePath": _rebuild_source_path(child),
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     if legacy_occupied and not any(item["sourceId"] == _LEGACY_PITCH_SOURCE_ID for item in result):
@@ -2447,6 +2449,7 @@ def _frequency_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaVersion": max(version, 0),
                 "isCategorical": meta.get("is_categorical") == "1",
                 "rebuildSourcePath": _rebuild_source_path(child),
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     return result
@@ -2477,6 +2480,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                     "format": "unknown",
                     "entryCount": 0,
                     "contentAvailable": False,
+                    "language": core._inventory_language(None),
                 }
             )
             continue
@@ -2517,6 +2521,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                 "format": meta.get("format", "unknown"),
                 "entryCount": max(count, 0),
                 "contentAvailable": content_available,
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     return result

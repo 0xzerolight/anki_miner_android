@@ -146,6 +146,49 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun everyInventoryCarriesEachSlotsLanguageStamp() {
+        val listed =
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"opensubtitles-he","sourceName":"OS","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":3,"isCategorical":false,"rebuildSourcePath":null,"language":"he"}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
+        assertEquals("he", ResourceBridgeCodec.decodeLocalResourceList(listed).frequencies.single().language)
+
+        for (bad in listOf("\"HE\"", "\"\"", "null")) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeLocalResourceList(listed.replace("\"language\":\"he\"", "\"language\":$bad"))
+                }
+            assertEquals("invalid_resource_response", failure.code)
+        }
+        // Exact keys: a Python inventory without the stamp is refused rather than guessed.
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeLocalResourceList(listed.replace(",\"language\":\"he\"", ""))
+        }
+    }
+
+    @Test
+    fun languageBearingRequestsSendTheirLanguage() {
+        val requests =
+            listOf(
+                ResourceBridgeCodec.encodeLocalResourceListRequest("he"),
+                ResourceBridgeCodec.encodeKnownWordsExportRequest("op", language = "he"),
+                ResourceBridgeCodec.encodeKnownWordsResetRequest("op", KnownWordsResetScope.USER, language = "he"),
+                ResourceBridgeCodec.encodeFrequencyImportRequest(
+                    "op",
+                    "/a.csv",
+                    "freq",
+                    "Freq",
+                    FrequencySourceFormat.CSV,
+                    overwrite = false,
+                    language = "he",
+                ),
+                ResourceBridgeCodec.encodeDictionaryImportRequest("op", "/a.zip", "slot", false, null, language = "he"),
+            )
+
+        requests.forEach { assertTrue(it, it.contains("\"language\":\"he\"")) }
+        assertTrue(ResourceBridgeCodec.encodeLocalResourceListRequest().contains("\"language\":\"ja\""))
+        assertThrows(IllegalArgumentException::class.java) { ResourceBridgeCodec.encodeLocalResourceListRequest("Hebrew") }
+    }
+
+    @Test
     fun catalogRejectsALocalFormatOutsideTheImporterContract() {
         // "txt" is a legal frequency format and an illegal pitch one.
         val raw = committedCatalogEnvelope().replace(""""format": "tsv"""", """"format": "txt"""")
@@ -186,7 +229,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun dictionaryInventoryPreservesInvalidOccupiedSlots() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":false,"sourceName":"jitendex","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":"/data/user/0/files/dicts/jitendex/source.zip"}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":false,"sourceName":"jitendex","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":"/data/user/0/files/dicts/jitendex/source.zip","language":"ja"}]}}"""
 
         val installed = ResourceBridgeCodec.decodeDictionaryList(raw).single()
 
@@ -211,7 +254,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun dictionaryInventoryRejectsInconsistentFlagsAndForgedAttribution() {
         val unoccupied =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":false,"valid":false,"sourceName":"fixture","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":null}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":false,"valid":false,"sourceName":"fixture","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":null,"language":"ja"}]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeDictionaryList(unoccupied)
         }
@@ -268,7 +311,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun installedDictionaryWithUnknownCatalogIdentityIsRejected() {
         val unknownCatalogId =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[],"rebuildSourcePath":null}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[],"rebuildSourcePath":null,"language":"ja"}]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeDictionaryList(unknownCatalogId)
         }
@@ -623,7 +666,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryDecodesEveryInstalledClass() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}],"languageData":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null,"language":"ja"}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true,"language":"ja"}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}],"languageData":[]}}"""
 
         val inventory = ResourceBridgeCodec.decodeLocalResourceList(raw)
 
@@ -637,7 +680,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryRejectsDuplicateIdsAndInconsistentCounts() {
         val duplicateFrequency =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(duplicateFrequency)
         }

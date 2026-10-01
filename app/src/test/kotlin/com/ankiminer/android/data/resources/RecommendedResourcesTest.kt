@@ -71,6 +71,21 @@ class RecommendedResourcesTest {
     }
 
     @Test
+    fun aSlotStampedForAnotherLanguageDoesNotSatisfyThisOne() {
+        val plan =
+            plan(
+                dictionaries = listOf(dictionary(dictionarySlot).copy(language = "he")),
+                frequencySources = listOf(frequency(frequencyId).copy(language = "he")),
+                pitchSources = listOf(pitch(pitchId)),
+            )
+
+        assertEquals(
+            listOf(RecommendedResourceAction.REPLACE, RecommendedResourceAction.REPLACE, RecommendedResourceAction.SKIP),
+            plan.items.map { it.action },
+        )
+    }
+
+    @Test
     fun nullCatalogYieldsAPlanThatIsNeitherSatisfiedNorActionable() {
         val plan = recommendedResourcePlan(null, emptyList(), emptyList(), emptyList())
 
