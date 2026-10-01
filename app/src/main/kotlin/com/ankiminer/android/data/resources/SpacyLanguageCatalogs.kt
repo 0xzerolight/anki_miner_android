@@ -1821,8 +1821,53 @@ internal val slovenianCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-sl-en-2026.09.20",
+                    displayName = "Wiktionary (Slovene-English, small) 2026-09-20",
+                    slotId = "wty-sl-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/sl/en/wty-sl-en.zip",
+                            sha256 = "e41357b12e82ef16b401ecc2d85b64045506292532a82cf1428df6806ed2d667",
+                            sizeBytes = 828_222,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-sl-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 7,
+                            uncompressedBytes = 9_887_582,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-sl-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Slovenian)",
+                    sourceId = "opensubtitles-sl",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/sl/sl_50k.txt",
+                            sha256 = "00d9dc7a50726e99ab4d5bb50ce8087ce709a1416afad65a9dec0821c03ba442",
+                            sizeBytes = 619_289,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-sl-en-2026.09.20", "opensubtitles-sl-2018"),
     )
 
 internal val russianCatalog =
