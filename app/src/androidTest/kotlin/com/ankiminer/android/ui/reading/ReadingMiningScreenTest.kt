@@ -41,6 +41,7 @@ import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.MiningFailure
+import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
@@ -81,9 +82,6 @@ class ReadingMiningScreenTest {
         )
 
         composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_SOURCE).performClick()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled().performClick()
 
         composeRule.runOnIdle {
@@ -122,9 +120,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_SOURCE).assertDoesNotExist()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -149,9 +144,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).performTextInput("本文。")
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled().performClick()
 
         composeRule.runOnIdle { assertEquals(1, starts) }
@@ -176,9 +168,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_TEXT))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).performTextInput(" \n\t ")
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -344,9 +333,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.PICK_ARCHIVE))
         composeRule.onNodeWithTag(ReadingMiningTestTags.PICK_ARCHIVE).performClick()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsEnabled()
         composeRule.runOnIdle { assertTrue(pickedArchive) }
 
@@ -364,9 +350,6 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasText(mismatchMessage))
         composeRule.onNodeWithText(mismatchMessage).assertExists()
-        composeRule
-            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
     }
 
@@ -696,8 +679,6 @@ class ReadingMiningScreenTest {
                     },
                     onConfirmCuration = {},
                     onCancel = {},
-                    onRetry = {},
-                    onReset = {},
                 )
             }
         }
@@ -829,8 +810,6 @@ class ReadingMiningScreenTest {
                     onSelectSentence = { _, _ -> },
                     onConfirmCuration = {},
                     onCancel = { cancelled = true },
-                    onRetry = {},
-                    onReset = {},
                 )
             }
         }
@@ -921,7 +900,7 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun terminalReadingFailureSuppressesCommandError() {
+    fun aFailedReadingRunShowsItsCauseAboveTheInputs() {
         setScreen(
             state =
                 ReadingMiningUiState(
@@ -933,12 +912,28 @@ class ReadingMiningScreenTest {
                             failure = MiningFailure("Private protocol detail", retryable = true),
                             result = null,
                         ),
-                    commandError = ReadingMiningCommandError.START,
                 ),
         )
 
-        composeRule.onAllNodesWithTag(MINING_FAILURE_TEST_TAG).assertCountEquals(1)
         composeRule.onNodeWithText("Private protocol detail").assertIsDisplayed()
+        composeRule.onNodeWithText("Retry").assertDoesNotExist()
+        composeRule.onNodeWithText("Start over").assertDoesNotExist()
+    }
+
+    @Test
+    fun readingInputsStayOnScreenButLockedWhileARunIsActive() {
+        setScreen(
+            state =
+                ReadingMiningUiState(
+                    sourceMode = ReadingSourceMode.PASTED_TEXT,
+                    pastedText = "吾輩は猫である。",
+                    runState = MiningRunState.Running("run", MiningProgress(1, 4, "Tokenising")),
+                ),
+        )
+
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_TEXT).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PROGRESS).assertExists()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertDoesNotExist()
     }
 
     @Test
@@ -1121,8 +1116,6 @@ class ReadingMiningScreenTest {
             onSelectSentence = { _, _ -> },
             onConfirmCuration = {},
             onCancel = {},
-            onRetry = {},
-            onReset = {},
             onMapFields = onMapFields,
             listState = listState,
         )

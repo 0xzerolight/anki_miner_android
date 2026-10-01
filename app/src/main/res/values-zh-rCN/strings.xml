@@ -190,12 +190,9 @@
     <string name="details">详情</string>
     <string name="hide_details">隐藏详情</string>
     <string name="copy_diagnostics">复制诊断信息</string>
-    <string name="retry_mining">重试</string>
-    <string name="reset_mining">重新开始</string>
     <string name="start_error">无法启动运行。</string>
     <string name="curation_error">无法提交选择。</string>
     <string name="cancel_error">无法取消运行。</string>
-    <string name="reset_error">无法重置界面。</string>
     <string name="mining_notification_channel">挖词进度</string>
     <string name="mining_notification_channel_description">正在进行的挖词任务的进度和取消控件</string>
     <string name="resource_import_notification_channel">资源导入</string>

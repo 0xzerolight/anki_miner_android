@@ -198,12 +198,9 @@
     <string name="details">Détails</string>
     <string name="hide_details">Masquer les détails</string>
     <string name="copy_diagnostics">Copier les diagnostics</string>
-    <string name="retry_mining">Réessayer</string>
-    <string name="reset_mining">Recommencer</string>
     <string name="start_error">Impossible de démarrer l\'extraction.</string>
     <string name="curation_error">Impossible d\'envoyer les sélections.</string>
     <string name="cancel_error">Impossible d\'annuler l\'extraction.</string>
-    <string name="reset_error">Impossible de réinitialiser l\'écran.</string>
     <string name="mining_notification_channel">Progression de l\'extraction</string>
     <string name="mining_notification_channel_description">Progression et commandes d\'annulation des extractions actives</string>
     <string name="resource_import_notification_channel">Importations de ressources</string>

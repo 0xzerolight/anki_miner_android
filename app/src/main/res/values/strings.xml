@@ -201,12 +201,9 @@
     <string name="details">Details</string>
     <string name="hide_details">Hide details</string>
     <string name="copy_diagnostics">Copy diagnostics</string>
-    <string name="retry_mining">Retry</string>
-    <string name="reset_mining">Start over</string>
     <string name="start_error">Could not start the run.</string>
     <string name="curation_error">Selections could not be submitted.</string>
     <string name="cancel_error">Could not cancel the run.</string>
-    <string name="reset_error">Could not reset the screen.</string>
     <string name="mining_notification_channel">Mining progress</string>
     <string name="mining_notification_channel_description">Progress and cancellation controls for active mining runs</string>
     <string name="resource_import_notification_channel">Resource imports</string>

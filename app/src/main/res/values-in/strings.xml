@@ -190,12 +190,9 @@
     <string name="details">Detail</string>
     <string name="hide_details">Sembunyikan detail</string>
     <string name="copy_diagnostics">Salin diagnostik</string>
-    <string name="retry_mining">Coba lagi</string>
-    <string name="reset_mining">Mulai ulang</string>
     <string name="start_error">Proses tidak dapat dimulai.</string>
     <string name="curation_error">Pilihan tidak dapat dikirim.</string>
     <string name="cancel_error">Proses tidak dapat dibatalkan.</string>
-    <string name="reset_error">Layar tidak dapat disetel ulang.</string>
     <string name="mining_notification_channel">Progres mining</string>
     <string name="mining_notification_channel_description">Kontrol progres dan pembatalan untuk proses mining aktif</string>
     <string name="resource_import_notification_channel">Impor sumber daya</string>

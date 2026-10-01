@@ -151,8 +151,6 @@ class UiAuditScreenshotTest {
                         onSelectSentence = { _, _ -> },
                         onConfirmCuration = {},
                         onCancel = {},
-                        onRetry = {},
-                        onReset = {},
                         onSourceModeChanged = {},
                         onPastedTextChanged = {},
                         onClearPastedText = {},

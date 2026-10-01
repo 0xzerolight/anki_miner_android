@@ -198,12 +198,9 @@
     <string name="details">Dettagli</string>
     <string name="hide_details">Nascondi dettagli</string>
     <string name="copy_diagnostics">Copia diagnostica</string>
-    <string name="retry_mining">Riprova</string>
-    <string name="reset_mining">Ricomincia</string>
     <string name="start_error">Impossibile avviare l\'esecuzione.</string>
     <string name="curation_error">Impossibile inviare le selezioni.</string>
     <string name="cancel_error">Impossibile annullare l\'esecuzione.</string>
-    <string name="reset_error">Impossibile reimpostare la schermata.</string>
     <string name="mining_notification_channel">Avanzamento mining</string>
     <string name="mining_notification_channel_description">Controlli di avanzamento e annullamento per le esecuzioni di mining attive</string>
     <string name="resource_import_notification_channel">Importazioni di risorse</string>

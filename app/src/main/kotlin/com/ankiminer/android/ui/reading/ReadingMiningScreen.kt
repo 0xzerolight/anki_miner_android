@@ -1,19 +1,9 @@
 package com.ankiminer.android.ui.reading
 
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -23,18 +13,15 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,17 +33,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.heading
-import androidx.compose.ui.semantics.paneTitle
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationCandidate
-import com.ankiminer.android.mining.MiningProgress
 import com.ankiminer.android.mining.MiningRunState
-import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
+import com.ankiminer.android.mining.terminalResult
 import com.ankiminer.android.reading.CurationPageImageDecoder
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.curationDefinitionMaxHeight
@@ -77,11 +60,15 @@ import com.ankiminer.android.ui.mining.minedText
 import com.ankiminer.android.ui.mining.CurationSort
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
+import com.ankiminer.android.ui.mining.CURATING_PHASE
 import com.ankiminer.android.ui.mining.MiningAdvisoryLines
+import com.ankiminer.android.ui.mining.MiningBottomBar
+import com.ankiminer.android.ui.mining.MiningBottomBarState
+import com.ankiminer.android.ui.mining.MiningPhaseScaffold
+import com.ankiminer.android.ui.mining.ResetMiningScrollOnTransition
+import com.ankiminer.android.ui.mining.SETUP_PHASE
+import com.ankiminer.android.ui.mining.miningFailureBannerItem
 import com.ankiminer.android.ui.mining.MiningFailureCard
-import com.ankiminer.android.ui.mining.MiningPhaseTarget
-import com.ankiminer.android.ui.mining.MiningProgressPanel
-import com.ankiminer.android.ui.mining.MiningResultHeadline
 import com.ankiminer.android.ui.mining.MiningResultUndoAction
 import com.ankiminer.android.ui.mining.MiningUndoConfirmationDialog
 import com.ankiminer.android.ui.mining.ReconcileCurationFocus
@@ -99,9 +86,6 @@ import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.PhaseTitle
-import com.ankiminer.android.ui.theme.PrimaryActionButton
-import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
@@ -129,8 +113,6 @@ fun ReadingMiningScreen(
     onConfirmCuration: () -> Unit,
     onFinishCuration: () -> Unit = {},
     onCancel: () -> Unit,
-    onRetry: () -> Unit,
-    onReset: () -> Unit,
     onRequestUndo: () -> Unit = {},
     onConfirmUndo: () -> Unit = {},
     onDismissUndoConfirmation: () -> Unit = {},
@@ -170,15 +152,7 @@ fun ReadingMiningScreen(
         remember(sortName) {
             CurationSort.entries.firstOrNull { it.name == sortName } ?: CurationSort.FREQUENCY
         }
-    val phaseKey = state.phaseKey()
-    val phaseTarget =
-        remember(phaseKey) {
-            MiningPhaseTarget(
-                key = phaseKey,
-                initialState = state,
-            )
-        }
-    ResetMiningScrollOnTransition(state = state, listState = listState)
+    ResetMiningScrollOnTransition(transitionKey = state.scrollTransitionKey(), listState = listState)
     ResetCurationScrollOnProjectionChange(
         listState = listState,
         requestId = curation?.requestId,
@@ -196,336 +170,191 @@ fun ReadingMiningScreen(
         )
     }
 
-    Scaffold(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .testTag(ReadingMiningTestTags.SCREEN),
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+    MiningPhaseScaffold(
+        state = state,
+        phaseKey = if (state.runState is MiningRunState.Curating) CURATING_PHASE else SETUP_PHASE,
+        label = "reading mining phase",
+        phaseTitle = { target -> stringResource(target.phaseTitle()) },
         bottomBar = {
-            if (state.runState is MiningRunState.Curating) {
-                StickyCurationActions(
-                    selectedCount = curation?.selectedCount ?: 0,
-                    page = curation?.page,
-                    isFinalPage = curation?.isFinalPage ?: true,
-                    curationPending = state.curationPending,
-                    cancelPending = state.cancelPending,
-                    requiresCancelConfirmation = curation?.hasSelectionToLose == true,
-                    commandErrorMessage =
-                        state.commandError
-                            ?.takeIf {
-                                it == ReadingMiningCommandError.CURATION ||
-                                    it == ReadingMiningCommandError.CANCEL
-                            }?.message(),
-                    confirmTestTag = ReadingMiningTestTags.CONFIRM_CURATION,
-                    cancelTestTag = ReadingMiningTestTags.CANCEL,
-                    onDismissCommandError = onDismissCommandError,
-                    onConfirm = onConfirmCuration,
-                    onCancel = onCancel,
+            ReadingMiningBottomBar(
+                state = state,
+                onStart = onStart,
+                onCancel = onCancel,
+                onConfirmCuration = onConfirmCuration,
+                onDismissCommandError = onDismissCommandError,
+            )
+        },
+        modifier = modifier.testTag(ReadingMiningTestTags.SCREEN),
+    ) { targetState, paneHeight ->
+        val mediaMaxHeight = curationMediaMaxHeight(paneHeight)
+        val definitionMaxHeight = curationDefinitionMaxHeight(paneHeight)
+        val targetCuration = targetState.curation
+        val pageImageDecoder = remember { CurationPageImageDecoder() }
+        val selectionProjectionKey =
+            if (filter == CurationFilter.ALL) {
+                emptySet()
+            } else {
+                targetCuration?.selectedCandidateIds.orEmpty()
+            }
+        val visibleCandidates =
+            remember(
+                targetCuration?.candidates,
+                selectionProjectionKey,
+                query,
+                filter,
+                sort,
+            ) {
+                curateCandidates(
+                    candidates = targetCuration?.candidates.orEmpty(),
+                    selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty(),
+                    query = query,
+                    filter = filter,
+                    sort = sort,
                 )
             }
-        },
-    ) { scaffoldPadding ->
-        AnimatedContent(
-            targetState = phaseTarget,
-            modifier = Modifier.fillMaxSize(),
-            transitionSpec = {
-                (
-                    fadeIn(tween(durationMillis = 150)) togetherWith
-                        fadeOut(tween(durationMillis = 90))
-                ) using null
-            },
-            contentKey = { target -> target.key },
-            label = "reading mining phase",
-        ) { target ->
-            val targetState =
-                if (target === phaseTarget) {
-                    state
-                } else {
-                    target.initialState
-                }
-            val targetCuration = targetState.curation
-            val pageImageDecoder = remember { CurationPageImageDecoder() }
-            val selectionProjectionKey =
-                if (filter == CurationFilter.ALL) {
-                    emptySet()
-                } else {
-                    targetCuration?.selectedCandidateIds.orEmpty()
-                }
-            val visibleCandidates =
-                remember(
-                    targetCuration?.candidates,
-                    selectionProjectionKey,
-                    query,
-                    filter,
-                    sort,
-                ) {
-                    curateCandidates(
-                        candidates = targetCuration?.candidates.orEmpty(),
-                        selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty(),
-                        query = query,
-                        filter = filter,
-                        sort = sort,
-                    )
-                }
-            val candidateRowTexts =
-                rememberCurationCandidateRowTexts(visibleCandidates)
-            val selectedCandidateStateText = stringResource(R.string.candidate_state_selected)
-            val excludedCandidateStateText = stringResource(R.string.candidate_state_excluded)
-            // Raw templates: formatting per row is cheap, a resource lookup per row is not.
-            val includeWordTemplate = stringResource(R.string.curation_include_word)
-            val excludeWordTemplate = stringResource(R.string.curation_exclude_word)
-            val selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty()
-            val visibleCandidateIds =
-                remember(visibleCandidates) { visibleCandidates.map { it.candidateId } }
-            // Detail follows focus only. Requiring selection too is what made inspecting an
-            // included candidate exclude it.
-            val expandedCandidateId =
-                targetCuration?.focusedCandidateId?.takeIf { it in visibleCandidateIds }
-            val rowPositions =
-                remember(visibleCandidateIds, expandedCandidateId) {
-                    curationRowPositions(visibleCandidateIds, expandedCandidateId)
-                }
-            ReconcileCurationFocus(
-                visibleCandidateIds = visibleCandidateIds,
-                focusedCandidateId = targetCuration?.focusedCandidateId,
-                onReconcile = onReconcileFocus,
-            )
-            // Scoped to the projection, not the whole protocol page: a filtered bulk action must
-            // not silently reach rows the search is hiding.
-            val bulkSelectionScope =
-                remember(visibleCandidateIds, targetCuration?.knownCandidateIds) {
-                    curationBulkSelectionScope(
-                        visibleCandidateIds = visibleCandidateIds,
-                        knownCandidateIds = targetCuration?.knownCandidateIds.orEmpty(),
-                    )
-                }
-            val selectableVisibleCandidateIds = bulkSelectionScope.visibleCandidateIds
-            val phaseTitle = stringResource(targetState.phaseTitle())
-            // The pane title and insets belong to the whole phase, the CONTENT tag and its scroll
-            // semantics only to the list — every performScrollToNode resolves against that node.
-            BoxWithConstraints(
+        val candidateRowTexts =
+            rememberCurationCandidateRowTexts(visibleCandidates)
+        val selectedCandidateStateText = stringResource(R.string.candidate_state_selected)
+        val excludedCandidateStateText = stringResource(R.string.candidate_state_excluded)
+        // Raw templates: formatting per row is cheap, a resource lookup per row is not.
+        val includeWordTemplate = stringResource(R.string.curation_include_word)
+        val excludeWordTemplate = stringResource(R.string.curation_exclude_word)
+        val selectedCandidateIds = targetCuration?.selectedCandidateIds.orEmpty()
+        val visibleCandidateIds =
+            remember(visibleCandidates) { visibleCandidates.map { it.candidateId } }
+        // Detail follows focus only. Requiring selection too is what made inspecting an
+        // included candidate exclude it.
+        val expandedCandidateId =
+            targetCuration?.focusedCandidateId?.takeIf { it in visibleCandidateIds }
+        val rowPositions =
+            remember(visibleCandidateIds, expandedCandidateId) {
+                curationRowPositions(visibleCandidateIds, expandedCandidateId)
+            }
+        ReconcileCurationFocus(
+            visibleCandidateIds = visibleCandidateIds,
+            focusedCandidateId = targetCuration?.focusedCandidateId,
+            onReconcile = onReconcileFocus,
+        )
+        // Scoped to the projection, not the whole protocol page: a filtered bulk action must
+        // not silently reach rows the search is hiding.
+        val bulkSelectionScope =
+            remember(visibleCandidateIds, targetCuration?.knownCandidateIds) {
+                curationBulkSelectionScope(
+                    visibleCandidateIds = visibleCandidateIds,
+                    knownCandidateIds = targetCuration?.knownCandidateIds.orEmpty(),
+                )
+            }
+        val selectableVisibleCandidateIds = bulkSelectionScope.visibleCandidateIds
+        if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
+            CurationChrome(
+                selectedCount = targetCuration.selectedCount,
+                runSelectedCount =
+                    targetCuration.previousPageSelectedCount + targetCuration.selectedCount,
+                candidateCount = targetCuration.candidates.size,
+                page = targetCuration.page,
+                isFinalPage = targetCuration.isFinalPage,
+                query = query,
+                filter = filter,
+                sort = sort,
+                enabled = !targetState.curationPending && !targetState.cancelPending,
+                visibleSelection =
+                    curationVisibleSelection(selectableVisibleCandidateIds, selectedCandidateIds),
+                visibleCount = bulkSelectionScope.visibleCount,
+                selectVisibleEnabled =
+                    selectableVisibleCandidateIds.isNotEmpty() &&
+                        !targetState.curationPending &&
+                        !targetState.cancelPending,
+                selectAllTestTag = ReadingMiningTestTags.SELECT_ALL,
+                finishTestTag = ReadingMiningTestTags.FINISH_CURATION,
+                onQueryChanged = { query = it },
+                onFilterChanged = { filterName = it.name },
+                onSortChanged = { sortName = it.name },
+                onSetSelectionForVisible = { select ->
+                    onSetSelectionForVisible(selectableVisibleCandidateIds, select)
+                },
+                onFinishCuration = onFinishCuration,
                 modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(scaffoldPadding)
-                        .consumeWindowInsets(scaffoldPadding),
-            ) {
-                val mediaMaxHeight = curationMediaMaxHeight(maxHeight)
-                val definitionMaxHeight = curationDefinitionMaxHeight(maxHeight)
-                Column(
-                    modifier = Modifier.fillMaxSize().semantics { paneTitle = phaseTitle },
-                ) {
-                    if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
-                        CurationChrome(
-                            selectedCount = targetCuration.selectedCount,
-                            runSelectedCount =
-                                targetCuration.previousPageSelectedCount + targetCuration.selectedCount,
-                            candidateCount = targetCuration.candidates.size,
-                            page = targetCuration.page,
-                            isFinalPage = targetCuration.isFinalPage,
-                            query = query,
-                            filter = filter,
-                            sort = sort,
-                            enabled = !targetState.curationPending && !targetState.cancelPending,
-                            visibleSelection =
-                                curationVisibleSelection(selectableVisibleCandidateIds, selectedCandidateIds),
-                            visibleCount = bulkSelectionScope.visibleCount,
-                            selectVisibleEnabled =
-                                selectableVisibleCandidateIds.isNotEmpty() &&
-                                    !targetState.curationPending &&
-                                    !targetState.cancelPending,
-                            selectAllTestTag = ReadingMiningTestTags.SELECT_ALL,
-                            finishTestTag = ReadingMiningTestTags.FINISH_CURATION,
-                            onQueryChanged = { query = it },
-                            onFilterChanged = { filterName = it.name },
-                            onSortChanged = { sortName = it.name },
-                            onSetSelectionForVisible = { select ->
-                                onSetSelectionForVisible(selectableVisibleCandidateIds, select)
-                            },
-                            onFinishCuration = onFinishCuration,
-                            modifier =
-                                Modifier.padding(
-                                    start = AnkiMinerTokens.Space.content,
-                                    top = AnkiMinerTokens.Space.content,
-                                    end = AnkiMinerTokens.Space.content,
-                                ),
-                        )
-                    }
-                    LazyColumn(
-                        state = listState,
-                        modifier =
-                            Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .testTag(ReadingMiningTestTags.CONTENT),
-                        contentPadding =
-                            if (targetState.runState is MiningRunState.Curating) {
-                                // The pinned chrome above already separates the list; a tighter top
-                                // inset gives the candidate rows the space back on small screens.
-                                PaddingValues(
-                                    start = AnkiMinerTokens.Space.content,
-                                    top = AnkiMinerTokens.Space.related,
-                                    end = AnkiMinerTokens.Space.content,
-                                    bottom = AnkiMinerTokens.Space.content,
-                                )
-                            } else {
-                                PaddingValues(AnkiMinerTokens.Space.content)
-                            },
-                        // Curation pays its own gaps per item, so an expanded candidate can close ranks
-                        // with its detail and read as one card.
-                        verticalArrangement =
-                            if (targetState.runState is MiningRunState.Curating) {
-                                Arrangement.Top
-                            } else {
-                                Arrangement.spacedBy(AnkiMinerTokens.Space.group)
-                            },
-                    ) {
-                        when (val runState = targetState.runState) {
-                            MiningRunState.Idle ->
-                                setupItems(
-                                    state = targetState,
-                                    onPickSource = onPickSource,
-                                    onPickArchive = onPickArchive,
-                                    onClearSource = onClearSource,
-                                    onClearArchive = onClearArchive,
-                                    onSourceModeChanged = onSourceModeChanged,
-                                    onPastedTextChanged = onPastedTextChanged,
-                                    onClearPastedText = onClearPastedText,
-                                    onSeriesNameChanged = onSeriesNameChanged,
-                                    onDismissDocumentError = onDismissDocumentError,
-                                    onDismissCommandError = onDismissCommandError,
-                                    onStart = onStart,
-                                    onReturnToActiveRun = onReturnToActiveRun,
-                                    onMapFields = onMapFields,
-                                )
-                            is MiningRunState.Starting ->
-                                progressItems(
-                                    progress = runState.progress,
-                                    canCancel =
-                                        runState.cancellationToken != null || runState.runId != null,
-                                    cancelPending = targetState.cancelPending,
-                                    cancelError =
-                                        targetState.commandError == ReadingMiningCommandError.CANCEL,
-                                    onDismissCommandError = onDismissCommandError,
-                                    onCancel = onCancel,
-                                )
-                            is MiningRunState.Curating ->
-                                curationItems(
-                                    state = targetState,
-                                    visibleCandidates = visibleCandidates,
-                                    candidateRowTexts = candidateRowTexts,
-                                    selectedCandidateStateText = selectedCandidateStateText,
-                                    excludedCandidateStateText = excludedCandidateStateText,
-                                    includeWordTemplate = includeWordTemplate,
-                                    excludeWordTemplate = excludeWordTemplate,
-                                    expandedCandidateId = expandedCandidateId,
-                                    rowPositions = rowPositions,
-                                    alternativesOpen = alternativesOpen,
-                                    onToggleAlternatives = { alternativesOpen = !alternativesOpen },
-                                    onFocusCandidate = onFocusCandidate,
-                                    onSetCandidateSelected = onSetCandidateSelected,
-                                    onMarkCandidateKnown = onMarkCandidateKnown,
-                                    onSelectSentence = onSelectSentence,
-                                    copy = copy,
-                                    wordLabel = wordLabel,
-                                    sentenceLabel = sentenceLabel,
-                                    copiedWord = copiedWord,
-                                    copiedSentence = copiedSentence,
-                                    definitionMaxHeight = definitionMaxHeight,
-                                    pageImageDecoder = pageImageDecoder,
-                                    mediaMaxHeight = mediaMaxHeight,
-                                )
-                            is MiningRunState.Running ->
-                                progressItems(
-                                    progress = runState.progress,
-                                    canCancel = true,
-                                    cancelPending = targetState.cancelPending,
-                                    cancelError =
-                                        targetState.commandError == ReadingMiningCommandError.CANCEL,
-                                    onDismissCommandError = onDismissCommandError,
-                                    onCancel = onCancel,
-                                )
-                            is MiningRunState.Success ->
-                                terminalItems(
-                                    title = R.string.success_title,
-                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
-                                    result = runState.result,
-                                    failed = false,
-                                    failureDetails = null,
-                                    canRetry = false,
-                                    busy = targetState.resetPending,
-                                    resetError =
-                                        targetState.commandError == ReadingMiningCommandError.RESET,
-                                    undoAvailable = targetState.undoAvailable,
-                                    undoneNoteCount = targetState.undoneNoteCount,
-                                    undoError = targetState.commandError == ReadingMiningCommandError.UNDO,
-                                    undoWordsError =
-                                        targetState.commandError == ReadingMiningCommandError.UNDO_WORDS,
-                                    detailsExpanded = resultDetailsExpanded,
-                                    onToggleDetails = {
-                                        resultDetailsExpanded = !resultDetailsExpanded
-                                    },
-                                    onDismissCommandError = onDismissCommandError,
-                                    onRetry = onRetry,
-                                    onReset = onReset,
-                                    onRequestUndo = onRequestUndo,
-                                )
-                            is MiningRunState.Cancelled ->
-                                terminalItems(
-                                    title = R.string.cancelled_title,
-                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
-                                    result = runState.result,
-                                    failed = false,
-                                    failureDetails = null,
-                                    canRetry = false,
-                                    busy = targetState.resetPending,
-                                    resetError =
-                                        targetState.commandError == ReadingMiningCommandError.RESET,
-                                    undoAvailable = targetState.undoAvailable,
-                                    undoneNoteCount = targetState.undoneNoteCount,
-                                    undoError = targetState.commandError == ReadingMiningCommandError.UNDO,
-                                    undoWordsError =
-                                        targetState.commandError == ReadingMiningCommandError.UNDO_WORDS,
-                                    detailsExpanded = resultDetailsExpanded,
-                                    onToggleDetails = {
-                                        resultDetailsExpanded = !resultDetailsExpanded
-                                    },
-                                    onDismissCommandError = onDismissCommandError,
-                                    onRetry = onRetry,
-                                    onReset = onReset,
-                                    onRequestUndo = onRequestUndo,
-                                )
-                            is MiningRunState.Failed ->
-                                terminalItems(
-                                    title = R.string.failed_title,
-                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
-                                    result = runState.result,
-                                    failed = true,
-                                    failureDetails = runState.failure.message,
-                                    canRetry =
-                                        runState.failure.retryable &&
-                                            targetState.hasRetryableSelection(),
-                                    busy = targetState.resetPending || targetState.startPending,
-                                    resetError =
-                                        targetState.commandError == ReadingMiningCommandError.RESET,
-                                    undoAvailable = targetState.undoAvailable,
-                                    undoneNoteCount = targetState.undoneNoteCount,
-                                    undoError = targetState.commandError == ReadingMiningCommandError.UNDO,
-                                    undoWordsError =
-                                        targetState.commandError == ReadingMiningCommandError.UNDO_WORDS,
-                                    detailsExpanded = resultDetailsExpanded,
-                                    onToggleDetails = {
-                                        resultDetailsExpanded = !resultDetailsExpanded
-                                    },
-                                    onDismissCommandError = onDismissCommandError,
-                                    onRetry = onRetry,
-                                    onReset = onReset,
-                                    onRequestUndo = onRequestUndo,
-                                )
-                        }
-                    }
-                }
+                    Modifier.padding(
+                        start = AnkiMinerTokens.Space.content,
+                        top = AnkiMinerTokens.Space.content,
+                        end = AnkiMinerTokens.Space.content,
+                    ),
+            )
+        }
+        LazyColumn(
+            state = listState,
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .testTag(ReadingMiningTestTags.CONTENT),
+            contentPadding =
+                if (targetState.runState is MiningRunState.Curating) {
+                    // The pinned chrome above already separates the list; a tighter top
+                    // inset gives the candidate rows the space back on small screens.
+                    PaddingValues(
+                        start = AnkiMinerTokens.Space.content,
+                        top = AnkiMinerTokens.Space.related,
+                        end = AnkiMinerTokens.Space.content,
+                        bottom = AnkiMinerTokens.Space.content,
+                    )
+                } else {
+                    PaddingValues(AnkiMinerTokens.Space.content)
+                },
+            // Curation pays its own gaps per item, so an expanded candidate can close ranks
+            // with its detail and read as one card.
+            verticalArrangement =
+                if (targetState.runState is MiningRunState.Curating) {
+                    Arrangement.Top
+                } else {
+                    Arrangement.spacedBy(AnkiMinerTokens.Space.group)
+                },
+        ) {
+            if (targetState.runState is MiningRunState.Curating) {
+                curationItems(
+                    state = targetState,
+                    visibleCandidates = visibleCandidates,
+                    candidateRowTexts = candidateRowTexts,
+                    selectedCandidateStateText = selectedCandidateStateText,
+                    excludedCandidateStateText = excludedCandidateStateText,
+                    includeWordTemplate = includeWordTemplate,
+                    excludeWordTemplate = excludeWordTemplate,
+                    expandedCandidateId = expandedCandidateId,
+                    rowPositions = rowPositions,
+                    alternativesOpen = alternativesOpen,
+                    onToggleAlternatives = { alternativesOpen = !alternativesOpen },
+                    onFocusCandidate = onFocusCandidate,
+                    onSetCandidateSelected = onSetCandidateSelected,
+                    onMarkCandidateKnown = onMarkCandidateKnown,
+                    onSelectSentence = onSelectSentence,
+                    copy = copy,
+                    wordLabel = wordLabel,
+                    sentenceLabel = sentenceLabel,
+                    copiedWord = copiedWord,
+                    copiedSentence = copiedSentence,
+                    definitionMaxHeight = definitionMaxHeight,
+                    pageImageDecoder = pageImageDecoder,
+                    mediaMaxHeight = mediaMaxHeight,
+                )
+            } else {
+                setupItems(
+                    state = targetState,
+                    detailsExpanded = resultDetailsExpanded,
+                    onToggleDetails = { resultDetailsExpanded = !resultDetailsExpanded },
+                    onPickSource = onPickSource,
+                    onPickArchive = onPickArchive,
+                    onClearSource = onClearSource,
+                    onClearArchive = onClearArchive,
+                    onSourceModeChanged = onSourceModeChanged,
+                    onPastedTextChanged = onPastedTextChanged,
+                    onClearPastedText = onClearPastedText,
+                    onSeriesNameChanged = onSeriesNameChanged,
+                    onDismissDocumentError = onDismissDocumentError,
+                    onDismissCommandError = onDismissCommandError,
+                    onMapFields = onMapFields,
+                    onRequestUndo = onRequestUndo,
+                    onReturnToActiveRun = onReturnToActiveRun,
+                )
             }
         }
     }
@@ -535,6 +364,8 @@ private const val PASTED_TEXT_MAX_LINES = 8
 
 private fun LazyListScope.setupItems(
     state: ReadingMiningUiState,
+    detailsExpanded: Boolean,
+    onToggleDetails: () -> Unit,
     onPickSource: () -> Unit,
     onPickArchive: () -> Unit,
     onClearSource: () -> Unit,
@@ -545,10 +376,17 @@ private fun LazyListScope.setupItems(
     onSeriesNameChanged: (String) -> Unit,
     onDismissDocumentError: (ReadingDocumentSelectionError) -> Unit,
     onDismissCommandError: () -> Unit,
-    onStart: () -> Unit,
-    onReturnToActiveRun: (() -> Unit)?,
     onMapFields: () -> Unit,
+    onRequestUndo: () -> Unit,
+    onReturnToActiveRun: (() -> Unit)?,
 ) {
+    val runState = state.runState
+    // A run in flight keeps its inputs on screen, locked: they are what it is mining.
+    val locked = runState is MiningRunState.Starting || runState is MiningRunState.Running
+    val inputsEnabled = !locked && !state.startPending
+    (runState as? MiningRunState.Failed)?.let { failed ->
+        miningFailureBannerItem(message = failed.failure.message, key = "reading_outcome_failure")
+    }
     state.runtimeConflict?.let { conflict ->
         item(key = "reading_setup_conflict", contentType = "header") {
             RuntimeConflictNotice(
@@ -568,7 +406,7 @@ private fun LazyListScope.setupItems(
                     Modifier
                         .heightIn(min = 48.dp)
                         .testTag(ReadingMiningTestTags.SOURCE_MODE_FILE),
-                enabled = !state.startPending,
+                enabled = inputsEnabled,
                 colors = segmentedActionColors(),
             ) {
                 Text(stringResource(R.string.reading_source_mode_file))
@@ -581,7 +419,7 @@ private fun LazyListScope.setupItems(
                     Modifier
                         .heightIn(min = 48.dp)
                         .testTag(ReadingMiningTestTags.SOURCE_MODE_TEXT),
-                enabled = !state.startPending,
+                enabled = inputsEnabled,
                 colors = segmentedActionColors(),
             ) {
                 Text(stringResource(R.string.reading_source_mode_text))
@@ -598,7 +436,7 @@ private fun LazyListScope.setupItems(
                                 label = stringResource(R.string.reading_source_label),
                                 document = state.source.document,
                                 isResolving = state.source.isResolving,
-                                enabled = !state.startPending,
+                                enabled = inputsEnabled,
                                 pickTestTag = ReadingMiningTestTags.PICK_SOURCE,
                                 clearTestTag = ReadingMiningTestTags.CLEAR_SOURCE,
                                 readKind = DocumentReadKind.DOCUMENT,
@@ -612,7 +450,7 @@ private fun LazyListScope.setupItems(
                                     label = stringResource(R.string.reading_archive_label),
                                     document = state.archive.document,
                                     isResolving = state.archive.isResolving,
-                                    enabled = !state.startPending,
+                                    enabled = inputsEnabled,
                                     pickTestTag = ReadingMiningTestTags.PICK_ARCHIVE,
                                     clearTestTag = ReadingMiningTestTags.CLEAR_ARCHIVE,
                                     readKind = DocumentReadKind.DOCUMENT,
@@ -659,7 +497,7 @@ private fun LazyListScope.setupItems(
                         Modifier
                             .fillMaxWidth()
                             .testTag(ReadingMiningTestTags.SERIES_NAME),
-                    enabled = !state.startPending,
+                    enabled = inputsEnabled,
                     singleLine = true,
                     label = { Text(stringResource(R.string.reading_series_label)) },
                 )
@@ -680,7 +518,7 @@ private fun LazyListScope.setupItems(
                         Modifier
                             .fillMaxWidth()
                             .testTag(ReadingMiningTestTags.PASTE_TEXT),
-                    enabled = !state.startPending,
+                    enabled = inputsEnabled,
                     singleLine = false,
                     minLines = 6,
                     // A pasted chapter scrolls inside the field instead of pushing Mine off the screen.
@@ -692,7 +530,7 @@ private fun LazyListScope.setupItems(
                         if (state.pastedText.isNotEmpty()) {
                             IconButton(
                                 onClick = onClearPastedText,
-                                enabled = !state.startPending,
+                                enabled = inputsEnabled,
                                 modifier = Modifier.testTag(ReadingMiningTestTags.CLEAR_PASTED_TEXT),
                             ) {
                                 Icon(
@@ -717,7 +555,7 @@ private fun LazyListScope.setupItems(
                     // Replaces the field without focusing it, so no keyboard opens.
                     TextButton(
                         onClick = { context.clipboardText()?.let(onPastedTextChanged) },
-                        enabled = !state.startPending,
+                        enabled = inputsEnabled,
                         modifier =
                             Modifier
                                 .align(Alignment.End)
@@ -731,28 +569,43 @@ private fun LazyListScope.setupItems(
             }
         }
     }
-    item(key = "reading_start", contentType = "actions") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            if (state.advisories.any) {
-                MiningAdvisoryLines(
-                    advisories = state.advisories,
-                    onMapFields = onMapFields,
-                    mapFieldsTestTag = ReadingMiningTestTags.MAP_FIELDS,
-                )
-            }
-            PrimaryActionButton(
-                onClick = onStart,
-                enabled = state.canStart,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag(ReadingMiningTestTags.START),
-            ) {
-                Text(stringResource(R.string.start_mining))
-            }
-            if (state.commandError == ReadingMiningCommandError.START) {
+    if (state.advisories.any) {
+        item(key = "reading_advisories", contentType = "hint") {
+            MiningAdvisoryLines(
+                advisories = state.advisories,
+                onMapFields = onMapFields,
+                mapFieldsTestTag = ReadingMiningTestTags.MAP_FIELDS,
+            )
+        }
+    }
+    miningResultHeadline(runState, state.resultDeckName)?.let { headline ->
+        val result = runState.terminalResult
+        miningResultItems(
+            headline = headline,
+            result = result,
+            failed = runState is MiningRunState.Failed,
+            detailsExpanded = detailsExpanded,
+            testTag = ReadingMiningTestTags.RESULT,
+            keyPrefix = "reading_terminal_result",
+            onToggleDetails = onToggleDetails,
+            undo =
+                result?.cardIds?.takeIf { it.isNotEmpty() }?.let { cardIds ->
+                    MiningResultUndoAction(
+                        noteCount = cardIds.size,
+                        undoneNoteCount = state.undoneNoteCount,
+                        enabled = state.undoAvailable,
+                        testTag = ReadingMiningTestTags.UNDO,
+                        onUndo = onRequestUndo,
+                    )
+                },
+        )
+    }
+    state.commandError
+        ?.takeIf { it == ReadingMiningCommandError.UNDO || it == ReadingMiningCommandError.UNDO_WORDS }
+        ?.let { error ->
+            item(key = "reading_undo_error", contentType = "error") {
                 MiningFailureCard(
-                    message = state.commandError.message(),
+                    message = error.message(),
                     primaryAction =
                         MiningFailureAction(
                             label = stringResource(R.string.dismiss_error),
@@ -761,44 +614,6 @@ private fun LazyListScope.setupItems(
                 )
             }
         }
-    }
-}
-
-private fun LazyListScope.progressItems(
-    progress: MiningProgress?,
-    canCancel: Boolean,
-    cancelPending: Boolean,
-    cancelError: Boolean,
-    onDismissCommandError: () -> Unit,
-    onCancel: () -> Unit,
-) {
-    item(key = "reading_progress", contentType = "header") {
-        MiningProgressPanel(
-            progress = progress,
-            testTag = ReadingMiningTestTags.PROGRESS,
-        )
-    }
-    if (canCancel) {
-        item(key = "reading_cancel", contentType = "actions") {
-            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                MiningCancelButton(
-                    cancelPending = cancelPending,
-                    testTag = ReadingMiningTestTags.CANCEL,
-                    onCancel = onCancel,
-                )
-                if (cancelError) {
-                    MiningFailureCard(
-                        message = ReadingMiningCommandError.CANCEL.message(),
-                        primaryAction =
-                            MiningFailureAction(
-                                label = stringResource(R.string.dismiss_error),
-                                onClick = onDismissCommandError,
-                            ),
-                    )
-                }
-            }
-        }
-    }
 }
 
 private fun LazyListScope.curationItems(
@@ -1027,165 +842,78 @@ private fun LazyListScope.curationItems(
     }
 }
 
-private fun LazyListScope.terminalItems(
-    title: Int,
-    headline: MiningResultHeadline?,
-    result: ProcessingResult?,
-    failed: Boolean,
-    failureDetails: String?,
-    canRetry: Boolean,
-    busy: Boolean,
-    resetError: Boolean,
-    undoAvailable: Boolean,
-    undoneNoteCount: Int?,
-    undoError: Boolean,
-    undoWordsError: Boolean,
-    detailsExpanded: Boolean,
-    onToggleDetails: () -> Unit,
-    onDismissCommandError: () -> Unit,
-    onRetry: () -> Unit,
-    onReset: () -> Unit,
-    onRequestUndo: () -> Unit,
-) {
-    item(key = "reading_terminal_header", contentType = "header") {
-        PhaseTitle(text = stringResource(title))
-    }
-    if (failed) {
-        item(key = "reading_terminal_failure", contentType = "header") {
-            MiningFailureCard(
-                message =
-                    if (resetError) {
-                        ReadingMiningCommandError.RESET.message()
-                    } else {
-                        failureDetails ?: stringResource(title)
-                    },
-                primaryAction =
-                    if (canRetry) {
-                        MiningFailureAction(
-                            label = stringResource(R.string.retry_mining),
-                            testTag = ReadingMiningTestTags.RETRY,
-                            enabled = !busy,
-                            onClick = onRetry,
-                        )
-                    } else {
-                        null
-                    },
-                secondaryAction =
-                    MiningFailureAction(
-                        label = stringResource(R.string.reset_mining),
-                        testTag = ReadingMiningTestTags.RESET,
-                        enabled = !busy,
-                        onClick = onReset,
-                    ),
-            )
-        }
-    }
-    headline?.let { lead ->
-        miningResultItems(
-            headline = lead,
-            result = result,
-            failed = failed,
-            detailsExpanded = detailsExpanded,
-            testTag = ReadingMiningTestTags.RESULT,
-            keyPrefix = "reading_terminal_result",
-            onToggleDetails = onToggleDetails,
-            undo =
-                result?.cardIds?.takeIf { it.isNotEmpty() }?.let { cardIds ->
-                    MiningResultUndoAction(
-                        noteCount = cardIds.size,
-                        undoneNoteCount = undoneNoteCount,
-                        enabled = undoAvailable,
-                        testTag = ReadingMiningTestTags.UNDO,
-                        onUndo = onRequestUndo,
-                    )
-                },
-        )
-    }
-    if (undoError || undoWordsError) {
-        item(key = "reading_terminal_undo_error", contentType = "error") {
-            MiningFailureCard(
-                message =
-                    if (undoError) {
-                        ReadingMiningCommandError.UNDO.message()
-                    } else {
-                        ReadingMiningCommandError.UNDO_WORDS.message()
-                    },
-                primaryAction =
-                    MiningFailureAction(
-                        label = stringResource(R.string.dismiss_error),
-                        onClick = onDismissCommandError,
-                    ),
-            )
-        }
-    }
-    if (!failed) {
-        item(key = "reading_terminal_actions", contentType = "actions") {
-            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                SecondaryActionButton(
-                    onClick = onReset,
-                    enabled = !busy,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .testTag(ReadingMiningTestTags.RESET),
-                ) {
-                    Text(stringResource(R.string.reset_mining))
-                }
-                if (resetError) {
-                    MiningFailureCard(
-                        message = ReadingMiningCommandError.RESET.message(),
-                        primaryAction =
-                            MiningFailureAction(
-                                label = stringResource(R.string.dismiss_error),
-                                onClick = onDismissCommandError,
-                            ),
-                    )
-                }
-            }
-        }
-    }
-}
-
 @Composable
-private fun MiningCancelButton(
-    cancelPending: Boolean,
-    testTag: String,
-    onCancel: () -> Unit,
-) {
-    SecondaryActionButton(
-        onClick = onCancel,
-        enabled = !cancelPending,
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .testTag(testTag),
-    ) {
-        if (cancelPending) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                Text(stringResource(R.string.cancelling))
-            }
-        } else {
-            Text(stringResource(R.string.cancel_mining))
-        }
-    }
-}
-
-@Composable
-private fun ResetMiningScrollOnTransition(
+private fun ReadingMiningBottomBar(
     state: ReadingMiningUiState,
-    listState: LazyListState,
+    onStart: () -> Unit,
+    onCancel: () -> Unit,
+    onConfirmCuration: () -> Unit,
+    onDismissCommandError: () -> Unit,
 ) {
-    val transitionKey = state.scrollTransitionKey()
-    var appliedKey by rememberSaveable { mutableStateOf<String?>(null) }
-    LaunchedEffect(transitionKey) {
-        if (appliedKey != null && appliedKey != transitionKey) {
-            listState.scrollToItem(0)
+    val cancelError = state.commandError?.takeIf { it == ReadingMiningCommandError.CANCEL }?.message()
+    when (val runState = state.runState) {
+        is MiningRunState.Curating -> {
+            val curation = state.curation
+            StickyCurationActions(
+                selectedCount = curation?.selectedCount ?: 0,
+                page = curation?.page,
+                isFinalPage = curation?.isFinalPage ?: true,
+                curationPending = state.curationPending,
+                cancelPending = state.cancelPending,
+                requiresCancelConfirmation = curation?.hasSelectionToLose == true,
+                commandErrorMessage =
+                    state.commandError
+                        ?.takeIf {
+                            it == ReadingMiningCommandError.CURATION ||
+                                it == ReadingMiningCommandError.CANCEL
+                        }?.message(),
+                confirmTestTag = ReadingMiningTestTags.CONFIRM_CURATION,
+                cancelTestTag = ReadingMiningTestTags.CANCEL,
+                onDismissCommandError = onDismissCommandError,
+                onConfirm = onConfirmCuration,
+                onCancel = onCancel,
+            )
         }
-        appliedKey = transitionKey
+        is MiningRunState.Starting ->
+            MiningBottomBar(
+                state =
+                    MiningBottomBarState.Progress(
+                        progress = runState.progress,
+                        canCancel = runState.cancellationToken != null || runState.runId != null,
+                        cancelPending = state.cancelPending,
+                        progressTestTag = ReadingMiningTestTags.PROGRESS,
+                        cancelTestTag = ReadingMiningTestTags.CANCEL,
+                        onCancel = onCancel,
+                    ),
+                commandErrorMessage = cancelError,
+                onDismissCommandError = onDismissCommandError,
+            )
+        is MiningRunState.Running ->
+            MiningBottomBar(
+                state =
+                    MiningBottomBarState.Progress(
+                        progress = runState.progress,
+                        canCancel = true,
+                        cancelPending = state.cancelPending,
+                        progressTestTag = ReadingMiningTestTags.PROGRESS,
+                        cancelTestTag = ReadingMiningTestTags.CANCEL,
+                        onCancel = onCancel,
+                    ),
+                commandErrorMessage = cancelError,
+                onDismissCommandError = onDismissCommandError,
+            )
+        else ->
+            MiningBottomBar(
+                state =
+                    MiningBottomBarState.Mine(
+                        enabled = state.canStart,
+                        testTag = ReadingMiningTestTags.START,
+                        onMine = onStart,
+                    ),
+                commandErrorMessage =
+                    state.commandError?.takeIf { it == ReadingMiningCommandError.START }?.message(),
+                onDismissCommandError = onDismissCommandError,
+            )
     }
 }
 
@@ -1202,17 +930,6 @@ private fun ReadingMiningUiState.scrollTransitionKey(): String =
         is MiningRunState.Failed -> "failed:${current.runId.orEmpty()}"
     }
 
-private fun ReadingMiningUiState.phaseKey(): String =
-    when (runState) {
-        MiningRunState.Idle -> "idle"
-        is MiningRunState.Starting -> "starting"
-        is MiningRunState.Curating -> "curating"
-        is MiningRunState.Running -> "running"
-        is MiningRunState.Success -> "success"
-        is MiningRunState.Cancelled -> "cancelled"
-        is MiningRunState.Failed -> "failed"
-    }
-
 @StringRes
 private fun ReadingMiningUiState.phaseTitle(): Int =
     when (runState) {
@@ -1223,15 +940,6 @@ private fun ReadingMiningUiState.phaseTitle(): Int =
         is MiningRunState.Success -> R.string.success_title
         is MiningRunState.Cancelled -> R.string.cancelled_title
         is MiningRunState.Failed -> R.string.failed_title
-    }
-
-private fun ReadingMiningUiState.hasRetryableSelection(): Boolean =
-    when (sourceMode) {
-        ReadingSourceMode.FILE ->
-            source.document != null &&
-                sourceKind != null &&
-                (!acceptsArchive || archive.document == null || archiveNamesMatch)
-        ReadingSourceMode.PASTED_TEXT -> pastedText.isNotBlank()
     }
 
 @StringRes
@@ -1259,7 +967,6 @@ private fun ReadingMiningCommandError.message(): String =
             ReadingMiningCommandError.START -> R.string.start_error
             ReadingMiningCommandError.CURATION -> R.string.curation_error
             ReadingMiningCommandError.CANCEL -> R.string.cancel_error
-            ReadingMiningCommandError.RESET -> R.string.reset_error
             ReadingMiningCommandError.UNDO -> R.string.undo_failed
             ReadingMiningCommandError.UNDO_WORDS -> R.string.undo_words_failed
         },

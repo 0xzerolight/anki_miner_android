@@ -594,10 +594,9 @@ class ReadingMiningViewModelTest {
             assertFalse(viewModel.uiState.value.canStart)
 
             repository.transitionTo(MiningRunState.Cancelled("run", null))
-            viewModel.reset()
             runCurrent()
 
-            assertEquals(MiningRunState.Idle, repository.state.value)
+            // A finished run already allows Mine with the restored pair (D7).
             assertTrue(viewModel.uiState.value.canStart)
         }
 

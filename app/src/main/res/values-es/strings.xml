@@ -198,12 +198,9 @@
     <string name="details">Detalles</string>
     <string name="hide_details">Ocultar detalles</string>
     <string name="copy_diagnostics">Copiar diagnósticos</string>
-    <string name="retry_mining">Reintentar</string>
-    <string name="reset_mining">Empezar de nuevo</string>
     <string name="start_error">No se pudo iniciar la ejecución.</string>
     <string name="curation_error">No se pudieron enviar las selecciones.</string>
     <string name="cancel_error">No se pudo cancelar la ejecución.</string>
-    <string name="reset_error">No se pudo restablecer la pantalla.</string>
     <string name="mining_notification_channel">Progreso de minería</string>
     <string name="mining_notification_channel_description">Controles de progreso y cancelación para ejecuciones de minería activas</string>
     <string name="resource_import_notification_channel">Importaciones de recursos</string>

@@ -38,7 +38,6 @@ enum class ReadingMiningCommandError {
     START,
     CURATION,
     CANCEL,
-    RESET,
     UNDO,
     UNDO_WORDS,
 }

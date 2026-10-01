@@ -194,12 +194,9 @@
     <string name="details">Details</string>
     <string name="hide_details">Details ausblenden</string>
     <string name="copy_diagnostics">Diagnose kopieren</string>
-    <string name="retry_mining">Erneut versuchen</string>
-    <string name="reset_mining">Neu beginnen</string>
     <string name="start_error">Durchlauf konnte nicht gestartet werden.</string>
     <string name="curation_error">Auswahl konnte nicht übermittelt werden.</string>
     <string name="cancel_error">Durchlauf konnte nicht abgebrochen werden.</string>
-    <string name="reset_error">Bildschirm konnte nicht zurückgesetzt werden.</string>
     <string name="mining_notification_channel">Mining-Fortschritt</string>
     <string name="mining_notification_channel_description">Fortschritt und Abbruchsteuerung für laufende Mining-Durchläufe</string>
     <string name="resource_import_notification_channel">Ressourcenimporte</string>
