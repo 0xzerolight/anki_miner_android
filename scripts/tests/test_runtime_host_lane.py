@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(77, len(records))
+        self.assertEqual(80, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -33,12 +33,15 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "charset-normalizer": "3.4.7",
                 "cloudpickle": "3.1.2",
                 "idna": "3.18",
+                "jieba": "0.42.1",
                 "joblib": "1.6.0",
                 "kiwipiepy": "0.23.2",
                 "kiwipiepy-model": "0.23.0",
                 "lxml": "6.1.1",
+                "opencc": "1.4.2",
                 "pillow": "12.2.0",
                 "pycantonese": "5.0.0",
+                "pypinyin": "0.55.0",
                 "pysubs2": "1.8.1",
                 "pythainlp": "5.3.7",
                 "requests": "2.34.2",
@@ -56,12 +59,15 @@ class RuntimeHostLaneTests(unittest.TestCase):
                     "charset-normalizer",
                     "cloudpickle",
                     "idna",
+                    "jieba",
                     "joblib",
                     "kiwipiepy",
                     "kiwipiepy-model",
                     "lxml",
+                    "opencc",
                     "pillow",
                     "pycantonese",
+                    "pypinyin",
                     "pysubs2",
                     "pythainlp",
                     "requests",
@@ -91,6 +97,8 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertIn("--require-hashes", provision)
         # The model is published as an sdist alone; nothing else may build from source.
         self.assertEqual(["--no-binary=kiwipiepy-model"], re.findall(r"--no-binary\S*", provision))
+        # jieba ships no upstream wheel; its lock hash is the vendored repacked wheel's.
+        self.assertIn('--find-links "$REPO_ROOT/app/wheels/common"', provision)
         self.assertIn("runtime-host-tests/bin/python", health)
         self.assertIn("check-python-runtime.py", health)
         self.assertNotIn("runtime-host-tests/bin", environment)

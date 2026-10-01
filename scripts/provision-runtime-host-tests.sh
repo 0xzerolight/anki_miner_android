@@ -63,13 +63,16 @@ expected = {
     "colorama": "0.4.6",
     "defusedxml": "0.7.1",
     "idna": "3.18",
+    "jieba": "0.42.1",
     "joblib": "1.6.0",
     "kiwipiepy": "0.23.2",
     "kiwipiepy-model": "0.23.0",
     "lxml": "6.1.1",
     "nltk": "3.10.3",
+    "opencc": "1.4.2",
     "pillow": "12.2.0",
     "pycantonese": "5.0.0",
+    "pypinyin": "0.55.0",
     "pysubs2": "1.8.1",
     "pythainlp": "5.3.7",
     "regex": "2026.9.10",
@@ -121,6 +124,7 @@ PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --no-binary=kiwipiepy-model \
     --require-hashes \
     --no-deps \
+    --find-links "$REPO_ROOT/app/wheels/common" \
     -r "$LOCK_FILE"
 verify_runtime_environment "$staging/bin/python"
 printf '%s\n' "$lock_sha256" >"$staging/$LOCK_MARKER_NAME"

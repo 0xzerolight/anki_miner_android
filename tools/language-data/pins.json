@@ -863,6 +863,15 @@
     },
     "yue/rustling": {
       "apk": "engine code: the Rust segmenter and tagger pycantonese calls, built for Android and shipped in the APK"
+    },
+    "zh/jieba": {
+      "apk": "engine code: the repacked jieba wheel (dict.txt included) ships in the APK (D5)"
+    },
+    "zh/opencc": {
+      "apk": "engine code: the cross-built opencc wheel and its dictionaries ship in the APK (D5); one entry covers desktop's per-CPython siblings"
+    },
+    "zh/pypinyin": {
+      "apk": "engine code: the pypinyin wheel ships in the APK (D5)"
     }
   }
 }

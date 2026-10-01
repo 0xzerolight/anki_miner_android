@@ -117,6 +117,7 @@ protected_verbatim = [
 allowed_external = [
   "PIL",
   "charset_normalizer",
+  "jieba",
   "kiwipiepy",
   "lxml",
   # yue's measure-word hook imports zh.render, whose OpenCC and pypinyin
@@ -226,7 +227,7 @@ forbidden_imports = [
 ]
 
 # Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
-languages = ["ja", "he", "id", "ar", "fa", "th", "tr", "en", "ca", "de", "pt", "fr", "es", "it", "nl", "nb", "ro", "el", "fi", "hu", "hr", "sv", "pl", "lt", "da", "sl", "ru", "uk", "ko", "vi", "yue"]
+languages = ["ja", "he", "id", "ar", "fa", "th", "tr", "en", "ca", "de", "pt", "fr", "es", "it", "nl", "nb", "ro", "el", "fi", "hu", "hr", "sv", "pl", "lt", "da", "sl", "ru", "uk", "ko", "vi", "yue", "zh"]
 
 # Imported only inside functions, never vendored. ASR and retiming are reached
 # from episode_processor's deferred paths; gui only through languages/ja/text.py's

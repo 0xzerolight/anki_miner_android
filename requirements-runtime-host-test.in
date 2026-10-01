@@ -8,6 +8,7 @@
 # ships nltk without its doctests and regex built for Android).
 # The lock installs with --no-deps, as Chaquopy does: pymorphy3 declares its
 # Russian dictionaries, which Android downloads as language data instead.
+# jieba has no upstream wheel: the lock pins the repacked app/wheels/common one.
 pytest==9.0.3
 jsonschema==4.26.0
 requests==2.34.2
@@ -82,3 +83,7 @@ underthesea==9.5.0
 underthesea-core==3.3.2
 pycantonese==5.0.0
 rustling==0.9.0
+# Chinese (D5).
+jieba==0.42.1
+opencc==1.4.2
+pypinyin==0.55.0
