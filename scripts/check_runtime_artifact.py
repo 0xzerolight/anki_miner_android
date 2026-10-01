@@ -39,6 +39,43 @@ ELF_MAGIC = b"\x7fELF"
 ALLOWED_COMPRESSION = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
 NESTED_ARCHIVE_SUFFIXES = (".aab", ".apk", ".imy", ".whl", ".zip")
 ZIP_MAGICS = (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")
+#: Judged exceptions: exact path -> (distribution, version, SHA-256) of a file a pinned release
+#: ships that a payload rule would refuse. numpy 2.5.0 carries two ``.npz`` test fixtures (ZIP
+#: files nothing on device opens) and three licence texts of bundled code inside its package;
+#: typer 0.26.7 carries the licence of the click code it vendors. Another release, a changed
+#: byte or any other path falls under the rule again.
+JUDGED_PAYLOADS: dict[str, tuple[str, str, str]] = {
+    "numpy/lib/tests/data/py2-objarr.npz": (
+        "numpy",
+        "2.5.0",
+        "c68d771c14f415b159daabd9cf42d61836f74ae40049269787baca7d57098f1e",
+    ),
+    "numpy/lib/tests/data/py3-objarr.npz": (
+        "numpy",
+        "2.5.0",
+        "bd5465f7f359effabe86376e52bf185a7cd1cbc1123659af30f95a4920baf5f9",
+    ),
+    "numpy/_core/include/numpy/random/LICENSE.txt": (
+        "numpy",
+        "2.5.0",
+        "fbc539f47d0cf83bc61378080fb873d5c14630126cacbfe754035c3926daa5ec",
+    ),
+    "numpy/ma/LICENSE": (
+        "numpy",
+        "2.5.0",
+        "05f3b88351988ecfad10abe92c0c50e5875c6452d5009a0084cc291551ffcca6",
+    ),
+    "numpy/random/LICENSE.md": (
+        "numpy",
+        "2.5.0",
+        "103166b62b80443afb9eb3488e052ea06be0cff566b908f199e561fde49af19f",
+    ),
+    "typer/_click/LICENSE.txt": (
+        "typer",
+        "0.26.7",
+        "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d",
+    ),
+}
 LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")
 
 FORBIDDEN_PACKAGE_PREFIXES = ("gtts", "pyqt6", "unidic", "yt-dlp")
@@ -785,6 +822,7 @@ def _audit_requirements(
             max_total_size=MAX_REQUIREMENT_TOTAL_SIZE,
         )
         files: dict[str, bytes] = {}
+        judged: dict[str, tuple[str, str]] = {}
         for path, info in infos.items():
             if info.is_dir():
                 continue
@@ -795,7 +833,10 @@ def _audit_requirements(
                 MAX_REQUIREMENT_ENTRY_SIZE,
             )
             lower = path.casefold()
-            if lower.endswith(NESTED_ARCHIVE_SUFFIXES) or data.startswith(ZIP_MAGICS):
+            allowance = JUDGED_PAYLOADS.get(path)
+            if allowance is not None and allowance[2] == _sha256(data):
+                judged[path] = allowance[:2]
+            if (lower.endswith(NESTED_ARCHIVE_SUFFIXES) or data.startswith(ZIP_MAGICS)) and path not in judged:
                 raise RuntimeArtifactError(f"{label}: nested archive payload {path}")
             _check_module_boundary(path, s1a_enabled)
             files[path] = data
@@ -828,6 +869,10 @@ def _audit_requirements(
         actual_distributions[package] = version
         root_owners[root] = package
 
+    for path, (package, version) in judged.items():
+        if actual_distributions.get(package) != version:
+            raise RuntimeArtifactError(f"{label}: judged payload {path} needs {package} {version}")
+
     if actual_distributions != expected.distributions:
         raise RuntimeArtifactError(
             f"{label}: distribution inventory differs: "
@@ -838,7 +883,7 @@ def _audit_requirements(
     actual_licenses: dict[str, ExpectedFile] = {}
     actual_natives: dict[str, ExpectedFile] = {}
     for path, data in files.items():
-        if _is_license_path(path):
+        if _is_license_path(path) and path not in judged:
             root, _, _ = _dist_info_identity(path, f"{label}:{path}")
             owner = root_owners.get(root)
             if owner is None:
