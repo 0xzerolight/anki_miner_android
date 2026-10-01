@@ -1373,7 +1373,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, hebrew) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1525,5 +1525,60 @@ object FrozenResourceCatalog {
                     "jpdb-v2.2-kana-2024-10-13",
                     "kanjium-pitch-8a0cdaa1",
                 ),
+        )
+
+    val hebrew =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "he",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-he-en-2026.09.20",
+                        displayName = "Wiktionary (Hebrew-English) 2026-09-20",
+                        slotId = "wty-he-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/he/en/wty-he-en.zip",
+                                sha256 = "287797cd78a1561326d18b1786588a504508e107fad58f9552c08d532a9c40ea",
+                                sizeBytes = 3_310_539,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-he-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 10,
+                                uncompressedBytes = 35_681_671,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-he-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Hebrew)",
+                        sourceId = "opensubtitles-he",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/he/he_50k.txt",
+                                sha256 = "0069e931eb1ca0aaf638ea806b0d9d5810d787c51ada944da564a2fb213af41d",
+                                sizeBytes = 792_853,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-he-en-2026.09.20", "opensubtitles-he-2018"),
         )
 }

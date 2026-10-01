@@ -1974,11 +1974,10 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     "resource_archive_mismatch",
                     "Pinned dictionary layout differs from the catalog",
                 )
-            # A catalog archive's banks are pinned under the catalog's own
-            # file_bytes_limit, so it has never needed the rewrite. A custom one
-            # needs it only when some bank is too large for the engine importer
-            # to read whole.
-            streamed_rewrite = catalog_resource is None and identity.max_bank_bytes > _YOMITAN_BANK_INLINE_LIMIT_BYTES
+            # Only an archive with a bank too large for the engine importer to
+            # read whole needs the rewrite. Pinned or not: the Japanese pins keep
+            # every bank under it, but wty builds put 20 MB in term_bank_1.
+            streamed_rewrite = identity.max_bank_bytes > _YOMITAN_BANK_INLINE_LIMIT_BYTES
             _check_free_space(
                 operation_root,
                 _yomitan_import_peak_bytes(

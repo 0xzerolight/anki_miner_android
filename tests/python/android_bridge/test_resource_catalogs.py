@@ -193,3 +193,78 @@ def test_a_pinned_dictionary_cannot_be_stamped_for_another_language(
 
     assert failure.value.code == "invalid_resource_request"
     assert not (home / "dicts").exists()
+
+
+def test_a_pinned_dictionary_with_an_oversized_bank_is_split_before_the_engine_reads_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, initialized_bridge_home: Path
+) -> None:
+    """wty builds put ~20 MB in term_bank_1, past what the engine importer may read whole."""
+
+    pytest.importorskip("requests", reason="runtime dependency lane")
+    import hashlib
+    import zipfile
+    from dataclasses import replace
+
+    del initialized_bridge_home
+    home = tmp_path / "files"
+    home.mkdir()
+    monkeypatch.setattr(resources, "require_initialized", lambda: str(home))
+    entry_bytes = 1024
+    row_count = resources._YOMITAN_BANK_INLINE_LIMIT_BYTES // entry_bytes + 2
+    rows = [[f"term-{n}", "", "", "", 0, ["x" * entry_bytes], n, ""] for n in range(row_count)]
+    source = tmp_path / "pinned.zip"
+    index = {"title": "Pinned Fixture", "revision": "2026.09.20", "format": 3}
+    with zipfile.ZipFile(source, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index))
+        archive.writestr("term_bank_1.json", json.dumps(rows))
+    with zipfile.ZipFile(source) as archive:
+        members = archive.infolist()
+    jmdict = load_resource_catalog().get("jmdict-en-2026-07-17")
+    assert isinstance(jmdict, YomitanResource)
+    pinned = replace(
+        jmdict,
+        resource_id="pinned-fixture",
+        slot_id="pinned-fixture",
+        archive=replace(
+            jmdict.archive,
+            sha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+            size_bytes=source.stat().st_size,
+        ),
+        dictionary=replace(
+            jmdict.dictionary,
+            title=index["title"],
+            revision=index["revision"],
+            member_count=len(members),
+            uncompressed_bytes=sum(member.file_size for member in members),
+            file_bytes_limit=32 * 1024 * 1024,
+        ),
+    )
+    monkeypatch.setattr(resources, "find_catalog_resource", lambda _id: ("ja", pinned))
+    rewrites: list[object] = []
+    original = resources._rewrite_yomitan_banks
+
+    def record(*args: object, **kwargs: object) -> Path:
+        rewrites.append(args)
+        return original(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(resources, "_rewrite_yomitan_banks", record)
+
+    imported = decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "pinned-rewrite",
+                "sourcePath": str(source),
+                "slotId": "pinned-fixture",
+                "overwrite": False,
+                "catalogResourceId": "pinned-fixture",
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    )
+
+    assert rewrites
+    assert imported.payload["catalogResourceId"] == "pinned-fixture"
+    assert imported.payload["entryCount"] == row_count
+    # The slot retains the verified original, not the split copy.
+    retained = home / "dicts" / "pinned-fixture" / "source.zip"
+    assert hashlib.sha256(retained.read_bytes()).hexdigest() == pinned.archive.sha256
