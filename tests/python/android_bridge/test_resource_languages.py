@@ -219,15 +219,17 @@ def test_a_catalog_list_follows_its_desktop_row(
     pinned_bytes = dataclasses.replace(
         indonesian,
         resources=tuple(
-            dataclasses.replace(
-                resource,
-                archive=dataclasses.replace(
-                    resource.archive,
-                    sha256=hashlib.sha256(pinned_source.read_bytes()).hexdigest(),
-                ),
+            (
+                dataclasses.replace(
+                    resource,
+                    archive=dataclasses.replace(
+                        resource.archive,
+                        sha256=hashlib.sha256(pinned_source.read_bytes()).hexdigest(),
+                    ),
+                )
+                if isinstance(resource, catalog.FrequencyResource)
+                else resource
             )
-            if isinstance(resource, catalog.FrequencyResource)
-            else resource
             for resource in indonesian.resources
         ),
     )
