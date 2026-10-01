@@ -54,6 +54,8 @@ _VIDEO_REQUEST_FIELDS = frozenset(
         "sourceLabel",
         "audioTrackOverride",
         "audioOnly",
+        "secondarySubtitlePath",
+        "secondarySubtitleOffsetMs",
         "cacheDir",
         "nativeLibraryDir",
         "configSnapshot",
@@ -61,6 +63,9 @@ _VIDEO_REQUEST_FIELDS = frozenset(
 )
 _CONFIG_SNAPSHOT_FIELDS = frozenset({"settings", "androidTtsEnabled"})
 _SUBTITLE_SUFFIXES = frozenset({".ass", ".srt", ".ssa", ".vtt"})
+# Desktop's spin box range for the translation track's offset
+# (gui/constants.py SUBTITLE_OFFSET_MIN/MAX, +-300 s).
+_MAX_SECONDARY_OFFSET_MS = 300_000
 # Imported local packs are the only expression-audio source the Android
 # builder can construct. The cut network kinds (jpod101/googletts) and the
 # removed URL-template kinds are rejected before any allocation.
@@ -80,6 +85,8 @@ class _VideoRequest:
     source_label: str | None
     audio_track_override: int | None
     audio_only: bool
+    secondary_subtitle_path: Path | None
+    secondary_subtitle_offset: float
     cache_dir: Path
     native_library_dir: Path
     settings: Mapping[str, object]
@@ -339,6 +346,27 @@ def _optional_audio_track(value: object) -> int | None:
     return converted
 
 
+def _subtitle_path(field_name: str, value: object) -> Path:
+    path = _absolute_path(field_name, value)
+    if path.suffix.lower() not in _SUBTITLE_SUFFIXES:
+        raise _invalid_request(f"{field_name} must preserve a supported subtitle filename suffix")
+    return path
+
+
+def _optional_secondary_subtitle(value: object) -> Path | None:
+    if value is None:
+        return None
+    return _subtitle_path("secondarySubtitlePath", value)
+
+
+def _secondary_offset_seconds(value: object) -> float:
+    converted = normalize_integral_json_number(value)
+    if converted is None or abs(converted) > _MAX_SECONDARY_OFFSET_MS:
+        limit = _MAX_SECONDARY_OFFSET_MS
+        raise _invalid_request(f"secondarySubtitleOffsetMs must be an integer from {-limit} to {limit}")
+    return converted / 1000.0
+
+
 def _parse_request(raw_request: str) -> _VideoRequest:
     payload = decode_message(raw_request, expected_type="mining.video.run")
     if set(payload) != _VIDEO_REQUEST_FIELDS:
@@ -358,13 +386,9 @@ def _parse_request(raw_request: str) -> _VideoRequest:
     if type(audio_only) is not bool:
         raise _invalid_request("audioOnly must be a boolean")
 
-    subtitle_path = _absolute_path("subtitlePath", payload["subtitlePath"])
-    if subtitle_path.suffix.lower() not in _SUBTITLE_SUFFIXES:
-        raise _invalid_request("subtitlePath must preserve a supported subtitle filename suffix")
-
     return _VideoRequest(
         video_path=_absolute_path("videoPath", payload["videoPath"]),
-        subtitle_path=subtitle_path,
+        subtitle_path=_subtitle_path("subtitlePath", payload["subtitlePath"]),
         # Empty is legal here alone: Kotlin sends it when the picked file has no
         # usable name, and _resolve_identity honours "" so the source field ends
         # up bare rather than repeating the synthetic lane label.
@@ -373,6 +397,10 @@ def _parse_request(raw_request: str) -> _VideoRequest:
         source_label=_optional_source_label(payload["sourceLabel"]),
         audio_track_override=_optional_audio_track(payload["audioTrackOverride"]),
         audio_only=audio_only,
+        # A translation track Kotlin staged next to the primary. The engine
+        # parses it in-process (parse_raw_entries), so it never reaches ffmpeg.
+        secondary_subtitle_path=_optional_secondary_subtitle(payload["secondarySubtitlePath"]),
+        secondary_subtitle_offset=_secondary_offset_seconds(payload["secondarySubtitleOffsetMs"]),
         cache_dir=_absolute_path("cacheDir", payload["cacheDir"]),
         native_library_dir=_absolute_path("nativeLibraryDir", payload["nativeLibraryDir"]),
         settings=dict(snapshot["settings"]),
@@ -1115,6 +1143,8 @@ def _process_episode(
                 audio_track_override=request.audio_track_override,
                 source_label_override=request.source_label,
                 audio_only=request.audio_only,
+                secondary_subtitle_file=request.secondary_subtitle_path,
+                secondary_subtitle_offset=request.secondary_subtitle_offset,
                 cancel_event=adapters.cancel_event,
             )
         finally:
