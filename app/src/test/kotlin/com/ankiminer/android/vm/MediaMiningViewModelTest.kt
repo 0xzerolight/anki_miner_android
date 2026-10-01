@@ -1246,6 +1246,53 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun aFinishedRunsUndoSurvivesProcessDeath() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = RecordingRepository()
+            mediaViewModel(before, ImmediateSafBroker(), savedStateHandle = savedState)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            val undo = RecordingUndoManager()
+            val restored =
+                mediaViewModel(
+                    RecordingRepository(),
+                    ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                    undoManager = undo,
+                )
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+
+            restored.requestUndo()
+            restored.confirmUndo()
+            runCurrent()
+
+            assertEquals(listOf(RecordingUndoManager.UndoCall("run", listOf(42L), listOf("食べる"))), undo.calls)
+            assertNull(MiningReceiptStore(savedState, "videoMining.receipt").restore())
+        }
+
+    @Test
+    fun startingANewRunForgetsTheSavedReceipt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val repository = RecordingRepository()
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker(), savedStateHandle = savedState)
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+            assertEquals("run", MiningReceiptStore(savedState, "videoMining.receipt").restore()?.runId)
+
+            viewModel.start()
+            runCurrent()
+
+            assertNull(MiningReceiptStore(savedState, "videoMining.receipt").restore())
+        }
+
+    @Test
     fun mineAfterAFinishedRunResetsItThenStartsWithTheNewInputs() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()

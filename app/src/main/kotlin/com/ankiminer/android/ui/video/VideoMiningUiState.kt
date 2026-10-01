@@ -15,6 +15,7 @@ import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.ExpansionPreview
 import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.MiningReceipt
 
 enum class DocumentSelectionError {
     VIDEO,
@@ -129,6 +130,8 @@ data class VideoMiningUiState(
     val undoAvailable: Boolean = false,
     /** The tab's own Undo is deleting notes; Mine waits for it. */
     val undoPending: Boolean = false,
+    /** A finished run's Undo receipt restored after a background process kill; shown while Idle. */
+    val restoredReceipt: MiningReceipt? = null,
     val audioTrackOverride: Long? = null,
     val audioTrackProbePending: Boolean = false,
     val audioTrackPickerError: AudioTrackPickerError? = null,

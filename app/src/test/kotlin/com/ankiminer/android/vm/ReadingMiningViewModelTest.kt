@@ -244,6 +244,39 @@ class ReadingMiningViewModelTest {
     }
 
     @Test
+    fun aFinishedReadingRunsUndoSurvivesProcessDeath() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = RecordingReadingRepository()
+            ReadingMiningViewModel(before, ImmediateSafBroker(), savedStateHandle = savedState)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            val undo = RecordingUndoManager()
+            val restored =
+                ReadingMiningViewModel(
+                    RecordingReadingRepository(),
+                    ImmediateSafBroker(),
+                    savedStateHandle = savedState,
+                    undoManager = undo,
+                )
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+
+            restored.requestUndo()
+            restored.confirmUndo()
+            runCurrent()
+
+            val expected = result()
+            assertEquals(
+                listOf(RecordingUndoManager.UndoCall("run", expected.cardIds, expected.minedForms)),
+                undo.calls,
+            )
+            assertNull(MiningReceiptStore(savedState, "readingMining.receipt").restore())
+        }
+
+    @Test
     fun mineAfterAFinishedReadingRunResetsItThenStarts() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingReadingRepository()

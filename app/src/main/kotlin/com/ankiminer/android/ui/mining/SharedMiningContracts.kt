@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.mining
 
+import androidx.compose.runtime.Immutable
 import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
@@ -20,6 +21,16 @@ internal const val RESULT_ISSUE_PREVIEW_COUNT = 3
 internal const val MAX_SAVEABLE_QUERY_LENGTH = 1024
 
 internal fun String.boundedSaveableQuery(): String = take(MAX_SAVEABLE_QUERY_LENGTH)
+
+/** What Undo needs from a finished run, kept across a background process kill. */
+@Immutable
+data class MiningReceipt(
+    val runId: String,
+    val notesAdded: Long,
+    val deckName: String?,
+    val noteIds: List<Long>,
+    val minedForms: List<String>,
+)
 
 /** The one sentence a finished run leads with. */
 internal sealed interface MiningResultHeadline {

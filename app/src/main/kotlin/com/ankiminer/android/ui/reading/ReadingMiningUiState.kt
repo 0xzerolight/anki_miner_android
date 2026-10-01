@@ -9,6 +9,7 @@ import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.MiningFieldAdvisories
+import com.ankiminer.android.ui.mining.MiningReceipt
 import java.nio.charset.StandardCharsets
 import java.text.Normalizer
 import java.util.Locale
@@ -101,6 +102,8 @@ data class ReadingMiningUiState(
     val undoAvailable: Boolean = false,
     /** The tab's own Undo is deleting notes; Mine waits for it. */
     val undoPending: Boolean = false,
+    /** A finished run's Undo receipt restored after a background process kill; shown while Idle. */
+    val restoredReceipt: MiningReceipt? = null,
 ) {
     val acceptsArchive: Boolean
         get() =

@@ -8,6 +8,7 @@ import com.ankiminer.android.media.SafSelectionInventory
 import com.ankiminer.android.media.SafSelectionPersistenceException
 import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.media.safSelectionRecordOrNull
+import com.ankiminer.android.ui.mining.MiningReceipt
 import com.ankiminer.android.ui.mining.SavedDocumentSelection
 import com.ankiminer.android.ui.mining.restoredDocumentSelection
 import java.util.concurrent.atomic.AtomicLong
@@ -446,5 +447,47 @@ internal class SavedTextValueStore(
     fun clear() {
         inventory?.putText(requireNotNull(inventorySlot), null)
         savedStateHandle.remove<String>(savedStateKey)
+    }
+}
+
+internal const val MAX_SAVED_RECEIPT_NOTES = 2_000
+
+/**
+ * The last finished run's Undo receipt, bounded, in the lane's SavedStateHandle: returning from
+ * AnkiDroid after Android killed the app in the background otherwise loses Undo for good.
+ */
+internal class MiningReceiptStore(
+    private val savedStateHandle: SavedStateHandle,
+    keyPrefix: String,
+) {
+    private val runIdKey = "$keyPrefix.runId"
+    private val notesKey = "$keyPrefix.notesAdded"
+    private val deckKey = "$keyPrefix.deck"
+    private val noteIdsKey = "$keyPrefix.noteIds"
+    private val formsKey = "$keyPrefix.minedForms"
+
+    fun save(receipt: MiningReceipt) {
+        // A huge run would bloat the saved-state Bundle past the Binder limit; it keeps no receipt.
+        if (receipt.noteIds.isEmpty() || receipt.noteIds.size > MAX_SAVED_RECEIPT_NOTES) {
+            clear()
+            return
+        }
+        savedStateHandle[runIdKey] = receipt.runId
+        savedStateHandle[notesKey] = receipt.notesAdded
+        savedStateHandle[deckKey] = receipt.deckName
+        savedStateHandle[noteIdsKey] = receipt.noteIds.toLongArray()
+        savedStateHandle[formsKey] = ArrayList(receipt.minedForms)
+    }
+
+    fun restore(): MiningReceipt? {
+        val runId = savedStateHandle.get<String>(runIdKey) ?: return null
+        val notesAdded = savedStateHandle.get<Long>(notesKey) ?: return null
+        val noteIds = savedStateHandle.get<LongArray>(noteIdsKey)?.toList() ?: return null
+        val forms = savedStateHandle.get<ArrayList<String>>(formsKey)?.toList() ?: return null
+        return MiningReceipt(runId, notesAdded, savedStateHandle.get<String>(deckKey), noteIds, forms)
+    }
+
+    fun clear() {
+        listOf(runIdKey, notesKey, deckKey, noteIdsKey, formsKey).forEach { savedStateHandle.remove<Any>(it) }
     }
 }

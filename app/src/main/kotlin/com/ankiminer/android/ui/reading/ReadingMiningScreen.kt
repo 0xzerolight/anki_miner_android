@@ -65,6 +65,7 @@ import com.ankiminer.android.ui.mining.MiningAdvisoryLines
 import com.ankiminer.android.ui.mining.MiningBottomBar
 import com.ankiminer.android.ui.mining.MiningBottomBarState
 import com.ankiminer.android.ui.mining.MiningPhaseScaffold
+import com.ankiminer.android.ui.mining.MiningResultHeadline
 import com.ankiminer.android.ui.mining.ResetMiningScrollOnTransition
 import com.ankiminer.android.ui.mining.SETUP_PHASE
 import com.ankiminer.android.ui.mining.miningFailureBannerItem
@@ -578,10 +579,14 @@ private fun LazyListScope.setupItems(
             )
         }
     }
-    miningResultHeadline(runState, state.resultDeckName)?.let { headline ->
+    // After a background process kill only the saved receipt is left: its sentence and its Undo.
+    val headline =
+        miningResultHeadline(runState, state.resultDeckName)
+            ?: state.restoredReceipt?.let { MiningResultHeadline.NotesAdded(it.notesAdded, it.deckName) }
+    headline?.let { lead ->
         val result = runState.terminalResult
         miningResultItems(
-            headline = headline,
+            headline = lead,
             result = result,
             failed = runState is MiningRunState.Failed,
             detailsExpanded = detailsExpanded,
@@ -589,9 +594,9 @@ private fun LazyListScope.setupItems(
             keyPrefix = "reading_terminal_result",
             onToggleDetails = onToggleDetails,
             undo =
-                result?.cardIds?.takeIf { it.isNotEmpty() }?.let { cardIds ->
+                (result?.cardIds ?: state.restoredReceipt?.noteIds)?.takeIf { it.isNotEmpty() }?.let { noteIds ->
                     MiningResultUndoAction(
-                        noteCount = cardIds.size,
+                        noteCount = noteIds.size,
                         undoneNoteCount = state.undoneNoteCount,
                         enabled = state.undoAvailable,
                         testTag = ReadingMiningTestTags.UNDO,

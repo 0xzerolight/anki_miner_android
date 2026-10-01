@@ -36,6 +36,7 @@ import com.ankiminer.android.reading.ReadingSourceSelection
 import com.ankiminer.android.ui.mining.CurationDefinitionState
 import com.ankiminer.android.ui.mining.DefinitionQuery
 import com.ankiminer.android.ui.mining.MiningPendingAction
+import com.ankiminer.android.ui.mining.MiningReceipt
 import com.ankiminer.android.ui.mining.MiningPendingState
 import com.ankiminer.android.ui.mining.SharedCurationDraft
 import com.ankiminer.android.ui.mining.completed
@@ -107,6 +108,8 @@ class ReadingMiningViewModel internal constructor(
         val deckName: String? = null,
         /** The deck the current run started with; the result line names it even if Settings changed since. */
         val runDeckName: String? = null,
+        /** The last run's Undo receipt, restored after Android killed the app in the background. */
+        val restoredReceipt: MiningReceipt? = null,
     )
 
     /**
@@ -141,6 +144,7 @@ class ReadingMiningViewModel internal constructor(
     )
 
     private val definitionState = MutableStateFlow(CurationDefinitionState())
+    private val receiptStore = MiningReceiptStore(savedStateHandle, "readingMining.receipt")
     private var definitionJob: Job? = null
     private var sourceDocumentRequest = 0L
     private var archiveDocumentRequest = 0L
@@ -214,11 +218,14 @@ class ReadingMiningViewModel internal constructor(
             // Own-lane in-flight is `local.pending.undo`; `aux.undoActive` catches the narrow
             // handoff gap between the delete phase releasing its ANKI_SETUP lease and the revert
             // phase acquiring RESOURCE, during which `aux.activeKind` alone would read null.
-            val undoneReceipt = runState.runId?.let { aux.undoneRuns[it] }
+            val restored = local.restoredReceipt?.takeIf { runState == MiningRunState.Idle }
+            val undoneReceipt = (runState.runId ?: restored?.runId)?.let { aux.undoneRuns[it] }
             val undoAvailable =
                 undoManager != null &&
-                    runState.isTerminal &&
-                    runState.terminalResult?.cardIds?.isNotEmpty() == true &&
+                    (
+                        (runState.isTerminal && runState.terminalResult?.cardIds?.isNotEmpty() == true) ||
+                            restored != null
+                    ) &&
                     undoneReceipt == null &&
                     aux.activeKind == null &&
                     !aux.undoActive &&
@@ -250,6 +257,7 @@ class ReadingMiningViewModel internal constructor(
                 undoneNoteCount = undoneReceipt?.deletedNotes,
                 undoAvailable = undoAvailable,
                 undoPending = local.pending.undo,
+                restoredReceipt = restored,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -258,6 +266,9 @@ class ReadingMiningViewModel internal constructor(
         )
 
     init {
+        if (repository.state.value == MiningRunState.Idle) {
+            receiptStore.restore()?.let { receipt -> localState.update { it.copy(restoredReceipt = receipt) } }
+        }
         viewModelScope.launch {
             deckName.distinctUntilChanged().collect { name ->
                 localState.update { local -> local.copy(deckName = name) }
@@ -296,7 +307,11 @@ class ReadingMiningViewModel internal constructor(
                         }
                     }
                     saveCurationSession(runState.request)
+                } else if (runState is MiningRunState.Starting) {
+                    receiptStore.clear()
+                    localState.update { it.copy(restoredReceipt = null) }
                 } else if (runState.isTerminal) {
+                    saveReceipt(runState)
                     definitionJob?.cancel()
                     definitionJob = null
                     requestDefinition(null, null)
@@ -767,8 +782,8 @@ class ReadingMiningViewModel internal constructor(
 
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
-        val result = repository.state.value.terminalResult ?: return
-        localState.update { it.copy(undoConfirmationNoteCount = result.cardIds.size) }
+        val target = undoTarget() ?: return
+        localState.update { it.copy(undoConfirmationNoteCount = target.noteIds.size) }
     }
 
     fun dismissUndoConfirmation() {
@@ -777,17 +792,8 @@ class ReadingMiningViewModel internal constructor(
 
     fun confirmUndo() {
         val manager = undoManager ?: return
-        val runState = repository.state.value
-        val result =
-            (runState as? MiningRunState.Success)?.result
-                ?: (runState as? MiningRunState.Cancelled)?.result
-                ?: (runState as? MiningRunState.Failed)?.result
-        // `runState.runId` is nullable for Cancelled/Failed (unlike Success); the manager needs a
-        // non-null run to key its receipt, so a null id is treated the same as no result.
-        val runId = runState.runId
-        if (result == null || runId == null || result.cardIds.isEmpty() || localState.value.pending.undo) {
-            return
-        }
+        val target = undoTarget() ?: return
+        if (localState.value.pending.undo) return
         localState.update {
             it.copy(
                 pending = it.pending.begin(MiningPendingAction.UNDO),
@@ -795,14 +801,16 @@ class ReadingMiningViewModel internal constructor(
                 undoConfirmationNoteCount = null,
             )
         }
-        viewModelScope.launch(LogContext.asContextElement(runId)) {
+        viewModelScope.launch(LogContext.asContextElement(target.runId)) {
             AppLog.i(LogComponent.UI, "command", "command" to "undo", "outcome" to "ok")
             try {
-                when (val outcome = manager.undoRun(runId, result.cardIds, result.minedForms)) {
-                    is UndoRunOutcome.Undone ->
+                when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms)) {
+                    is UndoRunOutcome.Undone -> {
+                        receiptStore.clear()
                         if (!outcome.receipt.knownWordsReverted) {
                             localState.update { it.copy(commandError = ReadingMiningCommandError.UNDO_WORDS) }
                         }
+                    }
                     UndoRunOutcome.Busy, UndoRunOutcome.DeleteFailed ->
                         localState.update { it.copy(commandError = ReadingMiningCommandError.UNDO) }
                 }
@@ -815,6 +823,26 @@ class ReadingMiningViewModel internal constructor(
                 localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.UNDO)) }
             }
         }
+    }
+
+    /** The run Undo acts on: the finished run on screen, or the receipt restored after a process kill. */
+    private fun undoTarget(): MiningReceipt? {
+        val runState = repository.state.value
+        val result = runState.terminalResult
+        val runId = runState.runId
+        if (result != null && runId != null && result.cardIds.isNotEmpty()) {
+            return MiningReceipt(runId, result.cardsCreated, null, result.cardIds, result.minedForms)
+        }
+        return localState.value.restoredReceipt.takeIf { runState == MiningRunState.Idle }
+    }
+
+    private fun saveReceipt(runState: MiningRunState) {
+        val runId = runState.runId ?: return
+        val result = runState.terminalResult ?: return
+        if (result.cardIds.isEmpty()) return
+        receiptStore.save(
+            MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms),
+        )
     }
 
     private fun launchStart(input: ReadingMiningInput) {
