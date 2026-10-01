@@ -30,8 +30,11 @@ anki_miner_emulator_is_running() {
             return 0
         fi
     fi
+    # Only Android emulators: the SDK front-end, its qemu under the SDK's
+    # emulator/ directory, or a qemu carrying -avd. A host VM such as
+    # libvirt's /usr/bin/qemu-system-x86_64 is not one.
     pgrep -f \
-        '(^|/)(emulator|qemu-system-[[:alnum:]_-]+)([[:space:]]|$)' \
+        '^([^[:space:]]*/)?emulator([[:space:]]|$)|^[^[:space:]]*/emulator/qemu/[^[:space:]]*qemu-system-[[:alnum:]_-]+([[:space:]]|$)|^[^[:space:]]*qemu-system-[[:alnum:]_-]+[[:space:]](.*[[:space:]])?-avd([[:space:]]|$)' \
         >/dev/null 2>&1
 }
 
