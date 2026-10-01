@@ -17,6 +17,8 @@ val androidNdkVersion = "28.2.13676358"
 
 // Identity of the vendored Chaquopy wheels under app/wheels/ (built once via
 // tools/wheels + tools/runtime-wheels; regenerate and update these keys on bump).
+// The language-pack wheels from tools/runtime-wheels/repack_wheels.py are
+// bound by repacked-wheels.lock instead.
 val runtimeWheelBuildKey =
     "01b8673597844082d525926e56c895c8e7e59f514334093789780295779eb76c"
 val s1aWheelBuildKey =
@@ -48,6 +50,7 @@ val verifyVendoredWheelManifest by tasks.registering(Exec::class) {
     inputs.file(manifest)
     inputs.file(verifier)
     inputs.file(rootProject.file("tools/runtime-wheels/sources.lock"))
+    inputs.file(rootProject.file("tools/runtime-wheels/repacked-wheels.lock"))
     inputs.file(rootProject.file("tools/wheels/sources.lock"))
     inputs.files(rootProject.fileTree("app/wheels") { include("**/*.whl") })
     commandLine(

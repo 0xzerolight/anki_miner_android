@@ -1,6 +1,6 @@
 # Third-party notices
 
-Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE)) and bundles the third-party components listed below, each retaining its own terms. Every distributed APK identifies an immutable commit and is accompanied by the corresponding source from that commit. The native components' upstream sources and hashes are pinned in `tools/ffmpeg/sources.lock`, `tools/runtime-wheels/sources.lock`, and `tools/wheels/sources.lock`.
+Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE)) and bundles the third-party components listed below, each retaining its own terms. Every distributed APK identifies an immutable commit and is accompanied by the corresponding source from that commit. The native components' upstream sources and hashes are pinned in `tools/ffmpeg/sources.lock`, `tools/runtime-wheels/sources.lock`, and `tools/wheels/sources.lock`; the repacked language wheels' upstream wheels are pinned in `tools/runtime-wheels/repacked-wheels.lock`.
 
 ## Embedded source and native components
 
@@ -13,6 +13,7 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 | FFmpeg, LAME, Opus, dav1d, libwebp, and libaom CLI build | `third_party/ffmpeg/` (license texts and `NOTICE.md`), `tools/ffmpeg/sources.lock`, build recipes, and committed `jniLibs` executables | FFmpeg 7.1.5 LGPL-2.1-or-later; LAME 3.100 LGPL-2.0-or-later (GNU Library GPL v2); Opus 1.5.2 BSD-3-Clause; dav1d 1.5.0 BSD-2-Clause; libwebp 1.4.0 BSD-3-Clause; libaom 3.12.1 BSD-2-Clause |
 | Chaquopy and CPython runtime | Chaquopy target artifacts and vendored runtime wheels under `app/wheels/` | Chaquopy, Python (PSF), OpenSSL, and SQLite terms as present in the runtime |
 | Python runtime wheels | `tools/runtime-wheels/sources.lock` and publication `attributions.json` | Hash-locked per-package terms including Apache-2.0, BSD, MIT-family, MPL-2.0, FTL, IJG, and Zlib terms |
+| PyThaiNLP and tzdata wheels (Thai mining) | `tools/runtime-wheels/repacked-wheels.lock`, `app/wheels/manifest.json`, and each wheel's `.dist-info/licenses/` plus `pythainlp/corpus/corpus_license.md` | PyThaiNLP 5.3.7 code Apache-2.0; its bundled corpora CC0-1.0 (word lists), CC-BY-4.0 (POS models), CC-BY-SA-4.0 (Thai names corpus, Volubilis word list) and Unicode-DFS-2016 (ICU Thai dictionary); repacked without the corpora the app never opens, including Thai WordNet and the Wikipedia titles list. tzdata 2026.3 Apache-2.0, carrying the public-domain IANA time zone database |
 | Fugashi/libmecab tokenizer wheels | `tools/wheels/sources.lock` and verified publication manifest | Publication verifier records and checks the packaged license files |
 | Kotlin and Android runtime dependencies | `third_party/s2-runtime-dependencies/manifest.json` and `NOTICE.md` | Complete locked runtime inventory, predominantly Apache-2.0, with Jackson's bundled notices recorded separately |
 | Unicode data | `tools/anki-contract/unicode/15.1.0/` | Unicode data license in that directory |

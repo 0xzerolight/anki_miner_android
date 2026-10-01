@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "wheels": {
+    "pythainlp": {
+      "exclude": [
+        "corpus/wikipedia_titles_th.txt",
+        "corpus/wordnet_th.db",
+        "corpus/pos_orchid_perceptron.json",
+        "corpus/sentenceseg_crfcut.model",
+        "corpus/tdtb-pt_tagger.json",
+        "corpus/thai2rom_decoder.onnx",
+        "corpus/thainer_crf_1_5_1.model",
+        "corpus/thai2rom_encoder.onnx"
+      ],
+      "filename": "pythainlp-5.3.7-py3-none-any.whl",
+      "license": {
+        "expression": "Apache-2.0 AND CC0-1.0 AND CC-BY-4.0 AND CC-BY-SA-4.0 AND Unicode-DFS-2016",
+        "members": {
+          "pythainlp-5.3.7.dist-info/licenses/LICENSE": "b40930bbcf80744c86c46a12bc9da056641d722716c378f5659b9e555ef833e1",
+          "pythainlp/corpus/corpus_license.md": "443978471ca3e75b7e39e233c9b7b86e871416fafeb7948fdc99b229adcc40ec"
+        }
+      },
+      "member_prefix": "pythainlp/",
+      "pack": "th",
+      "package": "pythainlp",
+      "repacked_sha256": "b7959a562d33605247258a2a550374fc65c3858aba7b3245f6a32e12c3a37ec7",
+      "sha256": "625b32cd42320dc6e359315108c58eb62480804b16ae843ae3249d925f4f2cf9",
+      "url": "https://files.pythonhosted.org/packages/bd/d3/d81ee1eea09f195e4243400c6b7090bae4cf40d6a7cde4d9ebd4b7f42c96/pythainlp-5.3.7-py3-none-any.whl",
+      "version": "5.3.7"
+    },
+    "tzdata": {
+      "exclude": [],
+      "filename": "tzdata-2026.3-py2.py3-none-any.whl",
+      "license": {
+        "expression": "Apache-2.0",
+        "members": {
+          "tzdata-2026.3.dist-info/licenses/LICENSE": "df58f69ea88683035d720b5375bcef0cf5aeaa98a1d098d572e0992c378deb46",
+          "tzdata-2026.3.dist-info/licenses/licenses/LICENSE_APACHE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"
+        }
+      },
+      "member_prefix": "tzdata/",
+      "pack": "th",
+      "package": "tzdata",
+      "repacked_sha256": "dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931",
+      "sha256": "dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931",
+      "url": "https://files.pythonhosted.org/packages/e5/6d/b53b99a9f2766d095985947a5782f1702cabb129a34f7a802d7197af832f/tzdata-2026.3-py2.py3-none-any.whl",
+      "version": "2026.3"
+    }
+  }
+}

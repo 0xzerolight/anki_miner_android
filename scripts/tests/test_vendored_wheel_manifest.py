@@ -47,7 +47,7 @@ class VendoredWheelManifestTests(unittest.TestCase):
     def test_committed_manifest_matches_every_vendored_wheel(self) -> None:
         result = self._run_tool("check")
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertIn("26 wheels verified", result.stdout)
+        self.assertIn("28 wheels verified", result.stdout)
 
     def test_generate_records_required_provenance_fields(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -64,7 +64,7 @@ class VendoredWheelManifestTests(unittest.TestCase):
             self.assertEqual(0, result.returncode, result.stderr)
             document = json.loads(manifest.read_text(encoding="utf-8"))
             self.assertEqual(1, document["schema"])
-            self.assertEqual(26, len(document["wheels"]))
+            self.assertEqual(28, len(document["wheels"]))
             for entry in document["wheels"]:
                 self.assertEqual(
                     {
@@ -149,6 +149,28 @@ class VendoredWheelManifestTests(unittest.TestCase):
 
             self.assertNotEqual(0, result.returncode)
             self.assertIn("source version 2026.6.17 does not match wheel version 9999", result.stderr)
+
+    def test_repacked_wheel_records_upstream_source_and_is_bound_to_the_repack_lock(self) -> None:
+        document = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        pythainlp = next(entry for entry in document["wheels"] if entry["package"] == "pythainlp")
+        self.assertEqual("repacked-wheel", pythainlp["source"]["kind"])
+        self.assertNotEqual(pythainlp["sha256"], pythainlp["source"]["sha256"])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            wheels_root = self._copy_wheels(root)
+            wheel = wheels_root / "common" / pythainlp["filename"]
+            with wheel.open("ab") as stream:
+                stream.write(b"tampered")
+
+            result = self._run_tool(
+                "generate",
+                wheels_root=wheels_root,
+                manifest=root / "manifest.json",
+            )
+
+            self.assertNotEqual(0, result.returncode)
+            self.assertIn("pythainlp: wheel SHA-256 differs from the repack lock", result.stderr)
 
 
 if __name__ == "__main__":

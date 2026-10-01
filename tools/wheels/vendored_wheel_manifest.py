@@ -19,6 +19,7 @@ DEFAULT_WHEELS_ROOT = REPO_ROOT / "app/wheels"
 DEFAULT_MANIFEST = DEFAULT_WHEELS_ROOT / "manifest.json"
 RUNTIME_SOURCE_LOCK = REPO_ROOT / "tools/runtime-wheels/sources.lock"
 S1A_SOURCE_LOCK = TOOL_ROOT / "sources.lock"
+REPACKED_LOCK = REPO_ROOT / "tools/runtime-wheels/repacked-wheels.lock"
 ABIS = ("arm64-v8a", "common", "x86_64")
 ENTRY_KEYS = {
     "abi",
@@ -63,6 +64,13 @@ def _source_entries(path: Path) -> dict[str, dict[str, Any]]:
     if not all(isinstance(name, str) and isinstance(entry, dict) for name, entry in entries.items()):
         raise ManifestError(f"source lock contains an invalid entry: {path}")
     return entries
+
+
+def _repacked_entries(path: Path) -> dict[str, dict[str, Any]]:
+    entries = _load_json(path).get("wheels")
+    if not isinstance(entries, dict) or not all(isinstance(entry, dict) for entry in entries.values()):
+        raise ManifestError(f"repack lock has no wheels object: {path}")
+    return {_normalize_package(name): entry for name, entry in entries.items()}
 
 
 def _normalize_package(value: str) -> str:
@@ -114,8 +122,10 @@ def _provenance(
     package: str,
     version: str,
     abi: str,
+    sha256: str,
     runtime_sources: dict[str, dict[str, Any]],
     s1a_sources: dict[str, dict[str, Any]],
+    repacked: dict[str, dict[str, Any]],
 ) -> tuple[str, dict[str, str]]:
     runtime_matches = [
         entry for entry in runtime_sources.values() if _normalize_package(str(entry.get("package", ""))) == package
@@ -132,6 +142,20 @@ def _provenance(
         if not isinstance(expression, str) or not expression:
             raise ManifestError(f"runtime source lacks license expression: {package}")
         return expression, _locked_source(entry)
+    repacked_entry = repacked.get(package)
+    if repacked_entry is not None:
+        # Desktop pack.py components: the source is the upstream PyPI wheel, and
+        # the vendored file is that wheel minus the pack's excludes (or verbatim).
+        if abi != "common" or repacked_entry.get("version") != version:
+            raise ManifestError(f"{package}: repack lock version or ABI differs from wheel {version}/{abi}")
+        if repacked_entry.get("repacked_sha256") != sha256:
+            raise ManifestError(f"{package}: wheel SHA-256 differs from the repack lock")
+        license_value = repacked_entry.get("license")
+        expression = license_value.get("expression") if isinstance(license_value, dict) else None
+        if not isinstance(expression, str) or not expression:
+            raise ManifestError(f"repack lock lacks license expression: {package}")
+        kind = "repacked-wheel" if repacked_entry.get("exclude") else "prebuilt-wheel"
+        return expression, _locked_source(repacked_entry, kind=kind)
     if package == "chaquopy-libcxx":
         if version != "190000":
             raise ManifestError(
@@ -180,12 +204,14 @@ def _wheel_paths(wheels_root: Path) -> list[Path]:
 def build_manifest(wheels_root: Path) -> dict[str, Any]:
     runtime_sources = _source_entries(RUNTIME_SOURCE_LOCK)
     s1a_sources = _source_entries(S1A_SOURCE_LOCK)
+    repacked = _repacked_entries(REPACKED_LOCK)
     entries: list[dict[str, Any]] = []
     for path in _wheel_paths(wheels_root):
         relative = path.relative_to(wheels_root)
         abi = relative.parts[0]
         package, version = _wheel_identity(path)
-        license_expression, source = _provenance(package, version, abi, runtime_sources, s1a_sources)
+        sha256 = _sha256(path)
+        license_expression, source = _provenance(package, version, abi, sha256, runtime_sources, s1a_sources, repacked)
         entries.append(
             {
                 "abi": abi,
@@ -193,7 +219,7 @@ def build_manifest(wheels_root: Path) -> dict[str, Any]:
                 "license": license_expression,
                 "package": package,
                 "path": relative.as_posix(),
-                "sha256": _sha256(path),
+                "sha256": sha256,
                 "source": source,
                 "version": version,
             },

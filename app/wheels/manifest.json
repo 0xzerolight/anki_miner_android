@@ -213,6 +213,21 @@
     },
     {
       "abi": "common",
+      "filename": "pythainlp-5.3.7-py3-none-any.whl",
+      "license": "Apache-2.0 AND CC0-1.0 AND CC-BY-4.0 AND CC-BY-SA-4.0 AND Unicode-DFS-2016",
+      "package": "pythainlp",
+      "path": "common/pythainlp-5.3.7-py3-none-any.whl",
+      "sha256": "b7959a562d33605247258a2a550374fc65c3858aba7b3245f6a32e12c3a37ec7",
+      "source": {
+        "filename": "pythainlp-5.3.7-py3-none-any.whl",
+        "kind": "repacked-wheel",
+        "sha256": "625b32cd42320dc6e359315108c58eb62480804b16ae843ae3249d925f4f2cf9",
+        "url": "https://files.pythonhosted.org/packages/bd/d3/d81ee1eea09f195e4243400c6b7090bae4cf40d6a7cde4d9ebd4b7f42c96/pythainlp-5.3.7-py3-none-any.whl"
+      },
+      "version": "5.3.7"
+    },
+    {
+      "abi": "common",
       "filename": "requests-2.34.2-py3-none-any.whl",
       "license": "Apache-2.0",
       "package": "requests",
@@ -225,6 +240,21 @@
         "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl"
       },
       "version": "2.34.2"
+    },
+    {
+      "abi": "common",
+      "filename": "tzdata-2026.3-py2.py3-none-any.whl",
+      "license": "Apache-2.0",
+      "package": "tzdata",
+      "path": "common/tzdata-2026.3-py2.py3-none-any.whl",
+      "sha256": "dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931",
+      "source": {
+        "filename": "tzdata-2026.3-py2.py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931",
+        "url": "https://files.pythonhosted.org/packages/e5/6d/b53b99a9f2766d095985947a5782f1702cabb129a34f7a802d7197af832f/tzdata-2026.3-py2.py3-none-any.whl"
+      },
+      "version": "2026.3"
     },
     {
       "abi": "common",
