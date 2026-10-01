@@ -4,7 +4,8 @@ Nothing here touches the network. The archives a catalog pins come from the
 local cache ``tools/language-data/fetch_language_data.py`` fills
 (``$ANKI_MINER_LANGUAGE_DATA_CACHE``, else
 ``$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/language-data``); a test that needs one which
-is not cached skips and names the command that caches it.
+is not cached skips, or fails when it asks for the data as required, and names the
+command that caches it.
 
 - :func:`language_data_home` points the engine and the bridge at a scratch
   ``ANKI_MINER_HOME``, so an install never leaks into the session's home.
@@ -76,8 +77,13 @@ def language_data_home(home: Path) -> Iterator[Path]:
                 tagger_provider.evict(code)
 
 
-def install_language_data(code: str, home: Path) -> list[Path]:
-    """Install every pinned ``language-data`` entry of *code* into *home*; skip when one is not cached."""
+def install_language_data(code: str, home: Path, *, required: bool = False) -> list[Path]:
+    """Install every pinned ``language-data`` entry of *code* into *home*.
+
+    An entry that is not cached skips the test, or FAILS it when *required*: desktop's rule for its
+    real-data tests (``tests/_pack_seeds.py``), since a real-data test that silently skipped would
+    prove nothing.
+    """
 
     from android_bridge import boundary
     from android_bridge.protocol import decode_envelope, encode_message
@@ -86,7 +92,10 @@ def install_language_data(code: str, home: Path) -> list[Path]:
     for entry in language_data_entries(code):
         archive = cached_archive(entry)
         if archive is None:
-            pytest.skip(f"{entry.resource_id} is not cached: run tools/language-data/fetch_language_data.py {code}")
+            missing = f"{entry.resource_id} is not cached: run tools/language-data/fetch_language_data.py {code}"
+            if required:
+                pytest.fail(missing, pytrace=False)
+            pytest.skip(missing)
         message = decode_envelope(
             boundary.dispatch(
                 encode_message(
