@@ -674,7 +674,7 @@
     <string name="settings_known_words_match_kana_variants_help">Khi phụ đề viết một từ bằng kana (ví dụ: うなずく) và dạng từ điển bằng kanji (頷く) đã có trong bộ sưu tập hoặc danh sách từ đã biết, bỏ qua từ đó thay vì tạo thêm thẻ thứ hai. Cách viết kanji không bao giờ được gộp theo cách này.</string>
     <string name="settings_card_creation">Tạo thẻ</string>
     <string name="settings_strict_card_order">Tạo thẻ theo thứ tự xuất hiện</string>
-    <string name="settings_strict_card_order_help">Thêm thẻ vào Anki theo thứ tự các từ xuất hiện trong phương tiện, thay vì theo thứ tự phương tiện của chúng được trích xuất xong.</string>
+    <string name="settings_strict_card_order_help">Thêm thẻ vào Anki theo thứ tự các từ xuất hiện lần đầu. Khi tùy chọn này tắt và “Luôn khai thác từ trong danh sách trắng” bật, các từ trong danh sách trắng được thêm trước.</string>
     <string name="settings_sentence_options">Tùy chọn câu</string>
     <string name="settings_max_duration_help">Loại bỏ các thẻ có âm thanh câu ví dụ dài hơn số giây này. Đặt 0 để không giới hạn.</string>
     <string name="settings_max_characters_help">Loại bỏ các thẻ có văn bản câu vượt quá số ký tự này. Đặt 0 để không giới hạn.</string>

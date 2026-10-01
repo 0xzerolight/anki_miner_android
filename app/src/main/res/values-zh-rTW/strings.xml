@@ -674,7 +674,7 @@
     <string name="settings_known_words_match_kana_variants_help">當字幕以假名拼寫單字（例如 うなずく），而該單字的漢字字典形（頷く）已在您的收藏或已知單字清單中時，則略過該單字，而不建立第二張卡片。漢字拼寫絕不會以此方式合併。</string>
     <string name="settings_card_creation">卡片建立</string>
     <string name="settings_strict_card_order">依出現順序建立卡片</string>
-    <string name="settings_strict_card_order_help">依單字在媒體中出現的順序，而非依媒體擷取完成的順序，將卡片加入 Anki。</string>
+    <string name="settings_strict_card_order_help">依單字首次出現的順序將卡片加入 Anki。關閉此項且開啟「一律採集白名單中的單字」時，白名單中的單字會排在最前面。</string>
     <string name="settings_sentence_options">句子選項</string>
     <string name="settings_max_duration_help">捨棄例句音訊長度超過此秒數的卡片。設為 0 表示無限制。</string>
     <string name="settings_max_characters_help">捨棄句子文字超過此字元數的卡片。設為 0 表示無限制。</string>

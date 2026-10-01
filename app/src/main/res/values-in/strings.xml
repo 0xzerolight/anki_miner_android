@@ -674,7 +674,7 @@
     <string name="settings_known_words_match_kana_variants_help">Ketika subtitel mengeja kata dalam kana (misalnya うなずく) dan bentuk kamus kanji-nya (頷く) sudah ada di koleksi Anda atau daftar kata yang dikenal, kata tersebut dilewati alih-alih dibuatkan kartu kedua. Ejaan kanji tidak pernah digabungkan dengan cara ini.</string>
     <string name="settings_card_creation">Pembuatan kartu</string>
     <string name="settings_strict_card_order">Buat kartu sesuai urutan kemunculan</string>
-    <string name="settings_strict_card_order_help">Menambahkan kartu ke Anki sesuai urutan kemunculan kata dalam media, bukan urutan selesainya ekstraksi media.</string>
+    <string name="settings_strict_card_order_help">Menambahkan kartu ke Anki sesuai urutan kata pertama kali muncul. Jika opsi ini mati dan “Selalu mining kata dalam daftar putih” aktif, kata dalam daftar putih didahulukan.</string>
     <string name="settings_sentence_options">Opsi kalimat</string>
     <string name="settings_max_duration_help">Menghilangkan kartu yang audio kalimat contohnya lebih panjang dari jumlah detik ini. Setel ke 0 untuk tanpa batas.</string>
     <string name="settings_max_characters_help">Menghilangkan kartu yang teks kalimatnya melebihi jumlah karakter ini. Setel ke 0 untuk tanpa batas.</string>

@@ -685,7 +685,7 @@
     <string name="settings_known_words_match_kana_variants_help">When a subtitle spells a word in kana (e.g. うなずく) and the kanji dictionary form (頷く) is already in your collection or known list, skip it instead of creating a second card. Kanji spellings are never merged this way.</string>
     <string name="settings_card_creation">Card creation</string>
     <string name="settings_strict_card_order">Create cards in order of appearance</string>
-    <string name="settings_strict_card_order_help">Adds cards to Anki in the order the words appear in the media, instead of the order their media finished extracting.</string>
+    <string name="settings_strict_card_order_help">Adds cards to Anki in the order the words first appear. When this is off and “Always mine whitelisted words” is on, whitelisted words come first.</string>
     <string name="settings_sentence_options">Sentence options</string>
     <string name="settings_max_duration_help">Drops cards whose example sentence audio is longer than this many seconds. Set to 0 for no limit.</string>
     <string name="settings_max_characters_help">Drops cards whose sentence text exceeds this many characters. Set to 0 for no limit.</string>

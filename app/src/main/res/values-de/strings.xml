@@ -675,7 +675,7 @@
     <string name="settings_known_words_match_kana_variants_help">Wenn ein Untertitel ein Wort in Kana schreibt (z. B. うなずく) und die Kanji-Wörterbuchform (頷く) bereits in Ihrer Sammlung oder Wortliste bekannter Wörter vorhanden ist, wird es übersprungen, anstatt eine zweite Karte zu erstellen. Kanji-Schreibweisen werden auf diese Weise nie zusammengeführt.</string>
     <string name="settings_card_creation">Kartenerstellung</string>
     <string name="settings_strict_card_order">Karten in Erscheinungsreihenfolge erstellen</string>
-    <string name="settings_strict_card_order_help">Fügt Karten zu Anki in der Reihenfolge hinzu, in der die Wörter im Medium erscheinen, statt in der Reihenfolge, in der die Extraktion ihrer Medien abgeschlossen wurde.</string>
+    <string name="settings_strict_card_order_help">Fügt Karten in der Reihenfolge zu Anki hinzu, in der die Wörter zum ersten Mal erscheinen. Ist dies aus und „Wörter auf der Whitelist immer sammeln“ an, kommen Wörter auf der Whitelist zuerst.</string>
     <string name="settings_sentence_options">Satzoptionen</string>
     <string name="settings_max_duration_help">Verwirft Karten, deren Beispielsatz-Audio länger als diese Anzahl an Sekunden ist. Auf 0 setzen für keine Begrenzung.</string>
     <string name="settings_max_characters_help">Verwirft Karten, deren Satztext diese Anzahl an Zeichen überschreitet. Auf 0 setzen für keine Begrenzung.</string>

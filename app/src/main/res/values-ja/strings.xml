@@ -677,7 +677,7 @@
     <string name="settings_known_words_match_kana_variants_help">字幕が単語をかなで表記していて（例：うなずく）、その漢字の辞書形（頷く）がすでにコレクションまたは既知単語リストにある場合、2枚目のカードを作成せずにスキップします。漢字表記がこの方法で統合されることはありません。</string>
     <string name="settings_card_creation">カード作成</string>
     <string name="settings_strict_card_order">登場順にカードを作成</string>
-    <string name="settings_strict_card_order_help">単語がメディア内に登場する順にカードを Anki に追加します。メディアの抽出が完了した順ではありません。</string>
+    <string name="settings_strict_card_order_help">単語が最初に登場した順にカードを Anki に追加します。オフのとき「ホワイトリストの単語は常にマイニング」がオンなら、ホワイトリストの単語が先に追加されます。</string>
     <string name="settings_sentence_options">例文のオプション</string>
     <string name="settings_max_duration_help">例文の音声がこの秒数より長いカードを除外します。0にすると制限なしになります。</string>
     <string name="settings_max_characters_help">例文のテキストがこの文字数を超えるカードを除外します。0にすると制限なしになります。</string>

@@ -676,7 +676,7 @@
     <string name="settings_known_words_match_kana_variants_help">Lorsqu\'un sous-titre écrit un mot en kana (par exemple うなずく) et que la forme kanji du dictionnaire (頷く) figure déjà dans votre collection ou votre liste de mots connus, le mot est ignoré au lieu de créer une seconde carte. Les graphies en kanji ne sont jamais fusionnées de cette manière.</string>
     <string name="settings_card_creation">Création des cartes</string>
     <string name="settings_strict_card_order">Créer les cartes dans l\'ordre d\'apparition</string>
-    <string name="settings_strict_card_order_help">Ajoute les cartes à Anki dans l\'ordre d\'apparition des mots dans le média, plutôt que dans l\'ordre où l\'extraction de leur média s\'est terminée.</string>
+    <string name="settings_strict_card_order_help">Ajoute les cartes à Anki dans l\'ordre de première apparition des mots. Si cette option est désactivée et que « Toujours extraire les mots de la liste blanche » est activée, les mots de la liste blanche passent en premier.</string>
     <string name="settings_sentence_options">Options des phrases</string>
     <string name="settings_max_duration_help">Écarte les cartes dont l\'audio de la phrase d\'exemple dépasse ce nombre de secondes. Indiquez 0 pour ne fixer aucune limite.</string>
     <string name="settings_max_characters_help">Écarte les cartes dont le texte de la phrase dépasse ce nombre de caractères. Indiquez 0 pour ne fixer aucune limite.</string>

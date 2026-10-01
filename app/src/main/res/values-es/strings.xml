@@ -676,7 +676,7 @@
     <string name="settings_known_words_match_kana_variants_help">Cuando un subtítulo escribe una palabra en kana (p. ej. うなずく) y la forma de diccionario en kanji (頷く) ya está en su colección o lista de palabras conocidas, se omite en vez de crear una segunda tarjeta. Las grafías en kanji nunca se combinan de esta forma.</string>
     <string name="settings_card_creation">Creación de tarjetas</string>
     <string name="settings_strict_card_order">Crear tarjetas en el orden de aparición</string>
-    <string name="settings_strict_card_order_help">Añade tarjetas a Anki en el orden en que las palabras aparecen en el contenido, en lugar del orden en que terminó la extracción de sus archivos multimedia.</string>
+    <string name="settings_strict_card_order_help">Añade tarjetas a Anki en el orden en que las palabras aparecen por primera vez. Si esta opción está desactivada y “Minar siempre las palabras de la lista blanca” está activada, las palabras de la lista blanca van primero.</string>
     <string name="settings_sentence_options">Opciones de oraciones</string>
     <string name="settings_max_duration_help">Descarta las tarjetas cuyo audio de la oración de ejemplo dura más de esta cantidad de segundos. Establezca 0 para no aplicar límite.</string>
     <string name="settings_max_characters_help">Descarta las tarjetas cuyo texto de la oración supera esta cantidad de caracteres. Establezca 0 para no aplicar límite.</string>

@@ -676,7 +676,7 @@
     <string name="settings_known_words_match_kana_variants_help">Quando uma legenda grafa uma palavra em kana (ex.: うなずく) e a forma de dicionário em kanji (頷く) já está na sua coleção ou lista de palavras conhecidas, ela é ignorada em vez de criar um segundo cartão. Grafias em kanji nunca são mescladas dessa forma.</string>
     <string name="settings_card_creation">Criação de cartões</string>
     <string name="settings_strict_card_order">Criar cartões na ordem em que aparecem</string>
-    <string name="settings_strict_card_order_help">Adiciona cartões ao Anki na ordem em que as palavras aparecem na mídia, em vez da ordem em que a mídia delas terminou de ser extraída.</string>
+    <string name="settings_strict_card_order_help">Adiciona cartões ao Anki na ordem em que as palavras aparecem pela primeira vez. Com esta opção desativada e “Sempre minerar palavras na lista de permissões” ativada, as palavras da lista de permissões vêm primeiro.</string>
     <string name="settings_sentence_options">Opções de frase</string>
     <string name="settings_max_duration_help">Descarta cartões cujo áudio da frase de exemplo é mais longo que este número de segundos. Defina como 0 para não ter limite.</string>
     <string name="settings_max_characters_help">Descarta cartões cujo texto da frase excede este número de caracteres. Defina como 0 para não ter limite.</string>
