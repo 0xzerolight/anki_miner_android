@@ -2375,6 +2375,27 @@ class VideoMiningScreenTest {
         composeRule.onAllNodesWithText("1 occurrences", substring = true).assertCountEquals(0)
     }
 
+    @Test
+    fun neighbouringCandidateRowsSitFlushInOneList() {
+        val request = request()
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Curating(request),
+                    curation = curationState(request, focusedCandidateId = null),
+                ),
+        )
+        val (upper, lower) =
+            request.candidates
+                .map {
+                    composeRule
+                        .onNodeWithTag(VideoMiningTestTags.candidate(it.candidateId))
+                        .fetchSemanticsNode()
+                        .boundsInRoot
+                }.sortedBy { it.top }
+        assertEquals(upper.bottom, lower.top, 1f)
+    }
+
     private fun openCurationTools() {
         if (composeRule.onAllNodesWithTag(CURATION_SEARCH_TEST_TAG).fetchSemanticsNodes().isEmpty()) {
             composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()

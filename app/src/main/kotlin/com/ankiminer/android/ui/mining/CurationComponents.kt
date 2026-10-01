@@ -41,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -430,7 +431,8 @@ internal fun ReconcileCurationFocus(
 }
 
 /**
- * Gap below one item of a candidate group: 12dp after the last part, nothing inside.
+ * Gap below one item of a candidate group: 12dp after a run of rows or an expanded group; nothing
+ * inside.
  *
  * The list itself spaces curation items by zero so the header, actions, definition and sentences —
  * separate lazy items for virtualization's sake — can sit flush and read as one card.
@@ -473,6 +475,7 @@ internal fun CurationCandidateRow(
     includeLabel: String,
     selected: Boolean,
     expanded: Boolean,
+    position: CurationRowPosition,
     animateSelection: Boolean,
     enabled: Boolean,
     toggleEnabled: Boolean,
@@ -482,11 +485,16 @@ internal fun CurationCandidateRow(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Neighbouring rows share one container: only the ends of a run are rounded.
+    val corner = 12.dp
     val shape =
-        if (expanded) {
-            RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-        } else {
-            MaterialTheme.shapes.medium
+        when {
+            expanded || position == CurationRowPosition.FIRST ->
+                RoundedCornerShape(topStart = corner, topEnd = corner)
+            position == CurationRowPosition.ONLY -> RoundedCornerShape(corner)
+            position == CurationRowPosition.LAST ->
+                RoundedCornerShape(bottomStart = corner, bottomEnd = corner)
+            else -> RectangleShape
         }
     val containerColor = curationRowContainerColor(selected, animateSelection)
     // Two targets, not one. The row opens the detail; only the checkbox includes or excludes. The
@@ -504,43 +512,46 @@ internal fun CurationCandidateRow(
         contentColor = MaterialTheme.colorScheme.onSurface,
         shape = shape,
     ) {
-        Row(
-            modifier =
-                Modifier.padding(
-                    horizontal = AnkiMinerTokens.Space.group,
-                    vertical = AnkiMinerTokens.Space.related,
-                ),
-            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Checkbox(
-                checked = selected,
-                onCheckedChange = onToggle,
-                enabled = toggleEnabled,
+        Column {
+            if (!position.startsRun) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Row(
                 modifier =
-                    Modifier
-                        .minimumInteractiveComponentSize()
-                        .testTag(toggleTestTag)
-                        .semantics { contentDescription = includeLabel },
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+                    Modifier.padding(
+                        horizontal = AnkiMinerTokens.Space.group,
+                        vertical = AnkiMinerTokens.Space.line,
+                    ),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = text.headline,
-                    style = MaterialTheme.typography.titleMedium.minedText(),
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
+                Checkbox(
+                    checked = selected,
+                    onCheckedChange = onToggle,
+                    enabled = toggleEnabled,
+                    modifier =
+                        Modifier
+                            .minimumInteractiveComponentSize()
+                            .testTag(toggleTestTag)
+                            .semantics { contentDescription = includeLabel },
                 )
-                Text(
-                    text = text.metadata,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+                ) {
+                    Text(
+                        text = text.headline,
+                        style = MaterialTheme.typography.titleMedium.minedText(),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = text.metadata,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

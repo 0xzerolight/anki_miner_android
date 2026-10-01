@@ -61,7 +61,9 @@ import com.ankiminer.android.ui.mining.ClipWindowSeconds
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.curationDefinitionMaxHeight
+import com.ankiminer.android.ui.mining.CurationRowPosition
 import com.ankiminer.android.ui.mining.curationMediaMaxHeight
+import com.ankiminer.android.ui.mining.curationRowPositions
 import com.ankiminer.android.ui.mining.curationVisibleSelection
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
@@ -297,6 +299,10 @@ fun VideoMiningScreen(
             // included candidate exclude it.
             val expandedCandidateId =
                 targetCuration?.focusedCandidateId?.takeIf { it in visibleCandidateIds }
+            val rowPositions =
+                remember(visibleCandidateIds, expandedCandidateId) {
+                    curationRowPositions(visibleCandidateIds, expandedCandidateId)
+                }
             ReconcileCurationFocus(
                 visibleCandidateIds = visibleCandidateIds,
                 focusedCandidateId = targetCuration?.focusedCandidateId,
@@ -469,6 +475,7 @@ fun VideoMiningScreen(
                                     includeWordTemplate = includeWordTemplate,
                                     excludeWordTemplate = excludeWordTemplate,
                                     expandedCandidateId = expandedCandidateId,
+                                    rowPositions = rowPositions,
                                     alternativesOpen = alternativesOpen,
                                     onToggleAlternatives = { alternativesOpen = !alternativesOpen },
                                     onFocusCandidate = onFocusCandidate,
@@ -958,6 +965,7 @@ private fun LazyListScope.curationItems(
     includeWordTemplate: String,
     excludeWordTemplate: String,
     expandedCandidateId: String?,
+    rowPositions: List<CurationRowPosition>,
     alternativesOpen: Boolean,
     onToggleAlternatives: () -> Unit,
     onFocusCandidate: (String?) -> Unit,
@@ -981,7 +989,8 @@ private fun LazyListScope.curationItems(
 ) {
     val curation = state.curation ?: return
     val enabled = !state.curationPending && !state.cancelPending
-    visibleCandidates.forEach { candidate ->
+    visibleCandidates.forEachIndexed { index, candidate ->
+        val position = rowPositions[index]
         val selected = candidate.candidateId in curation.selectedCandidateIds
         val known = candidate.candidateId in curation.knownCandidateIds
         val expanded = candidate.candidateId == expandedCandidateId
@@ -1014,6 +1023,7 @@ private fun LazyListScope.curationItems(
                     },
                 selected = selected,
                 expanded = expanded,
+                position = position,
                 animateSelection = animateSelection,
                 enabled = enabled,
                 toggleEnabled = enabled && !known,
@@ -1021,7 +1031,7 @@ private fun LazyListScope.curationItems(
                 toggleTestTag = toggleTestTag,
                 onFocus = onFocus,
                 onToggle = onToggle,
-                modifier = Modifier.padding(bottom = curationGroupGap(last = !expanded)),
+                modifier = Modifier.padding(bottom = curationGroupGap(last = !expanded && position.endsRun)),
             )
         }
         if (expanded) {

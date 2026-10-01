@@ -32,3 +32,35 @@ internal fun curationToolsStartExpanded(
     windowHeightDp: Int,
 ): Boolean =
     candidateCount >= CURATION_TOOLS_OPEN_MIN_CANDIDATES && windowHeightDp >= CURATION_COMPACT_WINDOW_HEIGHT_DP
+
+/** Where a candidate header sits in a run of flush rows; an expanded candidate breaks the run. */
+internal enum class CurationRowPosition {
+    ONLY,
+    FIRST,
+    MIDDLE,
+    LAST,
+    ;
+
+    val startsRun: Boolean get() = this == ONLY || this == FIRST
+    val endsRun: Boolean get() = this == ONLY || this == LAST
+}
+
+internal fun curationRowPositions(
+    visibleCandidateIds: List<String>,
+    expandedCandidateId: String?,
+): List<CurationRowPosition> =
+    visibleCandidateIds.indices.map { index ->
+        val id = visibleCandidateIds[index]
+        val starts =
+            index == 0 || id == expandedCandidateId || visibleCandidateIds[index - 1] == expandedCandidateId
+        val ends =
+            index == visibleCandidateIds.lastIndex ||
+                id == expandedCandidateId ||
+                visibleCandidateIds[index + 1] == expandedCandidateId
+        when {
+            starts && ends -> CurationRowPosition.ONLY
+            starts -> CurationRowPosition.FIRST
+            ends -> CurationRowPosition.LAST
+            else -> CurationRowPosition.MIDDLE
+        }
+    }

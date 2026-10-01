@@ -30,4 +30,22 @@ class CurationLayoutTest {
         assertFalse(curationToolsStartExpanded(candidateCount = 10, windowHeightDp = 914))
         assertFalse(curationToolsStartExpanded(candidateCount = 100, windowHeightDp = 640))
     }
+
+    @Test
+    fun rowsShareOneContainerUntilAnExpandedCandidateBreaksIt() {
+        assertEquals(
+            listOf(CurationRowPosition.FIRST, CurationRowPosition.MIDDLE, CurationRowPosition.LAST),
+            curationRowPositions(listOf("a", "b", "c"), null),
+        )
+        assertEquals(
+            listOf(
+                CurationRowPosition.ONLY,
+                CurationRowPosition.ONLY,
+                CurationRowPosition.FIRST,
+                CurationRowPosition.LAST,
+            ),
+            curationRowPositions(listOf("a", "b", "c", "d"), "b"),
+        )
+        assertEquals(listOf(CurationRowPosition.ONLY), curationRowPositions(listOf("a"), null))
+    }
 }
