@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""Export desktop's tokens for a language that has no desktop ``tests/fixtures/<code>/tokens.jsonl``.
+
+Runs the DESKTOP engine (a checkout at the ``tools/engine-sync/engine.lock`` SHA)
+with the upstream engine wheels of the interpreter that runs this script, so the
+expected tokens come from desktop's own tokenizer, never from the Android
+overrides under test. Run it with the runtime lane's CPython 3.12 at the pinned
+versions (``requirements-runtime-host-test.lock``)::
+
+    <venv>/bin/python tests/python/android_bridge/languages/export_desktop_tokens.py \\
+        --code vi --desktop "$ANKI_MINER_DESKTOP_REPO" \\
+        --sentences "$ANKI_MINER_DESKTOP_REPO/tests/fixtures/vi/pos_corpus.jsonl" \\
+        --output tests/python/android_bridge/languages/fixtures/vi/tokens.jsonl
+
+Input lines are JSON objects with a ``sentence`` (or ``line``) key; ``#`` lines
+are skipped. Output follows desktop's ``tests/fixtures/yue/tokens.jsonl`` shape,
+``{"line", "tokens": [{surface, lemma, pos1, pos2, start, end}]}``, where
+``start``/``end`` locate each surface in the line by a running ``str.find``. The
+first line records the command, the desktop SHA and the engine package versions.
+
+The desktop engine imports ``PyQt6.QtCore`` and ``psutil``; the Android shims
+from ``tools/engine-sync/overrides`` stand in for them (appended to ``sys.path``,
+so they never shadow desktop modules). The engine home is a throwaway directory.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.metadata
+import json
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[4]
+ENGINE_LOCK = REPO_ROOT / "tools" / "engine-sync" / "engine.lock"
+SHIMS = REPO_ROOT / "tools" / "engine-sync" / "overrides"
+#: The upstream distributions whose versions decide a language's tokens.
+ENGINE_DISTRIBUTIONS = {
+    "vi": ("underthesea", "underthesea-core"),
+    "yue": ("pycantonese", "rustling"),
+}
+
+
+def _desktop_sha(desktop: Path) -> str:
+    return subprocess.run(
+        ["git", "-C", str(desktop), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def _sentences(path: Path) -> list[str]:
+    lines = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        if not raw.strip() or raw.startswith("#"):
+            continue
+        row = json.loads(raw)
+        lines.append(row["sentence"] if "sentence" in row else row["line"])
+    return lines
+
+
+def _tokens(tagger: object, line: str) -> list[dict[str, object]]:
+    rows = []
+    cursor = 0
+    for token in tagger.parse(line):  # type: ignore[attr-defined]
+        start = line.find(token.surface, cursor)
+        if start < 0:
+            raise SystemExit(f"surface {token.surface!r} not found in {line!r} after offset {cursor}")
+        cursor = start + len(token.surface)
+        rows.append(
+            {
+                "surface": token.surface,
+                "lemma": token.feature.lemma,
+                "pos1": token.feature.pos1,
+                "pos2": token.feature.pos2,
+                "start": start,
+                "end": cursor,
+            }
+        )
+    return rows
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--code", required=True)
+    parser.add_argument("--desktop", type=Path, required=True, help="desktop checkout at the engine.lock SHA")
+    parser.add_argument("--sentences", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    args = parser.parse_args(argv)
+
+    pinned = ENGINE_LOCK.read_text(encoding="utf-8").strip()
+    actual = _desktop_sha(args.desktop)
+    if actual != pinned:
+        raise SystemExit(f"{args.desktop} is at {actual}, engine.lock pins {pinned}")
+
+    shims = Path(tempfile.mkdtemp(prefix="desktop-shims-"))
+    for name in ("PyQt6", "psutil"):
+        shutil.copytree(SHIMS / name, shims / name)
+    os.environ["ANKI_MINER_HOME"] = tempfile.mkdtemp(prefix="desktop-home-")
+    sys.path.insert(0, str(args.desktop.resolve()))
+    sys.path.append(str(shims))
+
+    import anki_miner
+    from anki_miner.languages.tagger_provider import get_tagger
+
+    if Path(anki_miner.__file__).resolve().parents[1] != args.desktop.resolve():
+        raise SystemExit(f"anki_miner resolved outside the desktop checkout: {anki_miner.__file__}")
+    tagger = get_tagger(args.code)
+    versions = {name: importlib.metadata.version(name) for name in ENGINE_DISTRIBUTIONS.get(args.code, ())}
+    command = shlex.join([Path(sys.executable).name, *sys.argv])
+    header = (
+        f"# provenance: desktop {args.code} tokenizer at {actual} (tools/engine-sync/engine.lock), "
+        f"Python {sys.version.split()[0]}, {json.dumps(versions, sort_keys=True)}; generated by: {command}"
+    )
+    rows = [
+        json.dumps({"line": line, "tokens": _tokens(tagger, line)}, ensure_ascii=False)
+        for line in _sentences(args.sentences)
+    ]
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text("\n".join([header, *rows]) + "\n", encoding="utf-8")
+    print(f"wrote {len(rows)} lines to {args.output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

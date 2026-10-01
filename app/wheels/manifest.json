@@ -258,6 +258,21 @@
     },
     {
       "abi": "arm64-v8a",
+      "filename": "pycantonese-5.0.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "pycantonese",
+      "path": "arm64-v8a/pycantonese-5.0.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "0d61e8c6f6f0527062cb8e878a2312f60047e98c4bde2e653f5bb590918468e0",
+      "source": {
+        "filename": "pycantonese-5.0.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "8655ba3cd891b528d6b070245abed55b20a08d673f1056fcf9afad0adbc47c1d",
+        "url": "https://files.pythonhosted.org/packages/09/09/32e8000e39eb9ff034e1d55a86536a14abab90f2f4df176129fd90c43c29/pycantonese-5.0.0.tar.gz"
+      },
+      "version": "5.0.0"
+    },
+    {
+      "abi": "arm64-v8a",
       "filename": "pydantic_core-2.46.5-0-cp312-cp312-android_26_arm64_v8a.whl",
       "license": "MIT",
       "package": "pydantic-core",
@@ -285,6 +300,21 @@
         "url": "https://files.pythonhosted.org/packages/b9/5c/f403115361de25809e8f785686ec7096e30fef73be9ae35aa51da4e80abb/regex-2026.9.10.tar.gz"
       },
       "version": "2026.9.10"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "rustling-0.9.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "MIT",
+      "package": "rustling",
+      "path": "arm64-v8a/rustling-0.9.0-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "f98f18b7a11545686cdb675260c447160de1f9ffff59e470fa86aa2c16285e22",
+      "source": {
+        "filename": "rustling-0.9.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "c698de9a650d6675673f1ead4743a86eb6de0d42c82be479f036a395bf4f27c6",
+        "url": "https://files.pythonhosted.org/packages/98/7c/c7324e7d463e31d313160e8f54273e3729482b3851ac344867612cdbc5f1/rustling-0.9.0.tar.gz"
+      },
+      "version": "0.9.0"
     },
     {
       "abi": "arm64-v8a",
@@ -330,6 +360,21 @@
         "url": "https://files.pythonhosted.org/packages/13/46/76df95f2c327f9a9cef30c1523bf285627897097163584dcf5f77b2ebce2/thinc-8.3.13.tar.gz"
       },
       "version": "8.3.13"
+    },
+    {
+      "abi": "arm64-v8a",
+      "filename": "underthesea_core-3.3.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "license": "Apache-2.0",
+      "package": "underthesea-core",
+      "path": "arm64-v8a/underthesea_core-3.3.2-0-cp312-cp312-android_26_arm64_v8a.whl",
+      "sha256": "b09fdf34c527672f0b2309b9fdc147c2ba9fa1bbd61aa43530d56fe123cd1710",
+      "source": {
+        "filename": "underthesea_core-3.3.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "7019f8f6d13f14556c032c63a9e5f77e107426654edce5e92d6513bb8ee8141a",
+        "url": "https://files.pythonhosted.org/packages/f1/62/a67e1ce6a0a7cf5a050d5debe3f4e1dad511bdf625fc4b169721c27da4be/underthesea_core-3.3.2.tar.gz"
+      },
+      "version": "3.3.2"
     },
     {
       "abi": "common",
@@ -918,6 +963,21 @@
     },
     {
       "abi": "common",
+      "filename": "underthesea-9.5.0-py3-none-any.whl",
+      "license": "Apache-2.0",
+      "package": "underthesea",
+      "path": "common/underthesea-9.5.0-py3-none-any.whl",
+      "sha256": "5bb9e203fb6ba9724f2e4123212d8ecff6452da2f159cd2e9728655240dfbfe4",
+      "source": {
+        "filename": "underthesea-9.5.0-py3-none-any.whl",
+        "kind": "prebuilt-wheel",
+        "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+        "url": "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl"
+      },
+      "version": "9.5.0"
+    },
+    {
+      "abi": "common",
       "filename": "urllib3-2.7.0-py3-none-any.whl",
       "license": "MIT",
       "package": "urllib3",
@@ -1248,6 +1308,21 @@
     },
     {
       "abi": "x86_64",
+      "filename": "pycantonese-5.0.0-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "pycantonese",
+      "path": "x86_64/pycantonese-5.0.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "35616f1f640677496da9310c7044e21da74582b00c501e12014f1b6cf21460b2",
+      "source": {
+        "filename": "pycantonese-5.0.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "8655ba3cd891b528d6b070245abed55b20a08d673f1056fcf9afad0adbc47c1d",
+        "url": "https://files.pythonhosted.org/packages/09/09/32e8000e39eb9ff034e1d55a86536a14abab90f2f4df176129fd90c43c29/pycantonese-5.0.0.tar.gz"
+      },
+      "version": "5.0.0"
+    },
+    {
+      "abi": "x86_64",
       "filename": "pydantic_core-2.46.5-0-cp312-cp312-android_26_x86_64.whl",
       "license": "MIT",
       "package": "pydantic-core",
@@ -1275,6 +1350,21 @@
         "url": "https://files.pythonhosted.org/packages/b9/5c/f403115361de25809e8f785686ec7096e30fef73be9ae35aa51da4e80abb/regex-2026.9.10.tar.gz"
       },
       "version": "2026.9.10"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "rustling-0.9.0-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "MIT",
+      "package": "rustling",
+      "path": "x86_64/rustling-0.9.0-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "455634380291ff033eb4f0daffcfa3510075f5d04708d2f6da783e0ee08fda56",
+      "source": {
+        "filename": "rustling-0.9.0.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "c698de9a650d6675673f1ead4743a86eb6de0d42c82be479f036a395bf4f27c6",
+        "url": "https://files.pythonhosted.org/packages/98/7c/c7324e7d463e31d313160e8f54273e3729482b3851ac344867612cdbc5f1/rustling-0.9.0.tar.gz"
+      },
+      "version": "0.9.0"
     },
     {
       "abi": "x86_64",
@@ -1320,6 +1410,21 @@
         "url": "https://files.pythonhosted.org/packages/13/46/76df95f2c327f9a9cef30c1523bf285627897097163584dcf5f77b2ebce2/thinc-8.3.13.tar.gz"
       },
       "version": "8.3.13"
+    },
+    {
+      "abi": "x86_64",
+      "filename": "underthesea_core-3.3.2-0-cp312-cp312-android_26_x86_64.whl",
+      "license": "Apache-2.0",
+      "package": "underthesea-core",
+      "path": "x86_64/underthesea_core-3.3.2-0-cp312-cp312-android_26_x86_64.whl",
+      "sha256": "eabc2b7fc24e504e3c66e227fc5dbe3b6b2e92db05d603aec543f1d1655f447e",
+      "source": {
+        "filename": "underthesea_core-3.3.2.tar.gz",
+        "kind": "runtime-source",
+        "sha256": "7019f8f6d13f14556c032c63a9e5f77e107426654edce5e92d6513bb8ee8141a",
+        "url": "https://files.pythonhosted.org/packages/f1/62/a67e1ce6a0a7cf5a050d5debe3f4e1dad511bdf625fc4b169721c27da4be/underthesea_core-3.3.2.tar.gz"
+      },
+      "version": "3.3.2"
     }
   ]
 }

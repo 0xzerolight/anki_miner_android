@@ -1,0 +1,60 @@
+"""Runtime probe for the optional zh dependency set (spec 11).
+
+The profile is always constructible — the GUI needs the language in its
+selector, and the setup notice has to name what is missing. Nothing here
+imports the packages; ``find_spec`` answers without executing them, so probing
+costs nothing on a machine that has none of them.
+"""
+
+from __future__ import annotations
+
+import sys
+
+from anki_miner.languages._spaced.availability import module_importable
+
+# Hard requirements: without a tokenizer or readings there is no zh mining.
+ZH_REQUIRED_PACKAGES: tuple[str, ...] = ("jieba", "pypinyin")
+# Optional: simplified input never reaches a converter, so Chinese still mines
+# without OpenCC. Traditional input does reach one - the tokenizer cuts a
+# simplified copy of every line and readings are taken off that copy - so its
+# absence costs segmentation, readings, the script-variant lookups and the
+# Traditional field there. Degraded, not disabled, and still reported.
+ZH_OPTIONAL_PACKAGES: tuple[str, ...] = ("opencc",)
+
+#: A frozen bundle has no pip, so naming a package is dead advice — this names
+#: the download button directly instead.
+ZH_FROZEN_PACK_REASON = "Chinese mining needs the Chinese language pack. Download it in Settings -> Mining Language."
+
+#: The sentence naming the in-app download for a pip build. Carried by the
+#: required-tier message only - the one the availability gate puts on screen.
+#: The full-stack line has no product caller, so pointing it at a button would
+#: reach nobody.
+ZH_PACK_DOWNLOAD_HINT = "or download the Chinese pack in Settings -> Mining Language."
+
+
+def _reason(missing: list[str], *, pack_hint: bool) -> str | None:
+    if not missing:
+        return None
+    if getattr(sys, "frozen", False):
+        # No pip in a bundle: name the download button instead of a package
+        # the user cannot install.
+        return ZH_FROZEN_PACK_REASON
+    line = f"Chinese mining needs {', '.join(missing)}. Install with: pip install \"anki-miner[zh]\""
+    return f"{line} - {ZH_PACK_DOWNLOAD_HINT}" if pack_hint else line
+
+
+def zh_unavailable_reason() -> str | None:
+    """Names every missing zh package, or ``None`` when the stack is complete."""
+    missing = [name for name in ZH_REQUIRED_PACKAGES + ZH_OPTIONAL_PACKAGES if not module_importable(name)]
+    return _reason(missing, pack_hint=False)
+
+
+def zh_missing_required_reason() -> str | None:
+    """Names the missing HARD requirements only - the availability gate.
+
+    This, not :func:`zh_unavailable_reason`, is what the profile hands the GUI:
+    a build missing only OpenCC still mines Chinese - simplified input is
+    untouched and traditional input degrades - so gating on the full set would
+    take the language out of the selector and refuse the switch over a feature.
+    """
+    return _reason([name for name in ZH_REQUIRED_PACKAGES if not module_importable(name)], pack_hint=True)

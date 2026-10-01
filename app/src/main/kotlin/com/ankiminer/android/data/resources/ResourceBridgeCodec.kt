@@ -1537,7 +1537,7 @@ object FrozenResourceCatalog {
                 russianCatalog,
                 ukrainianCatalog,
             ) +
-            listOf(korean)
+            listOf(korean, vietnamese, cantonese)
     }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
@@ -1948,5 +1948,312 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = listOf("krdict-en-1.0.0"),
+        )
+
+    val vietnamese =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "vi",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "vi-underthesea-models",
+                        displayName = "underthesea 9.5.0 Vietnamese word segmentation and POS models",
+                        importName = "underthesea_models",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl",
+                                sha256 = "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+                                sizeBytes = 7_273_326,
+                                format = "wheel",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "underthesea/pipeline/",
+                                exclude = listOf(
+                                    "__init__.py",
+                                    "chunking/",
+                                    "classification/",
+                                    "dependency_parse/",
+                                    "ipa/",
+                                    "lang_detect/",
+                                    "ner/",
+                                    "pos_tag/__init__.py",
+                                    "pos_tag/model_crf.py",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/test_output.txt",
+                                    "pos_tag/pos_crf_2017_10_11.bin",
+                                    "pos_tag/tagged_feature.py",
+                                    "sent_tokenize/",
+                                    "sentiment/",
+                                    "text_normalize/",
+                                    "translate/",
+                                    "tts/",
+                                    "word_tokenize/__init__.py",
+                                    "word_tokenize/regex_tokenize.py",
+                                ),
+                                sentinels = listOf(
+                                    "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+                                    "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+                                    "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+                                ),
+                                innerSha256 =
+                                    listOf(
+                                        LanguageDataInnerDigest(
+                                            "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+                                            "c3a64c64349f1d73304f89babacaa8f8cd6078b1ec1a1b2c104e9e411ac1d2c3",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+                                            "cf93263c7c7973bf50122b0be76a394443ff61be00c1368713dee1b7d5b8a435",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+                                            "ec8c62b3881c6682c18959988e1fe08800cc835777778845bded470ca02745d9",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+                                            "f79566ee0bfcf2584fb89ae656c62cc7d40ad6c272482cf51740b8635e50d930",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+                                            "00be4922c973cdf9738421e353ea1ac13f314105916c9e1b8e834bbb66412450",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+                                            "56e4888920e456e5a96c5a0b263c952f6286eedb98228b41dbda99e692132bfa",
+                                        ),
+                                    ),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "underthesea 9.5.0 CRF models ws_crf_vlsp2013_20230727 and pos_crf_vlsp2013_20230303 (trained on VLSP 2013)",
+                                    "Vu Anh and the underthesea contributors",
+                                    "Apache-2.0",
+                                    "https://github.com/undertheseanlp/underthesea",
+                                ),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-vi-en-2026.09.20",
+                        displayName = "Wiktionary (Vietnamese-English) 2026-09-20",
+                        slotId = "wty-vi-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/vi/en/wty-vi-en.zip",
+                                sha256 = "c9ee18f4572f2237eb46b280e3965a6b70f06dac55bdf06906c2355b1a3b968b",
+                                sizeBytes = 4_325_049,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-vi-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 7,
+                                uncompressedBytes = 45_628_027,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-vi-word-2026.09.19",
+                        displayName = "OpenSubtitles 2024 word frequency (Vietnamese)",
+                        sourceId = "opensubtitles-vi-word",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
+                                sha256 = "4475a9a3c9ee8247a60f11c9fe395f8212afa86296c296b24c452e111dd8d896",
+                                sizeBytes = 402_194,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("OPUS OpenSubtitles v2024 corpus (Vietnamese)", "P. Lison and J. Tiedemann (2016), OPUS (opus.nlpl.eu); subtitles from opensubtitles.org", "ODC-BY-1.0", "https://opus.nlpl.eu/OpenSubtitles/corpus/version/OpenSubtitles"),
+                                ResourceAttribution("Anki Miner Vietnamese word-frequency build", "Built by Anki Miner's scripts/build_vi_frequency.py (segmented with underthesea)", "ODC-BY-1.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-vi-en-2026.09.20", "opensubtitles-vi-word-2026.09.19"),
+        )
+
+    val cantonese =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "yue",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "yue-pycantonese-models",
+                        displayName = "PyCantonese 5.0.0 word segmentation and POS models",
+                        importName = "pycantonese_models",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/56/70/702c2edf2bd1dac56aef6236e30d977b83efe313e4a6b1ef9fa23004341a/pycantonese-5.0.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                                sha256 = "609d14a588cb0b39fe1644347609677dbda77e25978dfd34f1f9de455f88637b",
+                                sizeBytes = 42_602_997,
+                                format = "wheel",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "pycantonese/",
+                                exclude = listOf(
+                                    "__init__.py",
+                                    "_punctuation_marks.py",
+                                    "_rust.abi3.so",
+                                    "_rust.pyi",
+                                    "corpus.py",
+                                    "data/",
+                                    "jyutping/",
+                                    "parsing.py",
+                                    "pos_tagging/__init__.py",
+                                    "pos_tagging/hkcancor_to_ud.py",
+                                    "pos_tagging/tagger.py",
+                                    "pos_tagging/train_tagger.py",
+                                    "py.typed",
+                                    "search.py",
+                                    "stop_words.py",
+                                    "util.py",
+                                    "word_segmentation/__init__.py",
+                                    "word_segmentation/segmenter.py",
+                                    "word_segmentation/train_segmenter.py",
+                                ),
+                                sentinels = listOf("word_segmentation/segmenter.fb.zst", "pos_tagging/tagger.fb.zst"),
+                                innerSha256 =
+                                    listOf(
+                                        LanguageDataInnerDigest(
+                                            "word_segmentation/segmenter.fb.zst",
+                                            "b959a829908a22ea3efe2f89a01d8d9cdc79b0a8ca803fc47c33c136ca1f289f",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tagging/tagger.fb.zst",
+                                            "8d260b964d415ce24d9c21aab660cbf9675b83836b8873ef99bae32f45dfca24",
+                                        ),
+                                    ),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "PyCantonese 5.0.0 segmenter and tagger models (trained on HKCanCor, rime-cantonese, Common Voice and CTCPC data)",
+                                    "Copyright (c) 2014-2026 Jackson L. Lee",
+                                    "MIT",
+                                    "https://github.com/jacksonllee/pycantonese",
+                                ),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "cc-canto-2026-10-01",
+                        displayName = "CC-Canto (Cantonese-English) 2026-10-01",
+                        slotId = "cc-canto",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-Canto.zip",
+                                sha256 = "730d0330eb2835db32cff553391a9397e259dcfe62608902239a145d4ac9fcf0",
+                                sizeBytes = 1_785_659,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "CC-Canto [2017-02-02]",
+                                revision = "2017-02-02",
+                                format = 3,
+                                memberCount = 7,
+                                uncompressedBytes = 27_116_978,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("CC-Canto", "Pleco Software", "CC-BY-SA-3.0", "https://cantonese.org/about.html"),
+                                ResourceAttribution("cc-cedict-yomitan", "Marv (MarvNC), Yomitan conversion", "CC-BY-SA-3.0", "https://github.com/MarvNC/cc-cedict-yomitan"),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "cc-cedict-canto-2026-09-30",
+                        displayName = "CC-CEDICT Canto (Cantonese-English) 2026-09-30",
+                        slotId = "cc-cedict-canto",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-CEDICT.Canto.zip",
+                                sha256 = "d86cdbdd3d07a9cbfb7803dee3fcb3ee3a6168dbf4f6ae1211ad588d98fa52d8",
+                                sizeBytes = 5_483_317,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "CC-CEDICT Canto [2026-09-30]",
+                                revision = "2026-09-30",
+                                format = 3,
+                                memberCount = 18,
+                                uncompressedBytes = 84_161_134,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("CC-CEDICT", "MDBG and the CC-CEDICT editors and contributors", "CC-BY-SA-3.0", "https://cc-cedict.org/wiki/"),
+                                ResourceAttribution("CC-Canto Cantonese readings", "Pleco Software", "CC-BY-SA-3.0", "https://cantonese.org/about.html"),
+                                ResourceAttribution("cc-cedict-yomitan", "Marv (MarvNC), Yomitan conversion", "CC-BY-SA-3.0", "https://github.com/MarvNC/cc-cedict-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "hkcancor-yue-2026-09-20",
+                        displayName = "HKCanCor + CTCPC Cantonese frequency",
+                        sourceId = "hkcancor-yue",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
+                                sha256 = "604ce69f9793f46f46c31d99ffa6913def344e3cac467d118ca04a94a09f7029",
+                                sizeBytes = 909_116,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Hong Kong Cantonese Corpus (HKCanCor)", "K. K. Luke and May L. Y. Wong (2015), bundled with PyCantonese", "CC-BY-4.0", "https://github.com/jacksonllee/pycantonese"),
+                                ResourceAttribution("Cantonese-Traditional Chinese Parallel Corpus (CTCPC)", "CTCPC authors, bundled with PyCantonese", "CC0-1.0", "https://github.com/jacksonllee/pycantonese"),
+                                ResourceAttribution("Anki Miner Cantonese frequency build", "Built by Anki Miner's scripts/build_yue_frequency.py", "CC-BY-4.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-yue-en-2026.09.20",
+                        displayName = "Wiktionary (Cantonese-English) 2026-09-20",
+                        slotId = "wty-yue-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/yue/en/wty-yue-en.zip",
+                                sha256 = "4717fe0af7829d556ad035bbde2f097a21fec0e66fa66c57da840b9d439e5ccc",
+                                sizeBytes = 27_136,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-yue-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 5,
+                                uncompressedBytes = 232_751,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("cc-canto-2026-10-01", "cc-cedict-canto-2026-09-30", "hkcancor-yue-2026-09-20", "wty-yue-en-2026.09.20"),
         )
 }

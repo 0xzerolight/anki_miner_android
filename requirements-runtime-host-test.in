@@ -1,5 +1,9 @@
 # CPython 3.12 bridge test runner and the Android common pip set (pythainlp and
-# tzdata as upstream wheels; app/wheels/common ships pythainlp repacked).
+# tzdata as upstream wheels; app/wheels/common ships pythainlp repacked). The
+# Vietnamese and Cantonese engines are the upstream wheels too; their models
+# live inside them here, while the APK ships them stripped and downloads the
+# models. underthesea's declared requirements (Click, PyYAML, huggingface-hub)
+# are resolved into the lock only so pip check passes: the APK never ships them.
 # Turkish (tr): zeyrek and its nltk closure as upstream wheels (app/wheels
 # ships nltk without its doctests and regex built for Android).
 # The lock installs with --no-deps, as Chaquopy does: pymorphy3 declares its
@@ -73,3 +77,8 @@ setuptools==82.0.1
 # downloads the model).
 kiwipiepy==0.23.2
 kiwipiepy-model==0.23.0
+# Vietnamese and Cantonese (D4); joblib and cloudpickle are listed above.
+underthesea==9.5.0
+underthesea-core==3.3.2
+pycantonese==5.0.0
+rustling==0.9.0

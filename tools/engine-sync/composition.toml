@@ -44,6 +44,7 @@ assets = [
   "anki_miner/languages/fa/data/compound_verbs.tsv",
   "anki_miner/languages/fa/data/preferred_present_stems.tsv",
   "anki_miner/languages/fa/data/verb_first.tsv",
+  "anki_miner/languages/yue/data/jyutping_overrides.txt",
   "anki_miner/resources/wordsets/LICENSE.txt",
   "anki_miner/resources/wordsets/given-names.txt",
   "anki_miner/resources/wordsets/org-product.txt",
@@ -84,6 +85,8 @@ overlay_allowlist = [
   "anki_miner/languages/sl/pack.py",
   "anki_miner/languages/sv/pack.py",
   "anki_miner/languages/uk/pack.py",
+  "anki_miner/languages/vi/tokenizer.py",
+  "anki_miner/languages/yue/tokenizer.py",
   "anki_miner/models/reading.py",
   "anki_miner/services/__init__.py",
   "anki_miner/services/known_words_import.py",
@@ -99,7 +102,7 @@ overlay_allowlist = [
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/languages/_spaced/tokenizer.py" = "6efbe0e47144e4783f7654948af8eb85d2fcc5ea", "anki_miner/languages/ca/pack.py" = "b76fe537e1f561b6c242641d2f71c2ff766baa6b", "anki_miner/languages/da/pack.py" = "ee010310fd387dce747bf788d2ff22d863c5b13d", "anki_miner/languages/de/pack.py" = "b12253f8697762d2dc05220397c0c114f69ce431", "anki_miner/languages/el/pack.py" = "396bce12080e5789954ba8a7c1b34ddd1516fa7f", "anki_miner/languages/en/pack.py" = "20e5e0f02aa94f80897c72a3d7b81864d88412d8", "anki_miner/languages/es/pack.py" = "ed6b8d76e6aaa84263beedf51faeea43f401ffc0", "anki_miner/languages/fi/pack.py" = "d2cc968fb7961cff2057c3b49232e091ac10790e", "anki_miner/languages/fr/pack.py" = "f4e36aadb42428c31892531934c1fa005e947258", "anki_miner/languages/hr/pack.py" = "d682cff183efaa75723a7291e6ca2b1bbd545670", "anki_miner/languages/hu/pack.py" = "af70b74baba79bd090d18a88dbb135824da6dcef", "anki_miner/languages/it/pack.py" = "bb5ac9624c7adfcf9ccb7dbfd00b575ccea38041", "anki_miner/languages/lt/pack.py" = "2ea2d677853c250e19bf46ec8fa6e87c23aee101", "anki_miner/languages/nb/pack.py" = "e6961d071f0211a437febc395212388ad5c2e563", "anki_miner/languages/nl/pack.py" = "799f9cd85683ec31f6e26bb9e1236835f7caf972", "anki_miner/languages/pl/pack.py" = "e17bdd5260279ff867f895530fa8cb9792af4580", "anki_miner/languages/pt/pack.py" = "77f3dce7a4d52e2dd7cc21a86a587efbaaa4eda6", "anki_miner/languages/ro/pack.py" = "9ac14fa4ec1dd0ae36bf603c8edd3ce0d9880edb", "anki_miner/languages/ru/pack.py" = "d8cdd1d43949576c3a2f36fe36b14dfa879e1b0d", "anki_miner/languages/sl/pack.py" = "0301d2e5a3a26234a5a8df6103ccc75e4e552813", "anki_miner/languages/sv/pack.py" = "6220972fecff0dce8680dc870b288b487db65b94", "anki_miner/languages/uk/pack.py" = "9b4290124a026fa4088e3ff2b9471adc0f9ab22b", "anki_miner/models/reading.py" = "06fcdeac313931b926b2dc60129ec916da8c2550", "anki_miner/services/__init__.py" = "47c287386eedc5ec42feeebd42dbf6bf4f5b33dc", "anki_miner/services/known_words_import.py" = "27e665e30ca2ac7a2cd3dbc8f707aa532dd15697", "anki_miner/services/media_extractor.py" = "91499f32abde84a575e0e35c39963dd9bd574a2b", "anki_miner/services/reading/sentence_splitter.py" = "3e1b7d4cc8e34976fd4c11130eba0e3b2b6a0931", "anki_miner/services/sentence_tts_fetcher.py" = "5e4ecba85e548f0b5d1ccbdabe385231af7cdc20", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "5d9771333de46c24e931c02dd5f34ec7ec73a4fe" }
+overlay_base_blobs = { "anki_miner/languages/_spaced/tokenizer.py" = "6efbe0e47144e4783f7654948af8eb85d2fcc5ea", "anki_miner/languages/ca/pack.py" = "b76fe537e1f561b6c242641d2f71c2ff766baa6b", "anki_miner/languages/da/pack.py" = "ee010310fd387dce747bf788d2ff22d863c5b13d", "anki_miner/languages/de/pack.py" = "b12253f8697762d2dc05220397c0c114f69ce431", "anki_miner/languages/el/pack.py" = "396bce12080e5789954ba8a7c1b34ddd1516fa7f", "anki_miner/languages/en/pack.py" = "20e5e0f02aa94f80897c72a3d7b81864d88412d8", "anki_miner/languages/es/pack.py" = "ed6b8d76e6aaa84263beedf51faeea43f401ffc0", "anki_miner/languages/fi/pack.py" = "d2cc968fb7961cff2057c3b49232e091ac10790e", "anki_miner/languages/fr/pack.py" = "f4e36aadb42428c31892531934c1fa005e947258", "anki_miner/languages/hr/pack.py" = "d682cff183efaa75723a7291e6ca2b1bbd545670", "anki_miner/languages/hu/pack.py" = "af70b74baba79bd090d18a88dbb135824da6dcef", "anki_miner/languages/it/pack.py" = "bb5ac9624c7adfcf9ccb7dbfd00b575ccea38041", "anki_miner/languages/lt/pack.py" = "2ea2d677853c250e19bf46ec8fa6e87c23aee101", "anki_miner/languages/nb/pack.py" = "e6961d071f0211a437febc395212388ad5c2e563", "anki_miner/languages/nl/pack.py" = "799f9cd85683ec31f6e26bb9e1236835f7caf972", "anki_miner/languages/pl/pack.py" = "e17bdd5260279ff867f895530fa8cb9792af4580", "anki_miner/languages/pt/pack.py" = "77f3dce7a4d52e2dd7cc21a86a587efbaaa4eda6", "anki_miner/languages/ro/pack.py" = "9ac14fa4ec1dd0ae36bf603c8edd3ce0d9880edb", "anki_miner/languages/ru/pack.py" = "d8cdd1d43949576c3a2f36fe36b14dfa879e1b0d", "anki_miner/languages/sl/pack.py" = "0301d2e5a3a26234a5a8df6103ccc75e4e552813", "anki_miner/languages/sv/pack.py" = "6220972fecff0dce8680dc870b288b487db65b94", "anki_miner/languages/uk/pack.py" = "9b4290124a026fa4088e3ff2b9471adc0f9ab22b", "anki_miner/languages/vi/tokenizer.py" = "8e2a69fa71e8a9392ab0305908740e53995aa38f", "anki_miner/languages/yue/tokenizer.py" = "dfd2846d5613936aef53e6572a295d1b2b2893a7", "anki_miner/models/reading.py" = "06fcdeac313931b926b2dc60129ec916da8c2550", "anki_miner/services/__init__.py" = "47c287386eedc5ec42feeebd42dbf6bf4f5b33dc", "anki_miner/services/known_words_import.py" = "27e665e30ca2ac7a2cd3dbc8f707aa532dd15697", "anki_miner/services/media_extractor.py" = "91499f32abde84a575e0e35c39963dd9bd574a2b", "anki_miner/services/reading/sentence_splitter.py" = "3e1b7d4cc8e34976fd4c11130eba0e3b2b6a0931", "anki_miner/services/sentence_tts_fetcher.py" = "5e4ecba85e548f0b5d1ccbdabe385231af7cdc20", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "5d9771333de46c24e931c02dd5f34ec7ec73a4fe" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.
@@ -116,6 +119,12 @@ allowed_external = [
   "charset_normalizer",
   "kiwipiepy",
   "lxml",
+  # yue's measure-word hook imports zh.render, whose OpenCC and pypinyin
+  # imports are function-local; OpenCC's absence is handled there, and the
+  # yue path never reaches pypinyin. The Chinese family ships both.
+  "opencc",
+  "pycantonese",
+  "pypinyin",
   "pysubs2",
   "numpy",
   "pythainlp",
@@ -124,6 +133,7 @@ allowed_external = [
   "spacy_legacy",
   "srsly",
   "thinc",
+  "underthesea",
   "zeyrek",
 ]
 
@@ -216,7 +226,7 @@ forbidden_imports = [
 ]
 
 # Mining languages to vendor; each must be in the pinned AVAILABLE_LANGUAGES.
-languages = ["ja", "he", "id", "ar", "fa", "th", "tr", "en", "ca", "de", "pt", "fr", "es", "it", "nl", "nb", "ro", "el", "fi", "hu", "hr", "sv", "pl", "lt", "da", "sl", "ru", "uk", "ko"]
+languages = ["ja", "he", "id", "ar", "fa", "th", "tr", "en", "ca", "de", "pt", "fr", "es", "it", "nl", "nb", "ro", "el", "fi", "hu", "hr", "sv", "pl", "lt", "da", "sl", "ru", "uk", "ko", "vi", "yue"]
 
 # Imported only inside functions, never vendored. ASR and retiming are reached
 # from episode_processor's deferred paths; gui only through languages/ja/text.py's

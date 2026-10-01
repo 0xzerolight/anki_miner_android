@@ -125,7 +125,7 @@ def test_an_unavailable_language_import_is_refused(home: Path, tmp_path: Path) -
     source.write_text("word,rank\n猫,10\n", encoding="utf-8")
 
     with pytest.raises(BridgeProtocolError) as error:
-        local_resources.import_frequency(_frequency_request(source, language="zh"))
+        local_resources.import_frequency(_frequency_request(source, language="eo"))
 
     assert error.value.code == "unsupported_language"
     assert not (home / "freqs" / "hebrew-freq").exists()

@@ -58,10 +58,10 @@ def test_malformed_language_values_are_refused(value: object) -> None:
     assert error.value.code == "unsupported_language"
 
 
-@pytest.mark.parametrize("code", ["xx", "zh", "vi"])
+@pytest.mark.parametrize("code", ["xx", "eo"])
 def test_a_code_without_a_vendored_profile_is_refused(code: str) -> None:
-    # zh/vi are desktop languages that are not vendored in this wave: the
-    # engine would silently mine them as Japanese, the bridge must not.
+    # Every desktop language is vendored now; xx and eo are no desktop language
+    # at all: the engine would silently mine them as Japanese, the bridge must not.
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
         languages.validated_language(code)
@@ -73,6 +73,7 @@ def test_every_vendored_language_validates() -> None:
     assert _available() == (
         "ja",
         "ko",
+        "zh",
         "en",
         "ca",
         "de",
@@ -99,6 +100,8 @@ def test_every_vendored_language_validates() -> None:
         "fa",
         "sl",
         "uk",
+        "vi",
+        "yue",
         "he",
     )
     for code in _available():
@@ -132,7 +135,7 @@ def test_explicit_japanese_maps_exactly_like_an_absent_language(tmp_path: Path) 
 def test_config_map_refuses_an_unavailable_language(tmp_path: Path) -> None:
     _runtime_lane()
     with pytest.raises(BridgeProtocolError) as error:
-        map_config_settings({"language": "zh", **_NOTE_TYPE}, _paths(tmp_path))
+        map_config_settings({"language": "eo", **_NOTE_TYPE}, _paths(tmp_path))
     assert error.value.code == "unsupported_language"
 
 
@@ -471,7 +474,42 @@ def test_every_vendored_pack_component_is_downloadable_data_or_ships_in_the_apk(
                 assert find_spec(component.import_name) is None, key
             else:
                 assert find_spec(component.import_name) is not None, f"{key} is neither data nor bundled"
-    assert seen >= languages.DOWNLOADABLE_DATA_COMPONENTS
+    split = set(languages.SPLIT_DATA_COMPONENTS)
+    assert seen >= languages.DOWNLOADABLE_DATA_COMPONENTS - split
+    # Split models are no pack component: the component they come from ships in the APK.
+    assert {(code, source) for (code, _), source in languages.SPLIT_DATA_COMPONENTS.items()} <= seen - split
+    assert not split & seen
+
+
+@pytest.mark.parametrize("code", ["vi", "yue"])
+def test_split_models_gate_the_language_until_they_are_installed(
+    code: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The engine finds vi/yue code importable from the APK; only the bridge sees the missing models."""
+    _runtime_lane()
+    from android_bridge.resource_catalog import load_resource_catalog
+    from anki_miner.config import paths
+
+    monkeypatch.setattr(paths, "ANKI_MINER_HOME", tmp_path)
+    profile = languages.get_profile(code)
+    assert profile.unavailable_reason() is None
+    assert languages.unavailable_reason_code(profile) == "language_data_required"
+
+    (entry,) = load_resource_catalog(code).language_data
+    directory = tmp_path / "language_packs" / code / entry.import_name
+    for sentinel in entry.install.sentinels:
+        (directory / sentinel).parent.mkdir(parents=True, exist_ok=True)
+        (directory / sentinel).write_bytes(b"model")
+
+    assert languages.unavailable_reason_code(profile) is None
+
+
+def test_the_engine_overrides_read_the_split_models_the_catalog_installs() -> None:
+    _runtime_lane()
+    from anki_miner.languages.vi import tokenizer as vi_tokenizer
+    from anki_miner.languages.yue import tokenizer as yue_tokenizer
+
+    assert {("vi", vi_tokenizer.MODEL_DATA), ("yue", yue_tokenizer.MODEL_DATA)} == set(languages.SPLIT_DATA_COMPONENTS)
 
 
 def test_the_bridge_never_puts_downloaded_packs_on_sys_path() -> None:

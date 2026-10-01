@@ -53,6 +53,8 @@ CATALOG_LANGUAGES: tuple[str, ...] = (
     "ru",
     "uk",
     "ko",
+    "vi",
+    "yue",
 )
 _CATALOG_DIR = Path(__file__).parent
 _LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
