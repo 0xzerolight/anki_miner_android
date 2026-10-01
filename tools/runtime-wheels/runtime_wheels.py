@@ -68,6 +68,7 @@ FAMILIES = {
     "f2": "spaCy languages, Russian and Ukrainian (pymorphy3)",
     "f3": "Korean (ko): kiwipiepy",
     "f4": "Vietnamese (vi): underthesea; Cantonese (yue): pycantonese over rustling",
+    "f5": "Chinese (zh): jieba, pypinyin and opencc",
 }
 REPRODUCIBLE_ENV = {
     "SOURCE_DATE_EPOCH": SOURCE_DATE_EPOCH,
@@ -129,6 +130,9 @@ COMMON_SPECS = {
     "wrapt": ("2.4.1", "wrapt-2.4.1-py3-none-any.whl"),
     # F4: underthesea's tokenize and tag path imports joblib and cloudpickle.
     "underthesea": ("9.5.0", "underthesea-9.5.0-py3-none-any.whl"),
+    # F5: jieba ships only an sdist, packed here as a pure wheel.
+    "jieba": ("0.42.1", "jieba-0.42.1-py3-none-any.whl"),
+    "pypinyin": ("0.55.0", "pypinyin-0.55.0-py2.py3-none-any.whl"),
 }
 
 NATIVE_SPECS = {
@@ -286,6 +290,13 @@ NATIVE_SPECS = {
         "abi": "cp312",
         "source": "underthesea-core",
     },
+    "opencc": {
+        "version": "1.4.2",
+        "build": "0",
+        "python": "cp312",
+        "abi": "cp312",
+        "source": "opencc",
+    },
 }
 
 SOURCE_SPECS = {
@@ -358,6 +369,9 @@ SOURCE_SPECS = {
     "rustling": ("runtime-source", "rustling", "0.9.0"),
     "underthesea": ("prebuilt-wheel", "underthesea", "9.5.0"),
     "underthesea-core": ("runtime-source", "underthesea-core", "3.3.2"),
+    "jieba": ("pure-sdist", "jieba", "0.42.1"),
+    "opencc": ("runtime-source", "opencc", "1.4.2"),
+    "pypinyin": ("prebuilt-wheel", "pypinyin", "0.55.0"),
 }
 
 HOST_REQUIREMENTS = {
@@ -517,6 +531,9 @@ MANDATORY_DEPENDENCIES = {
     # Only underthesea-core and joblib are imported on the tokenize and tag path.
     "underthesea": {"click", "huggingface-hub", "joblib", "pyyaml", "requests", "tqdm", "underthesea-core"},
     "underthesea-core": set(),
+    "jieba": set(),
+    "opencc": {"chaquopy-libcxx"},
+    "pypinyin": {"argparse", "enum34", "typing"},
 }
 
 NATIVE_REQUIRED_PATHS = {
@@ -549,6 +566,7 @@ NATIVE_REQUIRED_PATHS = {
     "pycantonese": {"pycantonese/_rust.so"},
     "rustling": {"rustling/_lib_name.so"},
     "underthesea-core": {"underthesea_core/underthesea_core.so"},
+    "opencc": {"opencc/clib/opencc_clib.so"},
 }
 
 REQUIRED_NEEDED = {
@@ -586,6 +604,7 @@ REQUIRED_NEEDED = {
     "pycantonese": {"libpython3.12.so"},
     "rustling": {"libpython3.12.so"},
     "underthesea-core": {"libpython3.12.so"},
+    "opencc": {"libc++_shared.so", "libpython3.12.so"},
 }
 
 ANDROID_SYSTEM_LIBS = {
@@ -684,6 +703,7 @@ FAMILY_PACKAGES: dict[str, tuple[str, ...]] = {
     ),
     "f3": ("kiwipiepy", "tqdm"),
     "f4": ("cloudpickle", "joblib", "pycantonese", "rustling", "underthesea", "underthesea-core"),
+    "f5": ("jieba", "opencc", "pypinyin"),
 }
 PACKAGE_FAMILIES: dict[str, tuple[str, ...]] = {
     package: tuple(family for family, packages in FAMILY_PACKAGES.items() if package in packages)
@@ -722,10 +742,28 @@ REPACKS: dict[str, tuple[str, tuple[str, ...]]] = {
             "utils/",
         ),
     ),
+    # Desktop zh/pack.py: the .p pickles are Jython-only fallbacks, lac_small/
+    # an unrelated model, and analyse/idf.txt is only read by jieba.analyse.
+    "jieba": (
+        "jieba/",
+        (
+            "lac_small/",
+            "analyse/idf.txt",
+            "posseg/char_state_tab.p",
+            "posseg/prob_emit.p",
+            "posseg/prob_start.p",
+            "posseg/prob_trans.p",
+            "finalseg/prob_emit.p",
+            "finalseg/prob_start.p",
+            "finalseg/prob_trans.p",
+        ),
+    ),
 }
 # Pure packages published only as an sdist: the member prefix that becomes the
 # wheel's package directory. The wheel carries the sdist's PKG-INFO as METADATA.
-SDIST_WHEELS: dict[str, str] = {}
+SDIST_WHEELS: dict[str, str] = {
+    "jieba": "jieba-0.42.1/jieba/",
+}
 # Native payload locations for packages with more than their required modules:
 # an entry ending in "/" admits any .so below it, any other entry one path.
 NATIVE_ROOTS: dict[str, tuple[str, ...]] = {
@@ -738,7 +776,9 @@ NATIVE_ROOTS: dict[str, tuple[str, ...]] = {
 # Members whose bytes are pinned by a recipe-side JSON file:
 # {"prefix": "...", "members": {"path": "sha256"}}. The wheel must carry
 # exactly these members below the prefix.
-PINNED_MEMBER_FILES: dict[str, str] = {}
+PINNED_MEMBER_FILES: dict[str, str] = {
+    "opencc": "recipes/opencc/share-opencc.json",
+}
 
 OPTIONAL_SOURCE_KEYS = {"cargo_manifest", "cargo_vendor", "git_commit"}
 LICENSE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE", "FTL")

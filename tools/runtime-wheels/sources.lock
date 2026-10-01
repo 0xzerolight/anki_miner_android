@@ -293,6 +293,21 @@
       "url": "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl",
       "version": "3.18"
     },
+    "jieba": {
+      "filename": "jieba-0.42.1.tar.gz",
+      "kind": "pure-sdist",
+      "license": {
+        "carried": {
+          "LICENSE": "18ba0984839f85853b29fadaf992f7dba8fd0ca0fbeae34de2b8735222dc7a37"
+        },
+        "expression": "MIT",
+        "members": {}
+      },
+      "package": "jieba",
+      "sha256": "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2",
+      "url": "https://files.pythonhosted.org/packages/c6/cb/18eeb235f833b726522d7ebed54f2278ce28ba9438e3135ab0278d9792a2/jieba-0.42.1.tar.gz",
+      "version": "0.42.1"
+    },
     "jinja2": {
       "filename": "jinja2-3.1.6-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -497,6 +512,27 @@
       "url": "https://files.pythonhosted.org/packages/e7/05/3d27272d30698dc0ecb7fdfaa41ad70303b444f81722bb99bce1d818638a/numpy-2.5.0.tar.gz",
       "version": "2.5.0"
     },
+    "opencc": {
+      "filename": "opencc-1.4.2.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "carried": {
+          "LICENSE.marisa": "edf58dab34c3dc239ba4ba2d5d3d844d8c5b442aa4dd1149fac81b2d8c6cb8d1",
+          "LICENSE.pybind11": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb",
+          "LICENSE.rapidjson": "a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32"
+        },
+        "expression": "Apache-2.0 AND (BSD-2-Clause OR LGPL-2.1-or-later) AND BSD-3-Clause AND MIT",
+        "members": {
+          "opencc-1.4.2/LICENSE": "b534e465949558eec2597b04f5092b5e161236a68dfbfd04d547592ac3964308",
+          "opencc-1.4.2/deps/marisa-0.3.1/COPYING.md": "edf58dab34c3dc239ba4ba2d5d3d844d8c5b442aa4dd1149fac81b2d8c6cb8d1",
+          "opencc-1.4.2/deps/pybind11-2.13.1/LICENSE": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb"
+        }
+      },
+      "package": "opencc",
+      "sha256": "47977905f131d7d9cfcec29fba5d841154907e1da73103105a4a68744e0f4f1a",
+      "url": "https://files.pythonhosted.org/packages/e0/12/09e62f051af1de7ca84be1d69154bd0514416ef72237e2081584cc268bc9/opencc-1.4.2.tar.gz",
+      "version": "1.4.2"
+    },
     "packaging": {
       "filename": "packaging-26.2-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -626,6 +662,20 @@
       "sha256": "0254317c02ce3ea17e080b7fc9d675e44662b3a5296bae68605b7a41d25b36c3",
       "url": "https://files.pythonhosted.org/packages/18/4b/59bac03278033e293d1405ed42fb6c6252c25f40c50f509c615caeaa3b71/pymorphy3-2.0.6-py3-none-any.whl",
       "version": "2.0.6"
+    },
+    "pypinyin": {
+      "filename": "pypinyin-0.55.0-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pypinyin-0.55.0.dist-info/licenses/LICENSE.txt": "1e6c90014b4912815c296ee64bb6f6280af47e6d4c5d80e86232dfc5defe764c"
+        }
+      },
+      "package": "pypinyin",
+      "sha256": "d53b1e8ad2cdb815fb2cb604ed3123372f5a28c6f447571244aca36fc62a286f",
+      "url": "https://files.pythonhosted.org/packages/b9/7b/4cabc76fcc21c3c7d5c671d8783984d30ac9d3bb387c4ba784fca3cdfa3a/pypinyin-0.55.0-py2.py3-none-any.whl",
+      "version": "0.55.0"
     },
     "pysubs2": {
       "filename": "pysubs2-1.8.1-py3-none-any.whl",

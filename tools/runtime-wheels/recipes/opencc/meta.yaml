@@ -1,0 +1,34 @@
+# opencc builds its .ocd2 dictionaries with the opencc_dict and opencc tools it
+# has just compiled, which a cross build cannot run. The patch builds them for
+# the build machine first (unpinned host c++); share-opencc.json pins all 38
+# generated files, identical to the upstream manylinux wheels, so a different
+# host compiler fails the publication instead of shipping different data.
+# The extension module keeps CMake's MODULE default: no SONAME.
+# Licence texts copied into the wheel: LICENSE.marisa and LICENSE.pybind11 from
+# the sdist's deps/ (pinned as sdist members), LICENSE.rapidjson from
+# Tencent/rapidjson v1.1.0 (f54b0e47) license.txt; tclap goes only into the
+# deleted CLI tools, and darts-clone is not compiled.
+package:
+  name: opencc
+  version: "1.4.2"
+
+build:
+  number: 0
+  script_env:
+    # setup.py prefers $VERSION over `git describe`, which would otherwise
+    # walk up into whatever repository encloses the build root.
+    - VERSION=1.4.2
+
+source:
+  path: ../../sources/opencc
+
+requirements:
+  build:
+    - cmake 4.4.3
+    - setuptools 78.1.1
+    - wheel 0.45.1
+  host:
+    - python
+
+about:
+  license_file: LICENSE
