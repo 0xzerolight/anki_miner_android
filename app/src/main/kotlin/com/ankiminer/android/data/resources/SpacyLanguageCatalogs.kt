@@ -260,8 +260,53 @@ internal val germanCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-de-en-2026.09.20",
+                    displayName = "Wiktionary (German-English) 2026-09-20",
+                    slotId = "wty-de-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/de/en/wty-de-en.zip",
+                            sha256 = "0fec270f324df4b0ecd96666e196eb42462d5e75e243c6a507c0ac3f9dc36893",
+                            sizeBytes = 17_104_879,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-de-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 28,
+                            uncompressedBytes = 222_319_274,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 67_108_864,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-de-2018",
+                    displayName = "OpenSubtitles 2018 frequency (German)",
+                    sourceId = "opensubtitles-de",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/de/de_50k.txt",
+                            sha256 = "d9e50546fd7e8b6fe6542a2b33c51d1331092b2a3916ec09f80d97856068705b",
+                            sizeBytes = 662_497,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-de-en-2026.09.20", "opensubtitles-de-2018"),
     )
 
 internal val portugueseCatalog =
