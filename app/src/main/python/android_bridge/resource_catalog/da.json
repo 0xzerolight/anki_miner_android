@@ -45,7 +45,72 @@
           "url": "https://github.com/alexandrainst/danlp/blob/master/docs/datasets.md"
         }
       ]
+    },
+    {
+      "resourceId": "wty-da-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Danish-English) 2026-09-20",
+      "slotId": "wty-da-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/da/en/wty-da-en.zip",
+        "sha256": "4d072f93ea31894388b80b9822d2ba6d208607214bc5a7c4ad55076a11096760",
+        "sizeBytes": 3223474,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-da-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 10,
+        "uncompressedBytes": 39400119,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-da-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Danish)",
+      "sourceId": "opensubtitles-da",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/da/da_50k.txt",
+        "sha256": "6a83e4deb5e38d873b1ccfb4be4fb25903878c07c8522af708027ac8b540c6b1",
+        "sizeBytes": 616396,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
     }
   ],
-  "recommended": []
+  "recommended": [
+    "wty-da-en-2026.09.20",
+    "opensubtitles-da-2018"
+  ]
 }
