@@ -29,6 +29,7 @@ import com.ankiminer.android.data.settings.BridgeLanguageProfileSource
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.LanguageProfileSource
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.update.DataStoreUpdateCheckRepository
@@ -49,6 +50,7 @@ import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.LogcatSink
 import com.ankiminer.android.engine.ChaquopyPyBridge
 import com.ankiminer.android.engine.ChaquopyPythonRuntime
+import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.engine.applyPythonLogLevelSafely
 import com.ankiminer.android.localization.AndroidStringResourceResolver
@@ -115,17 +117,22 @@ import kotlin.coroutines.suspendCoroutine
  * Every persisted local-resource chain is intersected with this inventory before crossing the
  * bridge. Keep all installed-id kinds here so adding a call-site default cannot silently disable a
  * configured source in one mining mode.
+ *
+ * The settings are read once, and the inventory is the slots stamped for their language: a slot
+ * imported for another mining language never reaches this run.
  */
 internal suspend fun ResourceManager.snapshotProductionSettings(
     settingsRepository: AppSettingsRepository,
     /** Injectable only because `MimeTypeMap` is not mocked under the JVM android.jar stub. */
     canNameFilesFor: (String) -> Boolean = ::platformCanNameFilesFor,
-) =
-    settingsRepository.snapshot(
-        installedDictionaryIds = installedDictionaryIds(),
-        installedFrequencyIds = installedFrequencyIds(),
-        installedPitchIds = installedPitchIds(),
-        installedAudioPackIds = installedAudioPackIds(),
+): MiningConfigSnapshot {
+    val settings = settingsRepository.settings.first()
+    return EngineSettingsSnapshotMapper.map(
+        settings,
+        installedDictionaryIds = installedDictionaryIds(settings.language),
+        installedFrequencyIds = installedFrequencyIds(settings.language),
+        installedPitchIds = installedPitchIds(settings.language),
+        installedAudioPackIds = installedAudioPackIds(settings.language),
         availableWordsetIds = bundledWordsetIds(),
         blacklistPath = wordListPath(WordListKind.BLACKLIST),
         whitelistPath = wordListPath(WordListKind.WHITELIST),
@@ -133,6 +140,7 @@ internal suspend fun ResourceManager.snapshotProductionSettings(
         // on the WebP path, which is what shipped and what nobody noticed.
         avifNameable = canNameFilesFor("avif"),
     )
+}
 
 /**
  * Startup re-verification of the persisted Anki target.

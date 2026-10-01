@@ -9,6 +9,7 @@ import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.KnownWordsSourceFormat
+import com.ankiminer.android.data.resources.LanguageInventoryFixtures
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
@@ -28,6 +29,8 @@ import com.ankiminer.android.data.settings.SettingsBackupCodec
 import com.ankiminer.android.data.settings.SettingsBackupWriter
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.data.settings.parkedLanguages
+import com.ankiminer.android.data.settings.switchLanguage
 import com.ankiminer.android.engine.BridgeJsonValue
 import java.io.IOException
 import java.util.Locale
@@ -1284,6 +1287,117 @@ class SettingsViewModelTest {
             assertFalse(hebrew.knownWordsMatchKanaVariants)
             assertTrue("transliteration" in hebrew.fieldKeys)
             assertEquals("Transliteration", hebrew.extraCardFields.first().placeholder)
+        }
+
+    @Test
+    fun `under Hebrew the chains and the resource panels offer only Hebrew slots`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(AppSettings().switchLanguage(LanguageProfileFixtures.hebrew))
+            val viewModel =
+                SettingsViewModel(repository, FakeResourceManager(LanguageInventoryFixtures.mixed))
+            advanceUntilIdle()
+
+            val draft = viewModel.draftState.value.draft
+            assertEquals(listOf("wty-he-en"), draft.dictionarySources.map { it.resourceId })
+            assertEquals(listOf("opensubtitles-he"), draft.frequencySources.map { it.resourceId })
+            assertEquals(listOf("he-stress"), draft.pitchSources.map { it.resourceId })
+            assertEquals(listOf("forvo-he"), draft.audioPacks.map { it.resourceId })
+            val panels = viewModel.resourceState.value
+            assertEquals(
+                LanguageInventoryFixtures.hebrewIds,
+                (
+                    panels.dictionaries.map { it.slotId } +
+                        panels.frequencySources.map { it.sourceId } +
+                        panels.pitchSources.map { it.sourceId } +
+                        panels.audioPacks.map { it.packId }
+                ).toSet(),
+            )
+        }
+
+    @Test
+    fun `a chain edited under Hebrew is saved with Hebrew slots only`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository =
+                FakeAppSettingsRepository(AppSettings().switchLanguage(LanguageProfileFixtures.hebrew))
+            val viewModel =
+                SettingsViewModel(repository, FakeResourceManager(LanguageInventoryFixtures.mixed))
+            advanceUntilIdle()
+
+            val draft = viewModel.draftState.value.draft
+            viewModel.updateDraft(
+                draft.copy(dictionarySources = draft.dictionarySources.map { it.copy(enabled = false) }),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(ResourceChainSelection("wty-he-en", enabled = false)),
+                repository.current.dictionarySources,
+            )
+        }
+
+    @Test
+    fun `Japanese chains survive a round trip through Hebrew exactly`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val japanese =
+                AppSettings(
+                    dictionarySources =
+                        listOf(
+                            ResourceChainSelection("jmdict", enabled = false),
+                            ResourceChainSelection("jitendex", enabled = true),
+                        ),
+                    frequencySources = listOf(ResourceChainSelection("jpdb", enabled = false)),
+                    pitchSources = listOf(ResourceChainSelection("kanjium", enabled = true)),
+                    audioPacks = listOf(ResourceChainSelection("jpod", enabled = true)),
+                )
+            val repository = FakeAppSettingsRepository(japanese)
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(LanguageInventoryFixtures.mixed),
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+            // A pending Japanese chain edit is saved to Japanese before the switch.
+            val japaneseDraft = viewModel.draftState.value.draft
+            viewModel.updateDraft(
+                japaneseDraft.copy(audioPacks = japaneseDraft.audioPacks.map { it.copy(enabled = false) }),
+            )
+
+            assertTrue(viewModel.switchLanguage("he"))
+            advanceUntilIdle()
+            val hebrewDraft = viewModel.draftState.value.draft
+            viewModel.updateDraft(
+                hebrewDraft.copy(
+                    dictionarySources = hebrewDraft.dictionarySources.map { it.copy(enabled = false) },
+                    frequencySources = hebrewDraft.frequencySources.map { it.copy(enabled = false) },
+                ),
+            )
+            advanceUntilIdle()
+            assertTrue(viewModel.switchLanguage("ja"))
+            advanceUntilIdle()
+
+            val restored = repository.current
+            assertEquals("ja", restored.language)
+            assertEquals(japanese.dictionarySources, restored.dictionarySources)
+            assertEquals(japanese.frequencySources, restored.frequencySources)
+            assertEquals(japanese.pitchSources, restored.pitchSources)
+            assertEquals(listOf(ResourceChainSelection("jpod", enabled = false)), restored.audioPacks)
+            val hebrew = restored.parkedLanguages().single()
+            assertEquals("he", hebrew.language)
+            assertEquals(
+                listOf(ResourceChainSelection("wty-he-en", enabled = false)),
+                hebrew.dictionarySources,
+            )
+            assertEquals(
+                listOf(ResourceChainSelection("opensubtitles-he", enabled = false)),
+                hebrew.frequencySources,
+            )
+            assertTrue(
+                (hebrew.pitchSources + hebrew.audioPacks).none {
+                    it.resourceId in LanguageInventoryFixtures.japaneseIds
+                },
+            )
         }
 
     @Test

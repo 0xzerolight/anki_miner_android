@@ -468,28 +468,34 @@ internal data class SettingsDraft(
      * scalar edit (including raw numeric text). [EngineSettingsSnapshotMapper.resolveResourceChain]
      * keeps the draft's own order and enable choices and only appends newly installed resources, so
      * merging the same inventory twice is a fixed point.
+     *
+     * Only slots stamped for [language] can enter a chain, so an edit made under one language never
+     * saves another language's slot ids into its settings.
      */
-    fun withInventory(resources: ResourceManagerState): SettingsDraft {
+    fun withInventory(
+        resources: ResourceManagerState,
+        language: String,
+    ): SettingsDraft {
         return copy(
             dictionarySources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     dictionarySources,
-                    resources.usableDictionaryIds(),
+                    resources.usableDictionaryIds(language),
                 ),
             frequencySources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     frequencySources,
-                    resources.usableFrequencyIds(),
+                    resources.usableFrequencyIds(language),
                 ),
             pitchSources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     pitchSources,
-                    resources.usablePitchIds(),
+                    resources.usablePitchIds(language),
                 ),
             audioPacks =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     audioPacks,
-                    resources.usableAudioPackIds(),
+                    resources.usableAudioPackIds(language),
                 ),
         )
     }
@@ -576,7 +582,7 @@ internal data class SettingsDraft(
                 enabledWordsets = settings.enabledWordsets,
                 readingTts = settings.readingTtsEnabled,
                 jisho = settings.jishoEnabled,
-            ).withInventory(resources)
+            ).withInventory(resources, settings.language)
     }
 }
 
@@ -694,18 +700,6 @@ private fun <T> changedValue(
     persisted: T,
 ): T = if (current != baseline) current else persisted
 
-private fun ResourceManagerState.usableDictionaryIds(): List<String> =
-    dictionaries.filter { it.isChainEligible }.map { it.slotId }
-
-private fun ResourceManagerState.usableFrequencyIds(): List<String> =
-    frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
-
-private fun ResourceManagerState.usablePitchIds(): List<String> =
-    pitchSources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
-
-private fun ResourceManagerState.usableAudioPackIds(): List<String> =
-    audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
-
 internal data class SettingsDraftState(
     val draft: SettingsDraft,
     val dirty: Boolean,
@@ -783,7 +777,7 @@ internal class SettingsDraftStore(
                 val persistedDraft = SettingsDraft.from(settings, resources)
                 val persistedDeckName = persistedDraft.deckName
                 val deckDirty = current.deckDirty && current.draft.deckName != persistedDeckName
-                val mergedDraft = current.draft.withInventory(resources)
+                val mergedDraft = current.draft.withInventory(resources, settings.language)
                 SettingsDraftState(
                     draft =
                         if (deckDirty) {
@@ -869,8 +863,8 @@ internal class SettingsDraftStore(
                         writeCadence = SettingsWriteCadence.IMMEDIATE,
                     )
                 } else {
-                    val baseline = started.draft.withInventory(resources)
-                    val currentDraft = current.draft.withInventory(resources)
+                    val baseline = started.draft.withInventory(resources, settings.language)
+                    val currentDraft = current.draft.withInventory(resources, settings.language)
                     val rebased = currentDraft.rebaseChangesSince(baseline, persistedDraft)
                     val dirty = rebased != persistedDraft
                     SettingsDraftState(
@@ -1043,7 +1037,12 @@ internal class SettingsViewModel(
     private val mutableBackupState =
         MutableStateFlow<SettingsBackupState>(SettingsBackupState.Idle)
     val backupState: StateFlow<SettingsBackupState> = mutableBackupState.asStateFlow()
-    val resourceState: StateFlow<ResourceManagerState> = resources.state
+
+    /** The inventory as the active language's settings see it: only slots stamped for it. */
+    val resourceState: StateFlow<ResourceManagerState> =
+        combine(settings, resources.state) { persisted, inventory ->
+            persisted?.let { inventory.slotsFor(it.language) } ?: inventory
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, resources.state.value)
     private val persistenceMutex = Mutex()
     private val successfulWrites = SuccessfulSettingsWriteTracker()
     private val draftStore =

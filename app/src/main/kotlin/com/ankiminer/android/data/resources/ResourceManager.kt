@@ -173,17 +173,14 @@ interface ResourceManager {
 
     fun dismissFailure()
 
-    fun installedDictionaryIds(): List<String> =
-        state.value.dictionaries.filter { it.isChainEligible }.map { it.slotId }
+    /** The slots a [language] run may consult; see [ResourceManagerState.usableDictionaryIds]. */
+    fun installedDictionaryIds(language: String): List<String> = state.value.usableDictionaryIds(language)
 
-    fun installedFrequencyIds(): List<String> =
-        state.value.frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
+    fun installedFrequencyIds(language: String): List<String> = state.value.usableFrequencyIds(language)
 
-    fun installedPitchIds(): List<String> =
-        state.value.pitchSources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
+    fun installedPitchIds(language: String): List<String> = state.value.usablePitchIds(language)
 
-    fun installedAudioPackIds(): List<String> =
-        state.value.audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
+    fun installedAudioPackIds(language: String): List<String> = state.value.usableAudioPackIds(language)
 
     fun bundledWordsetIds(): List<String> = state.value.wordsets.map { it.wordsetId }
 }

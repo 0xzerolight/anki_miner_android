@@ -701,6 +701,41 @@ data class ResourceManagerState(
 
     fun wordList(kind: WordListKind): InstalledWordList? = wordLists.firstOrNull { it.kind == kind }
 
+    /**
+     * Slot ids a [language] chain may name: usable, and stamped for [language]. A slot imported for
+     * another language never enters the chain, as desktop's `usable_enabled` skips it; an unstamped
+     * legacy slot is Japanese.
+     */
+    fun usableDictionaryIds(language: String): List<String> =
+        dictionaries.filter { it.isChainEligible && it.language == language }.map { it.slotId }
+
+    /** See [usableDictionaryIds]. */
+    fun usableFrequencyIds(language: String): List<String> =
+        frequencySources
+            .filter { it.schemaOk && it.entryCount > 0 && it.language == language }
+            .map { it.sourceId }
+
+    /** See [usableDictionaryIds]. */
+    fun usablePitchIds(language: String): List<String> =
+        pitchSources
+            .filter { it.schemaOk && it.entryCount > 0 && it.language == language }
+            .map { it.sourceId }
+
+    /** See [usableDictionaryIds]. */
+    fun usableAudioPackIds(language: String): List<String> =
+        audioPacks
+            .filter { it.contentAvailable && it.entryCount > 0 && it.language == language }
+            .map { it.packId }
+
+    /** Only [language]'s slots, broken ones included: what that language's resource panels list. */
+    fun slotsFor(language: String): ResourceManagerState =
+        copy(
+            dictionaries = dictionaries.filter { it.language == language },
+            frequencySources = frequencySources.filter { it.language == language },
+            pitchSources = pitchSources.filter { it.language == language },
+            audioPacks = audioPacks.filter { it.language == language },
+        )
+
     /** What one press of the recommended-set download would install right now. */
     val recommendedPlan: RecommendedResourcePlan
         get() = recommendedResourcePlan(catalog)

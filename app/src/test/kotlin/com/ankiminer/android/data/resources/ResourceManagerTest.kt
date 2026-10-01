@@ -424,7 +424,7 @@ class ResourceManagerTest {
             harness.manager.recoverAndRefresh()
 
             assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
-            assertTrue(resource.slotId in harness.manager.installedDictionaryIds())
+            assertTrue(resource.slotId in harness.manager.installedDictionaryIds(JAPANESE))
             assertNull(harness.manager.state.value.failure)
         }
 
@@ -2261,7 +2261,7 @@ class ResourceManagerTest {
             val dictionary = harness.manager.state.value.dictionaries.single()
             assertTrue(dictionary.isUsable)
             assertFalse(dictionary.isChainEligible)
-            assertTrue(harness.manager.installedDictionaryIds().isEmpty())
+            assertTrue(harness.manager.installedDictionaryIds(JAPANESE).isEmpty())
         }
 
     @Test
