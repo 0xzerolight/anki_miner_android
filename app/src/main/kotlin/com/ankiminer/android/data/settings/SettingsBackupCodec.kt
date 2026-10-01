@@ -85,6 +85,11 @@ internal object SettingsBackupCodec {
             "use_sentence_length",
             "reading_tts_enabled",
             "jisho_enabled",
+            "frequency_keep_unranked",
+            "known_words_match_kana_variants",
+            "strict_card_order",
+            "merge_incomplete_cues",
+            "secondary_subtitle_enabled",
             // Appearance travels: a built-in palette always resolves on the receiving device, and
             // dynamic colour simply falls back where the platform cannot supply it.
             "theme_dynamic_color",
@@ -97,6 +102,7 @@ internal object SettingsBackupCodec {
             "max_sentence_characters",
             "reading_minimum_occurrence",
             "max_frequency_rank",
+            "min_frequency_rank",
             "max_parallel_workers",
         )
 

@@ -226,6 +226,15 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.maxSentenceCharacters, value.maxSentenceCharacters)
                 candidate.setOrRemove(Keys.readingMinimumOccurrence, value.readingMinimumOccurrence)
                 candidate.setOrRemove(Keys.maxFrequencyRank, value.maxFrequencyRank)
+                candidate.setOrRemove(Keys.minFrequencyRank, value.minFrequencyRank)
+                candidate.setOrRemove(Keys.frequencyKeepUnranked, value.frequencyKeepUnranked)
+                candidate.setOrRemove(
+                    Keys.knownWordsMatchKanaVariants,
+                    value.knownWordsMatchKanaVariants,
+                )
+                candidate.setOrRemove(Keys.strictCardOrder, value.strictCardOrder)
+                candidate.setOrRemove(Keys.mergeIncompleteCues, value.mergeIncompleteCues)
+                candidate[Keys.secondarySubtitleEnabled] = value.secondarySubtitleEnabled
                 candidate.setOrRemove(Keys.pitchCategoryFormat, value.pitchCategoryFormat?.wireValue)
                 candidate.setOrRemove(Keys.maxParallelWorkers, value.maxParallelWorkers)
                 candidate.setOrRemove(
@@ -400,6 +409,15 @@ class DataStoreAppSettingsRepository internal constructor(
                         },
                     maxFrequencyRank =
                         decoder.validated(Keys.maxFrequencyRank) { AppSettings(maxFrequencyRank = it) },
+                    minFrequencyRank =
+                        decoder.validated(Keys.minFrequencyRank) { AppSettings(minFrequencyRank = it) },
+                    frequencyKeepUnranked = decoder.read(Keys.frequencyKeepUnranked, null, { it }),
+                    knownWordsMatchKanaVariants =
+                        decoder.read(Keys.knownWordsMatchKanaVariants, null, { it }),
+                    strictCardOrder = decoder.read(Keys.strictCardOrder, null, { it }),
+                    mergeIncompleteCues = decoder.read(Keys.mergeIncompleteCues, null, { it }),
+                    secondarySubtitleEnabled =
+                        decoder.read(Keys.secondarySubtitleEnabled, false, { it }),
                     pitchCategoryFormat =
                         decoder.read(Keys.pitchCategoryFormat, null, { stored ->
                             PitchCategoryFormat.entries.singleOrNull { it.wireValue == stored }
@@ -586,6 +604,14 @@ class DataStoreAppSettingsRepository internal constructor(
             val maxSentenceCharacters = register(intPreferencesKey("max_sentence_characters"))
             val readingMinimumOccurrence = register(intPreferencesKey("reading_minimum_occurrence"))
             val maxFrequencyRank = register(intPreferencesKey("max_frequency_rank"))
+            val minFrequencyRank = register(intPreferencesKey("min_frequency_rank"))
+            val frequencyKeepUnranked = register(booleanPreferencesKey("frequency_keep_unranked"))
+            val knownWordsMatchKanaVariants =
+                register(booleanPreferencesKey("known_words_match_kana_variants"))
+            val strictCardOrder = register(booleanPreferencesKey("strict_card_order"))
+            val mergeIncompleteCues = register(booleanPreferencesKey("merge_incomplete_cues"))
+            val secondarySubtitleEnabled =
+                register(booleanPreferencesKey("secondary_subtitle_enabled"))
             val pitchCategoryFormat = register(stringPreferencesKey("pitch_category_format"))
             val maxParallelWorkers = register(intPreferencesKey("max_parallel_workers"))
             val dictionarySources = register(stringPreferencesKey("dictionary_sources_v1"))

@@ -735,6 +735,62 @@ class AppSettingsTest {
     }
 
     @Test
+    fun waveBEngineFieldsReachTheSnapshotOnlyWhenSet() {
+        val set =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    mergeIncompleteCues = true,
+                    strictCardOrder = true,
+                    minFrequencyRank = 500,
+                    frequencyKeepUnranked = true,
+                    knownWordsMatchKanaVariants = false,
+                ),
+                emptyList(),
+            ).settings
+        val unset = EngineSettingsSnapshotMapper.map(AppSettings(), emptyList()).settings
+
+        assertEquals(BridgeJsonValue.Bool(true), set["merge_incomplete_cues"])
+        assertEquals(BridgeJsonValue.Bool(true), set["strict_card_order"])
+        assertEquals(BridgeJsonValue.Integer(500L), set["min_frequency_rank"])
+        assertEquals(BridgeJsonValue.Bool(true), set["frequency_keep_unranked"])
+        assertEquals(BridgeJsonValue.Bool(false), set["known_words_match_kana_variants"])
+        listOf(
+            "merge_incomplete_cues",
+            "strict_card_order",
+            "min_frequency_rank",
+            "frequency_keep_unranked",
+            "known_words_match_kana_variants",
+        ).forEach { key -> assertFalse(key, key in unset) }
+    }
+
+    @Test
+    fun secondarySubtitleToggleNeverReachesTheEngine() {
+        // Kotlin-only: it gates the Video tab's second picker. The engine never reads it and the
+        // bridge rejects it as an unknown config field.
+        val settings =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(secondarySubtitleEnabled = true),
+                emptyList(),
+            ).settings
+
+        assertEquals(
+            EngineSettingsSnapshotMapper.map(AppSettings(), emptyList()).settings,
+            settings,
+        )
+        assertFalse(settings.keys.any { "secondary" in it })
+    }
+
+    @Test
+    fun minimumFrequencyRankMustNotBeNegative() {
+        AppSettingsValidator.validate(AppSettings(minFrequencyRank = 0))
+        val failure =
+            assertThrows(InvalidAppSettingException::class.java) {
+                AppSettingsValidator.validate(AppSettings(minFrequencyRank = -1))
+            }
+        assertEquals(InvalidAppSettingCode.NEGATIVE, failure.code)
+    }
+
+    @Test
     fun animatedScreenshotTuningOutsideTheSupportedRangeIsRejected() {
         listOf(
             AppSettings(animatedScreenshotsEnabled = true, animatedScreenshotDurationSeconds = 12.0),

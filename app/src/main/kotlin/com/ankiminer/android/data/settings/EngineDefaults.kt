@@ -64,6 +64,13 @@ internal object EngineDefaults {
     const val MAX_SENTENCE_CHARACTERS: Int = 0
     const val MAX_FREQUENCY_RANK: Int = 0
 
+    /** Zero leaves the common end of the frequency band open. */
+    const val MIN_FREQUENCY_RANK: Int = 0
+    const val FREQUENCY_KEEP_UNRANKED: Boolean = false
+    const val KNOWN_WORDS_MATCH_KANA_VARIANTS: Boolean = true
+    const val STRICT_CARD_ORDER: Boolean = false
+    const val MERGE_INCOMPLETE_CUES: Boolean = false
+
     /** One occurrence, i.e. no minimum. */
     const val READING_MINIMUM_OCCURRENCE: Int = 1
     const val MAX_PARALLEL_WORKERS: Int = 6

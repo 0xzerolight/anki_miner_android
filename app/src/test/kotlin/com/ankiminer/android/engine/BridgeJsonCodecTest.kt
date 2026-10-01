@@ -1,5 +1,7 @@
 package com.ankiminer.android.engine
 
+import com.ankiminer.android.data.settings.AppSettings
+import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationClipWindow
@@ -1213,6 +1215,45 @@ class BridgeJsonCodecTest {
             assertEquals(
                 setting,
                 BridgeProtocolCategory.INVALID_VALUE,
+                protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(setting)) }.category,
+            )
+        }
+    }
+
+    @Test
+    fun `accepts the wave B engine settings the snapshot mapper emits`() {
+        val snapshot =
+            EngineSettingsSnapshotMapper.map(
+                AppSettings(
+                    noteType = "Lapis",
+                    mergeIncompleteCues = true,
+                    strictCardOrder = false,
+                    minFrequencyRank = 500,
+                    frequencyKeepUnranked = true,
+                    knownWordsMatchKanaVariants = false,
+                    secondarySubtitleEnabled = true,
+                ),
+                emptyList(),
+            )
+        val request = videoRequest(audioOnly = false).copy(configSnapshot = snapshot)
+
+        assertEquals(
+            BridgeMessage.VideoRun(request),
+            BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)),
+        )
+    }
+
+    @Test
+    fun `rejects malformed wave B settings and the Kotlin-only secondary subtitle toggle`() {
+        mapOf(
+            """"min_frequency_rank":-1""" to BridgeProtocolCategory.INVALID_VALUE,
+            """"merge_incomplete_cues":1""" to BridgeProtocolCategory.INVALID_PAYLOAD,
+            """"known_words_match_kana_variants":"yes"""" to BridgeProtocolCategory.INVALID_PAYLOAD,
+            """"secondary_subtitle_enabled":true""" to BridgeProtocolCategory.INVALID_PAYLOAD,
+        ).forEach { (setting, category) ->
+            assertEquals(
+                setting,
+                category,
                 protocolFailure { BridgeJsonCodec.decode(videoRunWithSettings(setting)) }.category,
             )
         }

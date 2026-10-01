@@ -1174,11 +1174,12 @@ object BridgeJsonCodec {
                 "screenshot_animated_quality", "screenshot_animated_match_audio",
                 "subtitle_offset", "allowed_pos", "excluded_subtypes", "excluded_wordsets",
                 "dictionary_chain", "jisho_delay", "expression_audio_chain", "reading_tts_enabled", "pitch_category_format",
-                "max_frequency_rank", "frequency_chain", "pitch_chain", "use_known_words_db",
+                "max_frequency_rank", "min_frequency_rank", "frequency_keep_unranked", "frequency_chain", "pitch_chain",
+                "use_known_words_db", "known_words_match_kana_variants",
                 "exclude_hiragana_only_words",
                 "exclude_katakana_only_words", "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist",
                 "subtitle_regex_filter", "subtitle_regex_replacement", "use_subtitle_regex_filter",
-                "bold_target_in_sentence",
+                "bold_target_in_sentence", "strict_card_order", "merge_incomplete_cues",
                 "deduplicate_sentences", "use_i_plus_one_filter", "use_sentence_length_filter",
                 "max_sentence_duration_seconds", "max_sentence_chars", "reading_min_occurrence", "max_parallel_workers",
             )
@@ -1207,7 +1208,7 @@ object BridgeJsonCodec {
             "audio_format" -> requireOneOf(text(value, key), setOf("mp3", "opus"), key)
             "pitch_category_format" -> requireOneOf(text(value, key), setOf("jp", "romaji"), key)
             "audio_bitrate", "reading_min_occurrence" -> if (integral(value, key) < 1) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be positive")
-            "max_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
+            "max_frequency_rank", "min_frequency_rank", "max_sentence_chars" -> nonNegative(value, key)
             "max_parallel_workers" -> if (integral(value, key) !in 1L..20L) fail(BridgeProtocolCategory.INVALID_VALUE, "$key is outside 1 through 20")
             "screenshot_animated", "screenshot_animated_match_audio" -> bool(value, key)
             "screenshot_animated_format" -> requireOneOf(text(value, key), setOf("avif", "webp"), key)
@@ -1223,6 +1224,7 @@ object BridgeJsonCodec {
             "exclude_hiragana_only_words", "exclude_katakana_only_words",
             "use_blacklist", "use_whitelist", "use_subtitle_regex_filter",
             "bold_target_in_sentence", "deduplicate_sentences", "use_i_plus_one_filter",
+            "frequency_keep_unranked", "known_words_match_kana_variants", "strict_card_order", "merge_incomplete_cues",
             "use_sentence_length_filter" -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
             "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed", "jisho"))

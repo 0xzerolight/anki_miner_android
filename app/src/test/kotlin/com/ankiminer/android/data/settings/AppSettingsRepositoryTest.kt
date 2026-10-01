@@ -329,6 +329,12 @@ class AppSettingsRepositoryTest {
                 maxSentenceCharacters = null,
                 readingMinimumOccurrence = null,
                 maxFrequencyRank = null,
+                minFrequencyRank = null,
+                frequencyKeepUnranked = null,
+                knownWordsMatchKanaVariants = null,
+                strictCardOrder = null,
+                mergeIncompleteCues = null,
+                secondarySubtitleEnabled = false,
                 pitchCategoryFormat = null,
                 maxParallelWorkers = null,
                 readingTtsEnabled = false,
@@ -538,6 +544,13 @@ class AppSettingsRepositoryTest {
             maxSentenceCharacters = 48,
             readingMinimumOccurrence = 2,
             maxFrequencyRank = 10_000,
+            minFrequencyRank = 500,
+            frequencyKeepUnranked = true,
+            knownWordsMatchKanaVariants = false,
+            strictCardOrder = true,
+            mergeIncompleteCues = true,
+            // Non-default, or corrupting the key would quarantine to the value already stored.
+            secondarySubtitleEnabled = true,
             pitchCategoryFormat = PitchCategoryFormat.ROMAJI,
             maxParallelWorkers = 3,
             dictionarySources = listOf(ResourceChainSelection("jitendex")),
@@ -695,6 +708,30 @@ class AppSettingsRepositoryTest {
             corruptInt(
                 "max_frequency_rank",
                 original.copy(maxFrequencyRank = defaults.maxFrequencyRank),
+            ),
+            corruptInt(
+                "min_frequency_rank",
+                original.copy(minFrequencyRank = defaults.minFrequencyRank),
+            ),
+            corruptBoolean(
+                "frequency_keep_unranked",
+                original.copy(frequencyKeepUnranked = defaults.frequencyKeepUnranked),
+            ),
+            corruptBoolean(
+                "known_words_match_kana_variants",
+                original.copy(knownWordsMatchKanaVariants = defaults.knownWordsMatchKanaVariants),
+            ),
+            corruptBoolean(
+                "strict_card_order",
+                original.copy(strictCardOrder = defaults.strictCardOrder),
+            ),
+            corruptBoolean(
+                "merge_incomplete_cues",
+                original.copy(mergeIncompleteCues = defaults.mergeIncompleteCues),
+            ),
+            corruptBoolean(
+                "secondary_subtitle_enabled",
+                original.copy(secondarySubtitleEnabled = defaults.secondarySubtitleEnabled),
             ),
             corruptString(
                 "pitch_category_format",
