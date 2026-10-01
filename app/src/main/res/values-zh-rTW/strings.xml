@@ -505,7 +505,7 @@
     <string name="jpdb_frequency_resource_title">JPDB v2.2 假名頻率</string>
     <string name="kanjium_pitch_resource_title">Kanjium 高低音調</string>
     <string name="jmdict_resource_title">JMdict 字典（英文）</string>
-    <string name="language_dictionary_resource_title">詞典</string>
+    <string name="language_dictionary_resource_title">字典</string>
     <string name="language_frequency_resource_title">詞頻列表</string>
     <string name="language_data_resource_title">語言資料</string>
     <string name="jmdict_resource_description">含英文釋義的離線 Yomitan 字典 · 下載約 15 MiB，匯入時最多 163 MiB</string>
@@ -870,14 +870,14 @@
     <string name="b3_wizard_ready_title">可開始採集</string>
     <string name="b3_wizard_incomplete_title">設定未完成</string>
     <string name="b3_settings_category_language">語言</string>
-    <string name="language_settings_title">挖詞語言</string>
-    <string name="language_settings_help">切換後，詞典、篩選、牌組和卡片欄位會換成該語言自己的設定。App 的介面語言不受影響。</string>
+    <string name="language_settings_title">採集語言</string>
+    <string name="language_settings_help">切換後，字典、篩選、牌組和卡片欄位會換成該語言自己的設定。App 的介面語言不受影響。</string>
     <string name="language_unavailable_data_required">需要一次性下載語言資料。</string>
-    <string name="language_unavailable_unsupported">此版本無法對該語言挖詞。</string>
+    <string name="language_unavailable_unsupported">此版本無法採集該語言。</string>
     <string name="language_download_and_switch">下載並切換</string>
     <string name="language_downloading">正在下載語言資料…</string>
-    <string name="language_switch_blocked_known_words">切換語言前，請先完成或放棄已知詞匯入。</string>
-    <string name="language_note_type_needed">挖詞前，請為%1$s選擇筆記類型。</string>
+    <string name="language_switch_blocked_known_words">切換語言前，請先完成或放棄已知單字匯入。</string>
+    <string name="language_note_type_needed">採集前，請為 %1$s 選擇筆記類型。</string>
     <string name="language_choose_note_type">選擇筆記類型</string>
     <string name="language_script_variant">字元集</string>
     <string name="language_script_variant_as_written">保持原文</string>
@@ -887,8 +887,8 @@
     <string name="language_variety_br">巴西葡萄牙語</string>
     <string name="language_variety_pt">歐洲葡萄牙語</string>
     <string name="settings_reading_tone_color">依聲調為讀音著色</string>
-    <string name="mining_failure_language_unavailable">此挖詞語言需要語言資料。請在「設定 → 語言」中下載。</string>
-    <string name="mining_failure_unsupported_language">此版本無法對所選語言挖詞。請在「設定 → 語言」中選擇其他語言。</string>
-    <string name="resource_panel_other_language_slots">已為其他挖詞語言安裝，此處不使用：%1$s</string>
-    <string name="resource_dictionary_language_mismatch">%1$s 聲明其語言為%2$s，而不是你正在挖詞的語言。</string>
+    <string name="mining_failure_language_unavailable">此採集語言需要語言資料。請在「設定 → 語言」中下載。</string>
+    <string name="mining_failure_unsupported_language">此版本無法採集所選語言。請在「設定 → 語言」中選擇其他語言。</string>
+    <string name="resource_panel_other_language_slots">已為其他採集語言安裝，此處不使用：%1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s 標示的語言為 %2$s，而非你正在採集的語言。</string>
 </resources>

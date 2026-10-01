@@ -881,7 +881,7 @@
     <string name="language_unavailable_unsupported">このバージョンではこの言語をマイニングできません。</string>
     <string name="language_download_and_switch">ダウンロードして切り替え</string>
     <string name="language_downloading">言語データをダウンロード中…</string>
-    <string name="language_switch_blocked_known_words">言語を切り替える前に、既知語のインポートを完了するか破棄してください。</string>
+    <string name="language_switch_blocked_known_words">言語を切り替える前に、既知単語のインポートを完了するか破棄してください。</string>
     <string name="language_note_type_needed">マイニングの前に%1$sのノートタイプを選んでください。</string>
     <string name="language_choose_note_type">ノートタイプを選択</string>
     <string name="language_script_variant">字体</string>
@@ -892,8 +892,8 @@
     <string name="language_variety_br">ブラジル・ポルトガル語</string>
     <string name="language_variety_pt">ヨーロッパ・ポルトガル語</string>
     <string name="settings_reading_tone_color">読みを声調で色分け</string>
-    <string name="mining_failure_language_unavailable">このマイニング言語には言語データが必要です。設定 → 言語でダウンロードしてください。</string>
-    <string name="mining_failure_unsupported_language">このバージョンでは選択した言語をマイニングできません。設定 → 言語で別の言語を選んでください。</string>
-    <string name="resource_panel_other_language_slots">他のマイニング言語用にインストール済み（ここでは使われません）：%1$s</string>
+    <string name="mining_failure_language_unavailable">このマイニング言語には言語データが必要です。設定 → 言語 からダウンロードしてください。</string>
+    <string name="mining_failure_unsupported_language">このバージョンでは選択した言語をマイニングできません。設定 → 言語 から別の言語を選んでください。</string>
+    <string name="resource_panel_other_language_slots">他のマイニング言語用にインストール済み（ここでは使われません）: %1$s</string>
     <string name="resource_dictionary_language_mismatch">%1$sの言語は%2$sと記載されており、マイニング中の言語ではありません。</string>
 </resources>

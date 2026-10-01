@@ -888,7 +888,7 @@
     <string name="language_regional_variety">Regionale Varietät</string>
     <string name="language_variety_br">Brasilianisches Portugiesisch</string>
     <string name="language_variety_pt">Europäisches Portugiesisch</string>
-    <string name="settings_reading_tone_color">Lesungen nach Ton einfärben</string>
+    <string name="settings_reading_tone_color">Lesungen nach Tönen einfärben</string>
     <string name="mining_failure_language_unavailable">Diese Mining-Sprache benötigt ihre Sprachdaten. Laden Sie sie unter Einstellungen → Sprache herunter.</string>
     <string name="mining_failure_unsupported_language">Diese Version kann in der gewählten Sprache nicht minen. Wählen Sie unter Einstellungen → Sprache eine andere.</string>
     <string name="resource_panel_other_language_slots">Für andere Mining-Sprachen installiert, hier nicht verwendet: %1$s</string>

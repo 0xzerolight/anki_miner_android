@@ -871,7 +871,7 @@
     <string name="b3_wizard_incomplete_title">Thiết lập chưa hoàn tất</string>
     <string name="b3_settings_category_language">Ngôn ngữ</string>
     <string name="language_settings_title">Ngôn ngữ khai thác</string>
-    <string name="language_settings_help">Khi chuyển, từ điển, bộ lọc, bộ thẻ và các trường thẻ được thay bằng cài đặt riêng của ngôn ngữ đó. Ngôn ngữ hiển thị của ứng dụng là riêng biệt.</string>
+    <string name="language_settings_help">Khi chuyển, từ điển, bộ lọc, bộ thẻ và các trường thẻ được thay bằng cài đặt riêng của ngôn ngữ đó. Ngôn ngữ hiển thị của ứng dụng được đặt riêng.</string>
     <string name="language_unavailable_data_required">Cần tải dữ liệu ngôn ngữ một lần.</string>
     <string name="language_unavailable_unsupported">Phiên bản này không thể khai thác ngôn ngữ này.</string>
     <string name="language_download_and_switch">Tải xuống và chuyển</string>
@@ -889,6 +889,6 @@
     <string name="settings_reading_tone_color">Tô màu cách đọc theo thanh điệu</string>
     <string name="mining_failure_language_unavailable">Ngôn ngữ khai thác này cần dữ liệu ngôn ngữ. Hãy tải xuống trong Cài đặt → Ngôn ngữ.</string>
     <string name="mining_failure_unsupported_language">Phiên bản này không thể khai thác ngôn ngữ đã chọn. Hãy chọn ngôn ngữ khác trong Cài đặt → Ngôn ngữ.</string>
-    <string name="resource_panel_other_language_slots">Đã cài cho ngôn ngữ khai thác khác, không dùng ở đây: %1$s</string>
+    <string name="resource_panel_other_language_slots">Đã cài cho các ngôn ngữ khai thác khác, không dùng ở đây: %1$s</string>
     <string name="resource_dictionary_language_mismatch">%1$s cho biết ngôn ngữ của nó là %2$s, không phải ngôn ngữ bạn đang khai thác.</string>
 </resources>

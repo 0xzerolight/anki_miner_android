@@ -883,8 +883,8 @@
     <string name="language_download_and_switch">Скачать и переключить</string>
     <string name="language_downloading">Загрузка языковых данных…</string>
     <string name="language_switch_blocked_known_words">Завершите или отмените импорт известных слов, прежде чем переключать язык.</string>
-    <string name="language_note_type_needed">Перед майнингом выберите тип записи для языка %1$s.</string>
-    <string name="language_choose_note_type">Выбрать тип записи</string>
+    <string name="language_note_type_needed">Перед майнингом выберите тип заметки для языка %1$s.</string>
+    <string name="language_choose_note_type">Выбрать тип заметки</string>
     <string name="language_script_variant">Набор символов</string>
     <string name="language_script_variant_as_written">Как написано</string>
     <string name="language_script_variant_simplified">Упрощённые (简体)</string>
@@ -893,8 +893,8 @@
     <string name="language_variety_br">Бразильский португальский</string>
     <string name="language_variety_pt">Европейский португальский</string>
     <string name="settings_reading_tone_color">Окрашивать чтения по тону</string>
-    <string name="mining_failure_language_unavailable">Этому языку майнинга нужны языковые данные. Скачайте их в разделе «Настройки» → «Язык».</string>
-    <string name="mining_failure_unsupported_language">Эта версия не может майнить на выбранном языке. Выберите другой в разделе «Настройки» → «Язык».</string>
+    <string name="mining_failure_language_unavailable">Этому языку майнинга нужны языковые данные. Скачайте их в разделе Настройки → Язык.</string>
+    <string name="mining_failure_unsupported_language">Эта версия не может майнить на выбранном языке. Выберите другой в разделе Настройки → Язык.</string>
     <string name="resource_panel_other_language_slots">Установлено для других языков майнинга, здесь не используется: %1$s</string>
     <string name="resource_dictionary_language_mismatch">%1$s указывает язык %2$s, а не язык, на котором вы майните.</string>
 </resources>
