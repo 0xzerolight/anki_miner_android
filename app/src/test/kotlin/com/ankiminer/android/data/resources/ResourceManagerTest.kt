@@ -2443,7 +2443,7 @@ class ResourceManagerTest {
     @Test
     fun aLanguageWithNoCatalogOffersNothingToDownload() =
         runTest {
-            val harness = Harness(activeLanguage = { "th" })
+            val harness = Harness(activeLanguage = { "ko" })
 
             assertNull(harness.manager.state.value.catalog)
             assertFalse(harness.manager.state.value.recommendedPlan.isActionable)

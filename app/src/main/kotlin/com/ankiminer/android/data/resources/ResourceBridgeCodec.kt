@@ -1511,7 +1511,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, indonesian) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, indonesian, thai) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1945,5 +1945,77 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = listOf("wty-id-en-2026.09.20", "opensubtitles-id-2018"),
+        )
+
+    val thai =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "th",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-th-en-2026.09.20",
+                        displayName = "Wiktionary (Thai-English) 2026-09-20",
+                        slotId = "wty-th-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/th/en/wty-th-en.zip",
+                                sha256 = "d3e6d75acde52ba9d9d80054cb46479a362cb9e121d9598035c6e1890534c96d",
+                                sizeBytes = 2_704_086,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-th-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 5,
+                                uncompressedBytes = 28_503_853,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "tnc-th-2026-09-20",
+                        displayName = "Thai National Corpus frequency",
+                        sourceId = "tnc-th",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
+                                sha256 = "dc38af9e6c016b6ff165a863f969ec384bb5c05f9df98ee961b0eb870585756c",
+                                sizeBytes = 688_439,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Thai National Corpus word list", "PyThaiNLP project (word list bundled with pythainlp 5.3.7)", "CC0-1.0", "https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md"),
+                                ResourceAttribution("Anki Miner Thai frequency build", "Built by Anki Miner's scripts/convert_tnc_thai_frequency.py", "CC0-1.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "ttc-th-2026-09-20",
+                        displayName = "Thai textbook corpus frequency",
+                        sourceId = "ttc-th",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
+                                sha256 = "90a97a56f1b5375bb10b7fa9e36a79bd7fef2659d8525fa889a74e0a281e98ff",
+                                sizeBytes = 125_981,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Thai Textbook Corpus word list", "PyThaiNLP project (word list bundled with pythainlp 5.3.7)", "CC0-1.0", "https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md"),
+                                ResourceAttribution("Anki Miner Thai frequency build", "Built by Anki Miner's scripts/convert_tnc_thai_frequency.py", "CC0-1.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-th-en-2026.09.20", "tnc-th-2026-09-20", "ttc-th-2026-09-20"),
         )
 }
