@@ -28,6 +28,10 @@ import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
+import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
+import com.ankiminer.android.tts.SentenceAudioSynthesizer
+import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
+import com.ankiminer.android.tts.usesDeviceVoice
 import java.text.Normalizer
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
@@ -81,6 +85,8 @@ internal class BridgeMiningRepository(
     private val foregroundStartTimeoutSeconds: Long = 15,
     private val interruptionStore: MiningRunInterruptionStore = NoOpMiningRunInterruptionStore,
     private val lane: MiningLane = MiningLane.VIDEO,
+    /** Opens the device voice a non-Japanese run speaks its word audio with; see [usesDeviceVoice]. */
+    private val wordAudioSynthesizerFactory: SentenceAudioSynthesizerFactory? = null,
 ) : MiningRepository {
     private enum class Phase {
         PREPARING,
@@ -141,6 +147,8 @@ internal class BridgeMiningRepository(
         var sourcesDetached = false
         var interruptionRecorded = false
         var configSnapshot: MiningConfigSnapshot? = null
+        var wordAudioSynthesizer: SentenceAudioSynthesizer? = null
+        var wordAudioDispatcher: SentenceAudioCallbackDispatcher? = null
         var hasSelectedCandidate = false
         var videoCachePath: String? = null
         var subtitleCachePath: String? = null
@@ -430,6 +438,20 @@ internal class BridgeMiningRepository(
                         recordFault(generation, strings.resolve(R.string.mining_failure_settings_snapshot))
                         throw failure
                     }
+                if (requireNotNull(run.configSnapshot).usesDeviceVoice()) {
+                    val synthesizer =
+                        try {
+                            wordAudioSynthesizerFactory?.open()
+                                ?: throw IllegalStateException("Word-audio integration is unavailable")
+                        } catch (failure: RuntimeException) {
+                            recordFault(generation, strings.resolve(R.string.mining_failure_word_audio_preparation))
+                            throw failure
+                        }
+                    synchronized(monitor) {
+                        run.wordAudioSynthesizer = synthesizer
+                        run.wordAudioDispatcher = SentenceAudioCallbackDispatcher(synthesizer)
+                    }
+                }
                 if (run.cancellation.isCancelled()) return
                 val admission =
                     try {
@@ -626,6 +648,7 @@ internal class BridgeMiningRepository(
         val runId: String?
         val lease: MiningForegroundLease?
         val runtimeWorkLease: RuntimeWorkCoordinator.Lease
+        val wordAudioSynthesizer: SentenceAudioSynthesizer?
         val cancelled: Boolean
         val transition: PhaseTransition?
         var terminalForState = terminal
@@ -641,12 +664,19 @@ internal class BridgeMiningRepository(
             runId = run.runId
             lease = run.foregroundLease
             runtimeWorkLease = run.workLease
+            wordAudioSynthesizer = run.wordAudioSynthesizer
             cancelled = run.cancelRequested || run.cancellation.isCancelled()
             if (terminalForState == null) terminalForState = run.terminalCallback
         }
         transition?.emit()
         try {
             if (runId != null) releaseAnkiFallback(generation, runId)
+            try {
+                wordAudioSynthesizer?.close()
+            } catch (failure: RuntimeException) {
+                AppLog.w(LogComponent.MINING, "wordAudio.close", failure, "outcome" to "fail")
+                recordFault(generation, strings.resolve(R.string.mining_failure_word_audio_cleanup))
+            }
             try {
                 inputOwner?.close()
             } catch (failure: Exception) {
@@ -1692,6 +1722,9 @@ internal class BridgeMiningRepository(
         override fun onCurationNeeded(message: String) =
             callbackFailure(generation, "onCurationNeeded") { acceptCuration(generation, message) }
 
+        /** The device voice speaking one word; only a run whose chain names it opened one. */
+        override fun synthesizeSentenceAudio(message: String): String = wordAudioCallback(generation, message)
+
         override fun ankiVerifyTarget(message: String): String =
             ankiCallback(generation, "ankiVerifyTarget") { anki.verifyTarget(message) }
 
@@ -1749,6 +1782,35 @@ internal class BridgeMiningRepository(
     private fun requireActive(generation: Long): ActiveRun =
         synchronized(monitor) {
             activeFor(generation) ?: throw IllegalStateException("Mining run is stale")
+        }
+
+    private fun wordAudioCallback(
+        generation: Long,
+        rawRequest: String,
+    ): String =
+        try {
+            val callback =
+                synchronized(monitor) {
+                    val run = activeFor(generation)
+                        ?: throw IllegalStateException("Word-audio callback is stale")
+                    val runId = run.runId
+                        ?: throw IllegalStateException("Word-audio callback arrived before registration")
+                    if (run.phase == Phase.FINALIZING) {
+                        throw IllegalStateException("Word-audio callback is out of order")
+                    }
+                    val dispatcher = run.wordAudioDispatcher
+                        ?: throw IllegalStateException("Word-audio callback is unavailable")
+                    runId to dispatcher
+                }
+            callback.second.synthesizeSentenceAudio(
+                rawRequest = rawRequest,
+                expectedRunId = callback.first,
+                cancellationCheck = { isCancellationRequested(generation) },
+            )
+        } catch (failure: RuntimeException) {
+            AppLog.e(LogComponent.MINING, "wordAudio", failure, "outcome" to "fail")
+            recordFaultAndCancel(generation, strings.resolve(R.string.mining_failure_word_audio_callback))
+            throw failure
         }
 
     private fun isCancellationRequested(generation: Long): Boolean =

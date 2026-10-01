@@ -271,6 +271,9 @@
     <string name="mining_failure_job_registration">Registrasi tugas Python melanggar protokol bridge</string>
     <string name="mining_failure_anki_callback">Callback Anki gagal tak terduga</string>
     <string name="mining_failure_sentence_audio_callback">Callback audio kalimat gagal tak terduga</string>
+    <string name="mining_failure_word_audio_preparation">Audio kata luring tidak dapat disiapkan</string>
+    <string name="mining_failure_word_audio_cleanup">Pembersihan audio kata luring gagal</string>
+    <string name="mining_failure_word_audio_callback">Callback audio kata gagal tak terduga</string>
     <string name="mining_failure_control_worker">Pekerja kontrol mining tidak tersedia</string>
     <string name="mining_admission_not_checked">Kesiapan AnkiDroid belum diperiksa</string>
     <string name="mining_admission_install_ankidroid">Instal AnkiDroid sebelum mining</string>
@@ -722,6 +725,11 @@
     <string name="settings_reading_audio">Audio kalimat bacaan</string>
     <string name="settings_reading_tts">Text-to-speech Android luring</string>
     <string name="settings_open_speech_services">Kelola layanan suara</string>
+    <string name="settings_word_audio_device_voice">Suara perangkat</string>
+    <string name="settings_word_audio_device_voice_help">Kata yang tidak ada di paket audio mana pun diucapkan oleh suara text-to-speech luring perangkat.</string>
+    <string name="settings_word_audio_voice_available">Suara untuk bahasa ini sudah terpasang.</string>
+    <string name="settings_word_audio_voice_missing_data">Suara untuk bahasa ini belum diunduh. Unduh di Kelola layanan suara.</string>
+    <string name="settings_word_audio_voice_unsupported">Perangkat ini tidak memiliki suara text-to-speech untuk bahasa ini.</string>
     <string name="settings_jisho">Fallback definisi Jisho</string>
     <string name="settings_jisho_disclosure">Nonaktif secara default. Jika diaktifkan dan fallback ini tercapai, istilah pencarian dari subtitel atau konten bacaan Anda dikirim ke jisho.org.</string>
     <string name="settings_validation_card_type_marker">Bidang Anki \'%1$s\' sudah dipetakan dari \'%2$s\'</string>

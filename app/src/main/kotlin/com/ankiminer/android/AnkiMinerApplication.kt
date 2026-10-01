@@ -523,6 +523,7 @@ class AnkiMinerApplication : Application() {
             },
             strings = stringResourceResolver,
             interruptionStore = miningRunInterruptionStore,
+            wordAudioSynthesizerFactory = AndroidSentenceAudioSynthesizerFactory(this),
         )
 
     internal val miningRepository: MiningRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

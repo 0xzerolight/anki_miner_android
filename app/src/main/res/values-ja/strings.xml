@@ -271,6 +271,9 @@
     <string name="mining_failure_job_registration">Python のジョブ登録がブリッジプロトコルに違反しました</string>
     <string name="mining_failure_anki_callback">Anki コールバックが予期せず失敗しました</string>
     <string name="mining_failure_sentence_audio_callback">例文音声コールバックが予期せず失敗しました</string>
+    <string name="mining_failure_word_audio_preparation">オフライン単語音声を準備できませんでした</string>
+    <string name="mining_failure_word_audio_cleanup">オフライン単語音声のクリーンアップに失敗しました</string>
+    <string name="mining_failure_word_audio_callback">単語音声コールバックが予期せず失敗しました</string>
     <string name="mining_failure_control_worker">マイニング制御ワーカーが利用できません</string>
     <string name="mining_admission_not_checked">AnkiDroidの準備状況が確認されていません</string>
     <string name="mining_admission_install_ankidroid">マイニング前にAnkiDroidをインストールしてください</string>
@@ -725,6 +728,11 @@
     <string name="settings_reading_audio">読書例文音声</string>
     <string name="settings_reading_tts">オフラインAndroid音声合成</string>
     <string name="settings_open_speech_services">音声サービスを管理</string>
+    <string name="settings_word_audio_device_voice">端末の音声</string>
+    <string name="settings_word_audio_device_voice_help">どの音声パックにもない単語は、端末のオフライン音声合成で読み上げます。</string>
+    <string name="settings_word_audio_voice_available">この言語の音声はインストール済みです。</string>
+    <string name="settings_word_audio_voice_missing_data">この言語の音声はまだダウンロードされていません。「音声サービスを管理」からダウンロードしてください。</string>
+    <string name="settings_word_audio_voice_unsupported">この端末には、この言語の音声合成用の音声がありません。</string>
     <string name="settings_jisho">Jisho定義フォールバック</string>
     <string name="settings_jisho_disclosure">デフォルトでオフ。有効にしてこのフォールバックに達すると、字幕や読書コンテンツから得た検索語がjisho.orgに送信されます。</string>
     <string name="settings_validation_numeric_incomplete">すべての数値項目を入力するかクリアしてください</string>

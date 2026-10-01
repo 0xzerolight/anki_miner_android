@@ -1378,7 +1378,15 @@ object BridgeJsonCodec {
             -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
             "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed", "jisho"))
-            "expression_audio_chain" -> validateProviderArray(value, key, "kind", setOf("pack"))
+            // The device voice stands in for another language's Google/Edge default; Japanese word
+            // audio is packs only, as config_map enforces.
+            "expression_audio_chain" ->
+                validateProviderArray(
+                    value,
+                    key,
+                    "kind",
+                    if (language == JAPANESE_LANGUAGE) setOf("pack") else setOf("pack", "android_tts"),
+                )
             "frequency_chain", "pitch_chain" -> validateSourceIdArray(value, key)
         }
     }
@@ -1412,14 +1420,21 @@ object BridgeJsonCodec {
             val entry = objectValue(raw, context)
             val kind = text(entry[discriminator] ?: missing("$context kind"), "$context kind")
             requireOneOf(kind, kinds, context)
-            val required = if (kind == "jisho") setOf("kind") else setOf("kind", if (kind == "pack") "pack_id" else "dict_id")
+            // android_tts (the device voice) is a bare kind, like jisho: it names no resource.
+            val required =
+                when (kind) {
+                    "jisho", "android_tts" -> setOf("kind")
+                    "pack" -> setOf("kind", "pack_id")
+                    else -> setOf("kind", "dict_id")
+                }
             val allowed = required + setOf("enabled") + if (kind == "jisho") setOf("dict_id") else emptySet()
             if (!entry.keys.containsAll(required) || !allowed.containsAll(entry.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "$context entry fields are invalid")
             entry["enabled"]?.let { bool(it, "$context enabled") }
-            if (kind == "jisho") {
-                if (entry["dict_id"] != null && entry["dict_id"] !is BridgeJsonValue.Null) fail(BridgeProtocolCategory.INVALID_VALUE, "jisho dict_id must be null")
-            } else {
-                resourceId(entry.getValue(if (kind == "pack") "pack_id" else "dict_id"))
+            when (kind) {
+                "jisho" ->
+                    if (entry["dict_id"] != null && entry["dict_id"] !is BridgeJsonValue.Null) fail(BridgeProtocolCategory.INVALID_VALUE, "jisho dict_id must be null")
+                "android_tts" -> Unit
+                else -> resourceId(entry.getValue(if (kind == "pack") "pack_id" else "dict_id"))
             }
         }
     }

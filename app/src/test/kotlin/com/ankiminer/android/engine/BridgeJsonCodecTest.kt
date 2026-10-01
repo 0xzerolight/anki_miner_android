@@ -234,6 +234,61 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `only another language's snapshot carries the device voice`() {
+        val deviceVoice =
+            BridgeJsonValue.ArrayValue(
+                listOf(
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("pack"),
+                            "pack_id" to BridgeJsonValue.Text("forvo-he"),
+                        ),
+                    ),
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("android_tts"),
+                            "enabled" to BridgeJsonValue.Bool(true),
+                        ),
+                    ),
+                ),
+            )
+        val hebrew =
+            videoRequest(audioOnly = false).copy(
+                configSnapshot =
+                    MiningConfigSnapshot(
+                        mapOf("language" to BridgeJsonValue.Text("he"), "expression_audio_chain" to deviceVoice),
+                    ),
+            )
+        assertEquals(BridgeMessage.VideoRun(hebrew), BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(hebrew)))
+
+        val japanese =
+            videoRequest(audioOnly = false).copy(
+                configSnapshot = MiningConfigSnapshot(mapOf("expression_audio_chain" to deviceVoice)),
+            )
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.encodeVideoRun(japanese) }
+
+        val namedVoice =
+            BridgeJsonValue.ArrayValue(
+                listOf(
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("android_tts"),
+                            "pack_id" to BridgeJsonValue.Text("voice"),
+                        ),
+                    ),
+                ),
+            )
+        val malformed =
+            videoRequest(audioOnly = false).copy(
+                configSnapshot =
+                    MiningConfigSnapshot(
+                        mapOf("language" to BridgeJsonValue.Text("he"), "expression_audio_chain" to namedVoice),
+                    ),
+            )
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.encodeVideoRun(malformed) }
+    }
+
+    @Test
     fun `video run decoder rejects a missing audio only field`() {
         val fixture =
             fixtures("contracts/mining_protocol_v1.json", "invalid")

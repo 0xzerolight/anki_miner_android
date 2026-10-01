@@ -273,6 +273,9 @@
     <string name="mining_failure_job_registration">Registrazione del job Python non conforme al protocollo bridge</string>
     <string name="mining_failure_anki_callback">Callback Anki non riuscito in modo imprevisto</string>
     <string name="mining_failure_sentence_audio_callback">Callback dell’audio della frase non riuscito in modo imprevisto</string>
+    <string name="mining_failure_word_audio_preparation">Impossibile preparare l’audio offline della parola</string>
+    <string name="mining_failure_word_audio_cleanup">Pulizia dell’audio offline della parola non riuscita</string>
+    <string name="mining_failure_word_audio_callback">Callback dell’audio della parola non riuscito in modo imprevisto</string>
     <string name="mining_failure_control_worker">Processo di controllo del mining non disponibile</string>
     <string name="mining_admission_not_checked">Stato di AnkiDroid non verificato</string>
     <string name="mining_admission_install_ankidroid">Installa AnkiDroid prima del mining</string>
@@ -724,6 +727,11 @@
     <string name="settings_reading_audio">Audio della frase letta</string>
     <string name="settings_reading_tts">Sintesi vocale Android offline</string>
     <string name="settings_open_speech_services">Gestisci servizi vocali</string>
+    <string name="settings_word_audio_device_voice">Voce del dispositivo</string>
+    <string name="settings_word_audio_device_voice_help">Le parole che nessun pacchetto audio contiene vengono pronunciate dalla voce di sintesi vocale offline del dispositivo.</string>
+    <string name="settings_word_audio_voice_available">È installata una voce per questa lingua.</string>
+    <string name="settings_word_audio_voice_missing_data">La voce di questa lingua non è ancora scaricata. Scaricala in Gestisci servizi vocali.</string>
+    <string name="settings_word_audio_voice_unsupported">Questo dispositivo non ha una voce di sintesi vocale per questa lingua.</string>
     <string name="settings_jisho">Ripiego definizioni Jisho</string>
     <string name="settings_jisho_disclosure">Disattivato per impostazione predefinita. Se abilitato e raggiunto questo ripiego, i termini di ricerca dai tuoi sottotitoli o contenuto di lettura vengono inviati a jisho.org.</string>
     <string name="settings_validation_card_type_marker">Il campo Anki \'%1$s\' è già mappato da \'%2$s\'</string>
