@@ -1175,6 +1175,67 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun `an import before the profiles have loaded waits for them`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            var calls = 0
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentReader = RecordingDocumentIo(content = HEBREW_BACKUP),
+                    // The startup load fails, so nothing is loaded when the import starts.
+                    languageProfileSource = {
+                        calls += 1
+                        if (calls == 1) {
+                            Result.failure(IOException("python still starting"))
+                        } else {
+                            Result.success(LanguageProfileFixtures.all)
+                        }
+                    },
+                )
+            advanceUntilIdle()
+            assertTrue(viewModel.languageProfiles.value.isEmpty())
+
+            viewModel.importSettings("content://in.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertEquals(2, calls)
+            assertEquals("he", repository.current.language)
+            assertEquals(listOf("ja", "he", "ar"), viewModel.languageProfiles.value.map { it.code })
+            assertEquals(
+                SettingsBackupState.Imported(applied = 2, ignored = 0, rejected = 0),
+                viewModel.backupState.value,
+            )
+        }
+
+    @Test
+    fun `an import while the profiles cannot load keeps the current language and says so`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(resources("first")),
+                    documentReader = RecordingDocumentIo(content = HEBREW_BACKUP),
+                    languageProfileSource = { Result.failure(IOException("bridge down")) },
+                )
+            advanceUntilIdle()
+
+            viewModel.importSettings("content://in.json")
+            viewModel.backupState.first { it !is SettingsBackupState.Working }
+            advanceUntilIdle()
+
+            assertEquals("ja", repository.current.language)
+            assertEquals(ThemeMode.LIGHT, repository.current.theme)
+            assertEquals(
+                SettingsBackupState.Imported(applied = 1, ignored = 0, rejected = 1, unknownLanguage = "he"),
+                viewModel.backupState.value,
+            )
+        }
+
+    @Test
     fun `switching language saves pending edits to the outgoing language first`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings(jishoEnabled = true))
@@ -1362,6 +1423,11 @@ class SettingsViewModelTest {
      * validate before committing, so a value that fails [AppSettingsValidator] throws and leaves the
      * store (and [writeCount]) untouched, and the transform reads the freshest persisted value.
      */
+    private companion object {
+        const val HEBREW_BACKUP =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"0.9.0","schemaVersion":3,"settings":{"mining_language":"he","theme_mode":"light"}}"""
+    }
+
     private class FakeAppSettingsRepository(
         initial: AppSettings,
         private var failuresRemaining: Int = 0,

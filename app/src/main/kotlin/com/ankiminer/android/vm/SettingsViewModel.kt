@@ -340,8 +340,10 @@ internal data class SettingsDraft(
             audioBitrateKbps =
                 AppSettingsDraftParser.optionalInt(bitrate)
                     ?.takeUnless { it == EngineDefaults.AUDIO_BITRATE_KBPS },
-            // Blank text inherits the engine default, which is the empty pattern and the empty
-            // replacement — so an explicit empty override would mean exactly the same thing.
+            // Blank text inherits the active language's default. For Japanese that is the empty
+            // pattern and replacement, so an explicit empty override would mean the same thing;
+            // another language can inherit a real pattern (he strips bracketed captions), so a
+            // blank field keeps filtering with it until the filter toggle is turned off.
             subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
             subtitleRegexReplacement = subtitleRegexReplacement.takeIf(String::isNotEmpty),
             useSubtitleRegexFilter = useSubtitleRegex,
@@ -1349,6 +1351,7 @@ internal class SettingsViewModel(
                     return@launch
                 }
 
+            val minableLanguages = minableLanguages()
             val saveCompletion = CompletableDeferred<Boolean>()
             var report: AppliedSettingsBackup? = null
             val accepted =
@@ -1358,9 +1361,9 @@ internal class SettingsViewModel(
                             parsed.applyTo(
                                 current,
                                 resources.state.value,
-                                knownLanguages =
-                                    languageProfiles.value.mapTo(mutableSetOf()) { it.code }
-                                        .takeIf { it.isNotEmpty() },
+                                // Without the profiles nothing proves another code is minable, so
+                                // only the current language may stay.
+                                knownLanguages = minableLanguages ?: setOf(current.language),
                             )
                         }
                             .also { report = it }
@@ -1396,6 +1399,24 @@ internal class SettingsViewModel(
     }
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
+
+    /**
+     * The codes this build can mine: the loaded profiles, or the bridge's answer awaited now when
+     * none have loaded (an import right after a cold start). Null when the bridge cannot answer.
+     */
+    private suspend fun minableLanguages(): Set<String>? {
+        mutableLanguageProfiles.value.takeIf { it.isNotEmpty() }?.let { loaded ->
+            return loaded.mapTo(mutableSetOf(), LanguageProfileInfo::code)
+        }
+        val source = languageProfileSource ?: return null
+        return source.profiles()
+            .onSuccess { mutableLanguageProfiles.value = it }
+            .onFailure { failure ->
+                AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+            }
+            .getOrNull()
+            ?.mapTo(mutableSetOf(), LanguageProfileInfo::code)
+    }
 
     /** Ask the bridge again, e.g. after a language pack was installed. */
     fun refreshLanguageProfiles() {
