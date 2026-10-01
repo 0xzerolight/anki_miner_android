@@ -177,6 +177,16 @@ internal fun AppSettings.switchLanguage(target: LanguageProfileInfo): AppSetting
 }
 
 /**
+ * Each parked language's scoped settings, decoded as settings of their own. A diagnostics export
+ * redacts their deck, note type and field names like the active language's: log lines written
+ * while that language was active still carry them.
+ */
+internal fun AppSettings.parkedLanguages(): List<AppSettings> =
+    languageStash.map { (code, parked) ->
+        DataStoreAppSettingsRepository.overlayScoped(AppSettings(language = code), parked)
+    }
+
+/**
  * Storage for [AppSettings.languageStash]: one JSON object keyed by language code, each value the
  * parked preference values of that language's scoped settings, `null` where a setting was unset.
  *

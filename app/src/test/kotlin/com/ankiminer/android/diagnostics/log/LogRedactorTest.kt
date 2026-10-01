@@ -805,6 +805,32 @@ class LogRedactorTest {
     }
 
     @Test
+    fun `a parked language's deck and note type are redacted like the active one's`() {
+        val settings =
+            AppSettings(
+                language = "he",
+                deckName = "Hebrew",
+                languageStash =
+                    mapOf(
+                        "ja" to
+                            mapOf(
+                                "deck_name" to "Japanese private",
+                                "note_type" to "Lapis custom",
+                                "field_map_v1" to "field-map-v1\nword=MyWordField\n",
+                            ),
+                    ),
+            )
+
+        val redacted =
+            redactor(settings = settings)
+                .redact("deck=Japanese private notetype=Lapis custom field=MyWordField now=Hebrew")
+
+        listOf("Japanese private", "Lapis custom", "MyWordField", "Hebrew").forEach { secret ->
+            assertFalse(redacted, redacted.contains(secret))
+        }
+    }
+
+    @Test
     fun `the record header is never rewritten by a literal`() {
         // LogRecord's one parse rule is that a line starting with a digit begins a record. A deck
         // named 2026 would otherwise mangle every timestamp in that user's bundle.
