@@ -131,6 +131,16 @@
         "enabled": {"type": "boolean"}
       }
     },
+    "androidTtsAudio": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "$comment": "Bridge-only: the device's offline TextToSpeech voice. config_map accepts it once, and only outside Japanese.",
+      "properties": {
+        "kind": {"const": "android_tts"},
+        "enabled": {"type": "boolean"}
+      }
+    },
     "settings": {
       "type": "object",
       "additionalProperties": false,
@@ -182,7 +192,7 @@
         "expression_audio_chain": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/audioPack"}
+          "items": {"oneOf": [{"$ref": "#/$defs/audioPack"}, {"$ref": "#/$defs/androidTtsAudio"}]}
         },
         "reading_tts_enabled": {
           "type": "boolean",

@@ -502,3 +502,102 @@ def test_the_curation_pane_uses_the_run_languages_lookup_ladder(tmp_path: Path) 
         assert service._lookup is get_profile("he").lookup
     finally:
         service.close()
+
+
+# ---------------------------------------------------------------- device-voice word audio
+
+
+def test_a_hebrew_chain_keeps_the_device_voice_in_its_place(tmp_path: Path) -> None:
+    _runtime_lane()
+    from anki_miner.config import AudioSourceEntry
+
+    config = _hebrew_config(
+        tmp_path,
+        expression_audio_chain=[
+            {"kind": "pack", "pack_id": "forvo-he"},
+            {"kind": "android_tts", "enabled": False},
+        ],
+    )
+    assert config.expression_audio_chain == (
+        AudioSourceEntry(kind="pack", pack_id="forvo-he"),
+        AudioSourceEntry(kind="android_tts", enabled=False),
+    )
+
+
+@pytest.mark.parametrize("language", ["he", "ar", "id", "th", "fa"])
+def test_the_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Path, language: str) -> None:
+    _runtime_lane()
+    from anki_miner.config import AudioSourceEntry
+
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    config = map_config_settings({"language": language, "anki_note_type": "Basic"}, paths).engine_config
+    assert config.expression_audio_chain == (AudioSourceEntry(kind="android_tts"),)
+
+
+@pytest.mark.parametrize(
+    "chain",
+    [
+        [{"kind": "android_tts"}, {"kind": "android_tts", "enabled": False}],
+        [{"kind": "android_tts", "pack_id": "x"}],
+    ],
+    ids=["duplicate", "pack-id"],
+)
+def test_a_malformed_device_voice_entry_is_refused(tmp_path: Path, chain: list[object]) -> None:
+    _runtime_lane()
+    with pytest.raises(BridgeProtocolError) as error:
+        _hebrew_config(tmp_path, expression_audio_chain=chain)
+    assert error.value.code == "invalid_config_field"
+
+
+def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(tmp_path: Path) -> None:
+    _runtime_lane()
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    config = _hebrew_config(
+        tmp_path,
+        anki_fields={"expression_audio": "WordAudio"},
+        expression_audio_chain=[{"kind": "android_tts"}],
+    )
+    chain = mining._build_expression_audio_source_chain(
+        config,
+        tts_callbacks=object(),
+        run_id="run_00000000000000000000000000000000",
+    )
+    assert chain is not None
+    (member,) = chain._fetchers
+    assert isinstance(member, AndroidWordAudioFetcher)
+    assert member.media_name("ספר", "").startswith("androidtts_he_")
+    chain.close()
+
+    # Without the run's callbacks (a test double, a pre-language caller) the
+    # entry builds nothing rather than a source that cannot speak.
+    silent = mining._build_expression_audio_source_chain(config)
+    assert silent is not None
+    assert silent._fetchers == ()
+    silent.close()
+
+
+def test_the_processor_hands_the_runs_callbacks_to_the_device_voice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _runtime_lane()
+    import anki_miner.orchestration.episode_processor as episode_processor
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    monkeypatch.setattr(episode_processor, "EpisodeProcessor", _CapturedProcessor)
+    config = _hebrew_config(
+        tmp_path,
+        anki_fields={"expression_audio": "WordAudio"},
+        expression_audio_chain=[{"kind": "android_tts"}],
+    )
+    adapters = SimpleNamespace(
+        presenter=SimpleNamespace(show_warning=lambda _message: None),
+        cancel_event=threading.Event(),
+        callbacks=object(),
+        run_id="run_00000000000000000000000000000000",
+    )
+    processor = mining._build_processor(config, adapters, object())
+    chain = processor.kwargs["expression_audio_fetcher"]
+    assert [type(member) for member in chain._fetchers] == [AndroidWordAudioFetcher]
+    chain.close()
