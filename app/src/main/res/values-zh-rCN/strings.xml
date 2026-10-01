@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">字幕时间偏移（秒）</string>
     <string name="audio_subtitle_offset_label">文字稿时间偏移（秒）</string>
     <string name="video_subtitle_offset_placeholder">使用当前默认值（%1$s 秒）</string>
+    <string name="video_secondary_subtitle_label">翻译字幕</string>
+    <string name="video_secondary_subtitle_offset_label">翻译字幕时间偏移（毫秒）</string>
+    <string name="video_secondary_subtitle_offset_error">请输入 −300000 到 300000 之间的整数</string>
     <string name="timing_preview_test_action">测试时间轴</string>
     <string name="timing_preview_title">测试字幕时间轴</string>
     <string name="timing_preview_nudge_earlier">−0.1 秒</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">未映射单词音频字段。请映射“WordAudio”，否则卡片没有发音。</string>
     <string name="audio_pack_unusable_warning">不可用的音频包已跳过。请在 设置 → 资源 中重新导入。</string>
     <string name="subtitle_file_error">访问已丢失。请重新选择。</string>
+    <string name="secondary_subtitle_file_error">翻译字幕：访问已丢失。请重新选择。</string>
     <string name="dismiss_error">关闭错误</string>
     <string name="start_mining">挖词</string>
     <string name="starting_title">正在准备挖词任务</string>
@@ -651,7 +655,7 @@
     <string name="settings_subtitle_preset_speaker">说话人前缀</string>
     <string name="settings_subtitle_preset_description">%1$s：%2$s</string>
     <string name="settings_subtitle_regex_uncompilable">若引擎拒绝此模式，会跳过该过滤器。</string>
-    <string name="settings_filtering">过滤</string>
+    <string name="settings_filtering">单词过滤</string>
     <string name="settings_search">搜索设置</string>
     <string name="settings_search_no_results">没有匹配的设置。</string>
     <string name="settings_search_clear">清除搜索</string>
@@ -661,12 +665,26 @@
     <string name="settings_bold_target">在句中加粗目标词</string>
     <string name="settings_deduplicate">去除重复句子</string>
     <string name="settings_i_plus_one">使用 i+1 过滤器</string>
-    <string name="settings_sentence_length">限制句子长度</string>
-    <string name="settings_max_duration">最大句子时长（0 = 不限）</string>
-    <string name="settings_max_characters">最大句子字符数（0 = 不限）</string>
+    <string name="settings_max_duration">最大句子时长（秒）</string>
+    <string name="settings_max_characters">最大句子字符数</string>
     <string name="settings_reading_occurrence">阅读内容最低出现次数</string>
-    <string name="settings_max_frequency">最高词频排名（0 = 不限）</string>
+    <string name="settings_max_frequency">最高词频排名</string>
     <string name="settings_workers">并行媒体工作线程（1–20）</string>
+    <string name="settings_min_frequency">最低词频排名</string>
+    <string name="settings_frequency_band_help">仅挖取排名落在此区间内的单词。排名 1 为最常见的单词。0 表示该端不设限。</string>
+    <string name="settings_frequency_keep_unranked">包含词频列表中查不到的单词</string>
+    <string name="settings_known_words_match_kana_variants">将已知单词的假名拼写视为已知</string>
+    <string name="settings_known_words_match_kana_variants_help">当字幕以假名拼写某个单词（例如 うなずく），而该词的汉字词典形式（頷く）已存在于 Anki 集合或已知单词列表中时，将跳过该单词，而不会创建第二张卡片。汉字拼写永远不会以这种方式合并。</string>
+    <string name="settings_card_creation">卡片创建</string>
+    <string name="settings_strict_card_order">按出现顺序创建卡片</string>
+    <string name="settings_strict_card_order_help">按单词首次出现的顺序把卡片添加到 Anki。关闭此项且开启“始终挖词白名单中的单词”时，白名单中的单词排在最前。</string>
+    <string name="settings_sentence_options">句子选项</string>
+    <string name="settings_max_duration_help">丢弃例句音频超过此秒数的卡片。设为 0 表示无限制。</string>
+    <string name="settings_max_characters_help">丢弃句子文本超过此字符数的卡片。设为 0 表示无限制。</string>
+    <string name="settings_secondary_subtitle">副字幕</string>
+    <string name="settings_secondary_subtitle_help">在“视频”标签页中添加翻译字幕轨道选择器。若已在“卡片和 Anki”中映射“Sentence translation”字段，对应的翻译字幕行会写入卡片。</string>
+    <string name="settings_merge_incomplete_cues">跨字幕行挖取完整句子</string>
+    <string name="settings_merge_incomplete_cues_help">当某行未在句子末尾结束时，将其与相邻字幕行合并，使卡片包含完整句子而非片段。阅读来源没有字幕时间信息，会忽略此设置。</string>
     <string name="settings_no_dictionaries">未安装词典。</string>
     <string name="settings_no_frequency_sources">未安装词频来源。</string>
     <string name="settings_no_audio_packs">未安装音频包。</string>
@@ -684,7 +702,7 @@
     <string name="resource_panel_dictionaries_explanation">按从上到下顺序尝试，第一个含条目的词典胜出。</string>
     <string name="resource_panel_pitch_heading">已启用的音调来源</string>
     <string name="resource_panel_pitch_explanation">按从上到下顺序尝试，第一个含音调条目的来源胜出。</string>
-    <string name="resource_panel_audio_heading">已启用的音频来源</string>
+    <string name="resource_panel_audio_heading">单词音频</string>
     <string name="resource_panel_audio_explanation">按从上到下顺序尝试，第一个含音频的来源胜出。</string>
     <string name="resource_panel_frequency_heading">已启用的词频来源</string>
     <string name="resource_panel_frequency_explanation">过滤使用最低排名，排序使用调和平均值。顺序仅决定卡片的来源列表。</string>
@@ -773,12 +791,13 @@
     <string name="anki_setup_schedule_failed">无法安排 Anki 设置</string>
     <string name="notices_title">第三方声明</string>
     <string name="notices_documents_heading">随附的声明文档</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">卡片和 Anki</string>
     <string name="b3_settings_category_media">媒体</string>
     <string name="b3_settings_category_resources">资源</string>
     <string name="b3_settings_category_audio">音频</string>
     <string name="b3_settings_category_frequency">词频</string>
-    <string name="b3_settings_category_filtering">过滤</string>
+    <string name="b3_settings_category_word_filters">单词过滤</string>
+    <string name="b3_settings_category_sentences">句子</string>
     <string name="b3_settings_category_ui">界面</string>
     <string name="b3_settings_category_diagnostics">诊断</string>
     <string name="b3_settings_save_pending">有待保存的更改</string>

@@ -108,6 +108,8 @@ _MAX_DUPLICATE_HITS_UTF8_BYTES = _SCAN_LIMITS["duplicateHitsTotalMaxUtf8Bytes"]
 _KNOWN_VOCABULARY_PAGE_ITEMS = _SCAN_LIMITS["knownPageMaxItems"]
 _KNOWN_VOCABULARY_PAGE_UTF8_BYTES = _SCAN_LIMITS["knownPageMaxUtf8Bytes"]
 _MAX_KNOWN_CURSOR_UTF8_BYTES = _SCAN_LIMITS["knownCursorMaxUtf8Bytes"]
+_MAX_NOTE_TYPES = _SCAN_LIMITS["noteTypesMaxItems"]
+_MAX_NOTE_TYPES_UTF8_BYTES = _SCAN_LIMITS["noteTypesMaxUtf8Bytes"]
 _MAX_NOTE_FIELDS = _NOTE_LIMITS["maxFieldsPerNote"]
 _MAX_CARDS_PER_NOTE = _NOTE_LIMITS["maxCardsPerNote"]
 _MAX_FIELD_VALUE_UTF8_BYTES = _NOTE_LIMITS["fieldValueMaxUtf8Bytes"]
@@ -140,6 +142,105 @@ _MAX_MEDIA_SOURCE_PATH_UTF8_BYTES = _MEDIA_LIMITS["sourcePathMaxUtf8Bytes"]
 # constant. The limit now applies identically to card and dictionary assets.
 _MAX_CARD_MEDIA_BYTES = _MAX_MEDIA_ASSET_BYTES
 _MEDIA_HASH_CHUNK_BYTES = 128 * 1024
+
+
+@dataclass(frozen=True)
+class _NoteType:
+    """One note type of the collection, as the known-vocabulary scan names it."""
+
+    name: str
+    field_names: tuple[str, ...]
+
+
+class _JaScriptGate:
+    """ja's ``ScriptSupport.contains_target_script``, the one script method the resolver calls.
+
+    Desktop's AnkiService hands ``ExpressionFieldResolver`` the profile's script
+    and sentence rules. Spelled out for ja for the reason ``_JA_NOTE_BUILDER_KWARGS``
+    is: resolving a profile imports the parser, which the host lane cannot. A
+    runtime-lane test pins both against a real AnkiService.
+    """
+
+    @staticmethod
+    def contains_target_script(text: str) -> bool:
+        return _JAPANESE_RE.search(text) is not None
+
+
+def _ja_expression_field_resolver() -> Any:
+    """A fresh vendored ``ExpressionFieldResolver`` with ja's script and sentence rules."""
+
+    from anki_miner.languages.profile import SentenceRules
+    from anki_miner.services.expression_field import ExpressionFieldResolver
+    from anki_miner.services.reading import sentence_splitter
+
+    return ExpressionFieldResolver(
+        script=_JaScriptGate(),
+        sentence_rules=SentenceRules(
+            terminators=sentence_splitter._HARD_TERMINATORS,
+            ellipses=sentence_splitter._ELLIPSIS,
+            openers=sentence_splitter._OPENERS,
+            closers=sentence_splitter._CLOSERS,
+        ),
+    )
+
+
+def _expression_field_resolver(config: Any) -> Any:
+    """A fresh vendored ``ExpressionFieldResolver`` for *config*'s mining language.
+
+    Desktop's AnkiService builds it from the profile's script and sentence rules.
+    Japanese keeps the spelled-out ``_ja_expression_field_resolver`` (no profile
+    import, so the host lane can scan); any other language takes its profile's.
+    """
+
+    from .languages import JAPANESE, config_language, get_profile
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return _ja_expression_field_resolver()
+    from anki_miner.services.expression_field import ExpressionFieldResolver
+
+    profile = get_profile(language)
+    return ExpressionFieldResolver(script=profile.script, sentence_rules=profile.sentence_rules)
+
+
+def _expression_field_ordinals(note_types: Mapping[int, _NoteType]) -> dict[int, tuple[int, ...]]:
+    """Per note type, the fields the resolver can read: its first, then each later word-named one.
+
+    ``choose_expression_field`` reads the first field and only those later fields
+    ``names_word_field`` accepts, so asking Kotlin for exactly those reaches the
+    same decision desktop takes from whole notesInfo rows while the scan stays
+    close to its first-field size. A note type with no such later field is left
+    out: Kotlin returns its first field alone, which is all the resolver reads.
+    """
+
+    from anki_miner.services.expression_field import names_word_field
+
+    ordinals: dict[int, tuple[int, ...]] = {}
+    for model_id, note_type in sorted(note_types.items()):
+        later = tuple(index for index, name in enumerate(note_type.field_names) if index and names_word_field(name))
+        if later:
+            ordinals[model_id] = (0, *later)
+    return ordinals
+
+
+def _resolver_row(
+    note_type: _NoteType | None,
+    ordinals: Sequence[int],
+    values: Sequence[str],
+) -> tuple[str | None, dict[str, dict[str, object]]]:
+    """One note as the resolver's ``feed`` takes a notesInfo row: note type name, then fields.
+
+    A note type missing from the table (created after it was read, or outside its
+    budgets) has no name and resolves to its first field, Anki's convention.
+    """
+
+    if note_type is None:
+        return None, {"": {"value": values[0]}}
+    return note_type.name, {
+        note_type.field_names[ordinal]: {"value": value, "order": ordinal}
+        for ordinal, value in zip(ordinals, values, strict=True)
+    }
+
 
 _SETUP_ERROR_CODES = {
     "api_disabled",
@@ -1020,11 +1121,8 @@ class AndroidAnkiAdapter:
         self._accept_terminal_payload(payload)
         self._verified_field_names = tuple(fields)
 
-    def _scan_known_vocabulary_page(
-        self, cursor: dict[str, Any] | None
-    ) -> tuple[list[str], int, dict[str, Any] | None]:
-        self._raise_if_cancelled("scanFirstFields")
-        excluded_decks = _expect_bounded_string_list(
+    def _known_vocabulary_excluded_decks(self) -> list[str]:
+        return _expect_bounded_string_list(
             list(self.config.excluded_decks),
             context="scanFirstFields excludedDecks",
             max_items=_MAX_EXCLUDED_DECKS,
@@ -1032,59 +1130,127 @@ class AndroidAnkiAdapter:
             max_total_bytes=_MAX_EXCLUDED_DECKS_UTF8_BYTES,
             code="invalid_anki_request",
         )
+
+    def _scan_note_types(self) -> dict[int, _NoteType]:
+        """Every note type's name and ordered field names, keyed by model ID."""
+
+        self._raise_if_cancelled("scanFirstFields")
+        payload = self._callbacks.scan_first_fields(
+            {
+                "scope": {
+                    "kind": "noteTypes",
+                    "limits": {
+                        "maxItems": _MAX_NOTE_TYPES,
+                        "maxTotalUtf8Bytes": _MAX_NOTE_TYPES_UTF8_BYTES,
+                    },
+                }
+            }
+        )
+        result = _expect_exact_keys(payload, {"runId", "requestId", "noteTypes"}, context="note-type result")
+        rows = result["noteTypes"]
+        if not isinstance(rows, list) or len(rows) > _MAX_NOTE_TYPES:
+            _protocol_error("invalid_anki_response", "Note-type result contains too many note types")
+        note_types: dict[int, _NoteType] = {}
+        total_utf8_bytes = 0
+        for index, row in enumerate(rows):
+            entry = _expect_exact_keys(row, {"modelId", "name", "fieldNames"}, context=f"note type {index}")
+            model_id = _expect_positive_int(entry["modelId"], context=f"note type {index} modelId")
+            name = _expect_bounded_canonical_name(
+                entry["name"],
+                context=f"note type {index} name",
+                max_bytes=_MAX_MODEL_NAME_UTF8_BYTES,
+                code="invalid_anki_response",
+            )
+            field_names = _expect_bounded_string_list(
+                entry["fieldNames"],
+                context=f"note type {index} fieldNames",
+                max_items=_MAX_TARGET_FIELDS,
+                max_item_bytes=_MAX_FIELD_NAME_UTF8_BYTES,
+                max_total_bytes=_MAX_TARGET_FIELDS_UTF8_BYTES,
+                code="invalid_anki_response",
+            )
+            if not field_names:
+                _protocol_error("invalid_anki_response", f"note type {index} has no fields")
+            if model_id in note_types:
+                _protocol_error("invalid_anki_response", "Note-type result repeats a modelId")
+            total_utf8_bytes += sum(len(text.encode("utf-8")) for text in (name, *field_names))
+            if total_utf8_bytes > _MAX_NOTE_TYPES_UTF8_BYTES:
+                _protocol_error("invalid_anki_response", "Note-type result exceeds the UTF-8 budget")
+            note_types[model_id] = _NoteType(name, tuple(field_names))
+        return note_types
+
+    def _scan_known_vocabulary_page(
+        self,
+        cursor: dict[str, Any] | None,
+        excluded_decks: list[str],
+        field_ordinals: Mapping[int, tuple[int, ...]],
+    ) -> tuple[list[tuple[int, list[str]]], int, dict[str, Any] | None]:
+        self._raise_if_cancelled("scanFirstFields")
         limits = {
             "maxScannedNotes": _KNOWN_VOCABULARY_PAGE_ITEMS,
             "maxItems": _KNOWN_VOCABULARY_PAGE_ITEMS,
             "maxItemUtf8Bytes": _MAX_RAW_FIRST_FIELD_UTF8_BYTES,
             "maxTotalUtf8Bytes": _KNOWN_VOCABULARY_PAGE_UTF8_BYTES,
         }
-        try:
-            payload = self._callbacks.scan_first_fields(
-                {
-                    "scope": {
-                        "kind": "knownVocabulary",
-                        "excludedDecks": excluded_decks,
-                        "cursor": cursor,
-                        "limits": limits,
-                    }
+        payload = self._callbacks.scan_first_fields(
+            {
+                "scope": {
+                    "kind": "knownVocabulary",
+                    "excludedDecks": excluded_decks,
+                    "fieldOrdinals": [
+                        {"modelId": model_id, "ordinals": list(ordinals)}
+                        for model_id, ordinals in field_ordinals.items()
+                    ],
+                    "cursor": cursor,
+                    "limits": limits,
                 }
-            )
-        except AnkiCallbackError:
-            raise
+            }
+        )
         result = _expect_exact_keys(
             payload,
-            {"runId", "requestId", "firstFields", "scannedNotes", "nextCursor"},
+            {"runId", "requestId", "notes", "scannedNotes", "nextCursor"},
             context="known-vocabulary page result",
         )
-        raw_fields = _expect_string_list(result["firstFields"], context="firstFields")
-        if len(raw_fields) > _KNOWN_VOCABULARY_PAGE_ITEMS:
+        raw_notes = result["notes"]
+        if not isinstance(raw_notes, list) or len(raw_notes) > _KNOWN_VOCABULARY_PAGE_ITEMS:
             _protocol_error(
                 "invalid_anki_response",
-                "Known-vocabulary page contains too many fields",
+                "Known-vocabulary page contains too many notes",
             )
+        notes: list[tuple[int, list[str]]] = []
         total_utf8_bytes = 0
-        for index, raw_field in enumerate(raw_fields):
-            raw_bytes = len(
-                _strict_utf8_bytes(
-                    raw_field,
-                    context=f"Known-vocabulary first field {index}",
-                    code="invalid_anki_response",
-                )
-            )
-            if raw_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES:
+        for index, raw_note in enumerate(raw_notes):
+            note = _expect_exact_keys(raw_note, {"modelId", "fields"}, context=f"known-vocabulary note {index}")
+            model_id = _expect_positive_int(note["modelId"], context=f"known-vocabulary note {index} modelId")
+            values = _expect_string_list(note["fields"], context=f"known-vocabulary note {index} fields")
+            if len(values) != len(field_ordinals.get(model_id, (0,))):
                 _protocol_error(
                     "invalid_anki_response",
-                    f"Known-vocabulary first field {index} is too large",
+                    f"Known-vocabulary note {index} does not match its field projection",
                 )
-            total_utf8_bytes += raw_bytes
-            if total_utf8_bytes > _KNOWN_VOCABULARY_PAGE_UTF8_BYTES:
-                _protocol_error(
-                    "invalid_anki_response",
-                    "Known-vocabulary page exceeds the UTF-8 budget",
+            for value in values:
+                raw_bytes = len(
+                    _strict_utf8_bytes(
+                        value,
+                        context=f"Known-vocabulary note {index} field",
+                        code="invalid_anki_response",
+                    )
                 )
+                if raw_bytes > _MAX_RAW_FIRST_FIELD_UTF8_BYTES:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        f"Known-vocabulary note {index} field is too large",
+                    )
+                total_utf8_bytes += raw_bytes
+                if total_utf8_bytes > _KNOWN_VOCABULARY_PAGE_UTF8_BYTES:
+                    _protocol_error(
+                        "invalid_anki_response",
+                        "Known-vocabulary page exceeds the UTF-8 budget",
+                    )
+            notes.append((model_id, values))
 
         scanned_notes = normalize_integral_json_number(result["scannedNotes"])
-        if scanned_notes is None or scanned_notes < len(raw_fields) or scanned_notes > _KNOWN_VOCABULARY_PAGE_ITEMS:
+        if scanned_notes is None or scanned_notes < len(notes) or scanned_notes > _KNOWN_VOCABULARY_PAGE_ITEMS:
             _protocol_error(
                 "invalid_anki_response",
                 "Known-vocabulary scanned-note count is invalid",
@@ -1126,7 +1292,7 @@ class AndroidAnkiAdapter:
                     "Known-vocabulary cursor did not advance monotonically",
                 )
             next_cursor = {"ordinal": ordinal, "token": token}
-        return raw_fields, scanned_notes, next_cursor
+        return notes, scanned_notes, next_cursor
 
     def set_cancelled_check(self, cancelled: Callable[[], bool] | None) -> None:
         """Install or clear the engine's own cancellation probe.
@@ -1138,7 +1304,14 @@ class AndroidAnkiAdapter:
         self._engine_cancelled_check = cancelled
 
     def get_existing_vocabulary(self, *, allow_degraded: bool = True) -> set[str]:
-        """Return cached, desktop-normalized Japanese first fields.
+        """Return cached, desktop-normalized Japanese expressions already in Anki.
+
+        Desktop's ``AnkiService._collect_first_field_forms``: which field of a
+        note type is the expression is decided from its own notes by the vendored
+        ``ExpressionFieldResolver`` (the first field unless it does not hold
+        words), so a sentence-first or index-first shared deck contributes its
+        word field. Kotlin returns the first field plus the later word-named
+        fields the resolver can choose; see ``_expression_field_ordinals``.
 
         ``allow_degraded`` exists because ``create_cards_batch`` passes
         ``False``; it changes nothing here. Desktop degrades a timeout to an
@@ -1152,17 +1325,32 @@ class AndroidAnkiAdapter:
             return self._existing_vocab_cache
 
         from anki_miner.services.anki_note_builder import _strip_for_dedup
+        from anki_miner.utils.logging_ext import capped, log_summary
 
+        excluded_decks = self._known_vocabulary_excluded_decks()
         existing: set[str] = set()
+        resolver = _expression_field_resolver(self.config)
+
+        def collect(ready: list[tuple[Mapping[str, Any], str]]) -> None:
+            for fields, field_name in ready:
+                normalized = self._dedup_key(_strip_for_dedup(fields[field_name]["value"]))
+                if normalized and self._is_target_script(normalized):
+                    existing.add(normalized)
+
+        notes_read = 0
         cursor: dict[str, Any] | None = None
         seen_cursor_tokens: set[str] = set()
         try:
+            note_types = self._scan_note_types()
+            field_ordinals = _expression_field_ordinals(note_types)
             while True:
-                raw_fields, _scanned_notes, next_cursor = self._scan_known_vocabulary_page(cursor)
-                for raw in raw_fields:
-                    normalized = self._dedup_key(_strip_for_dedup(raw))
-                    if normalized and self._is_target_script(normalized):
-                        existing.add(normalized)
+                notes, _scanned_notes, next_cursor = self._scan_known_vocabulary_page(
+                    cursor, excluded_decks, field_ordinals
+                )
+                for model_id, values in notes:
+                    model, fields = _resolver_row(note_types.get(model_id), field_ordinals.get(model_id, (0,)), values)
+                    collect(resolver.feed(model, fields))
+                notes_read += len(notes)
                 if next_cursor is None:
                     break
                 token = next_cursor["token"]
@@ -1173,6 +1361,7 @@ class AndroidAnkiAdapter:
                     )
                 seen_cursor_tokens.add(token)
                 cursor = next_cursor
+            collect(resolver.flush())
         except AnkiCallbackError as error:
             # Desktop degrades this read to an empty set on a timeout, where a timeout means one
             # 30s HTTP batch of 1000 notes was slow. The provider scan is not that shape: it is a
@@ -1185,6 +1374,22 @@ class AndroidAnkiAdapter:
             self._callbacks.mark_response_failure()
             raise
 
+        # The bundle redacts only the target note type's names, so this receipt carries none:
+        # model_id:field_ordinal for each note type read from a field other than its first.
+        overrides = resolver.overrides()
+        log_summary(
+            logger,
+            "Anki known words scan",
+            outcome="ok",
+            notes=notes_read,
+            forms=len(existing),
+            note_types=len(resolver.chosen),
+            expression_fields=capped(
+                f"{model_id}:{note_type.field_names.index(overrides[note_type.name])}"
+                for model_id, note_type in sorted(note_types.items())
+                if overrides.get(note_type.name) in note_type.field_names
+            ),
+        )
         self._existing_vocab_cache = existing
         return existing
 

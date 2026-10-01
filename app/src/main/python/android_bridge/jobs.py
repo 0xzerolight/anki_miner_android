@@ -103,6 +103,22 @@ class SentencePageContext:
 
 
 @dataclass(frozen=True)
+class SentencePreview:
+    """What one curation sentence mines with when the user leaves it untouched.
+
+    ``line_expansion`` is the automatic cue merge (``merge_incomplete_cues``):
+    the engine's own stamp on the default sentence, re-derived for a sentence
+    variant the way desktop's curator does on a pick. ``translation`` is the
+    secondary track's line over the window that expansion produces, empty
+    without a track or a match. Kotlin seeds its expansion state from the
+    first, so the ± line buttons extend the merge and Reset undoes it.
+    """
+
+    line_expansion: tuple[int, int]
+    translation: str
+
+
+@dataclass(frozen=True)
 class _CurationPagePlan:
     candidate_ids: tuple[str, ...]
     candidate_start: int
@@ -131,6 +147,7 @@ class _CurationGate:
     allow_line_expansion: bool = False
     allow_clip_override: bool = False
     sentence_context: Callable[[object], SentencePageContext | None] | None = None
+    sentence_preview: Callable[[object], SentencePreview] | None = None
     known_words_target: KnownWordsTarget | None = None
 
     @property
@@ -174,6 +191,7 @@ def _sentence_payload(
     sentence_id: str,
     word: object,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+    sentence_preview: Callable[[object], SentencePreview] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "sentenceId": sentence_id,
@@ -189,6 +207,16 @@ def _sentence_payload(
         payload["imageEntry"] = context.image_entry
         payload["blockBox"] = list(context.block_box)
         payload["locationLabel"] = context.location_label
+    preview = sentence_preview(word) if sentence_preview is not None else None
+    if preview is not None:
+        # Zero counts and an empty translation are omitted, as in a selection.
+        lines_before, lines_after = preview.line_expansion
+        if lines_before:
+            payload["linesBefore"] = lines_before
+        if lines_after:
+            payload["linesAfter"] = lines_after
+        if preview.translation:
+            payload["translation"] = preview.translation
     return payload
 
 
@@ -223,10 +251,11 @@ def _candidate_payload_from_ref(
     candidate_id: str,
     reference: _CandidateRef,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+    sentence_preview: Callable[[object], SentencePreview] | None = None,
 ) -> dict[str, Any]:
     word = reference.original
     sentence_payloads = [
-        _sentence_payload(sentence_id, sentence, sentence_context)
+        _sentence_payload(sentence_id, sentence, sentence_context, sentence_preview)
         for sentence_id, sentence in reference.sentences.items()
     ]
 
@@ -253,11 +282,12 @@ def _candidate_payload(
     candidate_id: str,
     word: object,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+    sentence_preview: Callable[[object], SentencePreview] | None = None,
 ) -> tuple[dict[str, Any], _CandidateRef]:
     """Retain the original raw-word helper contract used by existing tests."""
 
     reference = _candidate_ref(word)
-    return _candidate_payload_from_ref(candidate_id, reference, sentence_context), reference
+    return _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview), reference
 
 
 def _utf8_size(raw: str) -> int:
@@ -489,16 +519,18 @@ class JobRegistry:
         allow_line_expansion: bool = False,
         allow_clip_override: bool = False,
         sentence_context: Callable[[object], SentencePageContext | None] | None = None,
+        sentence_preview: Callable[[object], SentencePreview] | None = None,
         known_words_target: KnownWordsTarget | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
         The returned objects are the exact original candidate or sentence
-        variant instances held by the engine, except that a selection carrying
-        line-expansion counts and/or a clip window returns a
-        ``dataclasses.replace`` copy with ``line_expansion`` and/or
-        ``clip_override`` stamped; the engine-owned original is untouched. No
-        model is reconstructed from JSON.
+        variant instances held by the engine, except that a selection whose
+        line-expansion counts differ from the variant's own ``line_expansion``
+        and/or that carries a clip window returns a ``dataclasses.replace``
+        copy with ``line_expansion`` and/or ``clip_override`` stamped; the
+        engine-owned original is untouched. No model is reconstructed from
+        JSON.
         """
 
         if not isinstance(candidates, Sequence) or isinstance(candidates, (str, bytes, bytearray)):
@@ -529,7 +561,7 @@ class JobRegistry:
             pages: tuple[_CurationPagePlan, ...] = ()
             if len(refs) <= CURATION_PAGE_MAX_CANDIDATES:
                 payloads = [
-                    _candidate_payload_from_ref(candidate_id, reference, sentence_context)
+                    _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview)
                     for candidate_id, reference in refs.items()
                 ]
                 small_request = encode_message(
@@ -557,7 +589,7 @@ class JobRegistry:
                     entries=(
                         (
                             candidate_id,
-                            _candidate_payload_from_ref(candidate_id, reference, sentence_context),
+                            _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview),
                         )
                         for candidate_id, reference in refs.items()
                     ),
@@ -570,6 +602,7 @@ class JobRegistry:
                 allow_line_expansion=allow_line_expansion,
                 allow_clip_override=allow_clip_override,
                 sentence_context=sentence_context,
+                sentence_preview=sentence_preview,
                 known_words_target=known_words_target,
             )
             state.curation = gate
@@ -629,7 +662,12 @@ class JobRegistry:
             return cast(str, gate.request_json)
         plan = gate.pages[gate.page_index]
         payloads = [
-            _candidate_payload_from_ref(candidate_id, gate.candidates[candidate_id], gate.sentence_context)
+            _candidate_payload_from_ref(
+                candidate_id,
+                gate.candidates[candidate_id],
+                gate.sentence_context,
+                gate.sentence_preview,
+            )
             for candidate_id in plan.candidate_ids
         ]
         raw = encode_message(
@@ -889,7 +927,10 @@ class JobRegistry:
             if chosen is None:
                 raise _reject("unknown_sentence", "The sentence does not belong to this candidate")
             stamped: dict[str, Any] = {}
-            if (lines_before, lines_after) != (0, 0):
+            # Against the variant's own stamp, not (0, 0): the automatic cue
+            # merge arrives stamped, and Reset has to write (0, 0) back over it
+            # (desktop get_selected_words).
+            if (lines_before, lines_after) != getattr(chosen, "line_expansion", (0, 0)):
                 if not gate.allow_line_expansion:
                     raise _reject(
                         "line_expansion_unsupported",

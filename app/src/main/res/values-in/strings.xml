@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Offset waktu subtitel (detik)</string>
     <string name="audio_subtitle_offset_label">Offset waktu transkrip (detik)</string>
     <string name="video_subtitle_offset_placeholder">Gunakan default saat ini (%1$s detik)</string>
+    <string name="video_secondary_subtitle_label">Subtitel terjemahan</string>
+    <string name="video_secondary_subtitle_offset_label">Offset waktu terjemahan (milidetik)</string>
+    <string name="video_secondary_subtitle_offset_error">Masukkan bilangan bulat dari −300000 hingga 300000</string>
     <string name="timing_preview_test_action">Uji Waktu</string>
     <string name="timing_preview_title">Uji waktu subtitel</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Tidak ada bidang yang dipetakan untuk audio kata. Petakan “WordAudio” atau kartu tidak mendapat pelafalan.</string>
     <string name="audio_pack_unusable_warning">Paket audio yang tidak dapat digunakan dilewati. Impor ulang di Pengaturan → Sumber daya.</string>
     <string name="subtitle_file_error">Akses hilang. Pilih lagi.</string>
+    <string name="secondary_subtitle_file_error">Subtitel terjemahan: akses hilang. Pilih lagi.</string>
     <string name="dismiss_error">Tutup kesalahan</string>
     <string name="start_mining">Mining</string>
     <string name="starting_title">Menyiapkan proses mining</string>
@@ -651,7 +655,7 @@
     <string name="settings_subtitle_preset_speaker">Awalan pembicara</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Jika mesin menolak pola ini, filter dilewati.</string>
-    <string name="settings_filtering">Pemfilteran</string>
+    <string name="settings_filtering">Filter kata</string>
     <string name="settings_search">Cari pengaturan</string>
     <string name="settings_search_no_results">Tidak ada pengaturan yang cocok.</string>
     <string name="settings_search_clear">Hapus pencarian</string>
@@ -661,12 +665,26 @@
     <string name="settings_bold_target">Tebalkan kata target dalam kalimat</string>
     <string name="settings_deduplicate">Deduplikasi kalimat</string>
     <string name="settings_i_plus_one">Gunakan filter i+1</string>
-    <string name="settings_sentence_length">Batasi panjang kalimat</string>
-    <string name="settings_max_duration">Durasi kalimat maksimum (0 = tidak terbatas)</string>
-    <string name="settings_max_characters">Karakter kalimat maksimum (0 = tidak terbatas)</string>
+    <string name="settings_max_duration">Durasi kalimat maksimum (detik)</string>
+    <string name="settings_max_characters">Karakter kalimat maksimum</string>
     <string name="settings_reading_occurrence">Kemunculan minimum bacaan</string>
-    <string name="settings_max_frequency">Peringkat frekuensi maksimum (0 = tidak terbatas)</string>
+    <string name="settings_max_frequency">Peringkat frekuensi maksimum</string>
     <string name="settings_workers">Pekerja media paralel (1–20)</string>
+    <string name="settings_min_frequency">Peringkat frekuensi minimum</string>
+    <string name="settings_frequency_band_help">Hanya tambang kata yang peringkatnya berada dalam rentang ini. Peringkat 1 adalah kata paling umum. 0 membiarkan batas itu terbuka.</string>
+    <string name="settings_frequency_keep_unranked">Sertakan kata yang tidak ada dalam daftar frekuensi</string>
+    <string name="settings_known_words_match_kana_variants">Anggap ejaan kana dari kata yang dikenal sebagai dikenal</string>
+    <string name="settings_known_words_match_kana_variants_help">Ketika subtitel mengeja kata dalam kana (misalnya うなずく) dan bentuk kamus kanji-nya (頷く) sudah ada di koleksi Anda atau daftar kata yang dikenal, kata tersebut dilewati alih-alih dibuatkan kartu kedua. Ejaan kanji tidak pernah digabungkan dengan cara ini.</string>
+    <string name="settings_card_creation">Pembuatan kartu</string>
+    <string name="settings_strict_card_order">Buat kartu sesuai urutan kemunculan</string>
+    <string name="settings_strict_card_order_help">Menambahkan kartu ke Anki sesuai urutan kata pertama kali muncul. Jika opsi ini mati dan “Selalu mining kata dalam daftar putih” aktif, kata dalam daftar putih didahulukan.</string>
+    <string name="settings_sentence_options">Opsi kalimat</string>
+    <string name="settings_max_duration_help">Menghilangkan kartu yang audio kalimat contohnya lebih panjang dari jumlah detik ini. Setel ke 0 untuk tanpa batas.</string>
+    <string name="settings_max_characters_help">Menghilangkan kartu yang teks kalimatnya melebihi jumlah karakter ini. Setel ke 0 untuk tanpa batas.</string>
+    <string name="settings_secondary_subtitle">Subtitel sekunder</string>
+    <string name="settings_secondary_subtitle_help">Menambahkan pemilih trek subtitel terjemahan ke tab Video. Jika bidang “Sentence translation” dipetakan di Kartu &amp; Anki, barisnya dimasukkan ke kartu.</string>
+    <string name="settings_merge_incomplete_cues">Tambang kalimat utuh lintas baris subtitel</string>
+    <string name="settings_merge_incomplete_cues_help">Menggabungkan baris subtitel yang bersebelahan ketika satu baris tidak mengakhiri kalimat, sehingga kartu memuat kalimat utuh, bukan penggalan. Sumber bacaan tidak memiliki waktu subtitel dan mengabaikan opsi ini.</string>
     <string name="settings_no_dictionaries">Tidak ada kamus yang terpasang.</string>
     <string name="settings_no_frequency_sources">Tidak ada sumber frekuensi yang terpasang.</string>
     <string name="settings_no_audio_packs">Tidak ada paket audio yang terpasang.</string>
@@ -684,7 +702,7 @@
     <string name="resource_panel_dictionaries_explanation">Dicoba dari atas ke bawah; kamus pertama yang memiliki entri dipakai.</string>
     <string name="resource_panel_pitch_heading">Sumber aksen nada aktif</string>
     <string name="resource_panel_pitch_explanation">Dicoba dari atas ke bawah; sumber pertama yang memiliki entri aksen nada dipakai.</string>
-    <string name="resource_panel_audio_heading">Sumber audio aktif</string>
+    <string name="resource_panel_audio_heading">Audio kata</string>
     <string name="resource_panel_audio_explanation">Dicoba dari atas ke bawah; sumber pertama yang memiliki audio dipakai.</string>
     <string name="resource_panel_frequency_heading">Sumber frekuensi aktif</string>
     <string name="resource_panel_frequency_explanation">Peringkat terendah memfilter; rata-rata harmonik mengurutkan. Urutan hanya menentukan daftar sumber pada kartu.</string>
@@ -773,12 +791,13 @@
     <string name="anki_setup_schedule_failed">Penyiapan Anki tidak dapat dijadwalkan</string>
     <string name="notices_title">Pemberitahuan pihak ketiga</string>
     <string name="notices_documents_heading">Dokumen pemberitahuan yang dibundel</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Kartu &amp; Anki</string>
     <string name="b3_settings_category_media">Media</string>
     <string name="b3_settings_category_resources">Sumber daya</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frekuensi</string>
-    <string name="b3_settings_category_filtering">Pemfilteran</string>
+    <string name="b3_settings_category_word_filters">Filter kata</string>
+    <string name="b3_settings_category_sentences">Kalimat</string>
     <string name="b3_settings_category_ui">UI</string>
     <string name="b3_settings_category_diagnostics">Diagnostik</string>
     <string name="b3_settings_save_pending">Perubahan tertunda</string>

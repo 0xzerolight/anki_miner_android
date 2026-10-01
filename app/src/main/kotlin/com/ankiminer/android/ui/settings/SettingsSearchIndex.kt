@@ -17,8 +17,8 @@ internal data class SettingsSearchEntry(
 internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
     mapOf(
         SettingsCategory.ANKI to
-            setOf("anki-deck-options", "anki-target", "anki-operation"),
-        SettingsCategory.MEDIA to setOf("media-options", "subtitle-text"),
+            setOf("anki-deck-options", "anki-target", "anki-card-creation", "anki-operation"),
+        SettingsCategory.MEDIA to setOf("media-options"),
         SettingsCategory.RESOURCES to
             setOf(
                 "dictionary-sources",
@@ -27,13 +27,14 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
                 "frequency-sources",
                 "dictionary-lookup",
             ),
-        SettingsCategory.FILTERING to
+        SettingsCategory.WORD_FILTERS to
             setOf(
                 "filtering-options",
                 "known-words-import",
                 "word-lists",
                 "filtering-import-result",
             ),
+        SettingsCategory.SENTENCES to setOf("subtitle-text", "sentence-options"),
         SettingsCategory.UI to setOf("ui-options"),
         SettingsCategory.DIAGNOSTICS to
             setOf(
@@ -60,7 +61,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
     listOf(
         // Anki
         entry("anki.deck_name", SettingsCategory.ANKI, "anki-deck-options", R.string.settings_deck_name),
-        entry("anki.excluded_decks", SettingsCategory.ANKI, "anki-deck-options", R.string.settings_excluded_decks),
         entry(
             "anki.tags",
             SettingsCategory.ANKI,
@@ -90,6 +90,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "anki-target",
             R.string.anki_card_type_marker_field,
             R.string.anki_card_type_marker_missing,
+        ),
+        entry(
+            "anki.strict_card_order",
+            SettingsCategory.ANKI,
+            "anki-card-creation",
+            R.string.settings_strict_card_order,
+            R.string.settings_strict_card_order_help,
         ),
 
         // Media
@@ -126,20 +133,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         entry("media.subtitle_offset", SettingsCategory.MEDIA, "media-options", R.string.settings_subtitle_offset),
         entry("media.audio_bitrate", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_bitrate),
         entry("media.audio_format", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_format),
-        entry("media.subtitle_regex", SettingsCategory.MEDIA, "subtitle-text", R.string.settings_subtitle_regex),
-        entry(
-            "media.subtitle_replacement",
-            SettingsCategory.MEDIA,
-            "subtitle-text",
-            R.string.settings_subtitle_replacement,
-        ),
-        entry(
-            "media.use_subtitle_regex",
-            SettingsCategory.MEDIA,
-            "subtitle-text",
-            R.string.settings_use_subtitle_regex,
-        ),
-        entry("media.subtitle_presets", SettingsCategory.MEDIA, "subtitle-text", R.string.settings_subtitle_presets),
 
         // Dictionaries
         // The recommended set is installed from the panel's Add menu, so searching for it has to
@@ -227,86 +220,149 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.resource_panel_add_frequency,
         ),
 
-        // Filtering
+        // Word filters
         entry(
-            "filtering.known_words_db",
-            SettingsCategory.FILTERING,
+            "word_filters.min_frequency",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_min_frequency,
+            R.string.settings_frequency_band_help,
+        ),
+        entry(
+            "word_filters.max_frequency",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_max_frequency,
+            R.string.settings_frequency_band_help,
+        ),
+        entry(
+            "word_filters.frequency_keep_unranked",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_frequency_keep_unranked,
+        ),
+        entry(
+            "word_filters.known_words_db",
+            SettingsCategory.WORD_FILTERS,
             "filtering-options",
             R.string.settings_known_words,
         ),
         entry(
-            "filtering.exclude_hiragana",
-            SettingsCategory.FILTERING,
+            "word_filters.kana_variants",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_known_words_match_kana_variants,
+            R.string.settings_known_words_match_kana_variants_help,
+        ),
+        entry(
+            "word_filters.excluded_decks",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_excluded_decks,
+        ),
+        entry(
+            "word_filters.exclude_hiragana",
+            SettingsCategory.WORD_FILTERS,
             "filtering-options",
             R.string.settings_exclude_hiragana,
         ),
         entry(
-            "filtering.exclude_katakana",
-            SettingsCategory.FILTERING,
+            "word_filters.exclude_katakana",
+            SettingsCategory.WORD_FILTERS,
             "filtering-options",
             R.string.settings_exclude_katakana,
         ),
-        entry("filtering.bold_target", SettingsCategory.FILTERING, "filtering-options", R.string.settings_bold_target),
-        entry("filtering.deduplicate", SettingsCategory.FILTERING, "filtering-options", R.string.settings_deduplicate),
-        entry("filtering.i_plus_one", SettingsCategory.FILTERING, "filtering-options", R.string.settings_i_plus_one),
         entry(
-            "filtering.sentence_length",
-            SettingsCategory.FILTERING,
-            "filtering-options",
-            R.string.settings_sentence_length,
-        ),
-        entry(
-            "filtering.max_duration",
-            SettingsCategory.FILTERING,
-            "filtering-options",
-            R.string.settings_max_duration,
-        ),
-        entry(
-            "filtering.max_characters",
-            SettingsCategory.FILTERING,
-            "filtering-options",
-            R.string.settings_max_characters,
-        ),
-        entry(
-            "filtering.reading_occurrence",
-            SettingsCategory.FILTERING,
+            "word_filters.reading_occurrence",
+            SettingsCategory.WORD_FILTERS,
             "filtering-options",
             R.string.settings_reading_occurrence,
         ),
+        entry("word_filters.workers", SettingsCategory.WORD_FILTERS, "filtering-options", R.string.settings_workers),
+        entry("word_filters.wordsets", SettingsCategory.WORD_FILTERS, "filtering-options", R.string.settings_wordsets),
         entry(
-            "filtering.max_frequency",
-            SettingsCategory.FILTERING,
-            "filtering-options",
-            R.string.settings_max_frequency,
-        ),
-        entry("filtering.workers", SettingsCategory.FILTERING, "filtering-options", R.string.settings_workers),
-        entry("filtering.wordsets", SettingsCategory.FILTERING, "filtering-options", R.string.settings_wordsets),
-        entry(
-            "filtering.known_words_import",
-            SettingsCategory.FILTERING,
+            "word_filters.known_words_import",
+            SettingsCategory.WORD_FILTERS,
             "known-words-import",
             R.string.known_words_import_title,
         ),
         entry(
-            "filtering.known_words_manage",
-            SettingsCategory.FILTERING,
+            "word_filters.known_words_manage",
+            SettingsCategory.WORD_FILTERS,
             "known-words-import",
             R.string.b3_known_words_manage,
         ),
         entry(
-            "filtering.blacklist",
-            SettingsCategory.FILTERING,
+            "word_filters.blacklist",
+            SettingsCategory.WORD_FILTERS,
             "word-lists",
             R.string.settings_use_blacklist,
             R.string.word_lists_format,
         ),
         entry(
-            "filtering.whitelist",
-            SettingsCategory.FILTERING,
+            "word_filters.whitelist",
+            SettingsCategory.WORD_FILTERS,
             "word-lists",
             R.string.settings_use_whitelist,
             R.string.word_list_whitelist_scope,
         ),
+
+        // Sentences
+        entry("sentences.subtitle_regex", SettingsCategory.SENTENCES, "subtitle-text", R.string.settings_subtitle_regex),
+        entry(
+            "sentences.subtitle_replacement",
+            SettingsCategory.SENTENCES,
+            "subtitle-text",
+            R.string.settings_subtitle_replacement,
+        ),
+        entry(
+            "sentences.use_subtitle_regex",
+            SettingsCategory.SENTENCES,
+            "subtitle-text",
+            R.string.settings_use_subtitle_regex,
+        ),
+        entry(
+            "sentences.subtitle_presets",
+            SettingsCategory.SENTENCES,
+            "subtitle-text",
+            R.string.settings_subtitle_presets,
+        ),
+        entry(
+            "sentences.deduplicate",
+            SettingsCategory.SENTENCES,
+            "sentence-options",
+            R.string.settings_deduplicate,
+        ),
+        entry("sentences.i_plus_one", SettingsCategory.SENTENCES, "sentence-options", R.string.settings_i_plus_one),
+        entry(
+            "sentences.max_duration",
+            SettingsCategory.SENTENCES,
+            "sentence-options",
+            R.string.settings_max_duration,
+            R.string.settings_max_duration_help,
+        ),
+        entry(
+            "sentences.max_characters",
+            SettingsCategory.SENTENCES,
+            "sentence-options",
+            R.string.settings_max_characters,
+            R.string.settings_max_characters_help,
+        ),
+        entry(
+            "sentences.secondary_subtitle",
+            SettingsCategory.SENTENCES,
+            "sentence-options",
+            R.string.settings_secondary_subtitle,
+            R.string.settings_secondary_subtitle_help,
+        ),
+        entry(
+            "sentences.merge_incomplete_cues",
+            SettingsCategory.SENTENCES,
+            "sentence-options",
+            R.string.settings_merge_incomplete_cues,
+            R.string.settings_merge_incomplete_cues_help,
+        ),
+        entry("sentences.bold_target", SettingsCategory.SENTENCES, "sentence-options", R.string.settings_bold_target),
 
         // UI
         entry("ui.theme", SettingsCategory.UI, "ui-options", R.string.settings_theme_mode),

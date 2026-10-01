@@ -12,7 +12,7 @@ from android_bridge.callbacks import (
     AnkiCallbackError,
     CallbackAdapters,
 )
-from android_bridge.jobs import JobRegistry
+from android_bridge.jobs import JobRegistry, SentencePreview
 from android_bridge.protocol import BridgeProtocolError, encode_message
 
 _RUN_ID = "run_" + "a" * 32
@@ -189,11 +189,13 @@ def _capturing_await_curation(captured: dict[str, object]) -> object:
         allow_line_expansion: bool = False,
         allow_clip_override: bool = False,
         sentence_context: object = None,
+        sentence_preview: object = None,
         known_words_target: object = None,
     ) -> list[object] | None:
         captured["allow_line_expansion"] = allow_line_expansion
         captured["allow_clip_override"] = allow_clip_override
         captured["sentence_context"] = sentence_context
+        captured["sentence_preview"] = sentence_preview
         captured["known_words_target"] = known_words_target
         return None
 
@@ -236,6 +238,26 @@ def test_curate_forwards_the_runs_known_words_target(monkeypatch: pytest.MonkeyP
     adapters.curate([])
 
     assert captured["known_words_target"] is target
+
+
+def test_curate_forwards_sentence_preview_to_await_curation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = JobRegistry()
+    handle = registry.begin()
+    adapters = CallbackAdapters(RecordingCallbacks(), registry, handle)
+    assert adapters.sentence_preview is None
+
+    def preview(word: object) -> SentencePreview:
+        return SentencePreview(line_expansion=(0, 1), translation="")
+
+    adapters.sentence_preview = preview
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(registry, "await_curation", _capturing_await_curation(captured))
+
+    adapters.curate([])
+
+    assert captured["sentence_preview"] is preview
 
 
 def test_curate_withholds_line_expansion_and_clip_override_by_default(

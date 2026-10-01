@@ -46,7 +46,9 @@
     "knownPageMaxUtf8Bytes": 262144,
     "knownTotalScannedExcludedRows": 1000000,
     "knownCursorMaxCodePoints": 1024,
-    "knownCursorMaxUtf8Bytes": 1024
+    "knownCursorMaxUtf8Bytes": 1024,
+    "noteTypesMaxItems": 1024,
+    "noteTypesMaxUtf8Bytes": 524288
   },
   "storeMedia": {
     "requestEnvelopeMaxUtf8Bytes": 2097152,

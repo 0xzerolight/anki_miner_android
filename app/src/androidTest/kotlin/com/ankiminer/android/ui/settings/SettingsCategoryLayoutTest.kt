@@ -62,7 +62,7 @@ class SettingsCategoryLayoutTest {
             .performScrollToIndex(22)
         composeRule.onNodeWithText("MEDIA row 20").assertIsDisplayed()
 
-        composeRule.onNodeWithText("Anki").performClick()
+        composeRule.onNodeWithText("Cards & Anki").performClick()
         composeRule.onNodeWithText("ANKI row 50").assertIsDisplayed()
         composeRule.onNodeWithText("MEDIA row 20").assertDoesNotExist()
     }

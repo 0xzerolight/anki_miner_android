@@ -195,6 +195,7 @@ internal class BridgeMiningRepository(
             if (
                 run.input.video != input.video ||
                 run.input.subtitle != input.subtitle ||
+                run.input.secondarySubtitle != input.secondarySubtitle ||
                 run.sourcesDetached ||
                 run.phase == Phase.FINALIZING
             ) {
@@ -464,6 +465,7 @@ internal class BridgeMiningRepository(
                 if (run.cancellation.isCancelled()) return
                 val videoPath: String
                 val subtitlePath: String
+                val secondarySubtitlePath: String?
                 try {
                     inputOwner =
                         inputOwnerFactory.create(run.cancellation) { copy ->
@@ -495,6 +497,9 @@ internal class BridgeMiningRepository(
                     videoPath = inputOwner.openVideo(run.input.video)
                     if (run.cancellation.isCancelled()) return
                     subtitlePath = inputOwner.materializeSubtitle(run.input.subtitle)
+                    if (run.cancellation.isCancelled()) return
+                    // Staged like the primary track: the engine parses it in-process by suffix.
+                    secondarySubtitlePath = run.input.secondarySubtitle?.let(inputOwner::materializeSubtitle)
                     synchronized(monitor) {
                         run.videoCachePath = videoPath
                         run.subtitleCachePath = subtitlePath
@@ -525,6 +530,8 @@ internal class BridgeMiningRepository(
                                 cacheDir = runtimePaths.cacheDir.canonicalPath,
                                 nativeLibraryDir = runtimePaths.nativeLibraryDir.canonicalPath,
                                 configSnapshot = requireNotNull(run.configSnapshot),
+                                secondarySubtitlePath = secondarySubtitlePath,
+                                secondarySubtitleOffsetMs = run.input.secondarySubtitleOffsetMs,
                             ),
                         ),
                         RunCallbacks(generation),
@@ -700,7 +707,9 @@ internal class BridgeMiningRepository(
             if (detachedInput != null) {
                 val videoFault = releaseDetachedSource(detachedInput.video.uri)
                 val subtitleFault = releaseDetachedSource(detachedInput.subtitle.uri)
-                detachedCleanupFault = videoFault ?: subtitleFault
+                val secondaryFault =
+                    detachedInput.secondarySubtitle?.let { releaseDetachedSource(it.uri) }
+                detachedCleanupFault = videoFault ?: subtitleFault ?: secondaryFault
             }
 
             val finalState: MiningRunState

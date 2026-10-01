@@ -91,6 +91,7 @@ import com.ankiminer.android.ui.mining.curationRowContainerColor
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
+import com.ankiminer.android.ui.mining.translationFor
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PhaseTitle
@@ -132,6 +133,9 @@ fun VideoMiningScreen(
     onConfirmUndo: () -> Unit = {},
     onDismissUndoConfirmation: () -> Unit = {},
     onSubtitleOffsetDraftChange: (String) -> Unit = {},
+    onPickSecondarySubtitle: () -> Unit = {},
+    onClearSecondarySubtitle: () -> Unit = {},
+    onSecondarySubtitleOffsetDraftChange: (String) -> Unit = {},
     onTestTiming: () -> Unit = {},
     audioTrackPicker: AudioTrackPickerState? = null,
     onAudioTracks: () -> Unit = {},
@@ -426,6 +430,10 @@ fun VideoMiningScreen(
                                 onDismissCommandError = onDismissCommandError,
                                 onDismissTimingPreviewError = onDismissTimingPreviewError,
                                 onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
+                                onPickSecondarySubtitle = onPickSecondarySubtitle,
+                                onClearSecondarySubtitle = onClearSecondarySubtitle,
+                                onSecondarySubtitleOffsetDraftChange =
+                                    onSecondarySubtitleOffsetDraftChange,
                                 onTestTiming = onTestTiming,
                                 onAudioTracks = onAudioTracks,
                                 onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
@@ -655,6 +663,9 @@ private fun LazyListScope.setupItems(
     onDismissCommandError: () -> Unit,
     onDismissTimingPreviewError: () -> Unit,
     onSubtitleOffsetDraftChange: (String) -> Unit,
+    onPickSecondarySubtitle: () -> Unit,
+    onClearSecondarySubtitle: () -> Unit,
+    onSecondarySubtitleOffsetDraftChange: (String) -> Unit,
     onTestTiming: () -> Unit,
     onAudioTracks: () -> Unit,
     onDismissAudioTrackPickerError: () -> Unit,
@@ -696,7 +707,20 @@ private fun LazyListScope.setupItems(
                         onPick = onPickSubtitle,
                         onClear = onClearSubtitle,
                     ),
-                ),
+                ) +
+                    listOfNotNull(
+                        MiningSourceItem(
+                            label = stringResource(R.string.video_secondary_subtitle_label),
+                            document = state.secondarySubtitle.document,
+                            isResolving = state.secondarySubtitle.isResolving,
+                            enabled = !state.startPending && !state.timingPreviewPending,
+                            pickTestTag = VideoMiningTestTags.PICK_SECONDARY_SUBTITLE,
+                            clearTestTag = VideoMiningTestTags.CLEAR_SECONDARY_SUBTITLE,
+                            readKind = DocumentReadKind.SUBTITLES,
+                            onPick = onPickSecondarySubtitle,
+                            onClear = onClearSecondarySubtitle,
+                        ).takeIf { state.secondarySubtitleEnabled },
+                    ),
         )
     }
     item(key = "subtitle_offset", contentType = "field") {
@@ -720,6 +744,22 @@ private fun LazyListScope.setupItems(
             },
         )
     }
+    if (state.secondarySubtitleEnabled) {
+        item(key = "secondary_subtitle_offset", contentType = "field") {
+            NumericField(
+                value = state.secondarySubtitleOffsetDraft,
+                onChange = onSecondarySubtitleOffsetDraftChange,
+                label = stringResource(R.string.video_secondary_subtitle_offset_label),
+                allowNegative = true,
+                integer = true,
+                enabled = !state.timingPreviewPending,
+                error =
+                    stringResource(R.string.video_secondary_subtitle_offset_error)
+                        .takeIf { state.secondarySubtitleOffsetDraftInvalid },
+                modifier = Modifier.testTag(VideoMiningTestTags.SECONDARY_SUBTITLE_OFFSET_FIELD),
+            )
+        }
+    }
     state.video.error?.let { error ->
         item(key = "video_file_error", contentType = "actions") {
             MiningFailureCard(
@@ -730,6 +770,8 @@ private fun LazyListScope.setupItems(
                             DocumentSelectionError.AUDIO_TYPE ->
                                 R.string.audio_selection_error_type
                             DocumentSelectionError.SUBTITLE -> R.string.subtitle_file_error
+                            DocumentSelectionError.SECONDARY_SUBTITLE ->
+                                R.string.secondary_subtitle_file_error
                         },
                     ),
                 primaryAction =
@@ -748,6 +790,20 @@ private fun LazyListScope.setupItems(
                     MiningFailureAction(
                         label = stringResource(R.string.dismiss_error),
                         onClick = { onDismissDocumentError(DocumentSelectionError.SUBTITLE) },
+                    ),
+            )
+        }
+    }
+    state.secondarySubtitle.error?.takeIf { state.secondarySubtitleEnabled }?.let {
+        item(key = "secondary_subtitle_file_error", contentType = "actions") {
+            MiningFailureCard(
+                message = stringResource(R.string.secondary_subtitle_file_error),
+                primaryAction =
+                    MiningFailureAction(
+                        label = stringResource(R.string.dismiss_error),
+                        onClick = {
+                            onDismissDocumentError(DocumentSelectionError.SECONDARY_SUBTITLE)
+                        },
                     ),
             )
         }
@@ -1052,6 +1108,7 @@ private fun LazyListScope.curationItems(
                     val onClick = {
                         onSelectSentence(candidate.candidateId, sentence.sentenceId)
                     }
+                    val chosen = sentence.sentenceId == curation.sentenceIds[candidate.candidateId]
                     item(
                         key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
                         contentType = "sentence",
@@ -1061,8 +1118,7 @@ private fun LazyListScope.curationItems(
                             sentence = sentence,
                             containerColor =
                                 curationRowContainerColor(selected, animateSelection),
-                            selected =
-                                sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
+                            selected = chosen,
                             enabled = enabled,
                             isLast = index == candidate.sentences.lastIndex,
                             testTag = sentenceTestTag,
@@ -1073,6 +1129,12 @@ private fun LazyListScope.curationItems(
                                         curationGroupGap(last = index == candidate.sentences.lastIndex),
                                 ),
                             selectable = layout.selectable,
+                            translation =
+                                if (chosen) {
+                                    sentence.translationFor(curation.lineExpansions[candidate.candidateId])
+                                } else {
+                                    sentence.translation
+                                },
                         )
                     }
                 }
@@ -1093,6 +1155,8 @@ private fun LazyListScope.curationItems(
                         onClick = {
                             onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
                         },
+                        translation =
+                            layout.chosen.translationFor(curation.lineExpansions[candidate.candidateId]),
                     )
                 }
                 item(
@@ -1143,6 +1207,7 @@ private fun LazyListScope.curationItems(
                                                 last = index == layout.alternatives.lastIndex,
                                             ),
                                     ),
+                                translation = sentence.translation,
                             )
                         }
                     }

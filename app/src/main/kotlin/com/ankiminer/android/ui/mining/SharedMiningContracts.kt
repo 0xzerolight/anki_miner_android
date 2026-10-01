@@ -6,6 +6,7 @@ import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
+import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -156,14 +157,20 @@ internal data class SharedCurationDraft(
         val candidate =
             request.candidates.singleOrNull { it.candidateId == candidateId }
                 ?: return null
-        if (candidate.sentences.none { it.sentenceId == sentenceId }) return null
+        val picked = candidate.sentences.firstOrNull { it.sentenceId == sentenceId } ?: return null
         val current = forRequest(request)
         val changed = current.sentenceIds[candidateId] != sentenceId
         // A different base sentence invalidates the merged window and the trimmed clip alike; the
-        // same pick keeps both.
+        // same pick keeps both. The new window starts from the picked sentence's own automatic
+        // merge, as desktop re-derives it on a pick.
         return current.copy(
             sentenceIds = current.sentenceIds + (candidateId to sentenceId),
-            lineExpansions = if (changed) current.lineExpansions - candidateId else current.lineExpansions,
+            lineExpansions =
+                if (changed) {
+                    current.lineExpansions.withExpansion(candidateId, picked.autoExpansion)
+                } else {
+                    current.lineExpansions
+                },
             clipOverrides = if (changed) current.clipOverrides - candidateId else current.clipOverrides,
         )
     }
@@ -248,6 +255,10 @@ internal data class SharedCurationDraft(
     }
 }
 
+/**
+ * Every candidate starts on its default sentence and that sentence's automatic merge, so the
+ * curator opens on the window an untouched card mines and Reset can undo it.
+ */
 internal fun CurationRequest.defaultCurationDraft(): SharedCurationDraft =
     SharedCurationDraft(
         runId = runId,
@@ -257,7 +268,26 @@ internal fun CurationRequest.defaultCurationDraft(): SharedCurationDraft =
         sentenceIds = candidates.associate { it.candidateId to it.defaultSentenceId },
         focusedCandidateId = null,
         knownCandidateIds = emptySet(),
+        lineExpansions =
+            candidates.fold(emptyMap()) { expansions, candidate ->
+                val default = candidate.sentences.first { it.sentenceId == candidate.defaultSentenceId }
+                expansions.withExpansion(candidate.candidateId, default.autoExpansion)
+            },
     )
+
+private fun Map<String, CurationLineExpansion>.withExpansion(
+    candidateId: String,
+    expansion: CurationLineExpansion?,
+): Map<String, CurationLineExpansion> =
+    if (expansion == null) this - candidateId else this + (candidateId to expansion)
+
+/**
+ * The sentence's translation while the candidate still mines the window it was matched over: its
+ * own automatic merge. A "+ line" or Reset moves the window, and the card's translation moves with
+ * it, so the stale line is withheld rather than shown.
+ */
+internal fun CurationSentence.translationFor(expansion: CurationLineExpansion?): String? =
+    translation?.takeIf { expansion == autoExpansion }
 
 internal fun CurationSessionState.draftFor(
     request: CurationRequest,

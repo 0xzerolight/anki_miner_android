@@ -577,6 +577,36 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun anInvertedFrequencyBandIsNeverPersistedByAutosaveOrFlush() =
+        runTest(mainDispatcherRule.dispatcher) {
+            // The path the band ordering cannot see: Back closes the keyboard but keeps focus, so
+            // nothing orders the band before the debounce and the stop flush write it.
+            val repository =
+                FakeAppSettingsRepository(
+                    AppSettings(minFrequencyRank = 1000, maxFrequencyRank = 5000),
+                )
+            val viewModel = SettingsViewModel(repository, FakeResourceManager(resources("first")))
+            advanceUntilIdle()
+
+            viewModel.updateDraft(viewModel.draftState.value.draft.copy(minFrequency = "8000"))
+            advanceUntilIdle()
+            viewModel.flushPendingWrites()
+            advanceUntilIdle()
+
+            assertEquals(1000, repository.current.minFrequencyRank)
+            assertEquals(5000, repository.current.maxFrequencyRank)
+
+            // Once the field is left, the ordered band is what gets stored.
+            viewModel.updateDraft(
+                viewModel.draftState.value.draft.withOrderedFrequencyBand(FrequencyBandEnd.MIN),
+            )
+            advanceUntilIdle()
+
+            assertEquals(8000, repository.current.minFrequencyRank)
+            assertEquals(8000, repository.current.maxFrequencyRank)
+        }
+
+    @Test
     fun lifecycleFlushSurvivesViewModelScopeCancellation() =
         runTest(mainDispatcherRule.dispatcher) {
             val writeStarted = CompletableDeferred<Unit>()
@@ -889,6 +919,7 @@ class SettingsViewModelTest {
             EngineDefaults.READING_MINIMUM_OCCURRENCE.toString(),
             draft.readingOccurrence,
         )
+        assertEquals(EngineDefaults.MIN_FREQUENCY_RANK.toString(), draft.minFrequency)
         assertEquals(EngineDefaults.MAX_FREQUENCY_RANK.toString(), draft.maxFrequency)
         assertEquals(EngineDefaults.MAX_PARALLEL_WORKERS.toString(), draft.workers)
         // A prefilled value the validators reject would block every settings write behind a field
@@ -912,6 +943,7 @@ class SettingsViewModelTest {
         assertNull(saved.maxSentenceDurationSeconds)
         assertNull(saved.maxSentenceCharacters)
         assertNull(saved.readingMinimumOccurrence)
+        assertNull(saved.minFrequencyRank)
         assertNull(saved.maxFrequencyRank)
         assertNull(saved.maxParallelWorkers)
         // Nothing else drifted either: the prefill is display text, not stored state.

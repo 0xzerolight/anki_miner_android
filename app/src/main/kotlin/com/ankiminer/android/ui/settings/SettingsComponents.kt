@@ -304,6 +304,7 @@ internal fun NullableToggle(
     label: String,
     value: Boolean?,
     desktopDefault: Boolean,
+    enabled: Boolean = true,
     onChange: (Boolean?) -> Unit,
 ) {
     val resolved = value ?: desktopDefault
@@ -315,6 +316,7 @@ internal fun NullableToggle(
             .heightIn(min = AnkiMinerTokens.Layout.minTouchTarget)
             .toggleable(
                 value = resolved,
+                enabled = enabled,
                 role = Role.Checkbox,
                 onValueChange = { onChange(it) },
             ).padding(vertical = AnkiMinerTokens.Space.line)
@@ -326,8 +328,15 @@ internal fun NullableToggle(
             text = label,
             modifier = Modifier.weight(1f),
             fontWeight = if (overridden) FontWeight.Medium else null,
+            // Same disabled treatment as BooleanSetting's label.
+            color =
+                if (enabled) {
+                    Color.Unspecified
+                } else {
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = DISABLED_CONTENT_ALPHA)
+                },
         )
-        Checkbox(checked = resolved, onCheckedChange = null)
+        Checkbox(checked = resolved, onCheckedChange = null, enabled = enabled)
     }
 }
 

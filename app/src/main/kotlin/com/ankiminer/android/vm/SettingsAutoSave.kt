@@ -35,6 +35,7 @@ internal fun settingsWriteCadence(
             maxDuration = previous.maxDuration,
             maxCharacters = previous.maxCharacters,
             readingOccurrence = previous.readingOccurrence,
+            minFrequency = previous.minFrequency,
             maxFrequency = previous.maxFrequency,
             workers = previous.workers,
             subtitleRegex = previous.subtitleRegex,

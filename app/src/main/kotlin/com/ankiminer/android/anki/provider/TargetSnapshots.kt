@@ -110,6 +110,55 @@ internal object ProviderSnapshotValidation {
         return if (separator < 0) raw else raw.substring(0, separator)
     }
 
+    /**
+     * The values at [ordinals], which strictly ascend from 0. A field the note does not have (its
+     * stored field list is shorter than its note type's) reads as empty, the way desktop's
+     * resolver skips a row that lacks the chosen field. Only the requested fields are allocated.
+     */
+    fun fieldsAt(
+        raw: String,
+        ordinals: List<Int>,
+    ): List<String> {
+        val result = ArrayList<String>(ordinals.size)
+        var ordinal = 0
+        var start = 0
+        while (result.size < ordinals.size) {
+            val separator = raw.indexOf(FIELD_SEPARATOR, start)
+            val end = if (separator < 0) raw.length else separator
+            if (ordinal == ordinals[result.size]) result += raw.substring(start, end)
+            if (separator < 0) break
+            start = separator + 1
+            ordinal += 1
+        }
+        while (result.size < ordinals.size) result += ""
+        return result
+    }
+
+    /**
+     * A note type's field names for the known-vocabulary scan, or null when its name or field
+     * names fall outside the v1 name limits. Unlike [validateModelBase] it accepts any model type
+     * and template set: the scan reads every note type, the mining target only one.
+     */
+    fun noteTypeFieldNames(
+        name: String,
+        rawFieldNames: String,
+    ): List<String>? =
+        try {
+            validateCanonicalName(name, AnkiLimitsV1.Names.Model.MAX_CODE_POINTS, AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES)
+            val fieldNames = splitFieldsPreservingTrailing(rawFieldNames)
+            requireTarget(fieldNames.distinct().size == fieldNames.size)
+            var fieldBytes = 0
+            for (field in fieldNames) {
+                fieldBytes +=
+                    validateCanonicalName(field, AnkiLimitsV1.Names.Field.MAX_CODE_POINTS, AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES)
+            }
+            requireTarget(fieldBytes <= AnkiLimitsV1.Names.TargetFields.MAX_TOTAL_UTF8_BYTES)
+            fieldNames
+            // instrumentation: silent — an unlisted note type is read from its first field, as before
+        } catch (_: InvalidTargetSnapshotException) {
+            null
+        }
+
     fun validateModelBase(
         id: Long,
         name: String,
@@ -258,6 +307,20 @@ internal object ProviderSnapshotValidation {
             AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
         )
         requireTarget(!snapshot.dynamic)
+    }
+
+    /**
+     * A later projected field's UTF-8 size, or null when it falls outside the per-value contract
+     * [validateFirstField] enforces (an invalid scalar, or over its caps). The known-vocabulary
+     * scan reads such a value as empty instead of failing: only first fields ever could.
+     */
+    fun boundedFieldBytesOrNull(value: String): Int? {
+        val scalarCount = UnicodeContractV151.scalarCount(value) ?: return null
+        val utf8Bytes = UnicodeContractV151.strictUtf8Length(value) ?: return null
+        return utf8Bytes.takeIf {
+            scalarCount <= AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_CODE_POINTS &&
+                utf8Bytes <= AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES
+        }
     }
 
     fun validateFirstField(value: String): Int {

@@ -50,7 +50,8 @@ internal enum class SettingsCategory(
     ANKI(R.string.b3_settings_category_anki),
     MEDIA(R.string.b3_settings_category_media),
     RESOURCES(R.string.b3_settings_category_resources),
-    FILTERING(R.string.b3_settings_category_filtering),
+    WORD_FILTERS(R.string.b3_settings_category_word_filters),
+    SENTENCES(R.string.b3_settings_category_sentences),
     UI(R.string.b3_settings_category_ui),
     DIAGNOSTICS(R.string.b3_settings_category_diagnostics),
 }
@@ -60,6 +61,8 @@ internal object SettingsCategoryTestTags {
     const val SEARCH = "settings-search"
     const val ANIMATED_SCREENSHOT_DURATION = "settings-animated-screenshot-duration"
     const val ANIMATED_SCREENSHOT_QUALITY = "settings-animated-screenshot-quality"
+    const val MIN_FREQUENCY = "settings-min-frequency"
+    const val MAX_FREQUENCY = "settings-max-frequency"
 }
 
 /** Width of the fade drawn over each scrollable edge of the category tab strip. */
@@ -82,7 +85,7 @@ internal fun settingsCategoryFor(origin: ResourceFailureOrigin): SettingsCategor
         -> SettingsCategory.RESOURCES
         ResourceFailureOrigin.KNOWN_WORDS,
         ResourceFailureOrigin.WORD_LIST,
-        -> SettingsCategory.FILTERING
+        -> SettingsCategory.WORD_FILTERS
     }
 
 internal fun settingsCategoryFor(origin: AnkiSetupFailureOrigin): SettingsCategory =
@@ -114,7 +117,7 @@ internal fun settingsCardIndexFor(origin: ResourceFailureOrigin): Int =
         ResourceFailureOrigin.DICTIONARY_LOOKUP -> 6
         // Diagnostics: diagnostic-runtime(2), unidic(3).
         ResourceFailureOrigin.UNIDIC -> 3
-        // Filtering: filtering-options(2), known-words-import(3), word-lists(4).
+        // Word filters: filtering-options(2), known-words-import(3), word-lists(4).
         ResourceFailureOrigin.KNOWN_WORDS -> 3
         ResourceFailureOrigin.WORD_LIST -> 4
     }
@@ -221,7 +224,7 @@ internal fun SettingsCategoryLayout(
                     )
                     PrimaryScrollableTabRow(
                         selectedTabIndex = selectedCategory.ordinal,
-                        // Six word labels still overrun a 320dp screen, so the strip scrolls.
+                        // Seven labels overrun a 320dp screen, so the strip scrolls.
                         // These fades are the affordance that the rest of it exists; shortening
                         // the labels would buy ~40dp and cost clarity on the two least
                         // self-evident tabs.

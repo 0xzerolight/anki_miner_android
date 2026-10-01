@@ -5,8 +5,12 @@ import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiJsonCodec
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
+import com.ankiminer.android.anki.protocol.KnownNote
 import com.ankiminer.android.anki.protocol.KnownVocabularyResult
 import com.ankiminer.android.anki.protocol.KnownVocabularyScope
+import com.ankiminer.android.anki.protocol.NoteTypeFields
+import com.ankiminer.android.anki.protocol.NoteTypesResult
+import com.ankiminer.android.anki.protocol.NoteTypesScope
 import com.ankiminer.android.anki.protocol.RawFirstFieldHit
 import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
@@ -229,8 +233,34 @@ internal class AnkiProviderReadService(
     ) =
         when (val scope = request.scope) {
             is KnownVocabularyScope -> scanKnownVocabulary(owner, request, scope)
+            NoteTypesScope -> scanNoteTypes(owner, request)
             is DuplicateScanScope -> scanDuplicates(owner, request, scope)
         }
+
+    /**
+     * The note-type table Python picks each type's expression fields from. Listed by ascending ID
+     * until either budget would be exceeded; a note type left out is read from its first field,
+     * which is what the scan did for every note type before.
+     */
+    private fun scanNoteTypes(
+        owner: AnkiRunStateRegistry.RunOwner,
+        request: ScanFirstFieldsRequest,
+    ): NoteTypesResult {
+        val cancellation = registry.cancellation(owner)
+        ensureActive(cancellation)
+        val listed = ArrayList<NoteTypeFields>()
+        var totalBytes = 0
+        for (noteType in targets.listNoteTypeFields(cancellation).sortedBy(NoteTypeFields::modelId)) {
+            if (listed.size == AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_ITEM_COUNT) break
+            val bytes = (listOf(noteType.name) + noteType.fieldNames).sumOf { it.toByteArray(Charsets.UTF_8).size }
+            if (totalBytes + bytes > AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_UTF8_BYTES) break
+            totalBytes += bytes
+            listed += noteType
+        }
+        val response = NoteTypesResult(request.runId, request.requestId, listed)
+        preflightCanonicalResponse(request, response)
+        return response
+    }
 
     private fun scanKnownVocabulary(
         owner: AnkiRunStateRegistry.RunOwner,
@@ -238,7 +268,7 @@ internal class AnkiProviderReadService(
         scope: KnownVocabularyScope,
     ): KnownVocabularyResult {
         val cancellation = registry.cancellation(owner)
-        val traversalScope = KnownTraversalScope(excludedDecks = scope.excludedDecks)
+        val traversalScope = KnownTraversalScope(excludedDecks = scope.excludedDecks, fieldOrdinals = scope.fieldOrdinals)
         val lease =
             if (scope.cursor == null) {
                 val initialization = registry.beginKnownTraversal(owner, traversalScope)
@@ -253,7 +283,8 @@ internal class AnkiProviderReadService(
                 registry.reserveKnownPage(owner, traversalScope, scope.cursor)
             }
         try {
-            val page = readKnownPageAfter(lease.fromId, lease.excludedNoteIds, cancellation)
+            val projections = scope.fieldOrdinals.associate { it.modelId to it.ordinals }
+            val page = readKnownPageAfter(lease.fromId, lease.excludedNoteIds, projections, cancellation)
             val nextToken =
                 if (page.observation.hasMoreAfterPage) tokenFactory.nextToken(KNOWN_CURSOR_PREFIX) else null
             val expectedNextCursor =
@@ -267,7 +298,7 @@ internal class AnkiProviderReadService(
                 KnownVocabularyResult(
                     runId = request.runId,
                     requestId = request.requestId,
-                    firstFields = page.firstFields,
+                    notes = page.notes,
                     scannedNotes = page.scannedNotes,
                     nextCursor = expectedNextCursor,
                 )
@@ -328,13 +359,16 @@ internal class AnkiProviderReadService(
      * One keyset page: every note ordered after [fromId], capped at the page's item count and
      * its byte budget, whichever fills first.
      *
-     * The page reads its own note IDs and first fields in a single query. There is no prior
+     * The page reads its own note IDs, note types and fields in a single query. There is no prior
      * collection-wide ID snapshot to slice, which is what let a collection size refuse the scan
      * outright; the walk now costs one indexed seek per page and holds nothing per collection.
+     * A note whose type is in [projections] returns the fields at those ordinals; every other
+     * note returns its first field.
      */
     private fun readKnownPageAfter(
         fromId: Long,
         excludedNoteIds: Set<Long>,
+        projections: Map<Long, List<Int>>,
         cancellation: AnkiCancellation,
     ): KnownPage {
         val query =
@@ -345,7 +379,7 @@ internal class AnkiProviderReadService(
                 sortOrder = ProviderOrder.NOTE_ID_ASCENDING,
                 deadline = ProviderReadDeadline.BULK,
             )
-        val firstFields = ArrayList<String>()
+        val notes = ArrayList<KnownNote>()
         var scannedNotes = 0
         var lastId = fromId
         var hasMoreAfterPage = false
@@ -367,28 +401,58 @@ internal class AnkiProviderReadService(
                     scannedNotes += 1
                     continue
                 }
+                val modelId = cursor.positiveLong(ProviderColumn.NOTE_MODEL_ID)
                 val rawFields = cursor.text(ProviderColumn.NOTE_FIELDS)
                 val firstField = ProviderSnapshotValidation.firstField(rawFields)
-                val pageBytes = checkedAdd(totalBytes, validateProviderFirstField(firstField))
+                // The first field fails the scan when it breaks the per-value contract, as it
+                // always has.
+                val firstBytes = validateProviderFirstField(firstField)
+                var values = listOf(firstField)
+                var noteBytes = firstBytes
+                val ordinals = projections[modelId]
+                if (ordinals != null) {
+                    // A later word-named field is only a candidate, so content the contract cannot
+                    // carry (over its caps, an invalid scalar, a field the note lacks) reads as empty
+                    // and is never chosen, rather than failing every run over one note. Desktop reads
+                    // past such a note the same way.
+                    val widened = ArrayList<String>(ordinals.size)
+                    widened += firstField
+                    for (value in ProviderSnapshotValidation.fieldsAt(rawFields, ordinals).drop(1)) {
+                        val bytes = ProviderSnapshotValidation.boundedFieldBytesOrNull(value)
+                        if (bytes == null) {
+                            widened += ""
+                        } else {
+                            widened += value
+                            noteBytes = checkedAdd(noteBytes, bytes)
+                        }
+                    }
+                    values = widened
+                    if (noteBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
+                        // Too wide for even an empty page: keep the first field alone.
+                        values = listOf(firstField) + List(values.size - 1) { "" }
+                        noteBytes = firstBytes
+                    }
+                }
+                val pageBytes = checkedAdd(totalBytes, noteBytes)
                 if (pageBytes > AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES) {
                     // The budget ends the page the way the item count does: the row that did not
                     // fit is not consumed, so the next page's keyset query serves it first with a
-                    // fresh budget. A single field always fits an empty page because the per-field
-                    // cap is below the page budget.
+                    // fresh budget. Every note fits an empty page: a first field alone is under the
+                    // page budget because the per-field cap is, and a wider note is cut to it above.
                     hasMoreAfterPage = true
                     break
                 }
                 lastId = id
                 scannedNotes += 1
                 totalBytes = pageBytes
-                firstFields += firstField
+                notes += KnownNote(modelId, values)
             }
         }
-        return KnownPage(firstFields, scannedNotes, KnownPageObservation(lastId, hasMoreAfterPage))
+        return KnownPage(notes, scannedNotes, KnownPageObservation(lastId, hasMoreAfterPage))
     }
 
     private class KnownPage(
-        val firstFields: List<String>,
+        val notes: List<KnownNote>,
         val scannedNotes: Int,
         val observation: KnownPageObservation,
     )
@@ -594,6 +658,30 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
             }
         }
         return summaries
+    }
+
+    /**
+     * Every note type's ID, name and field names for the known-vocabulary scan, any model type
+     * included. A note type whose names fall outside the v1 limits is left out.
+     */
+    fun listNoteTypeFields(cancellation: AnkiCancellation): List<NoteTypeFields> {
+        val result = ArrayList<NoteTypeFields>()
+        provider.queryRequired(MODEL_LIST_QUERY, cancellation).use { cursor ->
+            requireProjection(cursor, MODEL_LIST_QUERY)
+            var rows = 0
+            while (cursor.moveToNext()) {
+                ensureActive(cancellation)
+                rows += 1
+                if (rows > MAX_PROVIDER_LIST_ROWS) throw queryFailed()
+                val id = cursor.positiveLong(ProviderColumn.MODEL_ID)
+                val name = cursor.text(ProviderColumn.MODEL_NAME)
+                val fieldNames =
+                    ProviderSnapshotValidation.noteTypeFieldNames(name, cursor.text(ProviderColumn.MODEL_FIELD_NAMES))
+                        ?: continue
+                result += NoteTypeFields(id, name, fieldNames)
+            }
+        }
+        return result
     }
 
     fun readModelById(

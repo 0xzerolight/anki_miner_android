@@ -1,12 +1,18 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
+import com.ankiminer.android.anki.protocol.KnownFieldOrdinals
+import com.ankiminer.android.anki.protocol.KnownNote
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.KnownVocabularyResult
 import com.ankiminer.android.anki.protocol.KnownVocabularyScope
+import com.ankiminer.android.anki.protocol.NoteTypeFields
+import com.ankiminer.android.anki.protocol.NoteTypesResult
+import com.ankiminer.android.anki.protocol.NoteTypesScope
 import com.ankiminer.android.anki.protocol.ScanFirstFieldsRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import java.util.ArrayDeque
@@ -858,6 +864,7 @@ class AnkiProviderReadsTest {
                 listOf(
                     mapOf(
                         ProviderColumn.NOTE_ID to integer(2L),
+                        ProviderColumn.NOTE_MODEL_ID to integer(NOTE_TYPE_ID),
                         ProviderColumn.NOTE_FIELDS to text("two"),
                     ),
                 ),
@@ -888,6 +895,7 @@ class AnkiProviderReadsTest {
                     val id = from + index + 1L
                     mapOf(
                         ProviderColumn.NOTE_ID to integer(id),
+                        ProviderColumn.NOTE_MODEL_ID to integer(NOTE_TYPE_ID),
                         ProviderColumn.NOTE_FIELDS to text("word-$id"),
                     )
                 },
@@ -940,6 +948,7 @@ class AnkiProviderReadsTest {
             field: String,
         ) = mapOf(
             ProviderColumn.NOTE_ID to integer(id),
+            ProviderColumn.NOTE_MODEL_ID to integer(NOTE_TYPE_ID),
             ProviderColumn.NOTE_FIELDS to text(field),
         )
 
@@ -1074,6 +1083,148 @@ class AnkiProviderReadsTest {
 
         val pageQueries = fixture.gateway.queries.filter { it.selection is ProviderSelection.NoteIdsAfter }
         assertEquals(5L, (pageQueries[1].selection as ProviderSelection.NoteIdsAfter).fromId)
+    }
+
+    @Test
+    fun `known vocabulary returns a projected note type's fields at its ordinals and binds them to the traversal`() {
+        // A sentence-first note type (Sentence, Translation, Target Word) is read at 0 and 2; every
+        // other note type keeps its first field alone.
+        val fixture = fixture(tokens = listOf("cursor_${"c".repeat(32)}"))
+        val notes =
+            (1L..257L).map { id ->
+                id to if (id % 2L == 0L) "猫が好きです。\u001fI like cats.\u001f猫" else "word-$id\u001fmeaning"
+            }
+        fixture.gateway.queryHandler =
+            keysetPageHandler(notes) { id -> if (id % 2L == 0L) SENTENCE_FIRST_TYPE_ID else NOTE_TYPE_ID }
+        val projection = listOf(KnownFieldOrdinals(SENTENCE_FIRST_TYPE_ID, listOf(0, 2)))
+
+        val first =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(fieldOrdinals = projection))
+            } as KnownVocabularyResult
+
+        assertEquals(256, first.notes.size)
+        assertEquals(KnownNote(NOTE_TYPE_ID, listOf("word-1")), first.notes[0])
+        assertEquals(KnownNote(SENTENCE_FIRST_TYPE_ID, listOf("猫が好きです。", "猫")), first.notes[1])
+        // The projection is part of the traversal's immutable scope: a continuation that changes
+        // it is a different traversal and is refused.
+        assertThrows(InvalidCapabilityException::class.java) {
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(
+                    owner,
+                    knownRequest(cursor = first.nextCursor, requestId = SECOND_REQUEST_ID),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `known vocabulary reads a widened note's unreadable later fields as empty`() {
+        // A later word-named field is only a candidate: content the per-value contract cannot carry
+        // must not fail every run over one note, as it would if it were the first field.
+        val projection = listOf(KnownFieldOrdinals(NOTE_TYPE_ID, listOf(0, 2, 3, 4, 5)))
+
+        fun page(vararg notes: String): KnownVocabularyResult {
+            val fixture = fixture()
+            fixture.gateway.queryHandler =
+                keysetPageHandler(notes.mapIndexed { index, fields -> index + 1L to fields })
+            return fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, knownRequest(fieldOrdinals = projection))
+            } as KnownVocabularyResult
+        }
+
+        val oversized = "x".repeat(AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES + 1)
+        val result =
+            page(
+                // Stored with fewer fields than its note type: the missing ones read as empty.
+                "only\u001ftwo\u001f単語",
+                // Over the per-value cap, and a lone surrogate: each later value reads as empty.
+                "word\u001fm\u001f$oversized\u001f\uD800\u001f語\u001f",
+                // Five values of 60,000 bytes fit the cap one by one but not an empty page together,
+                // so the note keeps its first field alone.
+                List(6) { "x".repeat(60_000) }.joinToString("\u001f"),
+                // The page goes on past all three.
+                "after",
+            )
+
+        assertEquals(
+            listOf(
+                listOf("only", "単語", "", "", ""),
+                listOf("word", "", "", "語", ""),
+                listOf("x".repeat(60_000), "", "", "", ""),
+                listOf("after", "", "", "", ""),
+            ),
+            result.notes.map(KnownNote::fields),
+        )
+        assertEquals(4, result.scannedNotes)
+        assertNull(result.nextCursor)
+    }
+
+    @Test
+    fun `known vocabulary still fails a widened note's oversized or invalid first field`() {
+        fun failure(fields: String): AnkiReadFailure {
+            val fixture = fixture()
+            fixture.gateway.queryHandler = keysetPageHandler(listOf(1L to fields))
+            val projection = listOf(KnownFieldOrdinals(NOTE_TYPE_ID, listOf(0, 1)))
+            return assertThrows(AnkiReadFailure::class.java) {
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(owner, knownRequest(fieldOrdinals = projection))
+                }
+            }
+        }
+
+        val oversized = "x".repeat(AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES + 1)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure("$oversized\u001f単語").code)
+        assertEquals(AnkiErrorCode.QUERY_FAILED, failure("\uD800\u001f単語").code)
+    }
+
+    @Test
+    fun `note types list every model by id with its field names and leave out invalid ones`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = { query, _ ->
+            check(query.endpoint == ProviderEndpoint.MODELS)
+            FakeProviderCursor(
+                query.projection,
+                listOf(
+                    modelRow(30L, "Migaku Japanese", listOf("Sentence", "Translation", "Target Word")),
+                    modelRow(10L, "Cloze", listOf("Text", "Back Extra")),
+                    modelRow(20L, "Broken", listOf(" Word", "Meaning")),
+                    modelRow(40L, "Twins", listOf("Word", "Word")),
+                ),
+            )
+        }
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, ScanFirstFieldsRequest(RUN_ID, REQUEST_ID, NoteTypesScope))
+            } as NoteTypesResult
+
+        assertEquals(
+            listOf(
+                NoteTypeFields(10L, "Cloze", listOf("Text", "Back Extra")),
+                NoteTypeFields(30L, "Migaku Japanese", listOf("Sentence", "Translation", "Target Word")),
+            ),
+            result.noteTypes,
+        )
+    }
+
+    @Test
+    fun `note types stop at the item count and the byte budget`() {
+        fun listed(rows: List<Map<ProviderColumn, ProviderCell>>): List<NoteTypeFields> {
+            val fixture = fixture()
+            fixture.gateway.queryHandler = { query, _ -> FakeProviderCursor(query.projection, rows) }
+            return (
+                fixture.withOwner { owner ->
+                    fixture.reads.scanFirstFields(owner, ScanFirstFieldsRequest(RUN_ID, REQUEST_ID, NoteTypesScope))
+                } as NoteTypesResult
+            ).noteTypes
+        }
+
+        val many = (1L..1025L).map { id -> modelRow(id, "Type $id", listOf("Word")) }
+        assertEquals((1L..1024L).toList(), listed(many).map(NoteTypeFields::modelId))
+        // 1,000 bytes per entry: 524 fit, and the 525th would pass 524,288.
+        val wide = (1L..600L).map { id -> modelRow(id, id.toString().padStart(996, 'n'), listOf("Word")) }
+        assertEquals(524, listed(wide).size)
     }
 
     @Test
@@ -1622,11 +1773,13 @@ class AnkiProviderReadsTest {
         excluded: List<String> = emptyList(),
         cursor: KnownVocabularyCursor? = null,
         requestId: String = REQUEST_ID,
-    ) = ScanFirstFieldsRequest(RUN_ID, requestId, KnownVocabularyScope(excluded, cursor))
+        fieldOrdinals: List<KnownFieldOrdinals> = emptyList(),
+    ) = ScanFirstFieldsRequest(RUN_ID, requestId, KnownVocabularyScope(excluded, cursor, fieldOrdinals))
 
     /** Serves keyset pages out of an ascending note table, the way the v2 notes URI does. */
     private fun keysetPageHandler(
         notes: List<Pair<Long, String>>,
+        modelIdOf: (Long) -> Long = { NOTE_TYPE_ID },
     ): (ProviderQuery, AnkiCancellation) -> ProviderCursor =
         { query, _ ->
             val fromId = (query.selection as ProviderSelection.NoteIdsAfter).fromId
@@ -1637,11 +1790,26 @@ class AnkiProviderReadsTest {
                     .map { (id, fields) ->
                         mapOf(
                             ProviderColumn.NOTE_ID to integer(id),
+                            ProviderColumn.NOTE_MODEL_ID to integer(modelIdOf(id)),
                             ProviderColumn.NOTE_FIELDS to text(fields),
                         )
                     },
             )
         }
+
+    /** These pages list no projection, so every note carries its first field alone. */
+    private val KnownVocabularyResult.firstFields: List<String>
+        get() = notes.map { it.fields.single() }
+
+    private fun modelRow(
+        id: Long,
+        name: String,
+        fieldNames: List<String>,
+    ) = mapOf(
+        ProviderColumn.MODEL_ID to integer(id),
+        ProviderColumn.MODEL_NAME to text(name),
+        ProviderColumn.MODEL_FIELD_NAMES to text(fieldNames.joinToString("\u001f")),
+    )
 
     private fun duplicateRequest(
         scope: DuplicateScanScope,
@@ -1652,5 +1820,7 @@ class AnkiProviderReadsTest {
         const val RUN_ID = "run_11111111111111111111111111111111"
         const val REQUEST_ID = "anki_11111111111111111111111111111111"
         const val SECOND_REQUEST_ID = "anki_22222222222222222222222222222222"
+        const val NOTE_TYPE_ID = 1_700_000_000_001L
+        const val SENTENCE_FIRST_TYPE_ID = 1_700_000_000_002L
     }
 }

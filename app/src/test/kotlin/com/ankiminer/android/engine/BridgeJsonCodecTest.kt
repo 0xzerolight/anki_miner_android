@@ -5,6 +5,7 @@ import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationClipWindow
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
@@ -468,6 +469,50 @@ class BridgeJsonCodecTest {
             )
 
         assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `curation sentence decodes its automatic merge and translation`() {
+        val request = curationRequest()
+        val raw = curationRequestJson(request, ""","linesAfter":2,"translation":"It's a cat."""")
+
+        val sentence = (BridgeJsonCodec.decode(raw) as BridgeMessage.CurationNeeded).request.candidates.single()
+            .sentences.single()
+        assertEquals(CurationLineExpansion(0, 2), sentence.autoExpansion)
+        assertEquals("It's a cat.", sentence.translation)
+    }
+
+    @Test
+    fun `curation sentence without a merge or translation decodes both as absent`() {
+        val sentence =
+            (BridgeJsonCodec.decode(curationRequestJson(curationRequest(), "")) as BridgeMessage.CurationNeeded)
+                .request.candidates.single().sentences.single()
+
+        assertNull(sentence.autoExpansion)
+        assertNull(sentence.translation)
+    }
+
+    @Test
+    fun `curation sentence rejects an out-of-range merge count or an empty translation`() {
+        val request = curationRequest()
+        listOf(
+            ""","linesBefore":0""",
+            ""","linesAfter":101""",
+            ""","linesAfter":1.5""",
+            ""","translation":""""",
+        ).forEach { extra ->
+            assertEquals(
+                extra,
+                BridgeProtocolCategory.INVALID_VALUE,
+                protocolFailure { BridgeJsonCodec.decode(curationRequestJson(request, extra)) }.category,
+            )
+        }
+        assertEquals(
+            BridgeProtocolCategory.INVALID_PAYLOAD,
+            protocolFailure {
+                BridgeJsonCodec.decode(curationRequestJson(request, ""","translation":null"""))
+            }.category,
+        )
     }
 
     @Test

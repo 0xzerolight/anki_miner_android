@@ -192,6 +192,8 @@ _MANIFEST_FIELDS: tuple[FieldSpec, ...] = (
         ),
         _integer("knownCursorMaxCodePoints", "KNOWN_CURSOR_MAX_CODE_POINTS"),
         _integer("knownCursorMaxUtf8Bytes", "KNOWN_CURSOR_MAX_UTF8_BYTES"),
+        _integer("noteTypesMaxItems", "NOTE_TYPES_MAX_ITEM_COUNT"),
+        _integer("noteTypesMaxUtf8Bytes", "NOTE_TYPES_MAX_UTF8_BYTES"),
     ),
     _object(
         "storeMedia",

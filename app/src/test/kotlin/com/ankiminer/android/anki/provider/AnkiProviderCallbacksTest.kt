@@ -648,7 +648,7 @@ class AnkiProviderCallbacksTest {
         unblock.countDown()
         scanThread.join(5_000)
         assertFalse(scanThread.isAlive)
-        assertTrue(scanResult.contains("\"firstFields\":[]"))
+        assertTrue(scanResult.contains("\"notes\":[]"))
         assertEquals(listOf(emptySet<String>()), cleanup)
         assertTrue(harness.callbacks.ankiReleaseRunState(releaseEnvelope(SECOND_REQUEST_ID)).contains("\"state\":\"absent\""))
     }
@@ -873,6 +873,7 @@ class AnkiProviderCallbacksTest {
                     .map { (id, field) ->
                         mapOf(
                             ProviderColumn.NOTE_ID to integer(id),
+                            ProviderColumn.NOTE_MODEL_ID to integer(1L),
                             ProviderColumn.NOTE_FIELDS to text(field),
                         )
                     },
@@ -888,7 +889,7 @@ class AnkiProviderCallbacksTest {
     private fun knownEnvelope(requestId: String = REQUEST_ID): String =
         envelope(
             "anki.scanfirstfields.request",
-            """{"runId":"$RUN_ID","requestId":"$requestId","scope":{"kind":"knownVocabulary","excludedDecks":[],"cursor":null,"limits":{"maxScannedNotes":256,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}""",
+            """{"runId":"$RUN_ID","requestId":"$requestId","scope":{"kind":"knownVocabulary","excludedDecks":[],"fieldOrdinals":[],"cursor":null,"limits":{"maxScannedNotes":256,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}""",
         )
 
     private fun storeMediaEnvelope(includeSecondAsset: Boolean = false): String {

@@ -27,6 +27,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onChildren
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
@@ -72,6 +73,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -165,6 +167,92 @@ class VideoMiningScreenTest {
         composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SUBTITLE).assertIsNotEnabled()
         composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_SUBTITLE).assertIsNotEnabled()
         // START is asserted last: scrolling to it can dispose the slot actions above.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
+        composeRule.onNodeWithTag(VideoMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun secondarySubtitleRowsStayHiddenWhileTheToggleIsOff() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    // A pick kept from before the toggle went off is neither shown nor editable.
+                    secondarySubtitle = DocumentSlotState(document("translation", "episode.en.srt")),
+                    secondarySubtitleOffsetDraft = "-1500",
+                ),
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SUBTITLE).assertIsDisplayed()
+        composeRule.onAllNodesWithTag(VideoMiningTestTags.PICK_SECONDARY_SUBTITLE).assertCountEquals(0)
+        composeRule.onAllNodesWithText("episode.en.srt", substring = true).assertCountEquals(0)
+        assertThrows(AssertionError::class.java) {
+            composeRule
+                .onNodeWithTag(VideoMiningTestTags.CONTENT)
+                .performScrollToNode(hasTestTag(VideoMiningTestTags.SECONDARY_SUBTITLE_OFFSET_FIELD))
+        }
+    }
+
+    @Test
+    fun secondarySubtitleRowsPickClearAndValidateTheOffsetWhileTheToggleIsOn() {
+        var picked = false
+        var cleared = false
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    secondarySubtitleEnabled = true,
+                    secondarySubtitle = DocumentSlotState(document("translation", "episode.en.srt")),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state = state,
+                    onPickSecondarySubtitle = { picked = true },
+                    onClearSecondarySubtitle = { cleared = true },
+                    // Controlled like the real route: a field whose value never moves gets reset
+                    // by the IME.
+                    onSecondarySubtitleOffsetDraftChange = {
+                        state = state.copy(secondarySubtitleOffsetDraft = it)
+                    },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.PICK_SECONDARY_SUBTITLE))
+        composeRule.onNodeWithTag(VideoMiningTestTags.PICK_SECONDARY_SUBTITLE).performClick()
+        composeRule.onNodeWithTag(VideoMiningTestTags.CLEAR_SECONDARY_SUBTITLE).performClick()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.SECONDARY_SUBTITLE_OFFSET_FIELD))
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.SECONDARY_SUBTITLE_OFFSET_FIELD)
+            .performTextReplacement("-1500")
+        composeRule.runOnIdle {
+            assertTrue(picked)
+            assertTrue(cleared)
+            assertEquals("-1500", state.secondarySubtitleOffsetDraft)
+        }
+
+        composeRule.runOnIdle {
+            state = state.copy(secondarySubtitleOffsetDraft = "1.5", secondarySubtitleOffsetDraftInvalid = true)
+        }
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.SECONDARY_SUBTITLE_OFFSET_FIELD))
+        composeRule
+            .onNodeWithText(
+                InstrumentationRegistry.getInstrumentation().targetContext.getString(
+                    R.string.video_secondary_subtitle_offset_error,
+                ),
+            ).assertIsDisplayed()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(VideoMiningTestTags.START))
@@ -2333,6 +2421,9 @@ class VideoMiningScreenTest {
         onRequestUndo: () -> Unit = {},
         onConfirmUndo: () -> Unit = {},
         onDismissUndoConfirmation: () -> Unit = {},
+        onPickSecondarySubtitle: () -> Unit = {},
+        onClearSecondarySubtitle: () -> Unit = {},
+        onSecondarySubtitleOffsetDraftChange: (String) -> Unit = {},
         playerFactory: (Context) -> CurationPreviewPlayer = { FakeCurationPreviewPlayer() },
         listState: LazyListState = rememberLazyListState(),
     ) {
@@ -2342,6 +2433,9 @@ class VideoMiningScreenTest {
             onPickSubtitle = onPickSubtitle,
             onClearVideo = {},
             onClearSubtitle = {},
+            onPickSecondarySubtitle = onPickSecondarySubtitle,
+            onClearSecondarySubtitle = onClearSecondarySubtitle,
+            onSecondarySubtitleOffsetDraftChange = onSecondarySubtitleOffsetDraftChange,
             onDismissDocumentError = {},
             onDismissCommandError = {},
             onStart = onStart,

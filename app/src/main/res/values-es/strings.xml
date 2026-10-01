@@ -25,6 +25,9 @@
     <string name="video_subtitle_offset_label">Desfase de subtítulos (segundos)</string>
     <string name="audio_subtitle_offset_label">Desfase de transcripción (segundos)</string>
     <string name="video_subtitle_offset_placeholder">Usar el valor predeterminado actual (%1$s segundos)</string>
+    <string name="video_secondary_subtitle_label">Subtítulos de traducción</string>
+    <string name="video_secondary_subtitle_offset_label">Desfase de la traducción (milisegundos)</string>
+    <string name="video_secondary_subtitle_offset_error">Introduzca un número entero del −300000 al 300000</string>
     <string name="timing_preview_test_action">Probar sincronización</string>
     <string name="timing_preview_title">Probar sincronización de subtítulos</string>
     <string name="timing_preview_nudge_earlier">−0.1 s</string>
@@ -71,6 +74,7 @@
     <string name="expression_audio_field_unmapped_warning">Ningún campo está asignado al audio de palabra. Asigne “WordAudio” o las tarjetas no tendrán pronunciación.</string>
     <string name="audio_pack_unusable_warning">Paquete de audio inservible omitido. Vuelva a importarlo en Ajustes → Recursos.</string>
     <string name="subtitle_file_error">Se perdió el acceso. Elija de nuevo.</string>
+    <string name="secondary_subtitle_file_error">Subtítulos de traducción: se perdió el acceso. Elija de nuevo.</string>
     <string name="dismiss_error">Descartar error</string>
     <string name="start_mining">Minar</string>
     <string name="starting_title">Preparando la ejecución de minería</string>
@@ -653,7 +657,7 @@
     <string name="settings_subtitle_preset_speaker">Prefijo de hablante</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Si el motor rechaza este patrón, el filtro se omite.</string>
-    <string name="settings_filtering">Filtrado</string>
+    <string name="settings_filtering">Filtros de palabras</string>
     <string name="settings_search">Buscar ajustes</string>
     <string name="settings_search_no_results">Ningún ajuste coincide.</string>
     <string name="settings_search_clear">Borrar búsqueda</string>
@@ -663,12 +667,26 @@
     <string name="settings_bold_target">Resaltar el objetivo en su oración</string>
     <string name="settings_deduplicate">Eliminar oraciones duplicadas</string>
     <string name="settings_i_plus_one">Usar el filtro i+1</string>
-    <string name="settings_sentence_length">Limitar la longitud de la oración</string>
-    <string name="settings_max_duration">Duración máxima de la oración (0 = sin límite)</string>
-    <string name="settings_max_characters">Caracteres máximos de la oración (0 = sin límite)</string>
+    <string name="settings_max_duration">Duración máxima de la oración (segundos)</string>
+    <string name="settings_max_characters">Caracteres máximos de la oración</string>
     <string name="settings_reading_occurrence">Apariciones mínimas en lectura</string>
-    <string name="settings_max_frequency">Rango máximo de frecuencia (0 = sin límite)</string>
+    <string name="settings_max_frequency">Rango máximo de frecuencia</string>
     <string name="settings_workers">Procesos paralelos de medios (1–20)</string>
+    <string name="settings_min_frequency">Rango mínimo de frecuencia</string>
+    <string name="settings_frequency_band_help">Solo se minan palabras cuyo rango esté dentro de esta banda. El rango 1 es la palabra más común. 0 deja ese extremo abierto.</string>
+    <string name="settings_frequency_keep_unranked">Incluir palabras ausentes de la lista de frecuencia</string>
+    <string name="settings_known_words_match_kana_variants">Tratar las grafías en kana de palabras conocidas como conocidas</string>
+    <string name="settings_known_words_match_kana_variants_help">Cuando un subtítulo escribe una palabra en kana (p. ej. うなずく) y la forma de diccionario en kanji (頷く) ya está en su colección o lista de palabras conocidas, se omite en vez de crear una segunda tarjeta. Las grafías en kanji nunca se combinan de esta forma.</string>
+    <string name="settings_card_creation">Creación de tarjetas</string>
+    <string name="settings_strict_card_order">Crear tarjetas en el orden de aparición</string>
+    <string name="settings_strict_card_order_help">Añade tarjetas a Anki en el orden en que las palabras aparecen por primera vez. Si esta opción está desactivada y “Minar siempre las palabras de la lista blanca” está activada, las palabras de la lista blanca van primero.</string>
+    <string name="settings_sentence_options">Opciones de oraciones</string>
+    <string name="settings_max_duration_help">Descarta las tarjetas cuyo audio de la oración de ejemplo dura más de esta cantidad de segundos. Establezca 0 para no aplicar límite.</string>
+    <string name="settings_max_characters_help">Descarta las tarjetas cuyo texto de la oración supera esta cantidad de caracteres. Establezca 0 para no aplicar límite.</string>
+    <string name="settings_secondary_subtitle">Subtítulos secundarios</string>
+    <string name="settings_secondary_subtitle_help">Añade a la pestaña Vídeo un selector para una pista de subtítulos de traducción. Cuando el campo “Sentence translation” está asignado en Tarjetas y Anki, su línea va en la tarjeta.</string>
+    <string name="settings_merge_incomplete_cues">Minar oraciones completas a través de las líneas de subtítulos</string>
+    <string name="settings_merge_incomplete_cues_help">Une líneas de subtítulos vecinas cuando una línea no termina una oración, para que la tarjeta lleve la oración completa en vez de un fragmento. Las fuentes de lectura no tienen marcas de tiempo de subtítulos y lo ignoran.</string>
     <string name="settings_no_dictionaries">No hay ningún diccionario instalado.</string>
     <string name="settings_no_frequency_sources">No hay ninguna fuente de frecuencia instalada.</string>
     <string name="settings_no_audio_packs">No hay ningún paquete de audio instalado.</string>
@@ -686,7 +704,7 @@
     <string name="resource_panel_dictionaries_explanation">Se prueban de arriba abajo; gana el primer diccionario con una entrada.</string>
     <string name="resource_panel_pitch_heading">Fuentes de acento tonal activas</string>
     <string name="resource_panel_pitch_explanation">Se prueban de arriba abajo; gana la primera fuente con una entrada de acento tonal.</string>
-    <string name="resource_panel_audio_heading">Fuentes de audio activas</string>
+    <string name="resource_panel_audio_heading">Audio de palabras</string>
     <string name="resource_panel_audio_explanation">Se prueban de arriba abajo; gana la primera fuente con audio.</string>
     <string name="resource_panel_frequency_heading">Fuentes de frecuencia activas</string>
     <string name="resource_panel_frequency_explanation">El rango más bajo filtra; la media armónica ordena. El orden solo fija la lista de fuentes de la tarjeta.</string>
@@ -775,12 +793,13 @@
     <string name="anki_setup_schedule_failed">No se pudo programar la configuración de Anki</string>
     <string name="notices_title">Avisos de terceros</string>
     <string name="notices_documents_heading">Documentos de avisos incluidos</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Tarjetas y Anki</string>
     <string name="b3_settings_category_media">Multimedia</string>
     <string name="b3_settings_category_resources">Recursos</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frecuencia</string>
-    <string name="b3_settings_category_filtering">Filtrado</string>
+    <string name="b3_settings_category_word_filters">Filtros de palabras</string>
+    <string name="b3_settings_category_sentences">Oraciones</string>
     <string name="b3_settings_category_ui">UI</string>
     <string name="b3_settings_category_diagnostics">Diagnóstico</string>
     <string name="b3_settings_save_pending">Cambios pendientes</string>

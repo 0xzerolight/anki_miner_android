@@ -91,6 +91,7 @@ internal object AnkiValidators {
         when (response) {
             is VerifyTargetResult -> validateVerifyTargetResult(response)
             is KnownVocabularyResult -> validateKnownVocabularyResult(response)
+            is NoteTypesResult -> validateNoteTypesResult(response)
             is DuplicateLookupResult -> validateDuplicateLookupResult(response)
             is StoreMediaResult -> validateStoreMediaResult(response)
             is CreateNotesResult -> validateCreateNotesResult(response)
@@ -125,9 +126,18 @@ internal object AnkiValidators {
                         failValue("known-vocabulary cursor did not advance exactly once")
                     }
                 }
+                val projected = request.scope.fieldOrdinals.associate { it.modelId to it.ordinals.size }
+                for (note in response.notes) {
+                    if (note.fields.size != (projected[note.modelId] ?: 1)) {
+                        failValue("known-vocabulary note does not match its field projection")
+                    }
+                }
             }
             request is ScanFirstFieldsRequest && request.scope is KnownVocabularyScope ->
                 failValue("known-vocabulary request has the wrong response shape")
+            request is ScanFirstFieldsRequest && request.scope is NoteTypesScope && response is NoteTypesResult -> Unit
+            request is ScanFirstFieldsRequest && request.scope is NoteTypesScope ->
+                failValue("note-type request has the wrong response shape")
             request is ScanFirstFieldsRequest && request.scope is DuplicateScanScope && response is DuplicateLookupResult -> {
                 if (response.rawFirstFieldHits.size != request.scope.candidates.size) {
                     failValue("duplicate lookup buckets are not request-aligned")
@@ -210,8 +220,10 @@ internal object AnkiValidators {
                 var total = 0
                 for (deck in scope.excludedDecks) total = addExact(total, validateDeckName(deck).utf8Bytes)
                 requireAtMost(total, AnkiLimitsV1.Names.ExcludedDecks.MAX_TOTAL_UTF8_BYTES, "excluded deck bytes")
+                validateKnownFieldOrdinals(scope.fieldOrdinals)
                 scope.cursor?.let(::validateKnownCursor)
             }
+            NoteTypesScope -> Unit
             is DuplicateScanScope -> {
                 validateModelName(scope.modelName)
                 validateFieldName(scope.firstFieldName)
@@ -335,20 +347,53 @@ internal object AnkiValidators {
         requireAtMost(bytes, AnkiLimitsV1.Names.TargetFields.MAX_TOTAL_UTF8_BYTES, "field name bytes")
     }
 
+    private fun validateKnownFieldOrdinals(entries: List<KnownFieldOrdinals>) {
+        requireCountAtMost(entries.size, AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_ITEM_COUNT, "known field ordinals")
+        requireUnique(entries.map { it.modelId }, "known field ordinal model IDs")
+        for (entry in entries) {
+            requirePositive(entry.modelId, "field ordinals model ID")
+            requireCountBetween(entry.ordinals.size, 2, AnkiLimitsV1.Names.TargetFields.MAX_ITEM_COUNT, "field ordinals")
+            if (entry.ordinals.first() != 0) failValue("field ordinals must start at the first field")
+            if (entry.ordinals.zipWithNext().any { (left, right) -> left >= right }) failValue("field ordinals must ascend")
+            if (entry.ordinals.last() >= AnkiLimitsV1.Names.TargetFields.MAX_ITEM_COUNT) failValue("field ordinal exceeds the v1 field limit")
+        }
+    }
+
     private fun validateKnownVocabularyResult(result: KnownVocabularyResult) {
-        requireCountAtMost(result.firstFields.size, AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT, "known first fields")
+        requireCountAtMost(result.notes.size, AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT, "known notes")
         if (
-            result.scannedNotes !in result.firstFields.size..AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT ||
+            result.scannedNotes !in result.notes.size..AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_ITEM_COUNT ||
                 (result.nextCursor != null && result.scannedNotes == 0)
         ) {
             failValue("scanned note count is invalid")
         }
         var total = 0
-        for (value in result.firstFields) {
-            total = addExact(total, validatePlainString(value, "known first field", allowEmpty = true, maxScalars = AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_CODE_POINTS, maxUtf8Bytes = AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES).utf8Bytes)
+        for (note in result.notes) {
+            requirePositive(note.modelId, "known note model ID")
+            requireCountBetween(note.fields.size, 1, AnkiLimitsV1.Names.TargetFields.MAX_ITEM_COUNT, "known note fields")
+            for (value in note.fields) {
+                total = addExact(total, validatePlainString(value, "known field value", allowEmpty = true, maxScalars = AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_CODE_POINTS, maxUtf8Bytes = AnkiLimitsV1.ScanFirstFields.FIRST_FIELD_MAX_UTF8_BYTES).utf8Bytes)
+            }
         }
-        requireAtMost(total, AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES, "known first-field bytes")
+        requireAtMost(total, AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES, "known field bytes")
         result.nextCursor?.let(::validateKnownCursor)
+    }
+
+    private fun validateNoteTypesResult(result: NoteTypesResult) {
+        requireCountAtMost(result.noteTypes.size, AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_ITEM_COUNT, "note types")
+        requireUnique(result.noteTypes.map { it.modelId }, "note type model IDs")
+        var total = 0
+        for (noteType in result.noteTypes) {
+            requirePositive(noteType.modelId, "note type model ID")
+            total = addExact(total, validateModelName(noteType.name).utf8Bytes)
+            requireCountBetween(noteType.fieldNames.size, 1, AnkiLimitsV1.Names.TargetFields.MAX_ITEM_COUNT, "note type field names")
+            requireUnique(noteType.fieldNames, "note type field names")
+            var fieldBytes = 0
+            for (name in noteType.fieldNames) fieldBytes = addExact(fieldBytes, validateFieldName(name).utf8Bytes)
+            requireAtMost(fieldBytes, AnkiLimitsV1.Names.TargetFields.MAX_TOTAL_UTF8_BYTES, "note type field name bytes")
+            total = addExact(total, fieldBytes)
+        }
+        requireAtMost(total, AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_UTF8_BYTES, "note type bytes")
     }
 
     private fun validateDuplicateLookupResult(result: DuplicateLookupResult) {

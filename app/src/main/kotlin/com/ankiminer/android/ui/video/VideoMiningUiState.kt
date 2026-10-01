@@ -18,6 +18,7 @@ enum class DocumentSelectionError {
     VIDEO,
     AUDIO_TYPE,
     SUBTITLE,
+    SECONDARY_SUBTITLE,
 }
 
 enum class MiningCommandError {
@@ -97,6 +98,13 @@ data class VideoMiningUiState(
     val subtitle: DocumentSlotState = DocumentSlotState(),
     val subtitleOffsetDraft: String = "",
     val subtitleOffsetDraftInvalid: Boolean = false,
+    /** Settings → Sentences toggle; false on lanes without a translation track. */
+    val secondarySubtitleEnabled: Boolean = false,
+    /** Translation track, kept while the toggle is off but then neither shown nor sent. */
+    val secondarySubtitle: DocumentSlotState = DocumentSlotState(),
+    /** Whole milliseconds; empty means no shift. */
+    val secondarySubtitleOffsetDraft: String = "",
+    val secondarySubtitleOffsetDraftInvalid: Boolean = false,
     val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
     val audioFieldUnmapped: Boolean = false,
     val expressionAudioFieldUnmapped: Boolean = false,
@@ -126,6 +134,8 @@ data class VideoMiningUiState(
                 !video.isResolving &&
                 !subtitle.isResolving &&
                 !subtitleOffsetDraftInvalid &&
+                !(secondarySubtitleEnabled && secondarySubtitle.isResolving) &&
+                !secondarySubtitleOffsetDraftInvalid &&
                 !startPending &&
                 !timingPreviewPending &&
                 !audioTrackProbePending &&

@@ -112,7 +112,7 @@ internal data class ProviderQuery(
 
 internal object ProviderQueryShapes {
     val NOTE_ID_PROJECTION = listOf(ProviderColumn.NOTE_ID)
-    val NOTE_PAGE_PROJECTION = listOf(ProviderColumn.NOTE_ID, ProviderColumn.NOTE_FIELDS)
+    val NOTE_PAGE_PROJECTION = listOf(ProviderColumn.NOTE_ID, ProviderColumn.NOTE_MODEL_ID, ProviderColumn.NOTE_FIELDS)
     val DUPLICATE_PROJECTION =
         listOf(
             ProviderColumn.NOTE_ID,
