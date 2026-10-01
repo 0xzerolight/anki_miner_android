@@ -69,6 +69,11 @@ wherever a request names no language.
   parks the outgoing language's scoped settings in a stash, restores the
   incoming language's, and starts a first visit from the profile's defaults.
   The stash stays in Kotlin; only `language` crosses the bridge.
+- Desktop releases the outgoing language's tagger on the switch itself. On
+  Android the bridge does it when it admits a run, a cue view or a frequency-list
+  lemmatisation: every cached tagger except that language's is evicted.
+  Module-level engine state (jieba, underthesea, pycantonese) stays loaded, as on
+  desktop.
 - Known words are per language: Japanese keeps `known_words.db`, every other
   language gets `known_words.<lang>.db`.
 - Dictionary, frequency, pitch and audio-pack slots are stamped with the
@@ -125,10 +130,12 @@ evidence of current behavior.
   builds must match byte for byte before a publication is accepted. Wheels are
   grouped into families: the base runtime, f1 tr (zeyrek), f2 the spaCy
   languages with pymorphy3 for ru and uk, f3 ko (kiwipiepy), f4 vi and yue, and
-  f5 zh. Pure-Python pack wheels are repacked with the desktop `pack.py`
-  excludes (`repack_wheels.py`).
-- Every native `.so` must have 16 KiB `PT_LOAD` alignment, and on arm64 an ISA
-  audit rejects any instruction beyond ARMv8.0 that no runtime check guards.
+  f5 zh. Wheels are repacked with the desktop `pack.py` excludes: pythainlp and
+  tzdata by `repack_wheels.py`, and nltk, pycantonese, underthesea and jieba by
+  `runtime_wheels.py` `REPACKS` at publication.
+- Every native `.so` must have 16 KiB `PT_LOAD` alignment. On arm64, an ISA
+  audit of every wheel native rejects any instruction beyond ARMv8.0 that no
+  runtime check guards; it does not cover the jniLibs `ffmpeg`/`ffprobe`.
 - `ffmpeg`/`ffprobe` ship as PIE executables under `app/src/main/jniLibs/`.
 - The UniDic tokenizer dictionary (Japanese only) is downloaded once after
   install into private storage (never bundled in the APK).
