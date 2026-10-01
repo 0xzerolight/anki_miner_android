@@ -316,7 +316,8 @@
     <string name="mining_not_ready">Khai thác chưa sẵn sàng</string>
     <string name="open_settings">Mở Cài đặt</string>
     <string name="allow_required_access">Cho phép truy cập</string>
-    <string name="open_app_settings">Mở cài đặt ứng dụng</string>
+    <string name="allow_in_android_settings">Cho phép trong cài đặt Android</string>
+    <string name="ankidroid_permission_settings_prompt">Bật “Đọc và ghi cơ sở dữ liệu AnkiDroid” trong Quyền › Quyền bổ sung.</string>
     <string name="open_ankidroid">Mở AnkiDroid</string>
     <string name="install_ankidroid">Cài AnkiDroid</string>
     <string name="update_ankidroid">Cập nhật AnkiDroid</string>

@@ -288,12 +288,13 @@ private fun SetupTaskAction(
             when (state.ankiDroidAction) {
                 AnkiDroidSetupAction.INSTALL ->
                     StatusAction(ankiDroidInstallLabel(state.anki), onInstallAnkiDroid)
-                AnkiDroidSetupAction.OPEN ->
-                    StatusAction(R.string.open_ankidroid, onOpenAnkiDroid)
-                AnkiDroidSetupAction.OPEN_OR_INSTALL ->
-                    StatusAction(R.string.open_ankidroid, onOpenAnkiDroid)
+                AnkiDroidSetupAction.OPEN,
+                AnkiDroidSetupAction.OPEN_OR_INSTALL,
+                -> StatusAction(R.string.open_ankidroid, onOpenAnkiDroid)
                 AnkiDroidSetupAction.REQUEST_PERMISSION ->
                     StatusAction(R.string.allow_required_access, onRequestPermissions)
+                AnkiDroidSetupAction.OPEN_APP_SETTINGS ->
+                    StatusAction(R.string.allow_in_android_settings, onOpenAppSettings)
                 null -> StatusAction(R.string.check_again, onRefresh)
             }
         SetupTaskId.NOTE_TYPE ->
@@ -312,12 +313,6 @@ private fun SetupTaskAction(
                 onImportDictionary,
             )
         SetupTaskId.NOTIFICATIONS -> Unit
-    }
-    if (
-        id == SetupTaskId.ANKIDROID &&
-        state.ankiDroidAction == AnkiDroidSetupAction.REQUEST_PERMISSION
-    ) {
-        StatusAction(R.string.open_app_settings, onOpenAppSettings)
     }
 }
 

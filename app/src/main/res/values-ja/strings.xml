@@ -317,7 +317,8 @@
     <string name="mining_not_ready">マイニングの準備ができていません</string>
     <string name="open_settings">設定を開く</string>
     <string name="allow_required_access">アクセスを許可</string>
-    <string name="open_app_settings">アプリ設定を開く</string>
+    <string name="allow_in_android_settings">Android の設定で許可</string>
+    <string name="ankidroid_permission_settings_prompt">権限 › その他の権限 で「AnkiDroid データベースの読み書き」をオンにしてください。</string>
     <string name="open_ankidroid">AnkiDroidを開く</string>
     <string name="install_ankidroid">AnkiDroid をインストール</string>
     <string name="update_ankidroid">AnkiDroid を更新</string>

@@ -316,7 +316,8 @@
     <string name="mining_not_ready">尚未準備好採集</string>
     <string name="open_settings">開啟設定</string>
     <string name="allow_required_access">允許存取</string>
-    <string name="open_app_settings">開啟應用程式設定</string>
+    <string name="allow_in_android_settings">在 Android 設定中允許</string>
+    <string name="ankidroid_permission_settings_prompt">在「權限 › 其他權限」中開啟「讀寫 AnkiDroid 資料庫」。</string>
     <string name="open_ankidroid">開啟 AnkiDroid</string>
     <string name="install_ankidroid">安裝 AnkiDroid</string>
     <string name="update_ankidroid">更新 AnkiDroid</string>

@@ -1811,6 +1811,34 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `a permanent permission denial holds only while AnkiDroid still refuses`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val admission =
+                MutableStateFlow(
+                    MiningRunAdmissionState(
+                        anki = AnkiProviderReadiness.PermissionDenied,
+                        ankiRecovery = AnkiRecoveryReadiness.NotChecked,
+                        notifications = NotificationPermissionReadiness.READY,
+                        target = AnkiMiningTargetReadiness.NotChecked,
+                    ),
+                )
+            val model =
+                viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()), admission = admission)
+            advanceUntilIdle()
+
+            model.permissionBlocked()
+            advanceUntilIdle()
+            assertEquals(AnkiDroidSetupAction.OPEN_APP_SETTINGS, model.uiState.value.ankiDroidAction)
+
+            // Granted in Android settings, revoked later: the first ask is offered again.
+            admission.value = admission.value.copy(anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L))
+            advanceUntilIdle()
+            admission.value = admission.value.copy(anki = AnkiProviderReadiness.PermissionDenied)
+            advanceUntilIdle()
+            assertEquals(AnkiDroidSetupAction.REQUEST_PERMISSION, model.uiState.value.ankiDroidAction)
+        }
+
+    @Test
     fun `an unreadable settings store still renders setup`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()
@@ -1881,21 +1909,22 @@ class SetupViewModelTest {
         resources: FakeResourceManager = FakeResourceManager(),
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
         languageProfileSource: LanguageProfileSource? = null,
+        admission: MutableStateFlow<MiningRunAdmissionState> =
+            MutableStateFlow(
+                MiningRunAdmissionState(
+                    anki = AnkiProviderReadiness.NotChecked,
+                    ankiRecovery = AnkiRecoveryReadiness.NotChecked,
+                    notifications = NotificationPermissionReadiness.READY,
+                    target = AnkiMiningTargetReadiness.NotChecked,
+                ),
+            ),
     ): SetupViewModel =
         SetupViewModel(
             resources = resources,
             settingsRepository = repository,
             ankiSetup = setup,
             pythonReadiness = MutableStateFlow(PythonRuntimeReadiness.Pending),
-            miningAdmission =
-                MutableStateFlow(
-                    MiningRunAdmissionState(
-                        anki = AnkiProviderReadiness.NotChecked,
-                        ankiRecovery = AnkiRecoveryReadiness.NotChecked,
-                        notifications = NotificationPermissionReadiness.READY,
-                        target = AnkiMiningTargetReadiness.NotChecked,
-                    ),
-                ),
+            miningAdmission = admission,
             runtimeWorkState = MutableStateFlow<RuntimeWorkCoordinator.Kind?>(null),
             refreshExternalReadiness = {},
             strings = testStringResourceResolver,

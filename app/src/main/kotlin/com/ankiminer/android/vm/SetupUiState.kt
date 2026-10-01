@@ -99,6 +99,8 @@ internal data class SetupUiState(
     val uniDicRequired: Boolean = true,
     /** The mining language's profile capabilities; null for Japanese, which fills every row. */
     val languageCapabilities: Set<String>? = null,
+    /** AnkiDroid's permission was denied with "don't ask again": only Android settings can grant it. */
+    val ankiPermissionBlocked: Boolean = false,
 ) {
     /**
      * The field-map rows: every engine key the language can fill, then its own card fields. As on
@@ -195,7 +197,11 @@ internal data class SetupUiState(
                         AnkiDroidSetupAction.INSTALL
                     }
                 AnkiProviderReadiness.PermissionDenied ->
-                    AnkiDroidSetupAction.REQUEST_PERMISSION
+                    if (ankiPermissionBlocked) {
+                        AnkiDroidSetupAction.OPEN_APP_SETTINGS
+                    } else {
+                        AnkiDroidSetupAction.REQUEST_PERMISSION
+                    }
                 AnkiProviderReadiness.NotChecked,
                 is AnkiProviderReadiness.Ready,
                 -> null
@@ -231,7 +237,11 @@ internal data class SetupUiState(
                 anki == AnkiProviderReadiness.Uninitialized ->
                     MiningReadinessAction.OPEN_ANKIDROID
                 anki == AnkiProviderReadiness.PermissionDenied ->
-                    MiningReadinessAction.CONNECT_ANKIDROID
+                    if (ankiPermissionBlocked) {
+                        MiningReadinessAction.ALLOW_IN_SETTINGS
+                    } else {
+                        MiningReadinessAction.CONNECT_ANKIDROID
+                    }
                 anki is AnkiProviderReadiness.Incompatible ->
                     if (anki.apiSpecVersion == null) {
                         MiningReadinessAction.OPEN_ANKIDROID
@@ -283,6 +293,7 @@ internal enum class AnkiDroidSetupAction {
     OPEN,
     OPEN_OR_INSTALL,
     REQUEST_PERMISSION,
+    OPEN_APP_SETTINGS,
 }
 
 /** Corrective action rendered by a mining destination when setup is not ready. */
@@ -294,6 +305,9 @@ internal enum class MiningReadinessAction {
     INSTALL_ANKIDROID,
     OPEN_ANKIDROID,
     CONNECT_ANKIDROID,
+
+    /** The request dialog no longer appears; the grant is in Android's app settings. */
+    ALLOW_IN_SETTINGS,
     CHOOSE_NOTE_TYPE,
     CHECK_AGAIN,
     WAIT,

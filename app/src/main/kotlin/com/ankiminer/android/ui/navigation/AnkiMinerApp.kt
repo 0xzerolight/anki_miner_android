@@ -628,6 +628,22 @@ internal fun AnkiMinerApp(
             audio = audioTimingPreview,
         )
 
+    @Composable
+    fun ReadinessNotice() {
+        MiningReadinessNotice(
+            state = setup,
+            message = stringResource(miningReadinessMessage(setup)),
+            onRequestPermissions = onRequestPermissions,
+            onInstallUniDic = setupViewModel::installUniDic,
+            onInstallAnkiDroid = onInstallAnkiDroid,
+            onOpenAnkiDroid = onOpenAnkiDroid,
+            onCheckAgain = setupViewModel::refresh,
+            onOpenSettings = ::navigateToSettings,
+            onImportDictionary = ::navigateToDictionaries,
+            onOpenAppSettings = onOpenAppSettings,
+        )
+    }
+
     AnkiMinerAppShell(
         currentDestination = currentDestination,
         videoWorkflow = videoWorkflow,
@@ -728,17 +744,7 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessNotice(
-                        state = setup,
-                        message = stringResource(miningReadinessMessage(setup)),
-                        onRequestPermissions = onRequestPermissions,
-                        onInstallUniDic = setupViewModel::installUniDic,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = ::navigateToSettings,
-                        onImportDictionary = ::navigateToDictionaries,
-                    )
+                    ReadinessNotice()
                 }
             }
             composable(AnkiMinerDestination.AUDIO.route) {
@@ -758,17 +764,7 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessNotice(
-                        state = setup,
-                        message = stringResource(miningReadinessMessage(setup)),
-                        onRequestPermissions = onRequestPermissions,
-                        onInstallUniDic = setupViewModel::installUniDic,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = ::navigateToSettings,
-                        onImportDictionary = ::navigateToDictionaries,
-                    )
+                    ReadinessNotice()
                 }
             }
             composable(AnkiMinerDestination.READING.route) {
@@ -788,17 +784,7 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessNotice(
-                        state = setup,
-                        message = stringResource(miningReadinessMessage(setup)),
-                        onRequestPermissions = onRequestPermissions,
-                        onInstallUniDic = setupViewModel::installUniDic,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = ::navigateToSettings,
-                        onImportDictionary = ::navigateToDictionaries,
-                    )
+                    ReadinessNotice()
                 }
             }
             composable(AnkiMinerDestination.SETTINGS.route) {
@@ -878,6 +864,7 @@ internal fun MiningReadinessNotice(
     onCheckAgain: () -> Unit,
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
     onImportDictionary: () -> Unit,
+    onOpenAppSettings: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
@@ -887,6 +874,9 @@ internal fun MiningReadinessNotice(
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
                 Text(message)
+                if (miningReadinessActionForDisplay(state) == MiningReadinessAction.ALLOW_IN_SETTINGS) {
+                    SupportingText(stringResource(R.string.ankidroid_permission_settings_prompt))
+                }
                 when (val action = miningReadinessActionForDisplay(state)) {
                     null -> Unit
                     MiningReadinessAction.WAIT ->
@@ -902,6 +892,7 @@ internal fun MiningReadinessNotice(
                             onOpenSettings = onOpenSettings,
                             onImportDictionary = onImportDictionary,
                             installAnkiDroidLabel = ankiDroidInstallLabel(state.anki),
+                            onOpenAppSettings = onOpenAppSettings,
                         )
                 }
             }
@@ -920,6 +911,7 @@ internal fun MiningReadinessActions(
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
     onImportDictionary: () -> Unit,
     @StringRes installAnkiDroidLabel: Int = R.string.install_ankidroid,
+    onOpenAppSettings: () -> Unit = {},
 ) {
     val actionSpec =
         when (action) {
@@ -957,6 +949,12 @@ internal fun MiningReadinessActions(
                 ReadinessActionSpec(
                     R.string.readiness_connect_ankidroid,
                     onRequestPermissions,
+                    opensSettings = false,
+                )
+            MiningReadinessAction.ALLOW_IN_SETTINGS ->
+                ReadinessActionSpec(
+                    R.string.allow_in_android_settings,
+                    onOpenAppSettings,
                     opensSettings = false,
                 )
             MiningReadinessAction.CHOOSE_NOTE_TYPE ->

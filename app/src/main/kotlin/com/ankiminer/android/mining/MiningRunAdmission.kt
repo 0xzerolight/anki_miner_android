@@ -71,6 +71,12 @@ internal fun notificationPermissionDue(
         foregroundJobStarting &&
         !alreadyAskedThisProcess
 
+/** No rationale after a denial means "don't ask again": the request dialog will not show any more. */
+internal fun ankiPermissionPermanentlyDenied(
+    granted: Boolean,
+    showRationale: Boolean,
+): Boolean = !granted && !showRationale
+
 /** Process-context-only permission probe; an Activity is needed later only to launch a request. */
 internal class AndroidNotificationPermissionProbe(
     private val sdkInt: Int,

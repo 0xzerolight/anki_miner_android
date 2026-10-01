@@ -316,7 +316,8 @@
     <string name="mining_not_ready">Mining belum siap</string>
     <string name="open_settings">Buka Pengaturan</string>
     <string name="allow_required_access">Izinkan akses</string>
-    <string name="open_app_settings">Buka pengaturan aplikasi</string>
+    <string name="allow_in_android_settings">Izinkan di pengaturan Android</string>
+    <string name="ankidroid_permission_settings_prompt">Aktifkan “Membaca dan menulis ke database AnkiDroid” di Izin › Izin tambahan.</string>
     <string name="open_ankidroid">Buka AnkiDroid</string>
     <string name="install_ankidroid">Instal AnkiDroid</string>
     <string name="update_ankidroid">Perbarui AnkiDroid</string>

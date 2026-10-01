@@ -42,6 +42,13 @@ class MiningRunAdmissionTest {
     }
 
     @Test
+    fun `a denial with no rationale left is permanent`() {
+        assertTrue(ankiPermissionPermanentlyDenied(granted = false, showRationale = false))
+        assertFalse(ankiPermissionPermanentlyDenied(granted = false, showRationale = true))
+        assertFalse(ankiPermissionPermanentlyDenied(granted = true, showRationale = false))
+    }
+
+    @Test
     fun `notification permission is asked once, when a foreground job starts`() {
         assertTrue(notificationPermissionDue(33, notificationsReady = false, foregroundJobStarting = true, alreadyAskedThisProcess = false))
         assertFalse(notificationPermissionDue(33, notificationsReady = false, foregroundJobStarting = false, alreadyAskedThisProcess = false))

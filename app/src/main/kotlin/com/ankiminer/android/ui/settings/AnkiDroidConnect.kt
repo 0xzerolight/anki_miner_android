@@ -30,6 +30,7 @@ internal fun ankiDroidActionPrompt(state: SetupUiState): Int? =
         AnkiDroidSetupAction.OPEN_OR_INSTALL,
         -> R.string.ankidroid_open_prompt
         AnkiDroidSetupAction.REQUEST_PERMISSION -> R.string.ankidroid_permission_prompt
+        AnkiDroidSetupAction.OPEN_APP_SETTINGS -> R.string.ankidroid_permission_settings_prompt
         null -> null
     }
 
@@ -48,6 +49,7 @@ internal fun ankiDroidInstallLabel(anki: AnkiProviderReadiness): Int =
 internal fun AnkiDroidConnectActions(
     state: SetupUiState,
     onRequestPermissions: () -> Unit,
+    onOpenAppSettings: () -> Unit,
     onInstallAnkiDroid: () -> Unit,
     onOpenAnkiDroid: () -> Unit,
     modifier: Modifier = Modifier,
@@ -78,6 +80,7 @@ internal fun AnkiDroidConnectActions(
                 action(onInstallAnkiDroid, ankiDroidInstallLabel(state.anki))
             }
             AnkiDroidSetupAction.REQUEST_PERMISSION -> action(onRequestPermissions, R.string.allow_required_access)
+            AnkiDroidSetupAction.OPEN_APP_SETTINGS -> action(onOpenAppSettings, R.string.allow_in_android_settings)
             null -> Unit
         }
     }

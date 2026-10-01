@@ -319,7 +319,8 @@
     <string name="mining_not_ready">Майнинг не готов</string>
     <string name="open_settings">Открыть настройки</string>
     <string name="allow_required_access">Разрешить доступ</string>
-    <string name="open_app_settings">Открыть настройки приложения</string>
+    <string name="allow_in_android_settings">Разрешить в настройках Android</string>
+    <string name="ankidroid_permission_settings_prompt">Включите «Чтение и запись в базу данных AnkiDroid» в разделе Разрешения › Дополнительные разрешения.</string>
     <string name="open_ankidroid">Открыть AnkiDroid</string>
     <string name="install_ankidroid">Установить AnkiDroid</string>
     <string name="update_ankidroid">Обновить AnkiDroid</string>

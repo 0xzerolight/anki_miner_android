@@ -38,6 +38,7 @@ import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRunUndoManagerFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
+import com.ankiminer.android.mining.ankiPermissionPermanentlyDenied
 import com.ankiminer.android.mining.notificationPermissionDue
 import com.ankiminer.android.reading.ReadingRepositoryFactory
 import com.ankiminer.android.service.MiningForegroundService
@@ -266,7 +267,16 @@ class MainActivity : ComponentActivity() {
                 val ankiPermissionLauncher =
                     rememberLauncherForActivityResult(
                         ActivityResultContracts.RequestPermission(),
-                    ) {
+                    ) { granted ->
+                        if (
+                            ankiPermissionPermanentlyDenied(
+                                granted = granted,
+                                showRationale =
+                                    shouldShowRequestPermissionRationale(MiningRuntimePermissions.ANKIDROID_DATABASE),
+                            )
+                        ) {
+                            setupViewModel.permissionBlocked()
+                        }
                         setupViewModel.permissionsReturned()
                     }
                 val notificationPermissionLauncher =

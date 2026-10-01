@@ -459,6 +459,7 @@ private fun WizardStepBody(
                     AnkiDroidConnectActions(
                         state = state,
                         onRequestPermissions = callbacks.onRequestPermissions,
+                        onOpenAppSettings = callbacks.onOpenAppSettings,
                         onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
                         onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
                     )

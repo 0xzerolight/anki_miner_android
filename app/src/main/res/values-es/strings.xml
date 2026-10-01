@@ -318,7 +318,8 @@
     <string name="mining_not_ready">La minería no está lista</string>
     <string name="open_settings">Abrir Ajustes</string>
     <string name="allow_required_access">Permitir acceso</string>
-    <string name="open_app_settings">Abrir ajustes de la aplicación</string>
+    <string name="allow_in_android_settings">Permitir en los ajustes de Android</string>
+    <string name="ankidroid_permission_settings_prompt">Active «Leer y escribir en la base de datos de AnkiDroid» en Permisos › Permisos adicionales.</string>
     <string name="open_ankidroid">Abrir AnkiDroid</string>
     <string name="install_ankidroid">Instalar AnkiDroid</string>
     <string name="update_ankidroid">Actualizar AnkiDroid</string>

@@ -1848,6 +1848,7 @@ private fun AnkiOriginFailure(
         AnkiDroidConnectActions(
             state = setup,
             onRequestPermissions = callbacks.onRequestPermissions,
+            onOpenAppSettings = callbacks.onOpenAppSettings,
             onInstallAnkiDroid = callbacks.onInstallAnkiDroid,
             onOpenAnkiDroid = callbacks.onOpenAnkiDroid,
         )
