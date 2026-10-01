@@ -244,6 +244,52 @@ class ReadingMiningViewModelTest {
     }
 
     @Test
+    fun mineAfterAFinishedReadingRunResetsItThenStarts() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("本")
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            viewModel.onPastedTextChanged("猫")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(1, repository.resetCalls)
+            assertEquals(
+                ReadingSourceSelection.PastedText("猫"),
+                repository.startedInputs.single().selection,
+            )
+        }
+
+    @Test
+    fun aFinishedReadingRunLeavesThePasteEditable() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+            viewModel.onSourceModeChanged(ReadingSourceMode.PASTED_TEXT)
+            viewModel.onPastedTextChanged("本")
+            runCurrent()
+            repository.transitionTo(MiningRunState.Running("run", MiningProgress(1, 2, "Running")))
+            runCurrent()
+            viewModel.onPastedTextChanged("走行中")
+            runCurrent()
+            assertEquals("本", viewModel.uiState.value.pastedText)
+
+            repository.transitionTo(MiningRunState.Cancelled("run", null))
+            runCurrent()
+            viewModel.onPastedTextChanged("猫")
+            runCurrent()
+
+            assertEquals("猫", viewModel.uiState.value.pastedText)
+        }
+
+    @Test
     fun advisoriesFollowTheFieldMapAndAudioPacks() =
         runTest(mainDispatcherRule.dispatcher) {
             val unmapped =
@@ -1882,7 +1928,11 @@ class ReadingMiningViewModelTest {
             }
         }
 
+        var resetCalls = 0
+            private set
+
         override suspend fun reset() {
+            resetCalls += 1
             mutableState.value = MiningRunState.Idle
         }
 

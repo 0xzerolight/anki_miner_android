@@ -541,3 +541,10 @@ val MiningRunState.isTerminal: Boolean
         this is MiningRunState.Success ||
             this is MiningRunState.Cancelled ||
             this is MiningRunState.Failed
+
+/**
+ * Idle, or finished with its result line still on screen. Either way the inputs may change and
+ * Mine starts the next run; only a run in flight locks them (desktop single-screen layout, D7).
+ */
+val MiningRunState.acceptsInputEdits: Boolean
+    get() = this == MiningRunState.Idle || isTerminal

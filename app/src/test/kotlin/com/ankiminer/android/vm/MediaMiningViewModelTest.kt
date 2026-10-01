@@ -1247,6 +1247,46 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun mineAfterAFinishedRunResetsItThenStartsWithTheNewInputs() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            viewModel.onSubtitlePicked("content://test/episode-02.ass")
+            viewModel.setSubtitleOffsetDraft("1.5")
+            runCurrent()
+            assertTrue(viewModel.uiState.value.canStart)
+            viewModel.start()
+            runCurrent()
+
+            assertEquals(1, repository.resetCalls)
+            assertEquals(1, repository.startCalls)
+            assertEquals("content://test/episode-02.ass", repository.startedInputs.single().subtitle.uri)
+            assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
+        }
+
+    @Test
+    fun aRunInFlightKeepsTheInputsLocked() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingRepository()
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            selectDocuments(viewModel)
+            runCurrent()
+            repository.transitionTo(MiningRunState.Running("run", MiningProgress(0, 0, "Running")))
+            runCurrent()
+
+            viewModel.clearVideo()
+            runCurrent()
+
+            assertNotNull(viewModel.uiState.value.video.document)
+            assertFalse(viewModel.uiState.value.canStart)
+        }
+
+    @Test
     fun theResultLineNamesTheDeckTheRunStartedWith() =
         runTest(mainDispatcherRule.dispatcher) {
             val deck = MutableStateFlow<String?>("Deck A")

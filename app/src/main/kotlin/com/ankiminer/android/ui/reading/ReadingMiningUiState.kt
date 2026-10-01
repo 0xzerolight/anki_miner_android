@@ -6,6 +6,7 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.MiningFieldAdvisories
 import java.nio.charset.StandardCharsets
@@ -99,6 +100,8 @@ data class ReadingMiningUiState(
     val undoConfirmationNoteCount: Int? = null,
     val undoneNoteCount: Int? = null,
     val undoAvailable: Boolean = false,
+    /** The tab's own Undo is deleting notes; Mine waits for it. */
+    val undoPending: Boolean = false,
 ) {
     val acceptsArchive: Boolean
         get() =
@@ -116,9 +119,10 @@ data class ReadingMiningUiState(
     val canStart: Boolean
         get() {
             if (
-                runState != MiningRunState.Idle ||
+                !runState.acceptsInputEdits ||
                 startPending ||
                 resetPending ||
+                undoPending ||
                 runtimeConflict != null
             ) {
                 return false

@@ -30,6 +30,7 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningLane
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
@@ -337,13 +338,16 @@ class MediaMiningViewModel internal constructor(
                 // says so, and a banner calling it another run would be wrong.
                 runtimeConflict =
                     aux.activeKind?.toRuntimeConflict()?.takeIf {
-                        runState == MiningRunState.Idle &&
+                        runState.acceptsInputEdits &&
+                            // The tab's own undo is not another run either.
+                            !local.pending.undo &&
                             !local.timingPreviewPending &&
                             !local.audioTrackProbePending
                     },
                 undoConfirmationNoteCount = local.undoConfirmationNoteCount,
                 undoneNoteCount = undoneReceipt?.deletedNotes,
                 undoAvailable = undoAvailable,
+                undoPending = local.pending.undo,
             )
         }.stateIn(
             scope = viewModelScope,
@@ -487,7 +491,7 @@ class MediaMiningViewModel internal constructor(
 
     fun clearVideo() {
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
             mutableTimingPreviewState.value != null ||
@@ -520,7 +524,7 @@ class MediaMiningViewModel internal constructor(
 
     private fun clearSubtitleDocument(kind: DocumentKind) {
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
             mutableTimingPreviewState.value != null ||
@@ -588,7 +592,7 @@ class MediaMiningViewModel internal constructor(
     fun setSubtitleOffsetDraft(value: String) {
         val local = localState.value
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             local.pending.start ||
             local.pending.reset ||
             local.timingPreviewPending ||
@@ -603,7 +607,7 @@ class MediaMiningViewModel internal constructor(
         val local = localState.value
         if (
             secondarySubtitleSelection == null ||
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             local.pending.start ||
             local.pending.reset ||
             local.timingPreviewPending ||
@@ -623,7 +627,7 @@ class MediaMiningViewModel internal constructor(
             if (
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
-                repository.state.value != MiningRunState.Idle ||
+                !repository.state.value.acceptsInputEdits ||
                 local.subtitleOffsetDraftInvalid ||
                 local.pending.start ||
                 local.pending.reset ||
@@ -657,7 +661,7 @@ class MediaMiningViewModel internal constructor(
                                 onSuccess = { session ->
                                     val current = localState.value
                                     if (
-                                        repository.state.value != MiningRunState.Idle ||
+                                        !repository.state.value.acceptsInputEdits ||
                                         current.video.isResolving ||
                                         current.subtitle.isResolving ||
                                         current.video.document?.uri != video.uri ||
@@ -743,7 +747,7 @@ class MediaMiningViewModel internal constructor(
             val video = local.video.document ?: return
             if (
                 local.video.isResolving ||
-                repository.state.value != MiningRunState.Idle ||
+                !repository.state.value.acceptsInputEdits ||
                 local.pending.start ||
                 local.pending.reset ||
                 local.timingPreviewPending ||
@@ -811,13 +815,15 @@ class MediaMiningViewModel internal constructor(
         while (true) {
             val local = localState.value
             val input = buildVideoInput(local) ?: return
-            if (repository.state.value != MiningRunState.Idle ||
+            val runState = repository.state.value
+            if (!runState.acceptsInputEdits ||
                 runtimeWorkState.value != null ||
                 local.video.isResolving ||
                 local.subtitle.isResolving ||
                 (local.secondarySubtitleEnabled && local.secondarySubtitle.isResolving) ||
                 local.pending.start ||
                 local.pending.reset ||
+                local.pending.undo ||
                 local.timingPreviewPending ||
                 mutableTimingPreviewState.value != null ||
                 local.audioTrackProbePending ||
@@ -825,17 +831,23 @@ class MediaMiningViewModel internal constructor(
             ) {
                 return
             }
+            val restart = runState.isTerminal
             if (localState.compareAndSet(
                     local,
                     local.copy(
-                        pending = local.pending.begin(MiningPendingAction.START),
+                        pending =
+                            if (restart) {
+                                local.pending.beginRetry()
+                            } else {
+                                local.pending.begin(MiningPendingAction.START)
+                            },
                         commandError = null,
                         previousPageSelectedCount = 0,
                         runDeckName = local.deckName,
                     ),
                 )
             ) {
-                launchStart(input)
+                if (restart) launchRestart(runState.runId, input) else launchStart(input)
                 return
             }
         }
@@ -1327,13 +1339,54 @@ class MediaMiningViewModel internal constructor(
         }
     }
 
+    /** Mine from a finished run: clear its terminal state, then start with the inputs now on screen. */
+    private fun launchRestart(
+        previousRunId: String?,
+        input: VideoMiningInput,
+    ) {
+        viewModelScope.launch(LogContext.asContextElement(previousRunId)) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "start",
+                "after" to "terminal",
+                "outcome" to "ok",
+            )
+            try {
+                repository.reset()
+                localState.update { it.copy(pending = it.pending.complete(MiningPendingAction.RESET)) }
+                repository.startVideo(input)
+            } catch (failure: CancellationException) {
+                throw failure
+            } catch (failure: RuntimeException) {
+                AppLog.e(
+                    LogComponent.UI,
+                    "command",
+                    failure,
+                    "command" to "start",
+                    "outcome" to "fail",
+                )
+                localState.update { it.copy(commandError = MiningCommandError.START) }
+            } finally {
+                localState.update {
+                    it.copy(
+                        pending =
+                            it.pending
+                                .complete(MiningPendingAction.RESET)
+                                .complete(MiningPendingAction.START),
+                    )
+                }
+            }
+        }
+    }
+
     private fun resolveDocument(
         kind: DocumentKind,
         uri: String,
         restoring: Boolean = false,
     ) {
         if (uri.isBlank() ||
-            (!restoring && repository.state.value != MiningRunState.Idle) ||
+            (!restoring && !repository.state.value.acceptsInputEdits) ||
             localState.value.pending.start ||
             localState.value.timingPreviewPending ||
             mutableTimingPreviewState.value != null ||
@@ -1520,7 +1573,7 @@ class MediaMiningViewModel internal constructor(
     ) {
         val current = localState.value
         if (
-            repository.state.value != MiningRunState.Idle ||
+            !repository.state.value.acceptsInputEdits ||
             current.video.document?.uri != video.uri ||
             !isCurrentDocumentRequest(DocumentKind.VIDEO, videoRequest) ||
             mutableAudioTrackPickerState.value != null

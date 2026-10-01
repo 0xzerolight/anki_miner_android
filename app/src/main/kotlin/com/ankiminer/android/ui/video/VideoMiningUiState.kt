@@ -10,6 +10,7 @@ import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.ENGINE_DEFAULT_SUBTITLE_OFFSET
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.acceptsInputEdits
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.ExpansionPreview
@@ -127,13 +128,15 @@ data class VideoMiningUiState(
     val undoConfirmationNoteCount: Int? = null,
     val undoneNoteCount: Int? = null,
     val undoAvailable: Boolean = false,
+    /** The tab's own Undo is deleting notes; Mine waits for it. */
+    val undoPending: Boolean = false,
     val audioTrackOverride: Long? = null,
     val audioTrackProbePending: Boolean = false,
     val audioTrackPickerError: AudioTrackPickerError? = null,
 ) {
     val canStart: Boolean
         get() =
-            runState == MiningRunState.Idle &&
+            runState.acceptsInputEdits &&
                 video.document != null &&
                 subtitle.document != null &&
                 !video.isResolving &&
@@ -142,13 +145,15 @@ data class VideoMiningUiState(
                 !(secondarySubtitleEnabled && secondarySubtitle.isResolving) &&
                 !secondarySubtitleOffsetDraftInvalid &&
                 !startPending &&
+                !resetPending &&
+                !undoPending &&
                 !timingPreviewPending &&
                 !audioTrackProbePending &&
                 runtimeConflict == null
 
     val canTestTiming: Boolean
         get() =
-            runState == MiningRunState.Idle &&
+            runState.acceptsInputEdits &&
                 video.document != null &&
                 subtitle.document != null &&
                 !video.isResolving &&
@@ -160,7 +165,7 @@ data class VideoMiningUiState(
 
     val canPickAudioTracks: Boolean
         get() =
-            runState == MiningRunState.Idle &&
+            runState.acceptsInputEdits &&
                 video.document != null &&
                 !video.isResolving &&
                 !startPending &&
