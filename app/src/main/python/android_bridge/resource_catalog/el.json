@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "el",
+  "resources": [
+    {
+      "resourceId": "el-el-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy el_core_news_sm 3.8.0 pipeline",
+      "importName": "el_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/el_core_news_sm-3.8.0/el_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "18df59b7f099a20d6f7cc1f964a57408a4c1663b73b5110932c1ea24f66e3027",
+        "sizeBytes": 12607208,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "el_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "el_core_news_sm-3.8.0/config.cfg",
+          "el_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "el_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-NC-SA 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Greek GDT v2.8",
+          "copyright": "Prokopidis, Prokopis",
+          "license": "CC BY-NC-SA 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Greek-GDT"
+        },
+        {
+          "name": "Greek NER Corpus (Google Summer of Code 2018)",
+          "copyright": "Giannis Daras",
+          "license": "MIT",
+          "url": "https://github.com/eellak/gsoc2018-spacy"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

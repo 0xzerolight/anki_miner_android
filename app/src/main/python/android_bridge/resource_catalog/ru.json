@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 3,
+  "language": "ru",
+  "resources": [
+    {
+      "resourceId": "ru-ru-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy ru_core_news_sm 3.8.0 pipeline",
+      "importName": "ru_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/ru_core_news_sm-3.8.0/ru_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "69978d47b43e2c4f329bebdb155e8e9d3861bba1a58ba25551419dae7d7e07fc",
+        "sizeBytes": 15259622,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "ru_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "ru_core_news_sm-3.8.0/config.cfg",
+          "ru_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "ru_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "Nerus",
+          "copyright": "Alexander Kukushkin",
+          "license": "MIT",
+          "url": "https://github.com/natasha/nerus"
+        }
+      ]
+    },
+    {
+      "resourceId": "ru-pymorphy3-dicts-ru",
+      "kind": "language-data",
+      "displayName": "pymorphy3 Russian dictionaries 2.4.417150.4580142",
+      "importName": "pymorphy3_dicts_ru",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/b0/67/469e9e52d046863f5959928794d3067d455a77f580bf4a662630a43eb426/pymorphy3_dicts_ru-2.4.417150.4580142-py2.py3-none-any.whl",
+        "sha256": "718bac64c73c10c16073a199402657283d9b64c04188b694f6d3e9b0d85440f4",
+        "sizeBytes": 8442043,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pymorphy3_dicts_ru/",
+        "exclude": [
+          "__init__.py",
+          "version.py"
+        ],
+        "sentinels": [
+          "data/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "pymorphy3-dicts-ru 2.4.417150.4580142 (OpenCorpora-format dictionaries)",
+          "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
+          "license": "MIT",
+          "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

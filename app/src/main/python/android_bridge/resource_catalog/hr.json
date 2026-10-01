@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 3,
+  "language": "hr",
+  "resources": [
+    {
+      "resourceId": "hr-hr-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy hr_core_news_sm 3.8.0 pipeline",
+      "importName": "hr_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/hr_core_news_sm-3.8.0/hr_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "393ad455bba13536e6fb257bce2b5ef0253f41c1fb5249d8c16dde6cf116d196",
+        "sizeBytes": 13187227,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "hr_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "hr_core_news_sm-3.8.0/config.cfg",
+          "hr_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "hr_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "Training corpus hr500k 1.0",
+          "copyright": "Ljubešić, Nikola ; Agić, Željko ; Klubička, Filip ; Batanović, Vuk and Erjavec, Tomaž",
+          "license": "CC BY-SA 4.0",
+          "url": "https://hdl.handle.net/11356/1183"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

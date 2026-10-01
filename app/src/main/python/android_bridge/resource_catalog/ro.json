@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "ro",
+  "resources": [
+    {
+      "resourceId": "ro-ro-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy ro_core_news_sm 3.8.0 pipeline",
+      "importName": "ro_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/ro_core_news_sm-3.8.0/ro_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "3cebfba2437131efe95345adcc7ea2131e4463915652df9099c577e618460cd9",
+        "sizeBytes": 12910222,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "ro_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "ro_core_news_sm-3.8.0/config.cfg",
+          "ro_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "ro_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Romanian RRT v2.8",
+          "copyright": "Barbu Mititelu, Verginica; Irimia, Elena; Perez, Cenel-Augusto; Ion, Radu; Simionescu, Radu; Popel, Martin",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Romanian-RRT"
+        },
+        {
+          "name": "RONEC - the Romanian Named Entity Corpus (ca9ce460)",
+          "copyright": "Dumitrescu, Stefan Daniel; Avram, Andrei-Marius; Morogan, Luciana; Toma; Stefan",
+          "license": "MIT",
+          "url": "https://github.com/dumitrescustefan/ronec"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

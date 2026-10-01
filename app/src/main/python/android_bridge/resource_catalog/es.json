@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 3,
+  "language": "es",
+  "resources": [
+    {
+      "resourceId": "es-es-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy es_core_news_sm 3.8.0 pipeline",
+      "importName": "es_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/es_core_news_sm-3.8.0/es_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "e451a83d6df79b87e9eed0cb553f03e99e36a3bab18a7b79f0dcfd1fdf875e12",
+        "sizeBytes": 12884212,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "es_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "es_core_news_sm-3.8.0/config.cfg",
+          "es_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "es_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "GNU GPL 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Spanish AnCora v2.8",
+          "copyright": "Martínez Alonso, Héctor; Zeman, Daniel",
+          "license": "GNU GPL 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Spanish-AnCora"
+        },
+        {
+          "name": "WikiNER",
+          "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+          "license": "CC BY 4.0",
+          "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+        },
+        {
+          "name": "spaCy lookups data",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://github.com/explosion/spacy-lookups-data"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

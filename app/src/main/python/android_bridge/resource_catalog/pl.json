@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "pl",
+  "resources": [
+    {
+      "resourceId": "pl-pl-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy pl_core_news_sm 3.8.0 pipeline",
+      "importName": "pl_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/pl_core_news_sm-3.8.0/pl_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "9b536db854b0cdb9132a74f68b392b8112ab6030f971bb03282462362a940dbb",
+        "sizeBytes": 20213213,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pl_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "pl_core_news_sm-3.8.0/config.cfg",
+          "pl_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "pl_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "GNU GPL 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Polish PDB v2.8",
+          "copyright": "Wróblewska, Alina; Zeman, Daniel; Mašek, Jan; Rosa, Rudolf",
+          "license": "GNU GPL 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Polish-PDB/"
+        },
+        {
+          "name": "National Corpus of Polish",
+          "copyright": "Mirosław Bańko, Rafał L. Górski, Barbara Lewandowska-Tomaszczyk, Marek Łaziński, Piotr Pęzik, Adam Przepiórkowski",
+          "license": "GNU GPL 3.0",
+          "url": "https://nkjp.pl/"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

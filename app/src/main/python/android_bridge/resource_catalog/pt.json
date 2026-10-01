@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "pt",
+  "resources": [
+    {
+      "resourceId": "pt-pt-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy pt_core_news_sm 3.8.0 pipeline",
+      "importName": "pt_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/pt_core_news_sm-3.8.0/pt_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "c304fa04db3af73cd08a250feacf560506e15a2ec2469bd1b09f06847f6b455c",
+        "sizeBytes": 12985007,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pt_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "pt_core_news_sm-3.8.0/config.cfg",
+          "pt_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "pt_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Portuguese Bosque v2.8",
+          "copyright": "Rademaker, Alexandre; Freitas, Cláudia; de Souza, Elvis; Silveira, Aline; Cavalcanti, Tatiana; Evelyn, Wograine; Rocha, Luisa; Soares-Bastos, Isabela; Bick, Eckhard; Chalub, Fabricio; Paulino-Passos, Guilherme; Real, Livy; de Paiva, Valeria; Zeman, Daniel; Popel, Martin; Mareček, David; Silveira, Natalia; Martins, André",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Portuguese-Bosque"
+        },
+        {
+          "name": "WikiNER",
+          "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+          "license": "CC BY 4.0",
+          "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

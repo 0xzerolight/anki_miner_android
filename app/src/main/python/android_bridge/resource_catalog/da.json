@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "da",
+  "resources": [
+    {
+      "resourceId": "da-da-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy da_core_news_sm 3.8.0 pipeline",
+      "importName": "da_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/da_core_news_sm-3.8.0/da_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "8caeb4dc26f56de8abcf70399b202a0b2223d38664b1a59f1cb8db0000808bc9",
+        "sizeBytes": 12378278,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "da_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "da_core_news_sm-3.8.0/config.cfg",
+          "da_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "da_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Danish DDT v2.8",
+          "copyright": "Johannsen, Anders; Martínez Alonso, Héctor; Plank, Barbara",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Danish-DDT"
+        },
+        {
+          "name": "DaNE",
+          "copyright": "Rasmus Hvingelby, Amalie B. Pauli, Maria Barrett, Christina Rosted, Lasse M. Lidegaard, Anders Søgaard",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/alexandrainst/danlp/blob/master/docs/datasets.md"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

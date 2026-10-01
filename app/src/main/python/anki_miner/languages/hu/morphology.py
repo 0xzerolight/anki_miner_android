@@ -1,0 +1,143 @@
+"""Hungarian data for the shared spaCy substrate (spec E.1 hu column, E.2.6, E.2.8, E.6).
+
+Pinned on real ``hu_core_news_md`` 3.8.0 output (``tests/fixtures/hu/``) and wty-hu-en 2026.08.29 rows. Counts are
+over the 7,701 example sentences of wty-hu-en (statistics only).
+
+``HU_EXCLUDED_SUBTYPES`` is empty: the tagger's labels are the 17 UPOS names, so there is no fine tagset to exclude
+by. The tagger and the morphologizer still predict independently, so ``pos2`` carries the tagger's UPOS guess
+where the two disagree (1,075 of 28,546 content tokens, mostly NOUN tagged PROPN); nothing gates on it.
+
+``HU_PREVERBS`` is every row of en.wiktionary's Appendix:Hungarian verbal prefixes (revision 92508665), variants and
+debated or limited rows included. The parser labels a separated preverb ``compound:preverb`` (``nem olvasta el``,
+``el fogom olvasni``): 465 such arcs, of which 429 have the VERB or AUX head ``PARTICLE_HEAD_POS`` requires, and 23
+of those hang a word that is no preverb (``volna``, ``legalább``, ``hogy``, a closing quote).
+``hungarian_preverb_candidates`` offers a join only for a listed preverb: without a dictionary ``SeparableVerbPass``
+takes the first candidate, which would print ``volnatör``. The 36 arcs on a non-verb head (X, ADJ, PROPN, NOUN, ADV,
+NUM) are never stashed, so their dependent mines as its own ADV (``nem érhető el`` mines ``el``). A head with two
+arcs stashes both and the pass tries them in order: ``hitte volna el`` joins ``el`` (``elhisz``), because ``volna``
+offers no join; a stashed word the pass does not join keeps its own class (``legalább`` stays an adverb).
+
+``preverb_less_verb`` is the lookup rung (E.2.8, the German rung's shape): wty-hu-en lacks many preverb verbs the
+lemmatiser builds (``elkap``, ``elenged``, ``behoz``). It reads the front only, has no POS gate and emits every
+listed preverb the front starts with (``előrefut`` -> ``fut``, ``refut``, ``őrefut``); over the corpus's 28,546
+ADJ/ADV/NOUN/VERB tokens 310 reach the dictionary through it alone (VERB 242, NOUN 33, ADJ 31, ADV 4) against
+24,977 direct front hits and 403 surface hits.
+
+``demote_question_clitic``: spaCy's hu tokenizer splits the ``-e`` question clitic off (``tudod-e``), and the model
+tags it ADV, which would mine. ``demote_negation_particles``: the model tags ``nem``/``ne``/``sem``/``se`` ADV with
+``PronType=Neg`` (UD Hungarian), so ``nem``, third in the frequency list, was mined in 187 of 1,500 example sentences.
+
+``potential_verb_front`` gates the form-of front repair (``_spaced/form_of.py``, run after the preverb join in
+``hu/parser.py``): a VERB front with the potential ``-hat``/``-het`` that wty-hu-en files only as a form row takes
+the one target that row names, so an irregular base comes from the dictionary (``tudhat`` -> ``tud``, ``tehet`` ->
+``tesz``, ``mehet`` -> ``megy``) and ``lehet``, a headword, stays. The gate keeps every other front as the tagger
+built it: unrestricted, the repair rewrites ``gyerek`` as ``gyermek``.
+
+``HU_OPENERS``/``HU_CLOSERS``: Hungarian quotes are „…” outside and »…« inside, so ``»`` opens and ``«`` closes, the
+reverse of the shared Latin pair. ``HU_SPEAKER_PATTERN`` is the shared speaker label with ``Ő`` and ``Ű`` added:
+both sit outside Latin-1, so ``GYŐZŐ:`` escaped the Latin default.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from typing import Any
+
+from anki_miner.languages._spaced.pos import UPOS_ALLOWED
+from anki_miner.languages._spaced.script import BRACKETS_PATTERN, DIALOGUE_DASH_PATTERN, MUSIC_PATTERN, PARENS_PATTERN
+from anki_miner.languages.token import LanguageToken
+
+#: The model package the tokenizer loads and the availability probe looks for (a HuggingFace wheel, E.6).
+HU_MODEL_PACKAGE = "hu_core_news_md"
+
+HU_ALLOWED_POS: tuple[str, ...] = UPOS_ALLOWED
+HU_EXCLUDED_SUBTYPES: tuple[str, ...] = ()
+
+#: UD Hungarian labels a separated verbal prefix ``compound:preverb`` (spec §4.3 item 2, E.10).
+HU_PREVERB_DEPS: frozenset[str] = frozenset({"compound:preverb"})
+
+HU_PREVERBS: frozenset[str] = frozenset(
+    {
+        "abba", "agyon", "alul", "alá", "alább", "be", "bele", "belé", "benn", "egybe", "egyet", "együtt", "el",
+        "ellen", "ellent", "elé", "elő", "előre", "fel", "felül", "fenn", "félbe", "félre", "föl", "fölé", "fölül",
+        "fönn", "haza", "helyben", "helyre", "helyt", "hozzá", "hátra", "ide", "jól", "jót", "jóvá", "karban",
+        "keresztül", "ketté", "ki", "kétségbe", "kölcsön", "körbe", "köré", "körül", "közbe", "közben", "közre",
+        "közzé", "közé", "külön", "le", "létre", "meg", "mellé", "mögé", "nagyot", "neki", "nyilván", "oda",
+        "odább", "odébb", "ott", "rajta", "rendre", "rosszul", "rá", "szembe", "szemre", "szerte", "számon",
+        "széjjel", "szét", "szörnyet", "tele", "teli", "tova", "tovább", "tönkre", "túl", "utol", "után", "utána",
+        "vissza", "viszont", "végbe", "végig", "végre", "által", "át", "észre", "össze", "újjá", "újra"
+    }
+)  # fmt: skip
+
+#: Longest first, so ``előre`` is stripped before ``elő`` and ``el``.
+_PREVERBS_LONGEST_FIRST: tuple[str, ...] = tuple(sorted(HU_PREVERBS, key=lambda preverb: (-len(preverb), preverb)))
+
+#: A stripped preverb must leave a verb behind: ``ad``, ``ír`` and ``lő`` have two letters.
+_MIN_VERB_REST = 2
+
+
+def hungarian_preverb_candidates(token: Any) -> list[str]:
+    """``SeparableVerbPass`` candidates: preverb + lemma for a listed preverb, none for any other stashed word."""
+    particle: str = token.feature.particle
+    return [particle + token.feature.lemma] if particle in HU_PREVERBS else []
+
+
+def preverb_less_verb(word: str, surface: str) -> list[str]:
+    """Lookup rung over ``(mined_form, surface)``: ``elkap`` -> ``kap``, longest preverb first.
+
+    Reads the card front only: a surface never carries a preverb the front lacks.
+    """
+    del surface
+    return [
+        word[len(preverb) :]
+        for preverb in _PREVERBS_LONGEST_FIRST
+        if word.startswith(preverb) and len(word) - len(preverb) >= _MIN_VERB_REST
+    ]
+
+
+def demote_question_clitic(tokens: list[LanguageToken]) -> list[LanguageToken]:
+    """Tokenizer post-pass (``build_spacy_tagger(post_passes=...)``): the split-off ``-e`` clitic becomes PART."""
+    for token in tokens:
+        if token.surface.casefold() == "-e":
+            token.feature.pos1 = "PART"
+    return tokens
+
+
+#: The negation particles UD Hungarian tags ADV with ``PronType=Neg`` (``se`` is the colloquial ``sem``).
+HU_NEGATION_PARTICLES: frozenset[str] = frozenset({"nem", "ne", "sem", "se"})
+
+
+def demote_negation_particles(tokens: list[LanguageToken]) -> list[LanguageToken]:
+    """Tokenizer post-pass: an ADV negation particle becomes PART (fr ``ne``, en ``not``).
+
+    Both the lemma table and the morph must agree: ``soha`` (never) is ``PronType=Tot`` vocabulary, and the model's
+    rare ``PronType=Neg`` on a content word (``nélküle``, ``bármennyire``) is no listed lemma.
+    """
+    for token in tokens:
+        feature = token.feature
+        if feature.pos1 == "ADV" and feature.lemma in HU_NEGATION_PARTICLES and "PronType=Neg" in token.morph:
+            feature.pos1 = "PART"
+    return tokens
+
+
+#: The potential suffix: ``tud`` -> ``tudhat``, ``tesz`` -> ``tehet``.
+_POTENTIAL_SUFFIXES = ("hat", "het")
+
+
+def potential_verb_front(token: Any, front: str, lemma_rows: Sequence[tuple[str, str]]) -> bool:
+    """``FormOfLemmaPass`` gate: only a VERB whose front carries the potential ``-hat``/``-het`` is repaired."""
+    del front, lemma_rows
+    return bool(token.feature.pos1 == "VERB" and token.feature.lemma.endswith(_POTENTIAL_SUFFIXES))
+
+
+#: Words a deck front carries that the mined lemma never does (S3, D18): ``a ház`` meets ``ház``.
+HU_LEADING_WORDS: frozenset[str] = frozenset({"a", "az", "egy"})
+
+HU_OPENERS: frozenset[str] = frozenset("([{“„»")
+HU_CLOSERS: frozenset[str] = frozenset(")]}”«")
+
+#: ``GYŐZŐ:``, ``ŐR:`` — the Latin speaker label with Ő (U+0150) and Ű (U+0170) in both classes.
+HU_SPEAKER_PATTERN = r"^[A-ZÀ-ÖØ-ÞŐŰ][A-ZÀ-ÖØ-ÞŐŰ0-9 .'-]*[A-ZÀ-ÖØ-ÞŐŰ]:\s*"
+HU_SUBTITLE_REGEX = "|".join(
+    (BRACKETS_PATTERN, PARENS_PATTERN, MUSIC_PATTERN, HU_SPEAKER_PATTERN, DIALOGUE_DASH_PATTERN)
+)

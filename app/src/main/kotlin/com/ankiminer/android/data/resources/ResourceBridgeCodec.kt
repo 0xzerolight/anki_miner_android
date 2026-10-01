@@ -1511,7 +1511,33 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew) }
+    val all: List<ResourceCatalog> by lazy {
+        listOf(value, arabic, persian, hebrew) +
+            // The spaCy languages (SpacyLanguageCatalogs.kt).
+            listOf(
+                englishCatalog,
+                catalanCatalog,
+                germanCatalog,
+                portugueseCatalog,
+                frenchCatalog,
+                spanishCatalog,
+                italianCatalog,
+                dutchCatalog,
+                norwegianBokmalCatalog,
+                romanianCatalog,
+                greekCatalog,
+                finnishCatalog,
+                hungarianCatalog,
+                croatianCatalog,
+                swedishCatalog,
+                polishCatalog,
+                lithuanianCatalog,
+                danishCatalog,
+                slovenianCatalog,
+                russianCatalog,
+                ukrainianCatalog,
+            )
+    }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 

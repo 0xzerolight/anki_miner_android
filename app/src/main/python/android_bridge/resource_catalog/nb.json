@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "nb",
+  "resources": [
+    {
+      "resourceId": "nb-nb-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy nb_core_news_sm 3.8.0 pipeline",
+      "importName": "nb_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/nb_core_news_sm-3.8.0/nb_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "086f2cfcc1568b2ee49a2ab297f7910f2645ae6892f2d5d15d8b077f5d0bd773",
+        "sizeBytes": 12488349,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "nb_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "nb_core_news_sm-3.8.0/config.cfg",
+          "nb_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "nb_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Norwegian Bokmaal v2.8",
+          "copyright": "Øvrelid, Lilja; Jørgensen, Fredrik; Hohle, Petter",
+          "license": "Public Domain (CC0)",
+          "url": "https://github.com/UniversalDependencies/UD_Norwegian-Bokmaal"
+        },
+        {
+          "name": "NorNE: Norwegian Named Entities (commit: bd311de5)",
+          "copyright": "Language Technology Group (University of Oslo)",
+          "license": "Public Domain (CC0)",
+          "url": "https://github.com/ltgoslo/norne"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

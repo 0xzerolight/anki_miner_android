@@ -81,7 +81,31 @@ class GenerateLanguageDataTest(unittest.TestCase):
         # generate_entries raises on an unclassified component or a stale pin.
         entries = generator.generate_entries(REPO_ROOT)
         self.assertEqual(
-            {"ar": ["calima_msa"], "fa": ["hazm_data"]},
+            {
+                "ar": ["calima_msa"],
+                "fa": ["hazm_data"],
+                "en": ["en_core_web_sm"],
+                "ca": ["ca_core_news_sm"],
+                "de": ["de_core_news_sm"],
+                "pt": ["pt_core_news_sm"],
+                "fr": ["fr_core_news_sm"],
+                "es": ["es_core_news_sm"],
+                "it": ["it_core_news_sm"],
+                "nl": ["nl_core_news_sm"],
+                "nb": ["nb_core_news_sm"],
+                "ro": ["ro_core_news_sm"],
+                "el": ["el_core_news_sm"],
+                "fi": ["fi_core_news_sm"],
+                "hu": ["hu_core_news_md"],
+                "hr": ["hr_core_news_sm"],
+                "sv": ["sv_core_news_sm"],
+                "pl": ["pl_core_news_sm"],
+                "lt": ["lt_core_news_sm"],
+                "da": ["da_core_news_sm"],
+                "sl": ["sl_core_news_sm"],
+                "ru": ["ru_core_news_sm", "pymorphy3_dicts_ru"],
+                "uk": ["uk_core_news_sm", "pymorphy3_dicts_uk"],
+            },
             {code: [entry["importName"] for entry in items] for code, items in entries.items()},
         )
 

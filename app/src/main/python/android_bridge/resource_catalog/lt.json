@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "lt",
+  "resources": [
+    {
+      "resourceId": "lt-lt-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy lt_core_news_sm 3.8.0 pipeline",
+      "importName": "lt_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/lt_core_news_sm-3.8.0/lt_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "c1f709112fd01771c10fbd2fe7e01d9d65712c8bccd9171065a29f91c9dc151e",
+        "sizeBytes": 13246100,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "lt_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "lt_core_news_sm-3.8.0/config.cfg",
+          "lt_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "lt_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Lithuanian ALKSNIS v2.8",
+          "copyright": "Utka, Andrius; Rimkutė, Erika; Bielinskienė, Agnė; Kovalevskaitė, Jolanta; Boizou, Loïc; Aleksandravičiūtė, Gabrielė; Brokaitė, Kristina; Zeman, Daniel; Perkova, Natalia; Griciūtė, Bernadeta",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Lithuanian-ALKSNIS"
+        },
+        {
+          "name": "TokenMill NER Corpus",
+          "copyright": "TokenMill",
+          "license": "commercial (licensed by Explosion)",
+          "url": "https://www.tokenmill.lt"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

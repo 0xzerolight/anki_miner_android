@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "sv",
+  "resources": [
+    {
+      "resourceId": "sv-sv-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy sv_core_news_sm 3.8.0 pipeline",
+      "importName": "sv_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/sv_core_news_sm-3.8.0/sv_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "be4929fb30523dca0b6672f999cdbf4d64f165419f1eed0014ca3a36599b8b4d",
+        "sizeBytes": 12741934,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "sv_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "sv_core_news_sm-3.8.0/config.cfg",
+          "sv_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "sv_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Swedish Talbanken v2.8",
+          "copyright": "Nivre, Joakim; Smith, Aaron",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Swedish-Talbanken"
+        },
+        {
+          "name": "Stockholm-Umeå Corpus (SUC) v3.0",
+          "copyright": "Språkbanken",
+          "license": "CC BY 4.0",
+          "url": "https://huggingface.co/datasets/KBLab/sucx3_ner"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 3,
+  "language": "uk",
+  "resources": [
+    {
+      "resourceId": "uk-uk-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy uk_core_news_sm 3.8.0 pipeline",
+      "importName": "uk_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/uk_core_news_sm-3.8.0/uk_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "d20adb50b42c0dcfdedf4994dabcb96789a64983a9ab560d0c6c38a59e8efb58",
+        "sizeBytes": 14908659,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "uk_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "uk_core_news_sm-3.8.0/config.cfg",
+          "uk_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "uk_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "Ukr-Synth (e5d9eaf3)",
+          "copyright": "Volodymyr Kurnosov",
+          "license": "MIT",
+          "url": "https://huggingface.co/datasets/ukr-models/Ukr-Synth"
+        }
+      ]
+    },
+    {
+      "resourceId": "uk-pymorphy3-dicts-uk",
+      "kind": "language-data",
+      "displayName": "pymorphy3 Ukrainian dictionaries 2.4.1.1.1663094765",
+      "importName": "pymorphy3_dicts_uk",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/60/1a/310e767e0dd9ad414c11f9b969735b8e7af90c38b7372ebc3a086f3c1249/pymorphy3_dicts_uk-2.4.1.1.1663094765-py2.py3-none-any.whl",
+        "sha256": "6af1e389b69e7e90ef7d50b20e3955a0c78383317a15d9ade5979f1536354733",
+        "sizeBytes": 8201207,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pymorphy3_dicts_uk/",
+        "exclude": [
+          "__init__.py",
+          "version.py"
+        ],
+        "sentinels": [
+          "data/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "pymorphy3-dicts-uk 2.4.1.1.1663094765 (OpenCorpora-format dictionaries)",
+          "copyright": "Danylo Halaiko and the pymorphy3-dicts contributors",
+          "license": "GPL-3.0",
+          "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 3,
+  "language": "ca",
+  "resources": [
+    {
+      "resourceId": "ca-ca-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy ca_core_news_sm 3.8.0 pipeline",
+      "importName": "ca_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/ca_core_news_sm-3.8.0/ca_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "e214211aa8da91c24ebdc453c2aa5f54fac09f44e01e65bcbdd3b0a5cb94d809",
+        "sizeBytes": 19566606,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "ca_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "ca_core_news_sm-3.8.0/config.cfg",
+          "ca_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "ca_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "GNU GPL 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Catalan AnCora v2.8",
+          "copyright": "Martínez Alonso, Héctor; Pascual, Elena; Zeman, Daniel",
+          "license": "GNU GPL 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Catalan-AnCora"
+        },
+        {
+          "name": "UD Catalan AnCora v2.8 + NER v3.2.9",
+          "copyright": "Carlos Rodríguez-Penagos and Carme Armentano-Oller",
+          "license": "CC BY 4.0",
+          "url": "https://github.com/TeMU-BSC/spacy/releases/tag/3.2.9"
+        },
+        {
+          "name": "Catalan Lemmatizer",
+          "copyright": "Text Mining Unit, Barcelona Supercomputing Center",
+          "license": "CC0",
+          "url": "https://github.com/explosion/spacy-lookups-data"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "it",
+  "resources": [
+    {
+      "resourceId": "it-it-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy it_core_news_sm 3.8.0 pipeline",
+      "importName": "it_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/it_core_news_sm-3.8.0/it_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "3f617bf9a8ae0418953cf1fbf014e10272684c4229e882a7fd748b637d0100bf",
+        "sizeBytes": 13030943,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "it_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "it_core_news_sm-3.8.0/config.cfg",
+          "it_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "it_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-NC-SA 3.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Italian ISDT v2.8",
+          "copyright": "Bosco, Cristina; Lenci, Alessandro; Montemagni, Simonetta; Simi, Maria",
+          "license": "CC BY-NC-SA 3.0",
+          "url": "https://github.com/UniversalDependencies/UD_Italian-ISDT"
+        },
+        {
+          "name": "WikiNER",
+          "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+          "license": "CC BY 4.0",
+          "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

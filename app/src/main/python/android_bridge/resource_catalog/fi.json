@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "fi",
+  "resources": [
+    {
+      "resourceId": "fi-fi-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy fi_core_news_sm 3.8.0 pipeline",
+      "importName": "fi_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/fi_core_news_sm-3.8.0/fi_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "5b9bd1496f500c1fac98f5e6a5d3913aa502f188c094ecea191dc6b8a81f418d",
+        "sizeBytes": 14346621,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "fi_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "fi_core_news_sm-3.8.0/config.cfg",
+          "fi_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "fi_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Finnish TDT v2.8",
+          "copyright": "Ginter, Filip; Kanerva, Jenna; Laippala, Veronika; Miekka, Niko; Missilä, Anna; Ojala, Stina; Pyysalo, Sampo",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Finnish-TDT"
+        },
+        {
+          "name": "TurkuONE (ffe2040e)",
+          "copyright": "Jouni Luoma, Li-Hsin Chang, Filip Ginter, Sampo Pyysalo",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/TurkuNLP/turku-one"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

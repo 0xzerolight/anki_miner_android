@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 3,
+  "language": "en",
+  "resources": [
+    {
+      "resourceId": "en-en-core-web-sm",
+      "kind": "language-data",
+      "displayName": "spaCy en_core_web_sm 3.8.0 pipeline",
+      "importName": "en_core_web_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+        "sha256": "1932429db727d4bff3deed6b34cfc05df17794f4a52eeb26cf8928f7c1a0fb85",
+        "sizeBytes": 12806118,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "en_core_web_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "en_core_web_sm-3.8.0/config.cfg",
+          "en_core_web_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "en_core_web_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "OntoNotes 5",
+          "copyright": "Ralph Weischedel, Martha Palmer, Mitchell Marcus, Eduard Hovy, Sameer Pradhan, Lance Ramshaw, Nianwen Xue, Ann Taylor, Jeff Kaufman, Michelle Franchini, Mohammed El-Bachouti, Robert Belvin, Ann Houston",
+          "license": "commercial (licensed by Explosion)",
+          "url": "https://catalog.ldc.upenn.edu/LDC2013T19"
+        },
+        {
+          "name": "ClearNLP Constituent-to-Dependency Conversion",
+          "copyright": "Emory University",
+          "license": "Citation provided for reference, no code packaged with model",
+          "url": "https://github.com/clir/clearnlp-guidelines/blob/master/md/components/dependency_conversion.md"
+        },
+        {
+          "name": "WordNet 3.0",
+          "copyright": "Princeton University",
+          "license": "WordNet 3.0 License",
+          "url": "https://wordnet.princeton.edu/"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

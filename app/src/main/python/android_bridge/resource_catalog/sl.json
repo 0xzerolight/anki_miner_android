@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 3,
+  "language": "sl",
+  "resources": [
+    {
+      "resourceId": "sl-sl-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy sl_core_news_sm 3.8.0 pipeline",
+      "importName": "sl_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/sl_core_news_sm-3.8.0/sl_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "d6d11f38c917d59b0fe52a15da09963bdc8011d2be288f75371e734065b6911c",
+        "sizeBytes": 13643819,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "sl_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "sl_core_news_sm-3.8.0/config.cfg",
+          "sl_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "sl_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "CC BY-SA 4.0",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "UD Slovenian SSJ v2.11",
+          "copyright": "Dobrovoljc, Kaja; Erjavec, Tomaž; Krek, Simon",
+          "license": "CC BY-SA 4.0",
+          "url": "https://github.com/UniversalDependencies/UD_Slovenian-SSJ"
+        },
+        {
+          "name": "Training corpus SUK 1.0",
+          "copyright": "Arhar Holdt, Špela; Krek, Simon; Dobrovoljc, Kaja; Erjavec, Tomaž; Gantar, Polona; Čibej, Jaka; Pori, Eva; Terčon, Luka; Munda, Tina; Žitnik, Slavko; Robida, Nejc; Blagus, Neli; Može, Sara; Ledinek, Nina; Holz, Nanika; Zupan, Katja; Kuzman, Taja; Kavčič, Teja; Škrjanec, Iza; Marko, Dafne; Jezeršek, Lucija; Zajc, Anja",
+          "license": "CC BY-SA 4.0",
+          "url": "https://www.clarin.si/repository/xmlui/handle/11356/1747"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

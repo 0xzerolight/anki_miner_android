@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 3,
+  "language": "de",
+  "resources": [
+    {
+      "resourceId": "de-de-core-news-sm",
+      "kind": "language-data",
+      "displayName": "spaCy de_core_news_sm 3.8.0 pipeline",
+      "importName": "de_core_news_sm",
+      "archive": {
+        "url": "https://github.com/explosion/spacy-models/releases/download/de_core_news_sm-3.8.0/de_core_news_sm-3.8.0-py3-none-any.whl",
+        "sha256": "fec69fec52b1780f2d269d5af7582a5e28028738bd3190532459aeb473bfa3e7",
+        "sizeBytes": 14639490,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "de_core_news_sm/",
+        "exclude": [
+          "__init__.py"
+        ],
+        "sentinels": [
+          "meta.json",
+          "de_core_news_sm-3.8.0/config.cfg",
+          "de_core_news_sm-3.8.0/meta.json"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "de_core_news_sm 3.8.0 (spaCy pipeline)",
+          "copyright": "Explosion",
+          "license": "MIT",
+          "url": "https://explosion.ai"
+        },
+        {
+          "name": "TIGER Corpus",
+          "copyright": "Brants, Sabine, Stefanie Dipper, Peter Eisenberg, Silvia Hansen, Esther König, Wolfgang Lezius, Christian Rohrer, George Smith, and Hans Uszkoreit",
+          "license": "commercial (licensed by Explosion)",
+          "url": "https://www.ims.uni-stuttgart.de/forschung/ressourcen/korpora/tiger.html"
+        },
+        {
+          "name": "Tiger2Dep",
+          "copyright": "Wolfgang Seeker",
+          "license": "Citation provided for reference, no code packaged with model",
+          "url": "https://www.ims.uni-stuttgart.de/forschung/ressourcen/werkzeuge/tiger2dep/"
+        },
+        {
+          "name": "WikiNER",
+          "copyright": "Joel Nothman, Nicky Ringland, Will Radford, Tara Murphy, James R Curran",
+          "license": "CC BY 4.0",
+          "url": "https://figshare.com/articles/Learning_multilingual_named_entity_recognition_from_Wikipedia/5462500"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}
