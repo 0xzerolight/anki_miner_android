@@ -110,6 +110,53 @@ internal object ProviderSnapshotValidation {
         return if (separator < 0) raw else raw.substring(0, separator)
     }
 
+    /**
+     * The values at [ordinals], which strictly ascend, or null when the note has no field at the
+     * last of them. Only the requested fields are allocated.
+     */
+    fun fieldsAt(
+        raw: String,
+        ordinals: List<Int>,
+    ): List<String>? {
+        val result = ArrayList<String>(ordinals.size)
+        var ordinal = 0
+        var start = 0
+        while (result.size < ordinals.size) {
+            val separator = raw.indexOf(FIELD_SEPARATOR, start)
+            val end = if (separator < 0) raw.length else separator
+            if (ordinal == ordinals[result.size]) result += raw.substring(start, end)
+            if (separator < 0) break
+            start = separator + 1
+            ordinal += 1
+        }
+        return if (result.size == ordinals.size) result else null
+    }
+
+    /**
+     * A note type's field names for the known-vocabulary scan, or null when its name or field
+     * names fall outside the v1 name limits. Unlike [validateModelBase] it accepts any model type
+     * and template set: the scan reads every note type, the mining target only one.
+     */
+    fun noteTypeFieldNames(
+        name: String,
+        rawFieldNames: String,
+    ): List<String>? =
+        try {
+            validateCanonicalName(name, AnkiLimitsV1.Names.Model.MAX_CODE_POINTS, AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES)
+            val fieldNames = splitFieldsPreservingTrailing(rawFieldNames)
+            requireTarget(fieldNames.distinct().size == fieldNames.size)
+            var fieldBytes = 0
+            for (field in fieldNames) {
+                fieldBytes +=
+                    validateCanonicalName(field, AnkiLimitsV1.Names.Field.MAX_CODE_POINTS, AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES)
+            }
+            requireTarget(fieldBytes <= AnkiLimitsV1.Names.TargetFields.MAX_TOTAL_UTF8_BYTES)
+            fieldNames
+            // instrumentation: silent — an unlisted note type is read from its first field, as before
+        } catch (_: InvalidTargetSnapshotException) {
+            null
+        }
+
     fun validateModelBase(
         id: Long,
         name: String,

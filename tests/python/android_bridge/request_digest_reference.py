@@ -289,10 +289,22 @@ def _scan_scope(value: object) -> _Object:
     if not isinstance(value, Mapping):
         _invalid("scan scope must be an object")
     kind = value.get("kind")
+    if kind == "noteTypes":
+        scope = _mapping(value, {"kind", "limits"}, "note-type scope")
+        scan_limits = ANKI_LIMITS_V1["scanFirstFields"]
+        _constant_limits(
+            scope["limits"],
+            {
+                "maxItems": scan_limits["noteTypesMaxItems"],
+                "maxTotalUtf8Bytes": scan_limits["noteTypesMaxUtf8Bytes"],
+            },
+            "note-type limits",
+        )
+        return _Object((("kind", "noteTypes"),))
     if kind == "knownVocabulary":
         scope = _mapping(
             value,
-            {"kind", "excludedDecks", "cursor", "limits"},
+            {"kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"},
             "known-vocabulary scope",
         )
         cursor_value = scope["cursor"]
@@ -322,10 +334,15 @@ def _scan_scope(value: object) -> _Object:
                     ("token", _string(raw_cursor["token"], "cursor token")),
                 )
             )
+        field_ordinals = [
+            _known_field_ordinals(entry, index)
+            for index, entry in enumerate(_list(scope["fieldOrdinals"], "fieldOrdinals"))
+        ]
         return _Object(
             (
                 ("kind", "knownVocabulary"),
                 ("excludedDecks", _string_list(scope["excludedDecks"], "excludedDecks")),
+                ("fieldOrdinals", field_ordinals),
                 ("cursor", cursor),
             )
         )
@@ -382,6 +399,22 @@ def _scan_scope(value: object) -> _Object:
             )
         )
     _invalid("scan scope kind is invalid")
+
+
+def _known_field_ordinals(value: object, index: int) -> _Object:
+    entry = _mapping(value, {"modelId", "ordinals"}, f"fieldOrdinals[{index}]")
+    return _Object(
+        (
+            ("modelId", _integer(entry["modelId"], "fieldOrdinals modelId")),
+            (
+                "ordinals",
+                [
+                    _integer(ordinal, f"fieldOrdinals[{index}].ordinals")
+                    for ordinal in _list(entry["ordinals"], "fieldOrdinals ordinals")
+                ],
+            ),
+        )
+    )
 
 
 def _duplicate_candidate(value: object, index: int) -> _Object:

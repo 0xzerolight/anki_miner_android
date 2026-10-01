@@ -22,6 +22,8 @@ import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateNote
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
 import com.ankiminer.android.anki.protocol.FailedMedia
+import com.ankiminer.android.anki.protocol.KnownFieldOrdinals
+import com.ankiminer.android.anki.protocol.KnownNote
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.KnownVocabularyResult
 import com.ankiminer.android.anki.protocol.KnownVocabularyScope
@@ -30,6 +32,9 @@ import com.ankiminer.android.anki.protocol.MediaAsset
 import com.ankiminer.android.anki.protocol.MediaPurpose
 import com.ankiminer.android.anki.protocol.NotAttemptedMedia
 import com.ankiminer.android.anki.protocol.NotAttemptedNote
+import com.ankiminer.android.anki.protocol.NoteTypeFields
+import com.ankiminer.android.anki.protocol.NoteTypesResult
+import com.ankiminer.android.anki.protocol.NoteTypesScope
 import com.ankiminer.android.anki.protocol.RawFirstFieldHit
 import com.ankiminer.android.anki.protocol.ReleaseRunStateRequest
 import com.ankiminer.android.anki.protocol.ReleaseRunStateResult
@@ -66,6 +71,7 @@ class AnkiJsonCodecTest {
             KnownVocabularyScope(
                 listOf("Suspended"),
                 KnownVocabularyCursor(1, "cursor-token"),
+                listOf(KnownFieldOrdinals(7, listOf(0, 2))),
             ),
             known.scope,
         )
@@ -306,8 +312,12 @@ class AnkiJsonCodecTest {
             encode(VerifyTargetResult(RUN_ID, REQUEST_ID, 2, 3, listOf("Expression"), false)),
         )
         assertEquals(
-            """{"schemaVersion":1,"type":"anki.scanfirstfields.result","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","firstFields":["猫"],"scannedNotes":1,"nextCursor":null}}""",
-            encode(KnownVocabularyResult(RUN_ID, REQUEST_ID, listOf("猫"), 1, null)),
+            """{"schemaVersion":1,"type":"anki.scanfirstfields.result","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","notes":[{"modelId":7,"fields":["猫"]}],"scannedNotes":1,"nextCursor":null}}""",
+            encode(KnownVocabularyResult(RUN_ID, REQUEST_ID, listOf(KnownNote(7, listOf("猫"))), 1, null)),
+        )
+        assertEquals(
+            """{"schemaVersion":1,"type":"anki.scanfirstfields.result","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","noteTypes":[{"modelId":7,"name":"Migaku","fieldNames":["Sentence","Target Word"]}]}}""",
+            encode(NoteTypesResult(RUN_ID, REQUEST_ID, listOf(NoteTypeFields(7, "Migaku", listOf("Sentence", "Target Word"))))),
         )
         assertEquals(
             """{"schemaVersion":1,"type":"anki.scanfirstfields.result","payload":{"runId":"$RUN_ID","requestId":"$REQUEST_ID","rawFirstFieldHits":[[{"noteId":9,"firstField":"猫"}]],"baselineToken":"$BASELINE_TOKEN"}}""",
@@ -454,6 +464,7 @@ class AnkiJsonCodecTest {
                                 null,
                             ),
                         )
+                    is NoteTypesResult -> ScanFirstFieldsRequest(response.runId, response.requestId, NoteTypesScope)
                     else ->
                         ScanFirstFieldsRequest(
                             response.runId,
@@ -517,7 +528,7 @@ class AnkiJsonCodecTest {
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","deckName":"$deck","modelName":"Mining","requiredFields":["Expression"]}"""
 
     private fun knownVocabularyPayload(): String =
-        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":["Suspended"],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
+        """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"knownVocabulary","excludedDecks":["Suspended"],"fieldOrdinals":[{"modelId":7,"ordinals":[0,2]}],"cursor":{"ordinal":1,"token":"cursor-token"},"limits":{"maxScannedNotes":256,"maxItems":256,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":262144}}}"""
 
     private fun duplicateScanPayload(): String =
         """{"runId":"$RUN_ID","requestId":"$REQUEST_ID","scope":{"kind":"duplicates","modelName":"Mining","firstFieldName":"Expression","candidates":[{"key":"猫","firstField":"<b>猫</b>"}],"occurrences":[0,0],"invalidateBaselineToken":null,"limits":{"maxHitsPerCandidate":100,"maxTotalHits":1000,"maxItemUtf8Bytes":65536,"maxTotalUtf8Bytes":1048576}}}"""

@@ -6,6 +6,7 @@ import com.ankiminer.android.anki.protocol.AnkiValidators
 import com.ankiminer.android.anki.protocol.CreateNotesResult
 import com.ankiminer.android.anki.protocol.CreatedNote
 import com.ankiminer.android.anki.protocol.DuplicateCandidate
+import com.ankiminer.android.anki.protocol.KnownFieldOrdinals
 import com.ankiminer.android.anki.protocol.KnownVocabularyCursor
 import com.ankiminer.android.anki.protocol.ReleaseState
 import com.ankiminer.android.anki.protocol.StoreMediaResult
@@ -118,6 +119,7 @@ internal data class KnownTraversalInitialization(
 
 internal data class KnownTraversalScope(
     val excludedDecks: List<String>,
+    val fieldOrdinals: List<KnownFieldOrdinals> = emptyList(),
 )
 
 internal data class KnownPageLease(
@@ -536,7 +538,10 @@ internal class AnkiRunStateRegistry(
                 state.runId,
                 owner.ownerId,
                 generation,
-                scope.copy(excludedDecks = scope.excludedDecks.toList()),
+                scope.copy(
+                    excludedDecks = scope.excludedDecks.toList(),
+                    fieldOrdinals = scope.fieldOrdinals.map { it.copy(ordinals = it.ordinals.toList()) },
+                ),
             )
         }
 

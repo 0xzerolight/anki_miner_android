@@ -69,10 +69,21 @@ internal data class KnownVocabularyCursor(
     val token: String,
 )
 
+/** A note type the known-vocabulary scan reads past its first field: exactly these fields, in order. */
+internal data class KnownFieldOrdinals(
+    val modelId: Long,
+    val ordinals: List<Int>,
+)
+
 internal data class KnownVocabularyScope(
     val excludedDecks: List<String>,
     val cursor: KnownVocabularyCursor?,
+    /** Part of the traversal's immutable scope. A note whose type is not listed returns its first field. */
+    val fieldOrdinals: List<KnownFieldOrdinals> = emptyList(),
 ) : ScanScope
+
+/** Every note type's ID, name and ordered field names, read once before a known-vocabulary traversal. */
+internal data object NoteTypesScope : ScanScope
 
 internal data class DuplicateCandidate(
     val key: String,
@@ -187,12 +198,33 @@ internal data class VerifyTargetResult(
     override val messageType: String = operation.resultType
 }
 
+/** One scanned note: its type and its raw field values at the request's ordinals (else its first field). */
+internal data class KnownNote(
+    val modelId: Long,
+    val fields: List<String>,
+)
+
 internal data class KnownVocabularyResult(
     override val runId: String,
     override val requestId: String,
-    val firstFields: List<String>,
+    val notes: List<KnownNote>,
     val scannedNotes: Int,
     val nextCursor: KnownVocabularyCursor?,
+) : AnkiResponse {
+    override val operation: AnkiOperation = AnkiOperation.SCAN_FIRST_FIELDS
+    override val messageType: String = operation.resultType
+}
+
+internal data class NoteTypeFields(
+    val modelId: Long,
+    val name: String,
+    val fieldNames: List<String>,
+)
+
+internal data class NoteTypesResult(
+    override val runId: String,
+    override val requestId: String,
+    val noteTypes: List<NoteTypeFields>,
 ) : AnkiResponse {
     override val operation: AnkiOperation = AnkiOperation.SCAN_FIRST_FIELDS
     override val messageType: String = operation.resultType

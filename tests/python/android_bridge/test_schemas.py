@@ -709,6 +709,8 @@ def test_anki_limits_v1_manifest_freezes_exact_units_and_values() -> None:
             "knownTotalScannedExcludedRows": 1000000,
             "knownCursorMaxCodePoints": 1024,
             "knownCursorMaxUtf8Bytes": 1024,
+            "noteTypesMaxItems": 1024,
+            "noteTypesMaxUtf8Bytes": 524288,
         },
         "storeMedia": {
             "requestEnvelopeMaxUtf8Bytes": 2097152,
@@ -954,20 +956,53 @@ _ANKI_SCHEMA_LIMIT_BINDINGS: tuple[_LimitBinding, ...] = (
         0,
     ),
     (
+        ("scanFirstFields", "noteTypesMaxItems"),
+        ("$defs", "knownVocabularyScope", "properties", "fieldOrdinals", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "knownFieldOrdinals", "properties", "ordinals", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "knownFieldOrdinals", "properties", "ordinals", "items", "maximum"),
+        -1,
+    ),
+    (
+        ("scanFirstFields", "noteTypesMaxItems"),
+        ("$defs", "noteTypesScope", "properties", "limits", "properties", "maxItems", "const"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "noteTypesMaxUtf8Bytes"),
+        ("$defs", "noteTypesScope", "properties", "limits", "properties", "maxTotalUtf8Bytes", "const"),
+        0,
+    ),
+    (
         ("scanFirstFields", "knownPageMaxItems"),
-        ("$defs", "scanFirstFieldsResult", "properties", "firstFields", "maxItems"),
+        ("$defs", "scanFirstFieldsResult", "properties", "notes", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "knownNote", "properties", "fields", "maxItems"),
         0,
     ),
     (
         ("scanFirstFields", "firstFieldMaxCodePoints"),
-        (
-            "$defs",
-            "scanFirstFieldsResult",
-            "properties",
-            "firstFields",
-            "items",
-            "maxLength",
-        ),
+        ("$defs", "knownNote", "properties", "fields", "items", "maxLength"),
+        0,
+    ),
+    (
+        ("scanFirstFields", "noteTypesMaxItems"),
+        ("$defs", "noteTypesResult", "properties", "noteTypes", "maxItems"),
+        0,
+    ),
+    (
+        ("names", "targetFields", "maxItems"),
+        ("$defs", "noteTypeFields", "properties", "fieldNames", "maxItems"),
         0,
     ),
     (
@@ -1975,6 +2010,7 @@ def test_selection_clip_window_non_number_is_schema_invalid(
             "scope": {
                 "kind": "knownVocabulary",
                 "excludedDecks": ["Japanese::Known"],
+                "fieldOrdinals": [{"modelId": 1700000000001, "ordinals": [0, 2, 8]}],
                 "cursor": None,
                 "limits": {
                     "maxScannedNotes": 256,
@@ -2008,9 +2044,24 @@ def test_selection_clip_window_non_number_is_schema_invalid(
         {
             "runId": "run_" + "a" * 32,
             "requestId": "anki_" + "b" * 32,
-            "firstFields": ["<b>猫</b>", "[sound:dog.mp3]犬"],
+            "notes": [
+                {"modelId": 1, "fields": ["<b>猫</b>"]},
+                {"modelId": 1700000000001, "fields": ["犬が走る。", "[sound:dog.mp3]犬", ""]},
+            ],
             "scannedNotes": 2,
             "nextCursor": {"ordinal": 1, "token": "opaque-page-token"},
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "scope": {"kind": "noteTypes", "limits": {"maxItems": 1024, "maxTotalUtf8Bytes": 524288}},
+        },
+        {
+            "runId": "run_" + "a" * 32,
+            "requestId": "anki_" + "b" * 32,
+            "noteTypes": [
+                {"modelId": 1700000000001, "name": "Migaku Japanese", "fieldNames": ["Sentence", "Target Word"]},
+            ],
         },
         {
             "runId": "run_" + "a" * 32,

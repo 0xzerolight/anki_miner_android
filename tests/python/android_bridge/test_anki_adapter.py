@@ -91,6 +91,10 @@ _KNOWN_VOCABULARY_LIMITS = {
     "maxItemUtf8Bytes": 65536,
     "maxTotalUtf8Bytes": 262144,
 }
+_NOTE_TYPE_LIMITS = {
+    "maxItems": 1024,
+    "maxTotalUtf8Bytes": 524288,
+}
 _ANKI_SCHEMA = json.loads(
     (Path(__file__).resolve().parents[3] / "app/src/main/python/android_bridge/schemas/anki.schema.json").read_text(
         encoding="utf-8"
@@ -203,6 +207,10 @@ class FakeKotlinAnki:
         self.verify_fields: list[str] | None = None
         self.allow_invalid_verify_result = False
         self.known_fields: list[str] = []
+        # Notes as (modelId, every field value in order). None reads ``known_fields`` as the first
+        # fields of note type 1, which the note-type table does not list unless a test adds it.
+        self.known_notes: list[tuple[int, list[str]]] | None = None
+        self.known_note_types: list[dict[str, Any]] = []
         self.known_note_decks: list[set[str]] = []
         self.duplicate_fields: list[str] = []
         self.duplicate_note_ids: dict[int, int] = {}
@@ -581,9 +589,13 @@ class FakeKotlinAnki:
             return error
         if error := self._error(request, "scanFirstFields"):
             return error
+        if request["scope"]["kind"] == "noteTypes":
+            assert request["scope"]["limits"] == _NOTE_TYPE_LIMITS
+            return self._note_types_result(request)
         if request["scope"]["kind"] == "knownVocabulary":
             scope = request["scope"]
             cursor = scope["cursor"]
+            field_ordinals = tuple((entry["modelId"], tuple(entry["ordinals"])) for entry in scope["fieldOrdinals"])
             if cursor is None:
                 start = 0
                 next_ordinal = 1
@@ -592,45 +604,51 @@ class FakeKotlinAnki:
                 cursor_state = self._known_cursors.pop(cursor["token"])
                 assert cursor_state["runId"] == request["runId"]
                 assert cursor_state["excludedDecks"] == tuple(scope["excludedDecks"])
+                assert cursor_state["fieldOrdinals"] == field_ordinals
                 assert cursor_state["ordinal"] == cursor["ordinal"]
                 start = cursor_state["start"]
                 scanned_before = cursor_state["scannedNotes"]
                 next_ordinal = cursor["ordinal"] + 1
+            projections = dict(field_ordinals)
+            rows = self._known_rows()
             limits = scope["limits"]
             excluded = scope["excludedDecks"]
-            page_fields: list[str] = []
+            page_notes: list[dict[str, object]] = []
             page_utf8_bytes = 0
             scanned_notes = 0
             for index in range(
                 start,
                 min(
                     start + limits["maxScannedNotes"],
-                    len(self.known_fields),
+                    len(rows),
                 ),
             ):
-                field = self.known_fields[index]
-                field_bytes = len(field.encode("utf-8"))
-                assert field_bytes <= limits["maxItemUtf8Bytes"]
+                model_id, fields = rows[index]
+                values = [fields[ordinal] for ordinal in projections.get(model_id, (0,))]
+                value_bytes = [len(value.encode("utf-8")) for value in values]
+                assert all(size <= limits["maxItemUtf8Bytes"] for size in value_bytes)
+                note_bytes = sum(value_bytes)
                 decks = self.known_note_decks[index] if index < len(self.known_note_decks) else set()
                 note_is_excluded = any(
                     deck == excluded_deck or deck.startswith(f"{excluded_deck}::")
                     for deck in decks
                     for excluded_deck in excluded
                 )
-                if not note_is_excluded and page_fields and page_utf8_bytes + field_bytes > limits["maxTotalUtf8Bytes"]:
+                if not note_is_excluded and page_notes and page_utf8_bytes + note_bytes > limits["maxTotalUtf8Bytes"]:
                     break
                 scanned_notes += 1
                 if not note_is_excluded:
-                    page_fields.append(field)
-                    page_utf8_bytes += field_bytes
+                    page_notes.append({"modelId": model_id, "fields": values})
+                    page_utf8_bytes += note_bytes
             next_index = start + scanned_notes
             total_scanned = scanned_before + scanned_notes
-            if next_index < len(self.known_fields):
+            if next_index < len(rows):
                 token = f"known_cursor_{self._known_cursor_counter:032x}"
                 self._known_cursor_counter += 1
                 self._known_cursors[token] = {
                     "runId": request["runId"],
                     "excludedDecks": tuple(scope["excludedDecks"]),
+                    "fieldOrdinals": field_ordinals,
                     "ordinal": next_ordinal,
                     "start": next_index,
                     "scannedNotes": total_scanned,
@@ -643,7 +661,7 @@ class FakeKotlinAnki:
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": page_fields,
+                    "notes": page_notes,
                     "scannedNotes": scanned_notes,
                     "nextCursor": next_cursor,
                 },
@@ -671,6 +689,21 @@ class FakeKotlinAnki:
                 "requestId": request["requestId"],
                 "rawFirstFieldHits": raw_hit_buckets,
                 "baselineToken": baseline_token,
+            },
+        )
+
+    def _known_rows(self) -> list[tuple[int, list[str]]]:
+        if self.known_notes is not None:
+            return self.known_notes
+        return [(1, [field]) for field in self.known_fields]
+
+    def _note_types_result(self, request: dict[str, Any]) -> str:
+        return encode_message(
+            "anki.scanfirstfields.result",
+            {
+                "runId": request["runId"],
+                "requestId": request["requestId"],
+                "noteTypes": self.known_note_types,
             },
         )
 
@@ -898,6 +931,11 @@ def _config(home: Path, **changes: object) -> Any:
 
     base = AnkiMinerConfig(dicts_root=home / "dicts")
     return replace(base, **changes)
+
+
+def _known_scopes(kotlin: FakeKotlinAnki) -> list[dict[str, Any]]:
+    scopes = [request["payload"]["scope"] for request in kotlin.requests_for("ankiScanFirstFields")]
+    return [scope for scope in scopes if scope["kind"] == "knownVocabulary"]
 
 
 def _adapter(
@@ -1336,10 +1374,12 @@ def test_known_vocabulary_is_normalized_filtered_and_cached(
     assert first == {"猫", "犬"}
     assert second is first
     requests = kotlin.requests_for("ankiScanFirstFields")
-    assert len(requests) == 1
-    assert requests[0]["payload"]["scope"] == {
+    assert len(requests) == 2
+    assert requests[0]["payload"]["scope"] == {"kind": "noteTypes", "limits": _NOTE_TYPE_LIMITS}
+    assert requests[1]["payload"]["scope"] == {
         "kind": "knownVocabulary",
         "excludedDecks": ["Ignored", "Ignored::Child"],
+        "fieldOrdinals": [],
         "cursor": None,
         "limits": _KNOWN_VOCABULARY_LIMITS,
     }
@@ -1371,7 +1411,7 @@ def test_known_vocabulary_excluded_deck_item_limit_is_exact_and_pre_callback(
     exact_config = replace(_config(initialized_bridge_home), excluded_decks=exact_decks)
 
     assert _adapter(exact_config, exact_kotlin).get_existing_vocabulary() == set()
-    assert len(exact_kotlin.requests_for("ankiScanFirstFields")) == 1
+    assert len(_known_scopes(exact_kotlin)) == 1
 
     oversized_kotlin = FakeKotlinAnki()
     oversized_config = replace(
@@ -1431,7 +1471,7 @@ def test_known_vocabulary_scan_uses_monotonic_bounded_pages(
 
     assert adapter.get_existing_vocabulary() == set(kotlin.known_fields)
 
-    scopes = [request["payload"]["scope"] for request in kotlin.requests_for("ankiScanFirstFields")]
+    scopes = _known_scopes(kotlin)
     assert scopes[0]["cursor"] is None
     assert [scope["cursor"]["ordinal"] for scope in scopes[1:]] == [1, 2]
     cursor_tokens = [scope["cursor"]["token"] for scope in scopes[1:]]
@@ -1456,10 +1496,12 @@ def test_known_vocabulary_drains_a_collection_past_the_retired_note_ceiling(
 
         def ankiScanFirstFields(self, raw: str) -> str:
             request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
             cursor = request["scope"]["cursor"]
             assert cursor is None if self.page == 0 else cursor["ordinal"] == self.page
             page_size = min(256, total_notes - self.scanned)
-            fields = [f"語{self.scanned + offset}" for offset in range(page_size)]
+            fields = [{"modelId": 1, "fields": [f"語{self.scanned + offset}"]} for offset in range(page_size)]
             self.scanned += page_size
             self.page += 1
             next_cursor = (
@@ -1470,7 +1512,7 @@ def test_known_vocabulary_drains_a_collection_past_the_retired_note_ceiling(
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": fields,
+                    "notes": fields,
                     "scannedNotes": page_size,
                     "nextCursor": next_cursor,
                 },
@@ -1499,12 +1541,407 @@ def test_known_vocabulary_excludes_parent_descendants_and_whole_mixed_note(
     assert adapter.get_existing_vocabulary() == {"採用"}
 
 
+# Shared-deck note types whose first field is not the expression (desktop
+# services/expression_field.py names both). Field lists follow the decks.
+_MIGAKU_ID = 100
+_MIGAKU_FIELDS = [
+    "Sentence",
+    "Translation",
+    "Target Word",
+    "Definitions",
+    "Sentence Audio",
+    "Word Audio",
+    "Images",
+    "Example Sentences",
+    "Is Vocabulary Card",
+    "Is Audio Card",
+]
+_CORE_2K_ID = 200
+_CORE_2K_FIELDS = [
+    "Optimized-Voc-Index",
+    "Vocabulary-Kanji",
+    "Vocabulary-Furigana",
+    "Vocabulary-Kana",
+    "Vocabulary-English",
+    "Vocabulary-Audio",
+    "Vocabulary-Pos",
+    "Caution",
+    "Expression",
+    "Reading",
+    "Sentence-Kana",
+    "Sentence-English",
+    "Sentence-Clozed",
+    "Sentence-Audio",
+    "Notes",
+    "Core-Index",
+    "Optimized-Sent-Index",
+    "Frequency",
+]
+_LAPIS_ID = 300
+_LAPIS_FIELDS = [
+    "Expression",
+    "ExpressionFurigana",
+    "ExpressionReading",
+    "ExpressionAudio",
+    "SelectionText",
+    "MainDefinition",
+    "Sentence",
+    "SentenceFurigana",
+    "SentenceAudio",
+    "Picture",
+    "Glossary",
+    "Hint",
+    "IsWordAndSentenceCard",
+    "IsClickCard",
+    "IsSentenceCard",
+    "PitchPosition",
+    "Frequency",
+    "FreqSort",
+    "MiscInfo",
+]
+# Sentence first and no later field named for a word: rule 3 keeps the first field.
+_SENTENCE_CARD_ID = 400
+_SENTENCE_CARD_FIELDS = ["Sentence", "Meaning"]
+
+_SHARED_DECK_NOTE_TYPES = [
+    {"modelId": _MIGAKU_ID, "name": "Migaku Japanese", "fieldNames": _MIGAKU_FIELDS},
+    {"modelId": _CORE_2K_ID, "name": "Core 2000", "fieldNames": _CORE_2K_FIELDS},
+    {"modelId": _LAPIS_ID, "name": "Lapis", "fieldNames": _LAPIS_FIELDS},
+    {"modelId": _SENTENCE_CARD_ID, "name": "Sentence Card", "fieldNames": _SENTENCE_CARD_FIELDS},
+]
+
+
+def _note(field_names: list[str], **values: str) -> list[str]:
+    by_name = {name.replace(" ", "_").replace("-", "_"): name for name in field_names}
+    filled = {by_name[key]: value for key, value in values.items()}
+    return [filled.get(name, "") for name in field_names]
+
+
+def _migaku(sentence: str, word: str) -> tuple[int, list[str]]:
+    return _MIGAKU_ID, _note(
+        _MIGAKU_FIELDS,
+        Sentence=sentence,
+        Translation="translation",
+        Target_Word=word,
+        Definitions="<ol><li>definition</li></ol>",
+        Sentence_Audio="[sound:line.mp3]",
+        Is_Vocabulary_Card="x",
+    )
+
+
+def _core(index: int, kanji: str, english: str, sentence: str) -> tuple[int, list[str]]:
+    return _CORE_2K_ID, _note(
+        _CORE_2K_FIELDS,
+        Optimized_Voc_Index=str(index),
+        Vocabulary_Kanji=kanji,
+        Vocabulary_Furigana=f"{kanji}[reading]",
+        Vocabulary_Kana="よみ",
+        Vocabulary_English=english,
+        Vocabulary_Pos="Noun",
+        Expression=sentence,
+        Reading="よみ",
+        Sentence_English="an example sentence",
+    )
+
+
+def _lapis(expression: str) -> tuple[int, list[str]]:
+    return _LAPIS_ID, _note(
+        _LAPIS_FIELDS,
+        Expression=expression,
+        ExpressionReading="よみ",
+        MainDefinition="<div>definition</div>",
+        Sentence=f"{expression}を使った例文です。",
+    )
+
+
+def _shared_deck_notes() -> list[tuple[int, list[str]]]:
+    return [
+        _migaku("猫が好きです。", "猫"),
+        _lapis("<b>食べる</b>"),
+        _migaku("毎日学校に行きます。", "学校"),
+        _core(1, "一つ", "one", "一つください。"),
+        _migaku("彼は毎日走る", "走る"),
+        _core(2, "人", "person", "あの人は先生です。"),
+        _sentence_card("今日は雨が降っています。"),
+        _migaku("この本はとても面白いと思いますよ", "面白い"),
+        _core(3, "家族", "family", "家族と一緒に住んでいます。"),
+        _lapis("言葉"),
+        _migaku("駅まで歩いて十分かかります。", "<span>駅</span>"),
+        _core(4, "時間", "time", "時間がありません。"),
+        _sentence_card("明日は晴れるでしょう。"),
+        _migaku("電車が遅れた。", "電車"),
+        _core(5, "言葉", "word", "言葉を覚える。"),
+    ]
+
+
+def _sentence_card(sentence: str) -> tuple[int, list[str]]:
+    return _SENTENCE_CARD_ID, [sentence, "meaning"]
+
+
+_SHARED_DECK_KNOWN_WORDS = {
+    # Migaku: Target Word, never the sentence
+    "猫",
+    "学校",
+    "走る",
+    "面白い",
+    "駅",
+    "電車",
+    # Core 2k: Vocabulary-Kanji (the index never held the script; Expression holds the sentence)
+    "一つ",
+    "人",
+    "家族",
+    "時間",
+    "言葉",
+    # Lapis: the first field, as before
+    "食べる",
+    # Sentence-first with no word-named field: the first field, as before (desktop rule 3)
+    "今日は雨が降っています。",
+    "明日は晴れるでしょう。",
+}
+
+
+def test_known_vocabulary_reads_the_word_field_of_sentence_and_index_first_note_types(
+    initialized_bridge_home: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_note_types = _SHARED_DECK_NOTE_TYPES
+    kotlin.known_notes = _shared_deck_notes()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    with caplog.at_level(logging.INFO, logger=anki_adapter_module.logger.name):
+        known = adapter.get_existing_vocabulary()
+
+    assert known == _SHARED_DECK_KNOWN_WORDS
+    requests = kotlin.requests_for("ankiScanFirstFields")
+    assert requests[0]["payload"]["scope"] == {"kind": "noteTypes", "limits": _NOTE_TYPE_LIMITS}
+    # Only note types with a later field named for a word are widened, and only by those
+    # fields: the first plus Target Word / Is Vocabulary Card, the first plus the Vocabulary-
+    # and Expression fields. Lapis and the sentence card stay first-field-only.
+    assert [scope["fieldOrdinals"] for scope in _known_scopes(kotlin)] == [
+        [
+            {"modelId": _MIGAKU_ID, "ordinals": [0, 2, 8]},
+            {"modelId": _CORE_2K_ID, "ordinals": [0, 1, 4, 6, 8]},
+        ]
+    ]
+    summaries = [record.getMessage() for record in caplog.records if "Anki known words scan" in record.getMessage()]
+    assert len(summaries) == 1
+    assert "outcome=ok" in summaries[0]
+    assert "notes=15" in summaries[0]
+    assert "note_types=4" in summaries[0]
+    assert 'expression_fields="Migaku Japanese: Target Word,Core 2000: Vocabulary-Kanji"' in summaries[0]
+
+
+def test_known_vocabulary_streams_each_note_type_past_its_sample(
+    initialized_bridge_home: Path,
+) -> None:
+    # 450 Migaku notes cross the 200-note sample and two page boundaries: the decision is taken
+    # once on the sample and every later note is read from the same field. A note type the
+    # table does not list (created after it was read) is read from its first field.
+    kotlin = FakeKotlinAnki()
+    kotlin.known_note_types = _SHARED_DECK_NOTE_TYPES
+    notes: list[tuple[int, list[str]]] = []
+    for index in range(450):
+        notes.append(_migaku(f"{index}番目の文を読みました。", f"単語{index}"))
+        if index % 50 == 0:
+            notes.append(_lapis(f"表現{index}"))
+    notes.append((999, ["<i>新語</i>", "Target Word value is never read"]))
+    kotlin.known_notes = notes
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    known = adapter.get_existing_vocabulary()
+
+    assert len(_known_scopes(kotlin)) == 2
+    assert known == (
+        {f"単語{index}" for index in range(450)} | {f"表現{index}" for index in range(0, 450, 50)} | {"新語"}
+    )
+
+
+@pytest.mark.parametrize(
+    "note_types",
+    [
+        [{"modelId": 1, "name": "A", "fieldNames": ["Word"]}, {"modelId": 1, "name": "B", "fieldNames": ["Word"]}],
+        [{"modelId": 1, "name": "A", "fieldNames": [" Word"]}],
+        [{"modelId": 1, "name": "A", "fieldNames": []}],
+        [{"modelId": 1, "name": "A", "fieldNames": ["Word", "Word"]}],
+        [{"modelId": 0, "name": "A", "fieldNames": ["Word"]}],
+        [{"modelId": 1, "name": "A", "fieldNames": ["Word"], "extra": True}],
+        [{"modelId": index + 1, "name": f"N{index}", "fieldNames": ["Word"]} for index in range(1025)],
+        [{"modelId": index + 1, "name": f"{index:04d}" + "名" * 340, "fieldNames": ["Word"]} for index in range(520)],
+    ],
+    ids=[
+        "duplicate-model-id",
+        "non-canonical-field-name",
+        "no-fields",
+        "duplicate-field-name",
+        "model-id",
+        "unknown-key",
+        "item-count",
+        "utf8-budget",
+    ],
+)
+def test_known_vocabulary_rejects_an_invalid_note_type_table(
+    initialized_bridge_home: Path,
+    note_types: list[dict[str, Any]],
+) -> None:
+    kotlin = FakeKotlinAnki()
+    kotlin.known_note_types = note_types
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
+
+    assert exc_info.value.code == "invalid_anki_response"
+    assert _known_scopes(kotlin) == []
+
+
+@pytest.mark.parametrize(
+    "notes",
+    [
+        [{"modelId": _MIGAKU_ID, "fields": ["猫が好きです。"]}],
+        [{"modelId": _LAPIS_ID, "fields": ["食べる", "たべる"]}],
+        [{"modelId": 0, "fields": ["食べる"]}],
+        [{"modelId": _LAPIS_ID, "fields": ["食べる"], "deck": "x"}],
+        [{"modelId": _MIGAKU_ID, "fields": ["界" * 21_846, "猫", ""]}],
+        [{"modelId": _MIGAKU_ID, "fields": ["猫" * 20_000, "猫" * 20_000, "猫" * 20_000]}] * 2,
+    ],
+    ids=["short-projection", "long-first-field-only", "model-id", "unknown-key", "value-utf8", "page-utf8"],
+)
+def test_known_vocabulary_rejects_notes_that_do_not_match_their_projection(
+    initialized_bridge_home: Path,
+    notes: list[dict[str, object]],
+) -> None:
+    class InvalidNotesKotlin(FakeKotlinAnki):
+        def ankiScanFirstFields(self, raw: str) -> str:
+            request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
+            return encode_message(
+                "anki.scanfirstfields.result",
+                {
+                    "runId": request["runId"],
+                    "requestId": request["requestId"],
+                    "notes": notes,
+                    "scannedNotes": len(notes),
+                    "nextCursor": None,
+                },
+            )
+
+    kotlin = InvalidNotesKotlin()
+    kotlin.known_note_types = _SHARED_DECK_NOTE_TYPES
+
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
+
+    assert exc_info.value.code == "invalid_anki_response"
+
+
+def _desktop_known_vocabulary(
+    monkeypatch: pytest.MonkeyPatch,
+    note_types: list[dict[str, Any]],
+    notes: list[tuple[int, list[str]]],
+) -> set[str]:
+    """What desktop's AnkiService.get_existing_vocabulary returns for the same notes.
+
+    AnkiConnect is replaced at the module's two transport names; everything from
+    findNotes on is desktop's own code, resolver included.
+    """
+    from anki_miner.config import AnkiMinerConfig
+    from anki_miner.services import anki_service as anki_service_module
+
+    names = {entry["modelId"]: (entry["name"], entry["fieldNames"]) for entry in note_types}
+    rows = []
+    for note_id, (model_id, values) in enumerate(notes, start=1):
+        model_name, field_names = names[model_id]
+        rows.append(
+            {
+                "noteId": note_id,
+                "modelName": model_name,
+                "tags": [],
+                "fields": {
+                    name: {"value": value, "order": order}
+                    for order, (name, value) in enumerate(zip(field_names, values, strict=True))
+                },
+            }
+        )
+    by_id = {row["noteId"]: row for row in rows}
+
+    def post_action(_url: str, action: str, params: dict[str, Any] | None = None, **_kwargs: object) -> object:
+        assert params is not None
+        if action == "findNotes":
+            assert params["query"] == "deck:*"
+            return list(by_id)
+        assert action == "notesInfo"
+        return [by_id[note_id] for note_id in params["notes"]]
+
+    monkeypatch.setattr(anki_service_module, "post_action", post_action)
+    monkeypatch.setattr(anki_service_module, "_expect_list", lambda value, *_args, **_kwargs: value)
+    return anki_service_module.AnkiService(AnkiMinerConfig()).get_existing_vocabulary()
+
+
+def test_known_vocabulary_matches_desktop_anki_service_on_shared_decks(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Android and desktop agree on which words a collection already knows.
+
+    Desktop's AnkiService reads whole notesInfo rows; Android reads the first
+    field plus the later fields named for a word. Both feed the vendored
+    ExpressionFieldResolver, so the sets must be equal, including past the
+    sample size and across Kotlin page boundaries.
+    """
+    pytest.importorskip("requests")
+    pytest.importorskip("pysubs2", reason="runtime dependency lane: AnkiService resolves the ja profile")
+    many: list[tuple[int, list[str]]] = []
+    for index in range(260):
+        many.append(_migaku(f"{index}番目の文を読みました。", f"単語{index}"))
+        many.append(_core(index, f"漢字{index}", "word", f"{index}番目の例文です。"))
+    for notes in (_shared_deck_notes(), _shared_deck_notes() + many):
+        kotlin = FakeKotlinAnki()
+        kotlin.known_note_types = _SHARED_DECK_NOTE_TYPES
+        kotlin.known_notes = notes
+        android = _adapter(_config(initialized_bridge_home), kotlin).get_existing_vocabulary()
+
+        desktop = _desktop_known_vocabulary(monkeypatch, _SHARED_DECK_NOTE_TYPES, notes)
+
+        assert android == desktop
+        assert android >= _SHARED_DECK_KNOWN_WORDS
+
+
+def test_ja_expression_field_resolver_inputs_match_desktop_anki_service(
+    initialized_bridge_home: Path,
+) -> None:
+    """The adapter builds ja's resolver inputs without resolving a profile.
+
+    Desktop's AnkiService passes ``profile.script`` and ``profile.sentence_rules``;
+    a re-pin that changes either for ja must fail here rather than move the
+    known-word set on Android alone.
+    """
+    pytest.importorskip("requests")
+    pytest.importorskip("pysubs2", reason="runtime dependency lane: AnkiService resolves the ja profile")
+    from anki_miner.config import AnkiMinerConfig
+    from anki_miner.services.anki_service import AnkiService
+
+    service = AnkiService(AnkiMinerConfig())
+    resolver = anki_adapter_module._ja_expression_field_resolver()
+
+    assert resolver._sentence_rules == service._sentence_rules
+    for code_point in range(0x110000):
+        if 0xD800 <= code_point <= 0xDFFF:
+            continue
+        character = chr(code_point)
+        assert resolver._script.contains_target_script(character) == service._script.contains_target_script(
+            character
+        ), hex(code_point)
+
+
 def test_known_vocabulary_later_page_timeout_discards_the_partial_scan(
     initialized_bridge_home: Path,
 ) -> None:
     class TimeoutSecondPage(FakeKotlinAnki):
         def ankiScanFirstFields(self, raw: str) -> str:
             request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
             cursor = request["scope"]["cursor"]
             if cursor is not None:
                 return encode_message(
@@ -1523,7 +1960,7 @@ def test_known_vocabulary_later_page_timeout_discards_the_partial_scan(
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": ["猫"],
+                    "notes": [{"modelId": 1, "fields": ["猫"]}],
                     "scannedNotes": 1,
                     "nextCursor": {"ordinal": 1, "token": "page-2"},
                 },
@@ -1540,7 +1977,8 @@ def test_known_vocabulary_later_page_timeout_discards_the_partial_scan(
         with pytest.raises(AnkiConnectionError, match="slow second page"):
             adapter.get_existing_vocabulary()
         assert adapter._existing_vocab_cache is None
-    assert len(kotlin.requests_for("ankiScanFirstFields")) == 4
+    # Each attempt reads the note types, then page one, then fails on page two.
+    assert len(kotlin.requests_for("ankiScanFirstFields")) == 6
 
 
 def test_dictionary_media_read_failure_has_one_stack_owner(
@@ -1601,12 +2039,14 @@ def test_known_vocabulary_response_enforces_page_and_cursor_bounds(
     class InvalidPageKotlin(FakeKotlinAnki):
         def ankiScanFirstFields(self, raw: str) -> str:
             request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
             return encode_message(
                 "anki.scanfirstfields.result",
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": first_fields,
+                    "notes": [{"modelId": 1, "fields": [field]} for field in first_fields],
                     "scannedNotes": scanned_notes,
                     "nextCursor": next_cursor,
                 },
@@ -1625,6 +2065,8 @@ def test_known_vocabulary_response_rejects_reused_opaque_cursor_token(
     class ReusedCursorKotlin(FakeKotlinAnki):
         def ankiScanFirstFields(self, raw: str) -> str:
             request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
             cursor = request["scope"]["cursor"]
             ordinal = 1 if cursor is None else cursor["ordinal"] + 1
             return encode_message(
@@ -1632,7 +2074,7 @@ def test_known_vocabulary_response_rejects_reused_opaque_cursor_token(
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": ["猫"],
+                    "notes": [{"modelId": 1, "fields": ["猫"]}],
                     "scannedNotes": 1,
                     "nextCursor": {"ordinal": ordinal, "token": "same-token"},
                 },
@@ -2511,12 +2953,14 @@ def test_semantically_invalid_known_scan_makes_release_ack_false(
     class InvalidKnownScanKotlin(FakeKotlinAnki):
         def ankiScanFirstFields(self, raw: str) -> str:
             request = self._request("ankiScanFirstFields", raw)
+            if request["scope"]["kind"] == "noteTypes":
+                return self._note_types_result(request)
             return encode_message(
                 "anki.scanfirstfields.result",
                 {
                     "runId": request["runId"],
                     "requestId": request["requestId"],
-                    "firstFields": [],
+                    "notes": [],
                     "scannedNotes": -1,
                     "nextCursor": None,
                 },

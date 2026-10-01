@@ -64,7 +64,7 @@ class AnkiLimitsCodegenTest(unittest.TestCase):
             numeric_leaves,
             {constant.source_path: constant.value for constant in constants},
         )
-        self.assertEqual(71, len(constants))
+        self.assertEqual(73, len(constants))
         self.assertEqual(
             len(constants),
             len({constant.kotlin_path for constant in constants}),

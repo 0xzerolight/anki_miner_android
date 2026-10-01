@@ -464,6 +464,7 @@ internal object AnkiJsonCodec {
         private fun readScanScope(): ScanScope {
             var kind: String? = null
             var excludedDecks: List<String>? = null
+            var fieldOrdinals: List<KnownFieldOrdinals>? = null
             var cursorSeen = false
             var cursor: KnownVocabularyCursor? = null
             var modelName: String? = null
@@ -477,6 +478,7 @@ internal object AnkiJsonCodec {
                 setOf(
                     "kind",
                     "excludedDecks",
+                    "fieldOrdinals",
                     "cursor",
                     "modelName",
                     "firstFieldName",
@@ -489,6 +491,11 @@ internal object AnkiJsonCodec {
                 when (field) {
                     "kind" -> kind = readString("scan scope kind")
                     "excludedDecks" -> excludedDecks = readStringArray(AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT, 0, "excluded decks")
+                    "fieldOrdinals" ->
+                        fieldOrdinals =
+                            readArray(AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_ITEM_COUNT, 0, "known field ordinals") {
+                                readKnownFieldOrdinals()
+                            }
                     "cursor" -> {
                         cursorSeen = true
                         cursor = readNullable { readKnownCursor() }
@@ -507,7 +514,7 @@ internal object AnkiJsonCodec {
             }
             return when (kind) {
                 "knownVocabulary" -> {
-                    requireExactSeen(seen, setOf("kind", "excludedDecks", "cursor", "limits"), "known-vocabulary scope")
+                    requireExactSeen(seen, setOf("kind", "excludedDecks", "fieldOrdinals", "cursor", "limits"), "known-vocabulary scope")
                     if (!cursorSeen) missingPayload("cursor")
                     requireExactLimits(
                         limits!!,
@@ -518,7 +525,18 @@ internal object AnkiJsonCodec {
                             "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.KNOWN_PAGE_MAX_UTF8_BYTES.toLong(),
                         ),
                     )
-                    KnownVocabularyScope(excludedDecks!!, cursor)
+                    KnownVocabularyScope(excludedDecks!!, cursor, fieldOrdinals!!)
+                }
+                "noteTypes" -> {
+                    requireExactSeen(seen, setOf("kind", "limits"), "note-type scope")
+                    requireExactLimits(
+                        limits!!,
+                        mapOf(
+                            "maxItems" to AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_ITEM_COUNT.toLong(),
+                            "maxTotalUtf8Bytes" to AnkiLimitsV1.ScanFirstFields.NOTE_TYPES_MAX_UTF8_BYTES.toLong(),
+                        ),
+                    )
+                    NoteTypesScope
                 }
                 "duplicates" -> {
                     requireExactSeen(
@@ -553,6 +571,23 @@ internal object AnkiJsonCodec {
                 }
             }
             return KnownVocabularyCursor(ordinal!!, token!!)
+        }
+
+        private fun readKnownFieldOrdinals(): KnownFieldOrdinals {
+            var modelId: Long? = null
+            var ordinals: List<Int>? = null
+            readObject("known field ordinals", setOf("modelId", "ordinals")) { field ->
+                when (field) {
+                    "modelId" -> modelId = readIntegral("field ordinals model ID")
+                    "ordinals" ->
+                        ordinals =
+                            readArray(AnkiLimitsV1.Names.TargetFields.MAX_ITEM_COUNT, 2, "field ordinals") {
+                                readInt("field ordinal")
+                            }
+                    else -> unknownPayload(field)
+                }
+            }
+            return KnownFieldOrdinals(modelId!!, ordinals!!)
         }
 
         private fun readDuplicateCandidate(): DuplicateCandidate {
@@ -1043,6 +1078,7 @@ internal object AnkiJsonCodec {
         when (response) {
             is VerifyTargetResult -> writeVerifyTargetResult(generator, response)
             is KnownVocabularyResult -> writeKnownVocabularyResult(generator, response)
+            is NoteTypesResult -> writeNoteTypesResult(generator, response)
             is DuplicateLookupResult -> writeDuplicateLookupResult(generator, response)
             is StoreMediaResult -> writeStoreMediaResult(generator, response)
             is CreateNotesResult -> writeCreateNotesResult(generator, response)
@@ -1063,12 +1099,34 @@ internal object AnkiJsonCodec {
 
     private fun writeKnownVocabularyResult(generator: JsonGenerator, result: KnownVocabularyResult) {
         writeResponseIds(generator, result)
-        generator.writeArrayFieldStart("firstFields")
-        result.firstFields.forEach(generator::writeString)
+        generator.writeArrayFieldStart("notes")
+        for (note in result.notes) {
+            generator.writeStartObject()
+            generator.writeNumberField("modelId", note.modelId)
+            generator.writeArrayFieldStart("fields")
+            note.fields.forEach(generator::writeString)
+            generator.writeEndArray()
+            generator.writeEndObject()
+        }
         generator.writeEndArray()
         generator.writeNumberField("scannedNotes", result.scannedNotes)
         generator.writeFieldName("nextCursor")
         writeCursor(generator, result.nextCursor)
+    }
+
+    private fun writeNoteTypesResult(generator: JsonGenerator, result: NoteTypesResult) {
+        writeResponseIds(generator, result)
+        generator.writeArrayFieldStart("noteTypes")
+        for (noteType in result.noteTypes) {
+            generator.writeStartObject()
+            generator.writeNumberField("modelId", noteType.modelId)
+            generator.writeStringField("name", noteType.name)
+            generator.writeArrayFieldStart("fieldNames")
+            noteType.fieldNames.forEach(generator::writeString)
+            generator.writeEndArray()
+            generator.writeEndObject()
+        }
+        generator.writeEndArray()
     }
 
     private fun writeDuplicateLookupResult(generator: JsonGenerator, result: DuplicateLookupResult) {
