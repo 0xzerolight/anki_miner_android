@@ -212,6 +212,7 @@
     <string name="mining_notification_step">Étape %1$d sur %2$d</string>
     <string name="mining_notification_cancel">Annuler</string>
     <string name="mining_notification_cancelling">Annulation de l\'extraction…</string>
+    <string name="mining_notification_tap_for_details">Touchez pour voir les détails.</string>
     <string name="mining_progress_copying_video">Copie de la vidéo</string>
     <string name="mining_progress_copying_subtitle">Copie des sous-titres</string>
     <string name="mining_progress_preparing_media">Préparation des médias sélectionnés</string>

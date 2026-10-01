@@ -37,4 +37,15 @@ class MiningNotificationIntentInstrumentedTest {
         assertEquals(MainActivity::class.java.name, intent.component?.className)
         assertNull(MiningForegroundService.consumeOpenedRunId(intent))
     }
+
+    @Test
+    fun aCompletionNoticeOpensItsRunOnce() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val intent = MiningCompletionNotifier.openRunIntent(context, "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
+        assertEquals(MainActivity::class.java.name, intent.component?.className)
+        assertNull(MiningForegroundService.consumeOpenedRunId(intent))
+        assertEquals("run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", MiningCompletionNotifier.consumeOpenedRunId(intent))
+        assertNull(MiningCompletionNotifier.consumeOpenedRunId(intent))
+    }
 }

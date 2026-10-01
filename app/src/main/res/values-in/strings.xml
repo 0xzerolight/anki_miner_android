@@ -204,6 +204,7 @@
     <string name="mining_notification_step">Langkah %1$d dari %2$d</string>
     <string name="mining_notification_cancel">Batal</string>
     <string name="mining_notification_cancelling">Membatalkan proses mining…</string>
+    <string name="mining_notification_tap_for_details">Ketuk untuk melihat detail.</string>
     <string name="mining_progress_copying_video">Menyalin video</string>
     <string name="mining_progress_copying_subtitle">Menyalin subtitel</string>
     <string name="mining_progress_preparing_media">Menyiapkan media yang dipilih</string>

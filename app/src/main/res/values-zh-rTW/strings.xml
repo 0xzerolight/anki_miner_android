@@ -204,6 +204,7 @@
     <string name="mining_notification_step">第 %1$d／%2$d 步</string>
     <string name="mining_notification_cancel">取消</string>
     <string name="mining_notification_cancelling">正在取消採集工作…</string>
+    <string name="mining_notification_tap_for_details">輕觸以查看詳細資訊。</string>
     <string name="mining_progress_copying_video">正在複製影片</string>
     <string name="mining_progress_copying_subtitle">正在複製字幕</string>
     <string name="mining_progress_preparing_media">正在準備選取的媒體</string>

@@ -204,6 +204,7 @@
     <string name="mining_notification_step">ステップ %1$d/%2$d</string>
     <string name="mining_notification_cancel">キャンセル</string>
     <string name="mining_notification_cancelling">マイニングを中止しています…</string>
+    <string name="mining_notification_tap_for_details">タップして詳細を表示</string>
     <string name="mining_progress_copying_video">動画をコピー中</string>
     <string name="mining_progress_copying_subtitle">字幕をコピー中</string>
     <string name="mining_progress_preparing_media">選択したメディアを準備中</string>

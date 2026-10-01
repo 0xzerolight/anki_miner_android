@@ -83,6 +83,8 @@ import com.ankiminer.android.reading.AndroidReadingSourceStaging
 import com.ankiminer.android.reading.BridgeReadingMiningRepository
 import com.ankiminer.android.reading.ReadingConfigSnapshotResolver
 import com.ankiminer.android.reading.ReadingMiningRepository
+import com.ankiminer.android.service.AppForegroundTracker
+import com.ankiminer.android.service.MiningCompletionNotifier
 import com.ankiminer.android.service.MiningForegroundSessionController
 import com.ankiminer.android.subtitles.BridgeSubtitleCueLookupService
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
@@ -297,6 +299,10 @@ class AnkiMinerApplication : Application() {
         Executors.newSingleThreadExecutor { task -> Thread(task, "anki-miner-diagnostics") }
     }
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    internal val appForegroundTracker = AppForegroundTracker()
+    private val miningCompletionNotifier by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        MiningCompletionNotifier(this, appForegroundTracker)
+    }
 
     /**
      * Retained rather than built inline in [AppLog.install], because the diagnostics export needs
@@ -592,8 +598,17 @@ class AnkiMinerApplication : Application() {
         )
     }
 
+    /** MainActivity calls this: a run can only start from it, so its repositories exist by then. */
+    internal fun startMiningCompletionNotices() {
+        miningCompletionNotifier.watch(
+            applicationScope,
+            listOf(miningRepository.state, audioRepository.state, readingRepository.state),
+        )
+    }
+
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(appForegroundTracker)
         val buildIdentity = currentTesterBuildIdentity()
         AppLog.i(
             LogComponent.APP,

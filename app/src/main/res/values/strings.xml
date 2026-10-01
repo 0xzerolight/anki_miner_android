@@ -215,6 +215,7 @@
     <string name="mining_notification_step">Step %1$d of %2$d</string>
     <string name="mining_notification_cancel">Cancel</string>
     <string name="mining_notification_cancelling">Cancelling the mining run…</string>
+    <string name="mining_notification_tap_for_details">Tap for details.</string>
     <string name="mining_progress_copying_video">Copying video</string>
     <string name="mining_progress_copying_subtitle">Copying subtitles</string>
     <string name="mining_progress_preparing_media">Preparing selected media</string>

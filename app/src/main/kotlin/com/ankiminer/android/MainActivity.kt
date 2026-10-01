@@ -42,6 +42,7 @@ import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.mining.ankiPermissionPermanentlyDenied
 import com.ankiminer.android.mining.notificationPermissionDue
 import com.ankiminer.android.reading.ReadingRepositoryFactory
+import com.ankiminer.android.service.MiningCompletionNotifier
 import com.ankiminer.android.service.MiningForegroundService
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.MiningContentStyle
@@ -178,9 +179,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as AnkiMinerApplication).startMiningCompletionNotices()
         notificationRunId.value =
             savedInstanceState?.getString(PENDING_NOTIFICATION_RUN_ID)
-                ?: MiningForegroundService.consumeOpenedRunId(intent)
+                ?: consumeOpenedRunId(intent)
         setContent {
             val app = application as AnkiMinerApplication
             val shellSettings = remember(app) { app.settingsRepository.appShellSettings() }
@@ -356,8 +358,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
+        notificationRunId.value = consumeOpenedRunId(intent)
     }
+
+    /** A run opened from either the progress notification or the completion notice. */
+    private fun consumeOpenedRunId(intent: Intent?): String? =
+        MiningForegroundService.consumeOpenedRunId(intent)
+            ?: MiningCompletionNotifier.consumeOpenedRunId(intent)
 
     override fun onSaveInstanceState(outState: Bundle) {
         notificationRunId.value?.let { runId ->

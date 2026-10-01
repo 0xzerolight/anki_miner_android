@@ -216,6 +216,7 @@
     <string name="mining_notification_step">Шаг %1$d из %2$d</string>
     <string name="mining_notification_cancel">Отмена</string>
     <string name="mining_notification_cancelling">Отмена запуска майнинга…</string>
+    <string name="mining_notification_tap_for_details">Нажмите, чтобы узнать подробности.</string>
     <string name="mining_progress_copying_video">Копирование видео</string>
     <string name="mining_progress_copying_subtitle">Копирование субтитров</string>
     <string name="mining_progress_preparing_media">Подготовка выбранного медиа</string>

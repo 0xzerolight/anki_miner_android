@@ -212,6 +212,7 @@
     <string name="mining_notification_step">Paso %1$d de %2$d</string>
     <string name="mining_notification_cancel">Cancelar</string>
     <string name="mining_notification_cancelling">Cancelando la ejecución de minería…</string>
+    <string name="mining_notification_tap_for_details">Toque para ver los detalles.</string>
     <string name="mining_progress_copying_video">Copiando vídeo</string>
     <string name="mining_progress_copying_subtitle">Copiando subtítulos</string>
     <string name="mining_progress_preparing_media">Preparando el contenido multimedia seleccionado</string>

@@ -21,6 +21,22 @@ import com.ankiminer.android.localization.byteProgressResource
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+/** The "mining" channel: run progress, and the completion notice for a backgrounded run. */
+internal const val MINING_NOTIFICATION_CHANNEL_ID = "mining"
+
+internal fun ensureMiningNotificationChannel(context: Context) {
+    context.getSystemService(NotificationManager::class.java).createNotificationChannel(
+        NotificationChannel(
+            MINING_NOTIFICATION_CHANNEL_ID,
+            context.getString(R.string.mining_notification_channel),
+            NotificationManager.IMPORTANCE_LOW,
+        ).apply {
+            description = context.getString(R.string.mining_notification_channel_description)
+            setShowBadge(false)
+        },
+    )
+}
+
 internal fun warnMalformedForegroundIntent(
     action: String?,
     extraKeys: Set<String>,
@@ -128,17 +144,7 @@ class MiningForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         cpuWakeLease = MiningCpuWakeLease(AndroidMiningCpuWakeLock.create(this))
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(
-                NOTIFICATION_CHANNEL_ID,
-                getString(R.string.mining_notification_channel),
-                NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = getString(R.string.mining_notification_channel_description)
-                setShowBadge(false)
-            },
-        )
+        ensureMiningNotificationChannel(this)
     }
 
     override fun onStartCommand(
@@ -417,7 +423,7 @@ class MiningForegroundService : Service() {
         identity: MiningForegroundSessionIdentity,
         text: String,
     ): NotificationCompat.Builder =
-        NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
+        NotificationCompat.Builder(this, MINING_NOTIFICATION_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_mining)
             .setContentTitle(getString(R.string.mining_notification_title))
             .setContentText(text)
@@ -459,7 +465,6 @@ class MiningForegroundService : Service() {
         )
 
     companion object {
-        private const val NOTIFICATION_CHANNEL_ID = "mining"
         private const val NOTIFICATION_ID = 1001
         private const val CANCEL_REQUEST_CODE_MASK = 0x4d494e45
 

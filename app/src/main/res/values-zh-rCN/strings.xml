@@ -204,6 +204,7 @@
     <string name="mining_notification_step">第 %1$d/%2$d 步</string>
     <string name="mining_notification_cancel">取消</string>
     <string name="mining_notification_cancelling">正在取消挖词任务…</string>
+    <string name="mining_notification_tap_for_details">点按查看详情。</string>
     <string name="mining_progress_copying_video">正在复制视频</string>
     <string name="mining_progress_copying_subtitle">正在复制字幕</string>
     <string name="mining_progress_preparing_media">正在准备所选媒体</string>
