@@ -567,11 +567,6 @@
     <string name="bundled_wordsets_title">Các tập từ tên riêng đi kèm</string>
     <string name="bundled_wordset_item">%1$s · %2$d mục</string>
     <string name="bundled_wordsets_unavailable">Không thể đọc các bộ từ đi kèm.</string>
-    <string name="local_import_complete">Đã hoàn tất nhập cục bộ</string>
-    <string name="frequency_import_result">%1$s: %2$d mục; đã bỏ qua %3$d hàng sai định dạng</string>
-    <string name="pitch_import_result">%1$s: %2$d mục; đã bỏ qua %3$d hàng sai định dạng</string>
-    <string name="audio_pack_import_result">%1$s: %2$d mục âm thanh</string>
-    <string name="known_words_import_result">Đã đọc %1$d từ, đã thêm %2$d, tổng %3$d</string>
     <string name="readiness_python">Python nhúng: %1$s</string>
     <string name="readiness_resource_recovery">Khôi phục tài nguyên: %1$s</string>
     <string name="readiness_anki_recovery">Khôi phục Anki: %1$s</string>
@@ -591,8 +586,8 @@
     <string name="status_database_permission">cần quyền truy cập cơ sở dữ liệu</string>
     <string name="status_ready_api">sẵn sàng (API %1$d)</string>
     <string name="dictionary_test_title">Kiểm tra từ điển ngoại tuyến</string>
-    <string name="dictionary_term">Thuật ngữ tiếng Nhật</string>
-    <string name="dictionary_render_html">Kết xuất HTML từ điển chính xác</string>
+    <string name="dictionary_term">Từ</string>
+    <string name="dictionary_render_html">Tra cứu</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">Giao diện</string>

@@ -67,11 +67,6 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.data.resources.AudioPackCandidate
-import com.ankiminer.android.data.resources.ImportedAudioPack
-import com.ankiminer.android.data.resources.ImportedFrequencySource
-import com.ankiminer.android.data.resources.ImportedKnownWords
-import com.ankiminer.android.data.resources.ImportedPitchSource
-import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
@@ -862,27 +857,6 @@ internal fun MessageSnackbarEffect(
             } else {
                 currentOnDismiss()
             }
-        }
-    }
-}
-
-@Composable
-internal fun LocalImportResultCard(result: LocalResourceImportResult) {
-    val summary =
-        when (result) {
-            is ImportedFrequencySource ->
-                stringResource(R.string.frequency_import_result, result.sourceName, result.entryCount, result.skippedMalformed)
-            is ImportedPitchSource ->
-                stringResource(R.string.pitch_import_result, result.sourceName, result.entryCount, result.skippedMalformed)
-            is ImportedAudioPack ->
-                stringResource(R.string.audio_pack_import_result, result.sourceName, result.entryCount)
-            is ImportedKnownWords ->
-                stringResource(R.string.known_words_import_result, result.importedCount, result.newRowCount, result.totalEntries)
-        }
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(stringResource(R.string.local_import_complete), style = MaterialTheme.typography.titleMedium)
-            Text(summary)
         }
     }
 }

@@ -567,11 +567,6 @@
     <string name="bundled_wordsets_title">內建專有名稱單字集</string>
     <string name="bundled_wordset_item">%1$s · %2$d 個項目</string>
     <string name="bundled_wordsets_unavailable">無法讀取內建單字集。</string>
-    <string name="local_import_complete">本機匯入完成</string>
-    <string name="frequency_import_result">%1$s：%2$d 個項目；略過 %3$d 列格式錯誤的資料</string>
-    <string name="pitch_import_result">%1$s：%2$d 個項目；略過 %3$d 列格式錯誤的資料</string>
-    <string name="audio_pack_import_result">%1$s：%2$d 個音訊項目</string>
-    <string name="known_words_import_result">讀取 %1$d 個單字，加入 %2$d 個，總計 %3$d 個</string>
     <string name="readiness_python">內嵌 Python：%1$s</string>
     <string name="readiness_resource_recovery">資源復原：%1$s</string>
     <string name="readiness_anki_recovery">Anki 復原：%1$s</string>
@@ -591,8 +586,8 @@
     <string name="status_database_permission">需要資料庫權限</string>
     <string name="status_ready_api">已就緒（API %1$d）</string>
     <string name="dictionary_test_title">離線字典測試</string>
-    <string name="dictionary_term">日文詞彙</string>
-    <string name="dictionary_render_html">顯示精確的字典 HTML</string>
+    <string name="dictionary_term">詞語</string>
+    <string name="dictionary_render_html">查詢</string>
     <string name="dictionary_lookup_label">%1$s：%2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">介面</string>

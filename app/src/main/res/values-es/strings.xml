@@ -569,11 +569,6 @@
     <string name="bundled_wordsets_title">Conjuntos de palabras de nombres propios incluidos</string>
     <string name="bundled_wordset_item">%1$s · %2$d entradas</string>
     <string name="bundled_wordsets_unavailable">No se pudieron leer los conjuntos de palabras incluidos.</string>
-    <string name="local_import_complete">Importación local completada</string>
-    <string name="frequency_import_result">%1$s: %2$d entradas; se omitieron %3$d filas malformadas</string>
-    <string name="pitch_import_result">%1$s: %2$d entradas; se omitieron %3$d filas malformadas</string>
-    <string name="audio_pack_import_result">%1$s: %2$d entradas de audio</string>
-    <string name="known_words_import_result">Se leyeron %1$d palabras, se añadieron %2$d, total: %3$d</string>
     <string name="readiness_python">Python integrado: %1$s</string>
     <string name="readiness_resource_recovery">Recuperación de recursos: %1$s</string>
     <string name="readiness_anki_recovery">Recuperación de Anki: %1$s</string>
@@ -593,8 +588,8 @@
     <string name="status_database_permission">se necesita permiso para la base de datos</string>
     <string name="status_ready_api">listo (API %1$d)</string>
     <string name="dictionary_test_title">Prueba de diccionario sin conexión</string>
-    <string name="dictionary_term">Término japonés</string>
-    <string name="dictionary_render_html">Renderizar HTML exacto del diccionario</string>
+    <string name="dictionary_term">Palabra</string>
+    <string name="dictionary_render_html">Buscar</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">UI</string>

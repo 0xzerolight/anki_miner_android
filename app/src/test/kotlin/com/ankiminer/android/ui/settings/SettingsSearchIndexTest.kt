@@ -10,6 +10,14 @@ import org.junit.Test
 
 class SettingsSearchIndexTest {
     @Test
+    fun wordFiltersNoLongerEmitsTheImportReceiptCard() {
+        assertEquals(
+            setOf("filtering-options", "known-words-import", "word-lists"),
+            SETTINGS_CARD_KEYS.getValue(SettingsCategory.WORD_FILTERS),
+        )
+    }
+
+    @Test
     fun `every id is unique`() {
         val ids = SETTINGS_SEARCH_INDEX.map { it.id }
 

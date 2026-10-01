@@ -27,7 +27,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.InstalledDictionary
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.PrimaryActionButton
+import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.accentTextColor
 import com.ankiminer.android.vm.SetupUiState
 
@@ -110,7 +110,7 @@ internal fun DictionaryLookupCard(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            PrimaryActionButton(
+            SecondaryActionButton(
                 onClick = onLookup,
                 enabled = state.lookupSlotId != null && state.lookupTerm.isNotBlank() && !state.busy,
                 modifier = Modifier.fillMaxWidth(),

@@ -570,11 +570,6 @@
     <string name="bundled_wordsets_title">Встроенные наборы имён собственных</string>
     <string name="bundled_wordset_item">%1$s · записей: %2$d</string>
     <string name="bundled_wordsets_unavailable">Не удалось прочитать встроенные наборы слов.</string>
-    <string name="local_import_complete">Локальный импорт завершён</string>
-    <string name="frequency_import_result">%1$s: записей %2$d; пропущено некорректных строк: %3$d</string>
-    <string name="pitch_import_result">%1$s: записей %2$d; пропущено некорректных строк: %3$d</string>
-    <string name="audio_pack_import_result">%1$s: аудиозаписей %2$d</string>
-    <string name="known_words_import_result">Прочитано слов: %1$d, добавлено: %2$d, всего: %3$d</string>
     <string name="readiness_python">Встроенный Python: %1$s</string>
     <string name="readiness_resource_recovery">Восстановление ресурсов: %1$s</string>
     <string name="readiness_anki_recovery">Восстановление Anki: %1$s</string>
@@ -594,8 +589,8 @@
     <string name="status_database_permission">требуется разрешение к базе данных</string>
     <string name="status_ready_api">готово (API %1$d)</string>
     <string name="dictionary_test_title">Проверка офлайн-словаря</string>
-    <string name="dictionary_term">Японский термин</string>
-    <string name="dictionary_render_html">Показать точный HTML словаря</string>
+    <string name="dictionary_term">Слово</string>
+    <string name="dictionary_render_html">Найти</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
     <string name="settings_anki_target">Anki</string>
     <string name="settings_ui_section">Интерфейс</string>

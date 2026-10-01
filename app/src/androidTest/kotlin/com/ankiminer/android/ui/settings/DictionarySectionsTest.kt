@@ -47,6 +47,8 @@ class DictionarySectionsTest {
         composeRule
             .onNodeWithText("Offline dictionary test")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit))
+        composeRule.onNodeWithText("Word").assertExists()
+        composeRule.onNodeWithText("Look up").assertExists()
     }
 
     @Test

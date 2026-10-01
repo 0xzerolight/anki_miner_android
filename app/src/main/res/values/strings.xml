@@ -577,11 +577,6 @@
     <string name="bundled_wordsets_title">Bundled proper-name wordsets</string>
     <string name="bundled_wordset_item">%1$s · %2$d entries</string>
     <string name="bundled_wordsets_unavailable">Bundled wordsets could not be read.</string>
-    <string name="local_import_complete">Local import complete</string>
-    <string name="frequency_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
-    <string name="pitch_import_result">%1$s: %2$d entries; %3$d malformed rows skipped</string>
-    <string name="audio_pack_import_result">%1$s: %2$d audio entries</string>
-    <string name="known_words_import_result">Read %1$d words, added %2$d, total %3$d</string>
     <string name="readiness_python">Embedded Python: %1$s</string>
     <string name="readiness_resource_recovery">Resource recovery: %1$s</string>
     <string name="readiness_anki_recovery">Anki recovery: %1$s</string>
@@ -601,8 +596,8 @@
     <string name="status_database_permission">database permission needed</string>
     <string name="status_ready_api">ready (API %1$d)</string>
     <string name="dictionary_test_title">Offline dictionary test</string>
-    <string name="dictionary_term">Japanese term</string>
-    <string name="dictionary_render_html">Render exact dictionary HTML</string>
+    <string name="dictionary_term">Word</string>
+    <string name="dictionary_render_html">Look up</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
 
     <string name="settings_anki_target">Anki</string>

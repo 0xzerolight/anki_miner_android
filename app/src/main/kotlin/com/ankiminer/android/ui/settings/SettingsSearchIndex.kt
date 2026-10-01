@@ -33,7 +33,6 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
                 "filtering-options",
                 "known-words-import",
                 "word-lists",
-                "filtering-import-result",
             ),
         SettingsCategory.SENTENCES to setOf("subtitle-text", "sentence-options"),
         SettingsCategory.LANGUAGE to setOf(MINING_LANGUAGE_KEY, LANGUAGE_VARIANT_KEY, LANGUAGE_TONE_COLOR_KEY),

@@ -569,11 +569,6 @@
     <string name="bundled_wordsets_title">同梱の固有名詞単語リスト</string>
     <string name="bundled_wordset_item">%1$s · エントリ%2$d件</string>
     <string name="bundled_wordsets_unavailable">同梱の単語リストを読み取れませんでした。</string>
-    <string name="local_import_complete">ローカルインポート完了</string>
-    <string name="frequency_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
-    <string name="pitch_import_result">%1$s: エントリ%2$d件、不正な行%3$d件をスキップ</string>
-    <string name="audio_pack_import_result">%1$s: 音声エントリ%2$d件</string>
-    <string name="known_words_import_result">%1$d語を読み込み、%2$d語を追加、合計%3$d語</string>
     <string name="readiness_python">組み込みPython: %1$s</string>
     <string name="readiness_resource_recovery">リソースリカバリー: %1$s</string>
     <string name="readiness_anki_recovery">Anki リカバリー: %1$s</string>
@@ -593,8 +588,8 @@
     <string name="status_database_permission">データベース権限が必要</string>
     <string name="status_ready_api">準備完了 (API %1$d)</string>
     <string name="dictionary_test_title">オフライン辞書テスト</string>
-    <string name="dictionary_term">日本語の語</string>
-    <string name="dictionary_render_html">辞書HTMLをそのまま表示</string>
+    <string name="dictionary_term">単語</string>
+    <string name="dictionary_render_html">調べる</string>
     <string name="dictionary_lookup_label">%1$s: %2$s</string>
 
     <string name="settings_anki_target">Anki</string>

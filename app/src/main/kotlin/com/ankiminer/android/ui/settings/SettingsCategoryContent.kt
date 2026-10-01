@@ -1179,11 +1179,6 @@ private fun LazyListScope.wordFilterSettings(
             },
         )
     }
-    setup.lastLocalImport?.let { imported ->
-        settingsCard(SettingsCategory.WORD_FILTERS, recorder, "filtering-import-result") {
-            LocalImportResultCard(imported)
-        }
-    }
 }
 
 /**
