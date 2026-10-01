@@ -986,10 +986,9 @@ class MediaMiningViewModelTest {
             assertFalse(viewModel.uiState.value.canStart)
 
             repository.transitionTo(MiningRunState.Success("run", result()))
-            viewModel.reset()
             runCurrent()
 
-            assertEquals(MiningRunState.Idle, repository.state.value)
+            // A finished run already allows Mine with the restored inputs (D7).
             assertTrue(viewModel.uiState.value.canStart)
         }
 
@@ -1460,7 +1459,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun retryKeepsPerRunSubtitleOffsetOverride() =
+    fun mineAfterAFailedRunKeepsThePerRunOffset() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
             val viewModel = mediaViewModel(repository, ImmediateSafBroker())
@@ -1475,7 +1474,7 @@ class MediaMiningViewModelTest {
             )
             runCurrent()
 
-            viewModel.retry()
+            viewModel.start()
             runCurrent()
 
             assertEquals(1.5, repository.startedInputs.single().subtitleOffsetOverride!!, 0.0)
@@ -1579,35 +1578,6 @@ class MediaMiningViewModelTest {
                 ),
             )
             assertFalse(savedState.keys().any { it.startsWith("videoMining.") })
-        }
-
-    @Test
-    fun resetClearsSubtitleOffsetDraft() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val savedState = SavedStateHandle()
-            val repository = RecordingRepository()
-            val viewModel =
-                mediaViewModel(
-                    repository = repository,
-                    safBroker = ImmediateSafBroker(),
-                    savedStateHandle = savedState,
-                )
-            viewModel.setSubtitleOffsetDraft("1.5")
-            repository.transitionTo(MiningRunState.Success("run", result()))
-            runCurrent()
-
-            viewModel.reset()
-            runCurrent()
-
-            assertEquals("", viewModel.uiState.value.subtitleOffsetDraft)
-            val restored =
-                mediaViewModel(
-                    repository = RecordingRepository(),
-                    safBroker = ImmediateSafBroker(),
-                    savedStateHandle = savedState,
-                )
-            runCurrent()
-            assertEquals("", restored.uiState.value.subtitleOffsetDraft)
         }
 
     @Test
@@ -1922,7 +1892,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun runFailedKeepsAudioTrackOverrideAndRetryResendsIt() =
+    fun runFailedKeepsAudioTrackOverrideAndMineResendsIt() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
             val opener = FakeAudioTrackProbeOpener()
@@ -1942,7 +1912,7 @@ class MediaMiningViewModelTest {
             runCurrent()
             assertEquals(2L, viewModel.uiState.value.audioTrackOverride)
 
-            viewModel.retry()
+            viewModel.start()
             runCurrent()
 
             assertEquals(2L, repository.startedInputs.last().audioTrackOverride)
@@ -2425,35 +2395,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun resetClearsOnlyResetPendingAndReEnablesStart() =
-        runTest(mainDispatcherRule.dispatcher) {
-            val resetGate = CompletableDeferred<Unit>()
-            val repository =
-                RecordingRepository(
-                    resetGate = resetGate,
-                )
-            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
-            selectDocuments(viewModel)
-            runCurrent()
-            repository.transitionTo(MiningRunState.Success("run", result()))
-            runCurrent()
-
-            viewModel.reset()
-            runCurrent()
-
-            assertTrue(viewModel.uiState.value.resetPending)
-            assertFalse(viewModel.uiState.value.startPending)
-            resetGate.complete(Unit)
-            runCurrent()
-
-            assertEquals(MiningRunState.Idle, repository.state.value)
-            assertFalse(viewModel.uiState.value.resetPending)
-            assertFalse(viewModel.uiState.value.startPending)
-            assertTrue(viewModel.uiState.value.canStart)
-        }
-
-    @Test
-    fun retrySetsBothPendingFlagsBeforeLaunchAndRejectsDuplicates() =
+    fun mineFromAFailedRunSetsBothPendingFlagsAndRejectsDuplicates() =
         runTest(mainDispatcherRule.dispatcher) {
             val resetGate = CompletableDeferred<Unit>()
             val startGate = CompletableDeferred<Unit>()
@@ -2474,8 +2416,8 @@ class MediaMiningViewModelTest {
             )
             runCurrent()
 
-            viewModel.retry()
-            viewModel.retry()
+            viewModel.start()
+            viewModel.start()
             runCurrent()
 
             assertEquals(1, repository.resetCalls)
@@ -2485,7 +2427,7 @@ class MediaMiningViewModelTest {
 
             resetGate.complete(Unit)
             runCurrent()
-            viewModel.retry()
+            viewModel.start()
 
             assertEquals(1, repository.resetCalls)
             assertEquals(1, repository.startCalls)

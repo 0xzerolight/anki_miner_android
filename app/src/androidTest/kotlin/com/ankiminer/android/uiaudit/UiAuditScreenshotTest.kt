@@ -119,8 +119,6 @@ class UiAuditScreenshotTest {
             onSelectSentence = { _, _ -> },
             onConfirmCuration = {},
             onCancel = {},
-            onRetry = {},
-            onReset = {},
             playerFactory = playerFactory,
             modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
         )

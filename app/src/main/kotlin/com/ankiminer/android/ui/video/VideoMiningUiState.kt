@@ -31,7 +31,6 @@ enum class MiningCommandError {
     START,
     CURATION,
     CANCEL,
-    RESET,
     UNDO,
     UNDO_WORDS,
 }

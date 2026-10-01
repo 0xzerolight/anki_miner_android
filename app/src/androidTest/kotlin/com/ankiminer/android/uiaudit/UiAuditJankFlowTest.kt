@@ -95,8 +95,6 @@ class UiAuditJankFlowTest {
                     onSelectSentence = { _, _ -> },
                     onConfirmCuration = {},
                     onCancel = {},
-                    onRetry = {},
-                    onReset = {},
                     playerFactory = { FakeCurationPreviewPlayer() },
                     modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     listState = listState,

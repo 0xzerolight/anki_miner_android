@@ -22,8 +22,6 @@ object VideoMiningTestTags {
     const val CUES_UNAVAILABLE = "curation_cues_unavailable"
     const val CONFIRM_CURATION = "confirm_curation"
     const val CANCEL = "cancel_mining"
-    const val RETRY = "retry_mining"
-    const val RESET = "reset_mining"
     const val RESULT = "mining_result"
     const val UNDO = "undo_mining_run"
     const val UNDO_CONFIRM = "undo_mining_run_confirm"
