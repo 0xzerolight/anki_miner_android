@@ -2002,7 +2002,110 @@ object FrozenResourceCatalog {
                                 ),
                             ),
                     ),
+                    YomitanCatalogResource(
+                        resourceId = "cc-canto-2026-10-01",
+                        displayName = "CC-Canto (Cantonese-English) 2026-10-01",
+                        slotId = "cc-canto",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-Canto.zip",
+                                sha256 = "730d0330eb2835db32cff553391a9397e259dcfe62608902239a145d4ac9fcf0",
+                                sizeBytes = 1_785_659,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "CC-Canto [2017-02-02]",
+                                revision = "2017-02-02",
+                                format = 3,
+                                memberCount = 7,
+                                uncompressedBytes = 27_116_978,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("CC-Canto", "Pleco Software", "CC-BY-SA-3.0", "https://cantonese.org/about.html"),
+                                ResourceAttribution("cc-cedict-yomitan", "Marv (MarvNC), Yomitan conversion", "CC-BY-SA-3.0", "https://github.com/MarvNC/cc-cedict-yomitan"),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "cc-cedict-canto-2026-09-30",
+                        displayName = "CC-CEDICT Canto (Cantonese-English) 2026-09-30",
+                        slotId = "cc-cedict-canto",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-CEDICT.Canto.zip",
+                                sha256 = "d86cdbdd3d07a9cbfb7803dee3fcb3ee3a6168dbf4f6ae1211ad588d98fa52d8",
+                                sizeBytes = 5_483_317,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "CC-CEDICT Canto [2026-09-30]",
+                                revision = "2026-09-30",
+                                format = 3,
+                                memberCount = 18,
+                                uncompressedBytes = 84_161_134,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("CC-CEDICT", "MDBG and the CC-CEDICT editors and contributors", "CC-BY-SA-3.0", "https://cc-cedict.org/wiki/"),
+                                ResourceAttribution("CC-Canto Cantonese readings", "Pleco Software", "CC-BY-SA-3.0", "https://cantonese.org/about.html"),
+                                ResourceAttribution("cc-cedict-yomitan", "Marv (MarvNC), Yomitan conversion", "CC-BY-SA-3.0", "https://github.com/MarvNC/cc-cedict-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "hkcancor-yue-2026-09-20",
+                        displayName = "HKCanCor + CTCPC Cantonese frequency",
+                        sourceId = "hkcancor-yue",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
+                                sha256 = "604ce69f9793f46f46c31d99ffa6913def344e3cac467d118ca04a94a09f7029",
+                                sizeBytes = 909_116,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Hong Kong Cantonese Corpus (HKCanCor)", "K. K. Luke and May L. Y. Wong (2015), bundled with PyCantonese", "CC-BY-4.0", "https://github.com/jacksonllee/pycantonese"),
+                                ResourceAttribution("Cantonese-Traditional Chinese Parallel Corpus (CTCPC)", "CTCPC authors, bundled with PyCantonese", "CC0-1.0", "https://github.com/jacksonllee/pycantonese"),
+                                ResourceAttribution("Anki Miner Cantonese frequency build", "Built by Anki Miner's scripts/build_yue_frequency.py", "CC-BY-4.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-yue-en-2026.09.20",
+                        displayName = "Wiktionary (Cantonese-English) 2026-09-20",
+                        slotId = "wty-yue-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/yue/en/wty-yue-en.zip",
+                                sha256 = "4717fe0af7829d556ad035bbde2f097a21fec0e66fa66c57da840b9d439e5ccc",
+                                sizeBytes = 27_136,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-yue-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 5,
+                                uncompressedBytes = 232_751,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
                 ),
-            recommended = emptyList(),
+            recommended = listOf("cc-canto-2026-10-01", "cc-cedict-canto-2026-09-30", "hkcancor-yue-2026-09-20", "wty-yue-en-2026.09.20"),
         )
 }

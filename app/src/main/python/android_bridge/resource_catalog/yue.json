@@ -59,7 +59,158 @@
           "url": "https://github.com/jacksonllee/pycantonese"
         }
       ]
+    },
+    {
+      "resourceId": "cc-canto-2026-10-01",
+      "kind": "yomitan-dictionary",
+      "displayName": "CC-Canto (Cantonese-English) 2026-10-01",
+      "slotId": "cc-canto",
+      "archive": {
+        "url": "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-Canto.zip",
+        "sha256": "730d0330eb2835db32cff553391a9397e259dcfe62608902239a145d4ac9fcf0",
+        "sizeBytes": 1785659,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "CC-Canto [2017-02-02]",
+        "revision": "2017-02-02",
+        "format": 3,
+        "memberCount": 7,
+        "uncompressedBytes": 27116978,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "CC-Canto",
+          "copyright": "Pleco Software",
+          "license": "CC-BY-SA-3.0",
+          "url": "https://cantonese.org/about.html"
+        },
+        {
+          "name": "cc-cedict-yomitan",
+          "copyright": "Marv (MarvNC), Yomitan conversion",
+          "license": "CC-BY-SA-3.0",
+          "url": "https://github.com/MarvNC/cc-cedict-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "cc-cedict-canto-2026-09-30",
+      "kind": "yomitan-dictionary",
+      "displayName": "CC-CEDICT Canto (Cantonese-English) 2026-09-30",
+      "slotId": "cc-cedict-canto",
+      "archive": {
+        "url": "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-CEDICT.Canto.zip",
+        "sha256": "d86cdbdd3d07a9cbfb7803dee3fcb3ee3a6168dbf4f6ae1211ad588d98fa52d8",
+        "sizeBytes": 5483317,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "CC-CEDICT Canto [2026-09-30]",
+        "revision": "2026-09-30",
+        "format": 3,
+        "memberCount": 18,
+        "uncompressedBytes": 84161134,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "CC-CEDICT",
+          "copyright": "MDBG and the CC-CEDICT editors and contributors",
+          "license": "CC-BY-SA-3.0",
+          "url": "https://cc-cedict.org/wiki/"
+        },
+        {
+          "name": "CC-Canto Cantonese readings",
+          "copyright": "Pleco Software",
+          "license": "CC-BY-SA-3.0",
+          "url": "https://cantonese.org/about.html"
+        },
+        {
+          "name": "cc-cedict-yomitan",
+          "copyright": "Marv (MarvNC), Yomitan conversion",
+          "license": "CC-BY-SA-3.0",
+          "url": "https://github.com/MarvNC/cc-cedict-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "hkcancor-yue-2026-09-20",
+      "kind": "frequency",
+      "displayName": "HKCanCor + CTCPC Cantonese frequency",
+      "sourceId": "hkcancor-yue",
+      "archive": {
+        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
+        "sha256": "604ce69f9793f46f46c31d99ffa6913def344e3cac467d118ca04a94a09f7029",
+        "sizeBytes": 909116,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "Hong Kong Cantonese Corpus (HKCanCor)",
+          "copyright": "K. K. Luke and May L. Y. Wong (2015), bundled with PyCantonese",
+          "license": "CC-BY-4.0",
+          "url": "https://github.com/jacksonllee/pycantonese"
+        },
+        {
+          "name": "Cantonese-Traditional Chinese Parallel Corpus (CTCPC)",
+          "copyright": "CTCPC authors, bundled with PyCantonese",
+          "license": "CC0-1.0",
+          "url": "https://github.com/jacksonllee/pycantonese"
+        },
+        {
+          "name": "Anki Miner Cantonese frequency build",
+          "copyright": "Built by Anki Miner's scripts/build_yue_frequency.py",
+          "license": "CC-BY-4.0",
+          "url": "https://github.com/0xzerolight/anki_miner"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-yue-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Cantonese-English) 2026-09-20",
+      "slotId": "wty-yue-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/yue/en/wty-yue-en.zip",
+        "sha256": "4717fe0af7829d556ad035bbde2f097a21fec0e66fa66c57da840b9d439e5ccc",
+        "sizeBytes": 27136,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-yue-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 5,
+        "uncompressedBytes": 232751,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 16777216
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
     }
   ],
-  "recommended": []
+  "recommended": [
+    "cc-canto-2026-10-01",
+    "cc-cedict-canto-2026-09-30",
+    "hkcancor-yue-2026-09-20",
+    "wty-yue-en-2026.09.20"
+  ]
 }
