@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Рабочее смещение (секунды)</string>
     <string name="timing_preview_apply">Применить</string>
     <string name="timing_preview_cancel">Отмена</string>
-    <string name="timing_preview_readout_offset">Смещение %1$+.2f с</string>
-    <string name="timing_preview_readout_unshifted">Без смещения</string>
     <string name="timing_preview_busy">Сначала закройте выполняющуюся задачу.</string>
     <string name="timing_preview_unavailable">Предпросмотр недоступен для этого источника</string>
     <string name="timing_preview_tokenizer_required">Установите ресурс японского токенизатора перед майнингом</string>

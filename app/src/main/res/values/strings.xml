@@ -43,8 +43,6 @@
     <string name="timing_preview_offset_label">Working offset (seconds)</string>
     <string name="timing_preview_apply">Apply</string>
     <string name="timing_preview_cancel">Cancel</string>
-    <string name="timing_preview_readout_offset">Offset %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Unshifted</string>
     <string name="timing_preview_busy">Close the running task first.</string>
     <string name="timing_preview_unavailable">Preview unavailable for this source</string>
     <string name="timing_preview_tokenizer_required">Install the Japanese tokenizer resource before mining</string>

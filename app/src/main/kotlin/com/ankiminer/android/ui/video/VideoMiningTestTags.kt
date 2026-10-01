@@ -29,7 +29,6 @@ object VideoMiningTestTags {
     const val TIMING_PREVIEW_CONTENT = "timing_preview_content"
     const val TIMING_PREVIEW_TITLE = "timing_preview_title"
     const val TIMING_PREVIEW_UNAVAILABLE = "timing_preview_unavailable"
-    const val TIMING_PREVIEW_READOUT = "timing_preview_readout"
     const val TIMING_PREVIEW_NUDGE_EARLIER = "timing_preview_nudge_earlier"
     const val TIMING_PREVIEW_NUDGE_LATER = "timing_preview_nudge_later"
     const val TIMING_PREVIEW_TOGGLE = "timing_preview_toggle"

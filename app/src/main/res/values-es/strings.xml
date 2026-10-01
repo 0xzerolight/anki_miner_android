@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Desfase de trabajo (segundos)</string>
     <string name="timing_preview_apply">Aplicar</string>
     <string name="timing_preview_cancel">Cancelar</string>
-    <string name="timing_preview_readout_offset">Desfase %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Sin desfase</string>
     <string name="timing_preview_busy">Cierre primero la tarea en curso.</string>
     <string name="timing_preview_unavailable">Vista previa no disponible para esta fuente</string>
     <string name="timing_preview_tokenizer_required">Instale el recurso del tokenizador japonés antes de minar</string>

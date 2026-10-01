@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Scostamento corrente (secondi)</string>
     <string name="timing_preview_apply">Applica</string>
     <string name="timing_preview_cancel">Annulla</string>
-    <string name="timing_preview_readout_offset">Scostamento %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Senza scostamento</string>
     <string name="timing_preview_busy">Chiudi prima l\'attività in corso.</string>
     <string name="timing_preview_unavailable">Anteprima non disponibile per questa fonte</string>
     <string name="timing_preview_tokenizer_required">Installa la risorsa del tokenizzatore giapponese prima del mining</string>

@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Arbeitsversatz (Sekunden)</string>
     <string name="timing_preview_apply">Anwenden</string>
     <string name="timing_preview_cancel">Abbrechen</string>
-    <string name="timing_preview_readout_offset">Versatz %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Unverschoben</string>
     <string name="timing_preview_busy">Schließen Sie zuerst die laufende Aufgabe.</string>
     <string name="timing_preview_unavailable">Vorschau für diese Quelle nicht verfügbar</string>
     <string name="timing_preview_tokenizer_required">Installieren Sie vor dem Mining die japanische Tokenizer-Ressource</string>

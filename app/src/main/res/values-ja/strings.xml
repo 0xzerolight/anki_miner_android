@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">調整中のオフセット（秒）</string>
     <string name="timing_preview_apply">適用</string>
     <string name="timing_preview_cancel">キャンセル</string>
-    <string name="timing_preview_readout_offset">オフセット %1$+.2f秒</string>
-    <string name="timing_preview_readout_unshifted">オフセットなし</string>
     <string name="timing_preview_busy">実行中のタスクを先に終了してください。</string>
     <string name="timing_preview_unavailable">このソースではプレビューを利用できません</string>
     <string name="timing_preview_tokenizer_required">マイニング前に日本語形態素解析器リソースをインストールしてください</string>

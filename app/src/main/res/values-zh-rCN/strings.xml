@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">当前偏移（秒）</string>
     <string name="timing_preview_apply">应用</string>
     <string name="timing_preview_cancel">取消</string>
-    <string name="timing_preview_readout_offset">偏移 %1$+.2f 秒</string>
-    <string name="timing_preview_readout_unshifted">未偏移</string>
     <string name="timing_preview_busy">请先关闭正在运行的任务。</string>
     <string name="timing_preview_unavailable">此来源无法预览</string>
     <string name="timing_preview_tokenizer_required">请在挖词前安装日语分词器资源</string>

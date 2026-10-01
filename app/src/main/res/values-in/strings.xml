@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Offset aktif (detik)</string>
     <string name="timing_preview_apply">Terapkan</string>
     <string name="timing_preview_cancel">Batal</string>
-    <string name="timing_preview_readout_offset">Offset %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Tanpa pergeseran</string>
     <string name="timing_preview_busy">Tutup tugas yang sedang berjalan dahulu.</string>
     <string name="timing_preview_unavailable">Pratinjau tidak tersedia untuk sumber ini</string>
     <string name="timing_preview_tokenizer_required">Instal sumber daya tokenizer bahasa Jepang sebelum mining</string>

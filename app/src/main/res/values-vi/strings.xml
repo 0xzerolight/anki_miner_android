@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Độ lệch đang dùng (giây)</string>
     <string name="timing_preview_apply">Áp dụng</string>
     <string name="timing_preview_cancel">Hủy</string>
-    <string name="timing_preview_readout_offset">Độ lệch %1$+.2f giây</string>
-    <string name="timing_preview_readout_unshifted">Chưa dịch</string>
     <string name="timing_preview_busy">Đóng tác vụ đang chạy trước.</string>
     <string name="timing_preview_unavailable">Không thể xem trước nguồn này</string>
     <string name="timing_preview_tokenizer_required">Cài đặt tài nguyên bộ tách từ tiếng Nhật trước khi khai thác</string>

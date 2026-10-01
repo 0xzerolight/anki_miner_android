@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Deslocamento em uso (segundos)</string>
     <string name="timing_preview_apply">Aplicar</string>
     <string name="timing_preview_cancel">Cancelar</string>
-    <string name="timing_preview_readout_offset">Deslocamento %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Sem deslocamento</string>
     <string name="timing_preview_busy">Feche a tarefa em execução primeiro.</string>
     <string name="timing_preview_unavailable">Prévia indisponível para esta fonte</string>
     <string name="timing_preview_tokenizer_required">Instale o recurso do tokenizador japonês antes de minerar</string>

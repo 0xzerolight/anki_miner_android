@@ -36,8 +36,6 @@
     <string name="timing_preview_offset_label">Décalage utilisé (secondes)</string>
     <string name="timing_preview_apply">Appliquer</string>
     <string name="timing_preview_cancel">Annuler</string>
-    <string name="timing_preview_readout_offset">Décalage %1$+.2f s</string>
-    <string name="timing_preview_readout_unshifted">Non décalé</string>
     <string name="timing_preview_busy">Fermez d\'abord la tâche en cours.</string>
     <string name="timing_preview_unavailable">Aperçu indisponible pour cette source</string>
     <string name="timing_preview_tokenizer_required">Installez la ressource du tokeniseur japonais avant l\'extraction</string>
