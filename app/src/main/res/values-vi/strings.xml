@@ -271,6 +271,9 @@
     <string name="mining_failure_job_registration">Đăng ký tác vụ Python vi phạm giao thức cầu nối</string>
     <string name="mining_failure_anki_callback">Hàm gọi lại Anki thất bại đột ngột</string>
     <string name="mining_failure_sentence_audio_callback">Hàm gọi lại âm thanh câu thất bại đột ngột</string>
+    <string name="mining_failure_word_audio_preparation">Không thể chuẩn bị âm thanh từ ngoại tuyến</string>
+    <string name="mining_failure_word_audio_cleanup">Dọn dẹp âm thanh từ ngoại tuyến thất bại</string>
+    <string name="mining_failure_word_audio_callback">Hàm gọi lại âm thanh từ thất bại đột ngột</string>
     <string name="mining_failure_control_worker">Trình chạy điều khiển khai thác không khả dụng</string>
     <string name="mining_admission_not_checked">Chưa kiểm tra trạng thái sẵn sàng của AnkiDroid</string>
     <string name="mining_admission_install_ankidroid">Cài đặt AnkiDroid trước khi khai thác</string>
@@ -722,6 +725,11 @@
     <string name="settings_reading_audio">Âm thanh câu đọc</string>
     <string name="settings_reading_tts">Chuyển văn bản thành giọng nói Android ngoại tuyến</string>
     <string name="settings_open_speech_services">Quản lý dịch vụ giọng nói</string>
+    <string name="settings_word_audio_device_voice">Giọng của thiết bị</string>
+    <string name="settings_word_audio_device_voice_help">Những từ không có trong gói âm thanh nào sẽ được đọc bằng giọng chuyển văn bản thành giọng nói ngoại tuyến của thiết bị.</string>
+    <string name="settings_word_audio_voice_available">Đã cài giọng cho ngôn ngữ này.</string>
+    <string name="settings_word_audio_voice_missing_data">Chưa tải xuống giọng cho ngôn ngữ này. Hãy tải xuống trong Quản lý dịch vụ giọng nói.</string>
+    <string name="settings_word_audio_voice_unsupported">Thiết bị này không có giọng chuyển văn bản thành giọng nói cho ngôn ngữ này.</string>
     <string name="settings_jisho">Dự phòng định nghĩa Jisho</string>
     <string name="settings_jisho_disclosure">Mặc định tắt. Khi bật và dùng đến phương án dự phòng này, thuật ngữ tra cứu từ phụ đề hoặc nội dung đọc được gửi đến jisho.org.</string>
     <string name="settings_validation_card_type_marker">Trường Anki \'%1$s\' đã được ánh xạ từ \'%2$s\'</string>

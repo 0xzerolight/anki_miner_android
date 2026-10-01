@@ -34,6 +34,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
@@ -254,6 +255,7 @@ internal fun SettingsRoute(
     val languageProfiles by viewModel.languageProfiles.collectAsStateWithLifecycle()
     val languageDownload by viewModel.languageDownload.collectAsStateWithLifecycle()
     val diagnosticsExport by diagnosticsViewModel.state.collectAsStateWithLifecycle()
+    val languageDefaults by viewModel.languageDefaults.collectAsStateWithLifecycle()
     if (!draftState.loaded) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             CircularProgressIndicator()
@@ -407,6 +409,7 @@ internal fun SettingsRoute(
         onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
         onCheckForUpdates = onCheckForUpdates,
         onSkipUpdate = onSkipUpdate,
+        miningLanguage = languageDefaults?.code ?: LanguageScope.JAPANESE,
         modifier = modifier,
     )
 }
@@ -465,6 +468,7 @@ private fun SettingsScreen(
     onUpdateCheckEnabledChange: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
     onSkipUpdate: () -> Unit,
+    miningLanguage: String = LanguageScope.JAPANESE,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
@@ -631,6 +635,7 @@ private fun SettingsScreen(
                         },
                         onChooseNoteType = noteTypeJumps::request,
                     ),
+                miningLanguage = miningLanguage,
             )
         SettingsSearchJumpHandler(
             entries = resolvedEntries,

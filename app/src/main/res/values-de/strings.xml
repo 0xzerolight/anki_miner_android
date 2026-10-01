@@ -272,6 +272,9 @@
     <string name="mining_failure_job_registration">Python-Auftragsregistrierung hat das Bridge-Protokoll verletzt</string>
     <string name="mining_failure_anki_callback">Anki-Rückruf ist unerwartet fehlgeschlagen</string>
     <string name="mining_failure_sentence_audio_callback">Satz-Audio-Rückruf ist unerwartet fehlgeschlagen</string>
+    <string name="mining_failure_word_audio_preparation">Offline-Wort-Audio konnte nicht vorbereitet werden</string>
+    <string name="mining_failure_word_audio_cleanup">Bereinigung von Offline-Wort-Audio fehlgeschlagen</string>
+    <string name="mining_failure_word_audio_callback">Wort-Audio-Rückruf ist unerwartet fehlgeschlagen</string>
     <string name="mining_failure_control_worker">Mining-Steuerungs-Worker ist nicht verfügbar</string>
     <string name="mining_admission_not_checked">AnkiDroid-Bereitschaft wurde nicht geprüft</string>
     <string name="mining_admission_install_ankidroid">Installieren Sie AnkiDroid vor dem Mining</string>
@@ -723,6 +726,11 @@
     <string name="settings_reading_audio">Satz-Audio für Lesungen</string>
     <string name="settings_reading_tts">Offline-Android-Sprachsynthese</string>
     <string name="settings_open_speech_services">Sprachdienste verwalten</string>
+    <string name="settings_word_audio_device_voice">Gerätestimme</string>
+    <string name="settings_word_audio_device_voice_help">Wörter, die kein Audiopaket enthält, spricht die Offline-Sprachsynthese des Geräts.</string>
+    <string name="settings_word_audio_voice_available">Für diese Sprache ist eine Stimme installiert.</string>
+    <string name="settings_word_audio_voice_missing_data">Die Stimme für diese Sprache ist noch nicht heruntergeladen. Laden Sie sie unter „Sprachdienste verwalten“ herunter.</string>
+    <string name="settings_word_audio_voice_unsupported">Dieses Gerät hat keine Sprachsynthese-Stimme für diese Sprache.</string>
     <string name="settings_jisho">Jisho-Ersatz für Definitionen</string>
     <string name="settings_jisho_disclosure">Standardmäßig deaktiviert. Wenn aktiviert und dieser Ersatz greift, werden Suchbegriffe aus Ihren Untertiteln oder Leseinhalten an jisho.org gesendet.</string>
     <string name="settings_validation_card_type_marker">Anki-Feld \'%1$s\' ist bereits \'%2$s\' zugeordnet</string>

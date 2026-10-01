@@ -18,10 +18,11 @@ import org.junit.Test
 class LanguageScopeTest {
     @Test
     fun `the stash set is exactly the settings that move a language-scoped snapshot key`() {
-        // The language itself is the scope, never a member of it (a switch away from Japanese moves
-        // the Jisho entry, which is Japanese-only).
+        // `language` is the scope key itself, never parked. A switch away from Japanese moves the Jisho
+        // entry, which is Japanese-only, and expression_audio_chain, because the device voice stands in
+        // for every other language's network voice.
         val scoped =
-            ALTERNATIVES.keys.filter { it != "language" }.filterTo(linkedSetOf()) { property ->
+            (ALTERNATIVES.keys - "language").filterTo(linkedSetOf()) { property ->
                 BASES.any { base ->
                     ALTERNATIVES.getValue(property).any { candidate ->
                         val changed = changedSnapshotKeys(base, base.with(property, candidate))
@@ -82,14 +83,21 @@ class LanguageScopeTest {
 
         assertEquals(BridgeJsonValue.Text("he"), snapshot.settings["language"])
         assertEquals(BridgeJsonValue.ArrayValue(emptyList()), snapshot.settings["dictionary_chain"])
-        assertEquals(BridgeJsonValue.ArrayValue(emptyList()), snapshot.settings["expression_audio_chain"])
+        // No pack yet, but the device voice speaks Hebrew words in place of the desktop's Google one.
+        assertEquals(
+            BridgeJsonValue.ArrayValue(
+                listOf(BridgeJsonValue.ObjectValue(mapOf("kind" to BridgeJsonValue.Text("android_tts")))),
+            ),
+            snapshot.settings["expression_audio_chain"],
+        )
         assertFalse("jisho_delay" in snapshot.settings)
         // Every scoped key the snapshot carries is he's own default. The keys it leaves out —
         // the subtitle regex trio and the frequency band among them — resolve to he's defaults on
         // the bridge, which overlays the snapshot on he's first-visit config.
         assertTrue(listOf("subtitle_regex_filter", "use_subtitle_regex_filter").none(snapshot.settings::containsKey))
         assertTrue(listOf("min_frequency_rank", "max_frequency_rank").none(snapshot.settings::containsKey))
-        (defaults.keys - "anki_fields").forEach { key ->
+        // The audio chain's scoped default lists packs only; the device voice is the mapper's.
+        (defaults.keys - "anki_fields" - "expression_audio_chain").forEach { key ->
             snapshot.settings[key]?.let { sent -> assertEquals(key, defaults.getValue(key), sent) }
         }
         assertEquals(BridgeJsonValue.Text("Anki Miner"), snapshot.settings["anki_deck_name"])

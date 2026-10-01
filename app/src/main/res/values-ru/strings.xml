@@ -274,6 +274,9 @@
     <string name="mining_failure_job_registration">Регистрация задачи Python нарушила протокол моста</string>
     <string name="mining_failure_anki_callback">Обратный вызов Anki неожиданно завершился сбоем</string>
     <string name="mining_failure_sentence_audio_callback">Обратный вызов аудио предложений неожиданно завершился сбоем</string>
+    <string name="mining_failure_word_audio_preparation">Не удалось подготовить офлайн-аудио слов</string>
+    <string name="mining_failure_word_audio_cleanup">Сбой очистки офлайн-аудио слов</string>
+    <string name="mining_failure_word_audio_callback">Обратный вызов аудио слов неожиданно завершился сбоем</string>
     <string name="mining_failure_control_worker">Рабочий процесс управления майнингом недоступен</string>
     <string name="mining_admission_not_checked">Готовность AnkiDroid не проверена</string>
     <string name="mining_admission_install_ankidroid">Установите AnkiDroid перед майнингом</string>
@@ -725,6 +728,11 @@
     <string name="settings_reading_audio">Аудио предложений для чтения</string>
     <string name="settings_reading_tts">Офлайн-синтез речи Android</string>
     <string name="settings_open_speech_services">Управление речевыми службами</string>
+    <string name="settings_word_audio_device_voice">Голос устройства</string>
+    <string name="settings_word_audio_device_voice_help">Слова, которых нет ни в одном аудиопакете, произносит офлайн-голос синтеза речи устройства.</string>
+    <string name="settings_word_audio_voice_available">Голос для этого языка установлен.</string>
+    <string name="settings_word_audio_voice_missing_data">Голос для этого языка ещё не загружен. Загрузите его в разделе «Управление речевыми службами».</string>
+    <string name="settings_word_audio_voice_unsupported">На этом устройстве нет голоса синтеза речи для этого языка.</string>
     <string name="settings_jisho">Резервное определение Jisho</string>
     <string name="settings_jisho_disclosure">Выключено по умолчанию. При включении и переходе к этому резервному варианту термины поиска из субтитров или материалов для чтения отправляются на jisho.org.</string>
     <string name="settings_validation_card_type_marker">Поле Anki \'%1$s\' уже сопоставлено с \'%2$s\'</string>

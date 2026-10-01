@@ -271,6 +271,9 @@
     <string name="mining_failure_job_registration">Python 工作註冊違反橋接通訊協定</string>
     <string name="mining_failure_anki_callback">Anki 回呼意外失敗</string>
     <string name="mining_failure_sentence_audio_callback">句子音訊回呼意外失敗</string>
+    <string name="mining_failure_word_audio_preparation">無法準備離線單字音訊</string>
+    <string name="mining_failure_word_audio_cleanup">離線單字音訊清理失敗</string>
+    <string name="mining_failure_word_audio_callback">單字音訊回呼意外失敗</string>
     <string name="mining_failure_control_worker">採集控制工作程序無法使用</string>
     <string name="mining_admission_not_checked">尚未檢查 AnkiDroid 是否就緒</string>
     <string name="mining_admission_install_ankidroid">請在採集前安裝 AnkiDroid</string>
@@ -722,6 +725,11 @@
     <string name="settings_reading_audio">閱讀內容的句子音訊</string>
     <string name="settings_reading_tts">離線 Android 文字轉語音</string>
     <string name="settings_open_speech_services">管理語音服務</string>
+    <string name="settings_word_audio_device_voice">裝置語音</string>
+    <string name="settings_word_audio_device_voice_help">所有音訊包都沒有的單字，會由裝置的離線文字轉語音朗讀。</string>
+    <string name="settings_word_audio_voice_available">已安裝此語言的語音。</string>
+    <string name="settings_word_audio_voice_missing_data">此語言的語音尚未下載。請在「管理語音服務」中下載。</string>
+    <string name="settings_word_audio_voice_unsupported">此裝置沒有此語言的文字轉語音聲音。</string>
     <string name="settings_jisho">Jisho 釋義備援</string>
     <string name="settings_jisho_disclosure">預設關閉。啟用後，若觸發此備援，會將字幕或閱讀內容的查詢詞傳送至 jisho.org。</string>
     <string name="settings_validation_card_type_marker">Anki 欄位 \'%1$s\' 已從 \'%2$s\' 對應</string>

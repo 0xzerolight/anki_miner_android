@@ -711,6 +711,9 @@ object AppSettingsValidator {
     private const val MAX_WORDSET_SELECTIONS = 32
 }
 
+/** The bridge-only `expression_audio_chain` kind: the device's offline TextToSpeech voice. */
+internal const val ANDROID_TTS_AUDIO_KIND = "android_tts"
+
 internal object EngineSettingsSnapshotMapper {
     private val dictionaryId = Regex("(?!.*\\.\\.)[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
 
@@ -886,8 +889,9 @@ internal object EngineSettingsSnapshotMapper {
             }
         values["pitch_chain"] = BridgeJsonValue.ArrayValue(pitchChain)
 
-        // Only private local packs cross this boundary. Network audio kinds remain mechanically
-        // unrepresentable even if a desktop default or stale preference tries to introduce one.
+        // Only private local packs and, outside Japanese, the device's own offline voice cross this
+        // boundary. Network audio kinds remain mechanically unrepresentable even if a desktop default
+        // or stale preference tries to introduce one.
         val expressionAudioChain =
             resolveResourceChain(settings.audioPacks, installedAudioPackIds).map { selection ->
                 BridgeJsonValue.ObjectValue(
@@ -898,7 +902,15 @@ internal object EngineSettingsSnapshotMapper {
                     ),
                 )
             }
-        values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain)
+        // Every other language's desktop default is Google or Edge read-aloud; Android speaks with
+        // the device voice instead, after the packs, so a recording always outranks synthesis.
+        val deviceVoice =
+            if (settings.language == LanguageScope.JAPANESE) {
+                emptyList()
+            } else {
+                listOf(BridgeJsonValue.ObjectValue(mapOf("kind" to text(ANDROID_TTS_AUDIO_KIND))))
+            }
+        values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain + deviceVoice)
         // Emitted unconditionally so the key set does not depend on user settings; the tuning is
         // emitted only when the feature is on, because the bridge pins fps/height and would reject
         // a stray value anyway.

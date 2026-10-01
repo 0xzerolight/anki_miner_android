@@ -273,6 +273,9 @@
     <string name="mining_failure_job_registration">L\'enregistrement de tâche Python a enfreint le protocole du pont</string>
     <string name="mining_failure_anki_callback">Le rappel Anki a échoué inopinément</string>
     <string name="mining_failure_sentence_audio_callback">Le rappel d\'audio de phrase a échoué inopinément</string>
+    <string name="mining_failure_word_audio_preparation">Impossible de préparer l\'audio de mot hors ligne</string>
+    <string name="mining_failure_word_audio_cleanup">Échec du nettoyage de l\'audio de mot hors ligne</string>
+    <string name="mining_failure_word_audio_callback">Le rappel d\'audio de mot a échoué inopinément</string>
     <string name="mining_failure_control_worker">Le processus de contrôle de l\'extraction est indisponible</string>
     <string name="mining_admission_not_checked">L\'état de préparation d\'AnkiDroid n\'a pas été vérifié</string>
     <string name="mining_admission_install_ankidroid">Installez AnkiDroid avant l\'extraction</string>
@@ -724,6 +727,11 @@
     <string name="settings_reading_audio">Audio des phrases de lecture</string>
     <string name="settings_reading_tts">Synthèse vocale Android hors ligne</string>
     <string name="settings_open_speech_services">Gérer les services vocaux</string>
+    <string name="settings_word_audio_device_voice">Voix de l\'appareil</string>
+    <string name="settings_word_audio_device_voice_help">Les mots absents de tous les packs audio sont lus par la voix de synthèse vocale hors ligne de l\'appareil.</string>
+    <string name="settings_word_audio_voice_available">Une voix est installée pour cette langue.</string>
+    <string name="settings_word_audio_voice_missing_data">La voix de cette langue n\'est pas encore téléchargée. Téléchargez-la dans Gérer les services vocaux.</string>
+    <string name="settings_word_audio_voice_unsupported">Cet appareil n\'a aucune voix de synthèse vocale pour cette langue.</string>
     <string name="settings_jisho">Solution de repli de définition Jisho</string>
     <string name="settings_jisho_disclosure">Désactivé par défaut. Une fois activé et cette solution de repli atteinte, les termes recherchés depuis vos sous-titres ou votre contenu de lecture sont envoyés à jisho.org.</string>
     <string name="settings_validation_card_type_marker">Le champ Anki \'%1$s\' est déjà mappé depuis \'%2$s\'</string>

@@ -273,6 +273,9 @@
     <string name="mining_failure_job_registration">O registro de tarefa do Python violou o protocolo da ponte</string>
     <string name="mining_failure_anki_callback">O retorno de chamada do Anki falhou inesperadamente</string>
     <string name="mining_failure_sentence_audio_callback">O retorno de chamada do áudio de frase falhou inesperadamente</string>
+    <string name="mining_failure_word_audio_preparation">Não foi possível preparar o áudio de palavra sem conexão</string>
+    <string name="mining_failure_word_audio_cleanup">Falha na limpeza do áudio de palavra sem conexão</string>
+    <string name="mining_failure_word_audio_callback">O retorno de chamada do áudio de palavra falhou inesperadamente</string>
     <string name="mining_failure_control_worker">O processo de controle da mineração não está disponível</string>
     <string name="mining_admission_not_checked">A prontidão do AnkiDroid não foi verificada</string>
     <string name="mining_admission_install_ankidroid">Instale o AnkiDroid antes de minerar</string>
@@ -724,6 +727,11 @@
     <string name="settings_reading_audio">Áudio da frase de leitura</string>
     <string name="settings_reading_tts">Texto para fala offline do Android</string>
     <string name="settings_open_speech_services">Gerenciar serviços de fala</string>
+    <string name="settings_word_audio_device_voice">Voz do dispositivo</string>
+    <string name="settings_word_audio_device_voice_help">Palavras que nenhum pacote de áudio tem são faladas pela voz de texto para fala offline do dispositivo.</string>
+    <string name="settings_word_audio_voice_available">Há uma voz instalada para este idioma.</string>
+    <string name="settings_word_audio_voice_missing_data">A voz deste idioma ainda não foi baixada. Baixe-a em Gerenciar serviços de fala.</string>
+    <string name="settings_word_audio_voice_unsupported">Este dispositivo não tem voz de texto para fala para este idioma.</string>
     <string name="settings_jisho">Alternativa de definição do Jisho</string>
     <string name="settings_jisho_disclosure">Desativado por padrão. Quando ativado e esta alternativa é usada, termos de pesquisa das suas legendas ou conteúdo de leitura são enviados a jisho.org.</string>
     <string name="settings_validation_card_type_marker">O campo do Anki \'%1$s\' já está mapeado de \'%2$s\'</string>

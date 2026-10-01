@@ -279,6 +279,9 @@
     <string name="mining_failure_job_registration">Python job registration violated the bridge protocol</string>
     <string name="mining_failure_anki_callback">Anki callback failed unexpectedly</string>
     <string name="mining_failure_sentence_audio_callback">Sentence-audio callback failed unexpectedly</string>
+    <string name="mining_failure_word_audio_preparation">Offline word audio could not be prepared</string>
+    <string name="mining_failure_word_audio_cleanup">Offline word-audio cleanup failed</string>
+    <string name="mining_failure_word_audio_callback">Word-audio callback failed unexpectedly</string>
     <string name="mining_failure_control_worker">Mining control worker is unavailable</string>
     <string name="mining_admission_not_checked">AnkiDroid readiness has not been checked</string>
     <string name="mining_admission_install_ankidroid">Install AnkiDroid before mining</string>
@@ -733,6 +736,11 @@
     <string name="settings_reading_audio">Reading sentence audio</string>
     <string name="settings_reading_tts">Offline Android text-to-speech</string>
     <string name="settings_open_speech_services">Manage speech services</string>
+    <string name="settings_word_audio_device_voice">Device voice</string>
+    <string name="settings_word_audio_device_voice_help">Words no audio pack has are spoken by the device\'s offline text-to-speech voice.</string>
+    <string name="settings_word_audio_voice_available">A voice for this language is installed.</string>
+    <string name="settings_word_audio_voice_missing_data">This language\'s voice is not downloaded yet. Download it under Manage speech services.</string>
+    <string name="settings_word_audio_voice_unsupported">This device has no text-to-speech voice for this language.</string>
     <string name="settings_jisho">Jisho definition fallback</string>
     <string name="settings_jisho_disclosure">Off by default. When enabled and this fallback is reached, lookup terms from your subtitles or reading content are sent to jisho.org.</string>
     <string name="settings_validation_card_type_marker">Anki field \'%1$s\' is already mapped from \'%2$s\'</string>

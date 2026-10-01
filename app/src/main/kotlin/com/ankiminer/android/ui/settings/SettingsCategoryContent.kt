@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.settings
 
+import android.content.Context
 import android.os.Build
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
@@ -17,12 +18,14 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
@@ -30,6 +33,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
@@ -42,6 +48,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineDefaults
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
 import com.ankiminer.android.data.update.AvailableUpdate
@@ -49,6 +56,8 @@ import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.DiagnosticsExportStep
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
+import com.ankiminer.android.tts.DeviceVoiceStatus
+import com.ankiminer.android.tts.probeDeviceVoice
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -98,6 +107,8 @@ internal data class SettingsScreenCallbacks(
     val onCheckForUpdates: () -> Unit,
     val onSkipUpdate: () -> Unit,
     val language: LanguageSettingsActions = LanguageSettingsActions(),
+    /** The active mining language; outside Japanese the Word audio card shows the device voice. */
+    val miningLanguage: String = LanguageScope.JAPANESE,
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -974,6 +985,9 @@ private fun LazyListScope.audioSourcesCard(
                         callbacks,
                     )
                     OtherLanguageSlotsNote(otherLanguageSlots)
+                    if (callbacks.miningLanguage != LanguageScope.JAPANESE) {
+                        DeviceVoiceSection(callbacks.miningLanguage)
+                    }
                     SettingsSection(stringResource(R.string.settings_reading_audio)) {
                         BooleanSetting(
                             label = stringResource(R.string.settings_reading_tts),
@@ -994,6 +1008,36 @@ private fun LazyListScope.audioSourcesCard(
         }
     }
 }
+
+/**
+ * The device voice that speaks a non-Japanese language's word audio after the packs, and whether
+ * this device has one for [language]. The status is probed per language and again on every return
+ * to the screen, so a voice downloaded from the speech services shows up; it stays blank while the
+ * engine first answers.
+ */
+@Composable
+internal fun DeviceVoiceSection(
+    language: String,
+    probe: suspend (Context, String) -> DeviceVoiceStatus = ::probeDeviceVoice,
+) {
+    val context = LocalContext.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val status by produceState<DeviceVoiceStatus?>(null, language, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { value = probe(context, language) }
+    }
+    SettingsSection(stringResource(R.string.settings_word_audio_device_voice)) {
+        SupportingText(stringResource(R.string.settings_word_audio_device_voice_help))
+        status?.let { SupportingText(stringResource(it.message)) }
+    }
+}
+
+private val DeviceVoiceStatus.message: Int
+    get() =
+        when (this) {
+            DeviceVoiceStatus.AVAILABLE -> R.string.settings_word_audio_voice_available
+            DeviceVoiceStatus.MISSING_DATA -> R.string.settings_word_audio_voice_missing_data
+            DeviceVoiceStatus.UNSUPPORTED -> R.string.settings_word_audio_voice_unsupported
+        }
 
 private fun LazyListScope.frequencySourcesCard(
     draft: SettingsDraft,

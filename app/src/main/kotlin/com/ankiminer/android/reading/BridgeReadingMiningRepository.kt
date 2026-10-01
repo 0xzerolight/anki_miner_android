@@ -68,6 +68,7 @@ import com.ankiminer.android.service.MiningForegroundSessionListener
 import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
 import com.ankiminer.android.tts.SentenceAudioSynthesizer
 import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
+import com.ankiminer.android.tts.usesDeviceVoice
 import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.CancellationException
@@ -566,13 +567,18 @@ internal class BridgeReadingMiningRepository(
                         stagedSource.imageArchivePath != null ||
                         requireNotNull(run.configSnapshot).androidTtsEnabled == true ||
                         requireNotNull(run.configSnapshot).mapsExpressionAudioField()
-                if (requireNotNull(run.configSnapshot).androidTtsEnabled == true) {
+                // One synthesizer serves both the reading's sentence audio and, outside Japanese,
+                // the device voice speaking its word audio.
+                val readingTts = requireNotNull(run.configSnapshot).androidTtsEnabled == true
+                if (readingTts || requireNotNull(run.configSnapshot).usesDeviceVoice()) {
                     val synthesizer =
                         try {
                             sentenceAudioSynthesizerFactory?.open()
                                 ?: throw IllegalStateException("Sentence-audio integration is unavailable")
                         } catch (failure: RuntimeException) {
-                            recordFault(generation, strings.resolve(R.string.mining_failure_sentence_audio_preparation))
+                            val sentence = R.string.mining_failure_sentence_audio_preparation
+                            val message = if (readingTts) sentence else R.string.mining_failure_word_audio_preparation
+                            recordFault(generation, strings.resolve(message))
                             throw failure
                         }
                     run.sentenceAudioSynthesizer = synthesizer
@@ -1924,10 +1930,7 @@ internal class BridgeReadingMiningRepository(
                         ?: throw IllegalStateException("Sentence-audio callback is stale")
                     val runId = run.runId
                         ?: throw IllegalStateException("Sentence-audio callback arrived before registration")
-                    if (
-                        (run.phase != Phase.RUNNING && run.phase != Phase.CANCELLING) ||
-                            run.configSnapshot?.androidTtsEnabled != true
-                    ) {
+                    if (run.phase != Phase.RUNNING && run.phase != Phase.CANCELLING) {
                         throw IllegalStateException("Sentence-audio callback is out of order")
                     }
                     val dispatcher = run.sentenceAudioDispatcher

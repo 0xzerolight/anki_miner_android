@@ -273,6 +273,9 @@
     <string name="mining_failure_job_registration">El registro de trabajo de Python incumplió el protocolo del puente</string>
     <string name="mining_failure_anki_callback">La devolución de llamada de Anki falló inesperadamente</string>
     <string name="mining_failure_sentence_audio_callback">La devolución de llamada de audio de oración falló inesperadamente</string>
+    <string name="mining_failure_word_audio_preparation">No se pudo preparar el audio de palabra sin conexión</string>
+    <string name="mining_failure_word_audio_cleanup">Falló la limpieza del audio de palabra sin conexión</string>
+    <string name="mining_failure_word_audio_callback">La devolución de llamada de audio de palabra falló inesperadamente</string>
     <string name="mining_failure_control_worker">El trabajador de control de minería no está disponible</string>
     <string name="mining_admission_not_checked">No se ha comprobado el estado de AnkiDroid</string>
     <string name="mining_admission_install_ankidroid">Instale AnkiDroid antes de minar</string>
@@ -724,6 +727,11 @@
     <string name="settings_reading_audio">Audio de oraciones de lectura</string>
     <string name="settings_reading_tts">Texto a voz sin conexión de Android</string>
     <string name="settings_open_speech_services">Administrar servicios de voz</string>
+    <string name="settings_word_audio_device_voice">Voz del dispositivo</string>
+    <string name="settings_word_audio_device_voice_help">Las palabras que no están en ningún paquete de audio las pronuncia la voz de texto a voz sin conexión del dispositivo.</string>
+    <string name="settings_word_audio_voice_available">Hay una voz instalada para este idioma.</string>
+    <string name="settings_word_audio_voice_missing_data">La voz de este idioma aún no está descargada. Descárguela en Administrar servicios de voz.</string>
+    <string name="settings_word_audio_voice_unsupported">Este dispositivo no tiene una voz de texto a voz para este idioma.</string>
     <string name="settings_jisho">Alternativa de definición de Jisho</string>
     <string name="settings_jisho_disclosure">Desactivado de forma predeterminada. Si se activa y se usa esta alternativa, los términos de búsqueda de sus subtítulos o contenido de lectura se envían a jisho.org.</string>
     <string name="settings_validation_card_type_marker">El campo de Anki \'%1$s\' ya está asignado desde \'%2$s\'</string>

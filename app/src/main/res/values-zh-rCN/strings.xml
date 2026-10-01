@@ -271,6 +271,9 @@
     <string name="mining_failure_job_registration">Python 任务注册违反桥接协议</string>
     <string name="mining_failure_anki_callback">Anki 回调意外失败</string>
     <string name="mining_failure_sentence_audio_callback">句子音频回调意外失败</string>
+    <string name="mining_failure_word_audio_preparation">无法准备离线单词音频</string>
+    <string name="mining_failure_word_audio_cleanup">离线单词音频清理失败</string>
+    <string name="mining_failure_word_audio_callback">单词音频回调意外失败</string>
     <string name="mining_failure_control_worker">挖词控制工作线程不可用</string>
     <string name="mining_admission_not_checked">尚未检查 AnkiDroid 就绪状态</string>
     <string name="mining_admission_install_ankidroid">请在挖词前安装 AnkiDroid</string>
@@ -722,6 +725,11 @@
     <string name="settings_reading_audio">阅读句子音频</string>
     <string name="settings_reading_tts">离线 Android 文字转语音</string>
     <string name="settings_open_speech_services">管理语音服务</string>
+    <string name="settings_word_audio_device_voice">设备语音</string>
+    <string name="settings_word_audio_device_voice_help">所有音频包都没有的单词，由设备的离线文字转语音朗读。</string>
+    <string name="settings_word_audio_voice_available">已安装此语言的语音。</string>
+    <string name="settings_word_audio_voice_missing_data">此语言的语音尚未下载。请在“管理语音服务”中下载。</string>
+    <string name="settings_word_audio_voice_unsupported">此设备没有此语言的文字转语音声音。</string>
     <string name="settings_jisho">Jisho 释义回退</string>
     <string name="settings_jisho_disclosure">默认关闭。启用后，若触发此回退，会将从字幕或阅读内容得出的查询词发送至 jisho.org。</string>
     <string name="settings_validation_card_type_marker">Anki 字段“%1$s”已映射自“%2$s”</string>
