@@ -7,9 +7,14 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 ### Added
 
 - **Translation subtitles (Video tab).** With Settings -> Sentences -> Secondary subtitles on, a second subtitle file and its timing offset fill the Sentence translation field mapped under Settings -> Cards & Anki.
+- **Frequency band minimum (Settings -> Word filters).** "Minimum frequency rank" skips words more common than it, and "Include words missing from the frequency list" keeps unranked words while either end is set.
+- **"Treat kana spellings of known words as known" (Settings -> Word filters).** On by default, as before; it can now be turned off.
+- **"Mine full sentences across subtitle lines" (Settings -> Sentences).** Joins subtitle lines that do not end a sentence, so the card gets the whole sentence. Off by default; Reading sources ignore it.
+- **"Create cards in order of appearance" (Settings -> Cards & Anki).** Cards follow the order the words first appear even with "Always mine whitelisted words" on, which otherwise puts whitelisted words first.
 
 ### Changed
 
+- **Settings follow desktop's layout.** "Anki" is now "Cards & Anki", and its excluded decks moved to "Word filters", formerly "Filtering". A new Sentences tab holds the subtitle text cleanup, moved from Media, and deduplication, the i+1 filter, the sentence length caps and target bolding, moved from Filtering. The Resources audio panel is now "Word audio".
 - **The Japanese mining engine is updated to current desktop Anki Miner.** Mined words, readings and definitions are unchanged on the test corpus.
 - **Cards from the Video and Audio tabs are added in the same order on every run, following the subtitles.** They used to follow whichever clip finished extracting first, so the order changed from run to run.
 - **The dictionary-name line in definitions takes the note type's styling (Senren, Lapis) on new cards.** Anki Miner's grey label used to override it.
@@ -19,8 +24,12 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Audio-track auto-pick also recognises regional tags such as `jpn-JP`.** Before, only `ja` took a regional suffix.
 - **CI runs the Android checks as three parallel lanes.** One job did everything and took 19m48s, of which a single step — `Run JVM tests, lint, and assemble audited APKs` — was 13m52s. Inside it, lint was 340s (`lintAnalyzeEmulatorDebug` alone 141s) and the arm64 release 238s (`minifyDeviceReleaseWithR8` 132s): 578s of 832s spent on two things instrumentation does not need, since `run-api26-instrumentation.sh` wants only the two `emulatorDebug` APKs. `Android instrumentation (API 26)`, `Android lint` and `Android device release` now run concurrently, each assembling what it audits, so no artifact is passed between them and every `check-native-artifact.sh` and `check_runtime_artifact.py` invocation the single job ran still runs. `Android API 26` survives as a `needs`-gated aggregator carrying the name the branch ruleset requires, so the required-check set is unchanged and no repository setting moved; it is `if: always()`, because a job skipped by a failed dependency never reports a conclusion and would hang the pull request instead of failing it. The five setup steps became the composite action `.github/actions/android-build-toolchain`, so three lanes share one locked `sdkmanager --install` rather than three copies that drift — `test_ci_sdk_packages.py` parses the first install block it finds and would otherwise have policed one lane of three. That action also fabricates `$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT` once and exports it, replacing the symlink preamble each audit step used to repeat, and `.github/dependabot.yml` gains the nested directory, which the `/` entry does not scan.
 - **Gradle is no longer pinned to one worker and a 2 GiB heap.** `--no-parallel --max-workers=1 -Dorg.gradle.jvmargs=-Xmx2g` was passed by both CI and `ANKI_MINER_GRADLE_ARGS`, and lint analysis and R8 are precisely the two tasks that scale with workers and heap. The rationale was whole-system OOM kills, retired when swap went 8 GiB -> 40 GiB on 2026-07-30; the two commits that introduced the pinning recorded no reason, and no decision record covers it. The flags come off both lanes, `org.gradle.parallel` and `org.gradle.workers.max` are deleted rather than raised so the worker count tracks whatever host runs the build, and the heap moves to `org.gradle.jvmargs` in `gradle.properties` — until now dead config, because the command line overrode every line of that file except `org.gradle.caching`. `--dependency-verification strict` is untouched and remains the reason the shared argument array exists; `test_android_test_resources.py` now pins that, `--no-daemon` and the task position, and fails if the worker pinning returns.
-- **Word review opens on the full sentence when "Mine full sentences across subtitle lines" is on.** "+ Previous line" and "+ Next line" extend that sentence, and "Reset lines" returns to the single line.
-- **Word review shows each sentence's translation when a translation subtitle is picked.**
+- **Curation opens on the full sentence when "Mine full sentences across subtitle lines" is on.** "+ Previous line" and "+ Next line" extend that sentence, and "Reset lines" returns to the single line.
+- **Curation shows each sentence's translation when a translation subtitle is picked.**
+
+### Removed
+
+- **The "Limit sentence length" switch.** The two caps under Settings -> Sentences apply on their own, and 0 means no limit. Caps the switch kept off are reset to 0 on upgrade and when an older settings backup is imported, so what gets mined does not change.
 
 ### Fixed
 
