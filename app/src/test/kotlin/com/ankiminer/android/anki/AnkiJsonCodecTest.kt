@@ -1,6 +1,7 @@
 package com.ankiminer.android.anki
 
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
+import com.ankiminer.android.anki.protocol.AllowDuplicatesCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiErrorDetail
 import com.ankiminer.android.anki.protocol.AnkiErrorResult
@@ -96,6 +97,12 @@ class AnkiJsonCodecTest {
 
         val create = decode(AnkiOperation.CREATE_NOTES, createNotesPayload()) as CreateNotesRequest
         assertEquals(CollectionCreateDuplicateScope, create.duplicateScope)
+        val allowed =
+            decode(
+                AnkiOperation.CREATE_NOTES,
+                createNotesPayload().replace("\"kind\":\"collection\"", "\"kind\":\"allowDuplicates\""),
+            ) as CreateNotesRequest
+        assertEquals(AllowDuplicatesCreateDuplicateScope, allowed.duplicateScope)
         assertEquals("猫", create.notes.single().fields.getValue("Expression"))
         assertEquals("clip.mp3", create.notes.single().mediaBindings.single().actualFilename)
 

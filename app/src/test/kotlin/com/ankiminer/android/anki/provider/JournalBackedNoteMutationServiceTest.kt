@@ -22,9 +22,11 @@ import com.ankiminer.android.anki.journal.ReplayResult
 import com.ankiminer.android.anki.journal.RoutingIntentDraft
 import com.ankiminer.android.anki.journal.RoutingIntentRecord
 import com.ankiminer.android.anki.journal.RoutingIntentState
+import com.ankiminer.android.anki.protocol.AllowDuplicatesCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CommittedFailedNote
 import com.ankiminer.android.anki.protocol.CreateDuplicateCandidate
+import com.ankiminer.android.anki.protocol.CreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CreateNote
 import com.ankiminer.android.anki.protocol.CreateNotesRequest
 import com.ankiminer.android.anki.protocol.CreatedNote
@@ -106,6 +108,19 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(listOf(DuplicateNote(CLIENT_NOTE_ID)), outcome.result.results)
             assertEquals(0, harness.provider.insertCalls)
             assertEquals(1, harness.reads.duplicateReads)
+        }
+
+    @Test
+    fun `allowed duplicates are created without a duplicate read`() =
+        withHarness(initialMatchingNoteIds = setOf(91L)) { harness ->
+            harness.reads.freshMatchingNoteIds = setOf(92L)
+
+            val outcome = harness.service.create(harness.owner, harness.request(AllowDuplicatesCreateDuplicateScope))
+
+            assertEquals(listOf(CreatedNote(CLIENT_NOTE_ID, NOTE_ID)), outcome.result.results)
+            assertEquals(1, harness.provider.insertCalls)
+            assertEquals(0, harness.reads.duplicateReads)
+            assertTrue(harness.journal.readyResponse?.results?.single() is AlignedResult.NoteCreated)
         }
 
     @Test
@@ -543,7 +558,8 @@ class JournalBackedNoteMutationServiceTest {
         val reads: FakeNoteReads,
         val provider: FakeNoteProvider,
     ) {
-        fun request(): CreateNotesRequest = JournalBackedNoteMutationServiceTest.request()
+        fun request(duplicateScope: CreateDuplicateScope = CollectionCreateDuplicateScope): CreateNotesRequest =
+            JournalBackedNoteMutationServiceTest.request(duplicateScope)
     }
 
     private class FakeNoteReads : NoteMutationReads {
@@ -863,7 +879,7 @@ class JournalBackedNoteMutationServiceTest {
                     ),
             )
 
-        fun request() =
+        fun request(duplicateScope: CreateDuplicateScope = CollectionCreateDuplicateScope) =
             CreateNotesRequest(
                 runId = RUN_ID,
                 requestId = REQUEST_ID,
@@ -871,7 +887,7 @@ class JournalBackedNoteMutationServiceTest {
                 modelName = TARGET.model.name,
                 firstFieldName = "Expression",
                 baselineToken = BASELINE_TOKEN,
-                duplicateScope = CollectionCreateDuplicateScope,
+                duplicateScope = duplicateScope,
                 notes =
                     listOf(
                         CreateNote(

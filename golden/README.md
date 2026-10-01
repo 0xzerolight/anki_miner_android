@@ -83,14 +83,14 @@ repository. So it too is an opt-in manual step, not a per-push gate.
 `bridge/` holds the Anki bridge-boundary corpora. They are not engine goldens:
 no exporter derives them, and no provenance block pins them.
 
-- `bridge/anki-protocol-v1.jsonl` — 121 envelope cases (46 request, 75
-  response; 42 accept, 79 reject) across the five Anki callbacks. Read by
+- `bridge/anki-protocol-v1.jsonl` — 122 envelope cases (47 request, 75
+  response; 43 accept, 79 reject) across the five Anki callbacks. Read by
   `tests/python/android_bridge/test_anki_protocol_corpus.py` and
   `app/src/test/kotlin/com/ankiminer/android/anki/AnkiJsonCodecBoundaryTest.kt`,
   so one corpus pins both decoders. `AnkiRequestDigestTest.kt` also probes for
   it, but only to locate the project root.
 - `bridge/anki-request-digest-v1.jsonl` — 19 raw-request/canonical-form/digest
-  vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 57 single-leaf
+  vectors; `bridge/anki-request-digest-mutations-v1.jsonl` — 58 single-leaf
   mutations of those vectors with the digest each must produce. Both are read by
   `tests/python/android_bridge/test_request_digest.py` and
   `app/src/test/kotlin/com/ankiminer/android/anki/AnkiRequestDigestTest.kt`.

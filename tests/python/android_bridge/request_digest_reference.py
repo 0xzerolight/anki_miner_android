@@ -485,10 +485,10 @@ def _create_duplicate_scope(value: object) -> _Object:
     if not isinstance(value, Mapping):
         _invalid("create duplicate scope must be an object")
     kind = value.get("kind")
-    if kind == "collection":
-        scope = _mapping(value, {"kind", "limits"}, "collection duplicate scope")
+    if kind in {"collection", "allowDuplicates"}:
+        scope = _mapping(value, {"kind", "limits"}, f"{kind} duplicate scope")
         _validate_create_duplicate_limits(scope["limits"])
-        return _Object((("kind", "collection"),))
+        return _Object((("kind", kind),))
     _invalid("create duplicate scope kind is invalid")
 
 

@@ -867,6 +867,9 @@ class FakeKotlinAnki:
         # preprobe/write race without moving normalization into Kotlin. Notes
         # created below are deliberately absent from this immutable snapshot.
         records_snapshot = self._duplicate_records()
+        # allowDuplicates: Python admitted every note against the excluded-deck-aware known
+        # words, so Kotlin creates it whatever the collection holds (AnkiConnect allowDuplicate).
+        allow_duplicates = request["duplicateScope"]["kind"] == "allowDuplicates"
         script = self.create_scripts.pop(0) if self.create_scripts else None
         statuses, partial_error = (
             script
@@ -875,7 +878,8 @@ class FakeKotlinAnki:
                 [
                     (
                         "duplicate"
-                        if self._snapshot_candidate_ids(
+                        if not allow_duplicates
+                        and self._snapshot_candidate_ids(
                             note["duplicateCandidate"],
                             request["duplicateScope"],
                             records_snapshot,
@@ -6558,6 +6562,131 @@ def test_hebrew_known_vocabulary_resolves_word_fields_like_desktop_anki_service(
 
     assert android == {fold("סֵפֶר"), fold("יֶלֶד"), fold("קָפֶה"), "מים"}
     assert android == _desktop_known_vocabulary(monkeypatch, note_types, notes, config)
+
+
+def _language_config(home: Path, code: str, **changes: object) -> Any:
+    from anki_miner.languages.switching import switch_language
+
+    return replace(
+        switch_language(_config(home), code),
+        language_stash={},
+        anki_note_type="Basic",
+        **changes,
+    )
+
+
+def _excluded_deck_collection(kotlin: FakeKotlinAnki, notes: list[tuple[str, str]]) -> None:
+    """One first-field note per ``(deck, front)``: known to the scan unless excluded, and to the probe always."""
+    kotlin.known_fields = [front for _, front in notes]
+    kotlin.known_note_decks = [{deck} for deck, _ in notes]
+    kotlin.duplicate_fields = [front for _, front in notes]
+
+
+@pytest.mark.parametrize(
+    ("code", "archived", "known_elsewhere", "known_front"),
+    [
+        # A pointed front elsewhere folds onto the plain mined word, as desktop's _dedup_key does.
+        ("he", "ספר", "ילד", "יֶלֶד"),
+        ("th", "กินข้าว", "แมว", "แมว"),
+    ],
+)
+def test_excluded_deck_admission_creates_words_only_an_excluded_deck_holds(
+    initialized_bridge_home: Path,
+    code: str,
+    archived: str,
+    known_elsewhere: str,
+    known_front: str,
+) -> None:
+    """Desktop ``AnkiService._admit_against_excluded_decks``.
+
+    With excluded decks, a note is refused only when its folded front is known
+    outside them (or already admitted in this call), and every admitted note is
+    created even though Anki holds the same front in an excluded deck.
+    """
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    kotlin = FakeKotlinAnki()
+    _excluded_deck_collection(kotlin, [("Archive", archived), ("Main", known_front)])
+    adapter = _adapter(_language_config(initialized_bridge_home, code, excluded_decks=("Archive",)), kotlin)
+
+    created = adapter.create_cards_batch([_card(archived), _card(known_elsewhere)])
+
+    assert len(created) == 1
+    assert adapter.last_skipped_duplicates == 1
+    request = kotlin.requests_for("ankiCreateNotes")[0]["payload"]
+    assert request["duplicateScope"]["kind"] == "allowDuplicates"
+    assert [note["duplicateCandidate"]["key"] for note in request["notes"]] == [archived]
+
+
+def test_excluded_deck_admission_submits_one_note_per_folded_front(
+    initialized_bridge_home: Path,
+) -> None:
+    pytest.importorskip("pysubs2", reason="runtime dependency lane")
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_language_config(initialized_bridge_home, "he", excluded_decks=("Archive",)), kotlin)
+
+    created = adapter.create_cards_batch([_card("סֵפֶר"), _card("ספר")])
+
+    assert len(created) == 1
+    assert adapter.last_skipped_duplicates == 1
+    notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
+    assert [note["duplicateCandidate"]["key"] for note in notes] == ["סֵפֶר"]
+
+
+def test_excluded_deck_admission_creates_a_japanese_word_only_an_excluded_deck_holds(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    _excluded_deck_collection(kotlin, [("Archive::Old", "猫"), ("Main", "犬")])
+    adapter = _adapter(_config(initialized_bridge_home, excluded_decks=("Archive",)), kotlin)
+
+    created = adapter.create_cards_batch([_card("猫"), _card("犬")])
+
+    assert len(created) == 1
+    assert adapter.last_skipped_duplicates == 1
+    notes = kotlin.requests_for("ankiCreateNotes")[0]["payload"]["notes"]
+    assert [note["duplicateCandidate"]["key"] for note in notes] == ["猫"]
+
+
+def test_excluded_deck_admission_refusing_every_note_writes_nothing(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    _excluded_deck_collection(kotlin, [("Main", "犬")])
+    adapter = _adapter(_config(initialized_bridge_home, excluded_decks=("Archive",)), kotlin)
+
+    assert adapter.create_cards_batch([_card("犬"), _card("犬")]) == []
+    assert adapter.last_skipped_duplicates == 2
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert kotlin.requests_for("ankiCreateNotes") == []
+
+
+def test_without_excluded_decks_any_collection_duplicate_is_skipped(
+    initialized_bridge_home: Path,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    _excluded_deck_collection(kotlin, [("Archive", "猫")])
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+
+    assert adapter.create_cards_batch([_card("猫")]) == []
+    assert adapter.last_skipped_duplicates == 1
+    assert kotlin.requests_for("ankiCreateNotes") == []
+
+
+def test_excluded_deck_admission_fails_closed_before_any_write(
+    initialized_bridge_home: Path,
+) -> None:
+    """An unreadable known-word scan must not authorise collection-wide duplicates."""
+    from anki_miner.exceptions import AnkiConnectionError
+
+    kotlin = FakeKotlinAnki()
+    kotlin.errors["scanFirstFields"] = ("query_failed", "AnkiDroid query failed", False)
+    adapter = _adapter(_config(initialized_bridge_home, excluded_decks=("Archive",)), kotlin)
+
+    with pytest.raises(AnkiConnectionError):
+        adapter.create_cards_batch([_card("猫")])
+
+    assert kotlin.requests_for("ankiStoreMedia") == []
+    assert kotlin.requests_for("ankiCreateNotes") == []
 
 
 def test_japanese_known_vocabulary_ignores_hebrew_fields(initialized_bridge_home: Path) -> None:

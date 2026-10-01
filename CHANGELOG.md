@@ -38,6 +38,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Curation previews UTF-16 and EUC-JP subtitles again (Video and Audio tabs).** Since 1.0.0 any subtitle that was neither UTF-8 nor Shift-JIS showed "Subtitles unavailable for preview" and gave the line-widening controls no cue list: the encoding detector was handed a file path where the engine now takes bytes.
 - **A run stopped by a resource that needs re-importing says so in your language and names Settings -> Resources.** It used to show English text pointing at desktop menus.
 - **The update check's status no longer goes stale (Settings -> Diagnostics).** A rare race could show the check running after it finished, keeping Check now disabled, or idle while it ran.
+- **A word whose only card is in an excluded deck gets a new card (Settings -> Word filters).** It used to reach curation and then be skipped as already in Anki. As on desktop, a word is now skipped only when a deck outside the exclusions knows it.
 - **Known words come from the word field of note types that do not start with it, such as Migaku (sentence first) and Core 2k/6k (index first).** Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
 
 ## [1.1.0] - 2026-09-08
