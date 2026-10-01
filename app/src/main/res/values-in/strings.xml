@@ -258,7 +258,7 @@
     <string name="mining_failure_curation_page_rejected">Python menolak respons halaman kurasi</string>
     <string name="mining_failure_curation_page_ack_invalid">Python menghasilkan konfirmasi halaman kurasi tidak valid</string>
     <string name="mining_failure_curation_page_not_accepted">Python tidak menerima respons halaman kurasi</string>
-    <string name="mining_failure_background_stopped">Mining latar belakang berhenti tak terduga</string>
+    <string name="mining_failure_background_stopped">Android menutup Anki Miner saat berada di latar belakang, sehingga proses ini berhenti.</string>
     <string name="mining_failure_cancellation_dispatch">Pengiriman pembatalan Python gagal</string>
     <string name="mining_failure_cancellation_ack_invalid">Python menghasilkan konfirmasi pembatalan tidak valid</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python tidak mengonfirmasi pembatalan</string>

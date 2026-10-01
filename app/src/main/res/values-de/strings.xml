@@ -262,7 +262,7 @@
     <string name="mining_failure_curation_page_rejected">Python hat die Kuratierungsseitenantwort abgelehnt</string>
     <string name="mining_failure_curation_page_ack_invalid">Python gab eine ungültige Bestätigung der Kuratierungsseite zurück</string>
     <string name="mining_failure_curation_page_not_accepted">Python hat die Kuratierungsseitenantwort nicht akzeptiert</string>
-    <string name="mining_failure_background_stopped">Hintergrund-Mining wurde unerwartet beendet</string>
+    <string name="mining_failure_background_stopped">Android hat Anki Miner im Hintergrund beendet, deshalb wurde dieser Durchlauf gestoppt.</string>
     <string name="mining_failure_cancellation_dispatch">Auslösung der Abbruchanfrage durch Python fehlgeschlagen</string>
     <string name="mining_failure_cancellation_ack_invalid">Python gab eine ungültige Abbruchbestätigung zurück</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python hat den Abbruch nicht bestätigt</string>

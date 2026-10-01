@@ -258,7 +258,7 @@
     <string name="mining_failure_curation_page_rejected">Python 已拒絕整理頁面回應</string>
     <string name="mining_failure_curation_page_ack_invalid">Python 傳回無效的整理頁面確認</string>
     <string name="mining_failure_curation_page_not_accepted">Python 未接受整理頁面回應</string>
-    <string name="mining_failure_background_stopped">背景採集意外停止</string>
+    <string name="mining_failure_background_stopped">Android 在背景關閉了 Anki Miner，因此本次採集已停止。</string>
     <string name="mining_failure_cancellation_dispatch">Python 取消調度失敗</string>
     <string name="mining_failure_cancellation_ack_invalid">Python 傳回無效的取消確認</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python 未確認取消作業</string>

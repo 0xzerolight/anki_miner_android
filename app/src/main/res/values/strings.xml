@@ -269,7 +269,7 @@
     <string name="mining_failure_curation_page_rejected">Python rejected the curation page response</string>
     <string name="mining_failure_curation_page_ack_invalid">Python returned an invalid curation page acknowledgement</string>
     <string name="mining_failure_curation_page_not_accepted">Python did not accept the curation page response</string>
-    <string name="mining_failure_background_stopped">Background mining stopped unexpectedly</string>
+    <string name="mining_failure_background_stopped">Android closed Anki Miner while it was in the background, so this run stopped.</string>
     <string name="mining_failure_cancellation_dispatch">Python cancellation dispatch failed</string>
     <string name="mining_failure_cancellation_ack_invalid">Python returned an invalid cancellation acknowledgement</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python did not acknowledge cancellation</string>

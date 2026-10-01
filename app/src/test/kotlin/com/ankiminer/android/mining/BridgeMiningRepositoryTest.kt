@@ -728,7 +728,10 @@ class BridgeMiningRepositoryTest {
 
         val interrupted = recreated.repository.state.value as MiningRunState.Failed
         assertEquals(RUN_ID, interrupted.runId)
-        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+        assertEquals(
+            "Android closed Anki Miner while it was in the background, so this run stopped.",
+            interrupted.failure.message,
+        )
 
         runBlocking { activeHarness.repository.cancel(curating.request.runId) }
         activeHarness.bridge.allowTerminal.countDown()
@@ -772,7 +775,10 @@ class BridgeMiningRepositoryTest {
         val harness = harness(interruptionStore = interruptionStore)
 
         val interrupted = harness.repository.state.value as MiningRunState.Failed
-        assertEquals("Background mining stopped unexpectedly", interrupted.failure.message)
+        assertEquals(
+            "Android closed Anki Miner while it was in the background, so this run stopped.",
+            interrupted.failure.message,
+        )
         // The other lane's run id has no meaning on this screen.
         assertNull(interrupted.runId)
 

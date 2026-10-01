@@ -266,7 +266,7 @@
     <string name="mining_failure_curation_page_rejected">Python a rejeté la réponse de la page de curation</string>
     <string name="mining_failure_curation_page_ack_invalid">Python a renvoyé un accusé de réception de page de curation non valide</string>
     <string name="mining_failure_curation_page_not_accepted">Python n\'a pas accepté la réponse de la page de curation</string>
-    <string name="mining_failure_background_stopped">L\'extraction en arrière-plan s\'est arrêtée inopinément</string>
+    <string name="mining_failure_background_stopped">Android a fermé Anki Miner pendant qu\'il était en arrière-plan, cette extraction s\'est donc arrêtée.</string>
     <string name="mining_failure_cancellation_dispatch">Échec de l\'envoi de l\'annulation à Python</string>
     <string name="mining_failure_cancellation_ack_invalid">Python a renvoyé un accusé de réception d\'annulation non valide</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python n\'a pas confirmé l\'annulation</string>

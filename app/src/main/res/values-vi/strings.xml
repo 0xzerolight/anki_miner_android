@@ -258,7 +258,7 @@
     <string name="mining_failure_curation_page_rejected">Python từ chối phản hồi trang tuyển chọn</string>
     <string name="mining_failure_curation_page_ack_invalid">Python trả về xác nhận trang tuyển chọn không hợp lệ</string>
     <string name="mining_failure_curation_page_not_accepted">Python không chấp nhận phản hồi trang tuyển chọn</string>
-    <string name="mining_failure_background_stopped">Khai thác nền dừng đột ngột</string>
+    <string name="mining_failure_background_stopped">Android đã đóng Anki Miner khi ứng dụng chạy nền, nên lượt khai thác này đã dừng.</string>
     <string name="mining_failure_cancellation_dispatch">Gửi yêu cầu hủy đến Python thất bại</string>
     <string name="mining_failure_cancellation_ack_invalid">Python trả về xác nhận hủy không hợp lệ</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python không xác nhận việc hủy</string>

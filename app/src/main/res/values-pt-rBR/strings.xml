@@ -266,7 +266,7 @@
     <string name="mining_failure_curation_page_rejected">Python rejeitou a resposta da página de curadoria</string>
     <string name="mining_failure_curation_page_ack_invalid">Python retornou uma confirmação inválida da página de curadoria</string>
     <string name="mining_failure_curation_page_not_accepted">Python não aceitou a resposta da página de curadoria</string>
-    <string name="mining_failure_background_stopped">A mineração em segundo plano foi interrompida inesperadamente</string>
+    <string name="mining_failure_background_stopped">O Android fechou o Anki Miner enquanto ele estava em segundo plano, então esta execução parou.</string>
     <string name="mining_failure_cancellation_dispatch">Falha no envio do cancelamento pelo Python</string>
     <string name="mining_failure_cancellation_ack_invalid">Python retornou uma confirmação de cancelamento inválida</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python não confirmou o cancelamento</string>

@@ -258,7 +258,7 @@
     <string name="mining_failure_curation_page_rejected">Python が選別ページの応答を拒否しました</string>
     <string name="mining_failure_curation_page_ack_invalid">Python が無効な選別ページ確認応答を返しました</string>
     <string name="mining_failure_curation_page_not_accepted">Python が選別ページの応答を受け付けませんでした</string>
-    <string name="mining_failure_background_stopped">バックグラウンドマイニングが予期せず停止しました</string>
+    <string name="mining_failure_background_stopped">Anki Miner がバックグラウンドにある間に Android が終了させたため、この実行は停止しました。</string>
     <string name="mining_failure_cancellation_dispatch">Python の中止ディスパッチに失敗しました</string>
     <string name="mining_failure_cancellation_ack_invalid">Python が無効な中止確認応答を返しました</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python が中止を確認応答しませんでした</string>

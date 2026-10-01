@@ -258,7 +258,7 @@
     <string name="mining_failure_curation_page_rejected">Python 拒绝了整理页面响应</string>
     <string name="mining_failure_curation_page_ack_invalid">Python 返回了无效的整理页面确认</string>
     <string name="mining_failure_curation_page_not_accepted">Python 未接受整理页面响应</string>
-    <string name="mining_failure_background_stopped">后台挖词意外停止</string>
+    <string name="mining_failure_background_stopped">Android 在后台关闭了 Anki Miner，因此本次挖词已停止。</string>
     <string name="mining_failure_cancellation_dispatch">Python 取消分派失败</string>
     <string name="mining_failure_cancellation_ack_invalid">Python 返回了无效的取消确认</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python 未确认取消操作</string>

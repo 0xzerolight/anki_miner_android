@@ -270,7 +270,7 @@
     <string name="mining_failure_curation_page_rejected">Python отклонил ответ страницы отбора</string>
     <string name="mining_failure_curation_page_ack_invalid">Python вернул недопустимое подтверждение страницы отбора</string>
     <string name="mining_failure_curation_page_not_accepted">Python не принял ответ страницы отбора</string>
-    <string name="mining_failure_background_stopped">Фоновый майнинг неожиданно остановился</string>
+    <string name="mining_failure_background_stopped">Android закрыл Anki Miner, пока он работал в фоне, поэтому этот запуск остановлен.</string>
     <string name="mining_failure_cancellation_dispatch">Сбой отправки отмены в Python</string>
     <string name="mining_failure_cancellation_ack_invalid">Python вернул недопустимое подтверждение отмены</string>
     <string name="mining_failure_cancellation_not_acknowledged">Python не подтвердил отмену</string>
