@@ -159,8 +159,53 @@ internal val catalanCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-ca-en-2026.09.20",
+                    displayName = "Wiktionary (Catalan-English) 2026-09-20",
+                    slotId = "wty-ca-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ca/en/wty-ca-en.zip",
+                            sha256 = "adcdae56d10932ceab99c2d4d411a011368b2aab8049af141967e52e56a207be",
+                            sizeBytes = 4_639_237,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-ca-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 15,
+                            uncompressedBytes = 64_964_990,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-ca-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Catalan)",
+                    sourceId = "opensubtitles-ca",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ca/ca_50k.txt",
+                            sha256 = "3140bdce43ae1cd40b2dfa2ec1291f4917f477ff7d0573e4b77c6f1bc1d3ffad",
+                            sizeBytes = 564_792,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-ca-en-2026.09.20", "opensubtitles-ca-2018"),
     )
 
 internal val germanCatalog =
