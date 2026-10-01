@@ -1346,8 +1346,53 @@ internal val croatianCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-sh-en-2026.09.20",
+                    displayName = "Wiktionary (Serbo-Croatian-English) 2026-09-20",
+                    slotId = "wty-sh-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/sh/en/wty-sh-en.zip",
+                            sha256 = "d6293c86f86975e08f748c9e48178634a3789f675933301119be570d00cc3c0e",
+                            sizeBytes = 11_959_737,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-sh-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 44,
+                            uncompressedBytes = 171_035_458,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-hr-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Croatian)",
+                    sourceId = "opensubtitles-hr",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/hr/hr_50k.txt",
+                            sha256 = "725f57e0bd122f46d8e358c3542a4e1d126e468075c5e4d6644fd0d21c47bbc3",
+                            sizeBytes = 630_560,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-sh-en-2026.09.20", "opensubtitles-hr-2018"),
     )
 
 internal val swedishCatalog =
