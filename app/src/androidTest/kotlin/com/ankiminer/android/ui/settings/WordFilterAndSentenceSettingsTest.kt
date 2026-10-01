@@ -40,6 +40,9 @@ class WordFilterAndSentenceSettingsTest {
 
     private lateinit var latest: SettingsDraft
 
+    /** False takes the cards off the screen, as a tab switch does. */
+    private var shown by mutableStateOf(true)
+
     private fun setContent(
         settings: AppSettings = AppSettings(),
         cards: LazyListScope.(SettingsDraft, SettingsCardIndexRecorder, (SettingsDraft) -> Unit) -> Unit,
@@ -50,9 +53,11 @@ class WordFilterAndSentenceSettingsTest {
             val recorder = remember { SettingsCardIndexRecorder() }
             AnkiMinerTheme {
                 LazyColumn(Modifier.testTag(SettingsCategoryTestTags.LIST)) {
-                    cards(draft, recorder) {
-                        draft = it
-                        latest = it
+                    if (shown) {
+                        cards(draft, recorder) {
+                            draft = it
+                            latest = it
+                        }
                     }
                 }
             }
@@ -62,7 +67,7 @@ class WordFilterAndSentenceSettingsTest {
     private fun setWordFilters(settings: AppSettings = AppSettings()) =
         setContent(settings) { draft, recorder, onChange ->
             recorder.begin(SettingsCategory.WORD_FILTERS)
-            wordFilterOptions(draft, ResourceManagerState(), recorder, onChange)
+            wordFilterOptions(draft, ResourceManagerState(), emptyList(), recorder, onChange)
         }
 
     private fun scrollTo(matcher: SemanticsMatcher) {
@@ -71,7 +76,11 @@ class WordFilterAndSentenceSettingsTest {
             .performScrollToNode(matcher)
     }
 
-    /** Desktop raises the other end; here it happens once the user leaves the field. */
+    /**
+     * Desktop raises the other end; here it happens once the user leaves the field, by moving focus
+     * on or by the field leaving the screen while it still has focus (Back closes the keyboard but
+     * keeps focus, so a tab switch after it reports no focus change).
+     */
     @Test
     fun leavingAMinimumAboveTheMaximumRaisesTheMaximum() {
         setWordFilters(AppSettings(maxFrequencyRank = 5000))
@@ -89,6 +98,17 @@ class WordFilterAndSentenceSettingsTest {
         composeRule.runOnIdle {
             assertEquals("8000", latest.minFrequency)
             assertEquals("8000", latest.maxFrequency)
+        }
+
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.MIN_FREQUENCY).performClick()
+        composeRule
+            .onNodeWithTag(SettingsCategoryTestTags.MIN_FREQUENCY)
+            .performTextReplacement("9000")
+        composeRule.runOnIdle { shown = false }
+
+        composeRule.runOnIdle {
+            assertEquals("9000", latest.minFrequency)
+            assertEquals("9000", latest.maxFrequency)
         }
     }
 

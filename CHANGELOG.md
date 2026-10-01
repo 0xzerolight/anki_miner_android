@@ -9,7 +9,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The Japanese mining engine is updated to current desktop Anki Miner.** Mined words, readings and definitions are unchanged on the test corpus.
 - **Cards from the Video and Audio tabs are added in the same order on every run, following the subtitles.** They used to follow whichever clip finished extracting first, so the order changed from run to run.
 - **The dictionary-name line in definitions takes the note type's styling (Senren, Lapis) on new cards.** Anki Miner's grey label used to override it.
-- **Known-words import reads UTF-16 files, such as Excel's Unicode Text export (Settings -> Filtering).** They used to be refused as unreadable.
+- **Known-words import reads UTF-16 files, such as Excel's Unicode Text export (Settings -> Word filters).** They used to be refused as unreadable.
 - **The notice that a frequency cutoff was ignored is translated and names Settings -> Resources.** It appears when a cutoff is set but no ranked frequency source is loaded.
 - **Some result-screen notices are reworded.** "already in Anki" now reads "already known", and a subtitle or document with no Japanese text says so instead of "No words found". The notices for a run where no word's media could be extracted and for an image archive that cannot be opened are reworded too. These engine notices stay in English.
 - **Audio-track auto-pick also recognises regional tags such as `jpn-JP`.** Before, only `ja` took a regional suffix.

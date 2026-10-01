@@ -61,7 +61,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
     listOf(
         // Anki
         entry("anki.deck_name", SettingsCategory.ANKI, "anki-deck-options", R.string.settings_deck_name),
-        entry("anki.excluded_decks", SettingsCategory.ANKI, "anki-deck-options", R.string.settings_excluded_decks),
         entry(
             "anki.tags",
             SettingsCategory.ANKI,
@@ -254,6 +253,12 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "filtering-options",
             R.string.settings_known_words_match_kana_variants,
             R.string.settings_known_words_match_kana_variants_help,
+        ),
+        entry(
+            "word_filters.excluded_decks",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_excluded_decks,
         ),
         entry(
             "word_filters.exclude_hiragana",

@@ -72,25 +72,34 @@ class SettingsSearchIndexTest {
         assertEquals(R.string.settings_theme_mode, theme.title)
     }
 
+    private fun assertEntriesOn(
+        category: SettingsCategory,
+        ids: List<String>,
+    ) {
+        val byId = SETTINGS_SEARCH_INDEX.associateBy { it.id }
+        ids.forEach { id ->
+            assertEquals(id, category, byId[id]?.category)
+        }
+    }
+
     @Test
     fun `sentence rows sit on Sentences, as on desktop`() {
         val ids = SETTINGS_SEARCH_INDEX.map { it.id }.toSet()
 
-        assertTrue(
-            ids.containsAll(
-                listOf(
-                    "sentences.subtitle_regex",
-                    "sentences.subtitle_replacement",
-                    "sentences.use_subtitle_regex",
-                    "sentences.subtitle_presets",
-                    "sentences.deduplicate",
-                    "sentences.i_plus_one",
-                    "sentences.max_duration",
-                    "sentences.max_characters",
-                    "sentences.secondary_subtitle",
-                    "sentences.merge_incomplete_cues",
-                    "sentences.bold_target",
-                ),
+        assertEntriesOn(
+            SettingsCategory.SENTENCES,
+            listOf(
+                "sentences.subtitle_regex",
+                "sentences.subtitle_replacement",
+                "sentences.use_subtitle_regex",
+                "sentences.subtitle_presets",
+                "sentences.deduplicate",
+                "sentences.i_plus_one",
+                "sentences.max_duration",
+                "sentences.max_characters",
+                "sentences.secondary_subtitle",
+                "sentences.merge_incomplete_cues",
+                "sentences.bold_target",
             ),
         )
         // The length toggle is gone; its caps are the whole setting now.
@@ -99,19 +108,18 @@ class SettingsSearchIndexTest {
 
     @Test
     fun `word filter and card creation rows sit where desktop puts them`() {
-        val ids = SETTINGS_SEARCH_INDEX.map { it.id }.toSet()
-
-        assertTrue(
-            ids.containsAll(
-                listOf(
-                    "word_filters.min_frequency",
-                    "word_filters.max_frequency",
-                    "word_filters.frequency_keep_unranked",
-                    "word_filters.kana_variants",
-                    "anki.strict_card_order",
-                ),
+        assertEntriesOn(
+            SettingsCategory.WORD_FILTERS,
+            listOf(
+                "word_filters.min_frequency",
+                "word_filters.max_frequency",
+                "word_filters.frequency_keep_unranked",
+                "word_filters.kana_variants",
+                "word_filters.excluded_decks",
             ),
         )
+        assertEntriesOn(SettingsCategory.ANKI, listOf("anki.strict_card_order"))
+        assertFalse(SETTINGS_SEARCH_INDEX.any { it.id == "anki.excluded_decks" })
     }
 
     @Test

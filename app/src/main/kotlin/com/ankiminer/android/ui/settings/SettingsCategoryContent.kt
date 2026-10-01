@@ -13,6 +13,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -211,46 +212,6 @@ private fun LazyListScope.ankiSettings(
                 maxLines = 2,
                 placeholder = inheritedDefault(EngineDefaults.DECK_NAME),
             )
-            val choices = excludedDeckChoices(setup.availableDeckNames, draft.excludedDecks)
-            CollapsibleSettingGroup(
-                title = stringResource(R.string.settings_excluded_decks),
-                selectedCount = choices.count { it.checked },
-                totalCount = choices.size,
-                // Nothing to collapse, and the only explanation is the error line inside.
-                forceOpen = choices.isEmpty(),
-            ) {
-                if (choices.isEmpty()) {
-                    Text(
-                        stringResource(R.string.settings_no_anki_decks),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                } else {
-                    choices.forEach { deck ->
-                        BooleanSetting(
-                            label = deck.name,
-                            detail =
-                                if (deck.discovered) {
-                                    null
-                                } else {
-                                    stringResource(R.string.settings_anki_deck_not_discovered)
-                                },
-                            checked = deck.checked,
-                            onCheckedChange = { checked ->
-                                callbacks.onDraftChange(
-                                    draft.copy(
-                                        excludedDecks =
-                                            if (checked) {
-                                                (draft.excludedDecks + deck.name).distinct()
-                                            } else {
-                                                draft.excludedDecks - deck.name
-                                            },
-                                    ),
-                                )
-                            },
-                        )
-                    }
-                }
-            }
             SettingTextField(
                 value = draft.tags,
                 onChange = { callbacks.onDraftChange(draft.copy(tags = it)) },
@@ -1023,7 +984,13 @@ private fun LazyListScope.wordFilterSettings(
     callbacks: SettingsScreenCallbacks,
 ) {
     // First on the tab: the known-words and word-list deep links count on staying at 3 and 4.
-    wordFilterOptions(draft, resources, recorder, callbacks.onDraftChange)
+    wordFilterOptions(
+        draft,
+        resources,
+        setup.availableDeckNames,
+        recorder,
+        callbacks.onDraftChange,
+    )
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "known-words-import") {
         KnownWordsImportCard(
             state = setup,
@@ -1073,13 +1040,14 @@ private fun LazyListScope.wordFilterSettings(
 
 /**
  * Which words get mined, mirroring desktop's Word Filters page: the frequency band, the known-words
- * rules, the script filters and the reading threshold.
+ * rules and excluded decks, the script filters and the reading threshold.
  *
  * Internal rather than private so the instrumented tests can compose the real card.
  */
 internal fun LazyListScope.wordFilterOptions(
     draft: SettingsDraft,
     resources: ResourceManagerState,
+    availableDeckNames: List<String>,
     recorder: SettingsCardIndexRecorder,
     onDraftChange: (SettingsDraft) -> Unit,
 ) {
@@ -1126,6 +1094,48 @@ internal fun LazyListScope.wordFilterOptions(
                 EngineDefaults.KNOWN_WORDS_MATCH_KANA_VARIANTS,
             ) { onDraftChange(draft.copy(knownWordsMatchKanaVariants = it)) }
             SupportingText(stringResource(R.string.settings_known_words_match_kana_variants_help))
+            // Desktop keeps the excluded decks with the known-words rules: they decide which
+            // cards count as known.
+            val choices = excludedDeckChoices(availableDeckNames, draft.excludedDecks)
+            CollapsibleSettingGroup(
+                title = stringResource(R.string.settings_excluded_decks),
+                selectedCount = choices.count { it.checked },
+                totalCount = choices.size,
+                // Nothing to collapse, and the only explanation is the error line inside.
+                forceOpen = choices.isEmpty(),
+            ) {
+                if (choices.isEmpty()) {
+                    Text(
+                        stringResource(R.string.settings_no_anki_decks),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                } else {
+                    choices.forEach { deck ->
+                        BooleanSetting(
+                            label = deck.name,
+                            detail =
+                                if (deck.discovered) {
+                                    null
+                                } else {
+                                    stringResource(R.string.settings_anki_deck_not_discovered)
+                                },
+                            checked = deck.checked,
+                            onCheckedChange = { checked ->
+                                onDraftChange(
+                                    draft.copy(
+                                        excludedDecks =
+                                            if (checked) {
+                                                (draft.excludedDecks + deck.name).distinct()
+                                            } else {
+                                                draft.excludedDecks - deck.name
+                                            },
+                                    ),
+                                )
+                            },
+                        )
+                    }
+                }
+            }
             NullableToggle(
                 stringResource(R.string.settings_exclude_hiragana),
                 draft.hiragana,
@@ -1198,8 +1208,10 @@ internal fun LazyListScope.wordFilterOptions(
 }
 
 /**
- * One end of the frequency band. [onLeave] runs when focus leaves the field, which is when the
- * band is put back in order: leaving by IME Next, IME Done or a tap on another field.
+ * One end of the frequency band. [onLeave] puts the band back in order when the field is left:
+ * focus moving on (IME Next, a tap on another field), or the field leaving the screen while it
+ * still has focus — Back closes the keyboard but keeps focus, so a tab switch after it is a leave
+ * that no focus change reports.
  */
 @Composable
 private fun FrequencyBandField(
@@ -1213,6 +1225,7 @@ private fun FrequencyBandField(
 ) {
     var focused by remember { mutableStateOf(false) }
     val leave by rememberUpdatedState(onLeave)
+    DisposableEffect(Unit) { onDispose { if (focused) leave() } }
     NumericField(
         value,
         onChange,

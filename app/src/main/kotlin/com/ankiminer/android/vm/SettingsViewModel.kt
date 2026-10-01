@@ -84,6 +84,16 @@ private fun frequencyBandRank(
     default: Int,
 ): Int? = if (value.isEmpty()) default else value.toIntOrNull()
 
+/** Both ends set and the minimum above the maximum. 0 is an open end, so it never inverts. */
+private fun frequencyBandInverted(
+    minFrequency: String,
+    maxFrequency: String,
+): Boolean {
+    val low = frequencyBandRank(minFrequency, EngineDefaults.MIN_FREQUENCY_RANK) ?: return false
+    val high = frequencyBandRank(maxFrequency, EngineDefaults.MAX_FREQUENCY_RANK) ?: return false
+    return low > 0 && high > 0 && low > high
+}
+
 internal sealed interface SettingsSaveState {
     val revision: Long
 
@@ -332,12 +342,10 @@ internal data class SettingsDraft(
      * Text that is not a whole number is left for validation to report.
      */
     fun withOrderedFrequencyBand(edited: FrequencyBandEnd): SettingsDraft {
-        val low = frequencyBandRank(minFrequency, EngineDefaults.MIN_FREQUENCY_RANK) ?: return this
-        val high = frequencyBandRank(maxFrequency, EngineDefaults.MAX_FREQUENCY_RANK) ?: return this
-        if (low <= 0 || high <= 0 || low <= high) return this
+        if (!frequencyBandInverted(minFrequency, maxFrequency)) return this
         return when (edited) {
-            FrequencyBandEnd.MIN -> copy(maxFrequency = low.toString())
-            FrequencyBandEnd.MAX -> copy(minFrequency = high.toString())
+            FrequencyBandEnd.MIN -> copy(maxFrequency = minFrequency)
+            FrequencyBandEnd.MAX -> copy(minFrequency = maxFrequency)
         }
     }
 
@@ -434,6 +442,20 @@ internal data class SettingsDraft(
      */
     fun toPersistableSettings(base: AppSettings): AppSettings {
         val keepPersistedSubtitleRegexPair = subtitleRegexRejection != null
+        val persistedMinFrequency =
+            inheritedText(base.minFrequencyRank, EngineDefaults.MIN_FREQUENCY_RANK)
+        val persistedMaxFrequency =
+            inheritedText(base.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK)
+        val minFrequencyText =
+            minFrequency.takeIf { SettingsFieldKey.MIN_FREQUENCY !in validation }
+                ?: persistedMinFrequency
+        val maxFrequencyText =
+            maxFrequency.takeIf { SettingsFieldKey.MAX_FREQUENCY !in validation }
+                ?: persistedMaxFrequency
+        // An inverted band drops every ranked word, so it never reaches storage. The UI orders the
+        // band when its field is left; until then the stored band stays as it was, the same way a
+        // field holding unparseable text keeps its stored value.
+        val keepPersistedBand = frequencyBandInverted(minFrequencyText, maxFrequencyText)
         return copy(
             audioPadding =
                 audioPadding.takeIf { SettingsFieldKey.AUDIO_PADDING !in validation }
@@ -492,12 +514,8 @@ internal data class SettingsDraft(
                         base.readingMinimumOccurrence,
                         EngineDefaults.READING_MINIMUM_OCCURRENCE,
                     ),
-            minFrequency =
-                minFrequency.takeIf { SettingsFieldKey.MIN_FREQUENCY !in validation }
-                    ?: inheritedText(base.minFrequencyRank, EngineDefaults.MIN_FREQUENCY_RANK),
-            maxFrequency =
-                maxFrequency.takeIf { SettingsFieldKey.MAX_FREQUENCY !in validation }
-                    ?: inheritedText(base.maxFrequencyRank, EngineDefaults.MAX_FREQUENCY_RANK),
+            minFrequency = if (keepPersistedBand) persistedMinFrequency else minFrequencyText,
+            maxFrequency = if (keepPersistedBand) persistedMaxFrequency else maxFrequencyText,
             workers =
                 workers.takeIf { SettingsFieldKey.WORKERS !in validation }
                     ?: inheritedText(base.maxParallelWorkers, EngineDefaults.MAX_PARALLEL_WORKERS),

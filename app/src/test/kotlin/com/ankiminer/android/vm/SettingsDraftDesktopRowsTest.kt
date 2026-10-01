@@ -9,7 +9,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** The rows the Word filters, Sentences and Cards & Anki pages gained to mirror desktop. */
-class SettingsDraftWaveBFieldsTest {
+class SettingsDraftDesktopRowsTest {
     private fun draft(settings: AppSettings = AppSettings()): SettingsDraft =
         SettingsDraft.from(settings, ResourceManagerState())
 
@@ -104,6 +104,44 @@ class SettingsDraftWaveBFieldsTest {
         assertSame(ordered, ordered.withOrderedFrequencyBand(FrequencyBandEnd.MIN))
         assertSame(equal, equal.withOrderedFrequencyBand(FrequencyBandEnd.MAX))
         assertSame(malformed, malformed.withOrderedFrequencyBand(FrequencyBandEnd.MIN))
+    }
+
+    @Test
+    fun anInvertedBandKeepsTheStoredBand() {
+        // An inverted band drops every ranked word, so storage keeps the last ordered one until
+        // the field is left and the UI orders the band.
+        val base = AppSettings(minFrequencyRank = 1000, maxFrequencyRank = 5000)
+
+        val raisedMin = draft(base).copy(minFrequency = "8000").toPersistableSettings(base)
+        val loweredMax = draft(base).copy(maxFrequency = "500").toPersistableSettings(base)
+
+        assertEquals(1000, raisedMin.minFrequencyRank)
+        assertEquals(5000, raisedMin.maxFrequencyRank)
+        assertEquals(1000, loweredMax.minFrequencyRank)
+        assertEquals(5000, loweredMax.maxFrequencyRank)
+    }
+
+    @Test
+    fun aBrokenEndCannotInvertTheBandThroughItsStoredValue() {
+        // The minimum falls back to its stored 1000, which is above the new maximum.
+        val base = AppSettings(minFrequencyRank = 1000, maxFrequencyRank = 5000)
+
+        val saved =
+            draft(base).copy(minFrequency = "-1", maxFrequency = "500").toPersistableSettings(base)
+
+        assertEquals(1000, saved.minFrequencyRank)
+        assertEquals(5000, saved.maxFrequencyRank)
+    }
+
+    @Test
+    fun anOrderedBandIsStoredAsTyped() {
+        val base = AppSettings(minFrequencyRank = 1000, maxFrequencyRank = 5000)
+
+        val saved =
+            draft(base).copy(minFrequency = "8000", maxFrequency = "9000").toPersistableSettings(base)
+
+        assertEquals(8000, saved.minFrequencyRank)
+        assertEquals(9000, saved.maxFrequencyRank)
     }
 
     @Test
