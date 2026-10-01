@@ -316,7 +316,7 @@
     <string name="nav_notices">サードパーティ通知</string>
     <string name="mining_not_ready">マイニングの準備ができていません</string>
     <string name="open_settings">設定を開く</string>
-    <string name="allow_required_access">必要な権限をリクエスト</string>
+    <string name="allow_required_access">アクセスを許可</string>
     <string name="open_app_settings">アプリ設定を開く</string>
     <string name="open_ankidroid">AnkiDroidを開く</string>
     <string name="install_ankidroid">AnkiDroid をインストール</string>

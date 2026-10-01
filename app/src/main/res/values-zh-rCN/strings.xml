@@ -315,7 +315,7 @@
     <string name="nav_notices">第三方声明</string>
     <string name="mining_not_ready">挖词尚未就绪</string>
     <string name="open_settings">打开设置</string>
-    <string name="allow_required_access">请求应用权限</string>
+    <string name="allow_required_access">允许访问</string>
     <string name="open_app_settings">打开应用设置</string>
     <string name="open_ankidroid">打开 AnkiDroid</string>
     <string name="install_ankidroid">安装 AnkiDroid</string>

@@ -315,7 +315,7 @@
     <string name="nav_notices">Thông báo bên thứ ba</string>
     <string name="mining_not_ready">Khai thác chưa sẵn sàng</string>
     <string name="open_settings">Mở Cài đặt</string>
-    <string name="allow_required_access">Yêu cầu quyền ứng dụng</string>
+    <string name="allow_required_access">Cho phép truy cập</string>
     <string name="open_app_settings">Mở cài đặt ứng dụng</string>
     <string name="open_ankidroid">Mở AnkiDroid</string>
     <string name="install_ankidroid">Cài AnkiDroid</string>

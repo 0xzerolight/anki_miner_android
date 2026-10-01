@@ -318,7 +318,7 @@
     <string name="nav_notices">Уведомления о сторонних компонентах</string>
     <string name="mining_not_ready">Майнинг не готов</string>
     <string name="open_settings">Открыть настройки</string>
-    <string name="allow_required_access">Запросить разрешения приложения</string>
+    <string name="allow_required_access">Разрешить доступ</string>
     <string name="open_app_settings">Открыть настройки приложения</string>
     <string name="open_ankidroid">Открыть AnkiDroid</string>
     <string name="install_ankidroid">Установить AnkiDroid</string>

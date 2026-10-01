@@ -32,15 +32,22 @@ class MiningRunAdmissionTest {
     }
 
     @Test
-    fun `runtime permission descriptions are SDK exact and Activity independent`() {
+    fun `AnkiDroid and notification permissions are asked separately`() {
+        assertEquals(AnkiApiBuildConfig.READ_WRITE_PERMISSION, MiningRuntimePermissions.ANKIDROID_DATABASE)
+        assertNull(MiningRuntimePermissions.notificationPermissionFor(32))
         assertEquals(
-            listOf(AnkiApiBuildConfig.READ_WRITE_PERMISSION),
-            MiningRuntimePermissions.requestableFor(32).map { it.permission },
+            Manifest.permission.POST_NOTIFICATIONS,
+            MiningRuntimePermissions.notificationPermissionFor(Build.VERSION_CODES.TIRAMISU),
         )
-        assertEquals(
-            listOf(AnkiApiBuildConfig.READ_WRITE_PERMISSION, Manifest.permission.POST_NOTIFICATIONS),
-            MiningRuntimePermissions.requestableFor(Build.VERSION_CODES.TIRAMISU).map { it.permission },
-        )
+    }
+
+    @Test
+    fun `notification permission is asked once, when a foreground job starts`() {
+        assertTrue(notificationPermissionDue(33, notificationsReady = false, foregroundJobStarting = true, alreadyAskedThisProcess = false))
+        assertFalse(notificationPermissionDue(33, notificationsReady = false, foregroundJobStarting = false, alreadyAskedThisProcess = false))
+        assertFalse(notificationPermissionDue(33, notificationsReady = false, foregroundJobStarting = true, alreadyAskedThisProcess = true))
+        assertFalse(notificationPermissionDue(33, notificationsReady = true, foregroundJobStarting = true, alreadyAskedThisProcess = false))
+        assertFalse(notificationPermissionDue(32, notificationsReady = false, foregroundJobStarting = true, alreadyAskedThisProcess = false))
     }
 
     @Test

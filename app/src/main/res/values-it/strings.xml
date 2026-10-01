@@ -317,7 +317,7 @@
     <string name="nav_notices">Note su terze parti</string>
     <string name="mining_not_ready">Mining non pronto</string>
     <string name="open_settings">Apri le impostazioni</string>
-    <string name="allow_required_access">Richiedi autorizzazioni app</string>
+    <string name="allow_required_access">Consenti accesso</string>
     <string name="open_app_settings">Apri impostazioni app</string>
     <string name="open_ankidroid">Apri AnkiDroid</string>
     <string name="install_ankidroid">Installa AnkiDroid</string>

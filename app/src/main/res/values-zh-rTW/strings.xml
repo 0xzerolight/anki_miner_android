@@ -315,7 +315,7 @@
     <string name="nav_notices">第三方聲明</string>
     <string name="mining_not_ready">尚未準備好採集</string>
     <string name="open_settings">開啟設定</string>
-    <string name="allow_required_access">請求應用程式權限</string>
+    <string name="allow_required_access">允許存取</string>
     <string name="open_app_settings">開啟應用程式設定</string>
     <string name="open_ankidroid">開啟 AnkiDroid</string>
     <string name="install_ankidroid">安裝 AnkiDroid</string>

@@ -315,7 +315,7 @@
     <string name="nav_notices">Pemberitahuan pihak ketiga</string>
     <string name="mining_not_ready">Mining belum siap</string>
     <string name="open_settings">Buka Pengaturan</string>
-    <string name="allow_required_access">Minta izin aplikasi</string>
+    <string name="allow_required_access">Izinkan akses</string>
     <string name="open_app_settings">Buka pengaturan aplikasi</string>
     <string name="open_ankidroid">Buka AnkiDroid</string>
     <string name="install_ankidroid">Instal AnkiDroid</string>
