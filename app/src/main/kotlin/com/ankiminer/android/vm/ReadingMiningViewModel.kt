@@ -286,6 +286,9 @@ class ReadingMiningViewModel internal constructor(
         }
         viewModelScope.launch {
             repository.state.collect { runState ->
+                // StateFlow conflates, so Starting alone may never be seen: any in-flight state means a
+                // new run, and Undo must not reach the older run's notes after a process kill.
+                if (!runState.acceptsInputEdits) forgetReceipt()
                 if (runState is MiningRunState.Curating) {
                     val saved = repository.curationSessionState()
                     localState.update { local ->
@@ -307,9 +310,6 @@ class ReadingMiningViewModel internal constructor(
                         }
                     }
                     saveCurationSession(runState.request)
-                } else if (runState is MiningRunState.Starting) {
-                    receiptStore.clear()
-                    localState.update { it.copy(restoredReceipt = null) }
                 } else if (runState.isTerminal) {
                     saveReceipt(runState)
                     definitionJob?.cancel()
@@ -836,10 +836,19 @@ class ReadingMiningViewModel internal constructor(
         return localState.value.restoredReceipt.takeIf { runState == MiningRunState.Idle }
     }
 
+    private fun forgetReceipt() {
+        receiptStore.clear()
+        if (localState.value.restoredReceipt != null) localState.update { it.copy(restoredReceipt = null) }
+    }
+
     private fun saveReceipt(runState: MiningRunState) {
-        val runId = runState.runId ?: return
-        val result = runState.terminalResult ?: return
-        if (result.cardIds.isEmpty()) return
+        val runId = runState.runId
+        val result = runState.terminalResult
+        if (runId == null || result == null || result.cardIds.isEmpty()) {
+            // This run left nothing to undo, so no older receipt may stand in for it.
+            receiptStore.clear()
+            return
+        }
         receiptStore.save(
             MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms),
         )

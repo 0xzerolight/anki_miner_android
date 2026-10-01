@@ -277,6 +277,31 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun aReadingRunTheCollectorNeverSawStartingStillReplacesTheSavedReceipt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val store = MiningReceiptStore(savedState, "readingMining.receipt")
+            val repository = RecordingReadingRepository()
+            ReadingMiningViewModel(repository, ImmediateSafBroker(), savedStateHandle = savedState)
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+            assertEquals("run", store.restore()?.runId)
+
+            // StateFlow conflation can hide Starting: the next state seen is already Running.
+            repository.transitionTo(MiningRunState.Running("run-2", MiningProgress(0, 0, "Running")))
+            runCurrent()
+            assertNull(store.restore())
+
+            repository.transitionTo(MiningRunState.Success("run-2", result()))
+            runCurrent()
+            // A later run that added nothing leaves no receipt, not the older one.
+            val empty = result().copy(cardsCreated = 0, cardIds = emptyList(), minedForms = emptyList())
+            repository.transitionTo(MiningRunState.Success("run-3", empty))
+            runCurrent()
+            assertNull(store.restore())
+        }
+
+    @Test
     fun mineAfterAFinishedReadingRunResetsItThenStarts() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingReadingRepository()
