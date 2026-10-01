@@ -1476,6 +1476,28 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `a run in a language without UniDic reaches the engine with no tokenizer installed`() {
+        val harness =
+            harness(
+                tokenizerResourceProvider = InstalledTokenizerResourceProvider { null },
+                configSnapshotResolver =
+                    MiningConfigSnapshotResolver {
+                        MiningConfigSnapshot(mapOf("language" to BridgeJsonValue.Text("he")), false)
+                    },
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1, harness.bridge.videoRuns.get())
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `settings snapshot is captured only after mining excludes resource publication`() {
         val coordinator = RuntimeWorkCoordinator()
         val resolverReached = CountDownLatch(1)

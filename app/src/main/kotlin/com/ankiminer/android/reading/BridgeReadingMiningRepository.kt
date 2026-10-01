@@ -58,6 +58,7 @@ import com.ankiminer.android.mining.SecureMiningCancellationTokenFactory
 import com.ankiminer.android.mining.SourceGrantReleaser
 import com.ankiminer.android.mining.StartupInterruption
 import com.ankiminer.android.mining.isTerminal
+import com.ankiminer.android.mining.requiresUnidic
 import com.ankiminer.android.mining.runId
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
@@ -510,24 +511,26 @@ internal class BridgeReadingMiningRepository(
                     recordFault(generation, failure.message, failure.retryable)
                     return
                 }
-                val tokenizer =
-                    try {
-                        tokenizerResourceProvider.installedResource()
-                    } catch (failure: Exception) {
-                        recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
-                        throw failure
+                if (requireNotNull(run.configSnapshot).requiresUnidic()) {
+                    val tokenizer =
+                        try {
+                            tokenizerResourceProvider.installedResource()
+                        } catch (failure: Exception) {
+                            recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
+                            throw failure
+                        }
+                    if (tokenizer == null) {
+                        recordFault(
+                            generation,
+                            strings.resolve(R.string.mining_failure_tokenizer_required),
+                            retryable = true,
+                        )
+                        return
                     }
-                if (tokenizer == null) {
-                    recordFault(
-                        generation,
-                        strings.resolve(R.string.mining_failure_tokenizer_required),
-                        retryable = true,
-                    )
-                    return
+                    if (run.cancellation.isCancelled()) return
+                    configureTokenizer(run, tokenizer)
+                    if (run.cancellation.isCancelled()) return
                 }
-                if (run.cancellation.isCancelled()) return
-                configureTokenizer(run, tokenizer)
-                if (run.cancellation.isCancelled()) return
                 run.requiresMediaForeground = requiresMediaForeground(run)
                 if (run.requiresMediaForeground && !startForegroundOwnership(generation)) return
                 if (run.cancellation.isCancelled()) return

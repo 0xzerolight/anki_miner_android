@@ -941,6 +941,42 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
+    fun `a reading run in a language without UniDic reaches the engine with no tokenizer installed`() {
+        val harness =
+            harness(
+                tokenizerInstalled = false,
+                snapshotSettings = mapOf("language" to BridgeJsonValue.Text("he")),
+            )
+
+        runBlocking { harness.repository.startReading(PASTED_INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1, harness.bridge.readingRunRequests.size)
+        runBlocking {
+            harness.repository.confirmCuration(
+                curating.request.runId,
+                curating.request.requestId,
+                emptyList(),
+            )
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+    }
+
+    @Test
+    fun `a Japanese reading run still needs the installed tokenizer`() {
+        val harness = harness(tokenizerInstalled = false)
+
+        runBlocking { harness.repository.startReading(PASTED_INPUT) }
+
+        val failed = awaitState(harness.repository, MiningRunState::isTerminal) as MiningRunState.Failed
+        assertEquals("Install the Japanese tokenizer resource before mining", failed.failure.message)
+        assertTrue(harness.bridge.readingRunRequests.isEmpty())
+    }
+
+    @Test
     fun `pasted text failure terminal removes its private stage`() {
         val harness = harness(raisedFailure = true)
 
@@ -1861,6 +1897,7 @@ class BridgeReadingMiningRepositoryTest {
         foregroundFailure: ForegroundStartFailure? = null,
         ankiFailure: RuntimeException? = null,
         strings: StringResourceResolver = testStringResourceResolver,
+        tokenizerInstalled: Boolean = true,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
@@ -1906,7 +1943,7 @@ class BridgeReadingMiningRepositoryTest {
                             File("/tmp/test-unidic"),
                             TOKENIZER_RESOURCE_ID,
                             TOKENIZER_SHA,
-                        )
+                        ).takeIf { tokenizerInstalled }
                     },
                 runtimePaths = MiningRuntimePaths(cacheDir, temporary.newFolder("native-${executors.size}")),
                 sourceGrantReleaser = SourceGrantReleaser(releases::add),

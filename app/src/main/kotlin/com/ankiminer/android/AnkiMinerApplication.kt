@@ -355,6 +355,7 @@ class AnkiMinerApplication : Application() {
             cueLookup = subtitleCueLookupService,
             io = Dispatchers.IO,
             resourceDispatcher = resourceExecutor.asCoroutineDispatcher(),
+            language = { miningLanguage.value },
         )
     }
     internal val audioTrackProbeLoader: AudioTrackProbeLoader by lazy(

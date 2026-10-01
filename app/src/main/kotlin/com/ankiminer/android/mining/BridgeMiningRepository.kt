@@ -467,24 +467,26 @@ internal class BridgeMiningRepository(
                     recordFault(generation, failure.message, failure.retryable)
                     return
                 }
-                val tokenizer =
-                    try {
-                        tokenizerResourceProvider.installedResource()
-                    } catch (failure: Exception) {
-                        recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
-                        throw failure
+                if (requireNotNull(run.configSnapshot).requiresUnidic()) {
+                    val tokenizer =
+                        try {
+                            tokenizerResourceProvider.installedResource()
+                        } catch (failure: Exception) {
+                            recordFault(generation, strings.resolve(R.string.mining_failure_tokenizer_inspection))
+                            throw failure
+                        }
+                    if (tokenizer == null) {
+                        recordFault(
+                            generation,
+                            strings.resolve(R.string.mining_failure_tokenizer_required),
+                            retryable = true,
+                        )
+                        return
                     }
-                if (tokenizer == null) {
-                    recordFault(
-                        generation,
-                        strings.resolve(R.string.mining_failure_tokenizer_required),
-                        retryable = true,
-                    )
-                    return
+                    if (run.cancellation.isCancelled()) return
+                    configureTokenizer(run, tokenizer)
+                    if (run.cancellation.isCancelled()) return
                 }
-                if (run.cancellation.isCancelled()) return
-                configureTokenizer(run, tokenizer)
-                if (run.cancellation.isCancelled()) return
                 val videoPath: String
                 val subtitlePath: String
                 val secondarySubtitlePath: String?
