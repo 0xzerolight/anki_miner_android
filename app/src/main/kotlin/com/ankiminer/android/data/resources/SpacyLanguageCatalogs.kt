@@ -1938,8 +1938,81 @@ internal val russianCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-ru-en-2026.09.20",
+                    displayName = "Wiktionary (Russian-English) 2026-09-20",
+                    slotId = "wty-ru-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ru/en/wty-ru-en.zip",
+                            sha256 = "3503b90bfd005a50e49580a3b52c4b07047e605b822b14d56c3e45687350a0cf",
+                            sizeBytes = 26_133_529,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-ru-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 64,
+                            uncompressedBytes = 289_865_117,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 67_108_864,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                YomitanCatalogResource(
+                    resourceId = "opr-ru-en-2026.03.01",
+                    displayName = "OpenRussian (Russian-English) 2026-03-01",
+                    slotId = "opr-ru-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://github.com/ImenaOphelia/openrussian-to-yomitan/releases/download/v2026.03.01/opr-ru-en.zip",
+                            sha256 = "8f95d7179a04878c307be65d10e58202e6decc8553eff799635597d44cb0fbd5",
+                            sizeBytes = 28_179_164,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "opr-ru-en",
+                            revision = "2026.03.01",
+                            format = 3,
+                            memberCount = 70,
+                            uncompressedBytes = 559_774_019,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("OpenRussian.org", "OpenRussian.org contributors", "CC-BY-SA-4.0", "https://en.openrussian.org/"),
+                            ResourceAttribution("openrussian-to-yomitan", "ImenaOphelia (Yomitan build of OpenRussian.org data)", "CC-BY-SA-4.0", "https://github.com/ImenaOphelia/openrussian-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-ru-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Russian)",
+                    sourceId = "opensubtitles-ru",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ru/ru_50k.txt",
+                            sha256 = "6095f507cc167488ec66ada5a85ac50433503a08ad24a07c6eabdf54352c4e7f",
+                            sizeBytes = 998_861,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-ru-en-2026.09.20", "opr-ru-en-2026.03.01", "opensubtitles-ru-2018"),
     )
 
 internal val ukrainianCatalog =

@@ -70,7 +70,109 @@
           "url": "https://github.com/no-plagiarism/pymorphy3-dicts"
         }
       ]
+    },
+    {
+      "resourceId": "wty-ru-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Russian-English) 2026-09-20",
+      "slotId": "wty-ru-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ru/en/wty-ru-en.zip",
+        "sha256": "3503b90bfd005a50e49580a3b52c4b07047e605b822b14d56c3e45687350a0cf",
+        "sizeBytes": 26133529,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-ru-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 64,
+        "uncompressedBytes": 289865117,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 67108864
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opr-ru-en-2026.03.01",
+      "kind": "yomitan-dictionary",
+      "displayName": "OpenRussian (Russian-English) 2026-03-01",
+      "slotId": "opr-ru-en",
+      "archive": {
+        "url": "https://github.com/ImenaOphelia/openrussian-to-yomitan/releases/download/v2026.03.01/opr-ru-en.zip",
+        "sha256": "8f95d7179a04878c307be65d10e58202e6decc8553eff799635597d44cb0fbd5",
+        "sizeBytes": 28179164,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "opr-ru-en",
+        "revision": "2026.03.01",
+        "format": 3,
+        "memberCount": 70,
+        "uncompressedBytes": 559774019,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "OpenRussian.org",
+          "copyright": "OpenRussian.org contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.openrussian.org/"
+        },
+        {
+          "name": "openrussian-to-yomitan",
+          "copyright": "ImenaOphelia (Yomitan build of OpenRussian.org data)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/ImenaOphelia/openrussian-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-ru-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Russian)",
+      "sourceId": "opensubtitles-ru",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ru/ru_50k.txt",
+        "sha256": "6095f507cc167488ec66ada5a85ac50433503a08ad24a07c6eabdf54352c4e7f",
+        "sizeBytes": 998861,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
     }
   ],
-  "recommended": []
+  "recommended": [
+    "wty-ru-en-2026.09.20",
+    "opr-ru-en-2026.03.01",
+    "opensubtitles-ru-2018"
+  ]
 }
