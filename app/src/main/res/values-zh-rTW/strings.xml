@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">字元數：%1$d</string>
     <string name="reading_paste_truncated">文字已在最大長度處截斷。</string>
     <string name="reading_paste_clear">清除貼上的文字</string>
+    <string name="process_text_mine_words">採集單字</string>
     <string name="reading_source_access_error">存取遺失。請重新選擇。</string>
     <string name="reading_source_type_error">支援：TXT、EPUB、SRT、ASS、SSA、VTT、MOKURO、ZIP、CBZ。</string>
     <string name="reading_archive_access_error">存取遺失。請重新選擇。</string>
@@ -204,6 +205,7 @@
     <string name="mining_notification_step">第 %1$d／%2$d 步</string>
     <string name="mining_notification_cancel">取消</string>
     <string name="mining_notification_cancelling">正在取消採集工作…</string>
+    <string name="mining_notification_tap_for_details">輕觸以查看詳細資訊。</string>
     <string name="mining_progress_copying_video">正在複製影片</string>
     <string name="mining_progress_copying_subtitle">正在複製字幕</string>
     <string name="mining_progress_preparing_media">正在準備選取的媒體</string>

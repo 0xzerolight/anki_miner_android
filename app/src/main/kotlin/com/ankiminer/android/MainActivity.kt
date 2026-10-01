@@ -42,6 +42,7 @@ import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.mining.ankiPermissionPermanentlyDenied
 import com.ankiminer.android.mining.notificationPermissionDue
 import com.ankiminer.android.reading.ReadingRepositoryFactory
+import com.ankiminer.android.service.MiningCompletionNotifier
 import com.ankiminer.android.service.MiningForegroundService
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.MiningContentStyle
@@ -89,6 +90,7 @@ private fun AnkiMinerApplication.activeLanguageAudioPacks(): Flow<List<Installed
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
+    private val sharedText = MutableStateFlow<String?>(null)
 
     private val viewModelFactory by lazy {
         val app = application as AnkiMinerApplication
@@ -178,9 +180,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as AnkiMinerApplication).startMiningCompletionNotices()
         notificationRunId.value =
             savedInstanceState?.getString(PENDING_NOTIFICATION_RUN_ID)
-                ?: MiningForegroundService.consumeOpenedRunId(intent)
+                ?: consumeOpenedRunId(intent)
+        if (savedInstanceState == null) sharedText.value = consumeSharedText(intent)
         setContent {
             val app = application as AnkiMinerApplication
             val shellSettings = remember(app) { app.settingsRepository.appShellSettings() }
@@ -333,6 +337,8 @@ class MainActivity : ComponentActivity() {
                         diagnosticsViewModel = diagnosticsViewModel,
                         notificationRunId = openedRunId,
                         onNotificationRunHandled = { notificationRunId.value = null },
+                        sharedText = sharedText.collectAsStateWithLifecycle().value,
+                        onSharedTextHandled = { sharedText.value = null },
                         onRequestPermissions = {
                             ankiPermissionLauncher.launch(MiningRuntimePermissions.ANKIDROID_DATABASE)
                         },
@@ -356,8 +362,30 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        notificationRunId.value = MiningForegroundService.consumeOpenedRunId(intent)
+        notificationRunId.value = consumeOpenedRunId(intent)
+        consumeSharedText(intent)?.let { sharedText.value = it }
     }
+
+    /** Reads, then removes, handed-over text so Activity recreation cannot replay it. */
+    private fun consumeSharedText(intent: Intent?): String? {
+        intent ?: return null
+        val text =
+            sharedTextFrom(
+                intent.action,
+                intent.type,
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT),
+                intent.getCharSequenceExtra(Intent.EXTRA_TEXT),
+            ) ?: return null
+        intent.action = null
+        intent.removeExtra(Intent.EXTRA_PROCESS_TEXT)
+        intent.removeExtra(Intent.EXTRA_TEXT)
+        return text
+    }
+
+    /** A run opened from either the progress notification or the completion notice. */
+    private fun consumeOpenedRunId(intent: Intent?): String? =
+        MiningForegroundService.consumeOpenedRunId(intent)
+            ?: MiningCompletionNotifier.consumeOpenedRunId(intent)
 
     override fun onSaveInstanceState(outState: Bundle) {
         notificationRunId.value?.let { runId ->

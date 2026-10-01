@@ -1793,6 +1793,33 @@ class VideoMiningScreenTest {
     }
 
     @Test
+    fun aFinishedRunBringsItsResultLineIntoView() {
+        var state by
+            mutableStateOf(
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("video", "episode.mkv")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                    runState = MiningRunState.Running("run", MiningProgress(3, 10, "Parsing subtitles")),
+                ),
+            )
+        composeRule.setContent {
+            AnkiMinerTheme {
+                // A short window: the inputs alone fill it, so the result line starts below the fold.
+                Box(Modifier.requiredHeight(360.dp)) {
+                    ScreenUnderTest(state = state)
+                }
+            }
+        }
+
+        composeRule.runOnIdle {
+            state = state.copy(runState = MiningRunState.Success("run", result()), resultDeckName = "Anki Miner")
+        }
+
+        composeRule.onNodeWithText("2 notes added to Anki Miner").assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.UNDO).assertIsDisplayed()
+    }
+
+    @Test
     fun aFailedRunShowsItsCauseAboveTheInputs() {
         setScreen(
             state =

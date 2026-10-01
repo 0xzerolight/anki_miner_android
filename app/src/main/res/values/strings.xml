@@ -20,6 +20,7 @@
     <string name="reading_paste_counter">Characters: %1$d</string>
     <string name="reading_paste_truncated">Text was truncated at the maximum length.</string>
     <string name="reading_paste_clear">Clear pasted text</string>
+    <string name="process_text_mine_words">Mine words</string>
     <string name="reading_source_access_error">Access lost. Choose again.</string>
     <string name="reading_source_type_error">Supported: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Access lost. Choose again.</string>
@@ -215,6 +216,7 @@
     <string name="mining_notification_step">Step %1$d of %2$d</string>
     <string name="mining_notification_cancel">Cancel</string>
     <string name="mining_notification_cancelling">Cancelling the mining run…</string>
+    <string name="mining_notification_tap_for_details">Tap for details.</string>
     <string name="mining_progress_copying_video">Copying video</string>
     <string name="mining_progress_copying_subtitle">Copying subtitles</string>
     <string name="mining_progress_preparing_media">Preparing selected media</string>

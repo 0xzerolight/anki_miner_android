@@ -446,6 +446,36 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun sharedTextLandsInTextModeWithoutStarting() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
+
+            viewModel.receiveSharedText("吾輩は猫である。")
+            runCurrent()
+
+            assertEquals(ReadingSourceMode.PASTED_TEXT, viewModel.uiState.value.sourceMode)
+            assertEquals("吾輩は猫である。", viewModel.uiState.value.pastedText)
+            assertTrue(repository.startedInputs.isEmpty())
+        }
+
+    @Test
+    fun sharedTextNeverChangesTheInputsOfARunInFlight() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                ReadingMiningViewModel(
+                    RecordingReadingRepository(MiningRunState.Running("run", MiningProgress(1, 2, "Running"))),
+                    ImmediateSafBroker(),
+                )
+
+            viewModel.receiveSharedText("吾輩は猫である。")
+            runCurrent()
+
+            assertEquals(ReadingSourceMode.FILE, viewModel.uiState.value.sourceMode)
+            assertEquals("", viewModel.uiState.value.pastedText)
+        }
+
+    @Test
     fun pastedTextClampsByCodePointAndClearsTruncationOnShorterEdit() =
         runTest(mainDispatcherRule.dispatcher) {
             val viewModel =

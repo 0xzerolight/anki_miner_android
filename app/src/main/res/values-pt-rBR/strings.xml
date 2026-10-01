@@ -13,6 +13,7 @@
     <string name="reading_paste_counter">Caracteres: %1$d</string>
     <string name="reading_paste_truncated">O texto foi truncado no comprimento máximo.</string>
     <string name="reading_paste_clear">Limpar texto colado</string>
+    <string name="process_text_mine_words">Minerar palavras</string>
     <string name="reading_source_access_error">Acesso perdido. Escolha novamente.</string>
     <string name="reading_source_type_error">Compatíveis: TXT, EPUB, SRT, ASS, SSA, VTT, MOKURO, ZIP, CBZ.</string>
     <string name="reading_archive_access_error">Acesso perdido. Escolha novamente.</string>
@@ -212,6 +213,7 @@
     <string name="mining_notification_step">Etapa %1$d de %2$d</string>
     <string name="mining_notification_cancel">Cancelar</string>
     <string name="mining_notification_cancelling">Cancelando a execução de mineração…</string>
+    <string name="mining_notification_tap_for_details">Toque para ver os detalhes.</string>
     <string name="mining_progress_copying_video">Copiando vídeo</string>
     <string name="mining_progress_copying_subtitle">Copiando legendas</string>
     <string name="mining_progress_preparing_media">Preparando mídia selecionada</string>

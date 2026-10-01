@@ -391,6 +391,36 @@ class ReadingMiningViewModel internal constructor(
         }
     }
 
+    /** Text from another app goes into Text mode and waits; Mine stays the user's call (D8). */
+    fun receiveSharedText(text: String) {
+        if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) {
+            AppLog.i(
+                LogComponent.UI,
+                "command",
+                "command" to "shared_text",
+                "source" to "reading",
+                "outcome" to "skip",
+                "reason" to "run_active",
+            )
+            return
+        }
+        AppLog.i(
+            LogComponent.UI,
+            "command",
+            "command" to "shared_text",
+            "source" to "reading",
+            "outcome" to "ok",
+        )
+        val bounded = text.takeCodePoints(MAX_PASTED_TEXT_CODE_POINTS)
+        localState.update {
+            it.copy(
+                sourceMode = ReadingSourceMode.PASTED_TEXT,
+                pastedText = bounded,
+                pastedTextTruncated = bounded.length != text.length,
+            )
+        }
+    }
+
     fun clearPastedText() {
         if (!repository.state.value.acceptsInputEdits || localState.value.pending.start) return
         localState.update {
