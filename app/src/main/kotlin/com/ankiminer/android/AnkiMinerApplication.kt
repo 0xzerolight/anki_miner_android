@@ -99,6 +99,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
@@ -109,6 +110,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlin.coroutines.resume
@@ -384,6 +386,11 @@ class AnkiMinerApplication : Application() {
     }
     internal val pythonRuntimeReadiness: StateFlow<PythonRuntimeReadiness>
         get() = pythonRuntime.readiness
+    private val mutableForegroundJobStarts = MutableStateFlow(0)
+
+    /** Counts admitted resource foreground starts, so the activity can ask for notifications once. */
+    internal val foregroundJobStarts: StateFlow<Int>
+        get() = mutableForegroundJobStarts
     private val ankiProviderRuntime by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         AnkiProviderRuntime(this)
     }
@@ -476,7 +483,11 @@ class AnkiMinerApplication : Application() {
             runtimeWorkCoordinator = runtimeWorkCoordinator,
             safStager = SafArchiveStager(contentResolver, resourceStagingRoot),
             documentWriter = resourceDocumentWriter,
-            foregroundLease = AndroidResourceForegroundLease(this),
+            foregroundLease =
+                AndroidResourceForegroundLease(
+                    this,
+                    onStarted = { mutableForegroundJobStarts.update { it + 1 } },
+                ),
             strings = stringResourceResolver,
             activeLanguage = { miningLanguage.value },
         )

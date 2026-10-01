@@ -23,6 +23,14 @@ import org.junit.Test
 
 class SetupUiStateTest {
     @Test
+    fun aPermanentlyDeniedPermissionSendsTheUserToAndroidSettings() {
+        val denied = SetupUiState(anki = AnkiProviderReadiness.PermissionDenied)
+
+        assertEquals(AnkiDroidSetupAction.REQUEST_PERMISSION, denied.ankiDroidAction)
+        assertEquals(AnkiDroidSetupAction.OPEN_APP_SETTINGS, denied.copy(ankiPermissionBlocked = true).ankiDroidAction)
+    }
+
+    @Test
     fun verifiedUniDicAndAUsableDictionaryAreBothRequired() {
         val recovered =
             SetupUiState(

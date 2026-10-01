@@ -2,7 +2,6 @@ package com.ankiminer.android.ui.settings
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.assertIsEnabled
-import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -58,7 +57,7 @@ class AudioPackSectionsTest {
             }
         }
 
-        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertDoesNotExist()
         selectRow("broken")
         composeRule
             .onNodeWithTag(ResourcePanelTestTags.REMOVE)

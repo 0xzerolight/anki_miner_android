@@ -19,10 +19,12 @@ internal class AndroidResourceForegroundLease(
     private val startService: (ResourceOperationProgress) -> Unit,
     private val stopService: () -> Unit,
     private val elapsedMillis: () -> Long = System::currentTimeMillis,
+    private val onStarted: () -> Unit = {},
 ) : ResourceForegroundLease {
     constructor(
         context: Context,
         elapsedMillis: () -> Long = System::currentTimeMillis,
+        onStarted: () -> Unit = {},
     ) : this(
         startService = { progress ->
             val intent =
@@ -40,6 +42,7 @@ internal class AndroidResourceForegroundLease(
             Unit
         },
         elapsedMillis = elapsedMillis,
+        onStarted = onStarted,
     )
 
     private val lastPostedAt = AtomicLong(0)
@@ -53,6 +56,7 @@ internal class AndroidResourceForegroundLease(
     override fun start(progress: ResourceOperationProgress) {
         started = false
         startService(progress)
+        onStarted()
         lastPhase = progress.phase
         lastPostedAt.set(elapsedMillis())
         started = true

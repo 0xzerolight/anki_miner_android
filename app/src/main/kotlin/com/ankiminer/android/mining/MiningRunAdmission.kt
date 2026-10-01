@@ -44,37 +44,38 @@ internal fun interface AnkiMiningTargetProbe {
     fun probe(cancellation: AnkiCancellation): AnkiMiningTargetReadiness
 }
 
-internal enum class MiningRuntimePermissionKind {
-    ANKIDROID_DATABASE,
-    NOTIFICATIONS,
-}
-
-internal data class MiningRuntimePermissionRequest(
-    val kind: MiningRuntimePermissionKind,
-    val permission: String,
-)
-
-/** Activity-independent permissions which setup can request through an Activity Result launcher. */
+/** The runtime permissions setup asks for, each through its own Activity Result launcher. */
 @SuppressLint("InlinedApi")
 internal object MiningRuntimePermissions {
-    fun requestableFor(sdkInt: Int): List<MiningRuntimePermissionRequest> =
-        buildList {
-            add(
-                MiningRuntimePermissionRequest(
-                    MiningRuntimePermissionKind.ANKIDROID_DATABASE,
-                    AnkiApiBuildConfig.READ_WRITE_PERMISSION,
-                ),
-            )
-            if (sdkInt >= Build.VERSION_CODES.TIRAMISU) {
-                add(
-                    MiningRuntimePermissionRequest(
-                        MiningRuntimePermissionKind.NOTIFICATIONS,
-                        Manifest.permission.POST_NOTIFICATIONS,
-                    ),
-                )
-            }
-        }
+    /** AnkiDroid's database permission: what Connect AnkiDroid asks for, and all it asks for. */
+    const val ANKIDROID_DATABASE: String = AnkiApiBuildConfig.READ_WRITE_PERMISSION
+
+    /** POST_NOTIFICATIONS on API 33+; null below, where posting needs no runtime grant. */
+    fun notificationPermissionFor(sdkInt: Int): String? =
+        Manifest.permission.POST_NOTIFICATIONS.takeIf { sdkInt >= Build.VERSION_CODES.TIRAMISU }
 }
+
+/**
+ * Whether to ask for notification permission now: a foreground job (a download or a run) is
+ * starting, and without the grant its progress notification is hidden. Asked at most once per
+ * process; after two denials Android stops showing the dialog on its own. A denial changes nothing.
+ */
+internal fun notificationPermissionDue(
+    sdkInt: Int,
+    notificationsReady: Boolean,
+    foregroundJobStarting: Boolean,
+    alreadyAskedThisProcess: Boolean,
+): Boolean =
+    MiningRuntimePermissions.notificationPermissionFor(sdkInt) != null &&
+        !notificationsReady &&
+        foregroundJobStarting &&
+        !alreadyAskedThisProcess
+
+/** No rationale after a denial means "don't ask again": the request dialog will not show any more. */
+internal fun ankiPermissionPermanentlyDenied(
+    granted: Boolean,
+    showRationale: Boolean,
+): Boolean = !granted && !showRationale
 
 /** Process-context-only permission probe; an Activity is needed later only to launch a request. */
 internal class AndroidNotificationPermissionProbe(

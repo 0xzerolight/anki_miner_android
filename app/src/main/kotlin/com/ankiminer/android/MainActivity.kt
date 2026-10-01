@@ -38,6 +38,8 @@ import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepositoryFactory
 import com.ankiminer.android.mining.MiningRunUndoManagerFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
+import com.ankiminer.android.mining.ankiPermissionPermanentlyDenied
+import com.ankiminer.android.mining.notificationPermissionDue
 import com.ankiminer.android.reading.ReadingRepositoryFactory
 import com.ankiminer.android.service.MiningForegroundService
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
@@ -52,9 +54,11 @@ import com.ankiminer.android.ui.theme.resolveTheme
 import com.ankiminer.android.ui.theme.systemBarIconAppearance
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MediaMiningViewModel
+import com.ankiminer.android.vm.NavigationWorkflowState
 import com.ankiminer.android.vm.ReadingMiningViewModel
 import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
@@ -258,17 +262,55 @@ class MainActivity : ComponentActivity() {
                 val diagnosticsViewModel: DiagnosticsViewModel =
                     viewModel(factory = diagnosticsViewModelFactory)
                 val openedRunId = notificationRunId.collectAsStateWithLifecycle().value
-                val permissions =
-                    MiningRuntimePermissions.requestableFor(android.os.Build.VERSION.SDK_INT)
-                        .map { it.permission }
-                        .distinct()
-                        .toTypedArray()
-                val permissionLauncher =
+                // Connect AnkiDroid asks for AnkiDroid's permission and nothing else; the
+                // notification permission is asked on its own, when a job first needs it.
+                val ankiPermissionLauncher =
                     rememberLauncherForActivityResult(
-                        ActivityResultContracts.RequestMultiplePermissions(),
+                        ActivityResultContracts.RequestPermission(),
+                    ) { granted ->
+                        if (
+                            ankiPermissionPermanentlyDenied(
+                                granted = granted,
+                                showRationale =
+                                    shouldShowRequestPermissionRationale(MiningRuntimePermissions.ANKIDROID_DATABASE),
+                            )
+                        ) {
+                            setupViewModel.permissionBlocked()
+                        }
+                        setupViewModel.permissionsReturned()
+                    }
+                val notificationPermissionLauncher =
+                    rememberLauncherForActivityResult(
+                        ActivityResultContracts.RequestPermission(),
                     ) {
                         setupViewModel.permissionsReturned()
                     }
+                val notificationsReady =
+                    setupViewModel.uiState.collectAsStateWithLifecycle().value.notificationReady
+                val resourceJobStarts = app.foregroundJobStarts.collectAsStateWithLifecycle().value
+                val miningStarting =
+                    listOf(
+                        videoMiningViewModel.navigationWorkflowState.collectAsStateWithLifecycle().value,
+                        audioMiningViewModel.navigationWorkflowState.collectAsStateWithLifecycle().value,
+                        readingViewModel.navigationWorkflowState.collectAsStateWithLifecycle().value,
+                    ).any { it == NavigationWorkflowState.RUNNING }
+                val foregroundJobStarting = resourceJobStarts > 0 || miningStarting
+                LaunchedEffect(foregroundJobStarting) {
+                    val sdkInt = android.os.Build.VERSION.SDK_INT
+                    val permission = MiningRuntimePermissions.notificationPermissionFor(sdkInt)
+                    if (
+                        permission != null &&
+                        notificationPermissionDue(
+                            sdkInt = sdkInt,
+                            notificationsReady = notificationsReady,
+                            foregroundJobStarting = foregroundJobStarting,
+                            alreadyAskedThisProcess = notificationPermissionAsked.get(),
+                        )
+                    ) {
+                        notificationPermissionAsked.set(true)
+                        notificationPermissionLauncher.launch(permission)
+                    }
+                }
                 val languageProfiles =
                     settingsViewModel.languageProfiles.collectAsStateWithLifecycle().value
                 val contentStyle =
@@ -286,8 +328,7 @@ class MainActivity : ComponentActivity() {
                         notificationRunId = openedRunId,
                         onNotificationRunHandled = { notificationRunId.value = null },
                         onRequestPermissions = {
-                            if (permissions.isEmpty()) app.refreshExternalReadiness()
-                            else permissionLauncher.launch(permissions)
+                            ankiPermissionLauncher.launch(MiningRuntimePermissions.ANKIDROID_DATABASE)
                         },
                         onOpenAppSettings = ::openAppSettings,
                         onInstallAnkiDroid = ::installAnkiDroid,
@@ -409,6 +450,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        /** Process-wide: the notification permission is asked at most once per process. */
+        val notificationPermissionAsked = AtomicBoolean(false)
+
         const val PENDING_NOTIFICATION_RUN_ID = "pending_notification_run_id"
         const val ACTION_TTS_SETTINGS = "com.android.settings.TTS_SETTINGS"
         const val ANKIDROID_RELEASES_URL =

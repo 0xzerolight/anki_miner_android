@@ -37,6 +37,7 @@ import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.engine.LanguageExtraCardField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -60,7 +61,7 @@ internal fun AnkiDeckCard(
                 Text(stringResource(R.string.anki_deck_connect_first))
             }
             val resolution = state.deckSelection
-            NoteTypeDropdown(
+            SettingsDropdown(
                 label = stringResource(R.string.anki_deck_picker),
                 options =
                     resolution.choices.map { choice ->
@@ -112,6 +113,8 @@ internal fun AnkiTargetCard(
     onSelectCardType: (CardType?) -> Unit,
     onSelectCardTypeMarker: (String) -> Unit,
     onRemapFields: () -> Unit,
+    mappingExpanded: Boolean? = null,
+    onMappingExpandedChange: (Boolean) -> Unit = {},
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
@@ -121,7 +124,7 @@ internal fun AnkiTargetCard(
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
             } else {
-                NoteTypeDropdown(
+                SettingsDropdown(
                     label = stringResource(R.string.anki_note_type_picker),
                     options = state.availableNoteTypes.map { it.name to it.name },
                     selected = state.noteType ?: "",
@@ -148,11 +151,14 @@ internal fun AnkiTargetCard(
                         state.noteTypeStatus is NoteTypeSetupStatus.FieldsMissing ||
                             state.noteTypeStatus is NoteTypeSetupStatus.FieldMapInvalid ||
                             state.noteTypeStatus == NoteTypeSetupStatus.FirstFieldMismatch
-                    var mappingExpanded by
-                        rememberSaveable(state.noteType) { mutableStateOf(false) }
-                    val showMapping = mappingExpanded || mappingBlocked
+                    // Hoistable, so the wizard's "Change card fields" deep link can land on it open.
+                    var ownExpanded by rememberSaveable(state.noteType) { mutableStateOf(false) }
+                    val isExpanded = mappingExpanded ?: ownExpanded
+                    val showMapping = isExpanded || mappingBlocked
                     TextButton(
-                        onClick = { mappingExpanded = !mappingExpanded },
+                        onClick = {
+                            if (mappingExpanded == null) ownExpanded = !isExpanded else onMappingExpandedChange(!isExpanded)
+                        },
                         enabled = !mappingBlocked,
                         modifier =
                             Modifier.semantics {
@@ -185,11 +191,9 @@ internal fun AnkiTargetCard(
                     fieldKeys.forEach { key ->
                         // A language field is named by its profile's suggestion, which is the Anki
                         // field name it auto-maps to.
-                        val base =
-                            state.extraCardFields.firstOrNull { it.key == key }?.placeholder
-                                ?: key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+                        val base = fieldKeyLabel(key, state.extraCardFields)
                         val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
-                        NoteTypeDropdown(
+                        SettingsDropdown(
                             label = label,
                             options =
                                 AnkiFieldMapPolicy
@@ -275,7 +279,7 @@ private fun CardTypeMarkerSection(
         style = MaterialTheme.typography.titleSmall,
     )
     SupportingText(stringResource(R.string.anki_card_type_explainer))
-    NoteTypeDropdown(
+    SettingsDropdown(
         label = stringResource(R.string.anki_card_type_picker),
         options =
             listOf("" to noneLabel) +
@@ -287,7 +291,7 @@ private fun CardTypeMarkerSection(
         },
     )
     if (state.cardType != null) {
-        NoteTypeDropdown(
+        SettingsDropdown(
             label = stringResource(R.string.anki_card_type_marker_field),
             options = (listOf("") + fields).map { it to it.ifEmpty { noneLabel } },
             selected = state.cardTypeMarkerField ?: "",
@@ -323,41 +327,37 @@ private fun cardTypeLabel(cardType: CardType): String =
 internal fun WizardAnkiTargetCard(
     state: SetupUiState,
     onSelectNoteType: (String) -> Unit,
-    onCustomizeFields: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(
-                stringResource(R.string.anki_note_type_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
             inlineFailure?.invoke()
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
             } else {
-                NoteTypeDropdown(
+                SettingsDropdown(
                     label = stringResource(R.string.anki_note_type_picker),
                     options = state.availableNoteTypes.map { it.name to it.name },
                     selected = state.noteType.orEmpty(),
                     onSelect = onSelectNoteType,
                     isOptionEnabled = { !state.busy && it != state.noteType },
                 )
-                if (state.noteType != null) {
+                if (state.noteType == null) {
+                    SupportingText(stringResource(R.string.wizard_note_type_help))
+                } else {
                     Text(
-                        stringResource(
-                            R.string.b3_wizard_mapping_summary,
-                            state.fieldMap.values.count(String::isNotEmpty),
-                        ),
+                        fieldMappingLine(state.fieldKeys, state.fieldMap, state.extraCardFields),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    NoteTypeQualitySummary(state)
                 }
-                Text(
-                    noteTypeStatusText(state.noteTypeStatus),
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
-                TextButton(onClick = onCustomizeFields, colors = accentTextButtonColors()) {
-                    Text(stringResource(R.string.b3_wizard_customize_fields))
+                // "Verified writable and dedup-safe" said nothing a user can act on; only a
+                // problem earns the line.
+                if (state.noteTypeStatus !is NoteTypeSetupStatus.Verified) {
+                    Text(
+                        noteTypeStatusText(state.noteTypeStatus),
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
                 }
             }
         }
@@ -395,9 +395,10 @@ private fun noteTypeStatusText(status: NoteTypeSetupStatus): String =
         },
     )
 
+/** A read-only Material dropdown over (value, label) pairs; used by the Anki cards and the wizard's language page. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun NoteTypeDropdown(
+internal fun SettingsDropdown(
     label: String,
     options: List<Pair<String, String>>,
     selected: String,
@@ -453,3 +454,21 @@ internal fun AnkiOperationCard() {
     }
 }
 
+/** A field-map row's name: the language field's own placeholder, else the key in words. */
+internal fun fieldKeyLabel(
+    key: String,
+    extraCardFields: List<LanguageExtraCardField>,
+): String =
+    extraCardFields.firstOrNull { it.key == key }?.placeholder
+        ?: key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+/** "Word → Front · Definition → Back": what each card will get, in one plain line. */
+internal fun fieldMappingLine(
+    fieldKeys: List<String>,
+    fieldMap: Map<String, String>,
+    extraCardFields: List<LanguageExtraCardField> = emptyList(),
+): String =
+    fieldKeys
+        .mapNotNull { key ->
+            fieldMap[key]?.takeIf(String::isNotEmpty)?.let { field -> "${fieldKeyLabel(key, extraCardFields)} → $field" }
+        }.joinToString(" · ")

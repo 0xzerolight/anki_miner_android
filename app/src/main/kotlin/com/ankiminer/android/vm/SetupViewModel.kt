@@ -9,6 +9,7 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
+import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
@@ -118,6 +119,7 @@ internal class SetupViewModel(
         val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
         val audioPackChoices: List<AudioPackCandidate> = emptyList(),
         val resourcePickerFailure: ResourceFailure? = null,
+        val ankiPermissionBlocked: Boolean = false,
     )
 
     private val local =
@@ -265,6 +267,8 @@ internal class SetupViewModel(
                         appSettings.language == LanguageScope.JAPANESE -> null
                         else -> emptySet()
                     },
+                ankiPermissionBlocked =
+                    localState.ankiPermissionBlocked && admission.anki == AnkiProviderReadiness.PermissionDenied,
             )
         }.stateIn(
             viewModelScope,
@@ -282,6 +286,14 @@ internal class SetupViewModel(
             viewModelScope.launch { resources.discardAudioPackPreflight() }
         }
         resumePendingPicker()
+        // A re-probe that no longer reports a denial clears the permanent-denial path.
+        viewModelScope.launch {
+            miningAdmission.collect { state ->
+                if (state.anki != AnkiProviderReadiness.PermissionDenied) {
+                    local.update { it.copy(ankiPermissionBlocked = false) }
+                }
+            }
+        }
     }
 
     /**
@@ -642,6 +654,23 @@ internal class SetupViewModel(
     fun installRecommendedResources() {
         if (currentState().busy) return
         viewModelScope.launch { resources.installRecommendedResources() }
+    }
+
+    /**
+     * The one Download press: UniDic first when this language tokenizes with it and it is missing,
+     * then the language's recommended set. A failed or cancelled UniDic install stops the chain;
+     * its own failure carries the Retry. The set's install is itself a no-op once satisfied.
+     */
+    fun installRequiredResources() {
+        val state = currentState()
+        if (state.busy) return
+        viewModelScope.launch {
+            if (state.uniDicRequired && !state.uniDicInstalled) {
+                resources.installUniDic()
+                if (!resources.state.value.hasUniDic) return@launch
+            }
+            resources.installRecommendedResources()
+        }
     }
 
     /** Dispatches the import the pending record describes, this time authorised to overwrite. */
@@ -1642,6 +1671,11 @@ internal class SetupViewModel(
     }
 
     fun permissionsReturned() = refreshExternalReadiness()
+
+    /** The request dialog will not show again; the action becomes "Allow in Android settings". */
+    fun permissionBlocked() {
+        local.update { it.copy(ankiPermissionBlocked = true) }
+    }
 
     /** Persist completion; failure remains in state so first launch can retry or escape this session. */
     fun markWizardSeen() {

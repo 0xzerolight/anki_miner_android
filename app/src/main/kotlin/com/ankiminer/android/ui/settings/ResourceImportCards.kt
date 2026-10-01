@@ -192,22 +192,30 @@ private fun WordListRow(
             }
         NullableToggle(toggleLabel, enabled, engineDefault, onChange = onEnabledChange)
     }
-    AdaptivePairedActions(
-        first = { modifier ->
-            SecondaryActionButton(
-                onClick = { onImport(kind) },
-                enabled = !state.busy,
-                modifier = modifier,
-            ) { Text(stringResource(R.string.word_list_choose_file)) }
-        },
-        second = { modifier ->
-            SecondaryActionButton(
-                onClick = { onRemove(kind) },
-                enabled = !state.busy && installed != null,
-                modifier = modifier,
-            ) { Text(stringResource(R.string.word_list_remove)) }
-        },
-    )
+    if (installed == null) {
+        // Nothing to remove yet: one Choose button instead of a dead full-width Remove.
+        SecondaryActionButton(
+            onClick = { onImport(kind) },
+            enabled = !state.busy,
+        ) { Text(stringResource(R.string.word_list_choose_file)) }
+    } else {
+        AdaptivePairedActions(
+            first = { modifier ->
+                SecondaryActionButton(
+                    onClick = { onImport(kind) },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { Text(stringResource(R.string.word_list_choose_file)) }
+            },
+            second = { modifier ->
+                SecondaryActionButton(
+                    onClick = { onRemove(kind) },
+                    enabled = !state.busy,
+                    modifier = modifier,
+                ) { Text(stringResource(R.string.word_list_remove)) }
+            },
+        )
+    }
 }
 
 /**
@@ -231,6 +239,60 @@ internal fun knownWordsFormatLabel(format: String): String =
  */
 internal fun knownWordsPreviewWarnsWholesale(preview: KnownWordsImportPreview): Boolean = preview.isGeneric
 
+/** The import confirmation, shared by the Word filters card and the Known-words manager. */
+@Composable
+internal fun KnownWordsImportPreviewDialog(
+    state: SetupUiState,
+    onConfirmImport: () -> Unit,
+    onDismissImport: () -> Unit,
+) {
+    val preview = state.knownWordsImportPreview ?: return
+    AlertDialog(
+        onDismissRequest = { if (!state.busy) onDismissImport() },
+        title = { Text(stringResource(R.string.known_words_preview_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
+                Text(
+                    stringResource(
+                        R.string.known_words_preview_summary,
+                        knownWordsFormatLabel(preview.format),
+                        preview.importedCount,
+                        preview.totalEntries,
+                    ),
+                )
+                if (knownWordsPreviewWarnsWholesale(preview)) {
+                    Text(
+                        stringResource(
+                            R.string.known_words_preview_generic_warning,
+                            preview.importedCount,
+                        ),
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (preview.sampleWords.isNotEmpty()) {
+                    Text(stringResource(R.string.known_words_preview_samples, preview.sampleWords.joinToString()))
+                }
+            }
+        },
+        confirmButton = {
+            PrimaryActionButton(
+                onClick = onConfirmImport,
+                enabled = !state.busy,
+            ) {
+                Text(stringResource(R.string.known_words_import_confirm))
+            }
+        },
+        dismissButton = {
+            SecondaryActionButton(
+                onClick = onDismissImport,
+                enabled = !state.busy,
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
 @Composable
 internal fun KnownWordsImportCard(
     state: SetupUiState,
@@ -240,52 +302,7 @@ internal fun KnownWordsImportCard(
     onManage: () -> Unit,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
-    state.knownWordsImportPreview?.let { preview ->
-        AlertDialog(
-            onDismissRequest = { if (!state.busy) onDismissImport() },
-            title = { Text(stringResource(R.string.known_words_preview_title)) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                    Text(
-                        stringResource(
-                            R.string.known_words_preview_summary,
-                            knownWordsFormatLabel(preview.format),
-                            preview.importedCount,
-                            preview.totalEntries,
-                        ),
-                    )
-                    if (knownWordsPreviewWarnsWholesale(preview)) {
-                        Text(
-                            stringResource(
-                                R.string.known_words_preview_generic_warning,
-                                preview.importedCount,
-                            ),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-                    if (preview.sampleWords.isNotEmpty()) {
-                        Text(stringResource(R.string.known_words_preview_samples, preview.sampleWords.joinToString()))
-                    }
-                }
-            },
-            confirmButton = {
-                PrimaryActionButton(
-                    onClick = onConfirmImport,
-                    enabled = !state.busy,
-                ) {
-                    Text(stringResource(R.string.known_words_import_confirm))
-                }
-            },
-            dismissButton = {
-                SecondaryActionButton(
-                    onClick = onDismissImport,
-                    enabled = !state.busy,
-                ) {
-                    Text(stringResource(R.string.cancel))
-                }
-            },
-        )
-    }
+    KnownWordsImportPreviewDialog(state, onConfirmImport, onDismissImport)
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(stringResource(R.string.known_words_import_title), style = MaterialTheme.typography.titleMedium)

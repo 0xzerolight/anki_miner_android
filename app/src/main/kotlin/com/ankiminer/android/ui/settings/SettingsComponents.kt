@@ -67,11 +67,6 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.data.resources.AudioPackCandidate
-import com.ankiminer.android.data.resources.ImportedAudioPack
-import com.ankiminer.android.data.resources.ImportedFrequencySource
-import com.ankiminer.android.data.resources.ImportedKnownWords
-import com.ankiminer.android.data.resources.ImportedPitchSource
-import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.ResourceOperationPhase
 import com.ankiminer.android.data.resources.ResourceOperationProgress
 import com.ankiminer.android.data.resources.ResourceProgressUnit
@@ -192,7 +187,9 @@ internal fun SettingTextField(
     CompactOutlinedTextField(
         value = value,
         onValueChange = onChange,
-        label = { Text(label) },
+        // One line: at 2x text a wrapped floating label was printed over the field above it. The
+        // full text stays in semantics.
+        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         // Fields that inherit an engine default now arrive prefilled with it, so this line is the
         // fallback for the one case that still shows a blank: the user cleared the field. Material 3
         // draws the placeholder slot only while the field has focus, which is invisible on the
@@ -586,6 +583,8 @@ internal fun ResourceCard(
     actionLabel: String,
     inlineFailure: (@Composable () -> Unit)? = null,
     actionEnabled: Boolean = true,
+    statusOnly: Boolean = false,
+    emphasized: Boolean = false,
 ) {
     // Install/Repair on the button already says which state the resource is in, so the state line
     // is announced rather than drawn. The description is what the download actually is.
@@ -601,18 +600,28 @@ internal fun ResourceCard(
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 text = title,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (!installed) {
+            if (!installed && description.isNotEmpty()) {
                 Text(description)
             }
             inlineFailure?.invoke()
-            SecondaryActionButton(
-                onClick = action,
-                enabled = !busy && actionEnabled,
-            ) { Text(actionLabel) }
+            // In the wizard an installed resource just says so: a Repair button read as broken.
+            if (installed && statusOnly) {
+                SupportingText(stringResource(R.string.resource_installed))
+            } else if (emphasized) {
+                PrimaryActionButton(
+                    onClick = action,
+                    enabled = !busy && actionEnabled,
+                ) { Text(actionLabel) }
+            } else {
+                SecondaryActionButton(
+                    onClick = action,
+                    enabled = !busy && actionEnabled,
+                ) { Text(actionLabel) }
+            }
         }
     }
 }
@@ -843,44 +852,34 @@ internal fun MessageSnackbarEffect(
     actionLabel: String? = null,
     onAction: () -> Unit = {},
     onDismiss: () -> Unit = {},
+    /** The screen in front already shows [message]; it counts as seen and is not raised. */
+    suppressed: Boolean = false,
 ) {
     val currentOnAction by rememberUpdatedState(onAction)
     val currentOnDismiss by rememberUpdatedState(onDismiss)
-    LaunchedEffect(message) {
-        if (message != null) {
-            val result =
-                hostState.showSnackbar(
-                    message = message,
-                    actionLabel = actionLabel,
-                    withDismissAction = true,
-                    duration = SnackbarDuration.Long,
+    // Saved, so a recreation does not show the same summary twice: MainActivity handles no
+    // configChanges, and the effect restarts with every recreation.
+    var shownMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(message, suppressed) {
+        if (message == null) {
+            shownMessage = null
+            return@LaunchedEffect
+        }
+        if (message == shownMessage) return@LaunchedEffect
+        // Seen in place counts as seen: leaving the failure's own tab must not raise it on the next.
+        shownMessage = message
+        if (suppressed) return@LaunchedEffect
+        val result =
+            hostState.showSnackbar(
+                message = message,
+                actionLabel = actionLabel,
+                withDismissAction = true,
+                duration = SnackbarDuration.Long,
             )
-            if (result == SnackbarResult.ActionPerformed) {
-                currentOnAction()
-            } else {
-                currentOnDismiss()
-            }
-        }
-    }
-}
-
-@Composable
-internal fun LocalImportResultCard(result: LocalResourceImportResult) {
-    val summary =
-        when (result) {
-            is ImportedFrequencySource ->
-                stringResource(R.string.frequency_import_result, result.sourceName, result.entryCount, result.skippedMalformed)
-            is ImportedPitchSource ->
-                stringResource(R.string.pitch_import_result, result.sourceName, result.entryCount, result.skippedMalformed)
-            is ImportedAudioPack ->
-                stringResource(R.string.audio_pack_import_result, result.sourceName, result.entryCount)
-            is ImportedKnownWords ->
-                stringResource(R.string.known_words_import_result, result.importedCount, result.newRowCount, result.totalEntries)
-        }
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(stringResource(R.string.local_import_complete), style = MaterialTheme.typography.titleMedium)
-            Text(summary)
+        if (result == SnackbarResult.ActionPerformed) {
+            currentOnAction()
+        } else {
+            currentOnDismiss()
         }
     }
 }

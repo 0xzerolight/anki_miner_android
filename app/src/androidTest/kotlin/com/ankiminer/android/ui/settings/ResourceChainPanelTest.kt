@@ -69,8 +69,8 @@ class ResourceChainPanelTest {
 
         composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("jisho")).assertDoesNotExist()
         composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("jisho")).assertDoesNotExist()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("alpha")).assertIsNotEnabled()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("alpha")).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.moveUp("alpha")).assertDoesNotExist()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.moveDown("alpha")).assertDoesNotExist()
     }
 
     @Test
@@ -81,15 +81,15 @@ class ResourceChainPanelTest {
         selectRow("jisho")
 
         composeRule.onNodeWithTag(ResourcePanelTestTags.row("jisho")).assertIsSelected()
-        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertDoesNotExist()
         assertNull(removed)
     }
 
     @Test
-    fun removeIsDisabledUntilARowIsSelected() {
+    fun removeAppearsOnceARemovableRowIsSelected() {
         setPanel(chain)
 
-        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertDoesNotExist()
 
         selectRow("beta")
 
@@ -145,6 +145,17 @@ class ResourceChainPanelTest {
     }
 
     @Test
+    fun aOneEntryAddMenuRunsItDirectlyUnderItsLabel() {
+        var chosen = 0
+        setPanel(chain, addMenu = listOf(ResourcePanelAction("From file") { chosen++ }))
+
+        composeRule.onNodeWithTag(ResourcePanelTestTags.ADD).assertTextEquals("From file").performClick()
+
+        composeRule.onNodeWithText("From file").assertIsDisplayed()
+        assertEquals(1, chosen)
+    }
+
+    @Test
     fun warningRendersOnTheMetadataLine() {
         setPanel(
             listOf(
@@ -168,7 +179,7 @@ class ResourceChainPanelTest {
         composeRule
             .onNodeWithTag(ResourcePanelTestTags.EMPTY)
             .assertTextEquals("No sources are installed.")
-        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertIsNotEnabled()
+        composeRule.onNodeWithTag(ResourcePanelTestTags.REMOVE).assertDoesNotExist()
     }
 
     @Test

@@ -8,7 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -43,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.semantics
@@ -57,6 +58,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
+import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.update.UpdateCheckUiState
@@ -75,11 +77,15 @@ import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.KnownWordsManagerRoute
 import com.ankiminer.android.ui.settings.MessageSnackbarEffect
+import com.ankiminer.android.ui.settings.ResourceOperationCard
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsRoute
+import com.ankiminer.android.ui.settings.ankiDroidInstallLabel
 import com.ankiminer.android.ui.settings.settingsCardIndexFor
 import com.ankiminer.android.ui.settings.settingsCategoryFor
+import com.ankiminer.android.ui.settings.setupAttentionCount
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.LargeFontScale
 import com.ankiminer.android.ui.theme.ScreenTitle
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -89,6 +95,9 @@ import com.ankiminer.android.ui.video.TimingPreviewOverlay
 import com.ankiminer.android.ui.video.VideoMiningRoute
 import com.ankiminer.android.ui.video.VideoMiningTestTags
 import com.ankiminer.android.ui.wizard.OnboardingWizard
+import com.ankiminer.android.ui.wizard.WizardLanguageState
+import com.ankiminer.android.ui.wizard.WizardStep
+import com.ankiminer.android.ui.wizard.firstIncompleteWizardStep
 import com.ankiminer.android.ui.wizard.wizardVisible
 import com.ankiminer.android.vm.DiagnosticsViewModel
 import com.ankiminer.android.vm.MediaMiningViewModel
@@ -173,10 +182,42 @@ internal fun miningWorkflowVisible(
     hasRetainedRun: Boolean = false,
 ): Boolean = setupReady || workflow != NavigationWorkflowState.IDLE || hasRetainedRun
 
-internal fun compactNavigation(
-    widthDp: Int,
-    fontScale: Float,
-): Boolean = widthDp < 360 && fontScale >= 1.3f
+/**
+ * The Anki failure a linked snackbar may raise. While AnkiDroid still needs installing, opening or
+ * allowing, its target read can only fail, and the readiness notice and setup pages already say
+ * what to do; the raw provider error would only repeat it.
+ */
+internal fun linkedAnkiFailure(setup: SetupUiState): AnkiSetupFailure? =
+    setup.ankiFailure?.takeIf { setup.ankiDroidAction == null }
+
+/**
+ * Whether the screen in front already shows this failure, so a linked snackbar would only repeat
+ * it: Settings on the failure's own tab (SETUP renders in every tab's header), or a mining tab whose
+ * readiness notice states an Anki target failure.
+ */
+internal fun linkedFailureShownInPlace(
+    destination: AnkiMinerDestination?,
+    settingsCategory: SettingsCategory?,
+    resourceOrigin: ResourceFailureOrigin?,
+    ankiOrigin: AnkiSetupFailureOrigin?,
+    miningNoticeVisible: Boolean,
+): Boolean {
+    val failureCategory =
+        resourceOrigin?.let(::settingsCategoryFor) ?: ankiOrigin?.let(::settingsCategoryFor)
+    return when (destination) {
+        AnkiMinerDestination.SETTINGS ->
+            resourceOrigin == ResourceFailureOrigin.SETUP ||
+                (failureCategory != null && failureCategory == settingsCategory)
+        AnkiMinerDestination.VIDEO,
+        AnkiMinerDestination.AUDIO,
+        AnkiMinerDestination.READING,
+        -> resourceOrigin == null && ankiOrigin == AnkiSetupFailureOrigin.TARGET && miningNoticeVisible
+        else -> false
+    }
+}
+
+/** Labels drop at large text on every width: at 2x "Reading" and "Settings" touched. */
+internal fun compactNavigation(fontScale: Float): Boolean = fontScale >= LargeFontScale
 
 /**
  * Compact bar height for ordinary font scales; null keeps the stock M3 80dp bar so large
@@ -297,12 +338,8 @@ internal fun AnkiMinerAppShell(
     overlay: (@Composable () -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
-    BoxWithConstraints(modifier) {
-        val compact =
-            compactNavigation(
-                widthDp = maxWidth.value.toInt(),
-                fontScale = LocalDensity.current.fontScale,
-            )
+    Box(modifier) {
+        val compact = compactNavigation(LocalDensity.current.fontScale)
         Scaffold(
             modifier = if (overlay == null) Modifier else Modifier.inertBehindOverlay(),
             topBar = {
@@ -453,6 +490,8 @@ internal fun AnkiMinerApp(
             destination.route == currentRoute
         }
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val languageProfiles by settingsViewModel.languageProfiles.collectAsStateWithLifecycle()
+    val languageDownload by settingsViewModel.languageDownload.collectAsStateWithLifecycle()
     val wizardDismissedForSession by
         setupViewModel.wizardDismissedForSession.collectAsStateWithLifecycle()
     val videoWorkflow by
@@ -472,10 +511,11 @@ internal fun AnkiMinerApp(
             TesterDiagnosticsBuilder.identity(buildIdentity)
         }
     var wizardRerunRequested by rememberSaveable { mutableStateOf(false) }
-    var wizardRedirectedToSettings by rememberSaveable { mutableStateOf(false) }
+    var wizardStartStep by rememberSaveable { mutableStateOf(WizardStep.LANGUAGE) }
     var requestedSettingsCategory by
         rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
     var requestedSettingsItemIndex by rememberSaveable { mutableStateOf(2) }
+    var visibleSettingsCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
 
     fun navigateTo(destination: AnkiMinerDestination) {
         navController.navigate(destination.route) {
@@ -536,7 +576,7 @@ internal fun AnkiMinerApp(
         wizardVisible(
             wizardSeen = setup.wizardSeen,
             rerunRequested = wizardRerunRequested,
-            sessionDismissed = wizardDismissedForSession || wizardRedirectedToSettings,
+            sessionDismissed = wizardDismissedForSession,
             completion = setup.wizardCompletion,
         )
     if (wizardIsVisible) {
@@ -544,15 +584,33 @@ internal fun AnkiMinerApp(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val linkedFailureMessage =
-        setup.failure?.message
-            ?: setup.ankiFailure?.message
+    val miningNoticeVisible =
+        when (currentDestination) {
+            AnkiMinerDestination.VIDEO ->
+                !miningWorkflowVisible(setup.isMiningReady, videoWorkflow, videoRunState.runState.isTerminal)
+            AnkiMinerDestination.AUDIO ->
+                !miningWorkflowVisible(setup.isMiningReady, audioWorkflow, audioRunState.runState.isTerminal)
+            AnkiMinerDestination.READING ->
+                !miningWorkflowVisible(setup.isMiningReady, readingWorkflow, readingRunState.runState.isTerminal)
+            else -> false
+        }
+    val linkedAnkiFailure = linkedAnkiFailure(setup)
+    // Kept non-null while the failure stands, so seeing it in place counts as having seen it.
+    val linkedFailureMessage = setup.failure?.message ?: linkedAnkiFailure?.message
+    val linkedFailureSuppressed =
+        linkedFailureShownInPlace(
+            destination = currentDestination,
+            settingsCategory = visibleSettingsCategory,
+            resourceOrigin = setup.failure?.origin,
+            ankiOrigin = linkedAnkiFailure?.origin,
+            miningNoticeVisible = miningNoticeVisible,
+        )
     val linkedFailureCategory =
         setup.failure?.let { settingsCategoryFor(it.origin) }
-            ?: setup.ankiFailure?.let { settingsCategoryFor(it.origin) }
+            ?: linkedAnkiFailure?.let { settingsCategoryFor(it.origin) }
     val linkedFailureItemIndex =
         setup.failure?.let { settingsCardIndexFor(it.origin) }
-            ?: setup.ankiFailure?.let { settingsCardIndexFor(it.origin) }
+            ?: linkedAnkiFailure?.let { settingsCardIndexFor(it.origin) }
             ?: 2
     MessageSnackbarEffect(
         message = linkedFailureMessage,
@@ -563,6 +621,7 @@ internal fun AnkiMinerApp(
             requestedSettingsItemIndex = linkedFailureItemIndex
             navigateTo(AnkiMinerDestination.SETTINGS)
         },
+        suppressed = linkedFailureSuppressed,
     )
 
     val activeWorkflowDestination =
@@ -576,6 +635,37 @@ internal fun AnkiMinerApp(
             video = videoTimingPreview,
             audio = audioTimingPreview,
         )
+
+    @Composable
+    fun ReadinessNotice() {
+        MiningReadinessNotice(
+            state = setup,
+            message = stringResource(miningReadinessMessage(setup)),
+            onRequestPermissions = onRequestPermissions,
+            onInstallUniDic = setupViewModel::installRequiredResources,
+            onInstallAnkiDroid = onInstallAnkiDroid,
+            onOpenAnkiDroid = onOpenAnkiDroid,
+            onCheckAgain = setupViewModel::refresh,
+            onOpenSettings = ::navigateToSettings,
+            onImportDictionary = ::navigateToDictionaries,
+            onOpenAppSettings = onOpenAppSettings,
+            // ResourceManager.installRecommendedResources returns early when the set has nothing
+            // pending (catalog not refreshed yet, or every member installed while no dictionary is in
+            // the chain); the notice's only primary action must not be that silent no-op.
+            onInstallDictionary = {
+                if (setup.recommendedPlan.isActionable) {
+                    setupViewModel.installRecommendedResources()
+                } else {
+                    navigateToDictionaries()
+                }
+            },
+            onCancelOperation = setupViewModel::cancelOperation,
+            onContinueSetup = {
+                wizardStartStep = firstIncompleteWizardStep(setup)
+                wizardRerunRequested = true
+            },
+        )
+    }
 
     AnkiMinerAppShell(
         currentDestination = currentDestination,
@@ -592,20 +682,24 @@ internal fun AnkiMinerApp(
                         OnboardingWizard(
                             state = setup,
                             viewModel = setupViewModel,
+                            initialStep = wizardStartStep,
+                            language = WizardLanguageState(profiles = languageProfiles, downloadingCode = languageDownload),
+                            onSwitchLanguage = { code -> settingsViewModel.switchLanguage(code) },
+                            onDownloadAndSwitchLanguage = settingsViewModel::downloadAndSwitchLanguage,
                             onRequestPermissions = onRequestPermissions,
                             onOpenAppSettings = onOpenAppSettings,
                             onInstallAnkiDroid = onInstallAnkiDroid,
                             onOpenAnkiDroid = onOpenAnkiDroid,
                             onFinished = {
                                 wizardRerunRequested = false
-                                wizardRedirectedToSettings = false
                                 if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
                             },
-                            onCustomizeFields = {
+                            onChangeCardFields = {
+                                // Finish's path first, so the wizard does not come back next launch.
                                 wizardRerunRequested = false
-                                wizardRedirectedToSettings = true
+                                if (setup.wizardSeen != true) setupViewModel.markWizardSeen()
                                 requestedSettingsCategory = SettingsCategory.ANKI
-                                requestedSettingsItemIndex = 3
+                                requestedSettingsItemIndex = settingsCardIndexFor(AnkiSetupFailureOrigin.TARGET)
                                 navigateTo(AnkiMinerDestination.SETTINGS)
                             },
                         )
@@ -677,17 +771,7 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessNotice(
-                        state = setup,
-                        message = stringResource(miningReadinessMessage(setup)),
-                        onRequestPermissions = onRequestPermissions,
-                        onInstallUniDic = setupViewModel::installUniDic,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = ::navigateToSettings,
-                        onImportDictionary = ::navigateToDictionaries,
-                    )
+                    ReadinessNotice()
                 }
             }
             composable(AnkiMinerDestination.AUDIO.route) {
@@ -707,17 +791,7 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(VideoMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessNotice(
-                        state = setup,
-                        message = stringResource(miningReadinessMessage(setup)),
-                        onRequestPermissions = onRequestPermissions,
-                        onInstallUniDic = setupViewModel::installUniDic,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = ::navigateToSettings,
-                        onImportDictionary = ::navigateToDictionaries,
-                    )
+                    ReadinessNotice()
                 }
             }
             composable(AnkiMinerDestination.READING.route) {
@@ -737,17 +811,7 @@ internal fun AnkiMinerApp(
                         modifier = Modifier.testTag(ReadingMiningTestTags.SCREEN),
                     )
                 } else {
-                    MiningReadinessNotice(
-                        state = setup,
-                        message = stringResource(miningReadinessMessage(setup)),
-                        onRequestPermissions = onRequestPermissions,
-                        onInstallUniDic = setupViewModel::installUniDic,
-                        onInstallAnkiDroid = onInstallAnkiDroid,
-                        onOpenAnkiDroid = onOpenAnkiDroid,
-                        onCheckAgain = setupViewModel::refresh,
-                        onOpenSettings = ::navigateToSettings,
-                        onImportDictionary = ::navigateToDictionaries,
-                    )
+                    ReadinessNotice()
                 }
             }
             composable(AnkiMinerDestination.SETTINGS.route) {
@@ -775,7 +839,10 @@ internal fun AnkiMinerApp(
                     onAttributions = {
                         navController.navigate(AnkiMinerDestination.ATTRIBUTION.route)
                     },
-                    onRunSetupWizard = { wizardRerunRequested = true },
+                    onRunSetupWizard = {
+                        wizardStartStep = WizardStep.LANGUAGE
+                        wizardRerunRequested = true
+                    },
                     onManageKnownWords = {
                         navController.navigate(
                             AnkiMinerDestination.KNOWN_WORDS_MANAGER.route,
@@ -783,6 +850,7 @@ internal fun AnkiMinerApp(
                     },
                     requestedCategory = requestedSettingsCategory,
                     requestedCategoryItemIndex = requestedSettingsItemIndex,
+                    onSelectedCategoryChange = { visibleSettingsCategory = it },
                     onCategoryRequestConsumed = {
                         requestedSettingsCategory = null
                         requestedSettingsItemIndex = 2
@@ -826,19 +894,36 @@ internal fun MiningReadinessNotice(
     onCheckAgain: () -> Unit,
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
     onImportDictionary: () -> Unit,
+    onOpenAppSettings: () -> Unit = {},
+    onInstallDictionary: () -> Unit = {},
+    onCancelOperation: () -> Unit = {},
+    onContinueSetup: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.content),
     ) {
-        ScreenTitle(stringResource(R.string.mining_not_ready))
+        val left = state.setupAttentionCount()
+        ScreenTitle(
+            if (left > 0) {
+                pluralStringResource(R.plurals.readiness_finish_setup_count, left, left)
+            } else {
+                stringResource(R.string.mining_not_ready)
+            },
+        )
         OutlinedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
                 Text(message)
+                if (miningReadinessActionForDisplay(state) == MiningReadinessAction.ALLOW_IN_SETTINGS) {
+                    SupportingText(stringResource(R.string.ankidroid_permission_settings_prompt))
+                }
                 when (val action = miningReadinessActionForDisplay(state)) {
                     null -> Unit
                     MiningReadinessAction.WAIT ->
-                        SupportingText(stringResource(R.string.readiness_wait_action))
+                        // One live progress card instead of a second "Setup in progress" line.
+                        state.operation?.let { operation ->
+                            ResourceOperationCard(operation, onCancelOperation)
+                        }
                     else ->
                         MiningReadinessActions(
                             action = action,
@@ -849,6 +934,10 @@ internal fun MiningReadinessNotice(
                             onCheckAgain = onCheckAgain,
                             onOpenSettings = onOpenSettings,
                             onImportDictionary = onImportDictionary,
+                            installAnkiDroidLabel = ankiDroidInstallLabel(state.anki),
+                            onOpenAppSettings = onOpenAppSettings,
+                            onInstallDictionary = onInstallDictionary,
+                            onContinueSetup = onContinueSetup,
                         )
                 }
             }
@@ -866,6 +955,10 @@ internal fun MiningReadinessActions(
     onCheckAgain: () -> Unit,
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
     onImportDictionary: () -> Unit,
+    @StringRes installAnkiDroidLabel: Int = R.string.install_ankidroid,
+    onOpenAppSettings: () -> Unit = {},
+    onInstallDictionary: () -> Unit = {},
+    onContinueSetup: () -> Unit = {},
 ) {
     val actionSpec =
         when (action) {
@@ -878,8 +971,8 @@ internal fun MiningReadinessActions(
             MiningReadinessAction.INSTALL_DICTIONARY ->
                 ReadinessActionSpec(
                     R.string.readiness_install_dictionary,
-                    onImportDictionary,
-                    opensSettings = true,
+                    onInstallDictionary,
+                    opensSettings = false,
                 )
             MiningReadinessAction.ENABLE_DICTIONARY ->
                 ReadinessActionSpec(
@@ -889,7 +982,7 @@ internal fun MiningReadinessActions(
                 )
             MiningReadinessAction.INSTALL_ANKIDROID ->
                 ReadinessActionSpec(
-                    R.string.install_or_update_ankidroid,
+                    installAnkiDroidLabel,
                     onInstallAnkiDroid,
                     opensSettings = false,
                 )
@@ -903,6 +996,12 @@ internal fun MiningReadinessActions(
                 ReadinessActionSpec(
                     R.string.readiness_connect_ankidroid,
                     onRequestPermissions,
+                    opensSettings = false,
+                )
+            MiningReadinessAction.ALLOW_IN_SETTINGS ->
+                ReadinessActionSpec(
+                    R.string.allow_in_android_settings,
+                    onOpenAppSettings,
                     opensSettings = false,
                 )
             MiningReadinessAction.CHOOSE_NOTE_TYPE ->
@@ -926,11 +1025,12 @@ internal fun MiningReadinessActions(
         Text(stringResource(actionSpec.label))
     }
     if (!actionSpec.opensSettings) {
+        // Back into the wizard where work remains, not onto Settings' first tab.
         SecondaryActionButton(
-            onClick = { onOpenSettings(null) },
+            onClick = onContinueSetup,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text(stringResource(R.string.open_settings))
+            Text(stringResource(R.string.readiness_continue_setup))
         }
     }
 }

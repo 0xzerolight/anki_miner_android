@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.ThemePalette
+import com.ankiminer.android.ui.theme.ThemePaletteGroupKind
 import com.ankiminer.android.ui.theme.ThemePalettes
 import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.radioActionColors
@@ -53,6 +54,7 @@ internal fun ThemePickerDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
+            val otherLabel = stringResource(R.string.settings_theme_group_other)
             LazyColumn(
                 modifier =
                     Modifier
@@ -61,11 +63,17 @@ internal fun ThemePickerDialog(
                         .selectableGroup(),
                 verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
             ) {
-                ThemePalettes.grouped().forEach { (family, palettes) ->
-                    family?.let {
-                        item(key = "theme-picker-family-$it") {
+                ThemePalettes.grouped().forEach { group ->
+                    val header =
+                        when (group.kind) {
+                            ThemePaletteGroupKind.APP_DEFAULTS -> null
+                            ThemePaletteGroupKind.FAMILY -> group.family
+                            ThemePaletteGroupKind.OTHER -> otherLabel
+                        }
+                    header?.let { title ->
+                        item(key = "theme-picker-group-${group.kind}-${group.family.orEmpty()}") {
                             Text(
-                                text = it,
+                                text = title,
                                 modifier =
                                     Modifier
                                         .fillMaxWidth()
@@ -74,15 +82,15 @@ internal fun ThemePickerDialog(
                             )
                         }
                     }
-                    palettes.forEach { palette ->
+                    group.palettes.forEach { palette ->
                         item(key = palette.key) {
                             ThemePickerRow(
                                 palette = palette,
                                 label =
-                                    if (family == null) {
-                                        palette.displayName
-                                    } else {
+                                    if (group.kind == ThemePaletteGroupKind.FAMILY) {
                                         palette.variantName
+                                    } else {
+                                        palette.displayName
                                     },
                                 selected = palette.key == selectedKey,
                                 onSelect = { onSelect(palette.key) },

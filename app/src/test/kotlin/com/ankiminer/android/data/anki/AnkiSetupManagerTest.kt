@@ -1,5 +1,6 @@
 package com.ankiminer.android.data.anki
 
+import com.ankiminer.android.R
 import com.ankiminer.android.runStartupRecoverySequence
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiReadFailure
@@ -121,6 +122,12 @@ class AnkiSetupManagerTest {
         assertEquals(true, status.retryable)
         assertEquals("The AnkiDroid read timed out", status.stableMessage)
         assertEquals("timeout", requireNotNull(manager.state.value.failure).code)
+        // The status keeps the English stable message for diagnostics; the failure the setup
+        // screens show is said in the user's language.
+        assertEquals(
+            "resource:${R.string.mining_target_provider_timeout}",
+            requireNotNull(manager.state.value.failure).message,
+        )
     }
 
     @Test

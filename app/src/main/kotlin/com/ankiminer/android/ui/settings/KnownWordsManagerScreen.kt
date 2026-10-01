@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -11,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,9 +33,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.MAX_KNOWN_WORDS_MUTATION
@@ -40,8 +45,8 @@ import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.UtilityActionButton
 import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
@@ -49,6 +54,7 @@ import com.ankiminer.android.vm.SetupViewModel
 internal object KnownWordsManagerTestTags {
     const val LIST = "known-words-manager-list"
     const val REMOVE_SELECTED = "known-words-remove-selected"
+    const val SEARCH = "known-words-search"
 
     fun select(word: String): String = "known-words-select:$word"
 }
@@ -64,6 +70,8 @@ internal data class KnownWordsManagerCallbacks(
     val onCancel: () -> Unit = {},
     val onRetry: () -> Unit = {},
     val onDismissFailure: () -> Unit = {},
+    val onConfirmImport: () -> Unit = {},
+    val onDismissImport: () -> Unit = {},
 )
 
 internal enum class KnownWordsListContent {
@@ -104,6 +112,14 @@ internal fun knownWordsListPresentation(
                 page?.hasMore == true,
     )
 }
+
+/**
+ * The one sentence the manager shows when the store holds no words. A store that fails its schema
+ * check is also reported with every count at zero; calling it empty would hide that it is broken.
+ */
+@StringRes
+internal fun knownWordsEmptyMessage(inventory: KnownWordsInventory): Int =
+    if (inventory.schemaOk) R.string.known_words_manager_empty else R.string.known_words_inventory_invalid
 
 /**
  * The selection after tapping [word].
@@ -160,6 +176,8 @@ internal fun KnownWordsManagerRoute(
                 onCancel = setupViewModel::cancelOperation,
                 onRetry = setupViewModel::retryResourceFailure,
                 onDismissFailure = setupViewModel::dismissFailure,
+                onConfirmImport = setupViewModel::confirmKnownWordsImport,
+                onDismissImport = setupViewModel::dismissKnownWordsImportPreview,
             ),
         modifier = modifier,
     )
@@ -227,6 +245,25 @@ internal fun KnownWordsManagerScreen(
         )
     }
 
+    KnownWordsImportPreviewDialog(state, callbacks.onConfirmImport, callbacks.onDismissImport)
+    val knownWords = state.knownWords
+    if (knownWords.totalCount == 0L) {
+        // Nothing to search, remove, export or rebuild: one sentence and the one way in.
+        Column(
+            modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
+            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+        ) {
+            Text(stringResource(knownWordsEmptyMessage(knownWords)))
+            UtilityActionButton(
+                onClick = callbacks.onImport,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text(stringResource(R.string.known_words_choose_file)) }
+            KnownWordsFailure(state, callbacks)
+        }
+        return
+    }
+
     Column(modifier.fillMaxSize()) {
         Column(
             Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.group),
@@ -251,34 +288,11 @@ internal fun KnownWordsManagerScreen(
                 label = { Text(stringResource(R.string.known_words_search)) },
                 singleLine = true,
                 enabled = !state.busy,
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { callbacks.onSearch() }),
+                modifier = Modifier.fillMaxWidth().testTag(KnownWordsManagerTestTags.SEARCH),
             )
-            PrimaryActionButton(
-                onClick = callbacks.onSearch,
-                enabled = !state.busy,
-            ) { Text(stringResource(R.string.known_words_search_action)) }
-            state.failure
-                ?.takeIf { it.origin == ResourceFailureOrigin.KNOWN_WORDS }
-                ?.let { failure ->
-                    InlineFailureContainer(
-                        message = failure.message,
-                        actionLabel =
-                            stringResource(
-                                if (failure.retry.action == ResourceFailureAction.CHOOSE_ANOTHER) {
-                                    R.string.b3_choose_another
-                                } else {
-                                    R.string.b3_retry
-                                },
-                            ),
-                        onAction =
-                            when (knownWordsFailureTarget(failure)) {
-                                KnownWordsFailureTarget.IMPORT -> callbacks.onImport
-                                KnownWordsFailureTarget.EXPORT -> callbacks.onExport
-                                null -> callbacks.onRetry
-                            },
-                        onDismiss = callbacks.onDismissFailure,
-                    )
-                }
+            KnownWordsFailure(state, callbacks)
         }
 
         LazyColumn(
@@ -365,43 +379,76 @@ internal fun KnownWordsManagerScreen(
             Modifier.padding(AnkiMinerTokens.Space.content),
             verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
-            SecondaryActionButton(
-                onClick = {
-                    val batch = selectedWords.toList()
-                    selectedWords = emptySet()
-                    callbacks.onRemove(batch)
-                },
-                enabled = !state.busy && selectedWords.isNotEmpty(),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag(KnownWordsManagerTestTags.REMOVE_SELECTED),
-            ) {
-                Text(stringResource(R.string.known_words_remove_selected, selectedWords.size))
+            if (selectedWords.isNotEmpty()) {
+                SecondaryActionButton(
+                    onClick = {
+                        val batch = selectedWords.toList()
+                        selectedWords = emptySet()
+                        callbacks.onRemove(batch)
+                    },
+                    enabled = !state.busy,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag(KnownWordsManagerTestTags.REMOVE_SELECTED),
+                ) {
+                    Text(stringResource(R.string.known_words_remove_selected, selectedWords.size))
+                }
             }
-            AdaptiveActionGroup(
-                primary = { actionModifier ->
-                    SecondaryActionButton(
-                        onClick = callbacks.onExport,
-                        enabled = !state.busy,
-                        modifier = actionModifier,
-                    ) { Text(stringResource(R.string.known_words_export)) }
-                },
-                secondary = { actionModifier ->
-                    SecondaryActionButton(
-                        onClick = { pendingResetName = KnownWordsResetScope.USER.name },
-                        enabled = !state.busy && state.knownWords.userCount > 0,
-                        modifier = actionModifier,
-                    ) { Text(stringResource(R.string.known_words_reset_user)) }
-                },
-            )
-            SecondaryActionButton(
-                onClick = { pendingResetName = KnownWordsResetScope.CACHE.name },
-                enabled =
-                    !state.busy &&
-                        state.knownWords.ankiCount + state.knownWords.minedCount > 0,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.known_words_rebuild_cache)) }
+            if (knownWords.userCount > 0) {
+                AdaptiveActionGroup(
+                    primary = { actionModifier ->
+                        SecondaryActionButton(
+                            onClick = callbacks.onExport,
+                            enabled = !state.busy,
+                            modifier = actionModifier,
+                        ) { Text(stringResource(R.string.known_words_export)) }
+                    },
+                    secondary = { actionModifier ->
+                        SecondaryActionButton(
+                            onClick = { pendingResetName = KnownWordsResetScope.USER.name },
+                            enabled = !state.busy,
+                            modifier = actionModifier,
+                        ) { Text(stringResource(R.string.known_words_reset_user)) }
+                    },
+                )
+            }
+            if (knownWords.ankiCount + knownWords.minedCount > 0) {
+                SecondaryActionButton(
+                    onClick = { pendingResetName = KnownWordsResetScope.CACHE.name },
+                    enabled = !state.busy,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.known_words_rebuild_cache)) }
+            }
         }
     }
+}
+
+@Composable
+private fun KnownWordsFailure(
+    state: SetupUiState,
+    callbacks: KnownWordsManagerCallbacks,
+) {
+    state.failure
+        ?.takeIf { it.origin == ResourceFailureOrigin.KNOWN_WORDS }
+        ?.let { failure ->
+            InlineFailureContainer(
+                message = failure.message,
+                actionLabel =
+                    stringResource(
+                        if (failure.retry.action == ResourceFailureAction.CHOOSE_ANOTHER) {
+                            R.string.b3_choose_another
+                        } else {
+                            R.string.b3_retry
+                        },
+                    ),
+                onAction =
+                    when (knownWordsFailureTarget(failure)) {
+                        KnownWordsFailureTarget.IMPORT -> callbacks.onImport
+                        KnownWordsFailureTarget.EXPORT -> callbacks.onExport
+                        null -> callbacks.onRetry
+                    },
+                onDismiss = callbacks.onDismissFailure,
+            )
+        }
 }

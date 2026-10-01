@@ -18,6 +18,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -25,6 +26,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -239,6 +242,7 @@ internal fun SettingsRoute(
     requestedCategory: SettingsCategory? = null,
     requestedCategoryItemIndex: Int = 2,
     onCategoryRequestConsumed: () -> Unit = {},
+    onSelectedCategoryChange: (SettingsCategory) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LifecycleStartEffect(viewModel) {
@@ -410,6 +414,7 @@ internal fun SettingsRoute(
         onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
         onCheckForUpdates = onCheckForUpdates,
         onSkipUpdate = onSkipUpdate,
+        onSelectedCategoryChange = onSelectedCategoryChange,
         miningLanguage = languageDefaults?.code ?: LanguageScope.JAPANESE,
         modifier = modifier,
     )
@@ -469,10 +474,12 @@ private fun SettingsScreen(
     onUpdateCheckEnabledChange: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
     onSkipUpdate: () -> Unit,
+    onSelectedCategoryChange: (SettingsCategory) -> Unit = {},
     miningLanguage: String = LanguageScope.JAPANESE,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
+    LaunchedEffect(selectedCategory) { onSelectedCategoryChange(selectedCategory) }
     val listStates = rememberSettingsCategoryListStates()
     val cardIndexRecorder = remember { SettingsCardIndexRecorder() }
     val panelExpansion = rememberSettingsPanelExpansion()
@@ -503,6 +510,9 @@ private fun SettingsScreen(
         }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val searchResults = searchSettings(resolvedEntries, searchQuery)
+    var stickyHeaderPx by remember { mutableIntStateOf(0) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
 
     // A switch into a language with no note type is finished on the Anki tab: no run can start
     // until one is picked (config_map refuses a blank note type).
@@ -527,7 +537,9 @@ private fun SettingsScreen(
                     .first()
             }
         if (index != null) {
-            listStates.getValue(SettingsCategory.ANKI).scrollToItem(index)
+            focusManager.clearFocus()
+            keyboard?.hide()
+            listStates.getValue(SettingsCategory.ANKI).scrollBelowStickyHeader(index) { stickyHeaderPx }
             cardIndexRecorder.highlightedKey = NOTE_TYPE_CARD_KEY
             delay(HIGHLIGHT_MILLIS)
             cardIndexRecorder.highlightedKey = null
@@ -563,7 +575,9 @@ private fun SettingsScreen(
                 jump.targetCardKey == null -> jump.itemIndex
                 else -> SettingsCardIndexRecorder.FIRST_CARD_INDEX
             }
-        listStates.getValue(jump.category).scrollToItem(targetIndex)
+        focusManager.clearFocus()
+        keyboard?.hide()
+        listStates.getValue(jump.category).scrollBelowStickyHeader(targetIndex) { stickyHeaderPx }
         onCategoryRequestConsumed()
     }
 
@@ -645,6 +659,7 @@ private fun SettingsScreen(
             onSelectedCategory = { selectedCategory = it },
             onClearQuery = { searchQuery = "" },
             onExpandCard = panelExpansion::expand,
+            stickyHeaderPx = { stickyHeaderPx },
         ) { onResultChosen ->
             SettingsCategoryLayout(
                 selectedCategory = selectedCategory,
@@ -655,6 +670,7 @@ private fun SettingsScreen(
                 onQueryChange = { searchQuery = it },
                 results = searchResults,
                 onResultChosen = onResultChosen,
+                onStickyHeaderHeightChange = { stickyHeaderPx = it },
                 recorder = cardIndexRecorder,
                 listStates = listStates,
                 modifier = modifier,
@@ -682,7 +698,6 @@ private fun SettingsScreen(
                                 onOpenAppSettings = onOpenAppSettings,
                                 onInstallAnkiDroid = onInstallAnkiDroid,
                                 onOpenAnkiDroid = onOpenAnkiDroid,
-                                compact = true,
                                 onInstallUniDic = setupViewModel::installUniDic,
                                 onChooseNoteType = {
                                     selectedCategory = SettingsCategory.ANKI
@@ -771,9 +786,12 @@ internal fun SettingsSearchJumpHandler(
     onSelectedCategory: (SettingsCategory) -> Unit,
     onClearQuery: () -> Unit,
     onExpandCard: (String) -> Unit = {},
+    stickyHeaderPx: () -> Int = { 0 },
     onJumpIndexResolved: (Int?) -> Unit = {},
     content: @Composable ((ResolvedSettingsEntry) -> Unit) -> Unit,
 ) {
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     var pendingJumpId by rememberSaveable { mutableStateOf<String?>(null) }
     val pendingEntry = pendingJumpId?.let { id -> entries.firstOrNull { it.id == id } }
     LaunchedEffect(pendingJumpId, pendingEntry) {
@@ -783,6 +801,8 @@ internal fun SettingsSearchJumpHandler(
             pendingJumpId = null
             return@LaunchedEffect
         }
+        focusManager.clearFocus()
+        keyboard?.hide()
         // A previously visited category may still have a now-stale index. Clear it first so the
         // flow below can only resume from the destination's new layout pass.
         recorder.begin(entry.category)
@@ -800,7 +820,7 @@ internal fun SettingsSearchJumpHandler(
             }
         onJumpIndexResolved(index)
         if (index != null) {
-            listStates.getValue(entry.category).scrollToItem(index)
+            listStates.getValue(entry.category).scrollBelowStickyHeader(index, stickyHeaderPx)
             recorder.highlightedKey = entry.cardKey
             delay(HIGHLIGHT_MILLIS)
             recorder.highlightedKey = null
