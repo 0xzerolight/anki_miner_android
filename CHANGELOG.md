@@ -32,6 +32,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Curation definitions open on the sense that matches the word's part of speech, as on desktop.**
 - **Importing a dictionary whose own data names another language says so (Settings -> Resources).** It is still imported.
 - **Jisho is offered only while mining Japanese.** A settings backup cannot turn it on for another language.
+- **Japanese words, sentences and definitions in curation and Reading use Japanese character shapes.** On a phone set to another language some kanji used to show their Chinese forms.
 
 ### Removed
 
