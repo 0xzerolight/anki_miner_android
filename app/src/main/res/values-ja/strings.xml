@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">音声トラックを読み込めませんでした。</string>
     <string name="no_file_selected">ファイル未選択</string>
+    <string name="video_setup_hint">動画とその字幕ファイルを選択してください。</string>
+    <string name="audio_setup_hint">音声ファイルとその字幕ファイルを選択してください。</string>
     <string name="choose_file">選択</string>
     <string name="replace_file">置き換え</string>
     <string name="choose_file_description">%1$sを選択</string>

@@ -100,6 +100,10 @@ import com.ankiminer.android.ui.mining.rememberClipboardWriter
 import com.ankiminer.android.ui.mining.translationFor
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.TextButton
+import com.ankiminer.android.ui.theme.accentTextButtonColors
+import com.ankiminer.android.ui.theme.SupportingText
 import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
@@ -691,26 +695,58 @@ private fun LazyListScope.setupItems(
                     ),
         )
     }
-    item(key = "subtitle_offset", contentType = "field") {
-        NumericField(
-            value = state.subtitleOffsetDraft,
-            onChange = onSubtitleOffsetDraftChange,
-            label = stringResource(labels.subtitleOffsetLabel),
-            allowNegative = true,
-            enabled = !state.timingPreviewPending,
-            error =
-                stringResource(R.string.b3_validation_numeric_incomplete)
-                    .takeIf { state.subtitleOffsetDraftInvalid },
-            modifier = Modifier.testTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD),
-            placeholder = {
-                Text(
-                    stringResource(
-                        R.string.video_subtitle_offset_placeholder,
-                        state.effectiveSubtitleOffset.toString(),
-                    ),
+    if (state.video.document == null && state.subtitle.document == null) {
+        item(key = "setup_hint", contentType = "hint") {
+            SupportingText(
+                text = stringResource(labels.setupHint),
+                modifier = Modifier.testTag(VideoMiningTestTags.SETUP_HINT),
+            )
+        }
+    }
+    if (state.subtitle.document != null) {
+        item(key = "subtitle_offset", contentType = "field") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                verticalAlignment = Alignment.Top,
+            ) {
+                NumericField(
+                    value = state.subtitleOffsetDraft,
+                    onChange = onSubtitleOffsetDraftChange,
+                    label = stringResource(labels.subtitleOffsetLabel),
+                    allowNegative = true,
+                    enabled = !state.timingPreviewPending,
+                    error =
+                        stringResource(R.string.b3_validation_numeric_incomplete)
+                            .takeIf { state.subtitleOffsetDraftInvalid },
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .testTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD),
+                    placeholder = {
+                        Text(
+                            stringResource(
+                                R.string.video_subtitle_offset_placeholder,
+                                state.effectiveSubtitleOffset.toString(),
+                            ),
+                        )
+                    },
                 )
-            },
-        )
+                // Test timing lives with the offset it tests (desktop A05).
+                TextButton(
+                    onClick = onTestTiming,
+                    enabled = state.canTestTiming,
+                    modifier =
+                        Modifier
+                            .padding(top = AnkiMinerTokens.Space.related)
+                            .heightIn(min = 48.dp)
+                            .testTag(VideoMiningTestTags.TEST_TIMING),
+                    colors = accentTextButtonColors(),
+                ) {
+                    Text(stringResource(R.string.timing_preview_test_action))
+                }
+            }
+        }
     }
     if (state.secondarySubtitleEnabled) {
         item(key = "secondary_subtitle_offset", contentType = "field") {
@@ -764,18 +800,9 @@ private fun LazyListScope.setupItems(
             )
         }
     }
-    item(key = "start", contentType = "actions") {
-        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            SecondaryActionButton(
-                onClick = onTestTiming,
-                enabled = state.canTestTiming,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag(VideoMiningTestTags.TEST_TIMING),
-            ) {
-                Text(stringResource(R.string.timing_preview_test_action))
-            }
+    // No probe on pick: it would take the runtime lease before the user asked for tracks.
+    if (labels.showsAudioTracks && state.video.document != null) {
+        item(key = "audio_tracks", contentType = "actions") {
             SecondaryActionButton(
                 onClick = onAudioTracks,
                 enabled = state.canPickAudioTracks,
@@ -796,6 +823,10 @@ private fun LazyListScope.setupItems(
                     Text(stringResource(R.string.audio_tracks_button))
                 }
             }
+        }
+    }
+    item(key = "start", contentType = "actions") {
+        Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             if (state.audioFieldUnmapped) {
                 MiningFailureCard(
                     message = stringResource(R.string.audio_field_unmapped_warning),

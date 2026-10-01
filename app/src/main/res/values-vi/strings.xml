@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">Không thể đọc các bản âm thanh.</string>
     <string name="no_file_selected">Chưa chọn tệp</string>
+    <string name="video_setup_hint">Chọn video và tệp phụ đề của video.</string>
+    <string name="audio_setup_hint">Chọn tệp âm thanh và tệp phụ đề của tệp đó.</string>
     <string name="choose_file">Chọn</string>
     <string name="replace_file">Thay thế</string>
     <string name="choose_file_description">Chọn %1$s</string>

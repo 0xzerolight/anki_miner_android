@@ -11,6 +11,7 @@ object VideoMiningTestTags {
     const val PICK_SECONDARY_SUBTITLE = "pick_secondary_subtitle"
     const val CLEAR_SECONDARY_SUBTITLE = "clear_secondary_subtitle"
     const val SECONDARY_SUBTITLE_OFFSET_FIELD = "secondary_subtitle_offset_field"
+    const val SETUP_HINT = "setup_hint"
     const val TEST_TIMING = "test_timing"
     const val START = "start_mining"
     const val PROGRESS = "mining_progress"

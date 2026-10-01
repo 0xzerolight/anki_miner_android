@@ -12,6 +12,10 @@ data class MediaMiningLabels(
     @param:StringRes val transcriptLabel: Int,
     @param:StringRes val subtitleOffsetLabel: Int,
     @param:StringRes val resultSource: Int,
+    /** Shown while nothing is chosen yet: what the two pickers below want. */
+    @param:StringRes val setupHint: Int,
+    /** Video files carry several audio streams; an audio file is the one stream. */
+    val showsAudioTracks: Boolean,
 ) {
     companion object {
         val VIDEO =
@@ -22,6 +26,8 @@ data class MediaMiningLabels(
                 R.string.subtitle_file_label,
                 R.string.video_subtitle_offset_label,
                 R.string.result_video,
+                R.string.video_setup_hint,
+                showsAudioTracks = true,
             )
         val AUDIO =
             MediaMiningLabels(
@@ -31,6 +37,8 @@ data class MediaMiningLabels(
                 R.string.subtitle_file_label,
                 R.string.video_subtitle_offset_label,
                 R.string.result_audio,
+                R.string.audio_setup_hint,
+                showsAudioTracks = false,
             )
     }
 }

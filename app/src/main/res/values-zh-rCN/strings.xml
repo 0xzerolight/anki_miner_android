@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">无法读取音轨。</string>
     <string name="no_file_selected">未选择文件</string>
+    <string name="video_setup_hint">请选择视频及其字幕文件。</string>
+    <string name="audio_setup_hint">请选择音频文件及其字幕文件。</string>
     <string name="choose_file">选择</string>
     <string name="replace_file">替换</string>
     <string name="choose_file_description">选择 %1$s</string>

@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">Non è stato possibile leggere le tracce audio.</string>
     <string name="no_file_selected">Nessun file selezionato</string>
+    <string name="video_setup_hint">Scegli un video e il relativo file di sottotitoli.</string>
+    <string name="audio_setup_hint">Scegli un file audio e il relativo file di sottotitoli.</string>
     <string name="choose_file">Scegli</string>
     <string name="replace_file">Sostituisci</string>
     <string name="choose_file_description">Scegli %1$s</string>

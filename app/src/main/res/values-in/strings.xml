@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">Trek audio tidak dapat dibaca.</string>
     <string name="no_file_selected">Tidak ada berkas yang dipilih</string>
+    <string name="video_setup_hint">Pilih video dan berkas subtitelnya.</string>
+    <string name="audio_setup_hint">Pilih berkas audio dan berkas subtitelnya.</string>
     <string name="choose_file">Pilih</string>
     <string name="replace_file">Ganti</string>
     <string name="choose_file_description">Pilih %1$s</string>

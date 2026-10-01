@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">Не удалось прочитать аудиодорожки.</string>
     <string name="no_file_selected">Файл не выбран</string>
+    <string name="video_setup_hint">Выберите видео и файл субтитров к нему.</string>
+    <string name="audio_setup_hint">Выберите аудиофайл и файл субтитров к нему.</string>
     <string name="choose_file">Выбрать</string>
     <string name="replace_file">Заменить</string>
     <string name="choose_file_description">Выбрать %1$s</string>

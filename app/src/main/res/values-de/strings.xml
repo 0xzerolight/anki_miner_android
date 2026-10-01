@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">Audiospuren konnten nicht gelesen werden.</string>
     <string name="no_file_selected">Keine Datei ausgewählt</string>
+    <string name="video_setup_hint">Wählen Sie ein Video und die zugehörige Untertiteldatei.</string>
+    <string name="audio_setup_hint">Wählen Sie eine Audiodatei und die zugehörige Untertiteldatei.</string>
     <string name="choose_file">Auswählen</string>
     <string name="replace_file">Ersetzen</string>
     <string name="choose_file_description">%1$s auswählen</string>

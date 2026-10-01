@@ -70,6 +70,7 @@ import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_TOOLS_TOGGLE_TEST_TAG
 import com.ankiminer.android.ui.mining.MAX_SAVEABLE_QUERY_LENGTH
+import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MINING_FAILURE_TEST_TAG
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import kotlinx.coroutines.runBlocking
@@ -267,13 +268,28 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun audioTracksButtonVisibleButDisabledWithoutVideo() {
+    fun idleWithNothingChosenShowsOnlyTheHintAndThePickers() {
         setScreen(state = VideoMiningUiState())
 
-        composeRule
-            .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(VideoMiningTestTags.AUDIO_TRACKS))
-        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SETUP_HINT).assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.TEST_TIMING).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertDoesNotExist()
+    }
+
+    @Test
+    fun theAudioLaneNeverOffersAudioTracks() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    video = DocumentSlotState(document("audio", "episode.m4a")),
+                    subtitle = DocumentSlotState(document("subtitle", "episode.srt")),
+                ),
+            labels = MediaMiningLabels.AUDIO,
+        )
+
+        composeRule.onNodeWithTag(VideoMiningTestTags.SUBTITLE_OFFSET_FIELD).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.AUDIO_TRACKS).assertDoesNotExist()
     }
 
     @Test
@@ -2464,6 +2480,7 @@ class VideoMiningScreenTest {
 
     private fun setScreen(
         state: VideoMiningUiState,
+        labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
@@ -2487,6 +2504,7 @@ class VideoMiningScreenTest {
             AnkiMinerTheme {
                 ScreenUnderTest(
                     state = state,
+                    labels = labels,
                     onPickVideo = onPickVideo,
                     onPickSubtitle = onPickSubtitle,
                     onStart = onStart,
@@ -2514,6 +2532,7 @@ class VideoMiningScreenTest {
     @androidx.compose.runtime.Composable
     private fun ScreenUnderTest(
         state: VideoMiningUiState,
+        labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
         onPickVideo: () -> Unit = {},
         onPickSubtitle: () -> Unit = {},
         onStart: () -> Unit = {},
@@ -2550,6 +2569,7 @@ class VideoMiningScreenTest {
     ) {
         VideoMiningScreen(
             state = state,
+            labels = labels,
             onPickVideo = onPickVideo,
             onPickSubtitle = onPickSubtitle,
             onClearVideo = {},

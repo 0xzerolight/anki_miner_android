@@ -52,6 +52,8 @@
     <string name="audio_tracks_channels_n">%1$dch</string>
     <string name="audio_tracks_probe_error">Não foi possível ler as faixas de áudio.</string>
     <string name="no_file_selected">Nenhum arquivo selecionado</string>
+    <string name="video_setup_hint">Escolha um vídeo e o arquivo de legendas dele.</string>
+    <string name="audio_setup_hint">Escolha um arquivo de áudio e o arquivo de legendas dele.</string>
     <string name="choose_file">Escolher</string>
     <string name="replace_file">Substituir</string>
     <string name="choose_file_description">Escolher %1$s</string>
