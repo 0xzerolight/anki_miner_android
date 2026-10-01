@@ -91,7 +91,9 @@ class SettingsSearchJumpTest {
         }
         val list = composeRule.onNodeWithTag(SettingsCategoryTestTags.LIST)
         composeRule.onNodeWithText("header-marker").assertIsDisplayed()
-        composeRule.onNodeWithText(ankiTab).assertIsDisplayed()
+        // Exists, not displayed: the fixture opens on Diagnostics, so the strip has scrolled the
+        // first tab out of view.
+        composeRule.onNodeWithText(ankiTab).assertExists()
 
         composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("katakana")
         composeRule.onNodeWithText("header-marker").assertDoesNotExist()
