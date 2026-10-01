@@ -15,6 +15,7 @@ object VideoMiningTestTags {
     const val START = "start_mining"
     const val PROGRESS = "mining_progress"
     const val SELECT_ALL = "select_all_candidates"
+    const val FINISH_CURATION = "finish_curation"
     const val DEFINITION = "curation_definition"
     const val CUES_UNAVAILABLE = "curation_cues_unavailable"
     const val CONFIRM_CURATION = "confirm_curation"

@@ -62,6 +62,7 @@ import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.curationDefinitionMaxHeight
 import com.ankiminer.android.ui.mining.curationMediaMaxHeight
+import com.ankiminer.android.ui.mining.curationVisibleSelection
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
@@ -122,7 +123,6 @@ fun VideoMiningScreen(
     onSetCandidateSelected: (String, Boolean) -> Unit,
     onMarkCandidateKnown: (String, Boolean) -> Unit,
     onSetSelectionForVisible: (List<String>, Boolean) -> Unit,
-    onSetSelectionForPage: (Boolean) -> Unit,
     onReconcileFocus: (List<String>, List<String>) -> Unit,
     onSelectSentence: (String, String) -> Unit,
     onExpandSentencePrev: (String) -> Unit = {},
@@ -131,6 +131,7 @@ fun VideoMiningScreen(
     onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
     onResetClipWindow: (String) -> Unit = {},
     onConfirmCuration: () -> Unit,
+    onFinishCuration: () -> Unit = {},
     onCancel: () -> Unit,
     onRetry: () -> Unit,
     onReset: () -> Unit,
@@ -304,22 +305,13 @@ fun VideoMiningScreen(
             // Scoped to the projection, not the whole protocol page: a filtered bulk action must
             // not silently reach rows the search is hiding.
             val bulkSelectionScope =
-                remember(
-                    visibleCandidateIds,
-                    targetCuration?.candidates,
-                    targetCuration?.knownCandidateIds,
-                ) {
+                remember(visibleCandidateIds, targetCuration?.knownCandidateIds) {
                     curationBulkSelectionScope(
                         visibleCandidateIds = visibleCandidateIds,
-                        pageCandidateIds =
-                            targetCuration?.candidates.orEmpty().map { it.candidateId },
                         knownCandidateIds = targetCuration?.knownCandidateIds.orEmpty(),
                     )
                 }
             val selectableVisibleCandidateIds = bulkSelectionScope.visibleCandidateIds
-            val allVisibleSelected =
-                selectableVisibleCandidateIds.isNotEmpty() &&
-                    selectedCandidateIds.containsAll(selectableVisibleCandidateIds)
             val phaseTitle = stringResource(targetState.phaseTitle(labels))
             // Hoisted so the trim row's play button (mounted separately, inside curationItems)
             // can reach the same player instance the preview surface below is bound to. The
@@ -372,27 +364,31 @@ fun VideoMiningScreen(
                     if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
                         CurationChrome(
                             selectedCount = targetCuration.selectedCount,
+                            runSelectedCount =
+                                targetCuration.previousPageSelectedCount + targetCuration.selectedCount,
                             candidateCount = targetCuration.candidates.size,
                             page = targetCuration.page,
+                            isFinalPage = targetCuration.isFinalPage,
                             query = query,
                             filter = filter,
                             sort = sort,
                             enabled = !targetState.curationPending && !targetState.cancelPending,
+                            visibleSelection =
+                                curationVisibleSelection(selectableVisibleCandidateIds, selectedCandidateIds),
                             visibleCount = bulkSelectionScope.visibleCount,
-                            allVisibleSelected = allVisibleSelected,
                             selectVisibleEnabled =
                                 selectableVisibleCandidateIds.isNotEmpty() &&
                                     !targetState.curationPending &&
                                     !targetState.cancelPending,
-                            pageCandidateCount = bulkSelectionScope.pageCandidateCount,
                             selectAllTestTag = VideoMiningTestTags.SELECT_ALL,
+                            finishTestTag = VideoMiningTestTags.FINISH_CURATION,
                             onQueryChanged = { query = it },
                             onFilterChanged = { filterName = it.name },
                             onSortChanged = { sortName = it.name },
                             onSetSelectionForVisible = { select ->
                                 onSetSelectionForVisible(selectableVisibleCandidateIds, select)
                             },
-                            onSelectWholePage = { onSetSelectionForPage(true) },
+                            onFinishCuration = onFinishCuration,
                             modifier =
                                 Modifier.padding(
                                     start = AnkiMinerTokens.Space.content,

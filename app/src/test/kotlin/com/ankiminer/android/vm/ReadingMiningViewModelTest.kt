@@ -1080,7 +1080,10 @@ class ReadingMiningViewModelTest {
             val viewModel = ReadingMiningViewModel(repository, ImmediateSafBroker())
             runCurrent()
 
-            viewModel.setSelectionForPage(false)
+            viewModel.setSelectionForVisible(
+                (repository.state.value as MiningRunState.Curating).request.candidates.map { it.candidateId },
+                false,
+            )
             viewModel.confirmCuration()
             runCurrent()
 

@@ -301,8 +301,9 @@ class ReadingMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithText("Page 2 of 2 · 3–4 of 4").assertExists()
+        composeRule.onNodeWithText("2 selected · page 2 of 2").assertExists()
         composeRule.onNodeWithText("Finish (2)").assertIsDisplayed()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.FINISH_CURATION).assertDoesNotExist()
     }
 
     @Test
@@ -600,7 +601,6 @@ class ReadingMiningScreenTest {
                     onSetCandidateSelected = { _, _ -> },
                     onMarkCandidateKnown = { _, _ -> },
                     onSetSelectionForVisible = { _, _ -> },
-                    onSetSelectionForPage = {},
                     onReconcileFocus = { _, _ -> },
                     onSelectSentence = { id, sentenceId ->
                         val curation = requireNotNull(state.curation)
@@ -743,7 +743,6 @@ class ReadingMiningScreenTest {
                     onSetCandidateSelected = { _, _ -> },
                     onMarkCandidateKnown = { _, _ -> },
                     onSetSelectionForVisible = { _, _ -> },
-                    onSetSelectionForPage = {},
                     onReconcileFocus = { _, _ -> },
                     onSelectSentence = { _, _ -> },
                     onConfirmCuration = {},
@@ -761,7 +760,7 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun readingToolsToggleCollapsesAndRestoresSearchAndFilterControls() {
+    fun readingToolsStartFoldedOnASmallPageAndOpenOnDemand() {
         val request = request(CurationPage(0, 2, 0, 4))
         setScreen(
             state =
@@ -771,12 +770,15 @@ class ReadingMiningScreenTest {
                 ),
         )
 
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SELECT_ALL).assertIsDisplayed()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SELECT_ALL).assertIsDisplayed()
         composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(ReadingMiningTestTags.SELECT_ALL).assertIsDisplayed()
     }
 
     @Test
@@ -794,6 +796,7 @@ class ReadingMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).performClick()
         composeRule.onNodeWithText("Excluded").performClick()
 
@@ -1003,6 +1006,12 @@ class ReadingMiningScreenTest {
             .assertIsDisplayed()
     }
 
+    private fun openCurationTools() {
+        if (composeRule.onAllNodesWithTag(CURATION_SEARCH_TEST_TAG).fetchSemanticsNodes().isEmpty()) {
+            composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        }
+    }
+
     private fun setScreen(
         state: ReadingMiningUiState,
         onPickSource: () -> Unit = {},
@@ -1050,7 +1059,6 @@ class ReadingMiningScreenTest {
             onSetCandidateSelected = { _, _ -> },
             onMarkCandidateKnown = onMarkCandidateKnown,
             onSetSelectionForVisible = { _, _ -> },
-            onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
             onSelectSentence = { _, _ -> },
             onConfirmCuration = {},

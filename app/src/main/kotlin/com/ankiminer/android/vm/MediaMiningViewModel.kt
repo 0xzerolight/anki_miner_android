@@ -911,15 +911,6 @@ class MediaMiningViewModel internal constructor(
         saveCurationSession(request)
     }
 
-    /**
-     * Page-wide selection, kept distinct from the visible-scope action so the UI can label each
-     * one for what it actually reaches.
-     */
-    fun setSelectionForPage(selected: Boolean) {
-        val request = (repository.state.value as? MiningRunState.Curating)?.request ?: return
-        setSelectionForVisible(request.candidates.map { it.candidateId }, selected)
-    }
-
     /** Called when search, filter, or sort changes which candidates remain on screen. */
     fun reconcileCurationFocus(
         visibleCandidateIds: List<String>,

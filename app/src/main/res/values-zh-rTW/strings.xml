@@ -90,11 +90,9 @@
     <string name="cancel_mining_keep">繼續採集</string>
     <string name="curation_title">單字整理</string>
     <string name="curation_selected_count">已選取 %1$d／%2$d</string>
-    <string name="curation_selected_count_page">此頁已選取 %1$d／%2$d</string>
-    <string name="curation_page_position">第 %1$d／%2$d 頁 · %3$d–%4$d／%5$d</string>
+    <string name="curation_header_paged">已選取 %1$d · 第 %2$d／%3$d 頁</string>
     <string name="select_visible">選取可見項目（%1$d）</string>
     <string name="deselect_visible">取消選取可見項目（%1$d）</string>
-    <string name="curation_select_whole_page">選取此頁全部 %1$d 項</string>
     <string name="curation_include_word">納入 %1$s</string>
     <string name="curation_exclude_word">排除 %1$s</string>
     <string name="curation_add_known">加入已知單字</string>
@@ -142,7 +140,6 @@
     <string name="curation_sort_occurrences">出現次數</string>
     <string name="curation_filter_action">篩選器：%1$s</string>
     <string name="curation_sort_action">排序：%1$s</string>
-    <string name="curation_bulk_action">選取…</string>
     <string name="curation_tools_hide">隱藏搜尋和篩選</string>
     <string name="curation_tools_show">顯示搜尋和篩選</string>
     <plurals name="curation_alternatives_show">

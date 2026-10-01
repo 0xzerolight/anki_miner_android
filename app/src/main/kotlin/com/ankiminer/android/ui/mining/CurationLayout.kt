@@ -22,3 +22,13 @@ private val CurationDefinitionCap = 260.dp
 /** At most half the pane, so the list keeps somewhere to take a swipe. */
 internal fun curationDefinitionMaxHeight(paneHeight: Dp): Dp =
     (paneHeight * 0.5f).coerceIn(CurationDefinitionMinHeight, CurationDefinitionCap)
+
+private const val CURATION_TOOLS_OPEN_MIN_CANDIDATES = 11
+internal const val CURATION_COMPACT_WINDOW_HEIGHT_DP = 720
+
+/** Search and sort start folded when the page fits anyway or the window is short (phones, landscape). */
+internal fun curationToolsStartExpanded(
+    candidateCount: Int,
+    windowHeightDp: Int,
+): Boolean =
+    candidateCount >= CURATION_TOOLS_OPEN_MIN_CANDIDATES && windowHeightDp >= CURATION_COMPACT_WINDOW_HEIGHT_DP

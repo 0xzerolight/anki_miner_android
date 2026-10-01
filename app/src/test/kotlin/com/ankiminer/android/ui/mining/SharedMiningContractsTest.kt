@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.mining
 
+import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationClipWindow
 import com.ankiminer.android.mining.CurationLineExpansion
@@ -142,13 +143,19 @@ class SharedMiningContractsTest {
         val scope =
             curationBulkSelectionScope(
                 visibleCandidateIds = listOf("known", "visible"),
-                pageCandidateIds = listOf("known", "visible", "hidden"),
                 knownCandidateIds = setOf("known"),
             )
 
         assertEquals(listOf("visible"), scope.visibleCandidateIds)
         assertEquals(1, scope.visibleCount)
-        assertEquals(2, scope.pageCandidateCount)
+    }
+
+    @Test
+    fun theHeaderCheckboxIsOnOffOrMixed() {
+        assertEquals(ToggleableState.On, curationVisibleSelection(listOf("a", "b"), setOf("a", "b", "c")))
+        assertEquals(ToggleableState.Off, curationVisibleSelection(listOf("a", "b"), setOf("c")))
+        assertEquals(ToggleableState.Indeterminate, curationVisibleSelection(listOf("a", "b"), setOf("a")))
+        assertEquals(ToggleableState.Off, curationVisibleSelection(emptyList(), setOf("a")))
     }
 
     @Test

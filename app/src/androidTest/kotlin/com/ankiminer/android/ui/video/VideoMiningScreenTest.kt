@@ -19,7 +19,9 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasNoClickAction
 import androidx.compose.ui.test.hasTestTag
@@ -62,7 +64,6 @@ import com.ankiminer.android.ui.mining.ClipWindowSeconds
 import com.ankiminer.android.ui.mining.ClipWindowUiState
 import com.ankiminer.android.ui.mining.CurationPlayerTestTags
 import com.ankiminer.android.ui.mining.ExpansionPreview
-import com.ankiminer.android.ui.mining.CURATION_BULK_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_FILTER_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SEARCH_TEST_TAG
 import com.ankiminer.android.ui.mining.CURATION_SORT_TEST_TAG
@@ -387,7 +388,6 @@ class VideoMiningScreenTest {
             onConfirmCuration = { confirmed = true },
         )
 
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).performClick()
         composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
@@ -1224,7 +1224,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).assertIsNotEnabled()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsNotEnabled()
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate(request.candidates.first().candidateId))
             .assertIsNotEnabled()
@@ -1465,6 +1465,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).performClick()
         composeRule.onNodeWithText("Excluded").performClick()
 
@@ -1509,6 +1510,7 @@ class VideoMiningScreenTest {
         val tailTag = VideoMiningTestTags.candidate("candidate-99")
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).performClick()
         composeRule.onNodeWithText("Occurrences").performClick()
 
@@ -1541,6 +1543,7 @@ class VideoMiningScreenTest {
         val tailTag = VideoMiningTestTags.candidate(candidates.last().candidateId)
 
         composeRule.onNodeWithTag(tailTag).assertDoesNotExist()
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("懐かしい")
 
         composeRule.onNodeWithTag(tailTag).assertIsDisplayed()
@@ -1561,6 +1564,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule
             .onNodeWithTag(CURATION_SEARCH_TEST_TAG)
             .performTextReplacement(oversized)
@@ -1575,7 +1579,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun bulkMenuCountsAndSelectsOnlyEligibleCandidates() {
+    fun headerCheckboxCountsAndSelectsOnlyEligibleCandidates() {
         val known =
             candidate("candidate-known", "match-known", listOf(sentence("s-known", "Known")))
         val visible =
@@ -1603,24 +1607,20 @@ class VideoMiningScreenTest {
             onSetSelectionForVisible = { ids, selected -> bulkChange = ids to selected },
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("match")
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).performClick()
-
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         composeRule
-            .onNodeWithText(context.getString(R.string.select_visible, 1))
-            .assertIsDisplayed()
-        composeRule
-            .onNodeWithText(context.getString(R.string.curation_select_whole_page, 2))
-            .assertIsDisplayed()
-        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).performClick()
+            .onNodeWithTag(VideoMiningTestTags.SELECT_ALL)
+            .assertContentDescriptionEquals(context.getString(R.string.select_visible, 1))
+            .performClick()
         composeRule.runOnIdle {
             assertEquals(listOf(visible.candidateId) to true, bulkChange)
         }
     }
 
     @Test
-    fun toolsToggleCollapsesAndRestoresSearchAndFilterControls() {
+    fun toolsStartFoldedOnASmallPageAndOpenOnDemand() {
         val request = request()
         setScreen(
             state =
@@ -1630,14 +1630,16 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsDisplayed()
+        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsDisplayed()
         composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_FILTER_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_SORT_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_BULK_TEST_TAG).assertDoesNotExist()
-        composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
-        composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).assertExists()
+        composeRule.onNodeWithTag(VideoMiningTestTags.SELECT_ALL).assertIsDisplayed()
     }
 
     @Test
@@ -1656,6 +1658,7 @@ class VideoMiningScreenTest {
                 ),
         )
 
+        openCurationTools()
         composeRule.onNodeWithTag(CURATION_SEARCH_TEST_TAG).performTextInput("懐かしい")
         composeRule
             .onNodeWithTag(VideoMiningTestTags.candidate("candidate-other"))
@@ -1703,18 +1706,29 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun nonFinalCurationPageShowsPositionAndNextPageAction() {
-        val request = request().copy(page = CurationPage(0, 2, 0, 4))
-        setScreen(
-            state =
-                VideoMiningUiState(
-                    runState = MiningRunState.Curating(request),
-                    curation = curationState(request),
-                ),
-        )
-
-        composeRule.onNodeWithText("Page 1 of 2 · 1–2 of 4").assertExists()
+    fun aMiddlePageShowsTheRunTotalAndFinishBesideNext() {
+        val request = request().copy(page = CurationPage(1, 3, 2, 6))
+        var finished = false
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state =
+                        VideoMiningUiState(
+                            runState = MiningRunState.Curating(request),
+                            curation = curationState(request, previousPageSelectedCount = 3),
+                        ),
+                    onFinishCuration = { finished = true },
+                )
+            }
+        }
+        composeRule.onNodeWithText("5 selected · page 2 of 3").assertExists()
         composeRule.onNodeWithText("Next (2)").assertExists()
+        // Finish counts the whole run (3 earlier + 2 here); Next counts this page.
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.FINISH_CURATION)
+            .assertTextEquals("Finish (5)")
+            .performClick()
+        composeRule.runOnIdle { assertTrue(finished) }
     }
 
     @Test
@@ -2361,6 +2375,12 @@ class VideoMiningScreenTest {
         composeRule.onAllNodesWithText("1 occurrences", substring = true).assertCountEquals(0)
     }
 
+    private fun openCurationTools() {
+        if (composeRule.onAllNodesWithTag(CURATION_SEARCH_TEST_TAG).fetchSemanticsNodes().isEmpty()) {
+            composeRule.onNodeWithTag(CURATION_TOOLS_TOGGLE_TEST_TAG).performClick()
+        }
+    }
+
     private fun setScreen(
         state: VideoMiningUiState,
         onPickVideo: () -> Unit = {},
@@ -2432,6 +2452,7 @@ class VideoMiningScreenTest {
         onSetClipWindow: (String, CurationClipWindow) -> Unit = { _, _ -> },
         onResetClipWindow: (String) -> Unit = {},
         onConfirmCuration: () -> Unit = {},
+        onFinishCuration: () -> Unit = {},
         onCancel: () -> Unit = {},
         onRetry: () -> Unit = {},
         onReset: () -> Unit = {},
@@ -2469,7 +2490,6 @@ class VideoMiningScreenTest {
             onSetCandidateSelected = onSetCandidateSelected,
             onMarkCandidateKnown = onMarkCandidateKnown,
             onSetSelectionForVisible = onSetSelectionForVisible,
-            onSetSelectionForPage = {},
             onReconcileFocus = { _, _ -> },
             onSelectSentence = onSelectSentence,
             onExpandSentencePrev = onExpandSentencePrev,
@@ -2478,6 +2498,7 @@ class VideoMiningScreenTest {
             onSetClipWindow = onSetClipWindow,
             onResetClipWindow = onResetClipWindow,
             onConfirmCuration = onConfirmCuration,
+            onFinishCuration = onFinishCuration,
             onCancel = onCancel,
             onRetry = onRetry,
             onReset = onReset,

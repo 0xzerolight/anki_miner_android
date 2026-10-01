@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.mining
 
+import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.mining.CurationCandidate
 import com.ankiminer.android.mining.CurationClipWindow
@@ -364,7 +365,6 @@ internal enum class CurationSort {
 
 internal data class CurationBulkSelectionScope(
     val visibleCandidateIds: List<String>,
-    val pageCandidateCount: Int?,
 ) {
     val visibleCount: Int
         get() = visibleCandidateIds.size
@@ -372,15 +372,21 @@ internal data class CurationBulkSelectionScope(
 
 internal fun curationBulkSelectionScope(
     visibleCandidateIds: List<String>,
-    pageCandidateIds: List<String>,
     knownCandidateIds: Set<String>,
-): CurationBulkSelectionScope {
-    val selectableVisible = visibleCandidateIds.filterNot(knownCandidateIds::contains)
-    val selectablePageCount = pageCandidateIds.count { it !in knownCandidateIds }
-    return CurationBulkSelectionScope(
-        visibleCandidateIds = selectableVisible,
-        pageCandidateCount = selectablePageCount.takeIf { selectableVisible.size < it },
-    )
+): CurationBulkSelectionScope =
+    CurationBulkSelectionScope(visibleCandidateIds.filterNot(knownCandidateIds::contains))
+
+/** The header checkbox: every eligible visible row selected, none, or some. */
+internal fun curationVisibleSelection(
+    selectableVisibleIds: List<String>,
+    selectedIds: Set<String>,
+): ToggleableState {
+    val selected = selectableVisibleIds.count { it in selectedIds }
+    return when {
+        selected == 0 -> ToggleableState.Off
+        selected == selectableVisibleIds.size -> ToggleableState.On
+        else -> ToggleableState.Indeterminate
+    }
 }
 
 /**

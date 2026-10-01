@@ -90,11 +90,9 @@
     <string name="cancel_mining_keep">Tiếp tục khai thác</string>
     <string name="curation_title">Chọn lọc từ</string>
     <string name="curation_selected_count">Đã chọn %1$d trên %2$d</string>
-    <string name="curation_selected_count_page">Đã chọn %1$d trên %2$d ở trang này</string>
-    <string name="curation_page_position">Trang %1$d trên %2$d · %3$d–%4$d trên %5$d</string>
+    <string name="curation_header_paged">Đã chọn %1$d · trang %2$d/%3$d</string>
     <string name="select_visible">Chọn phần hiển thị (%1$d)</string>
     <string name="deselect_visible">Bỏ chọn phần hiển thị (%1$d)</string>
-    <string name="curation_select_whole_page">Chọn cả %1$d mục ở trang này</string>
     <string name="curation_include_word">Bao gồm %1$s</string>
     <string name="curation_exclude_word">Loại trừ %1$s</string>
     <string name="curation_add_known">Thêm vào từ đã biết</string>
@@ -142,7 +140,6 @@
     <string name="curation_sort_occurrences">Số lần xuất hiện</string>
     <string name="curation_filter_action">Bộ lọc: %1$s</string>
     <string name="curation_sort_action">Sắp xếp: %1$s</string>
-    <string name="curation_bulk_action">Chọn…</string>
     <string name="curation_tools_hide">Ẩn tìm kiếm và bộ lọc</string>
     <string name="curation_tools_show">Hiện tìm kiếm và bộ lọc</string>
     <plurals name="curation_alternatives_show">

@@ -97,11 +97,9 @@
     <string name="cancel_mining_keep">Keep mining</string>
     <string name="curation_title">Word Curation</string>
     <string name="curation_selected_count">%1$d of %2$d selected</string>
-    <string name="curation_selected_count_page">%1$d of %2$d selected on this page</string>
-    <string name="curation_page_position">Page %1$d of %2$d · %3$d–%4$d of %5$d</string>
+    <string name="curation_header_paged">%1$d selected · page %2$d of %3$d</string>
     <string name="select_visible">Select visible (%1$d)</string>
     <string name="deselect_visible">Deselect visible (%1$d)</string>
-    <string name="curation_select_whole_page">Select all %1$d on this page</string>
     <string name="curation_include_word">Include %1$s</string>
     <string name="curation_exclude_word">Exclude %1$s</string>
     <string name="curation_add_known">Add to Known Words</string>
@@ -149,7 +147,6 @@
     <string name="curation_sort_occurrences">Occurrences</string>
     <string name="curation_filter_action">Filter: %1$s</string>
     <string name="curation_sort_action">Sort: %1$s</string>
-    <string name="curation_bulk_action">Select…</string>
     <string name="curation_tools_hide">Hide search and filters</string>
     <string name="curation_tools_show">Show search and filters</string>
     <plurals name="curation_alternatives_show">

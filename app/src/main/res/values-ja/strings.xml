@@ -90,11 +90,9 @@
     <string name="cancel_mining_keep">マイニングを続ける</string>
     <string name="curation_title">単語の選別</string>
     <string name="curation_selected_count">%2$d件中%1$d件を選択</string>
-    <string name="curation_selected_count_page">このページで%2$d件中%1$d件を選択</string>
-    <string name="curation_page_position">ページ %1$d/%2$d · %3$d–%4$d/%5$d</string>
+    <string name="curation_header_paged">選択 %1$d 件 · %2$d/%3$d ページ</string>
     <string name="select_visible">表示中を選択 (%1$d)</string>
     <string name="deselect_visible">表示中を選択解除 (%1$d)</string>
-    <string name="curation_select_whole_page">このページの%1$d件をすべて選択</string>
     <string name="curation_include_word">%1$sを含める</string>
     <string name="curation_exclude_word">%1$sを除外</string>
     <string name="curation_add_known">既知の単語に追加</string>
@@ -142,7 +140,6 @@
     <string name="curation_sort_occurrences">出現回数順</string>
     <string name="curation_filter_action">絞り込み: %1$s</string>
     <string name="curation_sort_action">並び替え: %1$s</string>
-    <string name="curation_bulk_action">選択…</string>
     <string name="curation_tools_hide">検索とフィルターを隠す</string>
     <string name="curation_tools_show">検索とフィルターを表示</string>
     <plurals name="curation_alternatives_show">

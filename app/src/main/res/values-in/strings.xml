@@ -90,11 +90,9 @@
     <string name="cancel_mining_keep">Lanjutkan mining</string>
     <string name="curation_title">Kurasi Kata</string>
     <string name="curation_selected_count">%1$d dari %2$d dipilih</string>
-    <string name="curation_selected_count_page">%1$d dari %2$d dipilih di halaman ini</string>
-    <string name="curation_page_position">Halaman %1$d dari %2$d · %3$d–%4$d dari %5$d</string>
+    <string name="curation_header_paged">%1$d dipilih · halaman %2$d dari %3$d</string>
     <string name="select_visible">Pilih yang terlihat (%1$d)</string>
     <string name="deselect_visible">Batalkan pilihan yang terlihat (%1$d)</string>
-    <string name="curation_select_whole_page">Pilih semua %1$d di halaman ini</string>
     <string name="curation_include_word">Sertakan %1$s</string>
     <string name="curation_exclude_word">Kecualikan %1$s</string>
     <string name="curation_add_known">Tambahkan ke Kata yang Dikenal</string>
@@ -142,7 +140,6 @@
     <string name="curation_sort_occurrences">Kemunculan</string>
     <string name="curation_filter_action">Filter: %1$s</string>
     <string name="curation_sort_action">Urutkan: %1$s</string>
-    <string name="curation_bulk_action">Pilih…</string>
     <string name="curation_tools_hide">Sembunyikan pencarian dan filter</string>
     <string name="curation_tools_show">Tampilkan pencarian dan filter</string>
     <plurals name="curation_alternatives_show">

@@ -15,6 +15,7 @@ object ReadingMiningTestTags {
     const val START = "reading_start_mining"
     const val PROGRESS = "reading_mining_progress"
     const val SELECT_ALL = "reading_select_all_candidates"
+    const val FINISH_CURATION = "reading_finish_curation"
     const val DEFINITION = "reading_curation_definition"
     const val CONFIRM_CURATION = "reading_confirm_curation"
     const val CANCEL = "reading_cancel_mining"
