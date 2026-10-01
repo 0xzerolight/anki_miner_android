@@ -169,18 +169,20 @@
     <string name="success_title">Mining complete</string>
     <string name="cancelled_title">Mining cancelled</string>
     <string name="failed_title">Mining stopped</string>
-    <string name="partial_result_title">Notes added</string>
-    <string name="result_video">Video: %1$s</string>
-    <string name="result_audio">Audio: %1$s</string>
-    <string name="result_subtitle">Subtitles: %1$s</string>
-    <string name="result_reading_source">Reading source: %1$s</string>
-    <string name="result_reading_archive">Mokuro image archive: %1$s</string>
     <string name="result_more_items">+%1$d more</string>
-    <string name="result_mined_forms">Mined forms: %1$s</string>
-    <string name="result_card_ids">Anki note IDs: %1$s</string>
     <string name="result_no_items">None</string>
-    <string name="result_unknown_file">Unknown file</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="one">%1$d note added to %2$s</item>
+        <item quantity="other">%1$d notes added to %2$s</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="one">%1$d note added</item>
+        <item quantity="other">%1$d notes added</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">Run cancelled. Nothing was added.</string>
+    <string name="result_nothing_added">No new notes were added.</string>
+    <string name="result_detail_line">%1$s: %2$s</string>
     <string name="undo_mining_run">Undo (%1$d notes)</string>
     <string name="undo_confirm_title">Undo this run?</string>
     <string name="undo_confirm_message">Delete %1$d notes from Anki? This cannot be undone.</string>
@@ -191,7 +193,6 @@
     <string name="mining_notice_no_definition">No dictionary entry for %1$d word(s): %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Frequency cutoff ignored: no ranked frequency source is loaded. Add one under Settings → Resources.</string>
     <string name="mining_failure_resources_stale">These resources need reimporting after the app update: %1$s. Reimport them under Settings → Resources.</string>
-    <string name="result_metric_created">Created</string>
     <string name="result_metric_skipped_new">Skipped / new</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">Comprehension</string>

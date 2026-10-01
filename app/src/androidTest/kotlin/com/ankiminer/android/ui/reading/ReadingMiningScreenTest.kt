@@ -387,7 +387,7 @@ class ReadingMiningScreenTest {
     }
 
     @Test
-    fun terminalResultUsesRetainedNamesWithoutExposingEnginePaths() {
+    fun terminalResultNeverShowsEnginePaths() {
         val rawSourcePath = "/data/user/0/com.ankiminer.android/cache/run/private.mokuro"
         val rawArchivePath = "/proc/self/fd/57"
         val result =
@@ -407,9 +407,8 @@ class ReadingMiningScreenTest {
 
         composeRule
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
-            .performScrollToNode(hasTestTag(ReadingMiningTestTags.RESULT))
-        composeRule.onNodeWithText("Reading source: Retained source.mokuro").assertExists()
-        composeRule.onNodeWithText("Mokuro image archive: Retained source.cbz").assertExists()
+            .performScrollToNode(hasText("Details"))
+        composeRule.onNodeWithText("Details").performClick()
         composeRule.onNodeWithText(rawSourcePath, substring = true).assertDoesNotExist()
         composeRule.onNodeWithText(rawArchivePath, substring = true).assertDoesNotExist()
     }

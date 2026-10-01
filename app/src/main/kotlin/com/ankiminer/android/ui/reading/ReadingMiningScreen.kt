@@ -81,7 +81,7 @@ import com.ankiminer.android.ui.mining.MiningAdvisoryLines
 import com.ankiminer.android.ui.mining.MiningFailureCard
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
-import com.ankiminer.android.ui.mining.MiningResultSource
+import com.ankiminer.android.ui.mining.MiningResultHeadline
 import com.ankiminer.android.ui.mining.MiningResultUndoAction
 import com.ankiminer.android.ui.mining.MiningUndoConfirmationDialog
 import com.ankiminer.android.ui.mining.ReconcileCurationFocus
@@ -94,6 +94,7 @@ import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.curationBulkSelectionScope
 import com.ankiminer.android.ui.mining.curationGroupGap
 import com.ankiminer.android.ui.mining.curationRowContainerColor
+import com.ankiminer.android.ui.mining.miningResultHeadline
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
@@ -301,16 +302,6 @@ fun ReadingMiningScreen(
                 }
             val selectableVisibleCandidateIds = bulkSelectionScope.visibleCandidateIds
             val phaseTitle = stringResource(targetState.phaseTitle())
-            val terminalSourceDisplayName =
-                when (targetState.sourceMode) {
-                    ReadingSourceMode.FILE -> targetState.source.document?.displayName
-                    ReadingSourceMode.PASTED_TEXT ->
-                        stringResource(R.string.reading_source_mode_text)
-                }
-            val terminalArchiveDisplayName =
-                targetState.archive.document?.displayName.takeIf {
-                    targetState.sourceMode == ReadingSourceMode.FILE
-                }
             // The pane title and insets belong to the whole phase, the CONTENT tag and its scroll
             // semantics only to the list — every performScrollToNode resolves against that node.
             BoxWithConstraints(
@@ -458,10 +449,8 @@ fun ReadingMiningScreen(
                             is MiningRunState.Success ->
                                 terminalItems(
                                     title = R.string.success_title,
+                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
                                     result = runState.result,
-                                    sourceDisplayName = terminalSourceDisplayName,
-                                    archiveDisplayName = terminalArchiveDisplayName,
-                                    partial = false,
                                     failed = false,
                                     failureDetails = null,
                                     canRetry = false,
@@ -485,10 +474,8 @@ fun ReadingMiningScreen(
                             is MiningRunState.Cancelled ->
                                 terminalItems(
                                     title = R.string.cancelled_title,
+                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
                                     result = runState.result,
-                                    sourceDisplayName = terminalSourceDisplayName,
-                                    archiveDisplayName = terminalArchiveDisplayName,
-                                    partial = runState.result?.cardsCreated?.let { it > 0 } == true,
                                     failed = false,
                                     failureDetails = null,
                                     canRetry = false,
@@ -512,10 +499,8 @@ fun ReadingMiningScreen(
                             is MiningRunState.Failed ->
                                 terminalItems(
                                     title = R.string.failed_title,
+                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
                                     result = runState.result,
-                                    sourceDisplayName = terminalSourceDisplayName,
-                                    archiveDisplayName = terminalArchiveDisplayName,
-                                    partial = runState.result?.cardsCreated?.let { it > 0 } == true,
                                     failed = true,
                                     failureDetails = runState.failure.message,
                                     canRetry =
@@ -1044,10 +1029,8 @@ private fun LazyListScope.curationItems(
 
 private fun LazyListScope.terminalItems(
     title: Int,
+    headline: MiningResultHeadline?,
     result: ProcessingResult?,
-    sourceDisplayName: String?,
-    archiveDisplayName: String?,
-    partial: Boolean,
     failed: Boolean,
     failureDetails: String?,
     canRetry: Boolean,
@@ -1097,24 +1080,17 @@ private fun LazyListScope.terminalItems(
             )
         }
     }
-    result?.let { finalResult ->
+    headline?.let { lead ->
         miningResultItems(
-            result = finalResult,
-            sources =
-                buildList {
-                    add(MiningResultSource(R.string.result_reading_source, sourceDisplayName))
-                    archiveDisplayName?.let { archive ->
-                        add(MiningResultSource(R.string.result_reading_archive, archive))
-                    }
-                },
-            partial = partial,
+            headline = lead,
+            result = result,
             failed = failed,
             detailsExpanded = detailsExpanded,
             testTag = ReadingMiningTestTags.RESULT,
             keyPrefix = "reading_terminal_result",
             onToggleDetails = onToggleDetails,
             undo =
-                finalResult.cardIds.takeIf { it.isNotEmpty() }?.let { cardIds ->
+                result?.cardIds?.takeIf { it.isNotEmpty() }?.let { cardIds ->
                     MiningResultUndoAction(
                         noteCount = cardIds.size,
                         undoneNoteCount = undoneNoteCount,

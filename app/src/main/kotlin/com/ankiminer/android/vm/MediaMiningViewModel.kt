@@ -33,7 +33,6 @@ import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.mining.MiningSource
-import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.TokenizerConfigurationFailure
 import com.ankiminer.android.mining.VideoMiningInput
@@ -41,6 +40,7 @@ import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.mining.terminalResult
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import com.ankiminer.android.timing.TimingPreviewBusyException
 import com.ankiminer.android.timing.TimingPreviewOpener
@@ -119,6 +119,7 @@ class MediaMiningViewModel internal constructor(
     private val undoManager: MiningRunUndoManager? = null,
     private val audioTrackProbeOpener: AudioTrackProbeOpener? = null,
     secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
+    deckName: Flow<String?> = flowOf(null),
 ) : ViewModel() {
     private val subtitleOffsetDraftKey = "${lane.savedStateKeyPrefix}.subtitleOffsetDraft"
     private val secondarySubtitleOffsetDraftKey =
@@ -146,6 +147,9 @@ class MediaMiningViewModel internal constructor(
         val audioTrackProbePending: Boolean = false,
         val audioTrackPickerError: AudioTrackPickerError? = null,
         val undoConfirmationNoteCount: Int? = null,
+        val deckName: String? = null,
+        /** The deck the current run started with; the result line names it even if Settings changed since. */
+        val runDeckName: String? = null,
     )
 
     /**
@@ -294,7 +298,7 @@ class MediaMiningViewModel internal constructor(
             val undoAvailable =
                 undoManager != null &&
                     runState.isTerminal &&
-                    runState.terminalResultOrNull()?.cardIds?.isNotEmpty() == true &&
+                    runState.terminalResult?.cardIds?.isNotEmpty() == true &&
                     undoneReceipt == null &&
                     aux.activeKind == null &&
                     !aux.undoActive &&
@@ -316,6 +320,7 @@ class MediaMiningViewModel internal constructor(
                         ?: ENGINE_DEFAULT_SUBTITLE_OFFSET,
                 advisories =
                     miningFieldAdvisories(local.fieldMap, local.audioPacks, audioLane = lane == MiningLane.AUDIO),
+                resultDeckName = local.runDeckName,
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -366,6 +371,11 @@ class MediaMiningViewModel internal constructor(
                 localState.update { local ->
                     local.copy(audioPaddingSeconds = padding?.takeIf { it.isFinite() && it >= 0 })
                 }
+            }
+        }
+        viewModelScope.launch {
+            deckName.distinctUntilChanged().collect { name ->
+                localState.update { local -> local.copy(deckName = name) }
             }
         }
         viewModelScope.launch {
@@ -821,6 +831,7 @@ class MediaMiningViewModel internal constructor(
                         pending = local.pending.begin(MiningPendingAction.START),
                         commandError = null,
                         previousPageSelectedCount = 0,
+                        runDeckName = local.deckName,
                     ),
                 )
             ) {
@@ -1196,7 +1207,7 @@ class MediaMiningViewModel internal constructor(
         }
         val input = buildVideoInput(localState.value) ?: return
         localState.update {
-            it.copy(pending = it.pending.beginRetry(), commandError = null)
+            it.copy(pending = it.pending.beginRetry(), commandError = null, runDeckName = it.deckName)
         }
         viewModelScope.launch(LogContext.asContextElement(failed.runId)) {
             AppLog.i(
@@ -1237,7 +1248,7 @@ class MediaMiningViewModel internal constructor(
 
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
-        val result = repository.state.value.terminalResultOrNull() ?: return
+        val result = repository.state.value.terminalResult ?: return
         localState.update { it.copy(undoConfirmationNoteCount = result.cardIds.size) }
     }
 
@@ -1931,15 +1942,6 @@ class MediaMiningViewModel internal constructor(
         )
     }
 
-    /** The result a terminal run carries, regardless of which terminal branch it landed in. */
-    private fun MiningRunState.terminalResultOrNull(): ProcessingResult? =
-        when (this) {
-            is MiningRunState.Success -> result
-            is MiningRunState.Cancelled -> result
-            is MiningRunState.Failed -> result
-            else -> null
-        }
-
     internal class Factory(
         private val repository: MiningRepository,
         private val safBroker: SafBroker,
@@ -1959,6 +1961,7 @@ class MediaMiningViewModel internal constructor(
             { extras -> extras.createSavedStateHandle() },
         private val undoManager: MiningRunUndoManager? = null,
         private val secondarySubtitleEnabled: Flow<Boolean> = flowOf(false),
+        private val deckName: Flow<String?> = flowOf(null),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1984,6 +1987,7 @@ class MediaMiningViewModel internal constructor(
                 undoManager = undoManager,
                 audioTrackProbeOpener = audioTrackProbeOpener,
                 secondarySubtitleEnabled = secondarySubtitleEnabled,
+                deckName = deckName,
             ) as T
         }
     }

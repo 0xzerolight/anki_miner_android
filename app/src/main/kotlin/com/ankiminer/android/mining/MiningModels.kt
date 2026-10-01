@@ -526,6 +526,16 @@ val MiningRunState.cancellationPending: Boolean
             else -> false
         }
 
+/** The result a finished run carries, whichever way it finished. */
+val MiningRunState.terminalResult: ProcessingResult?
+    get() =
+        when (this) {
+            is MiningRunState.Success -> result
+            is MiningRunState.Cancelled -> result
+            is MiningRunState.Failed -> result
+            else -> null
+        }
+
 val MiningRunState.isTerminal: Boolean
     get() =
         this is MiningRunState.Success ||

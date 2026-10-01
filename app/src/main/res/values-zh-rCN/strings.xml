@@ -160,18 +160,18 @@
     <string name="success_title">挖词完成</string>
     <string name="cancelled_title">已取消挖词</string>
     <string name="failed_title">挖词已停止</string>
-    <string name="partial_result_title">已添加的笔记</string>
-    <string name="result_video">视频：%1$s</string>
-    <string name="result_audio">音频：%1$s</string>
-    <string name="result_subtitle">字幕：%1$s</string>
-    <string name="result_reading_source">阅读来源：%1$s</string>
-    <string name="result_reading_archive">Mokuro 图像压缩包：%1$s</string>
     <string name="result_more_items">另有 +%1$d 项</string>
-    <string name="result_mined_forms">挖词得到的词形：%1$s</string>
-    <string name="result_card_ids">Anki 笔记 ID：%1$s</string>
     <string name="result_no_items">无</string>
-    <string name="result_unknown_file">未知文件</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="other">已向 %2$s 添加 %1$d 条笔记</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="other">已添加 %1$d 条笔记</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">已取消本次挖词。未添加任何内容。</string>
+    <string name="result_nothing_added">没有添加新笔记。</string>
+    <string name="result_detail_line">%1$s：%2$s</string>
     <string name="undo_mining_run">撤销（%1$d 条笔记）</string>
     <string name="undo_confirm_title">撤销此次挖词？</string>
     <string name="undo_confirm_message">从 Anki 中删除 %1$d 条笔记？此操作无法撤销。</string>
@@ -182,7 +182,6 @@
     <string name="mining_notice_no_definition">%1$d 个单词没有词典条目：%2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">已忽略词频阈值：未加载带排名的词频来源。请在 设置 → 资源 中添加。</string>
     <string name="mining_failure_resources_stale">应用更新后，这些资源需要重新导入：%1$s。请在 设置 → 资源 中重新导入。</string>
-    <string name="result_metric_created">已创建</string>
     <string name="result_metric_skipped_new">跳过/新增</string>
     <string name="result_metric_skipped_new_value">%1$d/%2$d</string>
     <string name="result_metric_comprehension">理解度</string>

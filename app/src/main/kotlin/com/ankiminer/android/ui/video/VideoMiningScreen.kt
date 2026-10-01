@@ -82,7 +82,7 @@ import com.ankiminer.android.ui.mining.MediaMiningLabels
 import com.ankiminer.android.ui.mining.MiningAdvisoryLines
 import com.ankiminer.android.ui.mining.MiningPhaseTarget
 import com.ankiminer.android.ui.mining.MiningProgressPanel
-import com.ankiminer.android.ui.mining.MiningResultSource
+import com.ankiminer.android.ui.mining.MiningResultHeadline
 import com.ankiminer.android.ui.mining.MiningResultUndoAction
 import com.ankiminer.android.ui.mining.MiningSourceItem
 import com.ankiminer.android.ui.mining.MiningUndoConfirmationDialog
@@ -95,6 +95,7 @@ import com.ankiminer.android.ui.mining.curateCandidates
 import com.ankiminer.android.ui.mining.curationBulkSelectionScope
 import com.ankiminer.android.ui.mining.curationGroupGap
 import com.ankiminer.android.ui.mining.curationRowContainerColor
+import com.ankiminer.android.ui.mining.miningResultHeadline
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
@@ -522,11 +523,8 @@ fun VideoMiningScreen(
                             is MiningRunState.Success ->
                                 terminalItems(
                                     title = R.string.success_title,
-                                    labels = labels,
+                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
                                     result = runState.result,
-                                    videoDisplayName = targetState.video.document?.displayName,
-                                    subtitleDisplayName = targetState.subtitle.document?.displayName,
-                                    partial = false,
                                     failed = false,
                                     failureDetails = null,
                                     canRetry = false,
@@ -549,11 +547,8 @@ fun VideoMiningScreen(
                             is MiningRunState.Cancelled ->
                                 terminalItems(
                                     title = R.string.cancelled_title,
-                                    labels = labels,
+                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
                                     result = runState.result,
-                                    videoDisplayName = targetState.video.document?.displayName,
-                                    subtitleDisplayName = targetState.subtitle.document?.displayName,
-                                    partial = runState.result?.cardsCreated?.let { it > 0 } == true,
                                     failed = false,
                                     failureDetails = null,
                                     canRetry = false,
@@ -576,11 +571,8 @@ fun VideoMiningScreen(
                             is MiningRunState.Failed ->
                                 terminalItems(
                                     title = R.string.failed_title,
-                                    labels = labels,
+                                    headline = miningResultHeadline(runState, targetState.resultDeckName),
                                     result = runState.result,
-                                    videoDisplayName = targetState.video.document?.displayName,
-                                    subtitleDisplayName = targetState.subtitle.document?.displayName,
-                                    partial = runState.result?.cardsCreated?.let { it > 0 } == true,
                                     failed = true,
                                     failureDetails = runState.failure.message,
                                     canRetry =
@@ -1203,11 +1195,8 @@ private fun LazyListScope.curationItems(
 
 private fun LazyListScope.terminalItems(
     title: Int,
-    labels: MediaMiningLabels,
+    headline: MiningResultHeadline?,
     result: ProcessingResult?,
-    videoDisplayName: String?,
-    subtitleDisplayName: String?,
-    partial: Boolean,
     failed: Boolean,
     failureDetails: String?,
     canRetry: Boolean,
@@ -1257,22 +1246,17 @@ private fun LazyListScope.terminalItems(
             )
         }
     }
-    result?.let { finalResult ->
+    headline?.let { lead ->
         miningResultItems(
-            result = finalResult,
-            sources =
-                listOf(
-                    MiningResultSource(labels.resultSource, videoDisplayName),
-                    MiningResultSource(R.string.result_subtitle, subtitleDisplayName),
-                ),
-            partial = partial,
+            headline = lead,
+            result = result,
             failed = failed,
             detailsExpanded = detailsExpanded,
             testTag = VideoMiningTestTags.RESULT,
             keyPrefix = "terminal_result",
             onToggleDetails = onToggleDetails,
             undo =
-                finalResult.cardIds.takeIf { it.isNotEmpty() }?.let { cardIds ->
+                result?.cardIds?.takeIf { it.isNotEmpty() }?.let { cardIds ->
                     MiningResultUndoAction(
                         noteCount = cardIds.size,
                         undoneNoteCount = undoneNoteCount,

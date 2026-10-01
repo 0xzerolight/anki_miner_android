@@ -9,6 +9,8 @@ import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.CurationSentence
 import com.ankiminer.android.mining.CurationSessionState
+import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.mining.terminalResult
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
@@ -18,6 +20,33 @@ internal const val RESULT_ISSUE_PREVIEW_COUNT = 3
 internal const val MAX_SAVEABLE_QUERY_LENGTH = 1024
 
 internal fun String.boundedSaveableQuery(): String = take(MAX_SAVEABLE_QUERY_LENGTH)
+
+/** The one sentence a finished run leads with. */
+internal sealed interface MiningResultHeadline {
+    data class NotesAdded(val count: Long, val deckName: String?) : MiningResultHeadline
+
+    data object CancelledNothingAdded : MiningResultHeadline
+
+    data object NothingAdded : MiningResultHeadline
+}
+
+/** Null when there is nothing to report: a failure with no notes added speaks through its failure card. */
+internal fun miningResultHeadline(
+    runState: MiningRunState,
+    deckName: String?,
+): MiningResultHeadline? {
+    val added =
+        runState.terminalResult
+            ?.cardsCreated
+            ?.takeIf { it > 0 }
+            ?.let { MiningResultHeadline.NotesAdded(it, deckName) }
+    return when (runState) {
+        is MiningRunState.Success -> added ?: MiningResultHeadline.NothingAdded
+        is MiningRunState.Cancelled -> added ?: MiningResultHeadline.CancelledNothingAdded
+        is MiningRunState.Failed -> added
+        else -> null
+    }
+}
 
 internal data class BoundedResultItems<T>(
     val items: List<T>,

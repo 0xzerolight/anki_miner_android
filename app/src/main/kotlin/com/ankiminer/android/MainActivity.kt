@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
+import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
 import com.ankiminer.android.data.resources.InstalledAudioPack
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
             audioTrackProbeOpener = app.audioTrackProbeLoader,
             secondarySubtitleEnabled =
                 app.settingsRepository.settings.map { it.secondarySubtitleEnabled },
+            deckName = app.settingsRepository.settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
         )
     }
     private val audioViewModelFactory by lazy {
@@ -127,6 +129,7 @@ class MainActivity : ComponentActivity() {
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
             audioTrackProbeOpener = app.audioTrackProbeLoader,
+            deckName = app.settingsRepository.settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
         )
     }
     private val setupViewModelFactory by lazy {
@@ -165,6 +168,7 @@ class MainActivity : ComponentActivity() {
             undoManager = MiningRunUndoManagerFactory.create(app),
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
             audioPacks = app.activeLanguageAudioPacks(),
+            deckName = app.settingsRepository.settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
         )
     }
 

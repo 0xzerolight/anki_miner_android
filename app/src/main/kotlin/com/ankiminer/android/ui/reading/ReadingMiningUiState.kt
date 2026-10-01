@@ -86,6 +86,8 @@ data class ReadingMiningUiState(
     val pastedTextTruncated: Boolean = false,
     val subtitleSeriesName: String = "",
     val advisories: MiningFieldAdvisories = MiningFieldAdvisories(),
+    /** The deck the shown result's run wrote to. */
+    val resultDeckName: String? = null,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: ReadingCurationUiState? = null,
     val startPending: Boolean = false,

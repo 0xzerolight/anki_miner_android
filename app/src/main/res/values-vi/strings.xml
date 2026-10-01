@@ -160,18 +160,18 @@
     <string name="success_title">Hoàn tất khai thác</string>
     <string name="cancelled_title">Đã hủy khai thác</string>
     <string name="failed_title">Đã dừng khai thác</string>
-    <string name="partial_result_title">Ghi chú đã thêm</string>
-    <string name="result_video">Video: %1$s</string>
-    <string name="result_audio">Âm thanh: %1$s</string>
-    <string name="result_subtitle">Phụ đề: %1$s</string>
-    <string name="result_reading_source">Nguồn đọc: %1$s</string>
-    <string name="result_reading_archive">Kho ảnh Mokuro: %1$s</string>
     <string name="result_more_items">+%1$d mục khác</string>
-    <string name="result_mined_forms">Các dạng đã khai thác: %1$s</string>
-    <string name="result_card_ids">ID ghi chú Anki: %1$s</string>
     <string name="result_no_items">Không có</string>
-    <string name="result_unknown_file">Tệp không rõ</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="other">Đã thêm %1$d ghi chú vào %2$s</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="other">Đã thêm %1$d ghi chú</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">Đã hủy lượt khai thác. Chưa thêm gì.</string>
+    <string name="result_nothing_added">Không có ghi chú mới nào được thêm.</string>
+    <string name="result_detail_line">%1$s: %2$s</string>
     <string name="undo_mining_run">Hoàn tác (%1$d ghi chú)</string>
     <string name="undo_confirm_title">Hoàn tác lượt khai thác này?</string>
     <string name="undo_confirm_message">Xóa %1$d ghi chú khỏi Anki? Không thể hoàn tác.</string>
@@ -182,7 +182,6 @@
     <string name="mining_notice_no_definition">Không có mục từ điển cho %1$d từ: %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Đã bỏ qua ngưỡng tần suất: chưa tải nguồn tần suất có xếp hạng nào. Hãy thêm một nguồn trong Cài đặt → Tài nguyên.</string>
     <string name="mining_failure_resources_stale">Sau khi cập nhật ứng dụng, cần nhập lại các tài nguyên này: %1$s. Hãy nhập lại trong Cài đặt → Tài nguyên.</string>
-    <string name="result_metric_created">Đã tạo</string>
     <string name="result_metric_skipped_new">Đã bỏ qua / mới</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">Mức độ hiểu</string>

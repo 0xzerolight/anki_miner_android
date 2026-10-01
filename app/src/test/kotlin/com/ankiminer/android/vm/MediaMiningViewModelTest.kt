@@ -1247,6 +1247,30 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun theResultLineNamesTheDeckTheRunStartedWith() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val deck = MutableStateFlow<String?>("Deck A")
+            val repository = RecordingRepository()
+            val viewModel =
+                MediaMiningViewModel(
+                    repository = repository,
+                    safBroker = ImmediateSafBroker(),
+                    lane = MiningLane.VIDEO,
+                    deckName = deck,
+                )
+            selectDocuments(viewModel)
+            runCurrent()
+            viewModel.start()
+            runCurrent()
+            deck.value = "Deck B"
+            repository.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            assertEquals(1, repository.startCalls)
+            assertEquals("Deck A", viewModel.uiState.value.resultDeckName)
+        }
+
+    @Test
     fun advisoriesFollowTheFieldMapForTheLane() =
         runTest(mainDispatcherRule.dispatcher) {
             val viewModel =

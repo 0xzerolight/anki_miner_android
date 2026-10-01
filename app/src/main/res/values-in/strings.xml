@@ -160,18 +160,18 @@
     <string name="success_title">Mining selesai</string>
     <string name="cancelled_title">Mining dibatalkan</string>
     <string name="failed_title">Mining dihentikan</string>
-    <string name="partial_result_title">Catatan ditambahkan</string>
-    <string name="result_video">Video: %1$s</string>
-    <string name="result_audio">Audio: %1$s</string>
-    <string name="result_subtitle">Subtitel: %1$s</string>
-    <string name="result_reading_source">Sumber bacaan: %1$s</string>
-    <string name="result_reading_archive">Arsip gambar Mokuro: %1$s</string>
     <string name="result_more_items">+%1$d lainnya</string>
-    <string name="result_mined_forms">Bentuk yang di-mining: %1$s</string>
-    <string name="result_card_ids">ID catatan Anki: %1$s</string>
     <string name="result_no_items">Tidak ada</string>
-    <string name="result_unknown_file">Berkas tidak diketahui</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="other">%1$d catatan ditambahkan ke %2$s</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="other">%1$d catatan ditambahkan</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">Proses dibatalkan. Tidak ada yang ditambahkan.</string>
+    <string name="result_nothing_added">Tidak ada catatan baru yang ditambahkan.</string>
+    <string name="result_detail_line">%1$s: %2$s</string>
     <string name="undo_mining_run">Batalkan (%1$d catatan)</string>
     <string name="undo_confirm_title">Batalkan proses mining ini?</string>
     <string name="undo_confirm_message">Hapus %1$d catatan dari Anki? Tindakan ini tidak dapat dibatalkan.</string>
@@ -182,7 +182,6 @@
     <string name="mining_notice_no_definition">Tidak ada entri kamus untuk %1$d kata: %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Batas frekuensi diabaikan: tidak ada sumber frekuensi berperingkat yang dimuat. Tambahkan di Pengaturan → Sumber daya.</string>
     <string name="mining_failure_resources_stale">Setelah pembaruan aplikasi, sumber daya ini perlu diimpor ulang: %1$s. Impor ulang di Pengaturan → Sumber daya.</string>
-    <string name="result_metric_created">Dibuat</string>
     <string name="result_metric_skipped_new">Dilewati / baru</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">Pemahaman</string>

@@ -6,7 +6,6 @@ import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -29,7 +28,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.ProgressIndicatorDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -49,9 +47,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -61,7 +59,6 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.localization.byteProgressResource
@@ -73,9 +70,7 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
-import com.ankiminer.android.ui.theme.CompactLayoutWidthDp
 import com.ankiminer.android.ui.theme.ExitActionButton
-import com.ankiminer.android.ui.theme.MetricTile
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.accentTextButtonColors
@@ -94,11 +89,6 @@ internal const val MINING_FAILURE_TEST_TAG = "mining_failure"
 internal class MiningPhaseTarget<S>(
     val key: String,
     val initialState: S,
-)
-
-internal data class MiningResultSource(
-    @param:StringRes val label: Int,
-    val displayName: String?,
 )
 
 internal data class MiningResultUndoAction(
@@ -640,9 +630,8 @@ private fun SourceRowActions(
 }
 
 internal fun LazyListScope.miningResultItems(
-    result: ProcessingResult,
-    sources: List<MiningResultSource>,
-    partial: Boolean,
+    headline: MiningResultHeadline,
+    result: ProcessingResult?,
     failed: Boolean,
     detailsExpanded: Boolean,
     testTag: String,
@@ -650,52 +639,38 @@ internal fun LazyListScope.miningResultItems(
     onToggleDetails: () -> Unit,
     undo: MiningResultUndoAction? = null,
 ) {
-    val minedForms = result.minedForms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
-    val noteIds = result.cardIds.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS)
-    val issues = result.errors.boundedResultItems(MAX_RESULT_ERROR_LINES)
+    val issues = result?.errors.orEmpty().boundedResultItems(MAX_RESULT_ERROR_LINES)
+    val issueTone = if (failed) ResultIssueTone.FAILURE else ResultIssueTone.WARNING
     item(
         key = "$keyPrefix:summary",
         contentType = "header",
     ) {
         MiningResultSummary(
-            result = result,
-            sources = sources,
-            partial = partial,
+            headline = headline,
             issuePreview =
                 if (detailsExpanded) emptyList() else issues.items.take(RESULT_ISSUE_PREVIEW_COUNT),
-            issueTone = if (failed) ResultIssueTone.FAILURE else ResultIssueTone.WARNING,
+            issueTone = issueTone,
             detailsExpanded = detailsExpanded,
-            hasDetails =
-                minedForms.items.isNotEmpty() ||
-                    noteIds.items.isNotEmpty() ||
-                    issues.items.isNotEmpty(),
+            hasDetails = result != null,
             onToggleDetails = onToggleDetails,
             testTag = testTag,
             undo = undo,
         )
     }
-    if (!detailsExpanded) return
+    if (!detailsExpanded || result == null) return
 
     item(
         key = "$keyPrefix:details",
         contentType = "candidate",
     ) {
-        ResultDetailsCard(
-            result = result,
-            sources = sources,
-            minedForms = minedForms,
-            noteIds = noteIds,
-        )
+        ResultDetails(result)
     }
     items(
         count = issues.items.size,
         key = { index -> "$keyPrefix:issue:$index:${issues.items[index].hashCode()}" },
         contentType = { "sentence" },
     ) { index ->
-        ResultIssueRow(
-            message = issues.items[index],
-            tone = if (failed) ResultIssueTone.FAILURE else ResultIssueTone.WARNING,
-        )
+        ResultIssueRow(message = issues.items[index], tone = issueTone)
     }
     if (issues.remainingCount > 0) {
         item(
@@ -708,7 +683,7 @@ internal fun LazyListScope.miningResultItems(
                     if (failed) {
                         MaterialTheme.colorScheme.error
                     } else {
-                        MaterialTheme.colorScheme.onTertiaryContainer
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
             )
         }
@@ -717,79 +692,82 @@ internal fun LazyListScope.miningResultItems(
 
 @Composable
 private fun MiningResultSummary(
-    result: ProcessingResult,
-    sources: List<MiningResultSource>,
-    partial: Boolean,
+    headline: MiningResultHeadline,
     issuePreview: List<String>,
     issueTone: ResultIssueTone,
     detailsExpanded: Boolean,
     hasDetails: Boolean,
     onToggleDetails: () -> Unit,
     testTag: String,
-    undo: MiningResultUndoAction? = null,
+    undo: MiningResultUndoAction?,
 ) {
-    OutlinedCard(
+    // No card: one sentence and Undo, under the inputs it reports on.
+    Column(
         modifier =
             Modifier
                 .fillMaxWidth()
                 .testTag(testTag),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
-        Column(
-            modifier = Modifier.padding(AnkiMinerTokens.Space.content),
-            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ResultMetricGrid(result)
-            if (partial) {
-                Text(
-                    text = stringResource(R.string.partial_result_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
+            Text(
+                text = headline.text(),
+                modifier = Modifier.weight(1f).semantics { heading() },
+                style = MaterialTheme.typography.titleMedium,
+            )
+            if (undo != null && undo.undoneNoteCount == null) {
+                SecondaryActionButton(
+                    onClick = undo.onUndo,
+                    enabled = undo.enabled,
+                    modifier = Modifier.testTag(undo.testTag),
+                ) {
+                    Text(stringResource(R.string.undo_mining_run, undo.noteCount))
+                }
             }
-            sources.forEach { source ->
+        }
+        undo?.undoneNoteCount?.let { deleted ->
+            Text(
+                text = stringResource(R.string.undo_done, deleted),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        issuePreview.forEach { issue ->
+            ResultIssueRow(message = issue, tone = issueTone)
+        }
+        if (hasDetails) {
+            TextButton(
+                onClick = onToggleDetails,
+                modifier = Modifier.align(Alignment.End),
+                colors = accentTextButtonColors(),
+            ) {
                 Text(
                     stringResource(
-                        source.label,
-                        source.displayName ?: stringResource(R.string.result_unknown_file),
+                        if (detailsExpanded) R.string.hide_details else R.string.details,
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
                 )
-            }
-            if (undo != null) {
-                if (undo.undoneNoteCount != null) {
-                    Text(
-                        text = stringResource(R.string.undo_done, undo.undoneNoteCount),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                } else {
-                    SecondaryActionButton(
-                        onClick = undo.onUndo,
-                        enabled = undo.enabled,
-                        modifier = Modifier.testTag(undo.testTag),
-                    ) {
-                        Text(stringResource(R.string.undo_mining_run, undo.noteCount))
-                    }
-                }
-            }
-            issuePreview.forEach { issue ->
-                ResultIssueRow(message = issue, tone = issueTone)
-            }
-            if (hasDetails) {
-                TextButton(
-                    onClick = onToggleDetails,
-                    modifier = Modifier.align(Alignment.End),
-                    colors = accentTextButtonColors(),
-                ) {
-                    Text(
-                        stringResource(
-                            if (detailsExpanded) R.string.hide_details else R.string.details,
-                        ),
-                    )
-                }
             }
         }
     }
 }
+
+@Composable
+private fun MiningResultHeadline.text(): String =
+    when (this) {
+        is MiningResultHeadline.NotesAdded -> {
+            val quantity = count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+            if (deckName != null) {
+                pluralStringResource(R.plurals.result_notes_added_to_deck, quantity, count, deckName)
+            } else {
+                pluralStringResource(R.plurals.result_notes_added, quantity, count)
+            }
+        }
+        MiningResultHeadline.CancelledNothingAdded -> stringResource(R.string.result_cancelled_nothing_added)
+        MiningResultHeadline.NothingAdded -> stringResource(R.string.result_nothing_added)
+    }
 
 @Composable
 internal fun MiningUndoConfirmationDialog(
@@ -819,103 +797,12 @@ internal fun MiningUndoConfirmationDialog(
     )
 }
 
+/** Counts as plain lines; mined forms and note ids stay in Copy diagnostics only. */
 @Composable
-private fun ResultMetricGrid(result: ProcessingResult) {
+private fun ResultDetails(result: ProcessingResult) {
     val skipped = (result.newWordsFound - result.cardsCreated).coerceAtLeast(0)
-    val createdValue = result.cardsCreated.toString()
-    val createdLabel = stringResource(R.string.result_metric_created)
-    val skippedValue =
-        stringResource(R.string.result_metric_skipped_new_value, skipped, result.newWordsFound)
-    val skippedLabel = stringResource(R.string.result_metric_skipped_new)
-    val comprehensionValue =
-        stringResource(
-            R.string.result_metric_percent_value,
-            result.comprehensionPercentage,
-        )
-    val comprehensionLabel = stringResource(R.string.result_metric_comprehension)
-    val elapsedValue = stringResource(R.string.result_metric_elapsed_value, result.elapsedTime)
-    val elapsedLabel = stringResource(R.string.result_metric_elapsed)
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val stack =
-            maxWidth < CompactLayoutWidthDp.dp || LocalDensity.current.fontScale >= 1.3f
-        if (stack) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            ) {
-                MetricTile(
-                    value = createdValue,
-                    label = createdLabel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                MetricTile(
-                    value = skippedValue,
-                    label = skippedLabel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                MetricTile(
-                    value = comprehensionValue,
-                    label = comprehensionLabel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                MetricTile(
-                    value = elapsedValue,
-                    label = elapsedLabel,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-                ResultMetricRow(
-                    firstValue = createdValue,
-                    firstLabel = createdLabel,
-                    secondValue = skippedValue,
-                    secondLabel = skippedLabel,
-                )
-                ResultMetricRow(
-                    firstValue = comprehensionValue,
-                    firstLabel = comprehensionLabel,
-                    secondValue = elapsedValue,
-                    secondLabel = elapsedLabel,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ResultMetricRow(
-    firstValue: String,
-    firstLabel: String,
-    secondValue: String,
-    secondLabel: String,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-    ) {
-        MetricTile(
-            value = firstValue,
-            label = firstLabel,
-            modifier = Modifier.weight(1f),
-        )
-        MetricTile(
-            value = secondValue,
-            label = secondLabel,
-            modifier = Modifier.weight(1f),
-        )
-    }
-}
-
-@Composable
-private fun ResultDetailsCard(
-    result: ProcessingResult,
-    sources: List<MiningResultSource>,
-    minedForms: BoundedResultItems<String>,
-    noteIds: BoundedResultItems<Long>,
-) {
-    val formsText = minedForms.summaryText()
-    val idsText = noteIds.summaryText()
+    val formsText = result.minedForms.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS).summaryText()
+    val idsText = result.cardIds.boundedResultItems(MAX_RESULT_SUMMARY_ITEMS).summaryText()
     val diagnostics =
         buildString {
             appendLine("created=${result.cardsCreated}")
@@ -923,30 +810,41 @@ private fun ResultDetailsCard(
             appendLine("total=${result.totalWordsFound}")
             appendLine("comprehension=${result.comprehensionPercentage}")
             appendLine("elapsed=${result.elapsedTime}")
-            sources.forEach { source ->
-                appendLine("source=${source.displayName ?: "unknown"}")
-            }
             appendLine("forms=$formsText")
             appendLine("note_ids=$idsText")
             result.errors.boundedResultItems(MAX_RESULT_ERROR_LINES).items.forEach { issue ->
                 appendLine("issue=$issue")
             }
         }.trim()
-    OutlinedCard(Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(AnkiMinerTokens.Space.content),
-            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-        ) {
-            Text(
-                text = stringResource(R.string.details),
-                modifier = Modifier.semantics { heading() },
-                style = MaterialTheme.typography.titleMedium,
-            )
-            Text(stringResource(R.string.result_mined_forms, formsText))
-            Text(stringResource(R.string.result_card_ids, idsText))
-            CopyDiagnosticsButton(diagnostics = diagnostics)
-        }
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+    ) {
+        DetailLine(
+            R.string.result_metric_skipped_new,
+            stringResource(R.string.result_metric_skipped_new_value, skipped, result.newWordsFound),
+        )
+        DetailLine(
+            R.string.result_metric_comprehension,
+            stringResource(R.string.result_metric_percent_value, result.comprehensionPercentage),
+        )
+        DetailLine(
+            R.string.result_metric_elapsed,
+            stringResource(R.string.result_metric_elapsed_value, result.elapsedTime),
+        )
+        CopyDiagnosticsButton(diagnostics = diagnostics)
     }
+}
+
+@Composable
+private fun DetailLine(
+    @StringRes label: Int,
+    value: String,
+) {
+    Text(
+        text = stringResource(R.string.result_detail_line, stringResource(label), value),
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable
@@ -954,33 +852,28 @@ private fun ResultIssueRow(
     message: String,
     tone: ResultIssueTone,
 ) {
-    val container =
-        when (tone) {
-            ResultIssueTone.WARNING -> MaterialTheme.colorScheme.tertiaryContainer
-            ResultIssueTone.FAILURE -> MaterialTheme.colorScheme.errorContainer
-        }
-    val content =
-        when (tone) {
-            ResultIssueTone.WARNING -> MaterialTheme.colorScheme.onTertiaryContainer
-            ResultIssueTone.FAILURE -> MaterialTheme.colorScheme.onErrorContainer
-        }
+    val text = stringResource(R.string.result_error_item, message)
+    if (tone == ResultIssueTone.WARNING) {
+        // A warning on a finished run is a quiet line; only a failure gets the red surface.
+        Text(
+            text = text,
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        return
+    }
     Surface(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .then(
-                    if (tone == ResultIssueTone.FAILURE) {
-                        Modifier.semantics { error(message) }
-                    } else {
-                        Modifier
-                    },
-                ),
-        color = container,
-        contentColor = content,
+                .semantics { error(message) },
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.small,
     ) {
         Text(
-            text = stringResource(R.string.result_error_item, message),
+            text = text,
             modifier = Modifier.padding(horizontal = AnkiMinerTokens.Space.group, vertical = AnkiMinerTokens.Space.group),
             style = MaterialTheme.typography.bodyMedium,
         )

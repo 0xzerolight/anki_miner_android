@@ -162,18 +162,20 @@
     <string name="success_title">Mining abgeschlossen</string>
     <string name="cancelled_title">Mining abgebrochen</string>
     <string name="failed_title">Mining angehalten</string>
-    <string name="partial_result_title">Notizen hinzugefügt</string>
-    <string name="result_video">Video: %1$s</string>
-    <string name="result_audio">Audio: %1$s</string>
-    <string name="result_subtitle">Untertitel: %1$s</string>
-    <string name="result_reading_source">Lesequelle: %1$s</string>
-    <string name="result_reading_archive">Mokuro-Bildarchiv: %1$s</string>
     <string name="result_more_items">+%1$d weitere</string>
-    <string name="result_mined_forms">Gesammelte Formen: %1$s</string>
-    <string name="result_card_ids">Anki-Notiz-IDs: %1$s</string>
     <string name="result_no_items">Keine</string>
-    <string name="result_unknown_file">Unbekannte Datei</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="one">%1$d Notiz zu %2$s hinzugefügt</item>
+        <item quantity="other">%1$d Notizen zu %2$s hinzugefügt</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="one">%1$d Notiz hinzugefügt</item>
+        <item quantity="other">%1$d Notizen hinzugefügt</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">Durchlauf abgebrochen. Nichts wurde hinzugefügt.</string>
+    <string name="result_nothing_added">Es wurden keine neuen Notizen hinzugefügt.</string>
+    <string name="result_detail_line">%1$s: %2$s</string>
     <string name="undo_mining_run">Rückgängig (%1$d Notizen)</string>
     <string name="undo_confirm_title">Diesen Durchlauf rückgängig machen?</string>
     <string name="undo_confirm_message">%1$d Notizen aus Anki löschen? Kann nicht rückgängig gemacht werden.</string>
@@ -184,7 +186,6 @@
     <string name="mining_notice_no_definition">Kein Wörterbucheintrag für %1$d Wort/Wörter: %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Häufigkeitsgrenze ignoriert: Es ist keine Häufigkeitsquelle mit Rängen geladen. Fügen Sie eine unter Einstellungen → Ressourcen hinzu.</string>
     <string name="mining_failure_resources_stale">Nach dem App-Update müssen diese Ressourcen erneut importiert werden: %1$s. Importieren Sie sie unter Einstellungen → Ressourcen erneut.</string>
-    <string name="result_metric_created">Erstellt</string>
     <string name="result_metric_skipped_new">Übersprungen / neu</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">Verständnis</string>

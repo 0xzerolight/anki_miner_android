@@ -160,18 +160,18 @@
     <string name="success_title">マイニング完了</string>
     <string name="cancelled_title">マイニングをキャンセルしました</string>
     <string name="failed_title">マイニングを停止しました</string>
-    <string name="partial_result_title">追加したノート</string>
-    <string name="result_video">動画: %1$s</string>
-    <string name="result_audio">音声: %1$s</string>
-    <string name="result_subtitle">字幕: %1$s</string>
-    <string name="result_reading_source">読み物ソース: %1$s</string>
-    <string name="result_reading_archive">Mokuro画像アーカイブ: %1$s</string>
     <string name="result_more_items">他%1$d件</string>
-    <string name="result_mined_forms">マイニングした単語形: %1$s</string>
-    <string name="result_card_ids">Anki ノートID: %1$s</string>
     <string name="result_no_items">なし</string>
-    <string name="result_unknown_file">不明なファイル</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="other">%2$s に %1$d 件のノートを追加しました</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="other">%1$d 件のノートを追加しました</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">実行をキャンセルしました。何も追加されていません。</string>
+    <string name="result_nothing_added">新しいノートは追加されませんでした。</string>
+    <string name="result_detail_line">%1$s：%2$s</string>
     <string name="undo_mining_run">元に戻す（%1$d件のノート）</string>
     <string name="undo_confirm_title">この実行を元に戻しますか？</string>
     <string name="undo_confirm_message">Ankiから%1$d件のノートを削除しますか？元に戻せません。</string>
@@ -182,7 +182,6 @@
     <string name="mining_notice_no_definition">%1$d 語に辞書項目がありません: %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">頻度の絞り込みを無視しました。順位付きの頻度ソースが読み込まれていません。設定 → リソース から追加してください。</string>
     <string name="mining_failure_resources_stale">アプリの更新により、次のリソースの再インポートが必要です: %1$s。設定 → リソース から再インポートしてください。</string>
-    <string name="result_metric_created">作成</string>
     <string name="result_metric_skipped_new">スキップ / 新規</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">理解度</string>

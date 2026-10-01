@@ -164,18 +164,22 @@
     <string name="success_title">Mineração concluída</string>
     <string name="cancelled_title">Mineração cancelada</string>
     <string name="failed_title">Mineração interrompida</string>
-    <string name="partial_result_title">Notas adicionadas</string>
-    <string name="result_video">Vídeo: %1$s</string>
-    <string name="result_audio">Áudio: %1$s</string>
-    <string name="result_subtitle">Legendas: %1$s</string>
-    <string name="result_reading_source">Fonte de leitura: %1$s</string>
-    <string name="result_reading_archive">Arquivo de imagens Mokuro: %1$s</string>
     <string name="result_more_items">+%1$d mais</string>
-    <string name="result_mined_forms">Formas mineradas: %1$s</string>
-    <string name="result_card_ids">IDs de notas do Anki: %1$s</string>
     <string name="result_no_items">Nenhum</string>
-    <string name="result_unknown_file">Arquivo desconhecido</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="one">%1$d nota adicionada a %2$s</item>
+        <item quantity="many">%1$d notas adicionadas a %2$s</item>
+        <item quantity="other">%1$d notas adicionadas a %2$s</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="one">%1$d nota adicionada</item>
+        <item quantity="many">%1$d notas adicionadas</item>
+        <item quantity="other">%1$d notas adicionadas</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">Execução cancelada. Nada foi adicionado.</string>
+    <string name="result_nothing_added">Nenhuma nota nova foi adicionada.</string>
+    <string name="result_detail_line">%1$s: %2$s</string>
     <string name="undo_mining_run">Desfazer (%1$d notas)</string>
     <string name="undo_confirm_title">Desfazer esta execução?</string>
     <string name="undo_confirm_message">Excluir %1$d notas do Anki? Isso não pode ser desfeito.</string>
@@ -186,7 +190,6 @@
     <string name="mining_notice_no_definition">Nenhuma entrada de dicionário para %1$d palavra(s): %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Limite de frequência ignorado: nenhuma fonte de frequência com classificação está carregada. Adicione uma em Configurações → Recursos.</string>
     <string name="mining_failure_resources_stale">Após a atualização do app, estes recursos precisam ser reimportados: %1$s. Reimporte-os em Configurações → Recursos.</string>
-    <string name="result_metric_created">Criados</string>
     <string name="result_metric_skipped_new">Ignorados / novos</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">Compreensão</string>

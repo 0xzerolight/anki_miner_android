@@ -23,12 +23,12 @@ import com.ankiminer.android.media.SafSelectionSlot
 import com.ankiminer.android.mining.CurationRequest
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningRunState
-import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.mining.cancellationPending
 import com.ankiminer.android.mining.cancellationToken
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.mining.terminalResult
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
 import com.ankiminer.android.reading.ReadingSourceSelection
@@ -86,6 +86,7 @@ class ReadingMiningViewModel internal constructor(
     private val undoManager: MiningRunUndoManager? = null,
     fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
     audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
+    deckName: Flow<String?> = flowOf(null),
 ) : ViewModel() {
     private data class LocalState(
         val source: ReadingDocumentSlotState = ReadingDocumentSlotState(),
@@ -102,6 +103,9 @@ class ReadingMiningViewModel internal constructor(
         val undoConfirmationNoteCount: Int? = null,
         val fieldMap: Map<String, String> = emptyMap(),
         val audioPacks: List<InstalledAudioPack> = emptyList(),
+        val deckName: String? = null,
+        /** The deck the current run started with; the result line names it even if Settings changed since. */
+        val runDeckName: String? = null,
     )
 
     /**
@@ -213,7 +217,7 @@ class ReadingMiningViewModel internal constructor(
             val undoAvailable =
                 undoManager != null &&
                     runState.isTerminal &&
-                    runState.terminalResultOrNull()?.cardIds?.isNotEmpty() == true &&
+                    runState.terminalResult?.cardIds?.isNotEmpty() == true &&
                     undoneReceipt == null &&
                     aux.activeKind == null &&
                     !aux.undoActive &&
@@ -228,6 +232,7 @@ class ReadingMiningViewModel internal constructor(
                 pastedTextTruncated = local.pastedTextTruncated,
                 subtitleSeriesName = local.subtitleSeriesName,
                 advisories = miningFieldAdvisories(local.fieldMap, local.audioPacks, audioLane = false),
+                resultDeckName = local.runDeckName,
                 runState = runState,
                 curation = curation,
                 startPending = local.pending.start,
@@ -248,6 +253,11 @@ class ReadingMiningViewModel internal constructor(
         )
 
     init {
+        viewModelScope.launch {
+            deckName.distinctUntilChanged().collect { name ->
+                localState.update { local -> local.copy(deckName = name) }
+            }
+        }
         viewModelScope.launch {
             fieldMap.distinctUntilChanged().collect { currentFieldMap ->
                 localState.update { local -> local.copy(fieldMap = currentFieldMap) }
@@ -465,6 +475,7 @@ class ReadingMiningViewModel internal constructor(
                         pending = local.pending.begin(MiningPendingAction.START),
                         commandError = null,
                         previousPageSelectedCount = 0,
+                        runDeckName = local.deckName,
                     ),
                 )
             ) {
@@ -789,7 +800,7 @@ class ReadingMiningViewModel internal constructor(
         }
         val input = localState.value.toInputOrNull() ?: return
         localState.update {
-            it.copy(pending = it.pending.beginRetry(), commandError = null)
+            it.copy(pending = it.pending.beginRetry(), commandError = null, runDeckName = it.deckName)
         }
         viewModelScope.launch(LogContext.asContextElement(failed.runId)) {
             AppLog.i(
@@ -830,7 +841,7 @@ class ReadingMiningViewModel internal constructor(
 
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
-        val result = repository.state.value.terminalResultOrNull() ?: return
+        val result = repository.state.value.terminalResult ?: return
         localState.update { it.copy(undoConfirmationNoteCount = result.cardIds.size) }
     }
 
@@ -1504,15 +1515,6 @@ class ReadingMiningViewModel internal constructor(
         return if (count <= maximum) this else substring(0, offsetByCodePoints(0, maximum))
     }
 
-    /** The result a terminal run carries, regardless of which terminal branch it landed in. */
-    private fun MiningRunState.terminalResultOrNull(): ProcessingResult? =
-        when (this) {
-            is MiningRunState.Success -> result
-            is MiningRunState.Cancelled -> result
-            is MiningRunState.Failed -> result
-            else -> null
-        }
-
     internal class Factory(
         private val repository: ReadingMiningRepository,
         private val safBroker: SafBroker,
@@ -1524,6 +1526,7 @@ class ReadingMiningViewModel internal constructor(
         private val undoManager: MiningRunUndoManager? = null,
         private val fieldMap: Flow<Map<String, String>> = flowOf(emptyMap()),
         private val audioPacks: Flow<List<InstalledAudioPack>> = flowOf(emptyList()),
+        private val deckName: Flow<String?> = flowOf(null),
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(
@@ -1541,6 +1544,7 @@ class ReadingMiningViewModel internal constructor(
                 undoManager = undoManager,
                 fieldMap = fieldMap,
                 audioPacks = audioPacks,
+                deckName = deckName,
             ) as T
         }
     }

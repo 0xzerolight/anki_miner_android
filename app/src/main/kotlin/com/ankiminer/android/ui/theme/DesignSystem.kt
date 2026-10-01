@@ -24,7 +24,6 @@ import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.SegmentedButtonColors
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.Shapes
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.Composable
@@ -241,29 +240,6 @@ internal fun SupportingText(
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         style = MaterialTheme.typography.bodySmall,
     )
-}
-
-/** Compact result/status metric for later mining result layouts. */
-@Composable
-internal fun MetricTile(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    Surface(
-        modifier = modifier,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Text(value, style = MaterialTheme.typography.titleLarge)
-            SupportingText(label)
-        }
-    }
 }
 
 /**

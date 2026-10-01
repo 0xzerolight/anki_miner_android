@@ -1890,7 +1890,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun resultUsesRetainedNamesWithoutExposingEnginePaths() {
+    fun resultNeverShowsEnginePaths() {
         val rawVideoPath = "/proc/self/fd/41"
         val rawSubtitlePath = "/data/user/0/com.ankiminer.android/cache/run/subtitle.srt"
         val result =
@@ -1906,32 +1906,13 @@ class VideoMiningScreenTest {
             )
 
         setScreen(state = state)
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Details"))
+        composeRule.onNodeWithText("Details").performClick()
 
-        composeRule.onNodeWithText("Video: Retained video.mkv").assertExists()
-        composeRule.onNodeWithText("Subtitles: Retained subtitles.srt").assertExists()
         composeRule.onNodeWithText(rawVideoPath, substring = true).assertDoesNotExist()
         composeRule.onNodeWithText(rawSubtitlePath, substring = true).assertDoesNotExist()
-    }
-
-    @Test
-    fun missingRetainedNamesNeverFallBackToPrivateEnginePaths() {
-        val result =
-            result().copy(
-                videoFile = "/proc/self/fd/41",
-                subtitleFile = "/data/user/0/com.ankiminer.android/cache/run/private-title.srt",
-            )
-
-        setScreen(
-            state =
-                VideoMiningUiState(
-                    runState = MiningRunState.Success("run", result),
-                ),
-        )
-
-        composeRule.onNodeWithText("Video: Unknown file").assertExists()
-        composeRule.onNodeWithText("Subtitles: Unknown file").assertExists()
-        composeRule.onNodeWithText("/proc/self/fd", substring = true).assertDoesNotExist()
-        composeRule.onNodeWithText("private-title.srt", substring = true).assertDoesNotExist()
     }
 
     @Test
@@ -2092,20 +2073,29 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun legacyProcessingResultNamesArePresentedAsAnkiNotes() {
+    fun aResultLeadsWithTheNotesItAddedAndKeepsIdsOutOfSight() {
         setScreen(
             state =
                 VideoMiningUiState(
                     runState = MiningRunState.Success("run", result()),
+                    resultDeckName = "Anki Miner",
                 ),
         )
 
-        composeRule.onNodeWithText("Created").assertExists()
-        composeRule.onNodeWithText("Anki notes created: 2").assertDoesNotExist()
-        composeRule.onNodeWithText("Anki note IDs: 10, 11").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(VideoMiningTestTags.RESULT))
+        composeRule.onNodeWithText("2 notes added to Anki Miner").assertExists()
+        composeRule.onNodeWithText("Created").assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Details"))
         composeRule.onNodeWithText("Details").performClick()
-        composeRule.onNodeWithText("Anki note IDs: 10, 11").assertExists()
-        composeRule.onNodeWithText("Anki card IDs", substring = true).assertDoesNotExist()
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Comprehension: 75.0%"))
+        composeRule.onNodeWithText("Anki note IDs", substring = true).assertDoesNotExist()
+        composeRule.onNodeWithText("Mined forms", substring = true).assertDoesNotExist()
     }
 
     @Test
@@ -2144,7 +2134,7 @@ class VideoMiningScreenTest {
     }
 
     @Test
-    fun cancelledRunWithCreatedNotesLabelsItsResultAsPartial() {
+    fun aCancelledRunSaysHowManyNotesItAdded() {
         setScreen(
             state =
                 VideoMiningUiState(
@@ -2154,8 +2144,23 @@ class VideoMiningScreenTest {
 
         composeRule
             .onNodeWithTag(VideoMiningTestTags.CONTENT)
-            .performScrollToNode(hasText("Notes added"))
-        composeRule.onNodeWithText("Notes added").assertExists()
+            .performScrollToNode(hasText("2 notes added"))
+        composeRule.onNodeWithText("2 notes added").assertExists()
+    }
+
+    @Test
+    fun aUserCancelWithNothingAddedSaysSo() {
+        setScreen(
+            state =
+                VideoMiningUiState(
+                    runState = MiningRunState.Cancelled("run", null),
+                ),
+        )
+
+        composeRule
+            .onNodeWithTag(VideoMiningTestTags.CONTENT)
+            .performScrollToNode(hasText("Run cancelled. Nothing was added."))
+        composeRule.onNodeWithText("Run cancelled. Nothing was added.").assertExists()
     }
 
     @Test

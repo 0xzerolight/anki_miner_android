@@ -112,6 +112,8 @@ data class VideoMiningUiState(
     val secondarySubtitleOffsetDraftInvalid: Boolean = false,
     val effectiveSubtitleOffset: Double = ENGINE_DEFAULT_SUBTITLE_OFFSET,
     val advisories: MiningFieldAdvisories = MiningFieldAdvisories(),
+    /** The deck the shown result's run wrote to. */
+    val resultDeckName: String? = null,
     val runState: MiningRunState = MiningRunState.Idle,
     val curation: CurationUiState? = null,
     val startPending: Boolean = false,

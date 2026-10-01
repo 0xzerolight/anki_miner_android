@@ -166,18 +166,24 @@
     <string name="success_title">Майнинг завершён</string>
     <string name="cancelled_title">Майнинг отменён</string>
     <string name="failed_title">Майнинг остановлен</string>
-    <string name="partial_result_title">Заметки добавлены</string>
-    <string name="result_video">Видео: %1$s</string>
-    <string name="result_audio">Аудио: %1$s</string>
-    <string name="result_subtitle">Субтитры: %1$s</string>
-    <string name="result_reading_source">Источник для чтения: %1$s</string>
-    <string name="result_reading_archive">Архив изображений Mokuro: %1$s</string>
     <string name="result_more_items">Ещё: +%1$d</string>
-    <string name="result_mined_forms">Намайненные формы: %1$s</string>
-    <string name="result_card_ids">ID заметок Anki: %1$s</string>
     <string name="result_no_items">Нет</string>
-    <string name="result_unknown_file">Неизвестный файл</string>
     <string name="result_error_item">• %1$s</string>
+    <plurals name="result_notes_added_to_deck">
+        <item quantity="one">%1$d заметка добавлена в %2$s</item>
+        <item quantity="few">%1$d заметки добавлены в %2$s</item>
+        <item quantity="many">%1$d заметок добавлено в %2$s</item>
+        <item quantity="other">%1$d заметки добавлено в %2$s</item>
+    </plurals>
+    <plurals name="result_notes_added">
+        <item quantity="one">%1$d заметка добавлена</item>
+        <item quantity="few">%1$d заметки добавлены</item>
+        <item quantity="many">%1$d заметок добавлено</item>
+        <item quantity="other">%1$d заметки добавлено</item>
+    </plurals>
+    <string name="result_cancelled_nothing_added">Запуск отменён. Ничего не добавлено.</string>
+    <string name="result_nothing_added">Новые заметки не добавлены.</string>
+    <string name="result_detail_line">%1$s: %2$s</string>
     <string name="undo_mining_run">Отменить (%1$d заметок)</string>
     <string name="undo_confirm_title">Отменить этот запуск?</string>
     <string name="undo_confirm_message">Удалить %1$d заметок из Anki? Это нельзя отменить.</string>
@@ -188,7 +194,6 @@
     <string name="mining_notice_no_definition">Нет записи в словаре для %1$d слов: %2$s</string>
     <string name="mining_notice_frequency_cutoff_ignored">Порог частотности не применён: не загружен ни один источник частотности с рангами. Добавьте его в разделе Настройки → Ресурсы.</string>
     <string name="mining_failure_resources_stale">После обновления приложения эти ресурсы нужно импортировать заново: %1$s. Импортируйте их заново в разделе Настройки → Ресурсы.</string>
-    <string name="result_metric_created">Создано</string>
     <string name="result_metric_skipped_new">Пропущено / новых</string>
     <string name="result_metric_skipped_new_value">%1$d / %2$d</string>
     <string name="result_metric_comprehension">Понимание</string>
