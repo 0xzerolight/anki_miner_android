@@ -22,7 +22,7 @@ import android_bridge.local_resources as local_resources
 import android_bridge.resources as resources
 import pytest
 from android_bridge import boundary
-from android_bridge.languages import DOWNLOADABLE_DATA_COMPONENTS
+from android_bridge.languages import DOWNLOADABLE_DATA_COMPONENTS, SPLIT_DATA_COMPONENTS
 from android_bridge.protocol import BridgeProtocolError, decode_envelope, encode_message
 from android_bridge.resource_catalog import (
     InnerDigest,
@@ -234,7 +234,12 @@ def _fixture_archive(path: Path, entry: LanguageDataResource, *, extra: dict[str
 
 
 def _pin_to_fixture(monkeypatch: pytest.MonkeyPatch, code: str, entry: LanguageDataResource, archive: Path):
-    """Point the catalog entry and the vendored manifest at the fixture's bytes."""
+    """Point the catalog entry and the vendored manifest at the fixture's bytes.
+
+    Split models come from another component's archive (``SPLIT_DATA_COMPONENTS``):
+    that component's matching artifact is re-pinned, and only the catalog carries
+    the inner digests.
+    """
 
     from anki_miner.services import language_pack_installer
 
@@ -249,17 +254,27 @@ def _pin_to_fixture(monkeypatch: pytest.MonkeyPatch, code: str, entry: LanguageD
         install=replace(entry.install, inner_sha256=inner),
     )
     real = language_pack_installer.load_pack(code)
+    source = SPLIT_DATA_COMPONENTS.get((code, entry.import_name))
+
+    def repinned(spec):
+        if spec is None or spec.url != entry.archive.url:
+            return spec
+        if source is not None:
+            return replace(spec, sha256=digest)
+        return replace(spec, sha256=digest, inner_sha256=tuple((item.path, item.sha256) for item in inner))
+
     components = tuple(
         (
             replace(
                 component,
-                universal=replace(
-                    component.universal,
-                    sha256=digest,
-                    inner_sha256=tuple((item.path, item.sha256) for item in inner),
+                universal=repinned(component.universal),
+                per_platform=(
+                    None
+                    if component.per_platform is None
+                    else {key: repinned(spec) for key, spec in component.per_platform.items()}
                 ),
             )
-            if component.import_name == entry.import_name
+            if component.import_name == (source or entry.import_name)
             else component
         )
         for component in real.components
@@ -297,16 +312,14 @@ def _install(entry: LanguageDataResource, archive: Path, operation: str = "langu
 def test_every_data_component_installs_where_the_engine_looks_for_it(
     home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: str, entry: LanguageDataResource
 ) -> None:
-    from anki_miner.services.language_pack_installer import component_path
-
     archive = _fixture_archive(tmp_path / "download.part", entry)
     pinned = _pin_to_fixture(monkeypatch, code, entry, archive)
-    assert component_path(code, entry.import_name) is None
+    assert language_data.data_component_path(code, entry.import_name) is None
 
     installed = _install(pinned, archive)
 
     assert installed == {"resourceId": entry.resource_id, "language": code, "importName": entry.import_name}
-    path = component_path(code, entry.import_name)
+    path = language_data.data_component_path(code, entry.import_name)
     assert path == home / "language_packs" / code / entry.import_name
     assert entry.resource_id in language_data.installed_language_data(home)
     landed = sorted(

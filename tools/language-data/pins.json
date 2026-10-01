@@ -43,13 +43,141 @@
       "apk": "engine code: underthesea loads its models with joblib; ships in the APK"
     },
     "vi/underthesea": {
-      "apk": "engine code: the repacked underthesea wheel ships in the APK, its CRF models included"
+      "split": {
+        "apk": "engine code: underthesea ships in the APK, repacked without the two CRF model directories (tools/runtime-wheels REPACKS)",
+        "data": {
+          "importName": "underthesea_models",
+          "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+          "sizeBytes": 7273326,
+          "displayName": "underthesea 9.5.0 Vietnamese word segmentation and POS models",
+          "memberPrefix": "underthesea/pipeline/",
+          "exclude": [
+            "__init__.py",
+            "chunking/",
+            "classification/",
+            "dependency_parse/",
+            "ipa/",
+            "lang_detect/",
+            "ner/",
+            "pos_tag/__init__.py",
+            "pos_tag/model_crf.py",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/test_output.txt",
+            "pos_tag/pos_crf_2017_10_11.bin",
+            "pos_tag/tagged_feature.py",
+            "sent_tokenize/",
+            "sentiment/",
+            "text_normalize/",
+            "translate/",
+            "tts/",
+            "word_tokenize/__init__.py",
+            "word_tokenize/regex_tokenize.py"
+          ],
+          "sentinels": [
+            "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+            "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+            "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+            "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin"
+          ],
+          "innerSha256": [
+            {
+              "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+              "sha256": "c3a64c64349f1d73304f89babacaa8f8cd6078b1ec1a1b2c104e9e411ac1d2c3"
+            },
+            {
+              "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+              "sha256": "cf93263c7c7973bf50122b0be76a394443ff61be00c1368713dee1b7d5b8a435"
+            },
+            {
+              "path": "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+              "sha256": "ec8c62b3881c6682c18959988e1fe08800cc835777778845bded470ca02745d9"
+            },
+            {
+              "path": "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+              "sha256": "f79566ee0bfcf2584fb89ae656c62cc7d40ad6c272482cf51740b8635e50d930"
+            },
+            {
+              "path": "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+              "sha256": "00be4922c973cdf9738421e353ea1ac13f314105916c9e1b8e834bbb66412450"
+            },
+            {
+              "path": "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+              "sha256": "56e4888920e456e5a96c5a0b263c952f6286eedb98228b41dbda99e692132bfa"
+            }
+          ],
+          "attribution": [
+            {
+              "name": "underthesea 9.5.0 CRF models ws_crf_vlsp2013_20230727 and pos_crf_vlsp2013_20230303 (trained on VLSP 2013)",
+              "copyright": "Vu Anh and the underthesea contributors",
+              "license": "Apache-2.0",
+              "url": "https://github.com/undertheseanlp/underthesea"
+            }
+          ]
+        }
+      }
     },
     "vi/underthesea_core": {
       "apk": "engine code: underthesea's Rust extension, built for Android and shipped in the APK"
     },
     "yue/pycantonese": {
-      "apk": "engine code: pycantonese and its Rust core, built for Android and shipped in the APK with its models"
+      "split": {
+        "apk": "engine code: pycantonese and its Rust core ship in the APK, repacked without the segmenter and tagger models (tools/runtime-wheels REPACKS); its jyutping tables stay in the APK because import pycantonese reads them",
+        "data": {
+          "importName": "pycantonese_models",
+          "platform": [
+            "linux",
+            "aarch64"
+          ],
+          "sha256": "609d14a588cb0b39fe1644347609677dbda77e25978dfd34f1f9de455f88637b",
+          "sizeBytes": 42602997,
+          "displayName": "PyCantonese 5.0.0 word segmentation and POS models",
+          "memberPrefix": "pycantonese/",
+          "exclude": [
+            "__init__.py",
+            "_punctuation_marks.py",
+            "_rust.abi3.so",
+            "_rust.pyi",
+            "corpus.py",
+            "data/",
+            "jyutping/",
+            "parsing.py",
+            "pos_tagging/__init__.py",
+            "pos_tagging/hkcancor_to_ud.py",
+            "pos_tagging/tagger.py",
+            "pos_tagging/train_tagger.py",
+            "py.typed",
+            "search.py",
+            "stop_words.py",
+            "util.py",
+            "word_segmentation/__init__.py",
+            "word_segmentation/segmenter.py",
+            "word_segmentation/train_segmenter.py"
+          ],
+          "sentinels": [
+            "word_segmentation/segmenter.fb.zst",
+            "pos_tagging/tagger.fb.zst"
+          ],
+          "innerSha256": [
+            {
+              "path": "word_segmentation/segmenter.fb.zst",
+              "sha256": "b959a829908a22ea3efe2f89a01d8d9cdc79b0a8ca803fc47c33c136ca1f289f"
+            },
+            {
+              "path": "pos_tagging/tagger.fb.zst",
+              "sha256": "8d260b964d415ce24d9c21aab660cbf9675b83836b8873ef99bae32f45dfca24"
+            }
+          ],
+          "attribution": [
+            {
+              "name": "PyCantonese 5.0.0 segmenter and tagger models (trained on HKCanCor, rime-cantonese, Common Voice and CTCPC data)",
+              "copyright": "Copyright (c) 2014-2026 Jackson L. Lee",
+              "license": "MIT",
+              "url": "https://github.com/jacksonllee/pycantonese"
+            }
+          ]
+        }
+      }
     },
     "yue/rustling": {
       "apk": "engine code: the Rust segmenter and tagger pycantonese calls, built for Android and shipped in the APK"

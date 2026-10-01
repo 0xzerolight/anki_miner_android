@@ -58,6 +58,8 @@ assets = [
 overlay_allowlist = [
   "PyQt6/QtCore.py",
   "PyQt6/__init__.py",
+  "anki_miner/languages/vi/tokenizer.py",
+  "anki_miner/languages/yue/tokenizer.py",
   "anki_miner/models/reading.py",
   "anki_miner/services/__init__.py",
   "anki_miner/services/known_words_import.py",
@@ -73,7 +75,7 @@ overlay_allowlist = [
 # Whole-file shadow overlays must name the exact upstream Git blob they were
 # reviewed against. An engine.lock bump stops here until the override is
 # consciously rebased over any upstream change.
-overlay_base_blobs = { "anki_miner/models/reading.py" = "06fcdeac313931b926b2dc60129ec916da8c2550", "anki_miner/services/__init__.py" = "47c287386eedc5ec42feeebd42dbf6bf4f5b33dc", "anki_miner/services/known_words_import.py" = "27e665e30ca2ac7a2cd3dbc8f707aa532dd15697", "anki_miner/services/media_extractor.py" = "91499f32abde84a575e0e35c39963dd9bd574a2b", "anki_miner/services/reading/sentence_splitter.py" = "3e1b7d4cc8e34976fd4c11130eba0e3b2b6a0931", "anki_miner/services/sentence_tts_fetcher.py" = "5e4ecba85e548f0b5d1ccbdabe385231af7cdc20", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "5d9771333de46c24e931c02dd5f34ec7ec73a4fe" }
+overlay_base_blobs = { "anki_miner/languages/vi/tokenizer.py" = "8e2a69fa71e8a9392ab0305908740e53995aa38f", "anki_miner/languages/yue/tokenizer.py" = "dfd2846d5613936aef53e6572a295d1b2b2893a7", "anki_miner/models/reading.py" = "06fcdeac313931b926b2dc60129ec916da8c2550", "anki_miner/services/__init__.py" = "47c287386eedc5ec42feeebd42dbf6bf4f5b33dc", "anki_miner/services/known_words_import.py" = "27e665e30ca2ac7a2cd3dbc8f707aa532dd15697", "anki_miner/services/media_extractor.py" = "91499f32abde84a575e0e35c39963dd9bd574a2b", "anki_miner/services/reading/sentence_splitter.py" = "3e1b7d4cc8e34976fd4c11130eba0e3b2b6a0931", "anki_miner/services/sentence_tts_fetcher.py" = "5e4ecba85e548f0b5d1ccbdabe385231af7cdc20", "anki_miner/services/tagger.py" = "e7605b3aaad8239fa6897496a069a22f6bee1f4c", "anki_miner/utils/audio_track_detector.py" = "5d9771333de46c24e931c02dd5f34ec7ec73a4fe" }
 
 # A protected module may be selected from the desktop Git object only. An
 # overlay at the same path is a hard error.

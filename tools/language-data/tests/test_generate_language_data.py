@@ -81,9 +81,28 @@ class GenerateLanguageDataTest(unittest.TestCase):
         # generate_entries raises on an unclassified component or a stale pin.
         entries = generator.generate_entries(REPO_ROOT)
         self.assertEqual(
-            {"ar": ["calima_msa"], "fa": ["hazm_data"]},
+            {"ar": ["calima_msa"], "fa": ["hazm_data"], "vi": ["underthesea_models"], "yue": ["pycantonese_models"]},
             {code: [entry["importName"] for entry in items] for code, items in entries.items()},
         )
+
+    def test_every_split_model_is_stripped_from_the_apk_wheel(self) -> None:
+        """A split component's models are downloaded, so its APK wheel must not carry them too."""
+        sys.path.insert(0, str(REPO_ROOT / "tools" / "runtime-wheels"))
+        import runtime_wheels
+
+        pins = json.loads((REPO_ROOT / generator.PINS_PATH).read_text(encoding="utf-8"))["components"]
+        splits = {key: pin["split"]["data"] for key, pin in pins.items() if "split" in pin}
+        self.assertEqual({"vi/underthesea", "yue/pycantonese"}, set(splits))
+        for key, data in splits.items():
+            with self.subTest(component=key):
+                package = key.split("/", 1)[1]
+                prefix, excludes = runtime_wheels.REPACKS[runtime_wheels.normalize_package(package)]
+                for sentinel in data["sentinels"]:
+                    member = data["memberPrefix"] + sentinel
+                    self.assertTrue(member.startswith(prefix), member)
+                    self.assertTrue(
+                        any(runtime_wheels._exclude_matches(rule, member, prefix) for rule in excludes), member
+                    )
 
     def test_a_data_component_becomes_a_catalog_entry_copied_from_its_manifest(self) -> None:
         self.assertEqual(
@@ -155,6 +174,76 @@ class GenerateLanguageDataTest(unittest.TestCase):
             with self.subTest(kind=kind, extra=extra):
                 self._write_pack(kind=kind, extra=extra)
                 with self.assertRaises(generator.GenerationError):
+                    generator.drift(self.repo)
+
+    def _split_pin(self, **overrides: object) -> dict:
+        data = {
+            "importName": "xx_models",
+            "sha256": self.sha,
+            "sizeBytes": 4321,
+            "displayName": "XX models",
+            "memberPrefix": "pkg/models/",
+            "exclude": ["__init__.py"],
+            "sentinels": ["model.bin"],
+            "innerSha256": [{"path": "model.bin", "sha256": "c" * 64}],
+            "attribution": [
+                {"name": "XX", "copyright": "XX authors", "license": "MIT", "url": "https://example.invalid/"}
+            ],
+            **overrides,
+        }
+        return {"split": {"apk": "engine code ships in the APK", "data": data}}
+
+    def test_a_split_component_downloads_its_models_under_their_own_name(self) -> None:
+        self._write_pack(kind="wheel")
+        self._write_pins({"xx/xx_data": self._split_pin()})
+
+        generator.refresh(self.repo)
+
+        (entry,) = self._catalog("xx")["resources"]
+        self.assertEqual(("xx-xx-models", "xx_models"), (entry["resourceId"], entry["importName"]))
+        self.assertEqual(
+            {"url": "https://example.invalid/xx-data.zip", "sha256": self.sha, "sizeBytes": 4321, "format": "wheel"},
+            entry["archive"],
+        )
+        self.assertEqual(
+            {
+                "memberPrefix": "pkg/models/",
+                "exclude": ["__init__.py"],
+                "sentinels": ["model.bin"],
+                "innerSha256": [{"path": "model.bin", "sha256": "c" * 64}],
+            },
+            entry["install"],
+        )
+
+    def test_a_split_component_picks_one_per_platform_artifact(self) -> None:
+        text = (
+            _PACK_TEMPLATE.format(sha=self.sha, kind="wheel", extra="")
+            .replace(
+                "    universal=ArtifactSpec(",
+                '    per_platform={("linux", "aarch64"): ArtifactSpec(',
+            )
+            .replace("    ),\n)\n\nPACK", "    )},\n)\n\nPACK")
+        )
+        (self.repo / generator.LANGUAGES_PATH / "xx" / "pack.py").write_text(text, encoding="utf-8")
+        self._write_pins({"xx/xx_data": self._split_pin(platform=["linux", "aarch64"])})
+        generator.refresh(self.repo)
+        self.assertEqual(self.sha, self._catalog("xx")["resources"][0]["archive"]["sha256"])
+
+        self._write_pins({"xx/xx_data": self._split_pin(platform=["linux", "x86_64"])})
+        with self.assertRaisesRegex(generator.GenerationError, "no artifact"):
+            generator.drift(self.repo)
+
+    def test_a_split_pin_is_checked_like_a_data_pin(self) -> None:
+        self._write_pack(kind="wheel")
+        for pin, message in (
+            (self._split_pin(sha256="b" * 64), "re-measure"),
+            (self._split_pin(importName="xx_data"), "import name of their own"),
+            (self._split_pin(sentinels=[]), "sentinels"),
+            ({"split": {"apk": " ", "data": self._split_pin()["split"]["data"]}}, "reason"),
+        ):
+            with self.subTest(message=message):
+                self._write_pins({"xx/xx_data": pin})
+                with self.assertRaisesRegex(generator.GenerationError, message):
                     generator.drift(self.repo)
 
     def test_the_vendored_thai_manifest_reads_as_syntax(self) -> None:

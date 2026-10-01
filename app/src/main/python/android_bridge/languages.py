@@ -42,7 +42,17 @@ LANGUAGE_UNSUPPORTED = "language_unsupported"
 
 _LANGUAGE_CODE_RE = re.compile(r"^[a-z]{2,3}$")
 
-#: The pack components Android downloads, as ``(language, import_name)``. Data
+#: Models Android downloads apart from a pack component whose code ships in the
+#: APK: the APK wheel is repacked without them, and an engine override loads them
+#: by path. ``(language, import name) -> the vendored component they come from``;
+#: the catalog entry (``tools/language-data/pins.json`` ``split``) says which
+#: members of that component's own pinned archive they are.
+SPLIT_DATA_COMPONENTS: Mapping[tuple[str, str], str] = {
+    ("vi", "underthesea_models"): "underthesea",  # the two CRF models
+    ("yue", "pycantonese_models"): "pycantonese",  # the segmenter and tagger models
+}
+
+#: The language data Android downloads, as ``(language, import_name)``. Data
 #: only (decision 2): every other component a vendored pack declares is code,
 #: which ships in the APK or not at all. ``test_languages`` pins the split, so a
 #: newly vendored pack fails there until each of its components is classified.
@@ -50,6 +60,7 @@ DOWNLOADABLE_DATA_COMPONENTS: frozenset[tuple[str, str]] = frozenset(
     {
         ("ar", "calima_msa"),  # the CAMeL morphology database (a plain zip)
         ("fa", "hazm_data"),  # hazm's five .dat tables (the wheel's data/ directory only)
+        *SPLIT_DATA_COMPONENTS,
     }
 )
 
@@ -235,6 +246,22 @@ def _missing_components_are_data(code: str) -> bool:
     return bool(missing) and all((code, name) in DOWNLOADABLE_DATA_COMPONENTS for name in missing)
 
 
+def _missing_split_data(code: str) -> list[str]:
+    """The split models *code* needs that are not installed.
+
+    The engine's own probe cannot see them: it finds the component's code
+    importable from the APK and answers that the language can mine.
+    """
+
+    from .language_data import data_component_path
+
+    return [
+        name
+        for language, name in sorted(SPLIT_DATA_COMPONENTS)
+        if language == code and data_component_path(language, name) is None
+    ]
+
+
 def unavailable_reason_code(profile: Any) -> str | None:
     """Why *profile* cannot mine on this device, as an Android reason code; None when it can.
 
@@ -245,9 +272,13 @@ def unavailable_reason_code(profile: Any) -> str | None:
 
     probe = profile.unavailable_reason
     reason = probe() if probe is not None else None
-    if not reason:
-        return None
-    code = LANGUAGE_DATA_REQUIRED if _missing_components_are_data(profile.code) else LANGUAGE_UNSUPPORTED
+    if reason:
+        code = LANGUAGE_DATA_REQUIRED if _missing_components_are_data(profile.code) else LANGUAGE_UNSUPPORTED
+    else:
+        missing = _missing_split_data(profile.code)
+        if not missing:
+            return None
+        code, reason = LANGUAGE_DATA_REQUIRED, f"missing language data: {', '.join(missing)}"
     logger.info(
         "language_unavailable outcome=skip language=%s reason_code=%s detail=%s",
         profile.code,

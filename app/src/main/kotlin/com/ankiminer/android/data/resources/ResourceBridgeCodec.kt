@@ -1511,7 +1511,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, vietnamese, cantonese) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1795,6 +1795,165 @@ object FrozenResourceCatalog {
                                     "Copyright (c) 2013 Alireza Nourian and hazm contributors",
                                     "MIT",
                                     "https://github.com/roshan-research/hazm",
+                                ),
+                            ),
+                    ),
+                ),
+            recommended = emptyList(),
+        )
+
+    val vietnamese =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "vi",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "vi-underthesea-models",
+                        displayName = "underthesea 9.5.0 Vietnamese word segmentation and POS models",
+                        importName = "underthesea_models",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl",
+                                sha256 = "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+                                sizeBytes = 7_273_326,
+                                format = "wheel",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "underthesea/pipeline/",
+                                exclude = listOf(
+                                    "__init__.py",
+                                    "chunking/",
+                                    "classification/",
+                                    "dependency_parse/",
+                                    "ipa/",
+                                    "lang_detect/",
+                                    "ner/",
+                                    "pos_tag/__init__.py",
+                                    "pos_tag/model_crf.py",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/test_output.txt",
+                                    "pos_tag/pos_crf_2017_10_11.bin",
+                                    "pos_tag/tagged_feature.py",
+                                    "sent_tokenize/",
+                                    "sentiment/",
+                                    "text_normalize/",
+                                    "translate/",
+                                    "tts/",
+                                    "word_tokenize/__init__.py",
+                                    "word_tokenize/regex_tokenize.py",
+                                ),
+                                sentinels = listOf(
+                                    "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+                                    "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+                                    "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+                                    "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+                                ),
+                                innerSha256 =
+                                    listOf(
+                                        LanguageDataInnerDigest(
+                                            "word_tokenize/models/ws_crf_vlsp2013_20230727/models.bin",
+                                            "c3a64c64349f1d73304f89babacaa8f8cd6078b1ec1a1b2c104e9e411ac1d2c3",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "word_tokenize/models/ws_crf_vlsp2013_20230727/features.bin",
+                                            "cf93263c7c7973bf50122b0be76a394443ff61be00c1368713dee1b7d5b8a435",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "word_tokenize/models/ws_crf_vlsp2013_20230727/dictionary.bin",
+                                            "ec8c62b3881c6682c18959988e1fe08800cc835777778845bded470ca02745d9",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tag/models/pos_crf_vlsp2013_20230303/models.bin",
+                                            "f79566ee0bfcf2584fb89ae656c62cc7d40ad6c272482cf51740b8635e50d930",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tag/models/pos_crf_vlsp2013_20230303/features.bin",
+                                            "00be4922c973cdf9738421e353ea1ac13f314105916c9e1b8e834bbb66412450",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tag/models/pos_crf_vlsp2013_20230303/dictionary.bin",
+                                            "56e4888920e456e5a96c5a0b263c952f6286eedb98228b41dbda99e692132bfa",
+                                        ),
+                                    ),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "underthesea 9.5.0 CRF models ws_crf_vlsp2013_20230727 and pos_crf_vlsp2013_20230303 (trained on VLSP 2013)",
+                                    "Vu Anh and the underthesea contributors",
+                                    "Apache-2.0",
+                                    "https://github.com/undertheseanlp/underthesea",
+                                ),
+                            ),
+                    ),
+                ),
+            recommended = emptyList(),
+        )
+
+    val cantonese =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "yue",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "yue-pycantonese-models",
+                        displayName = "PyCantonese 5.0.0 word segmentation and POS models",
+                        importName = "pycantonese_models",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/56/70/702c2edf2bd1dac56aef6236e30d977b83efe313e4a6b1ef9fa23004341a/pycantonese-5.0.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+                                sha256 = "609d14a588cb0b39fe1644347609677dbda77e25978dfd34f1f9de455f88637b",
+                                sizeBytes = 42_602_997,
+                                format = "wheel",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "pycantonese/",
+                                exclude = listOf(
+                                    "__init__.py",
+                                    "_punctuation_marks.py",
+                                    "_rust.abi3.so",
+                                    "_rust.pyi",
+                                    "corpus.py",
+                                    "data/",
+                                    "jyutping/",
+                                    "parsing.py",
+                                    "pos_tagging/__init__.py",
+                                    "pos_tagging/hkcancor_to_ud.py",
+                                    "pos_tagging/tagger.py",
+                                    "pos_tagging/train_tagger.py",
+                                    "py.typed",
+                                    "search.py",
+                                    "stop_words.py",
+                                    "util.py",
+                                    "word_segmentation/__init__.py",
+                                    "word_segmentation/segmenter.py",
+                                    "word_segmentation/train_segmenter.py",
+                                ),
+                                sentinels = listOf("word_segmentation/segmenter.fb.zst", "pos_tagging/tagger.fb.zst"),
+                                innerSha256 =
+                                    listOf(
+                                        LanguageDataInnerDigest(
+                                            "word_segmentation/segmenter.fb.zst",
+                                            "b959a829908a22ea3efe2f89a01d8d9cdc79b0a8ca803fc47c33c136ca1f289f",
+                                        ),
+                                        LanguageDataInnerDigest(
+                                            "pos_tagging/tagger.fb.zst",
+                                            "8d260b964d415ce24d9c21aab660cbf9675b83836b8873ef99bae32f45dfca24",
+                                        ),
+                                    ),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "PyCantonese 5.0.0 segmenter and tagger models (trained on HKCanCor, rime-cantonese, Common Voice and CTCPC data)",
+                                    "Copyright (c) 2014-2026 Jackson L. Lee",
+                                    "MIT",
+                                    "https://github.com/jacksonllee/pycantonese",
                                 ),
                             ),
                     ),

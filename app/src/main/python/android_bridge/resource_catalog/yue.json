@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 3,
+  "language": "yue",
+  "resources": [
+    {
+      "resourceId": "yue-pycantonese-models",
+      "kind": "language-data",
+      "displayName": "PyCantonese 5.0.0 word segmentation and POS models",
+      "importName": "pycantonese_models",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/56/70/702c2edf2bd1dac56aef6236e30d977b83efe313e4a6b1ef9fa23004341a/pycantonese-5.0.0-cp310-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+        "sha256": "609d14a588cb0b39fe1644347609677dbda77e25978dfd34f1f9de455f88637b",
+        "sizeBytes": 42602997,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "pycantonese/",
+        "exclude": [
+          "__init__.py",
+          "_punctuation_marks.py",
+          "_rust.abi3.so",
+          "_rust.pyi",
+          "corpus.py",
+          "data/",
+          "jyutping/",
+          "parsing.py",
+          "pos_tagging/__init__.py",
+          "pos_tagging/hkcancor_to_ud.py",
+          "pos_tagging/tagger.py",
+          "pos_tagging/train_tagger.py",
+          "py.typed",
+          "search.py",
+          "stop_words.py",
+          "util.py",
+          "word_segmentation/__init__.py",
+          "word_segmentation/segmenter.py",
+          "word_segmentation/train_segmenter.py"
+        ],
+        "sentinels": [
+          "word_segmentation/segmenter.fb.zst",
+          "pos_tagging/tagger.fb.zst"
+        ],
+        "innerSha256": [
+          {
+            "path": "word_segmentation/segmenter.fb.zst",
+            "sha256": "b959a829908a22ea3efe2f89a01d8d9cdc79b0a8ca803fc47c33c136ca1f289f"
+          },
+          {
+            "path": "pos_tagging/tagger.fb.zst",
+            "sha256": "8d260b964d415ce24d9c21aab660cbf9675b83836b8873ef99bae32f45dfca24"
+          }
+        ]
+      },
+      "attribution": [
+        {
+          "name": "PyCantonese 5.0.0 segmenter and tagger models (trained on HKCanCor, rime-cantonese, Common Voice and CTCPC data)",
+          "copyright": "Copyright (c) 2014-2026 Jackson L. Lee",
+          "license": "MIT",
+          "url": "https://github.com/jacksonllee/pycantonese"
+        }
+      ]
+    }
+  ],
+  "recommended": []
+}

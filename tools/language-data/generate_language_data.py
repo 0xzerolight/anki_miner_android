@@ -16,6 +16,13 @@ Every component of every vendored pack must be classified in ``pins.json``:
   pin cannot keep a stale length.
 - ``apk``: engine code, which ships in the APK or not at all (decision 2), with
   the reason.
+- ``split``: a component whose code ships in the APK (``apk`` holds the reason)
+  but whose models the APK wheel is repacked without. The models are a
+  ``language-data`` entry of their own (``data``): the component's own pinned
+  archive (``platform`` picks one per-platform artifact, all carry the same
+  models), extracted with an Android selection (member prefix, excludes,
+  sentinels, inner digests) under an Android import name. An engine override
+  loads them from there by path.
 
 A data component must look like data in its manifest: one universal artifact,
 a zip or wheel, no root members and no ABI pin. The bridge's extraction
@@ -153,6 +160,76 @@ def _data_entry(code: str, component: Mapping[str, Any], pin: Mapping[str, Any])
     }
 
 
+def _require_reason(key: str, reason: object) -> None:
+    if not isinstance(reason, str) or not reason.strip():
+        raise GenerationError(f"{key}: an apk classification needs its reason")
+
+
+_SPLIT_DATA_KEYS = frozenset(
+    {
+        "importName",
+        "sha256",
+        "sizeBytes",
+        "displayName",
+        "memberPrefix",
+        "exclude",
+        "sentinels",
+        "innerSha256",
+        "attribution",
+    }
+)
+
+
+def _split_entry(code: str, component: Mapping[str, Any], pin: Mapping[str, Any]) -> dict[str, Any]:
+    """The ``language-data`` entry for the models of a component whose code ships in the APK."""
+
+    where = f"{code}/{component['import_name']}"
+    if not isinstance(pin, dict) or set(pin) != {"apk", "data"}:
+        raise GenerationError(f"{where}: a split classification holds exactly apk and data")
+    _require_reason(where, pin["apk"])
+    data = pin["data"]
+    if not isinstance(data, dict) or not _SPLIT_DATA_KEYS <= set(data) <= _SPLIT_DATA_KEYS | {"platform"}:
+        raise GenerationError(f"{where}: split data needs exactly {sorted(_SPLIT_DATA_KEYS)} (and optionally platform)")
+    platform = data.get("platform")
+    if platform is None:
+        spec = component.get("universal")
+    else:
+        spec = (component.get("per_platform") or {}).get(tuple(platform))
+    if not isinstance(spec, dict):
+        raise GenerationError(f"{where}: pack.py pins no artifact for platform {platform!r}")
+    if spec["kind"] not in DATA_KINDS:
+        raise GenerationError(f"{where}: artifact kind {spec['kind']!r} is not a data archive")
+    if data["sha256"] != spec["sha256"]:
+        raise GenerationError(
+            f"{where}: pins.json measured {data['sha256']!r} but pack.py pins {spec['sha256']!r}; "
+            "re-measure sizeBytes and the selection for the new artifact"
+        )
+    name = data["importName"]
+    if name == component["import_name"] or not isinstance(name, str) or not name.isidentifier():
+        raise GenerationError(f"{where}: the models need an import name of their own, not {name!r}")
+    if not data["sentinels"]:
+        raise GenerationError(f"{where}: split data needs sentinels")
+    return {
+        "resourceId": _resource_id(code, name),
+        "kind": "language-data",
+        "displayName": data["displayName"],
+        "importName": name,
+        "archive": {
+            "url": spec["url"],
+            "sha256": spec["sha256"],
+            "sizeBytes": data["sizeBytes"],
+            "format": spec["kind"],
+        },
+        "install": {
+            "memberPrefix": data["memberPrefix"],
+            "exclude": list(data["exclude"]),
+            "sentinels": list(data["sentinels"]),
+            "innerSha256": [{"path": item["path"], "sha256": item["sha256"]} for item in data["innerSha256"]],
+        },
+        "attribution": data["attribution"],
+    }
+
+
 def generate_entries(repo: Path) -> dict[str, list[dict[str, Any]]]:
     """``{code: [language-data entry, ...]}`` for every vendored language with a pack."""
 
@@ -169,11 +246,13 @@ def generate_entries(repo: Path) -> dict[str, list[dict[str, Any]]]:
             key = f"{code}/{component['import_name']}"
             seen.add(key)
             pin = pins.get(key)
-            if not isinstance(pin, dict) or len(pin) != 1 or not ({"data", "apk"} & set(pin)):
-                raise GenerationError(f"{key}: classify it in {PINS_PATH} as data or apk")
+            if not isinstance(pin, dict) or len(pin) != 1 or not ({"data", "apk", "split"} & set(pin)):
+                raise GenerationError(f"{key}: classify it in {PINS_PATH} as data, apk or split")
             if "apk" in pin:
-                if not isinstance(pin["apk"], str) or not pin["apk"].strip():
-                    raise GenerationError(f"{key}: an apk classification needs its reason")
+                _require_reason(key, pin["apk"])
+                continue
+            if "split" in pin:
+                entries.setdefault(code, []).append(_split_entry(code, component, pin["split"]))
                 continue
             entries.setdefault(code, []).append(_data_entry(code, component, pin["data"]))
     stale = sorted(set(pins) - seen)

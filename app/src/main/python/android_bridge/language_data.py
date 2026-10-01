@@ -10,6 +10,12 @@ write a single code member, and then runs the vendored
 exact layout ``language_pack_installer.component_path`` reads, so the engine's
 own availability probe answers for it.
 
+Split models (``languages.SPLIT_DATA_COMPONENTS``) are the exception to "a
+vendored pack component": their code ships in the APK, repacked without the
+models, so the models are extracted from the component's own pinned archive
+with Android's member selection, under an import name of their own, and an
+engine override loads them from there.
+
 Nothing here appends to ``sys.path``: a data directory is read by path.
 
 Engine imports are function-local (``bootstrap`` must set ``ANKI_MINER_HOME``
@@ -29,7 +35,12 @@ from typing import Any
 from . import resources as core
 from .bootstrap import require_initialized
 from .protocol import BridgeProtocolError, encode_message
-from .resource_catalog import LanguageDataResource, find_catalog_resource, load_resource_catalogs
+from .resource_catalog import (
+    LanguageDataResource,
+    find_catalog_resource,
+    load_resource_catalog,
+    load_resource_catalogs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +79,56 @@ def escapes(target: str) -> bool:
     return path.startswith("/") or path == ".." or path.startswith("../")
 
 
+def _split_component(language: str, resource: LanguageDataResource, source: str) -> tuple[Any, Any]:
+    """The ``(PackComponent, ArtifactSpec)`` that extracts split models (``languages.SPLIT_DATA_COMPONENTS``).
+
+    The archive must be one *source* pins in its vendored manifest. The
+    selection (member prefix, excludes, sentinels, inner digests) and the import
+    name are Android's, from the catalog entry: the vendored component would
+    extract the package's code too.
+    """
+
+    from anki_miner.languages.pack_spec import ArtifactSpec, PackComponent
+    from anki_miner.services.language_pack_installer import load_pack
+
+    pack = load_pack(language)
+    component = None if pack is None else next((item for item in pack.components if item.import_name == source), None)
+    artifacts = () if component is None else (component.universal, *(component.per_platform or {}).values())
+    archive = resource.archive
+    if not any(
+        artifact is not None
+        and (artifact.url, artifact.sha256, artifact.kind) == (archive.url, archive.sha256, archive.format)
+        for artifact in artifacts
+    ):
+        raise _fail(
+            "resource_catalog_mismatch",
+            "Pinned language data does not match the vendored pack manifest",
+        )
+    install = resource.install
+    spec = ArtifactSpec(
+        url=archive.url,
+        sha256=archive.sha256,
+        kind=archive.format,
+        member_prefix=install.member_prefix,
+        exclude=tuple(install.exclude),
+        inner_sha256=tuple((digest.path, digest.sha256) for digest in install.inner_sha256),
+    )
+    return (
+        PackComponent(import_name=resource.import_name, required=True, sentinels=install.sentinels, universal=spec),
+        spec,
+    )
+
+
 def _vendored_component(language: str, resource: LanguageDataResource) -> tuple[Any, Any]:
     """The vendored ``(PackComponent, ArtifactSpec)`` the catalog entry was generated from."""
 
     from anki_miner.services.language_pack_installer import load_pack
 
+    from .languages import SPLIT_DATA_COMPONENTS
+
+    source = SPLIT_DATA_COMPONENTS.get((language, resource.import_name))
+    if source is not None:
+        return _split_component(language, resource, source)
     pack = load_pack(language)
     component = (
         None
@@ -155,7 +211,7 @@ def install_language_data(payload: Mapping[str, object]) -> str:
 
         from anki_miner.exceptions import SetupError
         from anki_miner.services._install_common import sweep_stale
-        from anki_miner.services.language_pack_installer import component_path, language_pack_root
+        from anki_miner.services.language_pack_installer import language_pack_root
         from anki_miner.services.pack_installer import _extract_component
 
         root = language_pack_root(language)
@@ -171,7 +227,7 @@ def install_language_data(payload: Mapping[str, object]) -> str:
             except OSError as exc:
                 core._raise_if_storage_exhausted(exc)
                 raise _fail("language_data_install_failed", "The language data could not be installed") from exc
-        if component_path(language, resource.import_name) is None:
+        if data_component_path(language, resource.import_name) is None:
             raise _fail("language_data_install_failed", "The installed language data is incomplete")
     logger.info(
         "language_data_installed outcome=ok resource=%s language=%s component=%s",
@@ -198,6 +254,29 @@ def _component_complete(directory: Path, sentinels: tuple[str, ...]) -> bool:
     except OSError:
         return False
     return True
+
+
+def data_component_path(language: str, import_name: str) -> Path | None:
+    """The directory an installed language-data component reads from, or None.
+
+    A vendored pack component answers through the engine's own
+    ``component_path``. Split models are no pack component, so their catalog
+    entry's sentinels decide, by the same rule, in the same layout
+    (``language_packs/<code>/<import name>/``).
+    """
+
+    from anki_miner.services.language_pack_installer import component_path, language_pack_root
+
+    from .languages import SPLIT_DATA_COMPONENTS
+
+    if (language, import_name) not in SPLIT_DATA_COMPONENTS:
+        return component_path(language, import_name)
+    resource = next(
+        (entry for entry in load_resource_catalog(language).language_data if entry.import_name == import_name),
+        None,
+    )
+    directory = language_pack_root(language) / import_name
+    return directory if resource is not None and _component_complete(directory, resource.install.sentinels) else None
 
 
 def installed_language_data(home: Path) -> list[str]:
