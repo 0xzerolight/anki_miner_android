@@ -374,7 +374,8 @@ internal suspend fun LazyListState.scrollBelowStickyHeader(
         snapshotFlow { layoutInfo.totalItemsCount > index }.first { it }
     }
     scrollToItem(index)
-    val covered = stickyHeaderPx() - (layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset ?: return)
+    val offset = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }?.offset ?: return
+    val covered = stickyHeaderPx() - offset
     if (covered > 0) scrollBy(-covered.toFloat())
 }
 
