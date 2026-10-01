@@ -109,6 +109,19 @@ class OnboardingWizardTest {
     }
 
     @Test
+    fun aLanguageWithoutUniDicSkipsTheTokenizerStep() {
+        val steps = wizardSteps(uniDicRequired = false)
+        assertEquals(WizardStep.entries - WizardStep.TOKENIZER, steps)
+        assertEquals(WizardStep.DICTIONARY, nextWizardStep(WizardStep.ANKIDROID_NOTE_TYPE, steps))
+        assertEquals(WizardStep.ANKIDROID_NOTE_TYPE, previousWizardStep(WizardStep.DICTIONARY, steps))
+        assertEquals(
+            WizardBackAction.Previous(WizardStep.ANKIDROID_NOTE_TYPE),
+            wizardBackAction(WizardStep.DICTIONARY, steps),
+        )
+        assertEquals(WizardStep.entries, wizardSteps(uniDicRequired = true))
+    }
+
+    @Test
     fun wizardOrderAndRequirementLabelsMatchMiningGates() {
         assertEquals(
             listOf(
