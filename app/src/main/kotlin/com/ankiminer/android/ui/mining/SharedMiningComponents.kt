@@ -713,24 +713,40 @@ private fun MiningResultSummary(
                 .testTag(testTag),
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        val undoButton: (@Composable () -> Unit)? =
+            if (undo != null && undo.undoneNoteCount == null) {
+                {
+                    SecondaryActionButton(
+                        onClick = undo.onUndo,
+                        enabled = undo.enabled,
+                        modifier = Modifier.testTag(undo.testTag),
+                    ) {
+                        Text(stringResource(R.string.undo_mining_run, undo.noteCount))
+                    }
+                }
+            } else {
+                null
+            }
+        // Narrow or large text: Undo goes under the sentence, which would otherwise wrap per letter.
+        if (isCompactLayout()) {
             Text(
                 text = headline.text(),
-                modifier = Modifier.weight(1f).semantics { heading() },
+                modifier = Modifier.semantics { heading() },
                 style = MaterialTheme.typography.titleMedium,
             )
-            if (undo != null && undo.undoneNoteCount == null) {
-                SecondaryActionButton(
-                    onClick = undo.onUndo,
-                    enabled = undo.enabled,
-                    modifier = Modifier.testTag(undo.testTag),
-                ) {
-                    Text(stringResource(R.string.undo_mining_run, undo.noteCount))
-                }
+            undoButton?.invoke()
+        } else {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = headline.text(),
+                    modifier = Modifier.weight(1f).semantics { heading() },
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                undoButton?.invoke()
             }
         }
         undo?.undoneNoteCount?.let { deleted ->
