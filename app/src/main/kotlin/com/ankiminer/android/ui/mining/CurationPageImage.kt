@@ -31,6 +31,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
@@ -122,20 +123,17 @@ private val HighlightStrokeWidth = 2.5.dp
 // manga page, so the pane doesn't jump size once the decode resolves.
 private const val FALLBACK_ASPECT_RATIO = 3f / 4f
 
-// Caps the pane's image/placeholder region so it cannot starve the candidate list below it: on
-// the 320x640@160 CI emulator a full-width portrait page (no cap) leaves the list 0dp tall. This
-// also means the box's real aspect ratio stops matching the declared one once a tall page hits
-// the cap, which is what makes pageFitTransform's dx/dy letterboxing actually draw (matches the
-// video lane's own 16:9-at-full-width player surface, which lands at 180dp on that geometry).
-private val PaneContentMaxHeight = 180.dp
 
 // fillMaxWidth MUST run before heightIn/aspectRatio: it locks width to an exact constraint so
 // aspectRatio, seeing a capped maxHeight from heightIn, can only give way on height — producing a
 // capped box instead of one that silently ignores the cap and grows past it.
-private fun Modifier.paneContentSize(aspectRatio: Float): Modifier =
+private fun Modifier.paneContentSize(
+    aspectRatio: Float,
+    maxHeight: Dp,
+): Modifier =
     this
         .fillMaxWidth()
-        .heightIn(max = PaneContentMaxHeight)
+        .heightIn(max = maxHeight)
         .aspectRatio(aspectRatio)
 
 /**
@@ -144,6 +142,11 @@ private fun Modifier.paneContentSize(aspectRatio: Float): Modifier =
  *
  * Stays mounted (showing the "missing" placeholder) when [pageContext] is null so the pane never
  * pops in and out as the focused candidate/sentence changes.
+ *
+ * [maxContentHeight] caps the image/placeholder region so it cannot starve the candidate list
+ * below it: a full-width portrait page with no cap leaves the list 0dp tall on 320x640. Once a
+ * tall page hits the cap the box's aspect stops matching the page, which is what makes
+ * pageFitTransform's dx/dy letterboxing draw.
  */
 @Composable
 fun CurationPageImagePane(
@@ -152,6 +155,7 @@ fun CurationPageImagePane(
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
     decoder: CurationPageImageDecoder,
+    maxContentHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     Card(modifier = modifier.fillMaxWidth()) {
@@ -162,13 +166,14 @@ fun CurationPageImagePane(
                 if (pageContext == null) {
                     PageImagePlaceholder(
                         text = stringResource(R.string.curation_page_image_missing),
-                        modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO),
+                        modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO, maxContentHeight),
                     )
                 } else {
                     PageImageContent(
                         archivePath = archivePath,
                         pageContext = pageContext,
                         decoder = decoder,
+                        maxContentHeight = maxContentHeight,
                     )
                     Text(
                         text = pageContext.locationLabel,
@@ -193,6 +198,7 @@ private fun PageImageContent(
     archivePath: String,
     pageContext: CurationPageContext,
     decoder: CurationPageImageDecoder,
+    maxContentHeight: Dp,
 ) {
     // Two adjacent candidates commonly share (or alternate between) the same page image; the
     // cache spares a re-decode of a ~1280px-long-edge bitmap on every focus flip between them.
@@ -229,7 +235,7 @@ private fun PageImageContent(
         is PageDecodeState.Failed ->
             PageImagePlaceholder(
                 text = stringResource(R.string.curation_page_image_error),
-                modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO),
+                modifier = Modifier.paneContentSize(FALLBACK_ASPECT_RATIO, maxContentHeight),
             )
         is PageDecodeState.Loading ->
             // Tagged PLACEHOLDER, not SURFACE: SURFACE is reserved for the loaded Canvas so tests
@@ -237,11 +243,15 @@ private fun PageImageContent(
             Box(
                 modifier =
                     Modifier
-                        .paneContentSize(FALLBACK_ASPECT_RATIO)
+                        .paneContentSize(FALLBACK_ASPECT_RATIO, maxContentHeight)
                         .testTag(CurationPageImageTestTags.PLACEHOLDER),
             )
         is PageDecodeState.Loaded ->
-            PageImageCanvas(decoded = state.image, blockBox = pageContext.blockBox)
+            PageImageCanvas(
+                decoded = state.image,
+                blockBox = pageContext.blockBox,
+                maxContentHeight = maxContentHeight,
+            )
     }
 }
 
@@ -249,6 +259,7 @@ private fun PageImageContent(
 private fun PageImageCanvas(
     decoded: DecodedPageImage,
     blockBox: CurationBlockBox,
+    maxContentHeight: Dp,
 ) {
     val imageBitmap = remember(decoded.bitmap) { decoded.bitmap.asImageBitmap() }
     // Block boxes are in ORIGINAL-page pixel coords; the decoded bitmap may be downsampled, so
@@ -271,7 +282,10 @@ private fun PageImageCanvas(
     Canvas(
         modifier =
             Modifier
-                .paneContentSize(decoded.bitmap.width / decoded.bitmap.height.toFloat())
+                .paneContentSize(
+                    decoded.bitmap.width / decoded.bitmap.height.toFloat(),
+                    maxContentHeight,
+                )
                 .testTag(CurationPageImageTestTags.SURFACE)
                 .semantics { contentDescription = imageDescription },
     ) {

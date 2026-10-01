@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -28,6 +29,7 @@ import com.ankiminer.android.player.FakeCurationPreviewPlayer
 import com.ankiminer.android.player.PreviewFailure
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -159,6 +161,27 @@ class CurationVideoPreviewTest {
         val fake = setPreview(audioTrackOverride = 1L)
 
         assertEquals(listOf(1L), fake.boundOverrides)
+    }
+
+    @Test
+    fun videoSurfaceNeverExceedsItsHeightCap() {
+        composeRule.setContent {
+            AnkiMinerTheme {
+                CurationVideoPreview(
+                    player = FakeCurationPreviewPlayer(),
+                    videoUri = VIDEO_URI,
+                    cues = emptyList(),
+                    overlayOffsetSeconds = 0.0,
+                    collapsed = false,
+                    onToggleCollapsed = {},
+                    maxSurfaceHeight = 120.dp,
+                )
+            }
+        }
+        val height =
+            composeRule.onNodeWithTag(CurationPlayerTestTags.SURFACE).getUnclippedBoundsInRoot()
+                .let { it.bottom - it.top }
+        assertTrue("surface is $height", height <= 120.dp)
     }
 
     private fun setPreview(

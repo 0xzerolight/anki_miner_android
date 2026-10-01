@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -45,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.CurationCandidate
@@ -58,6 +60,7 @@ import com.ankiminer.android.player.ExoCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.ClipWindowSeconds
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
+import com.ankiminer.android.ui.mining.curationMediaMaxHeight
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
 import com.ankiminer.android.ui.mining.CurationChrome
@@ -338,245 +341,250 @@ fun VideoMiningScreen(
             }
             val onStopClipRange: () -> Unit = { player?.pause() }
 
-            Column(
+            BoxWithConstraints(
                 modifier =
                     Modifier
                         .fillMaxSize()
                         .padding(scaffoldPadding)
-                        .consumeWindowInsets(scaffoldPadding)
-                        .semantics { paneTitle = phaseTitle },
+                        .consumeWindowInsets(scaffoldPadding),
             ) {
-                if (player != null && targetCuration != null) {
-                    key(targetCuration.runId) {
-                        CurationPlayerSlot(
-                            curation = targetCuration,
-                            player = player,
+                val mediaMaxHeight = curationMediaMaxHeight(maxHeight)
+                Column(
+                    modifier = Modifier.fillMaxSize().semantics { paneTitle = phaseTitle },
+                ) {
+                    if (player != null && targetCuration != null) {
+                        key(targetCuration.runId) {
+                            CurationPlayerSlot(
+                                curation = targetCuration,
+                                player = player,
+                                maxSurfaceHeight = mediaMaxHeight,
+                                modifier =
+                                    Modifier.padding(
+                                        start = AnkiMinerTokens.Space.content,
+                                        top = AnkiMinerTokens.Space.content,
+                                        end = AnkiMinerTokens.Space.content,
+                                    ),
+                            )
+                        }
+                    }
+                    if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
+                        CurationChrome(
+                            selectedCount = targetCuration.selectedCount,
+                            candidateCount = targetCuration.candidates.size,
+                            page = targetCuration.page,
+                            query = query,
+                            filter = filter,
+                            sort = sort,
+                            enabled = !targetState.curationPending && !targetState.cancelPending,
+                            visibleCount = bulkSelectionScope.visibleCount,
+                            allVisibleSelected = allVisibleSelected,
+                            selectVisibleEnabled =
+                                selectableVisibleCandidateIds.isNotEmpty() &&
+                                    !targetState.curationPending &&
+                                    !targetState.cancelPending,
+                            pageCandidateCount = bulkSelectionScope.pageCandidateCount,
+                            selectAllTestTag = VideoMiningTestTags.SELECT_ALL,
+                            onQueryChanged = { query = it },
+                            onFilterChanged = { filterName = it.name },
+                            onSortChanged = { sortName = it.name },
+                            onSetSelectionForVisible = { select ->
+                                onSetSelectionForVisible(selectableVisibleCandidateIds, select)
+                            },
+                            onSelectWholePage = { onSetSelectionForPage(true) },
                             modifier =
                                 Modifier.padding(
                                     start = AnkiMinerTokens.Space.content,
-                                    top = AnkiMinerTokens.Space.content,
+                                    top = AnkiMinerTokens.Space.related,
                                     end = AnkiMinerTokens.Space.content,
                                 ),
                         )
                     }
-                }
-                if (targetState.runState is MiningRunState.Curating && targetCuration != null) {
-                    CurationChrome(
-                        selectedCount = targetCuration.selectedCount,
-                        candidateCount = targetCuration.candidates.size,
-                        page = targetCuration.page,
-                        query = query,
-                        filter = filter,
-                        sort = sort,
-                        enabled = !targetState.curationPending && !targetState.cancelPending,
-                        visibleCount = bulkSelectionScope.visibleCount,
-                        allVisibleSelected = allVisibleSelected,
-                        selectVisibleEnabled =
-                            selectableVisibleCandidateIds.isNotEmpty() &&
-                                !targetState.curationPending &&
-                                !targetState.cancelPending,
-                        pageCandidateCount = bulkSelectionScope.pageCandidateCount,
-                        selectAllTestTag = VideoMiningTestTags.SELECT_ALL,
-                        onQueryChanged = { query = it },
-                        onFilterChanged = { filterName = it.name },
-                        onSortChanged = { sortName = it.name },
-                        onSetSelectionForVisible = { select ->
-                            onSetSelectionForVisible(selectableVisibleCandidateIds, select)
-                        },
-                        onSelectWholePage = { onSetSelectionForPage(true) },
+                    LazyColumn(
+                        state = listState,
                         modifier =
-                            Modifier.padding(
-                                start = AnkiMinerTokens.Space.content,
-                                top = AnkiMinerTokens.Space.related,
-                                end = AnkiMinerTokens.Space.content,
-                            ),
-                    )
-                }
-                LazyColumn(
-                    state = listState,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .testTag(VideoMiningTestTags.CONTENT),
-                    contentPadding =
-                        if (targetState.runState is MiningRunState.Curating) {
-                            // The pinned chrome above already separates the list; a tighter top
-                            // inset gives the candidate rows the space back on small screens.
-                            PaddingValues(
-                                start = AnkiMinerTokens.Space.content,
-                                top = AnkiMinerTokens.Space.related,
-                                end = AnkiMinerTokens.Space.content,
-                                bottom = AnkiMinerTokens.Space.content,
-                            )
-                        } else {
-                            PaddingValues(AnkiMinerTokens.Space.content)
-                        },
-                    // Curation pays its own gaps per item, so an expanded candidate can close ranks
-                    // with its detail and read as one card.
-                    verticalArrangement =
-                        if (targetState.runState is MiningRunState.Curating) {
-                            Arrangement.Top
-                        } else {
-                            Arrangement.spacedBy(AnkiMinerTokens.Space.group)
-                        },
-                ) {
-                    when (val runState = targetState.runState) {
-                        MiningRunState.Idle ->
-                            setupItems(
-                                state = targetState,
-                                labels = labels,
-                                onPickVideo = onPickVideo,
-                                onPickSubtitle = onPickSubtitle,
-                                onClearVideo = onClearVideo,
-                                onClearSubtitle = onClearSubtitle,
-                                onDismissDocumentError = onDismissDocumentError,
-                                onDismissCommandError = onDismissCommandError,
-                                onDismissTimingPreviewError = onDismissTimingPreviewError,
-                                onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
-                                onPickSecondarySubtitle = onPickSecondarySubtitle,
-                                onClearSecondarySubtitle = onClearSecondarySubtitle,
-                                onSecondarySubtitleOffsetDraftChange =
-                                    onSecondarySubtitleOffsetDraftChange,
-                                onTestTiming = onTestTiming,
-                                onAudioTracks = onAudioTracks,
-                                onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
-                                onStart = onStart,
-                                onReturnToActiveRun = onReturnToActiveRun,
-                            )
-                        is MiningRunState.Starting ->
-                            progressItems(
-                                progress = runState.progress,
-                                canCancel =
-                                    runState.cancellationToken != null || runState.runId != null,
-                                cancelPending = targetState.cancelPending,
-                                cancelError = targetState.commandError == MiningCommandError.CANCEL,
-                                onDismissCommandError = onDismissCommandError,
-                                onCancel = onCancel,
-                            )
-                        is MiningRunState.Curating ->
-                            curationItems(
-                                state = targetState,
-                                visibleCandidates = visibleCandidates,
-                                candidateRowTexts = candidateRowTexts,
-                                selectedCandidateStateText = selectedCandidateStateText,
-                                excludedCandidateStateText = excludedCandidateStateText,
-                                includeWordTemplate = includeWordTemplate,
-                                excludeWordTemplate = excludeWordTemplate,
-                                expandedCandidateId = expandedCandidateId,
-                                alternativesOpen = alternativesOpen,
-                                onToggleAlternatives = { alternativesOpen = !alternativesOpen },
-                                onFocusCandidate = onFocusCandidate,
-                                onSetCandidateSelected = onSetCandidateSelected,
-                                onMarkCandidateKnown = onMarkCandidateKnown,
-                                onSelectSentence = onSelectSentence,
-                                onExpandSentencePrev = onExpandSentencePrev,
-                                onExpandSentenceNext = onExpandSentenceNext,
-                                onResetSentenceExpansion = onResetSentenceExpansion,
-                                clipPlaying = clipPlaying,
-                                onSetClipWindow = onSetClipWindow,
-                                onResetClipWindow = onResetClipWindow,
-                                onPlayClipRange = onPlayClipRange,
-                                onStopClipRange = onStopClipRange,
-                                copy = copy,
-                                wordLabel = wordLabel,
-                                sentenceLabel = sentenceLabel,
-                                copiedWord = copiedWord,
-                                copiedSentence = copiedSentence,
-                            )
-                        is MiningRunState.Running ->
-                            progressItems(
-                                progress = runState.progress,
-                                canCancel = true,
-                                cancelPending = targetState.cancelPending,
-                                cancelError = targetState.commandError == MiningCommandError.CANCEL,
-                                onDismissCommandError = onDismissCommandError,
-                                onCancel = onCancel,
-                            )
-                        is MiningRunState.Success ->
-                            terminalItems(
-                                title = R.string.success_title,
-                                labels = labels,
-                                result = runState.result,
-                                videoDisplayName = targetState.video.document?.displayName,
-                                subtitleDisplayName = targetState.subtitle.document?.displayName,
-                                partial = false,
-                                failed = false,
-                                failureDetails = null,
-                                canRetry = false,
-                                busy = targetState.resetPending,
-                                resetError = targetState.commandError == MiningCommandError.RESET,
-                                undoAvailable = targetState.undoAvailable,
-                                undoneNoteCount = targetState.undoneNoteCount,
-                                undoError = targetState.commandError == MiningCommandError.UNDO,
-                                undoWordsError =
-                                    targetState.commandError == MiningCommandError.UNDO_WORDS,
-                                detailsExpanded = resultDetailsExpanded,
-                                onToggleDetails = {
-                                    resultDetailsExpanded = !resultDetailsExpanded
-                                },
-                                onDismissCommandError = onDismissCommandError,
-                                onRetry = onRetry,
-                                onReset = onReset,
-                                onRequestUndo = onRequestUndo,
-                            )
-                        is MiningRunState.Cancelled ->
-                            terminalItems(
-                                title = R.string.cancelled_title,
-                                labels = labels,
-                                result = runState.result,
-                                videoDisplayName = targetState.video.document?.displayName,
-                                subtitleDisplayName = targetState.subtitle.document?.displayName,
-                                partial = runState.result?.cardsCreated?.let { it > 0 } == true,
-                                failed = false,
-                                failureDetails = null,
-                                canRetry = false,
-                                busy = targetState.resetPending,
-                                resetError = targetState.commandError == MiningCommandError.RESET,
-                                undoAvailable = targetState.undoAvailable,
-                                undoneNoteCount = targetState.undoneNoteCount,
-                                undoError = targetState.commandError == MiningCommandError.UNDO,
-                                undoWordsError =
-                                    targetState.commandError == MiningCommandError.UNDO_WORDS,
-                                detailsExpanded = resultDetailsExpanded,
-                                onToggleDetails = {
-                                    resultDetailsExpanded = !resultDetailsExpanded
-                                },
-                                onDismissCommandError = onDismissCommandError,
-                                onRetry = onRetry,
-                                onReset = onReset,
-                                onRequestUndo = onRequestUndo,
-                            )
-                        is MiningRunState.Failed ->
-                            terminalItems(
-                                title = R.string.failed_title,
-                                labels = labels,
-                                result = runState.result,
-                                videoDisplayName = targetState.video.document?.displayName,
-                                subtitleDisplayName = targetState.subtitle.document?.displayName,
-                                partial = runState.result?.cardsCreated?.let { it > 0 } == true,
-                                failed = true,
-                                failureDetails = runState.failure.message,
-                                canRetry =
-                                    runState.failure.retryable &&
-                                        targetState.video.document != null &&
-                                        targetState.subtitle.document != null,
-                                busy = targetState.resetPending || targetState.startPending,
-                                resetError = targetState.commandError == MiningCommandError.RESET,
-                                undoAvailable = targetState.undoAvailable,
-                                undoneNoteCount = targetState.undoneNoteCount,
-                                undoError = targetState.commandError == MiningCommandError.UNDO,
-                                undoWordsError =
-                                    targetState.commandError == MiningCommandError.UNDO_WORDS,
-                                detailsExpanded = resultDetailsExpanded,
-                                onToggleDetails = {
-                                    resultDetailsExpanded = !resultDetailsExpanded
-                                },
-                                onDismissCommandError = onDismissCommandError,
-                                onRetry = onRetry,
-                                onReset = onReset,
-                                onRequestUndo = onRequestUndo,
-                            )
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .testTag(VideoMiningTestTags.CONTENT),
+                        contentPadding =
+                            if (targetState.runState is MiningRunState.Curating) {
+                                // The pinned chrome above already separates the list; a tighter top
+                                // inset gives the candidate rows the space back on small screens.
+                                PaddingValues(
+                                    start = AnkiMinerTokens.Space.content,
+                                    top = AnkiMinerTokens.Space.related,
+                                    end = AnkiMinerTokens.Space.content,
+                                    bottom = AnkiMinerTokens.Space.content,
+                                )
+                            } else {
+                                PaddingValues(AnkiMinerTokens.Space.content)
+                            },
+                        // Curation pays its own gaps per item, so an expanded candidate can close ranks
+                        // with its detail and read as one card.
+                        verticalArrangement =
+                            if (targetState.runState is MiningRunState.Curating) {
+                                Arrangement.Top
+                            } else {
+                                Arrangement.spacedBy(AnkiMinerTokens.Space.group)
+                            },
+                    ) {
+                        when (val runState = targetState.runState) {
+                            MiningRunState.Idle ->
+                                setupItems(
+                                    state = targetState,
+                                    labels = labels,
+                                    onPickVideo = onPickVideo,
+                                    onPickSubtitle = onPickSubtitle,
+                                    onClearVideo = onClearVideo,
+                                    onClearSubtitle = onClearSubtitle,
+                                    onDismissDocumentError = onDismissDocumentError,
+                                    onDismissCommandError = onDismissCommandError,
+                                    onDismissTimingPreviewError = onDismissTimingPreviewError,
+                                    onSubtitleOffsetDraftChange = onSubtitleOffsetDraftChange,
+                                    onPickSecondarySubtitle = onPickSecondarySubtitle,
+                                    onClearSecondarySubtitle = onClearSecondarySubtitle,
+                                    onSecondarySubtitleOffsetDraftChange =
+                                        onSecondarySubtitleOffsetDraftChange,
+                                    onTestTiming = onTestTiming,
+                                    onAudioTracks = onAudioTracks,
+                                    onDismissAudioTrackPickerError = onDismissAudioTrackPickerError,
+                                    onStart = onStart,
+                                    onReturnToActiveRun = onReturnToActiveRun,
+                                )
+                            is MiningRunState.Starting ->
+                                progressItems(
+                                    progress = runState.progress,
+                                    canCancel =
+                                        runState.cancellationToken != null || runState.runId != null,
+                                    cancelPending = targetState.cancelPending,
+                                    cancelError = targetState.commandError == MiningCommandError.CANCEL,
+                                    onDismissCommandError = onDismissCommandError,
+                                    onCancel = onCancel,
+                                )
+                            is MiningRunState.Curating ->
+                                curationItems(
+                                    state = targetState,
+                                    visibleCandidates = visibleCandidates,
+                                    candidateRowTexts = candidateRowTexts,
+                                    selectedCandidateStateText = selectedCandidateStateText,
+                                    excludedCandidateStateText = excludedCandidateStateText,
+                                    includeWordTemplate = includeWordTemplate,
+                                    excludeWordTemplate = excludeWordTemplate,
+                                    expandedCandidateId = expandedCandidateId,
+                                    alternativesOpen = alternativesOpen,
+                                    onToggleAlternatives = { alternativesOpen = !alternativesOpen },
+                                    onFocusCandidate = onFocusCandidate,
+                                    onSetCandidateSelected = onSetCandidateSelected,
+                                    onMarkCandidateKnown = onMarkCandidateKnown,
+                                    onSelectSentence = onSelectSentence,
+                                    onExpandSentencePrev = onExpandSentencePrev,
+                                    onExpandSentenceNext = onExpandSentenceNext,
+                                    onResetSentenceExpansion = onResetSentenceExpansion,
+                                    clipPlaying = clipPlaying,
+                                    onSetClipWindow = onSetClipWindow,
+                                    onResetClipWindow = onResetClipWindow,
+                                    onPlayClipRange = onPlayClipRange,
+                                    onStopClipRange = onStopClipRange,
+                                    copy = copy,
+                                    wordLabel = wordLabel,
+                                    sentenceLabel = sentenceLabel,
+                                    copiedWord = copiedWord,
+                                    copiedSentence = copiedSentence,
+                                )
+                            is MiningRunState.Running ->
+                                progressItems(
+                                    progress = runState.progress,
+                                    canCancel = true,
+                                    cancelPending = targetState.cancelPending,
+                                    cancelError = targetState.commandError == MiningCommandError.CANCEL,
+                                    onDismissCommandError = onDismissCommandError,
+                                    onCancel = onCancel,
+                                )
+                            is MiningRunState.Success ->
+                                terminalItems(
+                                    title = R.string.success_title,
+                                    labels = labels,
+                                    result = runState.result,
+                                    videoDisplayName = targetState.video.document?.displayName,
+                                    subtitleDisplayName = targetState.subtitle.document?.displayName,
+                                    partial = false,
+                                    failed = false,
+                                    failureDetails = null,
+                                    canRetry = false,
+                                    busy = targetState.resetPending,
+                                    resetError = targetState.commandError == MiningCommandError.RESET,
+                                    undoAvailable = targetState.undoAvailable,
+                                    undoneNoteCount = targetState.undoneNoteCount,
+                                    undoError = targetState.commandError == MiningCommandError.UNDO,
+                                    undoWordsError =
+                                        targetState.commandError == MiningCommandError.UNDO_WORDS,
+                                    detailsExpanded = resultDetailsExpanded,
+                                    onToggleDetails = {
+                                        resultDetailsExpanded = !resultDetailsExpanded
+                                    },
+                                    onDismissCommandError = onDismissCommandError,
+                                    onRetry = onRetry,
+                                    onReset = onReset,
+                                    onRequestUndo = onRequestUndo,
+                                )
+                            is MiningRunState.Cancelled ->
+                                terminalItems(
+                                    title = R.string.cancelled_title,
+                                    labels = labels,
+                                    result = runState.result,
+                                    videoDisplayName = targetState.video.document?.displayName,
+                                    subtitleDisplayName = targetState.subtitle.document?.displayName,
+                                    partial = runState.result?.cardsCreated?.let { it > 0 } == true,
+                                    failed = false,
+                                    failureDetails = null,
+                                    canRetry = false,
+                                    busy = targetState.resetPending,
+                                    resetError = targetState.commandError == MiningCommandError.RESET,
+                                    undoAvailable = targetState.undoAvailable,
+                                    undoneNoteCount = targetState.undoneNoteCount,
+                                    undoError = targetState.commandError == MiningCommandError.UNDO,
+                                    undoWordsError =
+                                        targetState.commandError == MiningCommandError.UNDO_WORDS,
+                                    detailsExpanded = resultDetailsExpanded,
+                                    onToggleDetails = {
+                                        resultDetailsExpanded = !resultDetailsExpanded
+                                    },
+                                    onDismissCommandError = onDismissCommandError,
+                                    onRetry = onRetry,
+                                    onReset = onReset,
+                                    onRequestUndo = onRequestUndo,
+                                )
+                            is MiningRunState.Failed ->
+                                terminalItems(
+                                    title = R.string.failed_title,
+                                    labels = labels,
+                                    result = runState.result,
+                                    videoDisplayName = targetState.video.document?.displayName,
+                                    subtitleDisplayName = targetState.subtitle.document?.displayName,
+                                    partial = runState.result?.cardsCreated?.let { it > 0 } == true,
+                                    failed = true,
+                                    failureDetails = runState.failure.message,
+                                    canRetry =
+                                        runState.failure.retryable &&
+                                            targetState.video.document != null &&
+                                            targetState.subtitle.document != null,
+                                    busy = targetState.resetPending || targetState.startPending,
+                                    resetError = targetState.commandError == MiningCommandError.RESET,
+                                    undoAvailable = targetState.undoAvailable,
+                                    undoneNoteCount = targetState.undoneNoteCount,
+                                    undoError = targetState.commandError == MiningCommandError.UNDO,
+                                    undoWordsError =
+                                        targetState.commandError == MiningCommandError.UNDO_WORDS,
+                                    detailsExpanded = resultDetailsExpanded,
+                                    onToggleDetails = {
+                                        resultDetailsExpanded = !resultDetailsExpanded
+                                    },
+                                    onDismissCommandError = onDismissCommandError,
+                                    onRetry = onRetry,
+                                    onReset = onReset,
+                                    onRequestUndo = onRequestUndo,
+                                )
+                        }
                     }
                 }
             }
@@ -592,6 +600,7 @@ fun VideoMiningScreen(
 private fun CurationPlayerSlot(
     curation: CurationUiState,
     player: CurationPreviewPlayer,
+    maxSurfaceHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val playerState = curation.player ?: return
@@ -621,6 +630,7 @@ private fun CurationPlayerSlot(
         onToggleCollapsed = { collapsed = !collapsed },
         audioOnly = playerState.audioOnly,
         audioTrackOverride = playerState.audioTrackOverride,
+        maxSurfaceHeight = maxSurfaceHeight,
         notice =
             if (playerState.cuesUnavailable) {
                 { CuesUnavailableNotice() }

@@ -1,0 +1,17 @@
+package com.ankiminer.android.ui.mining
+
+import androidx.compose.ui.unit.dp
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class CurationLayoutTest {
+    @Test
+    fun mediaTakesAboutAThirdOfAPhonePane() {
+        assertEquals(140f, curationMediaMaxHeight(400.dp).value, 0.01f)
+    }
+
+    @Test
+    fun aShortLandscapePaneStillGetsAViewableFrame() {
+        assertEquals(96f, curationMediaMaxHeight(180.dp).value, 0.01f)
+    }
+}

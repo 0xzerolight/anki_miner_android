@@ -37,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -74,6 +75,7 @@ fun CurationVideoPreview(
     onToggleCollapsed: () -> Unit,
     audioOnly: Boolean = false,
     audioTrackOverride: Long? = null,
+    maxSurfaceHeight: Dp = Dp.Unspecified,
     notice: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -118,7 +120,11 @@ fun CurationVideoPreview(
                                 if (audioOnly) {
                                     Modifier.height(AudioSurfaceHeight)
                                 } else {
-                                    Modifier.aspectRatio(VIDEO_ASPECT_RATIO)
+                                    // Runs after fillMaxWidth so the cap gives way on height
+                                    // and the frame letterboxes inside it.
+                                    Modifier
+                                        .heightIn(max = maxSurfaceHeight)
+                                        .aspectRatio(VIDEO_ASPECT_RATIO)
                                 },
                             )
                             .background(Color.Black)
