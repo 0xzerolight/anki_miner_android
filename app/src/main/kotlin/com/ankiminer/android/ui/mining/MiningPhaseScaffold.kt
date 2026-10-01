@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.mining.MiningProgress
+import com.ankiminer.android.mining.MiningRunState
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
@@ -207,20 +208,34 @@ internal fun MiningCancelButton(
     }
 }
 
-/** Scrolls the list back to the top whenever [transitionKey] moves to a new run or phase. */
+/**
+ * Scrolls the list whenever [transitionKey] moves to a new run or phase: back to the top, or, with
+ * [revealEnd], to the end, where a finished run's result line sits under the inputs. On a short
+ * screen the inputs alone fill the view, and the top would hide how the run went.
+ */
 @Composable
 internal fun ResetMiningScrollOnTransition(
     transitionKey: String,
     listState: LazyListState,
+    revealEnd: Boolean = false,
 ) {
     var appliedKey by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(transitionKey) {
         if (appliedKey != null && appliedKey != transitionKey) {
             listState.scrollToItem(0)
+            if (revealEnd) {
+                // scrollToItem remeasured the list for this state, so the count includes the result.
+                val lastIndex = listState.layoutInfo.totalItemsCount - 1
+                if (lastIndex > 0) listState.scrollToItem(lastIndex)
+            }
         }
         appliedKey = transitionKey
     }
 }
+
+/** A run that ended with a result line rather than a failure banner, which stays at the top. */
+internal val MiningRunState.endsWithResultLine: Boolean
+    get() = this is MiningRunState.Success || this is MiningRunState.Cancelled
 
 /** A failed run's cause, above the inputs it asks the user to change. */
 internal fun LazyListScope.miningFailureBannerItem(

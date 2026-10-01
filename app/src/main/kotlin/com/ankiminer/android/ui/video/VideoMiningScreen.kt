@@ -70,6 +70,7 @@ import com.ankiminer.android.ui.mining.MiningBottomBarState
 import com.ankiminer.android.ui.mining.MiningPhaseScaffold
 import com.ankiminer.android.ui.mining.MiningResultHeadline
 import com.ankiminer.android.ui.mining.ResetMiningScrollOnTransition
+import com.ankiminer.android.ui.mining.endsWithResultLine
 import com.ankiminer.android.ui.mining.SETUP_PHASE
 import com.ankiminer.android.ui.mining.miningFailureBannerItem
 import com.ankiminer.android.ui.mining.MiningResultUndoAction
@@ -178,7 +179,11 @@ fun VideoMiningScreen(
         remember(sortName) {
             CurationSort.entries.firstOrNull { it.name == sortName } ?: CurationSort.FREQUENCY
         }
-    ResetMiningScrollOnTransition(transitionKey = state.scrollTransitionKey(), listState = listState)
+    ResetMiningScrollOnTransition(
+        transitionKey = state.scrollTransitionKey(),
+        listState = listState,
+        revealEnd = state.runState.endsWithResultLine,
+    )
     ResetCurationScrollOnProjectionChange(
         listState = listState,
         requestId = curation?.requestId,
