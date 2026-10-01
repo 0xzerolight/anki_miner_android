@@ -494,3 +494,51 @@ def test_known_words_need_no_language_data(home: Path, tmp_path: Path) -> None:
 
     inventory = _listed_local(language="ar")["knownWords"]
     assert (inventory["totalCount"], inventory["schemaOk"]) == (1, True)
+
+
+# ---------------------------------------------------------------- the Japanese known-words ladder
+
+
+def test_japanese_known_words_read_with_the_profiles_three_encoding_ladder(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Desktop's Manage Known Words passes ``profile.import_encodings`` for ja too, in its order."""
+    import anki_miner.services.known_words_import as known_words_import
+
+    seen: list[dict[str, object]] = []
+    real = known_words_import.parse_known_words_file
+
+    def spy(path: Path, **kwargs: object):  # type: ignore[no-untyped-def]
+        seen.append(kwargs)
+        return real(path, **kwargs)
+
+    monkeypatch.setattr(known_words_import, "parse_known_words_file", spy)
+    local_resources.preview_known_words(
+        {
+            "operationId": "ja-ladder",
+            "sourcePath": str(_known_words_file(tmp_path, "猫\n".encode())),
+            "sourceFormat": "txt",
+        }
+    )
+
+    assert seen[0]["encodings"] == ("utf-8-sig", "cp932", "euc_jp")
+    assert "script_check" not in seen[0]
+
+
+def test_a_japanese_list_only_euc_jp_decodes_is_imported(home: Path, tmp_path: Path) -> None:
+    data = "食べる\n日本語\n".encode("euc_jp")
+    for codec in ("utf-8", "cp932"):
+        with pytest.raises(UnicodeDecodeError):
+            data.decode(codec)
+
+    imported = decode_envelope(
+        local_resources.import_known_words(
+            {"operationId": "ja-euc", "sourcePath": str(_known_words_file(tmp_path, data)), "sourceFormat": "txt"}
+        ),
+        expected_type="resource.knownwords.imported",
+    )
+
+    assert imported.payload["importedCount"] == 2
+    from anki_miner.services.known_word_db import KnownWordDB
+
+    assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる", "日本語"}

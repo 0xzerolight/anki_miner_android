@@ -4104,7 +4104,7 @@ def test_known_words_import_reports_undecodable_bytes_as_unreadable(
 ) -> None:
     _local_home(tmp_path, monkeypatch)
     source = tmp_path / "undecodable.txt"
-    # Fails every leg of the Japanese decode ladder (utf-8-sig, cp932) and
+    # Fails every leg of the Japanese decode ladder (utf-8-sig, cp932, euc_jp) and
     # carries no UTF-16 BOM, which the ladder would honour first.
     source.write_bytes(b"\x81\xff")
 

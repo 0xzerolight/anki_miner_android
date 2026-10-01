@@ -1830,16 +1830,16 @@ def _parse_known_words_copy(
     )
 
     # Desktop's Manage Known Words reads a file with the mining language's
-    # ladder; Japanese keeps the parser's own two-leg default here.
-    ladder: dict[str, object] = {}
-    if language != JAPANESE:
-        from anki_miner.utils.subtitle_encoding import script_check_kwarg
+    # ladder, Japanese included: utf-8-sig, cp932, then euc_jp. The third leg
+    # is tried only after the first two fail, so a file either already read
+    # decodes exactly as before.
+    from anki_miner.utils.subtitle_encoding import script_check_kwarg
 
-        profile = get_profile(language)
-        ladder = {
-            "encodings": profile.import_encodings,
-            **script_check_kwarg(profile.import_encodings, profile.script),
-        }
+    profile = get_profile(language)
+    ladder: dict[str, object] = {
+        "encodings": profile.import_encodings,
+        **script_check_kwarg(profile.import_encodings, profile.script),
+    }
     try:
         parsed = parse_known_words_file(
             copied.path,
