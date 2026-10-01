@@ -13,6 +13,8 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **"Create cards in order of appearance" (Settings -> Cards & Anki).** Cards follow the order the words first appear even with "Always mine whitelisted words" on, which otherwise puts whitelisted words first.
 - **Mining in Hebrew, Indonesian, Arabic, Persian and Thai (Settings -> Language).** Each language keeps its own dictionaries, filters, deck and card fields. Arabic and Persian offer "Download and switch" for their language data. After a switch the Cards & Anki tab opens on the note type to pick, and the field map lists the language's own fields, such as Hebrew's transliteration.
 - **Hebrew, Arabic and Persian text reads right to left in curation, definitions and pasted Reading text.**
+- **Recommended dictionaries and frequency lists for Hebrew, Arabic, Persian, Indonesian and Thai (Settings -> Resources).**
+- **Outside Japanese, words no audio pack has are spoken by the device's offline text-to-speech voice (Settings -> Resources -> Word audio).** The card shows whether the device has a voice for the language.
 
 ### Changed
 
