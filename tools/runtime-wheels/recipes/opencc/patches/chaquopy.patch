@@ -1,0 +1,145 @@
+--- src-original/CMakeLists.txt
++++ src/CMakeLists.txt
+@@ -295,8 +295,10 @@
+ ######## Compiler flags
+ 
+ add_definitions(
+-  -DPKGDATADIR="${DIR_SHARE_OPENCC_FULL}"
+-  -DLOCALEDIR="${DIR_SHARE_LOCALE_FULL}"
++  # Chaquopy: no build path in the binary. The Python binding passes
++  # absolute config paths, so these fallbacks are never consulted.
++  -DPKGDATADIR="/anki-miner-runtime/share/opencc"
++  -DLOCALEDIR="/anki-miner-runtime/share/locale"
+   -DOPENCC_VERSION="${OPENCC_VERSION}"
+   -DPACKAGE_NAME="${PACKAGE_NAME}"
+ )
+@@ -344,7 +346,7 @@
+ endif()
+ 
+ add_definitions(
+-  -DOPENCC_SEGMENTATION_PLUGIN_DIR="${DIR_PLUGIN_FULL}"
++  -DOPENCC_SEGMENTATION_PLUGIN_DIR="/anki-miner-runtime/lib/opencc/plugins"
+ )
+ 
+ 
+--- src-original/cmake/GitVersion.cmake
++++ src/cmake/GitVersion.cmake
+@@ -16,7 +16,8 @@
+ set(_OPENCC_FALLBACK_MINOR 4)
+ set(_OPENCC_FALLBACK_REVISION 2)
+ 
+-find_package(Git QUIET)
++# Chaquopy: the sdist is a release; never describe an enclosing repository.
++set(GIT_FOUND FALSE)
+ 
+ set(_git_version_computed FALSE)
+ 
+--- src-original/data/CMakeLists.txt
++++ src/data/CMakeLists.txt
+@@ -4,8 +4,20 @@
+ 
+ find_package(Python3 REQUIRED COMPONENTS Interpreter)
+ 
+-set(OPENCC_DICT_BIN opencc_dict)
+-set(OPENCC_BIN opencc)
++# Chaquopy: a cross build cannot run its own opencc_dict/opencc, so the
++# dictionaries are compiled by host builds of the same sources.
++if(CMAKE_CROSSCOMPILING)
++  if(NOT OPENCC_HOST_TOOLS_DIR)
++    message(FATAL_ERROR "cross builds need OPENCC_HOST_TOOLS_DIR (host opencc_dict and opencc)")
++  endif()
++  set(OPENCC_DICT_BIN "${OPENCC_HOST_TOOLS_DIR}/opencc_dict")
++  set(OPENCC_BIN "${OPENCC_HOST_TOOLS_DIR}/opencc")
++  set(OPENCC_BIN_FILE "${OPENCC_BIN}")
++else()
++  set(OPENCC_DICT_BIN opencc_dict)
++  set(OPENCC_BIN opencc)
++  set(OPENCC_BIN_FILE $<TARGET_FILE:opencc>)
++endif()
+ set(DICT_REVERSE_BIN "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/reverse.py")
+ set(DICT_EXTRACT_TOFU_RISK_BIN "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/extract_tofu_risk.py")
+ set(DICT_GENERATE_ST_PHRASES_BIN "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/scripts/generate_st_phrases_from_regional_phrases.py")
+@@ -102,7 +114,7 @@
+     --input ${DICT_DIR}/HKPhrases.txt
+     --input ${DICT_DIR}/TWPhrases.txt
+     --output STPhrases_GeneratedFromRegionalPhrases.txt
+-    --opencc $<TARGET_FILE:${OPENCC_BIN}>
++    --opencc ${OPENCC_BIN_FILE}
+     --config ${CMAKE_CURRENT_SOURCE_DIR}/config/t2s.json
+     --dict-dir ${DICT_GENERATED_DIR}
+ )
+@@ -139,7 +151,7 @@
+   COMMENT
+     "Copying libopencc to directory of opencc_dict"
+   COMMAND
+-    ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:libopencc>" "$<TARGET_FILE_DIR:${OPENCC_DICT_BIN}>"
++    ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:libopencc>" "$<TARGET_FILE_DIR:opencc_dict>"
+ )
+ if (WIN32)
+   set(DICT_WIN32_DEPENDS copy_libopencc_to_dir_of_opencc_dict)
+--- src-original/setup.py
++++ src/setup.py
+@@ -97,6 +97,35 @@
+         return f.read().decode('utf-8')
+ 
+ 
++def build_host_tools():
++    """Chaquopy: build opencc_dict and opencc for the build machine.
++
++    The cross build compiles its .ocd2 dictionaries with these, because the
++    target executables cannot run here. Only the dictionaries reach the wheel.
++    """
++    host_dir = os.path.join(_this_dir, 'build', 'host')
++    env = {key: os.environ[key] for key in
++           ('PATH', 'HOME', 'TMPDIR', 'LANG', 'LC_ALL', 'TZ', 'SOURCE_DATE_EPOCH')
++           if key in os.environ}
++    cxx = shutil.which('c++', path=os.defpath)
++    assert cxx, 'no host C++ compiler on ' + os.defpath
++    cmd = ['cmake', '-S', _this_dir, '-B', host_dir,
++           '-DCMAKE_CXX_COMPILER={}'.format(cxx),
++           '-DCMAKE_BUILD_TYPE=Release',
++           '-DBUILD_SHARED_LIBS:BOOL=OFF',
++           '-DBUILD_PYTHON:BOOL=OFF',
++           '-DENABLE_GTEST:BOOL=OFF',
++           '-DENABLE_BENCHMARK:BOOL=OFF',
++           '-DBUILD_DOCUMENTATION:BOOL=OFF',
++           '-DBUILD_OPENCC_JIEBA_PLUGIN:BOOL=OFF',
++           '-DPYTHON_EXECUTABLE={}'.format(sys.executable)]
++    assert subprocess.call(cmd, env=env) == 0, 'Host configure failed'
++    cmd = ['cmake', '--build', host_dir, '--parallel', os.environ.get('CPU_COUNT', '4'),
++           '--target', 'opencc_dict', 'opencc']
++    assert subprocess.call(cmd, env=env) == 0, 'Host build failed'
++    return os.path.join(host_dir, 'src', 'tools')
++
++
+ def build_libopencc(output_path):
+     print('building libopencc into %s' % _build_dir)
+ 
+@@ -118,6 +147,8 @@
+         '-DCMAKE_LIBRARY_OUTPUT_DIRECTORY={}'.format(output_path),
+         '-DPYTHON_EXECUTABLE={}'.format(sys.executable),
+     ]
++    if os.environ.get('CMAKE_TOOLCHAIN_FILE'):
++        cmake_args += ['-DOPENCC_HOST_TOOLS_DIR={}'.format(build_host_tools())]
+ 
+     if is_windows:
+         cmake_args += \
+@@ -133,11 +164,18 @@
+     cmd = [
+         'cmake', '--build', _build_dir,
+         '--config', 'Release',
++        '--parallel', os.environ.get('CPU_COUNT', '4'),
+         '--target', 'install'
+     ]
+     errno = subprocess.call(cmd)
+     assert errno == 0, 'Build failed'
+ 
++    # Chaquopy: ship the extension and the share/ data only. bin/ holds target
++    # executables, include/ and lib/ link-time artefacts (static archives,
++    # CMake and pkg-config files naming the build prefix); none is imported.
++    for name in ('bin', 'include', 'lib', 'lib64'):
++        shutil.rmtree(os.path.join(output_path, name), ignore_errors=True)
++
+ 
+ class OpenCCExtension(setuptools.Extension, object):
+     def __init__(self, name, sourcedir=''):

@@ -98,7 +98,7 @@ def builder_identity() -> dict[str, object]:
         "unzip",
     }
     return {
-        "schema": 2,
+        "schema": runtime_wheels.BUILDER_IDENTITY_SCHEMA,
         "interpreters": {
             "outer": {
                 "implementation": "cpython",
@@ -122,6 +122,12 @@ def builder_identity() -> dict[str, object]:
             "source_properties_sha256": "3" * 64,
             "clang_sha256": "4" * 64,
             "clang_version": "Android clang version 19.0.2",
+        },
+        "rust": {
+            "release": runtime_wheels.RUST_TOOLCHAIN["release"],
+            "commit_hash": runtime_wheels.RUST_TOOLCHAIN["commit_hash"],
+            "host": runtime_wheels.RUST_TOOLCHAIN["host"],
+            "targets": sorted(runtime_wheels.RUST_TOOLCHAIN["targets"].values()),
         },
         "tools": {name: f"{name} 1" for name in tool_names},
     }
@@ -212,7 +218,11 @@ class LockContractTests(unittest.TestCase):
                 "idna": "3.18",
                 "certifi": "2026.6.17",
             },
-            {name: version for name, (version, _) in runtime_wheels.COMMON_SPECS.items()},
+            {
+                name: version
+                for name, (version, _) in runtime_wheels.COMMON_SPECS.items()
+                if "base" in runtime_wheels.PACKAGE_FAMILIES[name]
+            },
         )
         locked_text = runtime_wheels.SOURCE_LOCK.read_text(encoding="utf-8").casefold()
         for forbidden in ("unidic", "pyqt6", "gtts", "yt-dlp", "yt_dlp"):
@@ -261,6 +271,51 @@ class LockContractTests(unittest.TestCase):
             with mock.patch.object(runtime_wheels, "HOST_LOCK", path):
                 with self.assertRaises(runtime_wheels.RuntimeWheelError):
                     runtime_wheels.host_entries()
+
+    def test_carried_licences_and_pinned_members_match_the_lock(self) -> None:
+        carried = 0
+        for name, entry in runtime_wheels.source_entries().items():
+            license_value = entry.get("license")
+            if not isinstance(license_value, dict):
+                continue
+            for filename, sha256 in license_value.get("carried", {}).items():
+                with self.subTest(source=name, licence=filename):
+                    path = runtime_wheels.carried_license_path(entry, filename)
+                    self.assertEqual(sha256, hashlib.sha256(path.read_bytes()).hexdigest())
+                    carried += 1
+        self.assertGreater(carried, 0)
+        for package, relative in runtime_wheels.PINNED_MEMBER_FILES.items():
+            with self.subTest(package=package):
+                document = runtime_wheels.load_json(TOOL_ROOT / relative, 1)
+                self.assertTrue(document["members"])
+                self.assertTrue(document["prefix"].endswith("/"))
+
+    def test_family_specs_name_only_published_packages(self) -> None:
+        published = set(runtime_wheels.COMMON_SPECS) | set(runtime_wheels.NATIVE_SPECS)
+        self.assertFalse(set(runtime_wheels.COMMON_SPECS) & set(runtime_wheels.NATIVE_SPECS))
+        self.assertEqual(published, set(runtime_wheels.MANDATORY_DEPENDENCIES))
+        self.assertEqual(set(runtime_wheels.NATIVE_SPECS), set(runtime_wheels.NATIVE_REQUIRED_PATHS))
+        self.assertEqual(set(runtime_wheels.NATIVE_SPECS), set(runtime_wheels.REQUIRED_NEEDED))
+        for table in (
+            runtime_wheels.REPACKS,
+            runtime_wheels.NATIVE_ROOTS,
+            runtime_wheels.PINNED_MEMBER_FILES,
+            runtime_wheels.SDIST_WHEELS,
+        ):
+            self.assertTrue(set(table) <= published, table)
+        self.assertTrue(set(runtime_wheels.SDIST_WHEELS) <= set(runtime_wheels.COMMON_SPECS))
+        for package, (prefix, excludes) in runtime_wheels.REPACKS.items():
+            with self.subTest(package=package):
+                self.assertTrue(prefix.endswith("/") and excludes)
+        sources = runtime_wheels.source_entries()
+        for package, spec in runtime_wheels.NATIVE_SPECS.items():
+            with self.subTest(package=package):
+                self.assertEqual(
+                    package, runtime_wheels.normalize_package(str(sources[str(spec["source"])]["package"]))
+                )
+        for package in runtime_wheels.COMMON_SPECS:
+            with self.subTest(package=package):
+                runtime_wheels._pure_source_name(package, sources)
 
     def test_recipe_provenance_includes_build_python_and_license_inputs(self) -> None:
         self.assertEqual(
@@ -365,6 +420,40 @@ class BuilderContractTests(unittest.TestCase):
         extra["host"]["extra"] = True
         with self.assertRaises(runtime_wheels.RuntimeWheelError):
             runtime_wheels.validate_builder_identity(extra)
+        wrong_rust = copy.deepcopy(identity)
+        wrong_rust["rust"]["commit_hash"] = "0" * 40
+        with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "Rust toolchain"):
+            runtime_wheels.validate_builder_identity(wrong_rust)
+        missing_target = copy.deepcopy(identity)
+        missing_target["rust"]["targets"] = ["x86_64-linux-android"]
+        with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "Rust toolchain"):
+            runtime_wheels.validate_builder_identity(missing_target)
+
+    def test_rust_identity_comes_from_the_pinned_rustc_without_rustup(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            bin_dir = runtime_wheels.rust_toolchain_bin(home)
+            bin_dir.mkdir(parents=True)
+            sysroot = home / "sysroot"
+            for triple in runtime_wheels.RUST_TOOLCHAIN["targets"].values():
+                (sysroot / "lib/rustlib" / triple / "lib").mkdir(parents=True)
+            rustc = bin_dir / "rustc"
+            rustc.write_text(
+                "#!/bin/sh\n"
+                f'if [ "$1" = --print ]; then echo {sysroot}; exit 0; fi\n'
+                f"echo 'release: {runtime_wheels.RUST_TOOLCHAIN['release']}'\n"
+                f"echo 'commit-hash: {runtime_wheels.RUST_TOOLCHAIN['commit_hash']}'\n"
+                f"echo 'host: {runtime_wheels.RUST_TOOLCHAIN['host']}'\n",
+                encoding="utf-8",
+            )
+            rustc.chmod(0o755)
+            self.assertEqual(builder_identity()["rust"], runtime_wheels.rust_identity(home))
+            (sysroot / "lib/rustlib/aarch64-linux-android/lib").rmdir()
+            with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "Rust toolchain differs"):
+                runtime_wheels.rust_identity(home)
+            rustc.unlink()
+            with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "rustup toolchain install"):
+                runtime_wheels.rust_identity(home)
 
     def test_patch_builder_closes_network_and_selects_exact_target_python(self) -> None:
         builder_text = """import pypi_simple
@@ -726,7 +815,7 @@ class PublicationStateTests(unittest.TestCase):
             "arm64-v8a": [{"filename": "arm.whl"}],
             "x86_64": [{"filename": "x86.whl"}],
         }
-        result = runtime_wheels._publication_summary("a" * 64, "b" * 64, wheels)
+        result = runtime_wheels._publication_summary("a" * 64, "b" * 64, wheels, {"base": {}})
         self.assertEqual(
             {
                 "schema",
@@ -736,6 +825,7 @@ class PublicationStateTests(unittest.TestCase):
                 "ndk",
                 "python_target",
                 "groups",
+                "families",
             },
             set(result),
         )
@@ -877,6 +967,358 @@ class DriverBehaviorTests(unittest.TestCase):
             self.assertNotEqual(0, result.returncode)
             self.assertEqual(old_target.resolve(), pointer.resolve())
             self.assertEqual(1, len(list((root / "build").glob("runtime-*-run-*"))))
+
+
+class NativeBuilderCapabilityTests(unittest.TestCase):
+    def test_rust_and_cmake_builder_patches_apply_to_their_anchors(self) -> None:
+        builder_text = (
+            "class Builder:\n"
+            "    def get_rust_env_vars(self, env):\n"
+            '        run(f"rustup target add {tool_prefix}")\n'
+            "        env.update({\n"
+            '            "RUSTFLAGS": f"-C linker={env[\'CC\']} -L native={self.host_env}/chaquopy/lib",\n'
+            "        })\n"
+            "    def fix_wheel(self, in_filename):\n"
+            '        info_dir = assert_isdir(f"{tmp_dir}/{self.name_version}.dist-info")\n'
+            "    def toolchain(self, env):\n"
+            "        return f'''\n"
+            "                set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)\n"
+            "'''\n"
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            chaquopy = Path(temporary)
+            builder = chaquopy / "server/pypi/build-wheel.py"
+            builder.parent.mkdir(parents=True)
+            builder.write_text(builder_text, encoding="utf-8")
+            runtime_wheels.patch_builder_rust(chaquopy)
+            runtime_wheels.patch_builder_cmake(chaquopy)
+            patched = builder.read_text(encoding="utf-8")
+            self.assertNotIn("rustup target add", patched)
+            self.assertIn("INPUT(-lpython{self.python})", patched)
+            self.assertIn("_sysconfigdata__android_{tool_prefix}.py", patched)
+            self.assertIn('os.environ["ANKI_MINER_RUSTFLAGS"]', patched)
+            self.assertIn('replace(stage_root, "/anki-miner-runtime")', patched)
+            self.assertIn("set(CMAKE_STRIP {env['STRIP']}", patched)
+            compile(patched, "build-wheel.py", "exec")
+            with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "anchor"):
+                runtime_wheels.patch_builder_rust(chaquopy)
+
+    def test_build_driver_pins_rust_environment_and_follows_build_order(self) -> None:
+        driver = (TOOL_ROOT / "build-runtime-wheels.sh").read_text(encoding="utf-8")
+        for fragment in (
+            "-Wl,-z,max-page-size=16384",
+            "--remap-path-prefix=$stage=/anki-miner-runtime",
+            "CARGO_NET_OFFLINE=true",
+            'MATURIN_PEP517_ARGS="--frozen"',
+            "runtime_python build-order",
+            "runtime_python rust-bin",
+        ):
+            self.assertIn(fragment, driver)
+        order = runtime_wheels.build_order()
+        names = [package for package, _ in order]
+        self.assertEqual(set(runtime_wheels.NATIVE_SPECS), set(names))
+        kinds = [python for _, python in order]
+        self.assertEqual(sorted(kinds), kinds, "shared libraries must build before extensions")
+        self.assertLess(names.index("chaquopy-libxml2"), names.index("chaquopy-libxslt"))
+
+    def test_cargo_vendor_tarball_is_deterministic_and_rejects_symlinks(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            vendor = root / "vendor"
+            (vendor / "crate-1.0.0/src").mkdir(parents=True)
+            (vendor / "crate-1.0.0/src/lib.rs").write_text("pub fn f() {}\n", encoding="utf-8")
+            (vendor / "crate-1.0.0/.cargo-checksum.json").write_text("{}", encoding="utf-8")
+            first, second = root / "first.tar.gz", root / "second.tar.gz"
+            runtime_wheels.deterministic_tar(vendor, "vendor", first)
+            os.utime(vendor / "crate-1.0.0/src/lib.rs", (1, 1))
+            runtime_wheels.deterministic_tar(vendor, "vendor", second)
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+            with tarfile.open(first) as archive:
+                self.assertEqual("vendor", archive.getmembers()[0].name)
+                self.assertEqual({0}, {member.uid for member in archive.getmembers()})
+            (vendor / "link").symlink_to(vendor / "crate-1.0.0")
+            with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "symlink"):
+                runtime_wheels.deterministic_tar(vendor, "vendor", root / "third.tar.gz")
+
+    def test_vendor_tree_is_staged_beside_the_crate_with_offline_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            tree = root / "tree/vendor/crate-1.0.0"
+            tree.mkdir(parents=True)
+            (tree / "Cargo.toml").write_text("[package]\n", encoding="utf-8")
+            downloads = root / "downloads"
+            downloads.mkdir()
+            runtime_wheels.deterministic_tar(root / "tree/vendor", "vendor", downloads / "x-cargo-vendor.tar.gz")
+            entry = {
+                "cargo_manifest": "Cargo.toml",
+                "cargo_vendor": {"filename": "x-cargo-vendor.tar.gz", "sha256": "0" * 64},
+            }
+            source = root / "source"
+            (source / ".cargo").mkdir(parents=True)
+            (source / ".cargo/config.toml").write_text('[build]\nrustflags = ["-Cx"]\n', encoding="utf-8")
+            runtime_wheels.stage_cargo_vendor("x", entry, downloads, source, root / "scratch")
+            self.assertTrue((source / "vendor/crate-1.0.0/Cargo.toml").is_file())
+            config = (source / ".cargo/config.toml").read_text(encoding="utf-8")
+            self.assertTrue(config.startswith("[build]"))
+            self.assertIn('replace-with = "vendored-sources"', config)
+            other = root / "other"
+            (other / ".cargo").mkdir(parents=True)
+            (other / ".cargo/config.toml").write_text("[source.crates-io]\n", encoding="utf-8")
+            with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "already configures"):
+                runtime_wheels.stage_cargo_vendor("x", entry, downloads, other, root / "scratch2")
+
+    def test_git_archive_must_name_its_pinned_commit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "release.tar.gz"
+            with tarfile.open(path, "w:gz", format=tarfile.PAX_FORMAT, pax_headers={"comment": "a" * 40}) as archive:
+                info = tarfile.TarInfo("project-1.0/setup.py")
+                info.size = 1
+                archive.addfile(info, io.BytesIO(b"x"))
+            runtime_wheels.verify_git_archive_commit(path, "a" * 40)
+            with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "not git commit"):
+                runtime_wheels.verify_git_archive_commit(path, "b" * 40)
+
+    def test_source_lock_extras_and_carried_licences_are_validated(self) -> None:
+        good = {"expression": "MIT", "members": {}, "carried": {"LICENSE": "a" * 64}}
+        self.assertEqual(good, runtime_wheels._validate_license(good, "fixture"))
+        for bad in (
+            {"expression": "MIT", "members": {}},
+            {"expression": "MIT", "members": {}, "carried": {}},
+            {"expression": "MIT", "members": {}, "carried": {"../LICENSE": "a" * 64}},
+            {"expression": "MIT", "members": {}, "carried": {"README": "a" * 64}},
+        ):
+            with self.subTest(bad=bad), self.assertRaises(runtime_wheels.RuntimeWheelError):
+                runtime_wheels._validate_license(bad, "fixture")
+        vendored = {
+            "kind": "runtime-source",
+            "cargo_manifest": "Cargo.toml",
+            "cargo_vendor": {"filename": "x-1.0-cargo-vendor.tar.gz", "sha256": "a" * 64},
+            "git_commit": "b" * 40,
+        }
+        runtime_wheels._validate_source_extras(vendored, "fixture")
+        for change in (
+            {"kind": "prebuilt-wheel"},
+            {"cargo_manifest": "../Cargo.toml"},
+            {"cargo_vendor": {"filename": "x.tar.gz", "sha256": "a" * 64}},
+            {"git_commit": "main"},
+        ):
+            with self.subTest(change=change), self.assertRaises(runtime_wheels.RuntimeWheelError):
+                runtime_wheels._validate_source_extras({**vendored, **change}, "fixture")
+        runtime_wheels._validate_source_extras({"kind": "runtime-source"}, "fixture")
+        self.assertEqual(
+            TOOL_ROOT / "recipes/rustling/LICENSE",
+            runtime_wheels.carried_license_path({"kind": "runtime-source", "package": "rustling"}, "LICENSE"),
+        )
+        self.assertEqual(
+            TOOL_ROOT / "licenses/jieba/LICENSE",
+            runtime_wheels.carried_license_path({"kind": "pure-sdist", "package": "jieba"}, "LICENSE"),
+        )
+
+    def test_drive_letter_bytes_in_machine_code_are_not_build_paths(self) -> None:
+        with mock.patch.object(runtime_wheels, "_native_artifact_checker") as checker:
+            checker.return_value.parse_elf.return_value = mock.Mock(soname=None, needed=())
+            checker.return_value.ArtifactError = RuntimeError
+            result = runtime_wheels.inspect_elf(b"\x7fELF machine code C:\\ D:\\", "module.so", "x86_64")
+            self.assertEqual("module.so", result["path"])
+            for leak in (b"/home/builder/x", b"/var/tmp/stage", b"/Users/x"):
+                with self.subTest(leak=leak), self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "build path"):
+                    runtime_wheels.inspect_elf(b"\x7fELF " + leak, "module.so", "x86_64")
+
+
+class RepackTests(unittest.TestCase):
+    def test_filename_tags_expand_compressed_tag_sets(self) -> None:
+        self.assertEqual(
+            ["py2-none-any", "py3-none-any"],
+            runtime_wheels._filename_tags("x-1.0-py2.py3-none-any.whl"),
+        )
+        self.assertEqual(["py3-none-any"], runtime_wheels._filename_tags("x-1.0-py3-none-any.whl"))
+
+    def test_repack_drops_excluded_members_and_rewrites_record(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source.whl"
+            make_wheel(
+                source,
+                package="demo",
+                version="1.0",
+                tag="py3-none-any",
+                extra_files={
+                    "demo/__init__.py": b"",
+                    "demo/data/big.bin": b"x" * 64,
+                    "demo/data/keep.txt": b"keep",
+                    "demo/train.py": b"",
+                    "demo/train.py.orig": b"",
+                },
+            )
+            with mock.patch.object(runtime_wheels, "REPACKS", {"demo": ("demo/", ("data/big.bin", "train.py"))}):
+                first, second = root / "first.whl", root / "second.whl"
+                runtime_wheels.repack_wheel(source, first, "demo")
+                runtime_wheels.repack_wheel(source, second, "demo")
+                self.assertEqual(first.read_bytes(), second.read_bytes())
+                with zipfile.ZipFile(first) as archive:
+                    names = archive.namelist()
+                    files = {name: archive.read(name) for name in names}
+                    runtime_wheels._validate_record(archive, files, "demo-1.0.dist-info")
+            self.assertNotIn("demo/data/big.bin", names)
+            self.assertNotIn("demo/train.py", names)
+            self.assertIn("demo/train.py.orig", names)
+            self.assertIn("demo/data/keep.txt", names)
+            self.assertEqual("demo-1.0.dist-info/RECORD", names[-1])
+            for excludes in (("absent/",), ("data/big.bin", "absent/")):
+                with (
+                    self.subTest(excludes=excludes),
+                    mock.patch.object(runtime_wheels, "REPACKS", {"demo": ("demo/", excludes)}),
+                    self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, r"match no member: \['absent/'\]"),
+                ):
+                    runtime_wheels.repack_wheel(source, root / "third.whl", "demo")
+
+    def test_verification_rejects_a_repack_excluded_member(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / runtime_wheels.COMMON_SPECS["pysubs2"][1]
+            license_hash = make_wheel(
+                path,
+                package="pysubs2",
+                version="1.8.1",
+                tag="py3-none-any",
+                extra_files={"pysubs2/test/fixture.srt": b"1"},
+            )
+            with (
+                mock.patch.object(runtime_wheels, "_expected_license_hashes", return_value=("MIT", {license_hash})),
+                mock.patch.object(runtime_wheels, "REPACKS", {"pysubs2": ("pysubs2/", ("test/",))}),
+            ):
+                with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "repack-excluded"):
+                    runtime_wheels.verify_runtime_wheel(path)
+
+    def test_sdist_only_package_becomes_a_pure_wheel_with_carried_licence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sdist = root / "demo-1.0.tar.gz"
+            with tarfile.open(sdist, "w:gz") as archive:
+                for name, data in (
+                    ("demo-1.0/PKG-INFO", b"Metadata-Version: 1.1\nName: demo\nVersion: 1.0\nLicense: MIT\n"),
+                    ("demo-1.0/setup.py", b""),
+                    ("demo-1.0/demo/__init__.py", b"VALUE = 1\n"),
+                    ("demo-1.0/demo/model.p", b"pickle"),
+                    ("demo-1.0/demo/lac/model.bin", b"model"),
+                ):
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+            licence = root / "licenses/demo/LICENSE"
+            licence.parent.mkdir(parents=True)
+            licence.write_bytes(b"MIT licence text\n")
+            entry = {
+                "kind": "pure-sdist",
+                "package": "demo",
+                "license": {"expression": "MIT", "members": {}, "carried": {"LICENSE": "a" * 64}},
+            }
+            with (
+                mock.patch.object(runtime_wheels, "SDIST_WHEELS", {"demo": "demo-1.0/demo/"}),
+                mock.patch.object(runtime_wheels, "REPACKS", {"demo": ("demo/", ("lac/", "model.p"))}),
+                mock.patch.object(runtime_wheels, "source_entries", return_value={"demo": entry}),
+                mock.patch.object(
+                    runtime_wheels,
+                    "carried_license_path",
+                    side_effect=lambda _entry, name: root / "licenses/demo" / name,
+                ),
+            ):
+                first, second = root / "first.whl", root / "second.whl"
+                runtime_wheels.sdist_wheel(sdist, first, "demo", "1.0")
+                runtime_wheels.sdist_wheel(sdist, second, "demo", "1.0")
+            self.assertEqual(first.read_bytes(), second.read_bytes())
+            with zipfile.ZipFile(first) as archive:
+                files = {name: archive.read(name) for name in archive.namelist()}
+                runtime_wheels._validate_record(archive, files, "demo-1.0.dist-info")
+            self.assertEqual(
+                {
+                    "demo/__init__.py",
+                    "demo-1.0.dist-info/LICENSE",
+                    "demo-1.0.dist-info/METADATA",
+                    "demo-1.0.dist-info/WHEEL",
+                    "demo-1.0.dist-info/RECORD",
+                },
+                set(files),
+            )
+            self.assertIn(b"Tag: py3-none-any", files["demo-1.0.dist-info/WHEEL"])
+            self.assertIn(b"Name: demo", files["demo-1.0.dist-info/METADATA"])
+
+    def test_pinned_members_must_match_exactly(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            pinned = root / "recipes/demo/pinned.json"
+            pinned.parent.mkdir(parents=True)
+            data = {"demo/share/a.ocd2": b"a", "demo/share/b.json": b"b"}
+            members = {name.split("/")[-1]: hashlib.sha256(value).hexdigest() for name, value in data.items()}
+            pinned.write_text(
+                json.dumps({"schema": 1, "prefix": "demo/share/", "members": members}),
+                encoding="utf-8",
+            )
+            with (
+                mock.patch.object(runtime_wheels, "TOOL_ROOT", root),
+                mock.patch.object(runtime_wheels, "PINNED_MEMBER_FILES", {"demo": "recipes/demo/pinned.json"}),
+            ):
+                runtime_wheels._verify_pinned_members("demo.whl", "demo", {**data, "demo/x.py": b""})
+                for changed in ({**data, "demo/share/a.ocd2": b"other"}, {"demo/share/a.ocd2": b"a"}):
+                    with (
+                        self.subTest(changed=sorted(changed)),
+                        self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "pinned members differ"),
+                    ):
+                        runtime_wheels._verify_pinned_members("demo.whl", "demo", changed)
+
+
+class PublicationContractTests(unittest.TestCase):
+    def test_family_selection_lists_each_wave_exact_wheels(self) -> None:
+        wheels = {
+            "common": [{"package": "requests", "filename": "requests.whl"}],
+            "arm64-v8a": [{"package": "lxml", "filename": "lxml-arm.whl"}],
+            "x86_64": [{"package": "lxml", "filename": "lxml-x86.whl"}],
+        }
+        self.assertEqual(
+            {"common": ["requests.whl"], "arm64-v8a": ["lxml-arm.whl"], "x86_64": ["lxml-x86.whl"]},
+            runtime_wheels._families(wheels)["base"],
+        )
+        self.assertEqual(
+            set(runtime_wheels.PACKAGE_FAMILIES),
+            set(runtime_wheels.COMMON_SPECS) | set(runtime_wheels.NATIVE_SPECS),
+        )
+        for package, families in runtime_wheels.PACKAGE_FAMILIES.items():
+            with self.subTest(package=package):
+                self.assertTrue(families)
+                self.assertTrue(set(families) <= set(runtime_wheels.FAMILIES))
+
+    def test_publication_natives_must_close_over_the_publication(self) -> None:
+        def native(path: str, soname: str | None, *needed: str) -> dict[str, object]:
+            return {"path": path, "soname": soname, "needed": list(needed), "abi": "x86_64", "sha256": "a" * 64}
+
+        good = {
+            "common": [],
+            "arm64-v8a": [],
+            "x86_64": [
+                {"native": [native("chaquopy/lib/libxml2.so", "libxml2.so", "libz.so")]},
+                {"native": [native("lxml/etree.so", None, "libxml2.so", "libpython3.12.so", "libc++_shared.so")]},
+            ],
+        }
+        runtime_wheels._validate_publication_natives(good)
+        bad = copy.deepcopy(good)
+        bad["x86_64"][1]["native"][0]["needed"].append("libpython3.so")
+        with self.assertRaisesRegex(runtime_wheels.RuntimeWheelError, "DT_NEEDED outside"):
+            runtime_wheels._validate_publication_natives(bad)
+
+    def test_isa_audit_record_must_cover_every_arm64_native(self) -> None:
+        wheels = {"arm64-v8a": [{"filename": "a.whl", "native": [{"path": "a/x.so"}, {"path": "a/y.so"}]}]}
+        baseline = runtime_wheels._native_artifact_checker().ARM64_ISA_BASELINE
+        report = {"instructions": 10, "lse": 2}
+        runtime_wheels._validate_isa_audit(
+            {"baseline": baseline, "natives": {"a.whl!a/x.so": report, "a.whl!a/y.so": report}},
+            wheels,
+        )
+        for audit in (
+            {"baseline": baseline, "natives": {"a.whl!a/x.so": report}},
+            {"baseline": "+all", "natives": {"a.whl!a/x.so": report, "a.whl!a/y.so": report}},
+            {"baseline": baseline, "natives": {"a.whl!a/x.so": report, "a.whl!a/y.so": {"instructions": 0}}},
+        ):
+            with self.subTest(audit=audit), self.assertRaises(runtime_wheels.RuntimeWheelError):
+                runtime_wheels._validate_isa_audit(audit, wheels)
 
 
 if __name__ == "__main__":

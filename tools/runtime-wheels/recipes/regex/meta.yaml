@@ -1,0 +1,19 @@
+package:
+  name: regex
+  version: "2026.9.10"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/regex
+
+requirements:
+  build:
+    - setuptools 78.1.1
+    - wheel 0.45.1
+  host:
+    - python
+
+about:
+  license_file: LICENSE.txt

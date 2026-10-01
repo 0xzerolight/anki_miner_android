@@ -1,0 +1,16 @@
+package:
+  name: markupsafe
+  version: "3.0.3"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/markupsafe
+
+requirements:
+  host:
+    - python
+
+about:
+  license_file: LICENSE.txt

@@ -1,0 +1,18 @@
+package:
+  name: murmurhash
+  version: "1.0.15"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/murmurhash
+
+requirements:
+  build:
+    - cython 3.2.4
+  host:
+    - python
+
+about:
+  license_file: LICENSE

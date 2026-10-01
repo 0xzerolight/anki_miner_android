@@ -2,6 +2,13 @@
   "schema": 2,
   "wheels": [
     {
+      "filename": "annotated_types-0.8.0-py3-none-any.whl",
+      "requirement": "annotated-types==0.8.0",
+      "roles": ["target"],
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl"
+    },
+    {
       "filename": "attrs-26.1.0-py3-none-any.whl",
       "requirement": "attrs==26.1.0",
       "roles": ["outer"],
@@ -9,11 +16,46 @@
       "url": "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl"
     },
     {
+      "filename": "blis-1.3.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "blis==1.3.3",
+      "roles": ["target"],
+      "sha256": "1ef6d6e2b599a3a2788eb6d9b443533961265aa4ec49d574ed4bb846e548dcdb",
+      "url": "https://files.pythonhosted.org/packages/d5/ad/58deaa3ad856dd3cc96493e40ffd2ed043d18d4d304f85a65cde1ccbf644/blis-1.3.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
       "filename": "build-1.2.2.post1-py3-none-any.whl",
       "requirement": "build==1.2.2.post1",
       "roles": ["outer"],
       "sha256": "1d61c0887fa860c01971625baae8bdd338e517b836a2f70dd1f7aa3a6b2fc5b5",
       "url": "https://files.pythonhosted.org/packages/84/c2/80633736cd183ee4a62107413def345f7e6e3c01563dbca1417363cf957e/build-1.2.2.post1-py3-none-any.whl"
+    },
+    {
+      "filename": "catalogue-2.0.10-py3-none-any.whl",
+      "requirement": "catalogue==2.0.10",
+      "roles": ["target"],
+      "sha256": "58c2de0020aa90f4a2da7dfad161bf7b3b054c86a5f09fcedc0b2b740c109a9f",
+      "url": "https://files.pythonhosted.org/packages/9e/96/d32b941a501ab566a16358d68b6eb4e4acc373fab3c3c4d7d9e649f7b4bb/catalogue-2.0.10-py3-none-any.whl"
+    },
+    {
+      "filename": "cmake-4.4.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "cmake==4.4.3",
+      "roles": ["target"],
+      "sha256": "bae3c4954623ec4d62e62c70443f0da7988b733111c2871fcc6a31ead5137e20",
+      "url": "https://files.pythonhosted.org/packages/0b/d0/18fe62f0bddc8b9bb71ba55762ee48a224f8344101c34350d969f6e0d327/cmake-4.4.3-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
+      "filename": "confection-1.3.3-py3-none-any.whl",
+      "requirement": "confection==1.3.3",
+      "roles": ["target"],
+      "sha256": "b9fef9ee84b237ef4611ec3eb5797b70e13063e6310ad9f15536373f5e313c82",
+      "url": "https://files.pythonhosted.org/packages/8d/e4/d66708bdf0d92fb4d49b22cdff4b10cec38aca5dcd7e81d909bb55c65cd7/confection-1.3.3-py3-none-any.whl"
+    },
+    {
+      "filename": "cymem-2.0.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "cymem==2.0.13",
+      "roles": ["target"],
+      "sha256": "f190a92fe46197ee64d32560eb121c2809bb843341733227f51538ce77b3410d",
+      "url": "https://files.pythonhosted.org/packages/eb/12/678d16f7aa1996f947bf17b8cfb917ea9c9674ef5e2bd3690c04123d5680/cymem-2.0.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
     },
     {
       "filename": "cython-3.2.4-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl",
@@ -51,6 +93,48 @@
       "url": "https://files.pythonhosted.org/packages/a9/21/9b05698b46f218fc0e118e1f8168395c65c8a2c750ae2bab54fc4bd4e0e8/markupsafe-3.0.3-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl"
     },
     {
+      "filename": "maturin-1.15.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl",
+      "requirement": "maturin==1.15.0",
+      "roles": ["target"],
+      "sha256": "653020a63525bb224e5ab0adf02e17a2e08bc86dbea7fc1399c9a56d7529b99e",
+      "url": "https://files.pythonhosted.org/packages/fe/91/b495e19e2f5c503b540452b2039115e7b2363867e8c5ad4179eb752fa92c/maturin-1.15.0-py3-none-manylinux_2_12_x86_64.manylinux2010_x86_64.musllinux_1_1_x86_64.whl"
+    },
+    {
+      "filename": "meson-1.12.1-py3-none-any.whl",
+      "requirement": "meson==1.12.1",
+      "roles": ["target"],
+      "sha256": "930bc7542cbd9f57009e182fd014eba48cf1a0180a7b9006d2d32d8f168d8b02",
+      "url": "https://files.pythonhosted.org/packages/57/99/36cd25f9598eef70db97577440a70a360af505f6f01c2338a18d1556079c/meson-1.12.1-py3-none-any.whl"
+    },
+    {
+      "filename": "meson_python-0.22.0-py3-none-any.whl",
+      "requirement": "meson-python==0.22.0",
+      "roles": ["target"],
+      "sha256": "0ce9fa40bb8bfaecccba97347063970e1a18cca2730d6e68a341dc0b73b284a4",
+      "url": "https://files.pythonhosted.org/packages/37/35/26a6c96ed91fa3baacd64da82f279bc282eade45003c00d99293332b45e1/meson_python-0.22.0-py3-none-any.whl"
+    },
+    {
+      "filename": "murmurhash-1.0.15-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl",
+      "requirement": "murmurhash==1.0.15",
+      "roles": ["target"],
+      "sha256": "5a301decfaccfec70fe55cb01dde2a012c3014a874542eaa7cc73477bb749616",
+      "url": "https://files.pythonhosted.org/packages/ff/30/ea8f601a9bf44db99468696efd59eb9cff1157cd55cb586d67116697583f/murmurhash-1.0.15-cp312-cp312-manylinux1_x86_64.manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_5_x86_64.whl"
+    },
+    {
+      "filename": "ninja-1.13.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "ninja==1.13.2",
+      "roles": ["target"],
+      "sha256": "65a24341b5ac09fcadcc37082660be40a94174e51a937fabf6e2cae26225fa2c",
+      "url": "https://files.pythonhosted.org/packages/6e/53/ebfed7b689c338dd8ebeec9c0730c8d56821292f14e2536e5f3ef1a05744/ninja-1.13.2-py3-none-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
+      "filename": "numpy-2.5.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl",
+      "requirement": "numpy==2.5.0",
+      "roles": ["target"],
+      "sha256": "aaa760137137e8d3c920d27927748215b56014f92667dc9b6c27dfc61249255a",
+      "url": "https://files.pythonhosted.org/packages/bb/6b/f4a3d0637692c49da8ef99d72d52526f92e0a8d6ac4f0ca9f31441b9d9ea/numpy-2.5.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl"
+    },
+    {
       "filename": "packaging-26.2-py3-none-any.whl",
       "requirement": "packaging==26.2",
       "roles": ["outer"],
@@ -65,11 +149,32 @@
       "url": "https://files.pythonhosted.org/packages/29/a2/d40fb2460e883eca5199c62cfc2463fd261f760556ae6290f88488c362c0/pip-25.1.1-py3-none-any.whl"
     },
     {
+      "filename": "preshed-3.0.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "preshed==3.0.13",
+      "roles": ["target"],
+      "sha256": "8b8de3f58043070a354477995acdd98626ce43e4193c708ebd0f694e467f5155",
+      "url": "https://files.pythonhosted.org/packages/51/94/8c9bc48a6ea4903f53a1a0031ce8e35687526949f25821762ef21493c007/preshed-3.0.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
       "filename": "pybind11-3.0.1-py3-none-any.whl",
       "requirement": "pybind11==3.0.1",
       "roles": ["target"],
       "sha256": "aa8f0aa6e0a94d3b64adfc38f560f33f15e589be2175e103c0a33c6bce55ee89",
       "url": "https://files.pythonhosted.org/packages/cd/8a/37362fc2b949d5f733a8b0f2ff51ba423914cabefe69f1d1b6aab710f5fe/pybind11-3.0.1-py3-none-any.whl"
+    },
+    {
+      "filename": "pydantic-2.13.5-py3-none-any.whl",
+      "requirement": "pydantic==2.13.5",
+      "roles": ["target"],
+      "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+      "url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl"
+    },
+    {
+      "filename": "pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
+      "requirement": "pydantic-core==2.46.5",
+      "roles": ["target"],
+      "sha256": "0fc5be0abd4a407e200d844b404e33639a554e7bd0d448e7b9ae181be4789ac2",
+      "url": "https://files.pythonhosted.org/packages/c0/a4/eb9409ec0736e50aa70a412f16c204ed149516846912f7e6724d4c73ee53/pydantic_core-2.46.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl"
     },
     {
       "filename": "pyelftools-0.32-py3-none-any.whl",
@@ -84,6 +189,13 @@
       "roles": ["outer"],
       "sha256": "9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913",
       "url": "https://files.pythonhosted.org/packages/bd/24/12818598c362d7f300f18e74db45963dbcb85150324092410c8b49405e42/pyproject_hooks-1.2.0-py3-none-any.whl"
+    },
+    {
+      "filename": "pyproject_metadata-0.12.1-py3-none-any.whl",
+      "requirement": "pyproject-metadata==0.12.1",
+      "roles": ["target"],
+      "sha256": "f7162d580a96386a8eb096da06215f981f547d1490f03055ef99e323bc2da427",
+      "url": "https://files.pythonhosted.org/packages/b9/8e/d883718e872abc214ba053f60f7e6edc2abd5ffbd1544beb01a9c92ddd3c/pyproject_metadata-0.12.1-py3-none-any.whl"
     },
     {
       "filename": "PyYAML-6.0.2-cp313-cp313-manylinux_2_17_x86_64.manylinux2014_x86_64.whl",
@@ -112,6 +224,41 @@
       "roles": ["outer", "target"],
       "sha256": "c3a9c4211ff4c309edb8b8c4f1cbfa7ae324c4ba9f91ff254e3d305b9fd54561",
       "url": "https://files.pythonhosted.org/packages/90/99/158ad0609729111163fc1f674a5a42f2605371a4cf036d0441070e2f7455/setuptools-78.1.1-py3-none-any.whl"
+    },
+    {
+      "filename": "srsly-2.5.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "srsly==2.5.3",
+      "roles": ["target"],
+      "sha256": "99026bcd9cbd3211cc36517400b04ca0fc5d3e412b14daf84ee6e65f67d9a2d8",
+      "url": "https://files.pythonhosted.org/packages/4e/c9/741e29f534919a944a16da4184924b1d3404c4bf60716ab2b91be771d1e3/srsly-2.5.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
+      "filename": "thinc-8.3.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl",
+      "requirement": "thinc==8.3.13",
+      "roles": ["target"],
+      "sha256": "4b5ec9ff313819e7d8667794a3559463fa89ff45aaa73e3fd8d6273b1e0d7a7f",
+      "url": "https://files.pythonhosted.org/packages/f9/ff/6914bf370bd1d604d89e6dfb46b97d10cd9b00d42ff8c036283e92314a8c/thinc-8.3.13-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl"
+    },
+    {
+      "filename": "typing_extensions-4.15.0-py3-none-any.whl",
+      "requirement": "typing-extensions==4.15.0",
+      "roles": ["target"],
+      "sha256": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+      "url": "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl"
+    },
+    {
+      "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+      "requirement": "typing-inspection==0.4.4",
+      "roles": ["target"],
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl"
+    },
+    {
+      "filename": "wasabi-1.1.3-py3-none-any.whl",
+      "requirement": "wasabi==1.1.3",
+      "roles": ["target"],
+      "sha256": "f76e16e8f7e79f8c4c8be49b4024ac725713ab10cd7f19350ad18a8e3f71728c",
+      "url": "https://files.pythonhosted.org/packages/06/7c/34330a89da55610daa5f245ddce5aab81244321101614751e7537f125133/wasabi-1.1.3-py3-none-any.whl"
     },
     {
       "filename": "wheel-0.45.1-py3-none-any.whl",

@@ -1,0 +1,20 @@
+--- src-original/setup.py
++++ src/setup.py
+@@ -24,6 +24,17 @@
+ 
+ MOD_NAMES = ["blis.cy", "blis.py"]
+ 
++# Anki Miner (Chaquopy): the kernel set follows the Android ABI, never the build
++# host's platform.machine(). arm64-v8a takes the generic (reference C) set:
++# desktop's manylinux aarch64 choice, cortexa57, is inline asm that clobbers
++# x18, the Android platform register, so clang rejects it (and it would corrupt
++# the shadow call stack if it built). x86_64 takes the runtime-dispatched x86_64
++# family desktop's manylinux wheel builds. The BLIS objects bypass distutils, so
++# they get the target compiler and Chaquopy's CFLAGS (prefix maps for
++# reproducible, path-free objects) here.
++os.environ["BLIS_ARCH"] = {"arm64-v8a": "generic", "x86_64": "x86_64"}[os.environ["CHAQUOPY_ABI"]]
++os.environ["BLIS_COMPILER"] = os.environ["CC"] + " " + os.environ["CFLAGS"]
++
+ print("BLIS_COMPILER?", os.environ.get("BLIS_COMPILER", "None"))
+ 
+ 

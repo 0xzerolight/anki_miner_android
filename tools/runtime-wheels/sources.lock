@@ -1,6 +1,76 @@
 {
   "schema": 1,
   "sources": {
+    "annotated-doc": {
+      "filename": "annotated_doc-0.0.4-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "annotated_doc-0.0.4.dist-info/licenses/LICENSE": "fff170779a6acbf65abdb405c087f1cee1786691e4a96a4034517e4a504a0cdf"
+        }
+      },
+      "package": "annotated-doc",
+      "sha256": "571ac1dc6991c450b25a9c2d84a3705e2ae7a53467b5d111c24fa8baabbed320",
+      "url": "https://files.pythonhosted.org/packages/1e/d3/26bf1008eb3d2daa8ef4cacc7f3bfdc11818d111f7e2d0201bc6e3b49d45/annotated_doc-0.0.4-py3-none-any.whl",
+      "version": "0.0.4"
+    },
+    "annotated-types": {
+      "filename": "annotated_types-0.8.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "annotated_types-0.8.0.dist-info/licenses/LICENSE": "fe1049884b1a0d9342901e88e07f32925d24b3121d9972b6a6805fb9824b095d"
+        }
+      },
+      "package": "annotated-types",
+      "sha256": "f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0",
+      "url": "https://files.pythonhosted.org/packages/99/91/8acff4f5e50511b911bbccb72b8628a49c68ce14148cd9f6431094859a90/annotated_types-0.8.0-py3-none-any.whl",
+      "version": "0.8.0"
+    },
+    "anyio": {
+      "filename": "anyio-4.14.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "anyio-4.14.0.dist-info/licenses/LICENSE": "5361ac9dc58f2ef5fd2e9b09c68297c17f04950909bbc8023bdb82eacf22c2b0"
+        }
+      },
+      "package": "anyio",
+      "sha256": "dd9b7a2a9799ed6552fde617b2c5df02b7fdd7d88392fc48101e51bae46164d9",
+      "url": "https://files.pythonhosted.org/packages/ba/16/9826f089383c593cdfc4a6e5aca94d9e91ae1692c57af82c3b2aa5e810f7/anyio-4.14.0-py3-none-any.whl",
+      "version": "4.14.0"
+    },
+    "blis": {
+      "filename": "blis-1.3.3.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "blis-1.3.3/LICENSE": "730031e418c53828d32b3746e2ac618ada7d8e7a4d568909c0f989b53fa84378"
+        }
+      },
+      "package": "blis",
+      "sha256": "034d4560ff3cc43e8aa37e188451b0440e3261d989bb8a42ceee865607715ecd",
+      "url": "https://files.pythonhosted.org/packages/d0/d0/d8cc8c9a4488a787e7fa430f6055e5bd1ddb22c340a751d9e901b82e2efe/blis-1.3.3.tar.gz",
+      "version": "1.3.3"
+    },
+    "catalogue": {
+      "filename": "catalogue-2.0.10-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "catalogue-2.0.10.dist-info/LICENSE": "f7f74ea82f9a10d7ce2ba05dd7e460c8c2bb42a6cc7d9ae71ab35661b5f71c9b"
+        }
+      },
+      "package": "catalogue",
+      "sha256": "58c2de0020aa90f4a2da7dfad161bf7b3b054c86a5f09fcedc0b2b740c109a9f",
+      "url": "https://files.pythonhosted.org/packages/9e/96/d32b941a501ab566a16358d68b6eb4e4acc373fab3c3c4d7d9e649f7b4bb/catalogue-2.0.10-py3-none-any.whl",
+      "version": "2.0.10"
+    },
     "certifi": {
       "filename": "certifi-2026.6.17-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -41,6 +111,118 @@
       "url": "https://files.pythonhosted.org/packages/db/8f/61959034484a4a7c527811f4721e75d02d653a35afb0b6054474d8185d4c/charset_normalizer-3.4.7-py3-none-any.whl",
       "version": "3.4.7"
     },
+    "click": {
+      "filename": "click-8.1.8-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "click-8.1.8.dist-info/LICENSE.txt": "9a8ad106a394e853bfe21f42f4e72d592819a22805d991b5f3275029292b658d"
+        }
+      },
+      "package": "click",
+      "sha256": "63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2",
+      "url": "https://files.pythonhosted.org/packages/7e/d4/7ebdbd03970677812aac39c869717059dbb71a4cfc033ca6e5221787892c/click-8.1.8-py3-none-any.whl",
+      "version": "8.1.8"
+    },
+    "cloudpathlib": {
+      "filename": "cloudpathlib-0.25.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "cloudpathlib-0.25.0.dist-info/licenses/LICENSE": "7ab01fa6c3fb599011ca55017e9f09f9e67b868fb421736a665992db7712c135"
+        }
+      },
+      "package": "cloudpathlib",
+      "sha256": "8faef3ed3a0dd71d134e8617b4fdc5ce56a12a6b485c080cfe80106e5f1d1f5d",
+      "url": "https://files.pythonhosted.org/packages/37/f9/9084c945d0b3ef8f129b4f0dd21baec759761a337902b70f17a3945015dd/cloudpathlib-0.25.0-py3-none-any.whl",
+      "version": "0.25.0"
+    },
+    "cloudpickle": {
+      "filename": "cloudpickle-3.1.2-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "cloudpickle-3.1.2.dist-info/licenses/LICENSE": "3029ea34173e9fdc233ad315dc6b100bd1ea71f529b1c1af97664a272fdc55f5"
+        }
+      },
+      "package": "cloudpickle",
+      "sha256": "9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a",
+      "url": "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl",
+      "version": "3.1.2"
+    },
+    "colorama": {
+      "filename": "colorama-0.4.6-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "colorama-0.4.6.dist-info/licenses/LICENSE.txt": "cac35c02686e5d04a5a7140bfb3b36e73aed496656e891102e428886d7930318"
+        }
+      },
+      "package": "colorama",
+      "sha256": "4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6",
+      "url": "https://files.pythonhosted.org/packages/d1/d6/3965ed04c63042e047cb6a3e6ed1a63a35087b6a609aa3a15ed8ac56c221/colorama-0.4.6-py2.py3-none-any.whl",
+      "version": "0.4.6"
+    },
+    "confection": {
+      "filename": "confection-1.3.3-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "confection-1.3.3.dist-info/licenses/LICENSE": "f7f74ea82f9a10d7ce2ba05dd7e460c8c2bb42a6cc7d9ae71ab35661b5f71c9b"
+        }
+      },
+      "package": "confection",
+      "sha256": "b9fef9ee84b237ef4611ec3eb5797b70e13063e6310ad9f15536373f5e313c82",
+      "url": "https://files.pythonhosted.org/packages/8d/e4/d66708bdf0d92fb4d49b22cdff4b10cec38aca5dcd7e81d909bb55c65cd7/confection-1.3.3-py3-none-any.whl",
+      "version": "1.3.3"
+    },
+    "cymem": {
+      "filename": "cymem-2.0.13.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "cymem-2.0.13/LICENSE": "2cfcc6b46277cb271b890785eb70b80ffeebb84f64e845224089f4fcf90baf46"
+        }
+      },
+      "package": "cymem",
+      "sha256": "1c91a92ae8c7104275ac26bd4d29b08ccd3e7faff5893d3858cb6fadf1bc1588",
+      "url": "https://files.pythonhosted.org/packages/c0/8f/2f0fbb32535c3731b7c2974c569fb9325e0a38ed5565a08e1139a3b71e82/cymem-2.0.13.tar.gz",
+      "version": "2.0.13"
+    },
+    "dawg2-python": {
+      "filename": "dawg2_python-0.9.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "dawg2_python-0.9.0.dist-info/LICENSE": "2e5e7d32243cec7f102512b909db245c1c83b56823ec2b5fa1020cbe4fc7c3f0"
+        }
+      },
+      "package": "dawg2-python",
+      "sha256": "4fab6fc097bd176cd783cd8421b757348ea5a460789e53b0f6bb64831380bab5",
+      "url": "https://files.pythonhosted.org/packages/84/3b/7fb4c1a8df59cb80f5f7ecb9646280e000f9ba2ccff8710205dc9aa4604f/dawg2_python-0.9.0-py3-none-any.whl",
+      "version": "0.9.0"
+    },
+    "defusedxml": {
+      "filename": "defusedxml-0.7.1-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "PSF-2.0",
+        "members": {
+          "defusedxml-0.7.1.dist-info/LICENSE": "b80ce9da8c42a1f91079627fbbe2bf27210ae108a0ffe5f077d5b08e076c24c8"
+        }
+      },
+      "package": "defusedxml",
+      "sha256": "a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61",
+      "url": "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl",
+      "version": "0.7.1"
+    },
     "freetype": {
       "filename": "freetype-2.14.1.tar.xz",
       "kind": "runtime-source",
@@ -55,6 +237,48 @@
       "url": "https://download.savannah.gnu.org/releases/freetype/freetype-2.14.1.tar.xz",
       "version": "2.14.1"
     },
+    "h11": {
+      "filename": "h11-0.16.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "h11-0.16.0.dist-info/licenses/LICENSE.txt": "37db5bb85926db28a427a25867f10b1232003aea1be69ccb851138adb8e6f361"
+        }
+      },
+      "package": "h11",
+      "sha256": "63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86",
+      "url": "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl",
+      "version": "0.16.0"
+    },
+    "httpcore": {
+      "filename": "httpcore-1.0.9-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "httpcore-1.0.9.dist-info/licenses/LICENSE.md": "fdcb59154c74cbaba16a11242f7740bea9f23d6feb5547917d8c5f94a80392a5"
+        }
+      },
+      "package": "httpcore",
+      "sha256": "2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55",
+      "url": "https://files.pythonhosted.org/packages/7e/f5/f66802a942d491edb555dd61e3a9961140fd64c90bce1eafd741609d334d/httpcore-1.0.9-py3-none-any.whl",
+      "version": "1.0.9"
+    },
+    "httpx": {
+      "filename": "httpx-0.28.1-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "httpx-0.28.1.dist-info/licenses/LICENSE.md": "4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d"
+        }
+      },
+      "package": "httpx",
+      "sha256": "d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad",
+      "url": "https://files.pythonhosted.org/packages/2a/39/e50c7c3a983047577ee07d2a9e53faf5a69493943ec3f6a384bdc792deb2/httpx-0.28.1-py3-none-any.whl",
+      "version": "0.28.1"
+    },
     "idna": {
       "filename": "idna-3.18-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -68,6 +292,70 @@
       "sha256": "7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2",
       "url": "https://files.pythonhosted.org/packages/1e/5e/d4e9f1a599fb8e573b7b87160658329fbf28d19eac2718f51fc3def3aa5a/idna-3.18-py3-none-any.whl",
       "version": "3.18"
+    },
+    "jieba": {
+      "filename": "jieba-0.42.1.tar.gz",
+      "kind": "pure-sdist",
+      "license": {
+        "carried": {
+          "LICENSE": "18ba0984839f85853b29fadaf992f7dba8fd0ca0fbeae34de2b8735222dc7a37"
+        },
+        "expression": "MIT",
+        "members": {}
+      },
+      "package": "jieba",
+      "sha256": "055ca12f62674fafed09427f176506079bc135638a14e23e25be909131928db2",
+      "url": "https://files.pythonhosted.org/packages/c6/cb/18eeb235f833b726522d7ebed54f2278ce28ba9438e3135ab0278d9792a2/jieba-0.42.1.tar.gz",
+      "version": "0.42.1"
+    },
+    "jinja2": {
+      "filename": "jinja2-3.1.6-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "jinja2-3.1.6.dist-info/licenses/LICENSE.txt": "3b49dcee4105eb37bac10faf1be260408fe85d252b8e9df2e0979fc1e094437b"
+        }
+      },
+      "package": "jinja2",
+      "sha256": "85ece4451f492d0c13c5dd7c13a64681a86afae63a5f347908daf103ce6d2f67",
+      "url": "https://files.pythonhosted.org/packages/62/a1/3d680cbfd5f4b8f15abc1d571870c5fc3e594bb582bc3b64ea099db13e56/jinja2-3.1.6-py3-none-any.whl",
+      "version": "3.1.6"
+    },
+    "joblib": {
+      "filename": "joblib-1.6.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "joblib-1.6.0.dist-info/licenses/LICENSE.txt": "42612911c1872c5e4b43f6ae0e8ee59467cd350332241cf72ce90640264fae6a"
+        }
+      },
+      "package": "joblib",
+      "sha256": "3dbbf9f6e4b592a2357b854608e980fe6390d131d7a82f011a377ef2ebef7aba",
+      "url": "https://files.pythonhosted.org/packages/18/53/84099323c2ec4be98d935f63c033ac4151ee83836ca1050ede3b3aadf155/joblib-1.6.0-py3-none-any.whl",
+      "version": "1.6.0"
+    },
+    "kiwipiepy": {
+      "filename": "kiwipiepy-0.23.2.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "carried": {
+          "COPYING.eigen-MPL2": "fab3dd6bdab226f1c08630b1dd917e11fcb4ec5e1e020e2c16f83a0a13863e85",
+          "LICENSE.cpp-btree": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+          "LICENSE.cpuinfo": "8e7e60636c3aa0cb03571a1a841ce5697f9551ff92b3c426c2561613d15ade70",
+          "LICENSE.nlohmann-json": "46a65cffd1ea955132d95a8dd921640714a8d6b537d2e4e482d31145ae95b603",
+          "LICENSE.streamvbyte": "cb5e8e7e5f4a3988e1063c142c60dc2df75605f4c46515e776e3aca6df976e14"
+        },
+        "expression": "LGPL-3.0-or-later AND BSD-2-Clause AND Apache-2.0 AND MIT AND MPL-2.0",
+        "members": {
+          "kiwipiepy-0.23.2/LICENSE.txt": "e4aac7916a568db1d99a1c04f9273e9810a0fbf70fc4204cd3d436348032d263"
+        }
+      },
+      "package": "kiwipiepy",
+      "sha256": "632d627531ceaf4b55bd5c01d50eebdae0253c79c2c8a3f682f2e68492f36198",
+      "url": "https://files.pythonhosted.org/packages/c6/3f/b317dfd0085341a8e2b24fa8eddd7e709b07a91e6bcf20b8d8952ca26a03/kiwipiepy-0.23.2.tar.gz",
+      "version": "0.23.2"
     },
     "libjpeg": {
       "filename": "libjpeg-turbo-1.5.3.tar.gz",
@@ -139,6 +427,128 @@
       "url": "https://files.pythonhosted.org/packages/05/3b/aab6728cae887456f409b4d75e8a01856e4f04bd510de38052a47768b680/lxml-6.1.1.tar.gz",
       "version": "6.1.1"
     },
+    "markdown-it-py": {
+      "filename": "markdown_it_py-4.2.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "markdown_it_py-4.2.0.dist-info/licenses/LICENSE": "4a2260d6e2cd0f5a151a1e86dbfe7d3ed552b1e2beabf9941c1ba5c49cbce484",
+          "markdown_it_py-4.2.0.dist-info/licenses/LICENSE.markdown-it": "792c48c5a849a15fdf9e37e8bcf9e6d1dd13b32b46c642a748a0a46a9919d473"
+        }
+      },
+      "package": "markdown-it-py",
+      "sha256": "9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a",
+      "url": "https://files.pythonhosted.org/packages/b3/81/4da04ced5a082363ecfa159c010d200ecbd959ae410c10c0264a38cac0f5/markdown_it_py-4.2.0-py3-none-any.whl",
+      "version": "4.2.0"
+    },
+    "markupsafe": {
+      "filename": "markupsafe-3.0.3.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "BSD-3-Clause",
+        "members": {
+          "markupsafe-3.0.3/LICENSE.txt": "489a8e1108509ed98a37bb983e11e0f7e1d31f0bd8f99a79c8448e7ff37d07ea"
+        }
+      },
+      "package": "markupsafe",
+      "sha256": "722695808f4b6457b320fdc131280796bdceb04ab50fe1795cd540799ebe1698",
+      "url": "https://files.pythonhosted.org/packages/7e/99/7690b6d4034fffd95959cbe0c02de8deb3098cc577c67bb6a24fe5d7caa7/markupsafe-3.0.3.tar.gz",
+      "version": "3.0.3"
+    },
+    "mdurl": {
+      "filename": "mdurl-0.1.2-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "mdurl-0.1.2.dist-info/LICENSE": "7c605df6e28667a9603118e98274f64a49ce3eed0d26fccce9534a345e0ef955"
+        }
+      },
+      "package": "mdurl",
+      "sha256": "84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8",
+      "url": "https://files.pythonhosted.org/packages/b3/38/89ba8ad64ae25be8de66a6d463314cf1eb366222074cfda9ee839c56a4b4/mdurl-0.1.2-py3-none-any.whl",
+      "version": "0.1.2"
+    },
+    "murmurhash": {
+      "filename": "murmurhash-1.0.15.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "murmurhash-1.0.15/LICENSE": "5bab8e8668ce75cd96261a964357a57c7882eee6120858e2938b3fb380b85b4c"
+        }
+      },
+      "package": "murmurhash",
+      "sha256": "58e2b27b7847f9e2a6edf10b47a8c8dd70a4705f45dccb7bf76aeadacf56ba01",
+      "url": "https://files.pythonhosted.org/packages/23/2e/88c147931ea9725d634840d538622e94122bceaf346233349b7b5c62964b/murmurhash-1.0.15.tar.gz",
+      "version": "1.0.15"
+    },
+    "nltk": {
+      "filename": "nltk-3.10.3-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "Apache-2.0",
+        "members": {
+          "nltk-3.10.3.dist-info/licenses/LICENSE.txt": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        }
+      },
+      "package": "nltk",
+      "sha256": "ff9598a8e20518ee0d557745890cc4435b9578489e2dcbc69c4f81fa060caf7c",
+      "url": "https://files.pythonhosted.org/packages/b6/6d/ebd2af4640b12168fdf0cb74b6118df2f32a2f62ec7e0c06fbfd80706639/nltk-3.10.3-py3-none-any.whl",
+      "version": "3.10.3"
+    },
+    "numpy": {
+      "filename": "numpy-2.5.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+        "members": {
+          "numpy-2.5.0/LICENSE.txt": "1be1df33863f97a7bc1c4d67980bd6c69c9a6fef0a5ee76e6ad6cb91e56e8491"
+        }
+      },
+      "package": "numpy",
+      "sha256": "5a129578019311b6e56bdd714250f19b518f7dceeeb8d1af5490f4942d3f891c",
+      "url": "https://files.pythonhosted.org/packages/e7/05/3d27272d30698dc0ecb7fdfaa41ad70303b444f81722bb99bce1d818638a/numpy-2.5.0.tar.gz",
+      "version": "2.5.0"
+    },
+    "opencc": {
+      "filename": "opencc-1.4.2.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "carried": {
+          "LICENSE.marisa": "edf58dab34c3dc239ba4ba2d5d3d844d8c5b442aa4dd1149fac81b2d8c6cb8d1",
+          "LICENSE.pybind11": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb",
+          "LICENSE.rapidjson": "a140e5d46fe734a1c78f1a3c3ef207871dd75648be71fdda8e309b23ab8b1f32"
+        },
+        "expression": "Apache-2.0 AND (BSD-2-Clause OR LGPL-2.1-or-later) AND BSD-3-Clause AND MIT",
+        "members": {
+          "opencc-1.4.2/LICENSE": "b534e465949558eec2597b04f5092b5e161236a68dfbfd04d547592ac3964308",
+          "opencc-1.4.2/deps/marisa-0.3.1/COPYING.md": "edf58dab34c3dc239ba4ba2d5d3d844d8c5b442aa4dd1149fac81b2d8c6cb8d1",
+          "opencc-1.4.2/deps/pybind11-2.13.1/LICENSE": "83965b843b98f670d3a85bd041ed4b372c8ec50d7b4a5995a83ac697ba675dcb"
+        }
+      },
+      "package": "opencc",
+      "sha256": "47977905f131d7d9cfcec29fba5d841154907e1da73103105a4a68744e0f4f1a",
+      "url": "https://files.pythonhosted.org/packages/e0/12/09e62f051af1de7ca84be1d69154bd0514416ef72237e2081584cc268bc9/opencc-1.4.2.tar.gz",
+      "version": "1.4.2"
+    },
+    "packaging": {
+      "filename": "packaging-26.2-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "Apache-2.0 OR BSD-2-Clause",
+        "members": {
+          "packaging-26.2.dist-info/licenses/LICENSE": "cad1ef5bd340d73e074ba614d26f7deaca5c7940c3d8c34852e65c4909686c48",
+          "packaging-26.2.dist-info/licenses/LICENSE.APACHE": "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+          "packaging-26.2.dist-info/licenses/LICENSE.BSD": "b70e7e9b742f1cc6f948b34c16aa39ffece94196364bc88ff0d2180f0028fac5"
+        }
+      },
+      "package": "packaging",
+      "sha256": "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+      "url": "https://files.pythonhosted.org/packages/df/b2/87e62e8c3e2f4b32e5fe99e0b86d576da1312593b39f47d8ceef365e95ed/packaging-26.2-py3-none-any.whl",
+      "version": "26.2"
+    },
     "patchelf": {
       "filename": "patchelf-0.18.0-x86_64.tar.gz",
       "kind": "build-tool-binary",
@@ -158,6 +568,114 @@
       "sha256": "a830b1a40919539d07806aa58e1b114df53ddd43213d9c8b75847eee6c0182b5",
       "url": "https://files.pythonhosted.org/packages/8c/21/c2bcdd5906101a30244eaffc1b6e6ce71a31bd0742a01eb89e660ebfac2d/pillow-12.2.0.tar.gz",
       "version": "12.2.0"
+    },
+    "preshed": {
+      "filename": "preshed-3.0.13.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "preshed-3.0.13/LICENSE": "8dcabc9e85836e00771fb43ba17671855de7533772d8449dad0720a6efefe2df"
+        }
+      },
+      "package": "preshed",
+      "sha256": "d75f718bbfd97e992f7827e0fa7faf6a91bdd9c922d5baa4b50d62731396cb89",
+      "url": "https://files.pythonhosted.org/packages/43/75/fe6b7bbd0dea530a001b0e24c331b21a0be2786e402abf3c57f5dce43d4b/preshed-3.0.13.tar.gz",
+      "version": "3.0.13"
+    },
+    "pycantonese": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "pycantonese-5.0.0-cargo-vendor.tar.gz",
+        "sha256": "07be6ffcaf33237840e5abaada9a0a6d4f84bf07887b18de307da1ae072ef31c"
+      },
+      "filename": "pycantonese-5.0.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pycantonese-5.0.0/LICENSE.txt": "5e481f34b24f91466401e4b0606db7927f7f2f8e283cbc3a87660aee3074bf83"
+        }
+      },
+      "package": "pycantonese",
+      "sha256": "8655ba3cd891b528d6b070245abed55b20a08d673f1056fcf9afad0adbc47c1d",
+      "url": "https://files.pythonhosted.org/packages/09/09/32e8000e39eb9ff034e1d55a86536a14abab90f2f4df176129fd90c43c29/pycantonese-5.0.0.tar.gz",
+      "version": "5.0.0"
+    },
+    "pydantic": {
+      "filename": "pydantic-2.13.5-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pydantic-2.13.5.dist-info/licenses/LICENSE": "a9e186f3ca16b5eef84318e7a701721351a00cb7b8ae3a4394b67b49e3529ef3"
+        }
+      },
+      "package": "pydantic",
+      "sha256": "346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73",
+      "url": "https://files.pythonhosted.org/packages/eb/47/c95ffc2009878c7aac0c5e08528022dcb885933252a88b5f170058014464/pydantic-2.13.5-py3-none-any.whl",
+      "version": "2.13.5"
+    },
+    "pydantic-core": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "pydantic_core-2.46.5-cargo-vendor.tar.gz",
+        "sha256": "5ba8b217e19f3728d23119c46212c876c34ed871d6be4597bad15308e9c5f3e8"
+      },
+      "filename": "pydantic_core-2.46.5.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pydantic_core-2.46.5/LICENSE": "2afdd30d54b4d62b6f488a6bcc1546e84ec5061f13f4209c03d012348783795a"
+        }
+      },
+      "package": "pydantic-core",
+      "sha256": "10416c15b8839ecc4ef4d0885da76da6fd0f67333a0eb8aff6d93c4b8f2910fc",
+      "url": "https://files.pythonhosted.org/packages/af/f9/8a06bea35ef8daf588f707784c973a7046e0034c8d8cfb08828eeffb8b75/pydantic_core-2.46.5.tar.gz",
+      "version": "2.46.5"
+    },
+    "pygments": {
+      "filename": "pygments-2.20.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-2-Clause",
+        "members": {
+          "pygments-2.20.0.dist-info/licenses/LICENSE": "a9d66f1d526df02e29dce73436d34e56e8632f46c275bbdffc70569e882f9f17"
+        }
+      },
+      "package": "pygments",
+      "sha256": "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+      "url": "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl",
+      "version": "2.20.0"
+    },
+    "pymorphy3": {
+      "filename": "pymorphy3-2.0.6-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pymorphy3-2.0.6.dist-info/licenses/LICENSE.txt": "a5e6ddb3af783a02eacc848cbe309cc0940b4859ac653e9b1a2e21a4fea22552"
+        }
+      },
+      "package": "pymorphy3",
+      "sha256": "0254317c02ce3ea17e080b7fc9d675e44662b3a5296bae68605b7a41d25b36c3",
+      "url": "https://files.pythonhosted.org/packages/18/4b/59bac03278033e293d1405ed42fb6c6252c25f40c50f509c615caeaa3b71/pymorphy3-2.0.6-py3-none-any.whl",
+      "version": "2.0.6"
+    },
+    "pypinyin": {
+      "filename": "pypinyin-0.55.0-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "pypinyin-0.55.0.dist-info/licenses/LICENSE.txt": "1e6c90014b4912815c296ee64bb6f6280af47e6d4c5d80e86232dfc5defe764c"
+        }
+      },
+      "package": "pypinyin",
+      "sha256": "d53b1e8ad2cdb815fb2cb604ed3123372f5a28c6f447571244aca36fc62a286f",
+      "url": "https://files.pythonhosted.org/packages/b9/7b/4cabc76fcc21c3c7d5c671d8783984d30ac9d3bb387c4ba784fca3cdfa3a/pypinyin-0.55.0-py2.py3-none-any.whl",
+      "version": "0.55.0"
     },
     "pysubs2": {
       "filename": "pysubs2-1.8.1-py3-none-any.whl",
@@ -185,6 +703,20 @@
       "sha256": "d4140d76c0a3c73bbbb89a7139e9bcc3080b37f210f2c343acfdea8b21113aad",
       "url": "https://repo.maven.apache.org/maven2/com/chaquo/python/target/3.12.12-0/target-3.12.12-0-x86_64.zip"
     },
+    "regex": {
+      "filename": "regex-2026.9.10.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "Apache-2.0 AND CNRI-Python",
+        "members": {
+          "regex-2026.9.10/LICENSE.txt": "bff55ef4cdcc8c14ce259f8e8ab60e264418440d6335f4dc138273fbd506144d"
+        }
+      },
+      "package": "regex",
+      "sha256": "1e321e2c84f0e52c457f5ea5944f796d6e8e09cb99738ea98dcc1bfe402a128d",
+      "url": "https://files.pythonhosted.org/packages/b9/5c/f403115361de25809e8f785686ec7096e30fef73be9ae35aa51da4e80abb/regex-2026.9.10.tar.gz",
+      "version": "2026.9.10"
+    },
     "requests": {
       "filename": "requests-2.34.2-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -200,6 +732,228 @@
       "url": "https://files.pythonhosted.org/packages/a0/f4/c67b0b3f1b9245e8d266f0f112c500d50e5b4e83cb6f3b71b6528104182a/requests-2.34.2-py3-none-any.whl",
       "version": "2.34.2"
     },
+    "rich": {
+      "filename": "rich-15.0.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "rich-15.0.0.dist-info/licenses/LICENSE": "deed7c17a4318158190a3ea239cc879a5a50271cebb98ae7025f48fbe58dca15"
+        }
+      },
+      "package": "rich",
+      "sha256": "33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb",
+      "url": "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl",
+      "version": "15.0.0"
+    },
+    "rustling": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "rustling-0.9.0-cargo-vendor.tar.gz",
+        "sha256": "cc1f8f8284afbc927d74bb56a81a88f64b2843b5716c18aef30c290d6411ce1d"
+      },
+      "filename": "rustling-0.9.0.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "rustling-0.9.0/LICENSE.md": "eb3bc37c450e7fee85d4fd4abd8b844555a70801ec6eb617499f240fec32b3c0"
+        }
+      },
+      "package": "rustling",
+      "sha256": "c698de9a650d6675673f1ead4743a86eb6de0d42c82be479f036a395bf4f27c6",
+      "url": "https://files.pythonhosted.org/packages/98/7c/c7324e7d463e31d313160e8f54273e3729482b3851ac344867612cdbc5f1/rustling-0.9.0.tar.gz",
+      "version": "0.9.0"
+    },
+    "shellingham": {
+      "filename": "shellingham-1.5.4-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "ISC",
+        "members": {
+          "shellingham-1.5.4.dist-info/LICENSE": "f388fd38cad13112c1dc0f669bbe80e7f84541edbafb72f3030d2ca7642c3c9d"
+        }
+      },
+      "package": "shellingham",
+      "sha256": "7ecfff8f2fd72616f7481040475a65b2bf8af90a56c89140852d1120324e8686",
+      "url": "https://files.pythonhosted.org/packages/e0/f9/0595336914c5619e5f28a1fb793285925a8cd4b432c9da0a987836c7f822/shellingham-1.5.4-py2.py3-none-any.whl",
+      "version": "1.5.4"
+    },
+    "smart-open": {
+      "filename": "smart_open-8.0.1-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "smart_open-8.0.1.dist-info/licenses/LICENSE": "aedb4d99609243cb7d21e878af73a08cdf0fe32b94d6e09f59b39e8c2279844e"
+        }
+      },
+      "package": "smart-open",
+      "sha256": "3e97f90e92a952cb57863dfe132082c400a52eeeb27c067692fb51dbcc5b0089",
+      "url": "https://files.pythonhosted.org/packages/c3/96/325b8c507ccecc50421fecc0345a502ee6e4a44785af3c4e6ecbadad624a/smart_open-8.0.1-py3-none-any.whl",
+      "version": "8.0.1"
+    },
+    "spacy": {
+      "filename": "spaCy-release-v3.8.14.tar.gz",
+      "git_commit": "0069cf99b60023363ba5f47404819f59c8a39b3e",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "spaCy-release-v3.8.14/LICENSE": "3f4378e67708fecacd3e27651c8bc0f977cf20789e19da0d81a2840e7cf573a2"
+        }
+      },
+      "package": "spacy",
+      "sha256": "ad0ea4e15153de6703a1a77f22c34bdbf105b9362ccde4f4789e02dc9abcb538",
+      "url": "https://github.com/explosion/spaCy/archive/refs/tags/release-v3.8.14.tar.gz",
+      "version": "3.8.14"
+    },
+    "spacy-legacy": {
+      "filename": "spacy_legacy-3.0.12-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "spacy_legacy-3.0.12.dist-info/LICENSE": "95437f29c5577d43e50a0c6a5b6e74b55984e41661d1e43e32cbafa3ca557099"
+        }
+      },
+      "package": "spacy-legacy",
+      "sha256": "476e3bd0d05f8c339ed60f40986c07387c0a71479245d6d0f4298dbd52cda55f",
+      "url": "https://files.pythonhosted.org/packages/c3/55/12e842c70ff8828e34e543a2c7176dac4da006ca6901c9e8b43efab8bc6b/spacy_legacy-3.0.12-py2.py3-none-any.whl",
+      "version": "3.0.12"
+    },
+    "spacy-loggers": {
+      "filename": "spacy_loggers-1.0.5-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "spacy_loggers-1.0.5.dist-info/LICENSE": "95437f29c5577d43e50a0c6a5b6e74b55984e41661d1e43e32cbafa3ca557099"
+        }
+      },
+      "package": "spacy-loggers",
+      "sha256": "196284c9c446cc0cdb944005384270d775fdeaf4f494d8e269466cfa497ef645",
+      "url": "https://files.pythonhosted.org/packages/33/78/d1a1a026ef3af911159398c939b1509d5c36fe524c7b644f34a5146c4e16/spacy_loggers-1.0.5-py3-none-any.whl",
+      "version": "1.0.5"
+    },
+    "srsly": {
+      "filename": "srsly-2.5.3.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT AND BSD-3-Clause AND Apache-2.0",
+        "members": {
+          "srsly-2.5.3/LICENSE": "6c9e9291cb685579e05a3f76c776cc5dee1ebd89d6823b93d5f875b96e4e5f11"
+        }
+      },
+      "package": "srsly",
+      "sha256": "08f98dbecbff3a31466c4ae7c833131f59d3655a0ad8ac749e6e2c149e2b0680",
+      "url": "https://files.pythonhosted.org/packages/2b/db/f794f219a6c788b881252d2536a8c4a97d2bdaadc690391e1cb53d123d71/srsly-2.5.3.tar.gz",
+      "version": "2.5.3"
+    },
+    "thinc": {
+      "filename": "thinc-8.3.13.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "thinc-8.3.13/LICENSE": "d7192459f33a5d8c66358e2115ccbd3265478750f0b9d15f0c22e68e3ce6cc1e"
+        }
+      },
+      "package": "thinc",
+      "sha256": "68e658549fc1eb3ff92aed5147fcbb9c15d6e9cc0e623b4d0998d16522ffb4f9",
+      "url": "https://files.pythonhosted.org/packages/13/46/76df95f2c327f9a9cef30c1523bf285627897097163584dcf5f77b2ebce2/thinc-8.3.13.tar.gz",
+      "version": "8.3.13"
+    },
+    "tqdm": {
+      "filename": "tqdm-4.68.3-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MPL-2.0 AND MIT",
+        "members": {
+          "tqdm-4.68.3.dist-info/licenses/LICENCE": "fcff87c3a47ce8028a8512aa182d4fcf0ad1c90544ee75cf9b343684cac194de"
+        }
+      },
+      "package": "tqdm",
+      "sha256": "39832cc2def2789a6f29df83f172db7416cea70052c0907a57801c5f2fdccb03",
+      "url": "https://files.pythonhosted.org/packages/d8/8e/bb97bb0c71802080bfc8952937d174e49cfc50de5c951dd47b2496f0dcdb/tqdm-4.68.3-py3-none-any.whl",
+      "version": "4.68.3"
+    },
+    "typer": {
+      "filename": "typer-0.26.7-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "typer-0.26.7.dist-info/licenses/LICENSE": "58992cebcf8dfb6e40c4e2112ed12126c243666dca3912a3d78b7ecac4859d49"
+        }
+      },
+      "package": "typer",
+      "sha256": "5c87cfbc5d34491c5346ebf49c23e18d56ccb863268d3a8d592b26087c2f5e58",
+      "url": "https://files.pythonhosted.org/packages/24/25/2201973529af2c954de0bb725323c3aaed6d7f0ceee8f550dec9185df013/typer-0.26.7-py3-none-any.whl",
+      "version": "0.26.7"
+    },
+    "typing-extensions": {
+      "filename": "typing_extensions-4.15.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "PSF-2.0",
+        "members": {
+          "typing_extensions-4.15.0.dist-info/licenses/LICENSE": "3b2f81fe21d181c499c59a256c8e1968455d6689d269aa85373bfb6af41da3bf"
+        }
+      },
+      "package": "typing-extensions",
+      "sha256": "f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548",
+      "url": "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl",
+      "version": "4.15.0"
+    },
+    "typing-inspection": {
+      "filename": "typing_inspection-0.4.4-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "typing_inspection-0.4.4.dist-info/licenses/LICENSE": "804b59b25f2c31bd278f9202a19ae49a3945aa2664387e2d0a128c7cacc61ec3"
+        }
+      },
+      "package": "typing-inspection",
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "url": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+      "version": "0.4.4"
+    },
+    "underthesea": {
+      "filename": "underthesea-9.5.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "Apache-2.0",
+        "members": {
+          "underthesea-9.5.0.dist-info/licenses/LICENSE": "05e32ccfed98673da93f046564baf9c7c3403826b8d8a5570fa9c1793fe8881b"
+        }
+      },
+      "package": "underthesea",
+      "sha256": "81400f41b75ceff6f80c52b4ad043806c80f5899ec555d8e6374d468a59bce56",
+      "url": "https://files.pythonhosted.org/packages/ef/d5/9d81c3d04ad8aac071115bbc8e1870741308d6dadffd201be7a6fde0329f/underthesea-9.5.0-py3-none-any.whl",
+      "version": "9.5.0"
+    },
+    "underthesea-core": {
+      "cargo_manifest": "Cargo.toml",
+      "cargo_vendor": {
+        "filename": "underthesea_core-3.3.2-cargo-vendor.tar.gz",
+        "sha256": "2009750d9ebecb3244ce59e2dc3a66cf538d9fc561892cb5a5536f4c1ebed394"
+      },
+      "filename": "underthesea_core-3.3.2.tar.gz",
+      "kind": "runtime-source",
+      "license": {
+        "carried": {
+          "LICENSE": "05e32ccfed98673da93f046564baf9c7c3403826b8d8a5570fa9c1793fe8881b"
+        },
+        "expression": "Apache-2.0",
+        "members": {}
+      },
+      "package": "underthesea-core",
+      "sha256": "7019f8f6d13f14556c032c63a9e5f77e107426654edce5e92d6513bb8ee8141a",
+      "url": "https://files.pythonhosted.org/packages/f1/62/a67e1ce6a0a7cf5a050d5debe3f4e1dad511bdf625fc4b169721c27da4be/underthesea_core-3.3.2.tar.gz",
+      "version": "3.3.2"
+    },
     "urllib3": {
       "filename": "urllib3-2.7.0-py3-none-any.whl",
       "kind": "prebuilt-wheel",
@@ -213,6 +967,62 @@
       "sha256": "9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897",
       "url": "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl",
       "version": "2.7.0"
+    },
+    "wasabi": {
+      "filename": "wasabi-1.1.3-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "wasabi-1.1.3.dist-info/LICENSE": "5451063f2f9fa7ddc9541f710daebd54c3f44592caf16f6f98626c3213bec93d"
+        }
+      },
+      "package": "wasabi",
+      "sha256": "f76e16e8f7e79f8c4c8be49b4024ac725713ab10cd7f19350ad18a8e3f71728c",
+      "url": "https://files.pythonhosted.org/packages/06/7c/34330a89da55610daa5f245ddce5aab81244321101614751e7537f125133/wasabi-1.1.3-py3-none-any.whl",
+      "version": "1.1.3"
+    },
+    "weasel": {
+      "filename": "weasel-1.0.0-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "weasel-1.0.0.dist-info/licenses/LICENSE": "b4e5015878be0264d7a747a305338cc23cb2d3a50d6feb73847109a7b6e97e99"
+        }
+      },
+      "package": "weasel",
+      "sha256": "89518acee027f49d743126c3502d35e6dd14f5768be5c37c9af47c171b6005cc",
+      "url": "https://files.pythonhosted.org/packages/0a/07/57ebf7a6798b016c064bd0ca81b4c6a99daa4dc377b898bc7b41eb6b5af0/weasel-1.0.0-py3-none-any.whl",
+      "version": "1.0.0"
+    },
+    "wrapt": {
+      "filename": "wrapt-2.4.1-py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "BSD-2-Clause",
+        "members": {
+          "wrapt-2.4.1.dist-info/licenses/LICENSE": "d4f66854a24dda2f2a5282912aedebe6b18186b86284510a433d78fadcd88e5d"
+        }
+      },
+      "package": "wrapt",
+      "sha256": "1e84ec5d89a0a07a0ef6bcd343f5c8ecdc95601d71de3058cdc63274e86c193c",
+      "url": "https://files.pythonhosted.org/packages/4f/a2/edcfc8d9a30375791b775715f8501364588f65b494ec4f6930568a19e765/wrapt-2.4.1-py3-none-any.whl",
+      "version": "2.4.1"
+    },
+    "zeyrek": {
+      "filename": "zeyrek-0.1.3-py2.py3-none-any.whl",
+      "kind": "prebuilt-wheel",
+      "license": {
+        "expression": "MIT",
+        "members": {
+          "zeyrek-0.1.3.dist-info/LICENSE": "ee3498eecc1e397dcc1cb85a3958d64120d56a05cf33ef9604c79c9fe4dbe28a"
+        }
+      },
+      "package": "zeyrek",
+      "sha256": "23649bb49322a52d1e94959029b047fa4037bc540762819feb1096aa976b25b5",
+      "url": "https://files.pythonhosted.org/packages/7f/5b/76970fab035d2e2649ba06af037c394b9690d0e07a8faf53817ccccb3951/zeyrek-0.1.3-py2.py3-none-any.whl",
+      "version": "0.1.3"
     }
   }
 }

@@ -1,0 +1,23 @@
+--- src-original/setup.py
++++ src/setup.py
+@@ -127,6 +127,20 @@
+         ext_modules = cythonize(
+             ext_modules, compiler_directives=COMPILER_DIRECTIVES, language_level=2
+         )
++        # Anki Miner (Chaquopy): package_data ships the generated .c/.cpp, whose
++        # Cython metadata header records absolute include paths (the build
++        # Python, the stage root). Rewrite them so the wheel is path-free.
++        prefixes = {os.environ["ANKI_MINER_RUNTIME_STAGE_ROOT"]: "/anki-miner-runtime",
++                    sys.base_prefix: "/build-python"}
++        for generated in sorted(Path("srsly").rglob("*.c*")):
++            if generated.suffix not in (".c", ".cpp"):
++                continue
++            text = generated.read_text(encoding="utf-8")
++            rewritten = text
++            for prefix, replacement in prefixes.items():
++                rewritten = rewritten.replace(prefix, replacement)
++            if rewritten != text:
++                generated.write_text(rewritten, encoding="utf-8")
+ 
+         setup(
+             name="srsly",

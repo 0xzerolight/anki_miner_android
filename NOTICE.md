@@ -20,6 +20,20 @@ Anki Miner for Android is licensed under GPL-3.0-or-later (see [LICENSE](LICENSE
 | Unicode data | `tools/anki-contract/unicode/15.1.0/` | Unicode data license in that directory |
 | Discord mark | `app/src/main/res/drawable/ic_discord.xml` | Simple Icons geometry, CC0-1.0; "Discord" and the Discord logo are trademarks of Discord Inc., bundled solely to link to the community server |
 
+## Language engine wheels
+
+`tools/runtime-wheels` builds these from the hash-locked sources in `tools/runtime-wheels/sources.lock`. Each family's wheels ship in the APK with the languages that need them. Every wheel carries its licence texts in its `dist-info`, and the publication's `attributions.json` collects them. The Rust extensions also carry a CycloneDX SBOM of their statically linked crates, all under permissive terms (MIT, Apache-2.0, Unlicense, Zlib, bzip2-1.0.6, CC0-1.0, MIT-0, Unicode-3.0, Apache-2.0 WITH LLVM-exception).
+
+| Family | Packages | Recorded terms |
+|---|---|---|
+| Turkish | regex 2026.9.10, zeyrek 0.1.3, nltk 3.10.3, defusedxml 0.7.1, click 8.1.8, joblib 1.6.0, tqdm 4.68.3, cloudpickle 3.1.2, colorama 0.4.6 | regex Apache-2.0 AND CNRI-Python; zeyrek MIT (a partial port of Zemberek, Apache-2.0); nltk Apache-2.0; defusedxml PSF-2.0; tqdm MPL-2.0 AND MIT; the rest BSD-3-Clause |
+| spaCy (19 languages, Russian, Ukrainian) | spacy 3.8.14, thinc 8.3.13, blis 1.3.3, srsly 2.5.3, preshed 3.0.13, cymem 2.0.13, murmurhash 1.0.15, numpy 2.5.0, pydantic-core 2.46.5, markupsafe 3.0.3, and their pure-Python closure: pydantic, typer, rich, pygments, httpx, jinja2, pymorphy3, dawg2-python and 22 more | spaCy, thinc, cymem, murmurhash, preshed, pydantic-core MIT; blis BSD-3-Clause; srsly MIT AND BSD-3-Clause AND Apache-2.0 (bundled ujson, msgpack, ruamel.yaml); numpy BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 (bundled texts under its `licenses/`); markupsafe, jinja2, click, httpx, httpcore BSD-3-Clause; pygments, wrapt BSD-2-Clause; packaging Apache-2.0 OR BSD-2-Clause; typing-extensions PSF-2.0; shellingham ISC; tqdm MPL-2.0 AND MIT; the rest MIT |
+| Korean | kiwipiepy 0.23.2, tqdm 4.68.3 | kiwipiepy LGPL-3.0-or-later; statically linked cpuinfo BSD-2-Clause, streamvbyte Apache-2.0, cpp-btree Apache-2.0, nlohmann/json MIT and Eigen MPL-2.0, whose texts the sdist strips and the wheel restores from the submodule commits Kiwi pins |
+| Vietnamese, Cantonese | underthesea 9.5.0, underthesea-core 3.3.2, rustling 0.9.0, pycantonese 5.0.0, joblib 1.6.0, cloudpickle 3.1.2 | underthesea, underthesea-core Apache-2.0; rustling, pycantonese MIT, with pycantonese's HKCanCor and rime-cantonese data CC BY 4.0 (licence files kept beside the data); GPL-3.0 CantoMap data is excluded; joblib, cloudpickle BSD-3-Clause |
+| Chinese | opencc 1.4.2, jieba 0.42.1, pypinyin 0.55.0 | opencc Apache-2.0 (code and dictionaries), statically linking marisa-trie BSD-2-Clause OR LGPL-2.1-or-later, pybind11 BSD-3-Clause and rapidjson MIT; jieba MIT (upstream text added, the sdist has none); pypinyin MIT |
+
+kiwipiepy is LGPL-3.0-or-later. Python loads it at run time as a separate shared object, `_kiwipiepy.so`; nothing else in the app links it. Its exact sdist, the recipe patch applied to it and the build toolchain are pinned in this repository, and the app's own corresponding source lets anyone rebuild the APK with a modified kiwipiepy.
+
 ## Downloaded language resources
 
 UniDic Lite, the Jitendex and JMdict Yomitan dictionaries, the JPDB v2.2 kana frequency list and the Kanjium pitch accent data are downloaded as data after installation. Their immutable identities and attributions are stored in `app/src/main/python/android_bridge/resource_catalog/` (one file per mining language) and presented by the app. Jitendex includes data under CC BY-SA and source-specific terms, including EDRDG/JMdict attribution. Other mining languages download their own data the same way: the Hebrew wty-he-en Wiktionary dictionary and the FrequencyWords OpenSubtitles 2018 list (both CC BY-SA 4.0); the Arabic calima-msa-r13 morphology database from CAMeL Lab's camel-tools-data (GPL-2.0-only, derived from Aramorph 1.2.1; the archive's own `LICENSE` is extracted beside the database); and the hazm 0.12.1 Persian lexicon tables (MIT). Only data is extracted: an archive whose selected members include Python or native code is refused. Download-on-demand does not remove the need to preserve required notices in the product and store listing.
@@ -28,5 +42,6 @@ UniDic Lite, the Jitendex and JMdict Yomitan dictionaries, the JPDB v2.2 kana fr
 
 For a distributed APK, the corresponding source for the GPL/LGPL components
 must be made available at no charge at the immutable application commit embedded
-in that APK. Pinned upstream sources for FFmpeg, LAME, Opus, dav1d, libwebp, libaom, MeCab, fugashi, and
-the runtime wheels are recorded with hashes in the `sources.lock` files above.
+in that APK. Pinned upstream sources for FFmpeg, LAME, Opus, dav1d, libwebp, libaom, MeCab, fugashi, the
+runtime wheels and the language engine wheels (kiwipiepy among them) are recorded with hashes in
+the `sources.lock` files above.

@@ -1,0 +1,23 @@
+package:
+  name: numpy
+  version: "2.5.0"
+
+build:
+  number: 0
+
+source:
+  path: ../../sources/numpy
+
+requirements:
+  build:
+    - meson-python 0.22.0
+    - meson 1.12.1
+    - pyproject-metadata 0.12.1
+    - packaging 26.2
+    - ninja 1.13.2
+    - cython 3.2.4
+  host:
+    - python
+
+about:
+  license_file: LICENSE.txt
