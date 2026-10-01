@@ -607,6 +607,7 @@
     <string name="settings_theme_dynamic">Utiliser les couleurs de l\'appareil</string>
     <string name="settings_theme_dynamic_supporting">Palette tirée de votre fond d\'écran ; remplace les thèmes ci-dessus.</string>
     <string name="settings_theme_picker_close">Fermer</string>
+    <string name="settings_theme_group_other">Autres</string>
     <string name="settings_run_setup_wizard">Lancer l\'assistant de configuration</string>
     <string name="wizard_welcome_title">Bienvenue dans Anki Miner</string>
     <string name="wizard_tokenizer_title">Segmenteur</string>

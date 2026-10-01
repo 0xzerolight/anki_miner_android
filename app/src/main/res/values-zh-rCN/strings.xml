@@ -605,6 +605,7 @@
     <string name="settings_theme_dynamic">使用设备颜色</string>
     <string name="settings_theme_dynamic_supporting">采用壁纸调色板，覆盖上方选择的主题。</string>
     <string name="settings_theme_picker_close">关闭</string>
+    <string name="settings_theme_group_other">其他</string>
     <string name="settings_run_setup_wizard">运行设置向导</string>
     <string name="wizard_welcome_title">欢迎使用 Anki Miner</string>
     <string name="wizard_tokenizer_title">分词器</string>

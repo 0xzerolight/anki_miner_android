@@ -605,6 +605,7 @@
     <string name="settings_theme_dynamic">使用裝置色彩</string>
     <string name="settings_theme_dynamic_supporting">取自桌布的配色；會覆寫上方主題。</string>
     <string name="settings_theme_picker_close">關閉</string>
+    <string name="settings_theme_group_other">其他</string>
     <string name="settings_run_setup_wizard">執行設定精靈</string>
     <string name="wizard_welcome_title">歡迎使用 Anki Miner</string>
     <string name="wizard_tokenizer_title">斷詞器</string>
