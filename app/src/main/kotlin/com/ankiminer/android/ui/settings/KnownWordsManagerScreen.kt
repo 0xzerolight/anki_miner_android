@@ -2,6 +2,7 @@ package com.ankiminer.android.ui.settings
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -36,6 +37,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
 import com.ankiminer.android.data.resources.KnownWordsResetScope
 import com.ankiminer.android.data.resources.MAX_KNOWN_WORDS_MUTATION
@@ -110,6 +112,14 @@ internal fun knownWordsListPresentation(
                 page?.hasMore == true,
     )
 }
+
+/**
+ * The one sentence the manager shows when the store holds no words. A store that fails its schema
+ * check is also reported with every count at zero; calling it empty would hide that it is broken.
+ */
+@StringRes
+internal fun knownWordsEmptyMessage(inventory: KnownWordsInventory): Int =
+    if (inventory.schemaOk) R.string.known_words_manager_empty else R.string.known_words_inventory_invalid
 
 /**
  * The selection after tapping [word].
@@ -243,7 +253,7 @@ internal fun KnownWordsManagerScreen(
             modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
             verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
-            Text(stringResource(R.string.known_words_manager_empty))
+            Text(stringResource(knownWordsEmptyMessage(knownWords)))
             UtilityActionButton(
                 onClick = callbacks.onImport,
                 enabled = !state.busy,
