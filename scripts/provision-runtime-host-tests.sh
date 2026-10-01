@@ -37,9 +37,16 @@ python3.13 "$SCRIPT_DIR/verify_chaquopy_build_python.py" verify \
 exec {runtime_lock_fd}>"$runtime_lock"
 flock --exclusive "$runtime_lock_fd"
 
+# pymorphy3 declares the Russian dictionaries as a dependency; Android downloads
+# them as language data (decision 2), so the lock omits them and installs with
+# --no-deps, as Chaquopy does. That is the one requirement allowed to be missing.
+readonly ALLOWED_MISSING_REQUIREMENT="pymorphy3 2.0.6 requires pymorphy3-dicts-ru, which is not installed."
+
 verify_runtime_environment() {
-    local python_command="$1"
-    PIP_NO_CACHE_DIR=1 "$python_command" -m pip check || return 1
+    local python_command="$1" check_output
+    check_output="$(PIP_NO_CACHE_DIR=1 "$python_command" -m pip check 2>&1)" \
+        || [[ "$check_output" == "$ALLOWED_MISSING_REQUIREMENT" ]] \
+        || { printf '%s\n' "$check_output" >&2; return 1; }
     "$python_command" -I -c '
 import importlib.metadata
 import importlib.util
@@ -97,6 +104,7 @@ PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --disable-pip-version-check \
     --only-binary=:all: \
     --require-hashes \
+    --no-deps \
     -r "$LOCK_FILE"
 verify_runtime_environment "$staging/bin/python"
 printf '%s\n' "$lock_sha256" >"$staging/$LOCK_MARKER_NAME"

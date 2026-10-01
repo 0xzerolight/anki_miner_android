@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(21, len(records))
+        self.assertEqual(59, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -96,7 +96,11 @@ class RuntimeHostLaneTests(unittest.TestCase):
     def test_current_runtime_environment_reuses_full_identity_probe(self) -> None:
         provision = (REPO_ROOT / "scripts/provision-runtime-host-tests.sh").read_text(encoding="utf-8")
         self.assertGreaterEqual(provision.count("verify_runtime_environment"), 3)
-        self.assertIn("pip check || return 1", provision)
+        # pip check still gates the venv; only the dictionaries pymorphy3 declares may be missing.
+        self.assertIn('-m pip check 2>&1)"', provision)
+        self.assertIn('|| [[ "$check_output" == "$ALLOWED_MISSING_REQUIREMENT" ]]', provision)
+        self.assertIn("|| { printf '%s\\n' \"$check_output\" >&2; return 1; }", provision)
+        self.assertIn("    --no-deps \\\n", provision)
         self.assertIn("if verify_runtime_environment", provision)
         self.assertIn("failed verification; rebuilding it", provision)
 
