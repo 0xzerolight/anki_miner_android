@@ -272,6 +272,51 @@ class LockContractTests(unittest.TestCase):
                 with self.assertRaises(runtime_wheels.RuntimeWheelError):
                     runtime_wheels.host_entries()
 
+    def test_carried_licences_and_pinned_members_match_the_lock(self) -> None:
+        carried = 0
+        for name, entry in runtime_wheels.source_entries().items():
+            license_value = entry.get("license")
+            if not isinstance(license_value, dict):
+                continue
+            for filename, sha256 in license_value.get("carried", {}).items():
+                with self.subTest(source=name, licence=filename):
+                    path = runtime_wheels.carried_license_path(entry, filename)
+                    self.assertEqual(sha256, hashlib.sha256(path.read_bytes()).hexdigest())
+                    carried += 1
+        self.assertGreater(carried, 0)
+        for package, relative in runtime_wheels.PINNED_MEMBER_FILES.items():
+            with self.subTest(package=package):
+                document = runtime_wheels.load_json(TOOL_ROOT / relative, 1)
+                self.assertTrue(document["members"])
+                self.assertTrue(document["prefix"].endswith("/"))
+
+    def test_family_specs_name_only_published_packages(self) -> None:
+        published = set(runtime_wheels.COMMON_SPECS) | set(runtime_wheels.NATIVE_SPECS)
+        self.assertFalse(set(runtime_wheels.COMMON_SPECS) & set(runtime_wheels.NATIVE_SPECS))
+        self.assertEqual(published, set(runtime_wheels.MANDATORY_DEPENDENCIES))
+        self.assertEqual(set(runtime_wheels.NATIVE_SPECS), set(runtime_wheels.NATIVE_REQUIRED_PATHS))
+        self.assertEqual(set(runtime_wheels.NATIVE_SPECS), set(runtime_wheels.REQUIRED_NEEDED))
+        for table in (
+            runtime_wheels.REPACKS,
+            runtime_wheels.NATIVE_ROOTS,
+            runtime_wheels.PINNED_MEMBER_FILES,
+            runtime_wheels.SDIST_WHEELS,
+        ):
+            self.assertTrue(set(table) <= published, table)
+        self.assertTrue(set(runtime_wheels.SDIST_WHEELS) <= set(runtime_wheels.COMMON_SPECS))
+        for package, (prefix, excludes) in runtime_wheels.REPACKS.items():
+            with self.subTest(package=package):
+                self.assertTrue(prefix.endswith("/") and excludes)
+        sources = runtime_wheels.source_entries()
+        for package, spec in runtime_wheels.NATIVE_SPECS.items():
+            with self.subTest(package=package):
+                self.assertEqual(
+                    package, runtime_wheels.normalize_package(str(sources[str(spec["source"])]["package"]))
+                )
+        for package in runtime_wheels.COMMON_SPECS:
+            with self.subTest(package=package):
+                runtime_wheels._pure_source_name(package, sources)
+
     def test_recipe_provenance_includes_build_python_and_license_inputs(self) -> None:
         self.assertEqual(
             (
