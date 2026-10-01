@@ -57,6 +57,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.ankiminer.android.R
+import com.ankiminer.android.data.anki.AnkiSetupFailure
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.update.UpdateCheckUiState
@@ -173,6 +174,40 @@ internal fun miningWorkflowVisible(
     workflow: NavigationWorkflowState,
     hasRetainedRun: Boolean = false,
 ): Boolean = setupReady || workflow != NavigationWorkflowState.IDLE || hasRetainedRun
+
+/**
+ * The Anki failure a linked snackbar may raise. While AnkiDroid still needs installing, opening or
+ * allowing, its target read can only fail, and the readiness notice and setup pages already say
+ * what to do; the raw provider error would only repeat it.
+ */
+internal fun linkedAnkiFailure(setup: SetupUiState): AnkiSetupFailure? =
+    setup.ankiFailure?.takeIf { setup.ankiDroidAction == null }
+
+/**
+ * Whether the screen in front already shows this failure, so a linked snackbar would only repeat
+ * it: Settings on the failure's own tab (SETUP renders in every tab's header), or a mining tab whose
+ * readiness notice states an Anki target failure.
+ */
+internal fun linkedFailureShownInPlace(
+    destination: AnkiMinerDestination?,
+    settingsCategory: SettingsCategory?,
+    resourceOrigin: ResourceFailureOrigin?,
+    ankiOrigin: AnkiSetupFailureOrigin?,
+    miningNoticeVisible: Boolean,
+): Boolean {
+    val failureCategory =
+        resourceOrigin?.let(::settingsCategoryFor) ?: ankiOrigin?.let(::settingsCategoryFor)
+    return when (destination) {
+        AnkiMinerDestination.SETTINGS ->
+            resourceOrigin == ResourceFailureOrigin.SETUP ||
+                (failureCategory != null && failureCategory == settingsCategory)
+        AnkiMinerDestination.VIDEO,
+        AnkiMinerDestination.AUDIO,
+        AnkiMinerDestination.READING,
+        -> resourceOrigin == null && ankiOrigin == AnkiSetupFailureOrigin.TARGET && miningNoticeVisible
+        else -> false
+    }
+}
 
 /** Labels drop at large text on every width: at 2x "Reading" and "Settings" touched. */
 internal fun compactNavigation(fontScale: Float): Boolean = fontScale >= LargeFontScale
@@ -471,6 +506,7 @@ internal fun AnkiMinerApp(
     var requestedSettingsCategory by
         rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
     var requestedSettingsItemIndex by rememberSaveable { mutableStateOf(2) }
+    var visibleSettingsCategory by rememberSaveable { mutableStateOf<SettingsCategory?>(null) }
 
     fun navigateTo(destination: AnkiMinerDestination) {
         navController.navigate(destination.route) {
@@ -539,15 +575,33 @@ internal fun AnkiMinerApp(
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
-    val linkedFailureMessage =
-        setup.failure?.message
-            ?: setup.ankiFailure?.message
+    val miningNoticeVisible =
+        when (currentDestination) {
+            AnkiMinerDestination.VIDEO ->
+                !miningWorkflowVisible(setup.isMiningReady, videoWorkflow, videoRunState.runState.isTerminal)
+            AnkiMinerDestination.AUDIO ->
+                !miningWorkflowVisible(setup.isMiningReady, audioWorkflow, audioRunState.runState.isTerminal)
+            AnkiMinerDestination.READING ->
+                !miningWorkflowVisible(setup.isMiningReady, readingWorkflow, readingRunState.runState.isTerminal)
+            else -> false
+        }
+    val linkedAnkiFailure = linkedAnkiFailure(setup)
+    // Kept non-null while the failure stands, so seeing it in place counts as having seen it.
+    val linkedFailureMessage = setup.failure?.message ?: linkedAnkiFailure?.message
+    val linkedFailureSuppressed =
+        linkedFailureShownInPlace(
+            destination = currentDestination,
+            settingsCategory = visibleSettingsCategory,
+            resourceOrigin = setup.failure?.origin,
+            ankiOrigin = linkedAnkiFailure?.origin,
+            miningNoticeVisible = miningNoticeVisible,
+        )
     val linkedFailureCategory =
         setup.failure?.let { settingsCategoryFor(it.origin) }
-            ?: setup.ankiFailure?.let { settingsCategoryFor(it.origin) }
+            ?: linkedAnkiFailure?.let { settingsCategoryFor(it.origin) }
     val linkedFailureItemIndex =
         setup.failure?.let { settingsCardIndexFor(it.origin) }
-            ?: setup.ankiFailure?.let { settingsCardIndexFor(it.origin) }
+            ?: linkedAnkiFailure?.let { settingsCardIndexFor(it.origin) }
             ?: 2
     MessageSnackbarEffect(
         message = linkedFailureMessage,
@@ -558,6 +612,7 @@ internal fun AnkiMinerApp(
             requestedSettingsItemIndex = linkedFailureItemIndex
             navigateTo(AnkiMinerDestination.SETTINGS)
         },
+        suppressed = linkedFailureSuppressed,
     )
 
     val activeWorkflowDestination =
@@ -778,6 +833,7 @@ internal fun AnkiMinerApp(
                     },
                     requestedCategory = requestedSettingsCategory,
                     requestedCategoryItemIndex = requestedSettingsItemIndex,
+                    onSelectedCategoryChange = { visibleSettingsCategory = it },
                     onCategoryRequestConsumed = {
                         requestedSettingsCategory = null
                         requestedSettingsItemIndex = 2

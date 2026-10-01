@@ -840,23 +840,34 @@ internal fun MessageSnackbarEffect(
     actionLabel: String? = null,
     onAction: () -> Unit = {},
     onDismiss: () -> Unit = {},
+    /** The screen in front already shows [message]; it counts as seen and is not raised. */
+    suppressed: Boolean = false,
 ) {
     val currentOnAction by rememberUpdatedState(onAction)
     val currentOnDismiss by rememberUpdatedState(onDismiss)
-    LaunchedEffect(message) {
-        if (message != null) {
-            val result =
-                hostState.showSnackbar(
-                    message = message,
-                    actionLabel = actionLabel,
-                    withDismissAction = true,
-                    duration = SnackbarDuration.Long,
+    // Saved, so a recreation does not show the same summary twice: MainActivity handles no
+    // configChanges, and the effect restarts with every recreation.
+    var shownMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(message, suppressed) {
+        if (message == null) {
+            shownMessage = null
+            return@LaunchedEffect
+        }
+        if (message == shownMessage) return@LaunchedEffect
+        // Seen in place counts as seen: leaving the failure's own tab must not raise it on the next.
+        shownMessage = message
+        if (suppressed) return@LaunchedEffect
+        val result =
+            hostState.showSnackbar(
+                message = message,
+                actionLabel = actionLabel,
+                withDismissAction = true,
+                duration = SnackbarDuration.Long,
             )
-            if (result == SnackbarResult.ActionPerformed) {
-                currentOnAction()
-            } else {
-                currentOnDismiss()
-            }
+        if (result == SnackbarResult.ActionPerformed) {
+            currentOnAction()
+        } else {
+            currentOnDismiss()
         }
     }
 }

@@ -1,6 +1,12 @@
 package com.ankiminer.android.ui.navigation
 
+import com.ankiminer.android.anki.provider.AnkiProviderReadiness
+import com.ankiminer.android.data.anki.AnkiSetupFailure
+import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.mining.MiningRunState
+import com.ankiminer.android.ui.settings.SettingsCategory
+import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.ui.mining.TimingPreviewState
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.vm.NavigationWorkflowState
@@ -190,6 +196,39 @@ class AnkiMinerNavigationTest {
                 video = MiningRunState.Idle,
                 audio = MiningRunState.Starting(runId = null, progress = null),
                 reading = MiningRunState.Idle,
+            ),
+        )
+    }
+
+    @Test
+    fun linkedFailureIsSuppressedOnlyWhereTheScreenAlreadyShowsIt() {
+        val settings = AnkiMinerDestination.SETTINGS
+        val video = AnkiMinerDestination.VIDEO
+        assertTrue(linkedFailureShownInPlace(settings, SettingsCategory.RESOURCES, ResourceFailureOrigin.PITCH, null, false))
+        assertFalse(linkedFailureShownInPlace(settings, SettingsCategory.ANKI, ResourceFailureOrigin.PITCH, null, false))
+        // SETUP renders in the header of every tab.
+        assertTrue(linkedFailureShownInPlace(settings, SettingsCategory.UI, ResourceFailureOrigin.SETUP, null, false))
+        assertTrue(linkedFailureShownInPlace(video, null, null, AnkiSetupFailureOrigin.TARGET, miningNoticeVisible = true))
+        assertFalse(linkedFailureShownInPlace(video, null, null, AnkiSetupFailureOrigin.TARGET, miningNoticeVisible = false))
+        assertFalse(linkedFailureShownInPlace(video, null, ResourceFailureOrigin.PITCH, null, miningNoticeVisible = true))
+    }
+
+    @Test
+    fun aMissingOrUnallowedAnkiDroidRaisesNoLinkedSnackbar() {
+        val failure = AnkiSetupFailure("provider_unavailable", "AnkiDroid is not available", AnkiSetupFailureOrigin.TARGET)
+        listOf(
+            AnkiProviderReadiness.NotInstalled,
+            AnkiProviderReadiness.Uninitialized,
+            AnkiProviderReadiness.PermissionDenied,
+        ).forEach { readiness ->
+            // Every Video, Audio, Reading and Settings surface already says what to do; the raw
+            // provider error would only repeat it.
+            assertNull("$readiness", linkedAnkiFailure(SetupUiState(anki = readiness, ankiFailure = failure)))
+        }
+        assertEquals(
+            failure,
+            linkedAnkiFailure(
+                SetupUiState(anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L), ankiFailure = failure),
             ),
         )
     }

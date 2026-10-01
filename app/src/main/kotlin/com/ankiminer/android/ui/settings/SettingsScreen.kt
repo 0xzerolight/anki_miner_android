@@ -242,6 +242,7 @@ internal fun SettingsRoute(
     requestedCategory: SettingsCategory? = null,
     requestedCategoryItemIndex: Int = 2,
     onCategoryRequestConsumed: () -> Unit = {},
+    onSelectedCategoryChange: (SettingsCategory) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     LifecycleStartEffect(viewModel) {
@@ -413,6 +414,7 @@ internal fun SettingsRoute(
         onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
         onCheckForUpdates = onCheckForUpdates,
         onSkipUpdate = onSkipUpdate,
+        onSelectedCategoryChange = onSelectedCategoryChange,
         miningLanguage = languageDefaults?.code ?: LanguageScope.JAPANESE,
         modifier = modifier,
     )
@@ -472,10 +474,12 @@ private fun SettingsScreen(
     onUpdateCheckEnabledChange: (Boolean) -> Unit,
     onCheckForUpdates: () -> Unit,
     onSkipUpdate: () -> Unit,
+    onSelectedCategoryChange: (SettingsCategory) -> Unit = {},
     miningLanguage: String = LanguageScope.JAPANESE,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
+    LaunchedEffect(selectedCategory) { onSelectedCategoryChange(selectedCategory) }
     val listStates = rememberSettingsCategoryListStates()
     val cardIndexRecorder = remember { SettingsCardIndexRecorder() }
     val panelExpansion = rememberSettingsPanelExpansion()
