@@ -1511,7 +1511,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, indonesian) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1890,5 +1890,60 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = listOf("wty-fa-en-2026.09.20", "opensubtitles-fa-2018"),
+        )
+
+    val indonesian =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "id",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-id-en-2026.09.20",
+                        displayName = "Wiktionary (Indonesian-English) 2026-09-20",
+                        slotId = "wty-id-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/id/en/wty-id-en.zip",
+                                sha256 = "5d1824bb77481719612449195e3ec9e027c182e527971ac3f67598bf093b63b7",
+                                sizeBytes = 3_919_132,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-id-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 7,
+                                uncompressedBytes = 44_842_419,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-id-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Indonesian)",
+                        sourceId = "opensubtitles-id",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/id/id_50k.txt",
+                                sha256 = "f2eea0da9735b7040efbfa813f5f875ec931de5a0ec70a6f28213ea60a87bb38",
+                                sizeBytes = 588_873,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-id-en-2026.09.20", "opensubtitles-id-2018"),
         )
 }
