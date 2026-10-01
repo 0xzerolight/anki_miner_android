@@ -852,10 +852,8 @@
     <string name="b3_status_unidic">UniDic</string>
     <string name="b3_status_dictionary">Từ điển</string>
     <string name="b3_status_notifications">Thông báo</string>
-    <string name="b3_status_success">Sẵn sàng</string>
     <string name="b3_status_optional">Tùy chọn</string>
     <string name="b3_status_required_action">Cần hành động</string>
-    <string name="b3_status_busy">Đang kiểm tra</string>
     <string name="b3_status_choose_note_type">Chọn loại ghi chú</string>
     <string name="b3_diagnostics_runtime">Chi tiết thời gian chạy</string>
     <string name="b3_diagnostics_api_level">Cấp API Android: %1$d</string>

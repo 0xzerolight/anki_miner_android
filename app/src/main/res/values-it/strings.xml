@@ -856,10 +856,8 @@
     <string name="b3_status_unidic">UniDic</string>
     <string name="b3_status_dictionary">Dizionario</string>
     <string name="b3_status_notifications">Notifiche</string>
-    <string name="b3_status_success">Pronto</string>
     <string name="b3_status_optional">Facoltativo</string>
     <string name="b3_status_required_action">Azione richiesta</string>
-    <string name="b3_status_busy">Controllo</string>
     <string name="b3_status_choose_note_type">Scegli un tipo di nota</string>
     <string name="b3_diagnostics_runtime">Dettagli dell\'ambiente di esecuzione</string>
     <string name="b3_diagnostics_api_level">Livello API Android: %1$d</string>

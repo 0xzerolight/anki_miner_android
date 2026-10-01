@@ -857,10 +857,8 @@
     <string name="b3_status_unidic">UniDic</string>
     <string name="b3_status_dictionary">辞書</string>
     <string name="b3_status_notifications">通知</string>
-    <string name="b3_status_success">準備完了</string>
     <string name="b3_status_optional">任意</string>
     <string name="b3_status_required_action">対応が必要</string>
-    <string name="b3_status_busy">確認中</string>
     <string name="b3_status_choose_note_type">ノートタイプを選択</string>
     <string name="b3_diagnostics_runtime">実行環境の詳細</string>
     <string name="b3_diagnostics_api_level">Android API レベル: %1$d</string>

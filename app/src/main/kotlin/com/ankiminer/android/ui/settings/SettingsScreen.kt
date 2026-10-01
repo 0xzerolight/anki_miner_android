@@ -698,7 +698,6 @@ private fun SettingsScreen(
                                 onOpenAppSettings = onOpenAppSettings,
                                 onInstallAnkiDroid = onInstallAnkiDroid,
                                 onOpenAnkiDroid = onOpenAnkiDroid,
-                                compact = true,
                                 onInstallUniDic = setupViewModel::installUniDic,
                                 onChooseNoteType = {
                                     selectedCategory = SettingsCategory.ANKI
