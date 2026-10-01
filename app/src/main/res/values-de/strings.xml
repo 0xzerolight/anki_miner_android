@@ -669,7 +669,7 @@
     <string name="settings_max_frequency">Maximaler Häufigkeitsrang</string>
     <string name="settings_workers">Parallele Medien-Worker (1–20)</string>
     <string name="settings_min_frequency">Minimaler Häufigkeitsrang</string>
-    <string name="settings_frequency_band_help">Nur Wörter innerhalb dieses Bands sammeln. Rang 1 ist das häufigste Wort. 0 lässt dieses Ende offen.</string>
+    <string name="settings_frequency_band_help">Nur Wörter sammeln, deren Rang in diesem Bereich liegt. Rang 1 ist das häufigste Wort. 0 lässt dieses Ende offen.</string>
     <string name="settings_frequency_keep_unranked">Wörter einschließen, die in der Häufigkeitsliste fehlen</string>
     <string name="settings_known_words_match_kana_variants">Kana-Schreibweisen bekannter Wörter als bekannt behandeln</string>
     <string name="settings_known_words_match_kana_variants_help">Wenn ein Untertitel ein Wort in Kana schreibt (z. B. うなずく) und die Kanji-Wörterbuchform (頷く) bereits in Ihrer Sammlung oder Wortliste bekannter Wörter vorhanden ist, wird es übersprungen, anstatt eine zweite Karte zu erstellen. Kanji-Schreibweisen werden auf diese Weise nie zusammengeführt.</string>
@@ -679,7 +679,7 @@
     <string name="settings_sentence_options">Satzoptionen</string>
     <string name="settings_max_duration_help">Verwirft Karten, deren Beispielsatz-Audio länger als diese Anzahl an Sekunden ist. Auf 0 setzen für keine Begrenzung.</string>
     <string name="settings_max_characters_help">Verwirft Karten, deren Satztext diese Anzahl an Zeichen überschreitet. Auf 0 setzen für keine Begrenzung.</string>
-    <string name="settings_secondary_subtitle">Zweitsprachige Untertitel</string>
+    <string name="settings_secondary_subtitle">Sekundäre Untertitel</string>
     <string name="settings_secondary_subtitle_help">Fügt dem Video-Tab eine Auswahl für eine Übersetzungs-Untertitelspur hinzu. Ist das Feld „Sentence translation“ unter Karten &amp; Anki zugeordnet, kommt ihre Zeile auf die Karte.</string>
     <string name="settings_merge_incomplete_cues">Ganze Sätze über Untertitelzeilen hinweg sammeln</string>
     <string name="settings_merge_incomplete_cues_help">Verbindet benachbarte Untertitelzeilen, wenn eine Zeile keinen Satz beendet, damit die Karte den ganzen Satz statt eines Fragments enthält. Lesequellen haben keine Untertitel-Zeitstempel und ignorieren dies.</string>

@@ -668,7 +668,7 @@
     <string name="settings_max_frequency">Hạng tần suất tối đa</string>
     <string name="settings_workers">Trình xử lý phương tiện song song (1–20)</string>
     <string name="settings_min_frequency">Hạng tần suất tối thiểu</string>
-    <string name="settings_frequency_band_help">Chỉ khai thác từ có hạng nằm trong dải này. Hạng 1 là từ phổ biến nhất. 0 để đầu đó không giới hạn.</string>
+    <string name="settings_frequency_band_help">Chỉ khai thác từ có hạng nằm trong dải này. Hạng 1 là từ phổ biến nhất. Đặt 0 để bỏ giới hạn ở đầu đó.</string>
     <string name="settings_frequency_keep_unranked">Bao gồm từ thiếu trong danh sách tần suất</string>
     <string name="settings_known_words_match_kana_variants">Coi cách viết kana của từ đã biết là đã biết</string>
     <string name="settings_known_words_match_kana_variants_help">Khi phụ đề viết một từ bằng kana (ví dụ: うなずく) và dạng từ điển bằng kanji (頷く) đã có trong bộ sưu tập hoặc danh sách từ đã biết, bỏ qua từ đó thay vì tạo thêm thẻ thứ hai. Cách viết kanji không bao giờ được gộp theo cách này.</string>
@@ -676,12 +676,12 @@
     <string name="settings_strict_card_order">Tạo thẻ theo thứ tự xuất hiện</string>
     <string name="settings_strict_card_order_help">Thêm thẻ vào Anki theo thứ tự các từ xuất hiện trong phương tiện, thay vì theo thứ tự phương tiện của chúng được trích xuất xong.</string>
     <string name="settings_sentence_options">Tùy chọn câu</string>
-    <string name="settings_max_duration_help">Loại bỏ các thẻ mà âm thanh câu ví dụ dài hơn số giây này. Đặt 0 để không giới hạn.</string>
-    <string name="settings_max_characters_help">Loại bỏ các thẻ mà văn bản câu vượt quá số ký tự này. Đặt 0 để không giới hạn.</string>
+    <string name="settings_max_duration_help">Loại bỏ các thẻ có âm thanh câu ví dụ dài hơn số giây này. Đặt 0 để không giới hạn.</string>
+    <string name="settings_max_characters_help">Loại bỏ các thẻ có văn bản câu vượt quá số ký tự này. Đặt 0 để không giới hạn.</string>
     <string name="settings_secondary_subtitle">Phụ đề thứ hai</string>
-    <string name="settings_secondary_subtitle_help">Thêm bộ chọn rãnh phụ đề bản dịch vào tab Video. Khi trường “Sentence translation” đã được ánh xạ trong Thẻ &amp; Anki, dòng của nó sẽ có trên thẻ.</string>
+    <string name="settings_secondary_subtitle_help">Thêm bộ chọn bản phụ đề dịch vào tab Video. Khi trường “Sentence translation” đã được ánh xạ trong Thẻ &amp; Anki, dòng bản dịch tương ứng sẽ được đưa vào thẻ.</string>
     <string name="settings_merge_incomplete_cues">Khai thác câu đầy đủ qua các dòng phụ đề</string>
-    <string name="settings_merge_incomplete_cues_help">Ghép các dòng phụ đề liền kề khi một dòng không kết thúc câu, để thẻ chứa cả câu thay vì một đoạn rời. Nguồn tài liệu đọc không có mốc thời gian phụ đề nên bỏ qua tùy chọn này.</string>
+    <string name="settings_merge_incomplete_cues_help">Ghép các dòng phụ đề liền kề khi một dòng không kết thúc câu, để thẻ chứa cả câu thay vì một đoạn rời. Nguồn đọc không có mốc thời gian phụ đề nên bỏ qua tùy chọn này.</string>
     <string name="settings_no_dictionaries">Chưa cài từ điển nào.</string>
     <string name="settings_no_frequency_sources">Chưa cài nguồn tần suất nào.</string>
     <string name="settings_no_audio_packs">Chưa cài gói âm thanh nào.</string>

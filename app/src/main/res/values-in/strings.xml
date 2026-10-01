@@ -668,7 +668,7 @@
     <string name="settings_max_frequency">Peringkat frekuensi maksimum</string>
     <string name="settings_workers">Pekerja media paralel (1–20)</string>
     <string name="settings_min_frequency">Peringkat frekuensi minimum</string>
-    <string name="settings_frequency_band_help">Hanya mining kata yang peringkatnya berada dalam rentang ini. Peringkat 1 adalah kata paling umum. 0 membiarkan batas itu terbuka.</string>
+    <string name="settings_frequency_band_help">Hanya tambang kata yang peringkatnya berada dalam rentang ini. Peringkat 1 adalah kata paling umum. 0 membiarkan batas itu terbuka.</string>
     <string name="settings_frequency_keep_unranked">Sertakan kata yang tidak ada dalam daftar frekuensi</string>
     <string name="settings_known_words_match_kana_variants">Anggap ejaan kana dari kata yang dikenal sebagai dikenal</string>
     <string name="settings_known_words_match_kana_variants_help">Ketika subtitel mengeja kata dalam kana (misalnya うなずく) dan bentuk kamus kanji-nya (頷く) sudah ada di koleksi Anda atau daftar kata yang dikenal, kata tersebut dilewati alih-alih dibuatkan kartu kedua. Ejaan kanji tidak pernah digabungkan dengan cara ini.</string>
@@ -680,7 +680,7 @@
     <string name="settings_max_characters_help">Menghilangkan kartu yang teks kalimatnya melebihi jumlah karakter ini. Setel ke 0 untuk tanpa batas.</string>
     <string name="settings_secondary_subtitle">Subtitel sekunder</string>
     <string name="settings_secondary_subtitle_help">Menambahkan pemilih trek subtitel terjemahan ke tab Video. Jika bidang “Sentence translation” dipetakan di Kartu &amp; Anki, barisnya dimasukkan ke kartu.</string>
-    <string name="settings_merge_incomplete_cues">Mining kalimat penuh lintas baris subtitel</string>
+    <string name="settings_merge_incomplete_cues">Tambang kalimat utuh lintas baris subtitel</string>
     <string name="settings_merge_incomplete_cues_help">Menggabungkan baris subtitel yang bersebelahan ketika satu baris tidak mengakhiri kalimat, sehingga kartu memuat kalimat utuh, bukan penggalan. Sumber bacaan tidak memiliki waktu subtitel dan mengabaikan opsi ini.</string>
     <string name="settings_no_dictionaries">Tidak ada kamus yang terpasang.</string>
     <string name="settings_no_frequency_sources">Tidak ada sumber frekuensi yang terpasang.</string>

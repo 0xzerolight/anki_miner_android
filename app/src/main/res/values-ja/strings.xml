@@ -671,7 +671,7 @@
     <string name="settings_max_frequency">最大頻度順位</string>
     <string name="settings_workers">並列メディアワーカー数(1〜20)</string>
     <string name="settings_min_frequency">最小頻度順位</string>
-    <string name="settings_frequency_band_help">この範囲内にランクされた単語のみをマイニングします。ランク1が最も一般的な単語です。0にするとその端は制限なしになります。</string>
+    <string name="settings_frequency_band_help">頻度順位がこの範囲内の単語のみをマイニングします。順位1が最も一般的な単語です。0にするとその端は制限なしになります。</string>
     <string name="settings_frequency_keep_unranked">頻度リストにない単語を含める</string>
     <string name="settings_known_words_match_kana_variants">既知単語のかな表記を既知として扱う</string>
     <string name="settings_known_words_match_kana_variants_help">字幕が単語をかなで表記していて（例：うなずく）、その漢字の辞書形（頷く）がすでにコレクションまたは既知単語リストにある場合、2枚目のカードを作成せずにスキップします。漢字表記がこの方法で統合されることはありません。</string>
@@ -680,9 +680,9 @@
     <string name="settings_strict_card_order_help">単語がメディア内に登場する順にカードを Anki に追加します。メディアの抽出が完了した順ではありません。</string>
     <string name="settings_sentence_options">例文のオプション</string>
     <string name="settings_max_duration_help">例文の音声がこの秒数より長いカードを除外します。0にすると制限なしになります。</string>
-    <string name="settings_max_characters_help">文のテキストがこの文字数を超えるカードを除外します。0にすると制限なしになります。</string>
-    <string name="settings_secondary_subtitle">翻訳字幕</string>
-    <string name="settings_secondary_subtitle_help">動画タブに翻訳字幕トラックの選択欄を追加します。「カードと Anki」で「Sentence translation」フィールドが対応付けられていれば、その行がカードに入ります。</string>
+    <string name="settings_max_characters_help">例文のテキストがこの文字数を超えるカードを除外します。0にすると制限なしになります。</string>
+    <string name="settings_secondary_subtitle">第2字幕</string>
+    <string name="settings_secondary_subtitle_help">動画タブに翻訳字幕トラックの選択欄を追加します。「カードと Anki」で「Sentence translation」フィールドが対応付けられていれば、翻訳字幕の行がカードに入ります。</string>
     <string name="settings_merge_incomplete_cues">字幕の行をまたいで文全体をマイニング</string>
     <string name="settings_merge_incomplete_cues_help">行が文を終えていない場合、隣接する字幕行を結合し、カードに断片ではなく文全体を収録します。読み物ソースには字幕のタイミングがないため、この設定は無視されます。</string>
     <string name="settings_no_dictionaries">辞書がインストールされていません。</string>
