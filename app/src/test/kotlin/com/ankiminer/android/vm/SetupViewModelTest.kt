@@ -590,6 +590,35 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `the field map offers pitch and furigana rows only to a language that fills them`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val gated =
+                listOf(
+                    "expression_furigana",
+                    "sentence_furigana",
+                    "pitch_position",
+                    "pitch_category",
+                    "pitch_graph",
+                    "pitch_text",
+                )
+            val japanese =
+                viewModel(FakeSettingsRepository(AppSettings()), FakeAnkiSetupManager(emptyList()))
+            val hebrew =
+                viewModel(
+                    FakeSettingsRepository(AppSettings(language = "he")),
+                    FakeAnkiSetupManager(emptyList()),
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+
+            assertTrue(japanese.uiState.value.fieldKeys.containsAll(gated))
+            val hebrewKeys = hebrew.uiState.value.fieldKeys
+            assertTrue(gated.none(hebrewKeys::contains))
+            assertTrue("expression_reading" in hebrewKeys)
+            assertTrue("transliteration" in hebrewKeys)
+        }
+
+    @Test
     fun `setup lists only the slots stamped for the mining language`() =
         runTest(mainDispatcherRule.dispatcher) {
             val resources = FakeResourceManager()

@@ -77,6 +77,8 @@ internal class SetupViewModel(
         val code: String,
         val extraCardFields: List<LanguageExtraCardField>,
         val uniDicRequired: Boolean,
+        /** Null for Japanese, which fills every field-map row. */
+        val capabilities: Set<String>? = null,
     )
 
     private enum class ResourcePickerKind {
@@ -153,11 +155,18 @@ internal class SetupViewModel(
                 } else {
                     // Provisional first, so the screen never waits on Python for its state: no
                     // non-Japanese profile needs UniDic, and its card fields arrive with the answer.
-                    emit(LanguageFacts(code, emptyList(), uniDicRequired = false))
+                    emit(LanguageFacts(code, emptyList(), uniDicRequired = false, capabilities = emptySet()))
                     val profile =
                         languageProfileSource?.profiles()?.getOrNull()?.firstOrNull { it.code == code }
                     if (profile != null) {
-                        emit(LanguageFacts(code, profile.extraCardFields, profile.requiresUnidic))
+                        emit(
+                            LanguageFacts(
+                                code,
+                                profile.extraCardFields,
+                                profile.requiresUnidic,
+                                profile.capabilities,
+                            ),
+                        )
                     }
                 }
             }
@@ -249,6 +258,12 @@ internal class SetupViewModel(
                         facts.uniDicRequired
                     } else {
                         appSettings.language == LanguageScope.JAPANESE
+                    },
+                languageCapabilities =
+                    when {
+                        facts.code == appSettings.language -> facts.capabilities
+                        appSettings.language == LanguageScope.JAPANESE -> null
+                        else -> emptySet()
                     },
             )
         }.stateIn(
