@@ -87,7 +87,7 @@ class AppSettingsRepositoryTest {
                 preferencesOf(),
             )
 
-        assertEquals(2, migrated[intPreferencesKey("settings_schema_version")])
+        assertEquals(3, migrated[intPreferencesKey("settings_schema_version")])
         assertEquals("fresh-defaults-v1", migrated[stringPreferencesKey("wordset_defaults_policy")])
         assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
         assertEquals(
@@ -234,6 +234,119 @@ class AppSettingsRepositoryTest {
     }
 
     @Test
+    fun `schema v3 migration zeroes the caps an absent length toggle kept inert`() {
+        // Pin-era stores filtered only when the toggle was true AND a cap was above zero; the
+        // engine now filters on the caps alone, so typed caps behind an absent toggle would start
+        // dropping words.
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(pinEraStore(toggle = null))
+
+        assertSentenceLengthFolded(migrated, expectedDuration = 0.0, expectedCharacters = 0)
+    }
+
+    @Test
+    fun `schema v3 migration zeroes the caps a false length toggle kept inert`() {
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(pinEraStore(toggle = false))
+
+        assertSentenceLengthFolded(migrated, expectedDuration = 0.0, expectedCharacters = 0)
+    }
+
+    @Test
+    fun `schema v3 migration keeps the caps a true length toggle enforced`() {
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(pinEraStore(toggle = true))
+
+        assertSentenceLengthFolded(migrated, expectedDuration = 8.0, expectedCharacters = 48)
+    }
+
+    @Test
+    fun `schema v3 migration leaves unset caps unset`() {
+        val migrated =
+            DataStoreAppSettingsRepository.migratePreferences(
+                preferencesOf(
+                    intPreferencesKey("settings_schema_version") to 2,
+                    booleanPreferencesKey("use_sentence_length") to false,
+                ),
+            )
+        val settings = DataStoreAppSettingsRepository.decodePreferences(migrated)
+
+        assertNull(settings.maxSentenceDurationSeconds)
+        assertNull(settings.maxSentenceCharacters)
+        assertFalse(migrated.asMap().keys.any { it.name == "use_sentence_length" })
+    }
+
+    @Test
+    fun `a current store's caps stand without any toggle`() {
+        val current =
+            preferencesOf(
+                intPreferencesKey("settings_schema_version") to 3,
+                doublePreferencesKey("max_sentence_duration_seconds") to 8.0,
+                intPreferencesKey("max_sentence_characters") to 48,
+            )
+
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(current)
+
+        assertEquals(8.0, migrated[doublePreferencesKey("max_sentence_duration_seconds")])
+        assertEquals(48, migrated[intPreferencesKey("max_sentence_characters")])
+    }
+
+    @Test
+    fun `a length toggle written back by an older build is folded again`() {
+        // A downgrade keeps the schema marker at 3 (writes never lower it) but brings the toggle
+        // back, so the marker alone cannot say whether the caps were gated.
+        val downgraded =
+            preferencesOf(
+                intPreferencesKey("settings_schema_version") to 3,
+                booleanPreferencesKey("use_sentence_length") to false,
+                doublePreferencesKey("max_sentence_duration_seconds") to 8.0,
+                intPreferencesKey("max_sentence_characters") to 48,
+            )
+
+        assertTrue(DataStoreAppSettingsRepository.migrationRequired(downgraded))
+        val migrated = DataStoreAppSettingsRepository.migratePreferences(downgraded)
+
+        assertSentenceLengthFolded(migrated, expectedDuration = 0.0, expectedCharacters = 0)
+    }
+
+    @Test
+    fun `writing settings drops a stray length toggle`() {
+        val stray = preferencesOf(booleanPreferencesKey("use_sentence_length") to true)
+
+        val encoded = DataStoreAppSettingsRepository.encodePreferences(AppSettings(), stray)
+
+        assertFalse(encoded.asMap().keys.any { it.name == "use_sentence_length" })
+    }
+
+    private fun pinEraStore(toggle: Boolean?): Preferences =
+        preferencesOf(
+            intPreferencesKey("settings_schema_version") to 2,
+            stringPreferencesKey("enabled_wordsets_v2") to "enabled-wordsets-v1\n",
+            stringPreferencesKey("wordset_defaults_policy") to "preserved-existing-v1",
+            doublePreferencesKey("max_sentence_duration_seconds") to 8.0,
+            intPreferencesKey("max_sentence_characters") to 48,
+        ).toMutablePreferences().apply {
+            toggle?.let { this[booleanPreferencesKey("use_sentence_length")] = it }
+        }.toPreferences()
+
+    private fun assertSentenceLengthFolded(
+        migrated: Preferences,
+        expectedDuration: Double,
+        expectedCharacters: Int,
+    ) {
+        val settings = DataStoreAppSettingsRepository.decodePreferences(migrated)
+        assertEquals(expectedDuration, settings.maxSentenceDurationSeconds)
+        assertEquals(expectedCharacters, settings.maxSentenceCharacters)
+        assertFalse(migrated.asMap().keys.any { it.name == "use_sentence_length" })
+        assertEquals(
+            DataStoreAppSettingsRepository.CURRENT_SCHEMA_VERSION,
+            migrated[intPreferencesKey("settings_schema_version")],
+        )
+        assertFalse(DataStoreAppSettingsRepository.migrationRequired(migrated))
+        assertEquals(
+            migrated.asMap(),
+            DataStoreAppSettingsRepository.migratePreferences(migrated).asMap(),
+        )
+    }
+
+    @Test
     fun `failed repository DataStore write preserves the complete prior store`() =
         runTest {
             val dataStore = createDataStore(backgroundScope, "failed-write")
@@ -324,7 +437,6 @@ class AppSettingsRepositoryTest {
                 boldTargetInSentence = null,
                 deduplicateSentences = false,
                 useIPlusOneFilter = null,
-                useSentenceLengthFilter = null,
                 maxSentenceDurationSeconds = null,
                 maxSentenceCharacters = null,
                 readingMinimumOccurrence = null,
@@ -539,7 +651,6 @@ class AppSettingsRepositoryTest {
             boldTargetInSentence = true,
             deduplicateSentences = false,
             useIPlusOneFilter = true,
-            useSentenceLengthFilter = true,
             maxSentenceDurationSeconds = 8.0,
             maxSentenceCharacters = 48,
             readingMinimumOccurrence = 2,
@@ -688,10 +799,6 @@ class AppSettingsRepositoryTest {
             corruptBoolean(
                 "use_i_plus_one",
                 original.copy(useIPlusOneFilter = defaults.useIPlusOneFilter),
-            ),
-            corruptBoolean(
-                "use_sentence_length",
-                original.copy(useSentenceLengthFilter = defaults.useSentenceLengthFilter),
             ),
             corruptDouble(
                 "max_sentence_duration_seconds",

@@ -101,7 +101,10 @@ class DataStoreAppSettingsRepository internal constructor(
     }
 
     internal companion object {
-        const val CURRENT_SCHEMA_VERSION = 2
+        const val CURRENT_SCHEMA_VERSION = 3
+
+        /** The first schema whose sentence-length caps stand alone, without a toggle. */
+        private const val CAPS_ONLY_SENTENCE_LENGTH_SCHEMA = 3
 
         private const val FRESH_WORDSET_POLICY = "fresh-defaults-v1"
         private const val PRESERVED_WORDSET_POLICY = "preserved-existing-v1"
@@ -141,6 +144,14 @@ class DataStoreAppSettingsRepository internal constructor(
                         emptyList()
                     }
                 }
+            // A corrupt schema marker says nothing about the era, so only a readable pre-v3 marker
+            // (or none at all) or the toggle itself triggers the fold.
+            val foldSentenceLength =
+                preferences.contains(Keys.legacyUseSentenceLength) ||
+                    (
+                        Keys.schemaVersion !in decoded.invalidKeys &&
+                            (decoded.schemaVersion ?: 0) < CAPS_ONLY_SENTENCE_LENGTH_SCHEMA
+                    )
             return stagePreferenceWrite(preferences) { candidate ->
                 decoded.invalidKeys.forEach { candidate -= it }
                 candidate -= Keys.legacyAllowDuplicateCards
@@ -151,10 +162,34 @@ class DataStoreAppSettingsRepository internal constructor(
                         if (freshStore) FRESH_WORDSET_POLICY else PRESERVED_WORDSET_POLICY
                     candidate -= Keys.legacyExcludedWordsets
                 }
+                if (foldSentenceLength) foldSentenceLengthToggle(preferences, candidate)
                 if (decoded.schemaVersion == null || decoded.schemaVersion < CURRENT_SCHEMA_VERSION) {
                     candidate[Keys.schemaVersion] = CURRENT_SCHEMA_VERSION
                 }
             }
+        }
+
+        /**
+         * Schema 2 and earlier filtered sentence length only when the toggle was true AND a cap was
+         * above zero; an absent toggle meant no filtering even with caps typed in. The engine now
+         * filters on the caps alone, so caps the toggle kept inert become zero and the toggle goes.
+         */
+        private fun foldSentenceLengthToggle(
+            preferences: Preferences,
+            candidate: MutablePreferences,
+        ) {
+            val toggleOn =
+                try {
+                    preferences[Keys.legacyUseSentenceLength] == true
+                    // instrumentation: silent — a mistyped toggle was never true, so it reads as off.
+                } catch (_: ClassCastException) {
+                    false
+                }
+            if (!toggleOn) {
+                if (Keys.maxSentenceDuration in candidate) candidate[Keys.maxSentenceDuration] = 0.0
+                if (Keys.maxSentenceCharacters in candidate) candidate[Keys.maxSentenceCharacters] = 0
+            }
+            candidate -= Keys.legacyUseSentenceLength
         }
 
         internal fun migrationRequired(preferences: Preferences): Boolean {
@@ -164,7 +199,8 @@ class DataStoreAppSettingsRepository internal constructor(
                 decoded.schemaVersion < CURRENT_SCHEMA_VERSION ||
                 !preferences.contains(Keys.enabledWordsets) ||
                 !preferences.contains(Keys.wordsetDefaultsPolicy) ||
-                preferences.contains(Keys.legacyAllowDuplicateCards)
+                preferences.contains(Keys.legacyAllowDuplicateCards) ||
+                preferences.contains(Keys.legacyUseSentenceLength)
         }
 
         internal inline fun stagePreferenceWrite(
@@ -221,7 +257,6 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate.setOrRemove(Keys.boldTarget, value.boldTargetInSentence)
                 candidate.setOrRemove(Keys.deduplicateSentences, value.deduplicateSentences)
                 candidate.setOrRemove(Keys.useIPlusOne, value.useIPlusOneFilter)
-                candidate.setOrRemove(Keys.useSentenceLength, value.useSentenceLengthFilter)
                 candidate.setOrRemove(Keys.maxSentenceDuration, value.maxSentenceDurationSeconds)
                 candidate.setOrRemove(Keys.maxSentenceCharacters, value.maxSentenceCharacters)
                 candidate.setOrRemove(Keys.readingMinimumOccurrence, value.readingMinimumOccurrence)
@@ -261,6 +296,7 @@ class DataStoreAppSettingsRepository internal constructor(
                     readWordsetPolicy(preferences) ?: PRESERVED_WORDSET_POLICY
                 candidate -= Keys.legacyExcludedWordsets
                 candidate -= Keys.legacyAllowDuplicateCards
+                candidate -= Keys.legacyUseSentenceLength
                 candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
                 candidate[Keys.jishoEnabled] = value.jishoEnabled
             }
@@ -389,12 +425,11 @@ class DataStoreAppSettingsRepository internal constructor(
                     excludeHiraganaOnly = decoder.read(Keys.excludeHiraganaOnly, null, { it }),
                     excludeKatakanaOnly = decoder.read(Keys.excludeKatakanaOnly, null, { it }),
                     boldTargetInSentence = decoder.read(Keys.boldTarget, null, { it }),
-                    // Android-only default; keep in sync with AppSettings.deduplicateSentences.
+                    // Explicit, never null; keep in sync with AppSettings.deduplicateSentences.
                     // The literal here is what a fresh install actually gets — the data-class
                     // default is never consulted on this path.
                     deduplicateSentences = decoder.read(Keys.deduplicateSentences, false, { it }),
                     useIPlusOneFilter = decoder.read(Keys.useIPlusOne, null, { it }),
-                    useSentenceLengthFilter = decoder.read(Keys.useSentenceLength, null, { it }),
                     maxSentenceDurationSeconds =
                         decoder.validated(Keys.maxSentenceDuration) {
                             AppSettings(maxSentenceDurationSeconds = it)
@@ -599,7 +634,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val boldTarget = register(booleanPreferencesKey("bold_target"))
             val deduplicateSentences = register(booleanPreferencesKey("deduplicate_sentences"))
             val useIPlusOne = register(booleanPreferencesKey("use_i_plus_one"))
-            val useSentenceLength = register(booleanPreferencesKey("use_sentence_length"))
+            // Folded into the two caps by the schema 3 migration; never written again.
+            val legacyUseSentenceLength = booleanPreferencesKey("use_sentence_length")
             val maxSentenceDuration = register(doublePreferencesKey("max_sentence_duration_seconds"))
             val maxSentenceCharacters = register(intPreferencesKey("max_sentence_characters"))
             val readingMinimumOccurrence = register(intPreferencesKey("reading_minimum_occurrence"))

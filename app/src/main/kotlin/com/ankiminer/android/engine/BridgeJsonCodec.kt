@@ -1180,7 +1180,7 @@ object BridgeJsonCodec {
                 "exclude_katakana_only_words", "blacklist_path", "whitelist_path", "use_blacklist", "use_whitelist",
                 "subtitle_regex_filter", "subtitle_regex_replacement", "use_subtitle_regex_filter",
                 "bold_target_in_sentence", "strict_card_order", "merge_incomplete_cues",
-                "deduplicate_sentences", "use_i_plus_one_filter", "use_sentence_length_filter",
+                "deduplicate_sentences", "use_i_plus_one_filter",
                 "max_sentence_duration_seconds", "max_sentence_chars", "reading_min_occurrence", "max_parallel_workers",
             )
         if (!known.containsAll(settings.keys)) fail(BridgeProtocolCategory.INVALID_PAYLOAD, "config settings contain an unknown field")
@@ -1225,7 +1225,7 @@ object BridgeJsonCodec {
             "use_blacklist", "use_whitelist", "use_subtitle_regex_filter",
             "bold_target_in_sentence", "deduplicate_sentences", "use_i_plus_one_filter",
             "frequency_keep_unranked", "known_words_match_kana_variants", "strict_card_order", "merge_incomplete_cues",
-            "use_sentence_length_filter" -> bool(value, key)
+            -> bool(value, key)
             "blacklist_path", "whitelist_path" -> if (value !is BridgeJsonValue.Null) absolutePath(value, key)
             "dictionary_chain" -> validateProviderArray(value, key, "kind", setOf("indexed", "jisho"))
             "expression_audio_chain" -> validateProviderArray(value, key, "kind", setOf("pack"))

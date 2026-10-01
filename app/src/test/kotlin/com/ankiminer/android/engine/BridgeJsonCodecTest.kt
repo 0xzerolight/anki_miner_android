@@ -1250,6 +1250,7 @@ class BridgeJsonCodecTest {
             """"merge_incomplete_cues":1""" to BridgeProtocolCategory.INVALID_PAYLOAD,
             """"known_words_match_kana_variants":"yes"""" to BridgeProtocolCategory.INVALID_PAYLOAD,
             """"secondary_subtitle_enabled":true""" to BridgeProtocolCategory.INVALID_PAYLOAD,
+            """"use_sentence_length_filter":true""" to BridgeProtocolCategory.INVALID_PAYLOAD,
         ).forEach { (setting, category) ->
             assertEquals(
                 setting,

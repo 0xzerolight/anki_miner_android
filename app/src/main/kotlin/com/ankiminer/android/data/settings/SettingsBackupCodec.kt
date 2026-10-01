@@ -52,8 +52,19 @@ internal data class AppliedSettingsBackup(
 
 internal object SettingsBackupCodec {
     const val MAX_DOCUMENT_BYTES = 512 * 1024
-    private const val BACKUP_FORMAT_VERSION = 3
+    private const val BACKUP_FORMAT_VERSION = 4
     private const val LEGACY_BACKUP_FORMAT_VERSION = 2
+
+    /** From this format on the document must carry `resourceChains`. */
+    private const val RESOURCE_CHAINS_FORMAT_VERSION = 3
+
+    /** From this format on the sentence-length caps stand alone, without the toggle below. */
+    private const val CAPS_ONLY_SENTENCE_LENGTH_FORMAT_VERSION = 4
+
+    /** The retired toggle older formats carry; see [foldSentenceLengthToggle]. */
+    private const val LEGACY_SENTENCE_LENGTH_KEY = "use_sentence_length"
+    private val SENTENCE_LENGTH_CAP_ZEROS: Map<String, Any> =
+        mapOf("max_sentence_duration_seconds" to 0.0, "max_sentence_characters" to 0)
 
     /**
      * Store-local metadata never copied between devices. `setup_wizard_seen` is first-run state;
@@ -82,7 +93,6 @@ internal object SettingsBackupCodec {
             "bold_target",
             "deduplicate_sentences",
             "use_i_plus_one",
-            "use_sentence_length",
             "reading_tts_enabled",
             "jisho_enabled",
             "frequency_keep_unranked",
@@ -266,7 +276,7 @@ internal object SettingsBackupCodec {
         val base =
             DataStoreAppSettingsRepository.encodePreferences(current, emptyPreferences())
         val effectiveValues = values.toMutableMap()
-        if (formatVersion >= BACKUP_FORMAT_VERSION) {
+        if (formatVersion >= RESOURCE_CHAINS_FORMAT_VERSION) {
             if (resources == null) {
                 resourceChainKeyNames.forEach { name -> effectiveValues[name] = RejectedValue }
             } else {
@@ -324,6 +334,7 @@ internal object SettingsBackupCodec {
         var settingsSeen = false
         var resourceChainsIsObject = false
         var resourceChainsSeen = false
+        var sentenceLengthToggle: Boolean? = null
         val values = linkedMapOf<String, Any>()
         val ignoredKeys = mutableListOf<String>()
         val resourceChains = linkedMapOf<String, List<PortableResourceSelection>>()
@@ -344,7 +355,7 @@ internal object SettingsBackupCodec {
                     settingsSeen = true
                     settingsIsObject = parser.currentToken() == JsonToken.START_OBJECT
                     if (settingsIsObject) {
-                        readSettings(parser, values, ignoredKeys)
+                        sentenceLengthToggle = readSettings(parser, values, ignoredKeys)
                     } else {
                         parser.skipChildren()
                     }
@@ -369,7 +380,7 @@ internal object SettingsBackupCodec {
             throw SettingsBackupException(SettingsBackupFailure.NOT_A_BACKUP)
         }
         if (
-            version >= BACKUP_FORMAT_VERSION &&
+            version >= RESOURCE_CHAINS_FORMAT_VERSION &&
                 (
                     !resourceChainsSeen ||
                         !resourceChainsIsObject ||
@@ -378,6 +389,9 @@ internal object SettingsBackupCodec {
                 )
         ) {
             throw SettingsBackupException(SettingsBackupFailure.MALFORMED)
+        }
+        sentenceLengthToggle?.let { toggleOn ->
+            foldSentenceLengthToggle(version, toggleOn, values, ignoredKeys)
         }
         if (version < 2) {
             values.keys
@@ -474,20 +488,52 @@ internal object SettingsBackupCodec {
         return selections
     }
 
+    /** Returns whether the legacy sentence-length toggle was true, or null when the file lacks it. */
     private fun readSettings(
         parser: JsonParser,
         values: MutableMap<String, Any>,
         ignoredKeys: MutableList<String>,
-    ) {
+    ): Boolean? {
+        var sentenceLengthToggle: Boolean? = null
         while (parser.nextToken() != JsonToken.END_OBJECT) {
             val name = parser.currentName()
             parser.nextToken()
-            if (name in portableKeyNames) {
-                values[name] = readPortableValue(parser, name)
-            } else {
-                ignoredKeys += name
-                parser.skipChildren()
+            when (name) {
+                in portableKeyNames -> values[name] = readPortableValue(parser, name)
+                LEGACY_SENTENCE_LENGTH_KEY -> {
+                    sentenceLengthToggle = parser.currentToken() == JsonToken.VALUE_TRUE
+                    parser.skipChildren()
+                }
+                else -> {
+                    ignoredKeys += name
+                    parser.skipChildren()
+                }
             }
+        }
+        return sentenceLengthToggle
+    }
+
+    /**
+     * Formats before 4 carry the old `use_sentence_length` toggle, and those apps filtered only when
+     * it was true AND a cap was above zero (null, the export of an unset toggle, meant off). The
+     * caps now filter alone, so caps the toggle kept inert import as zero — the fold the store's
+     * schema 3 migration applies. A file without the key says nothing about it, so its caps apply
+     * as written; that includes the resource-less format 2 [encode] still writes. Format 4 never
+     * carries the toggle, so one found there is reported as ignored.
+     */
+    private fun foldSentenceLengthToggle(
+        version: Int,
+        toggleOn: Boolean,
+        values: MutableMap<String, Any>,
+        ignoredKeys: MutableList<String>,
+    ) {
+        if (version >= CAPS_ONLY_SENTENCE_LENGTH_FORMAT_VERSION) {
+            ignoredKeys += LEGACY_SENTENCE_LENGTH_KEY
+            return
+        }
+        if (toggleOn) return
+        SENTENCE_LENGTH_CAP_ZEROS.forEach { (name, zero) ->
+            if (values[name] is Number) values[name] = zero
         }
     }
 

@@ -140,7 +140,7 @@ data class AppSettings(
      */
     val deduplicateSentences: Boolean? = false,
     val useIPlusOneFilter: Boolean? = null,
-    val useSentenceLengthFilter: Boolean? = null,
+    /** Either cap above zero turns the sentence-length filter on; there is no separate toggle. */
     val maxSentenceDurationSeconds: Double? = null,
     val maxSentenceCharacters: Int? = null,
     val readingMinimumOccurrence: Int? = null,
@@ -194,7 +194,6 @@ data class AppSettings(
             boldTargetInSentence = null,
             deduplicateSentences = false,
             useIPlusOneFilter = null,
-            useSentenceLengthFilter = null,
             maxSentenceDurationSeconds = null,
             maxSentenceCharacters = null,
             readingMinimumOccurrence = null,
@@ -751,7 +750,6 @@ internal object EngineSettingsSnapshotMapper {
         settings.boldTargetInSentence?.let { values["bold_target_in_sentence"] = bool(it) }
         settings.deduplicateSentences?.let { values["deduplicate_sentences"] = bool(it) }
         settings.useIPlusOneFilter?.let { values["use_i_plus_one_filter"] = bool(it) }
-        settings.useSentenceLengthFilter?.let { values["use_sentence_length_filter"] = bool(it) }
         settings.maxSentenceDurationSeconds?.let {
             values["max_sentence_duration_seconds"] = decimal(it)
         }

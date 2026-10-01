@@ -52,14 +52,7 @@ internal object EngineDefaults {
     const val DEDUPLICATE_SENTENCES: Boolean = false
     const val USE_I_PLUS_ONE_FILTER: Boolean = false
 
-    /**
-     * Android-local, not an engine mirror: the engine removed `use_sentence_length_filter` and
-     * filters on a non-zero cap alone. The bridge still accepts this toggle and zeroes both caps
-     * unless it is true, so an unset toggle keeps meaning "no length filter".
-     */
-    const val USE_SENTENCE_LENGTH_FILTER: Boolean = false
-
-    /** Both caps use zero for "no limit". */
+    /** Both caps use zero for "no limit"; either one above zero turns the filter on. */
     const val MAX_SENTENCE_DURATION_SECONDS: Double = 0.0
     const val MAX_SENTENCE_CHARACTERS: Int = 0
     const val MAX_FREQUENCY_RANK: Int = 0

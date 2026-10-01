@@ -62,11 +62,6 @@ MIRRORED_FIELDS = {
     "PITCH_CATEGORY_FORMAT": "pitch_category_format",
 }
 
-# Constants EngineDefaults.kt declares for an Android-only setting, with no engine field to
-# mirror. USE_SENTENCE_LENGTH_FILTER outlived the engine's use_sentence_length_filter: the bridge
-# still reads the toggle as a legacy input until the Android setting goes too.
-ANDROID_LOCAL_CONSTANTS = frozenset({"USE_SENTENCE_LENGTH_FILTER"})
-
 # Kotlin enum entry -> the wire string the engine stores. Keeps the two enum-valued mirrors
 # comparable with the plain literals.
 KOTLIN_ENUM_WIRE_VALUES = {
@@ -149,14 +144,9 @@ class EngineDefaultsMirrorTests(unittest.TestCase):
             + "\n".join(mismatches),
         )
 
-    def test_android_local_constant_has_no_engine_field(self) -> None:
-        """Local only while the engine lacks the field; if it returns, mirror it again."""
-        self.assertIn("USE_SENTENCE_LENGTH_FILTER", _kotlin_defaults())
-        self.assertNotIn("use_sentence_length_filter", _engine_defaults())
-
     def test_mirror_declares_nothing_the_map_does_not_cover(self) -> None:
         """A new constant must be mapped, or it is guarded by nothing."""
-        unmapped = sorted(set(_kotlin_defaults()) - set(MIRRORED_FIELDS) - ANDROID_LOCAL_CONSTANTS)
+        unmapped = sorted(set(_kotlin_defaults()) - set(MIRRORED_FIELDS))
         self.assertEqual(
             [],
             unmapped,
