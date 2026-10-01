@@ -372,7 +372,6 @@
     <string name="readiness_connect_ankidroid">Kết nối AnkiDroid</string>
     <string name="readiness_choose_note_type">Chọn loại ghi chú</string>
     <string name="readiness_check_again">Kiểm tra lại</string>
-    <string name="readiness_wait_action">Đang thiết lập</string>
     <string name="anki_note_type_title">Loại ghi chú Anki</string>
     <string name="anki_note_type_connect_first">Kết nối AnkiDroid để tìm loại ghi chú.</string>
     <string name="anki_deck_title">Bộ thẻ đích</string>

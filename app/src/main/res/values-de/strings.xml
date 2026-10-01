@@ -373,7 +373,6 @@
     <string name="readiness_connect_ankidroid">AnkiDroid verbinden</string>
     <string name="readiness_choose_note_type">Notiztyp auswählen</string>
     <string name="readiness_check_again">Erneut prüfen</string>
-    <string name="readiness_wait_action">Einrichtung läuft</string>
     <string name="anki_note_type_title">Anki-Notiztyp</string>
     <string name="anki_note_type_connect_first">Verbinden Sie AnkiDroid, um Notiztypen zu finden.</string>
     <string name="anki_deck_title">Zielstapel</string>

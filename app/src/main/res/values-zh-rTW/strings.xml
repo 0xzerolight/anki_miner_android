@@ -372,7 +372,6 @@
     <string name="readiness_connect_ankidroid">連線至 AnkiDroid</string>
     <string name="readiness_choose_note_type">選擇筆記類型</string>
     <string name="readiness_check_again">再次檢查</string>
-    <string name="readiness_wait_action">正在設定</string>
     <string name="anki_note_type_title">Anki 筆記類型</string>
     <string name="anki_note_type_connect_first">請連線 AnkiDroid 以探索筆記類型。</string>
     <string name="anki_deck_title">目標牌組</string>

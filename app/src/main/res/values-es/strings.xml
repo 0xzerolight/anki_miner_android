@@ -374,7 +374,6 @@
     <string name="readiness_connect_ankidroid">Conectar AnkiDroid</string>
     <string name="readiness_choose_note_type">Elegir tipo de nota</string>
     <string name="readiness_check_again">Comprobar de nuevo</string>
-    <string name="readiness_wait_action">Configuración en curso</string>
     <string name="anki_note_type_title">Tipo de nota de Anki</string>
     <string name="anki_note_type_connect_first">Conecte AnkiDroid para descubrir tipos de nota.</string>
     <string name="anki_deck_title">Mazo de destino</string>

@@ -76,6 +76,7 @@ import com.ankiminer.android.ui.reading.ReadingMiningRoute
 import com.ankiminer.android.ui.reading.ReadingMiningTestTags
 import com.ankiminer.android.ui.settings.KnownWordsManagerRoute
 import com.ankiminer.android.ui.settings.MessageSnackbarEffect
+import com.ankiminer.android.ui.settings.ResourceOperationCard
 import com.ankiminer.android.ui.settings.SettingsCategory
 import com.ankiminer.android.ui.settings.SettingsRoute
 import com.ankiminer.android.ui.settings.ankiDroidInstallLabel
@@ -641,6 +642,17 @@ internal fun AnkiMinerApp(
             onOpenSettings = ::navigateToSettings,
             onImportDictionary = ::navigateToDictionaries,
             onOpenAppSettings = onOpenAppSettings,
+            // ResourceManager.installRecommendedResources returns early when the set has nothing
+            // pending (catalog not refreshed yet, or every member installed while no dictionary is in
+            // the chain); the notice's only primary action must not be that silent no-op.
+            onInstallDictionary = {
+                if (setup.recommendedPlan.isActionable) {
+                    setupViewModel.installRecommendedResources()
+                } else {
+                    navigateToDictionaries()
+                }
+            },
+            onCancelOperation = setupViewModel::cancelOperation,
         )
     }
 
@@ -865,6 +877,8 @@ internal fun MiningReadinessNotice(
     onOpenSettings: (AnkiSetupFailureOrigin?) -> Unit,
     onImportDictionary: () -> Unit,
     onOpenAppSettings: () -> Unit = {},
+    onInstallDictionary: () -> Unit = {},
+    onCancelOperation: () -> Unit = {},
 ) {
     Column(
         Modifier.fillMaxSize().padding(AnkiMinerTokens.Space.content),
@@ -880,7 +894,10 @@ internal fun MiningReadinessNotice(
                 when (val action = miningReadinessActionForDisplay(state)) {
                     null -> Unit
                     MiningReadinessAction.WAIT ->
-                        SupportingText(stringResource(R.string.readiness_wait_action))
+                        // One live progress card instead of a second "Setup in progress" line.
+                        state.operation?.let { operation ->
+                            ResourceOperationCard(operation, onCancelOperation)
+                        }
                     else ->
                         MiningReadinessActions(
                             action = action,
@@ -893,6 +910,7 @@ internal fun MiningReadinessNotice(
                             onImportDictionary = onImportDictionary,
                             installAnkiDroidLabel = ankiDroidInstallLabel(state.anki),
                             onOpenAppSettings = onOpenAppSettings,
+                            onInstallDictionary = onInstallDictionary,
                         )
                 }
             }
@@ -912,6 +930,7 @@ internal fun MiningReadinessActions(
     onImportDictionary: () -> Unit,
     @StringRes installAnkiDroidLabel: Int = R.string.install_ankidroid,
     onOpenAppSettings: () -> Unit = {},
+    onInstallDictionary: () -> Unit = {},
 ) {
     val actionSpec =
         when (action) {
@@ -924,8 +943,8 @@ internal fun MiningReadinessActions(
             MiningReadinessAction.INSTALL_DICTIONARY ->
                 ReadinessActionSpec(
                     R.string.readiness_install_dictionary,
-                    onImportDictionary,
-                    opensSettings = true,
+                    onInstallDictionary,
+                    opensSettings = false,
                 )
             MiningReadinessAction.ENABLE_DICTIONARY ->
                 ReadinessActionSpec(

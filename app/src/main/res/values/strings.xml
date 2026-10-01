@@ -381,7 +381,6 @@
     <string name="readiness_connect_ankidroid">Connect AnkiDroid</string>
     <string name="readiness_choose_note_type">Choose note type</string>
     <string name="readiness_check_again">Check again</string>
-    <string name="readiness_wait_action">Setup in progress</string>
 
     <string name="anki_note_type_title">Anki note type</string>
     <string name="anki_note_type_connect_first">Connect AnkiDroid to discover note types.</string>

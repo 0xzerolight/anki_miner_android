@@ -375,7 +375,6 @@
     <string name="readiness_connect_ankidroid">Подключить AnkiDroid</string>
     <string name="readiness_choose_note_type">Выбрать тип заметки</string>
     <string name="readiness_check_again">Проверить снова</string>
-    <string name="readiness_wait_action">Выполняется настройка</string>
     <string name="anki_note_type_title">Тип заметки Anki</string>
     <string name="anki_note_type_connect_first">Подключите AnkiDroid, чтобы найти типы заметок.</string>
     <string name="anki_deck_title">Целевая колода</string>
