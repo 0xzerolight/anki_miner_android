@@ -355,8 +355,70 @@ internal val portugueseCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-pt-en-2026.09.20",
+                    displayName = "Wiktionary (Portuguese-English) 2026-09-20",
+                    slotId = "wty-pt-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/pt/en/wty-pt-en.zip",
+                            sha256 = "0e1fa35833715be3688f2c01a3742c39fa1418a7862ee85fdca77331bbb871c4",
+                            sizeBytes = 11_334_569,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-pt-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 27,
+                            uncompressedBytes = 142_561_502,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-pt-br-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Brazilian Portuguese)",
+                    sourceId = "opensubtitles-pt-br",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/pt_br/pt_br_50k.txt",
+                            sha256 = "a61d6f2ede97c5daad5fb3907b72a228f0aff12668be6d24da590d20804fa611",
+                            sizeBytes = 650_066,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-pt-2018",
+                    displayName = "OpenSubtitles 2018 frequency (European Portuguese)",
+                    sourceId = "opensubtitles-pt",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/pt/pt_50k.txt",
+                            sha256 = "f97704382f97273ff59488b1885e7ac90d20f81fd92e5fbad3e3ce43633f495c",
+                            sizeBytes = 652_361,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-pt-en-2026.09.20", "opensubtitles-pt-br-2018"),
     )
 
 internal val frenchCatalog =
