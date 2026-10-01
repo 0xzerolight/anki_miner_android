@@ -1858,8 +1858,10 @@ def preflight_dictionary(payload: Mapping[str, object]) -> str:
 
 
 def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
+    from .languages import language_kwarg, payload_language, without_language
+
     _exact(
-        payload,
+        without_language(payload),
         {"operationId", "sourcePath", "slotId", "overwrite", "catalogResourceId"},
         code="invalid_resource_request",
     )
@@ -1910,6 +1912,16 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
             # streamed-rewrite path later move the slot's only copy into the
             # candidate, where a failed publication destroys it.
             in_place_rebuild = _dictionary_root(home) in source.parents
+            # A rebuild replays the slot's own stamp (desktop slot_language_kwarg):
+            # importing it as the request's language would restamp a Hebrew index
+            # "ja" and drop it from the Hebrew chain. Read before the import
+            # replaces the slot.
+            if in_place_rebuild:
+                from anki_miner.services._sqlite_index import read_slot_language
+
+                language = read_slot_language(final)
+            else:
+                language = payload_language(payload)
             if in_place_rebuild:
                 copied = _copy_archive(
                     source,
@@ -1984,6 +1996,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     overwrite=False,
                     cancel_check=operation.cancelled.is_set,
                     dict_id=slot_id,
+                    **language_kwarg(language),
                 )
             except Exception as exc:
                 operation.check()
@@ -2394,7 +2407,15 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
         raise _fail("dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed")
     if not meta.schema_ok:
         raise _fail("dictionary_schema_mismatch", "Dictionary must be reimported")
-    provider = IndexedDictProvider(meta.dict_id, meta.db_path, meta.source_name)
+    # Keyed with the slot's own language folding, as the registry builds it for a
+    # run of that language: a Hebrew index stores unpointed keys, so a pointed
+    # term misses under the ja defaults. Unstamped slots are ja (keys=None).
+    keys = {}
+    if meta.language != "ja":
+        from anki_miner.languages.registry import get_profile
+
+        keys = {"keys": get_profile(meta.language).dict_keys}
+    provider = IndexedDictProvider(meta.dict_id, meta.db_path, meta.source_name, **keys)
     if not provider.load():
         raise _fail("dictionary_unavailable", "Dictionary index cannot be opened")
     lookup_key = unicodedata.normalize("NFC", term)
