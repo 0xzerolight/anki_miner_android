@@ -435,3 +435,62 @@ def test_an_unreadable_or_unstamped_slot_reports_japanese(home: Path) -> None:
     listed = decode_envelope(resources.list_dictionaries({}), expected_type="resource.dictionary.listed")
 
     assert listed.payload["dictionaries"][0]["language"] == "ja"
+
+
+# ---------------------------------------------------------------- missing language data
+
+
+def test_a_lemmatised_list_for_a_language_missing_its_data_is_refused_as_unavailable(
+    home: Path, tmp_path: Path
+) -> None:
+    """Arabic lemmatises its lists with a tagger its downloaded data feeds; without it, no crash."""
+    source = tmp_path / "ar.txt"
+    source.write_text("كتاب 10\n", encoding="utf-8")
+
+    with pytest.raises(BridgeProtocolError) as error:
+        local_resources.import_frequency(
+            {**_frequency_request(source, language="ar"), "sourceId": "ar-freq", "sourceFormat": "txt"}
+        )
+
+    assert (error.value.code, str(error.value)) == ("language_unavailable", "language_data_required")
+    assert not (home / "freqs" / "ar-freq").exists()
+
+
+def test_rebuilding_a_lemmatised_slot_whose_data_went_missing_leaves_the_slot_alone(
+    home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The startup rebuild of one slot must fail on its own, never wedge recovery (Kotlin degrades it)."""
+    import anki_miner.services.frequency.lemmatize as lemmatize
+
+    monkeypatch.setattr(lemmatize, "build_frequency_lemmatizer", lambda language, dicts_root=None: list)
+    monkeypatch.setattr(local_resources, "unavailable_reason_code", lambda profile: None)
+    source = tmp_path / "ar.txt"
+    source.write_text("كتاب 10\n", encoding="utf-8")
+    request = {**_frequency_request(source, language="ar"), "sourceId": "ar-freq", "sourceFormat": "txt"}
+    local_resources.import_frequency(request)
+    slot = home / "freqs" / "ar-freq"
+    before = sorted(path.name for path in slot.iterdir())
+    monkeypatch.undo()
+
+    with pytest.raises(BridgeProtocolError) as error:
+        local_resources.import_frequency(
+            {**request, "sourcePath": str(slot / "source.txt"), "operationId": "rebuild", "overwrite": True}
+        )
+
+    assert error.value.code == "language_unavailable"
+    assert sorted(path.name for path in slot.iterdir()) == before
+    assert _meta_language(slot) == "ar"
+
+
+def test_known_words_need_no_language_data(home: Path, tmp_path: Path) -> None:
+    local_resources.import_known_words(
+        {
+            "operationId": "ar-known",
+            "sourcePath": str(_known_words_file(tmp_path, "كتاب\n".encode())),
+            "sourceFormat": "txt",
+            "language": "ar",
+        }
+    )
+
+    inventory = _listed_local(language="ar")["knownWords"]
+    assert (inventory["totalCount"], inventory["schemaOk"]) == (1, True)

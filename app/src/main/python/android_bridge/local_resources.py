@@ -33,6 +33,7 @@ from .languages import (
     known_words_db_path,
     language_kwarg,
     payload_language,
+    unavailable_reason_code,
     without_language,
 )
 from .protocol import BridgeProtocolError, encode_message
@@ -531,15 +532,23 @@ def _frequency_import_options(
     )
 
     if rebuild_slot is None:
-        return {**lemmatize_kwarg(manual_import_lemmatizer(language, dicts_root))}
-    from anki_miner.services.frequency.source_importer import slot_import_options
+        lemmatize = manual_import_lemmatizer(language, dicts_root)
+        declared: dict[str, object] = {}
+    else:
+        from anki_miner.services.frequency.source_importer import slot_import_options
 
-    declared_mode, lemmatised = slot_import_options(rebuild_slot)
-    lemmatize = build_frequency_lemmatizer(language, dicts_root) if lemmatised else None
-    return {
-        **({"declared_mode": declared_mode} if declared_mode else {}),
-        **lemmatize_kwarg(lemmatize),
-    }
+        declared_mode, lemmatised = slot_import_options(rebuild_slot)
+        lemmatize = build_frequency_lemmatizer(language, dicts_root) if lemmatised else None
+        declared = {"declared_mode": declared_mode} if declared_mode else {}
+    if lemmatize is not None:
+        # The tagger is built lazily, mid-import: with the language's data
+        # missing (ar/fa before their download, or after it is deleted) it would
+        # raise from inside the importer. Refuse up front with the reason code,
+        # so a startup rebuild fails this one slot and nothing else.
+        reason = unavailable_reason_code(get_profile(language))
+        if reason is not None:
+            raise _fail("language_unavailable", reason)
+    return {**declared, **lemmatize_kwarg(lemmatize)}
 
 
 def import_frequency(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:

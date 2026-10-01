@@ -2407,6 +2407,29 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aRebuildThatCannotRunForMissingLanguageDataDoesNotFailStartup() =
+        runTest {
+            // An Arabic list is lemmatised by a tagger its downloaded data feeds. With that data
+            // gone the bridge refuses the rebuild; recovery must finish and keep the slot listed.
+            val harness =
+                Harness(
+                    staleFrequency = "opensubtitles-ar" to "ar",
+                    frequencyImportFailureCode = "language_unavailable",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            val rebuild = harness.bridge.requestsOfType("resource.frequency.import").single()
+            assertTrue(rebuild.contains("\"language\":\"ar\""))
+            assertTrue(rebuild.contains("\"overwrite\":true"))
+            val stale = harness.manager.state.value.frequencySources.single()
+            assertEquals("opensubtitles-ar" to false, stale.sourceId to stale.schemaOk)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
     fun aLanguageWithNoCatalogOffersNothingToDownload() =
         runTest {
             val harness = Harness(activeLanguage = { "th" })
@@ -2585,6 +2608,8 @@ class ResourceManagerTest {
         safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
         foregroundStartFailure: Boolean = false,
         activeLanguage: () -> String = { JAPANESE },
+        staleFrequency: Pair<String, String>? = null,
+        frequencyImportFailureCode: String? = null,
     ) {
         val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
@@ -2637,6 +2662,8 @@ class ResourceManagerTest {
                 committedDictionaryDecodeFailure,
                 committedFrequencyDecodeFailure,
                 committedPitchDecodeFailure,
+                staleFrequency,
+                frequencyImportFailureCode,
             )
         val manager =
             AndroidResourceManager(
@@ -2916,6 +2943,9 @@ class ResourceManagerTest {
         private val committedDictionaryDecodeFailure: Boolean = false,
         private val committedFrequencyDecodeFailure: Boolean = false,
         private val committedPitchDecodeFailure: Boolean = false,
+        /** A schema-stale frequency slot (sourceId to its language stamp) with a rebuild source. */
+        private val staleFrequency: Pair<String, String>? = null,
+        private val frequencyImportFailureCode: String? = null,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
         var userCount = initialUserCount
@@ -3031,6 +3061,7 @@ class ResourceManagerTest {
                         """{"slotId":"fixture-dictionary-2026-08"}""",
                     )
                 "resource.frequency.import" -> {
+                    frequencyImportFailureCode?.let { throw ResourceBridgeException(it, "simulated rebuild failure") }
                     if (failFrequencyImport) {
                         throw ResourceBridgeException(
                             "frequency_import_failed",
@@ -3215,6 +3246,8 @@ class ResourceManagerTest {
             val frequencies =
                 installedFrequencySourceId?.let { sourceId ->
                     """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}]"""
+                } ?: staleFrequency?.let { (sourceId, language) ->
+                    """[{"sourceId":"$sourceId","sourceName":"Stale Frequency","format":"txt","entryCount":1,"schemaOk":false,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":"/data/user/0/files/freqs/$sourceId/source.txt","language":"$language"}]"""
                 } ?: "[]"
             val pitchSources =
                 installedPitchSourceId?.let { sourceId ->

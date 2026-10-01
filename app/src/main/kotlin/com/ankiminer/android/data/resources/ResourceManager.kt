@@ -2412,44 +2412,75 @@ internal class AndroidResourceManager(
             inventory.pitchSources.filter { !it.schemaOk && it.rebuildSourcePath != null }
         if (staleFrequencies.isEmpty() && stalePitch.isEmpty()) return
 
+        // Each slot on its own, as rebuildStaleDictionaries does: one that cannot be rebuilt (an
+        // Arabic list whose tagger data is missing answers language_unavailable) stays stale and is
+        // reported by inventory, while startup recovery carries on with the rest.
         for (source in staleFrequencies) {
             val path = source.rebuildSourcePath ?: continue
             val format =
                 FrequencySourceFormat.entries.firstOrNull { path.endsWith(it.fileSuffix) }
                     ?: continue
-            ResourceBridgeCodec.decodeImportedFrequency(
-                bridge.dispatch(
-                    ResourceBridgeCodec.encodeFrequencyImportRequest(
-                        "resource_${UUID.randomUUID().toString().replace("-", "")}",
-                        path,
-                        source.sourceId,
-                        source.sourceName,
-                        format,
-                        overwrite = true,
-                        language = source.language,
+            rebuildSlot("frequency.rebuild", source.sourceId) {
+                ResourceBridgeCodec.decodeImportedFrequency(
+                    bridge.dispatch(
+                        ResourceBridgeCodec.encodeFrequencyImportRequest(
+                            "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                            path,
+                            source.sourceId,
+                            source.sourceName,
+                            format,
+                            overwrite = true,
+                            language = source.language,
+                        ),
+                        null,
                     ),
-                    null,
-                ),
-            )
+                )
+            }
         }
         for (source in stalePitch) {
             val path = source.rebuildSourcePath ?: continue
             val format =
                 PitchAccentSourceFormat.entries.firstOrNull { path.endsWith(it.fileSuffix) }
                     ?: continue
-            ResourceBridgeCodec.decodeImportedPitch(
-                bridge.dispatch(
-                    ResourceBridgeCodec.encodePitchImportRequest(
-                        "resource_${UUID.randomUUID().toString().replace("-", "")}",
-                        path,
-                        source.sourceId,
-                        source.sourceName,
-                        format,
-                        overwrite = true,
-                        language = source.language,
+            rebuildSlot("pitch.rebuild", source.sourceId) {
+                ResourceBridgeCodec.decodeImportedPitch(
+                    bridge.dispatch(
+                        ResourceBridgeCodec.encodePitchImportRequest(
+                            "resource_${UUID.randomUUID().toString().replace("-", "")}",
+                            path,
+                            source.sourceId,
+                            source.sourceName,
+                            format,
+                            overwrite = true,
+                            language = source.language,
+                        ),
+                        null,
                     ),
-                    null,
-                ),
+                )
+            }
+        }
+    }
+
+    /**
+     * Degrade, never abort: a slot whose rebuild fails stays stale. A stale frequency list is left
+     * out of the chain, and a stale pitch source is the inventory verdict refreshFromPython raises
+     * with its replace retry — the same outcome as before the rebuild was attempted.
+     */
+    private inline fun rebuildSlot(
+        event: String,
+        slotId: String,
+        rebuild: () -> Unit,
+    ) {
+        try {
+            rebuild()
+        } catch (failure: Exception) {
+            AppLog.e(
+                LogComponent.RESOURCES,
+                event,
+                failure,
+                "slot" to slotId,
+                "code" to ((failure as? ResourceBridgeException)?.code ?: "unexpected"),
+                "outcome" to "fail",
             )
         }
     }
