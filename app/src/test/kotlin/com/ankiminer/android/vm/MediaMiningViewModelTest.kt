@@ -421,6 +421,80 @@ class MediaMiningViewModelTest {
         }
 
     @Test
+    fun theCuratorOpensOnTheAutomaticMergeAndALineExtendsIt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = mergedCurationRequest()
+            val media = CurationMediaBinding("/cache/video.mkv", "/cache/subtitle.srt")
+            val repository = RecordingRepository(MiningRunState.Curating(request, media = media))
+            val viewModel =
+                mediaViewModel(
+                    repository,
+                    ImmediateSafBroker(),
+                    cueLookup =
+                        SubtitleCueLookupService { _, _ ->
+                            Result.success(
+                                listOf(
+                                    SubtitleCue(0.0, 1.0, "魚を"),
+                                    SubtitleCue(1.2, 2.0, "食べる。"),
+                                    SubtitleCue(2.5, 3.0, "次の文"),
+                                ),
+                            )
+                        },
+                )
+            runCurrent()
+
+            viewModel.focusCandidate("candidate")
+            runCurrent()
+            val opened = requireNotNull(viewModel.uiState.value.curation)
+            assertEquals(CurationLineExpansion(0, 1), opened.lineExpansions["candidate"])
+            assertEquals("魚を 食べる。", opened.expansionPreview?.sentence)
+            // The clip is cut from the merged window, not the fragment's 0-1 s.
+            assertTrue(requireNotNull(opened.clipWindow).window.endSeconds >= 2.0)
+
+            viewModel.expandSentenceNext("candidate")
+            runCurrent()
+            val extended = requireNotNull(viewModel.uiState.value.curation)
+            assertEquals(CurationLineExpansion(0, 2), extended.lineExpansions["candidate"])
+            assertEquals("魚を 食べる。 次の文", extended.expansionPreview?.sentence)
+
+            viewModel.confirmCuration()
+            runCurrent()
+            val selection = requireNotNull(repository.confirmedSelection).single()
+            assertEquals(0 to 2, selection.linesBefore to selection.linesAfter)
+        }
+
+    @Test
+    fun resetUndoesTheAutomaticMergeOnTheWire() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = mergedCurationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.resetSentenceExpansion("candidate")
+            viewModel.confirmCuration()
+            runCurrent()
+
+            val selection = requireNotNull(repository.confirmedSelection).single()
+            assertEquals(0 to 0, selection.linesBefore to selection.linesAfter)
+        }
+
+    @Test
+    fun anUntouchedMergeIsSentEvenWithoutCues() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val request = mergedCurationRequest()
+            val repository = RecordingRepository(MiningRunState.Curating(request))
+            val viewModel = mediaViewModel(repository, ImmediateSafBroker())
+            runCurrent()
+
+            viewModel.confirmCuration()
+            runCurrent()
+
+            val selection = requireNotNull(repository.confirmedSelection).single()
+            assertEquals(0 to 1, selection.linesBefore to selection.linesAfter)
+        }
+
+    @Test
     fun confirmForwardsExpansionCountsToTheRepository() =
         runTest(mainDispatcherRule.dispatcher) {
             val request = curationRequest()
@@ -3836,6 +3910,20 @@ class MediaMiningViewModelTest {
                         ),
                     ),
             )
+        }
+
+        /** [curationRequest] mined from a fragment the engine merged with the next cue. */
+        fun mergedCurationRequest(): CurationRequest {
+            val request = curationRequest()
+            val candidate = request.candidates.single()
+            val sentence =
+                candidate.sentences.single().copy(
+                    sentence = "魚を",
+                    sentenceFurigana = "",
+                    autoExpansion = CurationLineExpansion(0, 1),
+                    translation = "I eat fish.",
+                )
+            return request.copy(candidates = listOf(candidate.copy(sentences = listOf(sentence))))
         }
 
         fun result(): ProcessingResult =

@@ -7,6 +7,7 @@ import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationBlockBox
 import com.ankiminer.android.mining.CurationCandidate
+import com.ankiminer.android.mining.CurationLineExpansion
 import com.ankiminer.android.mining.CurationPage
 import com.ankiminer.android.mining.CurationPageContext
 import com.ankiminer.android.mining.CurationRequest
@@ -648,9 +649,11 @@ object BridgeJsonCodec {
         requireExactWithOptional(
             payload,
             setOf("sentenceId", "sentence", "sentenceFurigana", "sentenceReading", "startTime", "endTime", "duration"),
-            setOf("imageEntry", "blockBox", "locationLabel"),
+            setOf("imageEntry", "blockBox", "locationLabel", "linesBefore", "linesAfter", "translation"),
             "curation sentence",
         )
+        val linesBefore = payload["linesBefore"]?.let { lineExpansionCount(it, "linesBefore") } ?: 0
+        val linesAfter = payload["linesAfter"]?.let { lineExpansionCount(it, "linesAfter") } ?: 0
         return CurationSentence(
             opaque(payload.getValue("sentenceId"), sentenceIdPattern, "sentence ID"),
             text(payload.getValue("sentence"), "sentence"),
@@ -660,6 +663,9 @@ object BridgeJsonCodec {
             number(payload.getValue("endTime"), "endTime"),
             number(payload.getValue("duration"), "duration"),
             readCurationPageContext(payload),
+            autoExpansion =
+                if (linesBefore > 0 || linesAfter > 0) CurationLineExpansion(linesBefore, linesAfter) else null,
+            translation = payload["translation"]?.let { nonEmptyText(it, "translation") },
         )
     }
 

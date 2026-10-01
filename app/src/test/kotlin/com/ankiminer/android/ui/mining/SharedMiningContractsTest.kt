@@ -436,6 +436,54 @@ class SharedMiningContractsTest {
     }
 
     @Test
+    fun theDraftOpensOnTheAutomaticMergeAndSendsItUntouched() {
+        val request = curationRequest(candidates = listOf(mergedCandidate()))
+
+        val draft = request.defaultCurationDraft()
+
+        assertEquals(CurationLineExpansion(0, 1), draft.lineExpansions["candidate-1"])
+        val selection = draft.selections(request).single()
+        assertEquals(0 to 1, selection.linesBefore to selection.linesAfter)
+    }
+
+    @Test
+    fun aLineButtonExtendsTheAutomaticMergeAndResetUndoesIt() {
+        val request = curationRequest(candidates = listOf(mergedCandidate()))
+
+        val extended = request.defaultCurationDraft().expandSentence(request, "candidate-1", 1, 1)!!
+        assertEquals(CurationLineExpansion(1, 2), extended.lineExpansions["candidate-1"])
+
+        val reset = extended.resetExpansion(request, "candidate-1").selections(request).single()
+        assertEquals(0 to 0, reset.linesBefore to reset.linesAfter)
+    }
+
+    @Test
+    fun pickingASentenceStartsFromThatSentencesOwnMerge() {
+        val request = curationRequest(candidates = listOf(mergedCandidate()))
+        val extended = request.defaultCurationDraft().expandSentence(request, "candidate-1", 0, 1)!!
+
+        val alternative = extended.selectSentence(request, "candidate-1", "sentence-alt")!!
+        assertEquals(CurationLineExpansion(1, 0), alternative.lineExpansions["candidate-1"])
+
+        val plain = alternative.selectSentence(request, "candidate-1", "sentence-plain")!!
+        assertNull(plain.lineExpansions["candidate-1"])
+
+        val back = plain.selectSentence(request, "candidate-1", "sentence-candidate-1")!!
+        assertEquals(CurationLineExpansion(0, 1), back.lineExpansions["candidate-1"])
+    }
+
+    @Test
+    fun aTranslationShowsOnlyWhileTheWindowItWasMatchedOverIsMined() {
+        val sentence = mergedCandidate().sentences.first()
+
+        assertEquals("I saw the cat.", sentence.translationFor(CurationLineExpansion(0, 1)))
+        assertNull(sentence.translationFor(CurationLineExpansion(0, 2)))
+        assertNull(sentence.translationFor(null))
+        val plain = sentence.copy(autoExpansion = null)
+        assertEquals("I saw the cat.", plain.translationFor(null))
+    }
+
+    @Test
     fun selectionCarriesClipWindowForItsCandidate() {
         val request = curationRequest()
         val draft =
@@ -549,6 +597,24 @@ class SharedMiningContractsTest {
         val restored = draft.toCurationSessionState(previousPageSelectedCount = 0).draftFor(request)!!
 
         assertEquals(window, restored.clipOverrides["candidate-1"])
+    }
+
+    /** A default sentence the engine merged one cue forward, an alternative merged one back, and one unmerged. */
+    private fun mergedCandidate(): CurationCandidate {
+        val base = candidate("candidate-1", "猫", frequency = 1, occurrences = 3)
+        val default =
+            base.sentences.single().copy(
+                autoExpansion = CurationLineExpansion(0, 1),
+                translation = "I saw the cat.",
+            )
+        return base.copy(
+            sentences =
+                listOf(
+                    default,
+                    default.copy(sentenceId = "sentence-alt", autoExpansion = CurationLineExpansion(1, 0)),
+                    default.copy(sentenceId = "sentence-plain", autoExpansion = null, translation = null),
+                ),
+        )
     }
 
     private fun candidateWithAlternateSentence(): CurationCandidate {

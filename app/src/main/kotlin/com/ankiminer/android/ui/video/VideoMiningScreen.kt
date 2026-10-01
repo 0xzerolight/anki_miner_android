@@ -91,6 +91,7 @@ import com.ankiminer.android.ui.mining.curationRowContainerColor
 import com.ankiminer.android.ui.mining.miningResultItems
 import com.ankiminer.android.ui.mining.rememberCurationCandidateRowTexts
 import com.ankiminer.android.ui.mining.rememberClipboardWriter
+import com.ankiminer.android.ui.mining.translationFor
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PhaseTitle
@@ -1107,6 +1108,7 @@ private fun LazyListScope.curationItems(
                     val onClick = {
                         onSelectSentence(candidate.candidateId, sentence.sentenceId)
                     }
+                    val chosen = sentence.sentenceId == curation.sentenceIds[candidate.candidateId]
                     item(
                         key = "sentence:${candidate.candidateId}:${sentence.sentenceId}",
                         contentType = "sentence",
@@ -1116,8 +1118,7 @@ private fun LazyListScope.curationItems(
                             sentence = sentence,
                             containerColor =
                                 curationRowContainerColor(selected, animateSelection),
-                            selected =
-                                sentence.sentenceId == curation.sentenceIds[candidate.candidateId],
+                            selected = chosen,
                             enabled = enabled,
                             isLast = index == candidate.sentences.lastIndex,
                             testTag = sentenceTestTag,
@@ -1128,6 +1129,12 @@ private fun LazyListScope.curationItems(
                                         curationGroupGap(last = index == candidate.sentences.lastIndex),
                                 ),
                             selectable = layout.selectable,
+                            translation =
+                                if (chosen) {
+                                    sentence.translationFor(curation.lineExpansions[candidate.candidateId])
+                                } else {
+                                    sentence.translation
+                                },
                         )
                     }
                 }
@@ -1148,6 +1155,8 @@ private fun LazyListScope.curationItems(
                         onClick = {
                             onSelectSentence(candidate.candidateId, layout.chosen.sentenceId)
                         },
+                        translation =
+                            layout.chosen.translationFor(curation.lineExpansions[candidate.candidateId]),
                     )
                 }
                 item(
@@ -1198,6 +1207,7 @@ private fun LazyListScope.curationItems(
                                                 last = index == layout.alternatives.lastIndex,
                                             ),
                                     ),
+                                translation = sentence.translation,
                             )
                         }
                     }

@@ -208,9 +208,18 @@ data class CurationSentence(
     val endTime: Double,
     val duration: Double,
     val pageContext: CurationPageContext? = null,
+    /**
+     * The automatic cue merge (`merge_incomplete_cues`) this sentence mines with when left
+     * untouched; null when there is none. The draft starts from it, so "+ previous/next line"
+     * extends the merge and Reset undoes it, as on desktop.
+     */
+    val autoExpansion: CurationLineExpansion? = null,
+    /** The translation track's line over that merged window; null without a track or a match. */
+    val translation: String? = null,
 ) {
     init {
         require(sentenceId.isNotBlank())
+        require(translation == null || translation.isNotEmpty())
     }
 }
 
