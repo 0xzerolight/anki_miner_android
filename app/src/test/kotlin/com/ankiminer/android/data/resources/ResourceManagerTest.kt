@@ -2362,10 +2362,19 @@ class ResourceManagerTest {
             val request = harness.bridge.requestsOfType("resource.languagedata.install").single()
             assertTrue(request.contains("\"resourceId\":\"ar-calima-msa\""))
             assertTrue(request.contains("\"archivePath\":\"/"))
-            // No Japanese member ran: the set is the requested language's.
-            assertTrue(harness.bridge.requestTypes.none { it.endsWith(".import") })
+            // The engine data leads, and every member is the requested language's own.
+            assertEquals(
+                listOf("resource.languagedata.install", "resource.dictionary.import", "resource.frequency.import"),
+                harness.bridge.requestTypes.filter { it.endsWith(".install") || it.endsWith(".import") },
+            )
+            for (type in listOf("resource.dictionary.import", "resource.frequency.import")) {
+                assertTrue(type, harness.bridge.requestsOfType(type).single().contains("\"language\":\"ar\""))
+            }
             assertEquals(setOf("ar-calima-msa"), harness.manager.state.value.installedLanguageData)
-            assertTrue(harness.manager.state.value.recommendedPlan("ar").isSatisfied)
+            assertEquals(
+                RecommendedResourceAction.SKIP,
+                harness.manager.state.value.recommendedPlan("ar").items.first().action,
+            )
             assertFalse(harness.manager.state.value.recommendedPlan.isSatisfied)
 
             harness.bridge.clearRequests()
@@ -2434,7 +2443,7 @@ class ResourceManagerTest {
     @Test
     fun aLanguageWithNoCatalogOffersNothingToDownload() =
         runTest {
-            val harness = Harness(activeLanguage = { "th" })
+            val harness = Harness(activeLanguage = { "ko" })
 
             assertNull(harness.manager.state.value.catalog)
             assertFalse(harness.manager.state.value.recommendedPlan.isActionable)
