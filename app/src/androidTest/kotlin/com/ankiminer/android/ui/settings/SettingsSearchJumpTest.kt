@@ -1,21 +1,24 @@
 package com.ankiminer.android.ui.settings
 
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -25,10 +28,13 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -71,6 +77,33 @@ class SettingsSearchJumpTest {
                     AnnotatedString(""),
                 ),
             )
+    }
+
+    @Test
+    fun queryHidesTabsAndHeaderAndAJumpLandsBelowTheStickyStrip() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val katakanaLabel = context.getString(R.string.settings_exclude_katakana)
+        val ankiTab = context.getString(SettingsCategory.ANKI.label)
+        composeRule.setContent {
+            AnkiMinerTheme {
+                SettingsSearchJumpFixture(fillerCards = 30, header = { Text("header-marker") })
+            }
+        }
+        val list = composeRule.onNodeWithTag(SettingsCategoryTestTags.LIST)
+        composeRule.onNodeWithText("header-marker").assertIsDisplayed()
+        composeRule.onNodeWithText(ankiTab).assertIsDisplayed()
+
+        composeRule.onNodeWithTag(SettingsCategoryTestTags.SEARCH).performTextInput("katakana")
+        composeRule.onNodeWithText("header-marker").assertDoesNotExist()
+        composeRule.onNodeWithText(ankiTab).assertDoesNotExist()
+
+        list.performScrollToNode(hasText(katakanaLabel))
+        composeRule.onNodeWithText(katakanaLabel).performClick()
+        composeRule.waitForIdle()
+
+        val strip = composeRule.onNodeWithTag(SettingsCategoryTestTags.STICKY_HEADER).getUnclippedBoundsInRoot()
+        val target = composeRule.onNodeWithText(katakanaLabel).assertIsDisplayed().getUnclippedBoundsInRoot()
+        assertTrue("target top ${target.top} sits under the strip ending at ${strip.bottom}", target.top >= strip.bottom)
     }
 
     @Test
@@ -199,7 +232,12 @@ class SettingsSearchJumpTest {
 }
 
 @Composable
-private fun SettingsSearchJumpFixture(onJumpIndexResolved: (Int?) -> Unit = {}) {
+private fun SettingsSearchJumpFixture(
+    onJumpIndexResolved: (Int?) -> Unit = {},
+    fillerCards: Int = 0,
+    header: @Composable () -> Unit = {},
+) {
+    var stickyPx by remember { mutableIntStateOf(0) }
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.DIAGNOSTICS) }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val listStates = rememberSettingsCategoryListStates()
@@ -231,6 +269,7 @@ private fun SettingsSearchJumpFixture(onJumpIndexResolved: (Int?) -> Unit = {}) 
         onSelectedCategory = { selectedCategory = it },
         onClearQuery = { searchQuery = "" },
         onJumpIndexResolved = onJumpIndexResolved,
+        stickyHeaderPx = { stickyPx },
     ) { onResultChosen ->
         SettingsCategoryLayout(
             selectedCategory = selectedCategory,
@@ -239,11 +278,17 @@ private fun SettingsSearchJumpFixture(onJumpIndexResolved: (Int?) -> Unit = {}) 
             onQueryChange = { searchQuery = it },
             results = searchSettings(entries, searchQuery),
             onResultChosen = onResultChosen,
+            onStickyHeaderHeightChange = { stickyPx = it },
             recorder = recorder,
             listStates = listStates,
-            header = {},
+            header = header,
         ) { category ->
             if (category == SettingsCategory.WORD_FILTERS) {
+                repeat(fillerCards) { index ->
+                    settingsCard(category, recorder, "filler-$index") {
+                        Text("Filler $index", Modifier.height(120.dp))
+                    }
+                }
                 settingsCard(category, recorder, "filtering-options") {
                     Text(title)
                 }

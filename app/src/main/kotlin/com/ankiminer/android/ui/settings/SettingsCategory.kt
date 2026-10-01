@@ -4,6 +4,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,6 +33,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -61,6 +63,7 @@ internal enum class SettingsCategory(
 internal object SettingsCategoryTestTags {
     const val LIST = "settings-category-list"
     const val SEARCH = "settings-search"
+    const val STICKY_HEADER = "settings-sticky-header"
     const val ANIMATED_SCREENSHOT_DURATION = "settings-animated-screenshot-duration"
     const val ANIMATED_SCREENSHOT_QUALITY = "settings-animated-screenshot-quality"
     const val MIN_FREQUENCY = "settings-min-frequency"
@@ -158,6 +161,7 @@ internal fun SettingsCategoryLayout(
     onQueryChange: (String) -> Unit = {},
     results: List<ResolvedSettingsEntry> = emptyList(),
     onResultChosen: (ResolvedSettingsEntry) -> Unit = {},
+    onStickyHeaderHeightChange: (Int) -> Unit = {},
     recorder: SettingsCardIndexRecorder,
     header: @Composable () -> Unit,
     modifier: Modifier = Modifier,
@@ -173,16 +177,20 @@ internal fun SettingsCategoryLayout(
                 .testTag(SettingsCategoryTestTags.LIST),
         contentPadding = PaddingValues(bottom = 16.dp),
     ) {
-        item(key = "settings-header", contentType = "header") {
-            Column(
-                Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related),
-                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
-            ) {
-                header()
-                // Last, so a setup failure or an active operation keeps the top of the page. This
-                // is the app's only always-reachable outbound surface: the four tabs carry no top
-                // bar and there is no overflow menu to hang the pair on.
-                CommunityLinks()
+        // Results span every category, so the header and the tabs step aside while a query is
+        // active.
+        if (query.isBlank()) {
+            item(key = "settings-header", contentType = "header") {
+                Column(
+                    Modifier.padding(horizontal = AnkiMinerTokens.Space.content, vertical = AnkiMinerTokens.Space.related),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group),
+                ) {
+                    header()
+                    // Last, so a setup failure or an active operation keeps the top of the page.
+                    // This is the app's only always-reachable outbound surface: the four tabs carry
+                    // no top bar and there is no overflow menu to hang the pair on.
+                    CommunityLinks()
+                }
             }
         }
         stickyHeader(key = "settings-category-tabs", contentType = "tabs") {
@@ -191,7 +199,11 @@ internal fun SettingsCategoryLayout(
             // under the edge rather than as a grey overlay.
             val edgeColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .testTag(SettingsCategoryTestTags.STICKY_HEADER)
+                        .onSizeChanged { onStickyHeaderHeightChange(it.height) },
                 color = MaterialTheme.colorScheme.surface,
                 tonalElevation = 2.dp,
             ) {
@@ -224,58 +236,60 @@ internal fun SettingsCategoryLayout(
                             }
                         },
                     )
-                    PrimaryScrollableTabRow(
-                        selectedTabIndex = selectedCategory.ordinal,
-                        // Eight labels overrun a 320dp screen, so the strip scrolls.
-                        // These fades are the affordance that the rest of it exists; shortening
-                        // the labels would buy ~40dp and cost clarity on the two least
-                        // self-evident tabs.
-                        modifier =
-                            Modifier.drawWithContent {
-                                drawContent()
-                                val fade = SettingsTabEdgeFade.toPx().coerceAtMost(size.width)
-                                if (tabScrollState.canScrollBackward) {
-                                    drawRect(
-                                        brush =
-                                            Brush.horizontalGradient(
-                                                colors = listOf(edgeColor, Color.Transparent),
-                                                startX = 0f,
-                                                endX = fade,
-                                            ),
-                                        size = Size(fade, size.height),
-                                    )
-                                }
-                                if (tabScrollState.canScrollForward) {
-                                    drawRect(
-                                        brush =
-                                            Brush.horizontalGradient(
-                                                colors = listOf(Color.Transparent, edgeColor),
-                                                startX = size.width - fade,
-                                                endX = size.width,
-                                            ),
-                                        topLeft = Offset(size.width - fade, 0f),
-                                        size = Size(fade, size.height),
-                                    )
-                                }
-                            },
-                        scrollState = tabScrollState,
-                        edgePadding = AnkiMinerTokens.Space.related,
-                        // Default is 90.dp, which wastes ~40dp on a label as short as "UI".
-                        minTabWidth = AnkiMinerTokens.Layout.minTouchTarget,
-                    ) {
-                        SettingsCategory.entries.forEach { category ->
-                            Tab(
-                                selected = selectedCategory == category,
-                                onClick = { onSelectedCategory(category) },
-                                selectedContentColor = accentTextColor(),
-                                unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                text = {
-                                    Text(
-                                        text = stringResource(category.label),
-                                        maxLines = 1,
-                                    )
+                    if (query.isBlank()) {
+                        PrimaryScrollableTabRow(
+                            selectedTabIndex = selectedCategory.ordinal,
+                            // Eight labels overrun a 320dp screen, so the strip scrolls.
+                            // These fades are the affordance that the rest of it exists;
+                            // shortening the labels would buy ~40dp and cost clarity on the two
+                            // least self-evident tabs.
+                            modifier =
+                                Modifier.drawWithContent {
+                                    drawContent()
+                                    val fade = SettingsTabEdgeFade.toPx().coerceAtMost(size.width)
+                                    if (tabScrollState.canScrollBackward) {
+                                        drawRect(
+                                            brush =
+                                                Brush.horizontalGradient(
+                                                    colors = listOf(edgeColor, Color.Transparent),
+                                                    startX = 0f,
+                                                    endX = fade,
+                                                ),
+                                            size = Size(fade, size.height),
+                                        )
+                                    }
+                                    if (tabScrollState.canScrollForward) {
+                                        drawRect(
+                                            brush =
+                                                Brush.horizontalGradient(
+                                                    colors = listOf(Color.Transparent, edgeColor),
+                                                    startX = size.width - fade,
+                                                    endX = size.width,
+                                                ),
+                                            topLeft = Offset(size.width - fade, 0f),
+                                            size = Size(fade, size.height),
+                                        )
+                                    }
                                 },
-                            )
+                            scrollState = tabScrollState,
+                            edgePadding = AnkiMinerTokens.Space.related,
+                            // Default is 90.dp, which wastes ~40dp on a label as short as "UI".
+                            minTabWidth = AnkiMinerTokens.Layout.minTouchTarget,
+                        ) {
+                            SettingsCategory.entries.forEach { category ->
+                                Tab(
+                                    selected = selectedCategory == category,
+                                    onClick = { onSelectedCategory(category) },
+                                    selectedContentColor = accentTextColor(),
+                                    unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    text = {
+                                        Text(
+                                            text = stringResource(category.label),
+                                            maxLines = 1,
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -338,4 +352,16 @@ internal fun LazyListScope.settingsCard(
             content()
         }
     }
+}
+
+/**
+ * Scrolls [index] to the top and then back by [stickyHeaderPx], so a jump lands below the pinned
+ * search and tab strip instead of under it.
+ */
+internal suspend fun LazyListState.scrollBelowStickyHeader(
+    index: Int,
+    stickyHeaderPx: Int,
+) {
+    scrollToItem(index)
+    if (stickyHeaderPx > 0) scrollBy(-stickyHeaderPx.toFloat())
 }
