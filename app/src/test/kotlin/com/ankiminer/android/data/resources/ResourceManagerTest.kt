@@ -2443,7 +2443,8 @@ class ResourceManagerTest {
     @Test
     fun aLanguageWithNoCatalogOffersNothingToDownload() =
         runTest {
-            val harness = Harness(activeLanguage = { "ko" })
+            // Every vendored language has a catalog; eo has neither (the bridge tests' unvendored probe).
+            val harness = Harness(activeLanguage = { "eo" })
 
             assertNull(harness.manager.state.value.catalog)
             assertFalse(harness.manager.state.value.recommendedPlan.isActionable)
