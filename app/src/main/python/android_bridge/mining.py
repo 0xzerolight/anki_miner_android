@@ -38,6 +38,7 @@ from .languages import (
     get_profile,
     known_words_db_path,
     language_kwarg,
+    release_other_taggers,
     requires_unidic,
     speech_language_for,
     unavailable_reason_code,
@@ -445,7 +446,8 @@ def _ensure_runtime_ready(settings: Mapping[str, object]) -> Path:
     Only Japanese tokenizes with UniDic through the S1a tagger; every other
     vendored language brings its own tokenizer. A language whose profile says it
     cannot mine here (its data pack is not installed) is refused with its Android
-    reason code, instead of failing deep inside parser construction.
+    reason code, instead of failing deep inside parser construction. An admitted
+    run releases every other language's cached tagger first (desktop S23).
     """
 
     from .bootstrap import require_initialized
@@ -456,6 +458,7 @@ def _ensure_runtime_ready(settings: Mapping[str, object]) -> Path:
         reason = unavailable_reason_code(get_profile(language))
         if reason is not None:
             raise BridgeProtocolError("language_unavailable", reason)
+        release_other_taggers(language)
         return home
 
     from .tokenizer_selection import selected_tokenizer_backend
@@ -467,6 +470,7 @@ def _ensure_runtime_ready(settings: Mapping[str, object]) -> Path:
             "tokenizer_configuration_required",
             "The selected Android S1a tokenizer must be configured before mining",
         )
+    release_other_taggers(language)
     return home
 
 

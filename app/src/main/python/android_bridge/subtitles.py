@@ -25,7 +25,14 @@ import re
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 
-from .languages import JAPANESE, base_config, config_language, payload_language, profile_parser
+from .languages import (
+    JAPANESE,
+    base_config,
+    config_language,
+    payload_language,
+    profile_parser,
+    release_other_taggers,
+)
 from .protocol import BridgeProtocolError, encode_message
 
 logger = logging.getLogger(__name__)
@@ -251,6 +258,7 @@ def get_cues(payload: Mapping[str, object]) -> str:
         logger.warning("Subtitle cue preflight failed: %s", error, exc_info=error)
         raise _fail("subtitle_cues_parse_failed", "The subtitle file could not be read") from error
 
+    release_other_taggers(config_language(config))
     # Construction isolated: only THIS RuntimeError means "tokenizer unconfigured".
     try:
         parser = _build_parser(config)

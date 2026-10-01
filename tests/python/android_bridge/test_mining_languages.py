@@ -100,6 +100,24 @@ def test_an_unvendored_language_is_refused_before_admission() -> None:
     assert error.value.code == "unsupported_language"
 
 
+def test_admitting_a_run_releases_every_other_languages_tagger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Desktop S23: a switch evicts the outgoing engine; Android's switch only saves settings.
+
+    So the run's admission is where the bridge lets the last language's engine go,
+    or every language mined in the process would stay resident.
+    """
+    _runtime_lane()
+    from anki_miner.languages import tagger_provider
+
+    monkeypatch.setattr(tagger_provider, "_TAGGERS", {})
+    tagger_provider.get_tagger("he")
+    tagger_provider.get_tagger("id")
+
+    mining._ensure_runtime_ready({"language": "id"})
+
+    assert set(tagger_provider._TAGGERS) == {"id"}
+
+
 # ---------------------------------------------------------------- composition
 
 
@@ -412,6 +430,22 @@ def test_hebrew_workbench_cues_need_no_japanese_tokenizer(tmp_path: Path) -> Non
     assert hebrew["type"] == "subtitle.cues.result", hebrew
     assert [cue["text"] for cue in hebrew["payload"]["cues"]] == ["הילד קרא ספר.", "שלום"]
     assert hebrew["payload"]["cues"][0]["start"] == 1.0
+
+
+def test_workbench_cues_release_every_other_languages_tagger(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cue view builds its language's tagger, so it lets the last language's go first."""
+    _runtime_lane()
+    from anki_miner.languages import tagger_provider
+
+    monkeypatch.setattr(tagger_provider, "_TAGGERS", {})
+    tagger_provider.get_tagger("id")
+    subtitle = tmp_path / "episode.srt"
+    subtitle.write_text(_HEBREW_SRT, encoding="utf-8")
+
+    hebrew = _cues({"runId": None, "subtitlePath": str(subtitle), "language": "he"})
+
+    assert hebrew["type"] == "subtitle.cues.result", hebrew
+    assert set(tagger_provider._TAGGERS) == {"he"}
 
 
 def test_workbench_cues_refuse_an_unavailable_language(tmp_path: Path) -> None:

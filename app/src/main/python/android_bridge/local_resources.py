@@ -34,6 +34,7 @@ from .languages import (
     known_words_db_path,
     language_kwarg,
     payload_language,
+    release_other_taggers,
     unavailable_reason_code,
     without_language,
 )
@@ -588,6 +589,7 @@ def _frequency_import_options(
         reason = unavailable_reason_code(get_profile(language))
         if reason is not None:
             raise _fail("language_unavailable", reason)
+        release_other_taggers(language)
     return {**declared, **lemmatize_kwarg(lemmatize)}
 
 

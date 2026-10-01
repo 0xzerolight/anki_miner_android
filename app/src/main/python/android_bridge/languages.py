@@ -190,6 +190,25 @@ def profile_parser(config: object) -> Any:
     return get_profile(language).create_parser(config)
 
 
+def release_other_taggers(language: str) -> None:
+    """Evict every cached tagger except *language*'s, before work in *language* builds its own.
+
+    Desktop releases the outgoing language's engine on every durable switch
+    (``language_switch.commit_language_change``, S23: Arabic's holds ~400 MB). An
+    Android switch only saves settings, so the bridge does it where a language's
+    tagger is about to be built: run, cue-view and lemmatisation admission. As on
+    desktop, a parser still holding a tagger keeps it alive until it lets go, ja's
+    shared tagger outlives its cache entry, and module-level engine state (jieba's
+    dictionary, underthesea's and pycantonese's models) is not freed.
+    """
+
+    from anki_miner.languages import tagger_provider
+
+    released = [code for code in tuple(tagger_provider._TAGGERS) if code != language and tagger_provider.evict(code)]
+    if released:
+        logger.info("Released the cached taggers of %s before %s work", ",".join(released), language)
+
+
 def config_language(config: object) -> str:
     """The mining language a mapped engine config carries (``"ja"`` for test doubles)."""
 
