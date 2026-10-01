@@ -133,16 +133,12 @@ class DesignSystemTest {
     }
 
     @Test
-    fun disabledActionContentAndBordersMeetReadableContrastTarget() {
+    fun disabledActionContentStaysReadableWhileItsOutlineGoesQuiet() {
         ThemePalettes.all.map { it.key to it.toColorScheme() }.forEach { (paletteKey, scheme) ->
             val colors = disabledActionColorsFor(scheme)
             assertTrue(
                 "$paletteKey disabled content/container was ${contrastRatio(colors.content, colors.container)}",
                 contrastRatio(colors.content, colors.container) >= ReadableContrast,
-            )
-            assertTrue(
-                "$paletteKey disabled border/container was ${contrastRatio(colors.border, colors.container)}",
-                contrastRatio(colors.border, colors.container) >= ReadableContrast,
             )
             assertTrue(
                 "$paletteKey disabled content/background was ${contrastRatio(colors.content, scheme.background)}",
@@ -152,9 +148,12 @@ class DesignSystemTest {
                 "$paletteKey disabled content/error container was ${contrastRatio(colors.content, scheme.errorContainer)}",
                 contrastRatio(colors.content, scheme.errorContainer) >= ReadableContrast,
             )
+            // A disabled outline drawn in the label colour was the brightest edge on the screen.
+            val disabledBorder = contrastRatio(colors.border, scheme.background)
+            val enabledBorder = contrastRatio(scheme.outline, scheme.background)
             assertTrue(
-                "$paletteKey disabled border/background was ${contrastRatio(colors.border, scheme.background)}",
-                contrastRatio(colors.border, scheme.background) >= SeparationContrast,
+                "$paletteKey disabled border $disabledBorder is not quieter than the enabled $enabledBorder",
+                disabledBorder < enabledBorder,
             )
             assertNotEquals(
                 "$paletteKey disabled and enabled action containers matched",

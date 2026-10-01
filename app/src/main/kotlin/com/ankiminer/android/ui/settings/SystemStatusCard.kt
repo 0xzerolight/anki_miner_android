@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -22,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.UtilityActionButton
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 
@@ -326,7 +326,8 @@ private fun StatusAction(
     label: Int,
     onClick: () -> Unit,
 ) {
-    OutlinedButton(onClick = onClick, shape = MaterialTheme.shapes.small) {
+    // Install, open, allow, choose: supporting work, so the tonal utility wrapper.
+    UtilityActionButton(onClick = onClick) {
         Text(stringResource(label))
     }
 }

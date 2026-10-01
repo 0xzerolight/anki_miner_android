@@ -22,10 +22,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -67,6 +65,7 @@ import com.ankiminer.android.ui.theme.AdaptiveActionGroup
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.UtilityActionButton
 import com.ankiminer.android.vm.AnkiDroidSetupAction
 import com.ankiminer.android.vm.SetupUiState
 import com.ankiminer.android.vm.SetupViewModel
@@ -617,18 +616,10 @@ private fun WizardCompletionCard(
                         stringResource(R.string.wizard_completion_failed),
                         color = MaterialTheme.colorScheme.error,
                     )
-                    Button(
-                        onClick = onRetry,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                    ) {
+                    PrimaryActionButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.wizard_completion_retry))
                     }
-                    OutlinedButton(
-                        onClick = onDismissForSession,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.small,
-                    ) {
+                    SecondaryActionButton(onClick = onDismissForSession, modifier = Modifier.fillMaxWidth()) {
                         Text(stringResource(R.string.wizard_completion_continue_session))
                     }
                     Text(
@@ -654,35 +645,25 @@ private fun AnkiDroidActionButtons(
 ) {
     when (state.ankiDroidAction) {
         AnkiDroidSetupAction.INSTALL ->
-            OutlinedButton(
-                onClick = onInstallAnkiDroid,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(stringResource(R.string.install_or_update_ankidroid)) }
+            UtilityActionButton(onClick = onInstallAnkiDroid, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.install_or_update_ankidroid))
+            }
         AnkiDroidSetupAction.OPEN ->
-            OutlinedButton(
-                onClick = onOpenAnkiDroid,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(stringResource(R.string.open_ankidroid)) }
+            UtilityActionButton(onClick = onOpenAnkiDroid, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.open_ankidroid))
+            }
         AnkiDroidSetupAction.OPEN_OR_INSTALL -> {
-            OutlinedButton(
-                onClick = onOpenAnkiDroid,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(stringResource(R.string.open_ankidroid)) }
-            OutlinedButton(
-                onClick = onInstallAnkiDroid,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(stringResource(R.string.install_or_update_ankidroid)) }
+            UtilityActionButton(onClick = onOpenAnkiDroid, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.open_ankidroid))
+            }
+            UtilityActionButton(onClick = onInstallAnkiDroid, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.install_or_update_ankidroid))
+            }
         }
         AnkiDroidSetupAction.REQUEST_PERMISSION ->
-            OutlinedButton(
-                onClick = onRequestPermissions,
-                modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
-            ) { Text(stringResource(R.string.allow_required_access)) }
+            UtilityActionButton(onClick = onRequestPermissions, modifier = Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.allow_required_access))
+            }
         null -> Text(stringResource(R.string.wizard_ankidroid_ready))
     }
 }

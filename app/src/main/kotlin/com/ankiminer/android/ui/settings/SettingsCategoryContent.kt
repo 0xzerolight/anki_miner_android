@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -1601,12 +1600,11 @@ private fun LazyListScope.diagnosticsSettings(
             )
             // diagnostics.txt already carries the bounded report, and the share sheet can save
             // this same ZIP, so separate text-share and SAF-save routes would duplicate delivery.
-            OutlinedButton(
+            SecondaryActionButton(
                 onClick = callbacks.onShareDiagnosticsBundle,
                 enabled = diagnosticsExport !is DiagnosticsExportState.Working &&
                     diagnosticsExport !is DiagnosticsExportState.Ready,
                 modifier = Modifier.fillMaxWidth(),
-                shape = MaterialTheme.shapes.small,
             ) {
                 Text(stringResource(R.string.settings_share_diagnostics_bundle))
             }

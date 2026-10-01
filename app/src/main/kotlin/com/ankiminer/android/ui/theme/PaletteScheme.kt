@@ -247,7 +247,13 @@ internal fun ThemePalette.toColorScheme(): ColorScheme {
     )
 }
 
-/** Derives disabled action colors from a complete scheme, including runtime dynamic schemes. */
+/**
+ * Derives disabled action colours from a complete scheme, including runtime dynamic schemes.
+ *
+ * The label stays readable so a disabled control can still be read, but its outline is the quiet
+ * [ColorScheme.outlineVariant]: drawn in the label colour, disabled Test timing, Audio tracks and the
+ * Resources arrows were the brightest controls on their screens.
+ */
 internal fun disabledActionColorsFor(scheme: ColorScheme): DisabledActionColors {
     val background = scheme.background
     val container =
@@ -263,7 +269,7 @@ internal fun disabledActionColorsFor(scheme: ColorScheme): DisabledActionColors 
         )
     return DisabledActionColors(
         content = content,
-        border = content,
+        border = scheme.outlineVariant,
         container = container,
         enabledContainer = scheme.primary,
     )

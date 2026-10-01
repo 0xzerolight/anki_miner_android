@@ -100,7 +100,7 @@ internal object AnkiMinerTokens {
 internal fun ColorScheme.selectedRowContainer(): Color =
     lerp(surfaceContainerLow, primaryContainer, 0.45f)
 
-/** Readable disabled colors. Fill remains distinct from every enabled action fill. */
+/** Disabled colours: a readable label over a quiet outline, on a fill distinct from every enabled one. */
 internal data class DisabledActionColors(
     val content: Color,
     val border: Color,
