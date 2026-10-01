@@ -1511,7 +1511,7 @@ object ResourceBridgeCodec {
  */
 object FrozenResourceCatalog {
     /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
-    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew) }
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, chinese) }
 
     fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
 
@@ -1718,6 +1718,61 @@ object FrozenResourceCatalog {
                     ),
                 ),
             recommended = listOf("wty-he-en-2026.09.20", "opensubtitles-he-2018"),
+        )
+
+    val chinese =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "zh",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "cc-cedict-2026-09-30",
+                        displayName = "CC-CEDICT 2026-09-30",
+                        slotId = "cc-cedict",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/MarvNC/cc-cedict-yomitan/releases/download/2026-10-01/CC-CEDICT.zip",
+                                sha256 = "74a5b5ef1e925610b7687a261347a065b52754baf8ebacabb89df9b5b68eac72",
+                                sizeBytes = 6_625_186,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "CC-CEDICT [2026-09-30]",
+                                revision = "2026-09-30",
+                                format = 3,
+                                memberCount = 22,
+                                uncompressedBytes = 101_656_679,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 16_777_216,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("CC-CEDICT", "MDBG and the CC-CEDICT editors and contributors", "CC-BY-SA-3.0", "https://cc-cedict.org/wiki/"),
+                                ResourceAttribution("cc-cedict-yomitan", "Marv (MarvNC), Yomitan conversion", "CC-BY-SA-3.0", "https://github.com/MarvNC/cc-cedict-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-zh-word-2026.09.20",
+                        displayName = "OpenSubtitles 2024 word frequency (Chinese)",
+                        sourceId = "opensubtitles-zh-word",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-21/opensubtitles-zh-word-2026.09.20.zip",
+                                sha256 = "991da78003cf1b2c9da4022ed694b9394d6496e171f76b5c79abebd71c46ccbb",
+                                sizeBytes = 400_970,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("OPUS OpenSubtitles v2024", "P. Lison and J. Tiedemann (2016); subtitles from opensubtitles.org", "ODC-BY-1.0", "https://opus.nlpl.eu/OpenSubtitles/corpus/version/OpenSubtitles"),
+                                ResourceAttribution("opensubtitles-zh-word 2026.09.20", "Anki Miner (zh_CN and zh_TW segmented with jieba)", "ODC-BY-1.0", "https://github.com/0xzerolight/anki_miner/releases/tag/resources-2026-09-21"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("cc-cedict-2026-09-30", "opensubtitles-zh-word-2026.09.20"),
         )
 
     val arabic =

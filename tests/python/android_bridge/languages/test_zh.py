@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from catalog_completeness import PENDING_PIN, assert_catalog_complete
+from catalog_completeness import assert_catalog_complete
 
 pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
 pytest.importorskip("jieba", reason="runtime dependency lane: zh engine packages")
@@ -140,8 +140,15 @@ def test_known_words_use_their_own_database_from_the_start(tmp_path: Path) -> No
 
 
 def test_every_desktop_catalog_row_is_pinned_or_excluded() -> None:
+    from android_bridge.resource_catalog import load_resource_catalog
+
     assert_catalog_complete(
         "zh",
-        pinned={},
-        excluded={"cc-cedict": PENDING_PIN, "opensubtitles-zh-word": PENDING_PIN},
+        pinned={
+            "cc-cedict": "cc-cedict-2026-09-30",
+            "opensubtitles-zh-word": "opensubtitles-zh-word-2026.09.20",
+        },
+        excluded={},
     )
+    # The engine ships in the APK: zh has nothing for the language-data installer.
+    assert not [resource for resource in load_resource_catalog("zh").resources if resource.kind == "language-data"]
