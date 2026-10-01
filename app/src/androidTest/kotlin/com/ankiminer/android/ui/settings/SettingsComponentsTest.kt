@@ -10,8 +10,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -438,6 +440,33 @@ class SettingsComponentsTest {
 
         composeRule.onNodeWithText("Finishing…").assertIsDisplayed()
         composeRule.onNodeWithText("0 of 0").assertDoesNotExist()
+    }
+
+    @Test
+    fun settingFieldLabelStaysOnOneLineAtDoubleFontScale() {
+        composeRule.setContent {
+            val baseDensity = LocalDensity.current.density
+            CompositionLocalProvider(LocalDensity provides Density(baseDensity, 2f)) {
+                AnkiMinerTheme {
+                    Box(Modifier.requiredWidth(320.dp)) {
+                        SettingTextField(
+                            value = "0.3",
+                            onChange = {},
+                            label = "Screenshot offset in seconds",
+                        )
+                    }
+                }
+            }
+        }
+
+        val layouts = mutableListOf<TextLayoutResult>()
+        composeRule
+            .onNodeWithText("Screenshot offset in seconds", useUnmergedTree = true)
+            .fetchSemanticsNode()
+            .config[SemanticsActions.GetTextLayoutResult]
+            .action
+            ?.invoke(layouts)
+        assertEquals(1, layouts.single().lineCount)
     }
 
     private fun setBusyAnkiTarget(

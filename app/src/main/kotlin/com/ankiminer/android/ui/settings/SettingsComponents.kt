@@ -192,7 +192,9 @@ internal fun SettingTextField(
     CompactOutlinedTextField(
         value = value,
         onValueChange = onChange,
-        label = { Text(label) },
+        // One line: at 2x text a wrapped floating label was printed over the field above it. The
+        // full text stays in semantics.
+        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         // Fields that inherit an engine default now arrive prefilled with it, so this line is the
         // fallback for the one case that still shows a blank: the user cleared the field. Material 3
         // draws the placeholder slot only while the field has focus, which is invisible on the
@@ -601,7 +603,7 @@ internal fun ResourceCard(
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
             Text(
                 text = title,
-                maxLines = 1,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.titleMedium,
             )

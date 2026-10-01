@@ -72,11 +72,11 @@ class AnkiMinerNavigationTest {
     }
 
     @Test
-    fun compactNavigationRequiresBothNarrowWidthAndLargeText() {
-        assertFalse(compactNavigation(widthDp = 320, fontScale = 1.0f))
-        assertFalse(compactNavigation(widthDp = 400, fontScale = 2.0f))
-        assertTrue(compactNavigation(widthDp = 320, fontScale = 1.3f))
-        assertTrue(compactNavigation(widthDp = 320, fontScale = 2.0f))
+    fun compactNavigationFollowsLargeTextAtAnyWidth() {
+        assertFalse(compactNavigation(fontScale = 1.0f))
+        assertFalse(compactNavigation(fontScale = 1.29f))
+        assertTrue(compactNavigation(fontScale = 1.3f))
+        assertTrue(compactNavigation(fontScale = 2.0f))
     }
 
     @Test

@@ -8,7 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
@@ -80,6 +80,7 @@ import com.ankiminer.android.ui.settings.SettingsRoute
 import com.ankiminer.android.ui.settings.settingsCardIndexFor
 import com.ankiminer.android.ui.settings.settingsCategoryFor
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
+import com.ankiminer.android.ui.theme.LargeFontScale
 import com.ankiminer.android.ui.theme.ScreenTitle
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -173,10 +174,8 @@ internal fun miningWorkflowVisible(
     hasRetainedRun: Boolean = false,
 ): Boolean = setupReady || workflow != NavigationWorkflowState.IDLE || hasRetainedRun
 
-internal fun compactNavigation(
-    widthDp: Int,
-    fontScale: Float,
-): Boolean = widthDp < 360 && fontScale >= 1.3f
+/** Labels drop at large text on every width: at 2x "Reading" and "Settings" touched. */
+internal fun compactNavigation(fontScale: Float): Boolean = fontScale >= LargeFontScale
 
 /**
  * Compact bar height for ordinary font scales; null keeps the stock M3 80dp bar so large
@@ -297,12 +296,8 @@ internal fun AnkiMinerAppShell(
     overlay: (@Composable () -> Unit)? = null,
     content: @Composable (Modifier) -> Unit,
 ) {
-    BoxWithConstraints(modifier) {
-        val compact =
-            compactNavigation(
-                widthDp = maxWidth.value.toInt(),
-                fontScale = LocalDensity.current.fontScale,
-            )
+    Box(modifier) {
+        val compact = compactNavigation(LocalDensity.current.fontScale)
         Scaffold(
             modifier = if (overlay == null) Modifier else Modifier.inertBehindOverlay(),
             topBar = {
