@@ -37,6 +37,7 @@ import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.engine.LanguageExtraCardField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -185,9 +186,7 @@ internal fun AnkiTargetCard(
                     fieldKeys.forEach { key ->
                         // A language field is named by its profile's suggestion, which is the Anki
                         // field name it auto-maps to.
-                        val base =
-                            state.extraCardFields.firstOrNull { it.key == key }?.placeholder
-                                ?: key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+                        val base = fieldKeyLabel(key, state.extraCardFields)
                         val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
                         NoteTypeDropdown(
                             label = label,
@@ -328,10 +327,6 @@ internal fun WizardAnkiTargetCard(
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
-            Text(
-                stringResource(R.string.anki_note_type_title),
-                style = MaterialTheme.typography.titleMedium,
-            )
             inlineFailure?.invoke()
             if (!state.ankiReady) {
                 Text(stringResource(R.string.anki_note_type_connect_first))
@@ -343,19 +338,23 @@ internal fun WizardAnkiTargetCard(
                     onSelect = onSelectNoteType,
                     isOptionEnabled = { !state.busy && it != state.noteType },
                 )
-                if (state.noteType != null) {
+                if (state.noteType == null) {
+                    SupportingText(stringResource(R.string.wizard_note_type_help))
+                } else {
                     Text(
-                        stringResource(
-                            R.string.b3_wizard_mapping_summary,
-                            state.fieldMap.values.count(String::isNotEmpty),
-                        ),
+                        fieldMappingLine(state.fieldKeys, state.fieldMap, state.extraCardFields),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                    NoteTypeQualitySummary(state)
                 }
-                Text(
-                    noteTypeStatusText(state.noteTypeStatus),
-                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-                )
+                // "Verified writable and dedup-safe" said nothing a user can act on; only a
+                // problem earns the line.
+                if (state.noteTypeStatus !is NoteTypeSetupStatus.Verified) {
+                    Text(
+                        noteTypeStatusText(state.noteTypeStatus),
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
                 TextButton(onClick = onCustomizeFields, colors = accentTextButtonColors()) {
                     Text(stringResource(R.string.b3_wizard_customize_fields))
                 }
@@ -453,3 +452,21 @@ internal fun AnkiOperationCard() {
     }
 }
 
+/** A field-map row's name: the language field's own placeholder, else the key in words. */
+internal fun fieldKeyLabel(
+    key: String,
+    extraCardFields: List<LanguageExtraCardField>,
+): String =
+    extraCardFields.firstOrNull { it.key == key }?.placeholder
+        ?: key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+
+/** "Word → Front · Definition → Back": what each card will get, in one plain line. */
+internal fun fieldMappingLine(
+    fieldKeys: List<String>,
+    fieldMap: Map<String, String>,
+    extraCardFields: List<LanguageExtraCardField> = emptyList(),
+): String =
+    fieldKeys
+        .mapNotNull { key ->
+            fieldMap[key]?.takeIf(String::isNotEmpty)?.let { field -> "${fieldKeyLabel(key, extraCardFields)} → $field" }
+        }.joinToString(" · ")

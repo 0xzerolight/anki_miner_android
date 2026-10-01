@@ -869,8 +869,8 @@
     <string name="b3_wizard_skip_title">Saltare la configurazione?</string>
     <string name="b3_wizard_skip_body">Completa più tardi in Impostazioni. Il mining resta indisponibile finché la configurazione non è completa.</string>
     <string name="b3_wizard_confirm_skip">Salta configurazione</string>
-    <string name="b3_wizard_mapping_summary">%1$d campi mappati</string>
     <string name="b3_wizard_customize_fields">Personalizza i campi nelle Impostazioni</string>
+    <string name="wizard_note_type_help">Qualsiasi tipo di nota funziona una volta associati i suoi campi. Anki Miner mette la parola nel primo campo e compila i campi che riconosce dal nome, come Word, Sentence, Reading, Definition, Picture e Audio. Puoi cambiare cosa riceve ogni campo in Impostazioni › Carte e Anki.</string>
     <string name="b3_wizard_ready_title">Pronto per il mining</string>
     <string name="b3_wizard_incomplete_title">Configurazione incompleta</string>
     <string name="b3_settings_category_language">Lingua</string>

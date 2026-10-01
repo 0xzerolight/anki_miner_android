@@ -22,4 +22,15 @@ class AnkiDroidConnectTest {
         assertEquals(R.string.ankidroid_permission_prompt, ankiDroidActionPrompt(SetupUiState(anki = AnkiProviderReadiness.PermissionDenied)))
         assertNull(ankiDroidActionPrompt(SetupUiState(anki = AnkiProviderReadiness.Ready(apiSpecVersion = 7, versionCode = 1L))))
     }
+
+    @Test
+    fun `the mapping line names each filled key and its field`() {
+        assertEquals(
+            "Word → Front · Definition → Back",
+            fieldMappingLine(
+                fieldKeys = listOf("word", "sentence", "definition"),
+                fieldMap = mapOf("word" to "Front", "sentence" to "", "definition" to "Back"),
+            ),
+        )
+    }
 }

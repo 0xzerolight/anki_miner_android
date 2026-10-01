@@ -865,8 +865,8 @@
     <string name="b3_wizard_skip_title">跳过设置？</string>
     <string name="b3_wizard_skip_body">可稍后在设置中完成。设置完成前挖词不可用。</string>
     <string name="b3_wizard_confirm_skip">跳过设置</string>
-    <string name="b3_wizard_mapping_summary">已映射 %1$d 个字段</string>
     <string name="b3_wizard_customize_fields">在设置中自定义字段</string>
+    <string name="wizard_note_type_help">任何笔记类型在映射字段后都能使用。Anki Miner 会把单词放进第一个字段，并按名称填写它能识别的字段，例如 Word、Sentence、Reading、Definition、Picture 和 Audio。可在 设置 › 卡片和 Anki 中更改各字段的内容。</string>
     <string name="b3_wizard_ready_title">准备挖词</string>
     <string name="b3_wizard_incomplete_title">设置未完成</string>
     <string name="b3_settings_category_language">语言</string>

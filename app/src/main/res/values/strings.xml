@@ -879,8 +879,8 @@
     <string name="b3_wizard_skip_title">Skip setup?</string>
     <string name="b3_wizard_skip_body">Finish later in Settings. Mining stays unavailable until setup is complete.</string>
     <string name="b3_wizard_confirm_skip">Skip setup</string>
-    <string name="b3_wizard_mapping_summary">%1$d fields mapped</string>
     <string name="b3_wizard_customize_fields">Customize fields in Settings</string>
+    <string name="wizard_note_type_help">Any note type works once its fields are mapped. Anki Miner puts the word in the first field and fills the fields it recognises by name, such as Word, Sentence, Reading, Definition, Picture and Audio. You can change which field gets what in Settings › Cards &amp; Anki.</string>
     <string name="b3_wizard_ready_title">Ready to mine</string>
     <string name="b3_wizard_incomplete_title">Setup incomplete</string>
     <string name="b3_settings_category_language">Language</string>

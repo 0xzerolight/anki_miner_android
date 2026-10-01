@@ -871,8 +871,8 @@
     <string name="b3_wizard_skip_title">Пропустить настройку?</string>
     <string name="b3_wizard_skip_body">Завершите позже в настройках. Майнинг недоступен, пока настройка не завершена.</string>
     <string name="b3_wizard_confirm_skip">Пропустить настройку</string>
-    <string name="b3_wizard_mapping_summary">Сопоставлено полей: %1$d</string>
     <string name="b3_wizard_customize_fields">Настроить поля в настройках</string>
+    <string name="wizard_note_type_help">Подойдёт любой тип записей, если сопоставить его поля. Anki Miner помещает слово в первое поле и заполняет поля, которые узнаёт по названию: Word, Sentence, Reading, Definition, Picture и Audio. Что получает каждое поле, можно изменить в разделе Настройки › Карточки и Anki.</string>
     <string name="b3_wizard_ready_title">Готово к майнингу</string>
     <string name="b3_wizard_incomplete_title">Настройка не завершена</string>
     <string name="b3_settings_category_language">Язык</string>

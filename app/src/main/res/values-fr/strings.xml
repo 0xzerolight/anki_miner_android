@@ -869,8 +869,8 @@
     <string name="b3_wizard_skip_title">Ignorer la configuration ?</string>
     <string name="b3_wizard_skip_body">Terminez plus tard dans Paramètres. L\'extraction reste indisponible tant que la configuration n\'est pas terminée.</string>
     <string name="b3_wizard_confirm_skip">Ignorer la configuration</string>
-    <string name="b3_wizard_mapping_summary">%1$d champs mappés</string>
     <string name="b3_wizard_customize_fields">Personnaliser les champs dans Paramètres</string>
+    <string name="wizard_note_type_help">Tout type de note convient une fois ses champs associés. Anki Miner met le mot dans le premier champ et remplit les champs qu\'il reconnaît par leur nom, comme Word, Sentence, Reading, Definition, Picture et Audio. Vous pouvez changer ce que reçoit chaque champ dans Paramètres › Cartes et Anki.</string>
     <string name="b3_wizard_ready_title">Prêt à extraire</string>
     <string name="b3_wizard_incomplete_title">Configuration incomplète</string>
     <string name="b3_settings_category_language">Langue</string>

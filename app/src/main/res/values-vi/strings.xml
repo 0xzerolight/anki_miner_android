@@ -865,8 +865,8 @@
     <string name="b3_wizard_skip_title">Bỏ qua thiết lập?</string>
     <string name="b3_wizard_skip_body">Hoàn tất sau trong Cài đặt. Không thể khai thác cho đến khi thiết lập xong.</string>
     <string name="b3_wizard_confirm_skip">Bỏ qua thiết lập</string>
-    <string name="b3_wizard_mapping_summary">Đã ánh xạ %1$d trường</string>
     <string name="b3_wizard_customize_fields">Tùy chỉnh trường trong Cài đặt</string>
+    <string name="wizard_note_type_help">Loại ghi chú nào cũng dùng được khi các trường đã được ánh xạ. Anki Miner đặt từ vào trường đầu tiên và điền các trường nhận ra theo tên, như Word, Sentence, Reading, Definition, Picture và Audio. Bạn có thể đổi trường nào nhận gì trong Cài đặt › Thẻ &amp; Anki.</string>
     <string name="b3_wizard_ready_title">Sẵn sàng khai thác</string>
     <string name="b3_wizard_incomplete_title">Thiết lập chưa hoàn tất</string>
     <string name="b3_settings_category_language">Ngôn ngữ</string>

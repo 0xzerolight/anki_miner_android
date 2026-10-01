@@ -865,8 +865,8 @@
     <string name="b3_wizard_skip_title">Lewati penyiapan?</string>
     <string name="b3_wizard_skip_body">Selesaikan nanti di Pengaturan. Mining tetap tidak tersedia hingga penyiapan selesai.</string>
     <string name="b3_wizard_confirm_skip">Lewati penyiapan</string>
-    <string name="b3_wizard_mapping_summary">%1$d bidang dipetakan</string>
     <string name="b3_wizard_customize_fields">Sesuaikan bidang di Pengaturan</string>
+    <string name="wizard_note_type_help">Tipe catatan apa pun bisa dipakai setelah kolomnya dipetakan. Anki Miner menaruh kata di kolom pertama dan mengisi kolom yang dikenalinya dari nama, seperti Word, Sentence, Reading, Definition, Picture, dan Audio. Anda bisa mengubah isi tiap kolom di Pengaturan › Kartu &amp; Anki.</string>
     <string name="b3_wizard_ready_title">Siap untuk mining</string>
     <string name="b3_wizard_incomplete_title">Penyiapan belum lengkap</string>
     <string name="b3_settings_category_language">Bahasa</string>
