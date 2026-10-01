@@ -256,7 +256,9 @@ class UiAuditJankFlowTest {
         onComplete: (Throwable?) -> Unit,
     ) {
         LaunchedEffect(Unit) {
-            withFrameNanos { }
+            // The mining screens compose inside the shell's scaffold one frame later, and their
+            // first-entry requestScrollToItem(0) would interrupt a scroll started before it runs.
+            repeat(SETTLE_FRAMES) { withFrameNanos { } }
             Log.i(LOG_TAG, "START $name")
             var failure: Throwable? = null
             try {
@@ -352,6 +354,7 @@ class UiAuditJankFlowTest {
         const val SETTINGS_CATEGORY_COMPOSITION_TIMEOUT_MILLIS = 2_000L
         const val WIZARD_HALF_STEP_MILLIS = 450
         const val FLOW_TIMEOUT_SECONDS = 15L
+        const val SETTLE_FRAMES = 3
 
         val FULL_SETTINGS_CARD_KEYS =
             mapOf(
@@ -367,6 +370,7 @@ class UiAuditJankFlowTest {
                     ),
                 SettingsCategory.WORD_FILTERS to listOf("filtering-options", "word-lists"),
                 SettingsCategory.SENTENCES to listOf("subtitle-text", "sentence-options"),
+                SettingsCategory.LANGUAGE to listOf("mining-language"),
                 SettingsCategory.UI to listOf("ui-options"),
                 SettingsCategory.DIAGNOSTICS to
                     listOf("diagnostic-runtime", "attributions"),
