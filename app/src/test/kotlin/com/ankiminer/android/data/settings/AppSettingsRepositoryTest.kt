@@ -671,6 +671,9 @@ class AppSettingsRepositoryTest {
             enabledWordsets = listOf("place-names"),
             readingTtsEnabled = true,
             jishoEnabled = true,
+            // Non-default, or corrupting the key would quarantine to the value already stored.
+            language = "he",
+            languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "jisho_enabled" to true)),
         )
 
     private fun unreadableDataStore(): DataStore<Preferences> =
@@ -871,6 +874,8 @@ class AppSettingsRepositoryTest {
                 original.copy(readingTtsEnabled = defaults.readingTtsEnabled),
             ),
             corruptBoolean("jisho_enabled", original.copy(jishoEnabled = defaults.jishoEnabled)),
+            corruptString("mining_language", original.copy(language = defaults.language)),
+            corruptString("language_stash_v1", original.copy(languageStash = defaults.languageStash)),
         )
     }
 

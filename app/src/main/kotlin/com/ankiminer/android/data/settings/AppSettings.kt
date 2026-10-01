@@ -169,6 +169,14 @@ data class AppSettings(
     val enabledWordsets: List<String> = DEFAULT_ENABLED_WORDSETS,
     val readingTtsEnabled: Boolean = false,
     val jishoEnabled: Boolean = false,
+    /** The mining language's registry code; the settings in [LanguageScope.SETTINGS] are its own. */
+    val language: String = LanguageScope.JAPANESE,
+    /**
+     * The scoped settings of every language that is not active, keyed by code, each held as its
+     * stored preference values (`null` = unset). Machine-local: kept out of backups and never sent
+     * to the engine. See [switchLanguage].
+     */
+    val languageStash: Map<String, Map<String, Any?>> = emptyMap(),
 ) {
     /** Restore processing behavior without changing onboarding, appearance, target, or resources. */
     fun restoreMiningDefaults(): AppSettings =
@@ -321,6 +329,12 @@ internal object AppSettingsDraftParser {
 object AppSettingsValidator {
     fun validate(settings: AppSettings): AppSettings =
         settings.also {
+            if (
+                !LanguageScope.LANGUAGE_CODE.matches(it.language) ||
+                    it.languageStash.keys.any { code -> !LanguageScope.LANGUAGE_CODE.matches(code) }
+            ) {
+                invalid(InvalidAppSettingCode.UNKNOWN, "Saved setting is invalid")
+            }
             it.deckName?.let { value ->
                 canonicalName(
                     "Deck name",
@@ -361,7 +375,7 @@ object AppSettingsValidator {
                     AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES,
                 )
             }
-            fieldMap(it.fieldMap)
+            fieldMap(it.fieldMap, it.language)
             cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
             tags(it.tags)
             it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
@@ -554,9 +568,20 @@ object AppSettingsValidator {
         }
     }
 
-    private fun fieldMap(values: Map<String, String>) {
+    /**
+     * Japanese maps exactly [AnkiFieldKeys.ALL]. Another language adds its profile's own card fields
+     * (he `transliteration`); the bridge holds that exact set, so only their shape is checked here,
+     * the same rule the snapshot codec applies.
+     */
+    private fun fieldMap(
+        values: Map<String, String>,
+        language: String,
+    ) {
         values.forEach { (key, value) ->
-            if (key !in AnkiFieldKeys.ALL) {
+            if (
+                key !in AnkiFieldKeys.ALL &&
+                (language == LanguageScope.JAPANESE || !PROFILE_FIELD_KEY.matches(key))
+            ) {
                 invalid(
                     InvalidAppSettingCode.FIELD_MAP_UNKNOWN_KEY,
                     "Field map contains an unknown key",
@@ -665,6 +690,7 @@ object AppSettingsValidator {
     ): Nothing = throw InvalidAppSettingException(code, arguments.toList(), message)
 
     private val RESOURCE_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+    private val PROFILE_FIELD_KEY = Regex("[a-z][a-z0-9_]*")
     private const val MAX_CHAIN_ENTRIES = 128
     private const val MAX_WORDSET_SELECTIONS = 32
 }
@@ -706,6 +732,11 @@ internal object EngineSettingsSnapshotMapper {
         require(availableWordsetIds.distinct() == availableWordsetIds)
         require(availableWordsetIds.all(dictionaryId::matches))
         val values = linkedMapOf<String, BridgeJsonValue>()
+        // The bridge overlays the snapshot on this language's first-visit config, so every key the
+        // snapshot leaves out resolves to the active profile's value. Japanese is the bridge's
+        // default, so a Japanese snapshot stays byte-for-byte what it was before languages
+        // existed. The stash never crosses.
+        if (settings.language != LanguageScope.JAPANESE) values["language"] = text(settings.language)
         // The deck keeps an Android-owned default, but the note type and field map are the user's.
         // Emit them fail-closed rather than inheriting the desktop Lapis default or the first-party
         // model, so an unconfigured target can never silently mine into "Anki Miner".
@@ -716,9 +747,14 @@ internal object EngineSettingsSnapshotMapper {
         // mining admission blocks upstream, so a blank here never injects "Anki Miner".
         values["anki_note_type"] = text(settings.noteType ?: "")
         // Emit a complete map over every logical key so config_map's {**defaults, **value} overlay
-        // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "".
+        // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "". A
+        // language's own extra card fields default to "" in every profile, so only the mapped
+        // ones need to cross.
         values["anki_fields"] =
-            stringMap(AnkiFieldKeys.ALL.associateWith { settings.fieldMap[it] ?: "" })
+            stringMap(
+                (AnkiFieldKeys.ALL + settings.fieldMap.keys.filterNot(AnkiFieldKeys.ALL::contains))
+                    .associateWith { settings.fieldMap[it] ?: "" },
+            )
         // Emit all four modes explicitly, blank unless the user picked one. An absent key would let
         // config_map's overlay reinstate the engine's JP Mining Note field names on a note type that
         // may not have them.
