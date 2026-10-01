@@ -502,3 +502,168 @@ def test_the_curation_pane_uses_the_run_languages_lookup_ladder(tmp_path: Path) 
         assert service._lookup is get_profile("he").lookup
     finally:
         service.close()
+
+
+# ---------------------------------------------------------------- Jisho guard
+
+
+def test_a_jisho_entry_under_another_language_is_refused(tmp_path: Path) -> None:
+    """Jisho is Japanese; a Hebrew chain naming it would send Hebrew terms to jisho.org."""
+    _runtime_lane()
+    with pytest.raises(BridgeProtocolError) as refused:
+        _hebrew_config(
+            tmp_path,
+            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": True}],
+        )
+    assert refused.value.code == "invalid_config_field"
+    assert "dictionary_chain.kind" in str(refused.value)
+
+
+def test_a_disabled_jisho_entry_under_another_language_is_refused_too(tmp_path: Path) -> None:
+    _runtime_lane()
+    with pytest.raises(BridgeProtocolError):
+        _hebrew_config(
+            tmp_path,
+            dictionary_chain=[{"kind": "jisho", "dict_id": None, "enabled": False}],
+        )
+
+
+def test_a_hebrew_chain_without_jisho_still_maps(tmp_path: Path) -> None:
+    _runtime_lane()
+    config = _hebrew_config(
+        tmp_path,
+        dictionary_chain=[{"kind": "indexed", "dict_id": "wty-he-en", "enabled": True}],
+    )
+    assert [entry.kind for entry in config.dictionary_chain] == ["indexed"]
+
+
+# ---------------------------------------------------------------- device-voice word audio
+
+
+def test_a_hebrew_chain_keeps_the_device_voice_in_its_place(tmp_path: Path) -> None:
+    _runtime_lane()
+    from anki_miner.config import AudioSourceEntry
+
+    config = _hebrew_config(
+        tmp_path,
+        expression_audio_chain=[
+            {"kind": "pack", "pack_id": "forvo-he"},
+            {"kind": "android_tts", "enabled": False},
+        ],
+    )
+    assert config.expression_audio_chain == (
+        AudioSourceEntry(kind="pack", pack_id="forvo-he"),
+        AudioSourceEntry(kind="android_tts", enabled=False),
+    )
+
+
+@pytest.mark.parametrize("language", ["he", "ar", "id", "th", "fa"])
+def test_the_profiles_synthetic_default_becomes_the_device_voice(tmp_path: Path, language: str) -> None:
+    _runtime_lane()
+    from anki_miner.config import AudioSourceEntry
+
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    config = map_config_settings({"language": language, "anki_note_type": "Basic"}, paths).engine_config
+    assert config.expression_audio_chain == (AudioSourceEntry(kind="android_tts"),)
+
+
+@pytest.mark.parametrize(
+    "chain",
+    [
+        [{"kind": "android_tts"}, {"kind": "android_tts", "enabled": False}],
+        [{"kind": "android_tts", "pack_id": "x"}],
+    ],
+    ids=["duplicate", "pack-id"],
+)
+def test_a_malformed_device_voice_entry_is_refused(tmp_path: Path, chain: list[object]) -> None:
+    _runtime_lane()
+    with pytest.raises(BridgeProtocolError) as error:
+        _hebrew_config(tmp_path, expression_audio_chain=chain)
+    assert error.value.code == "invalid_config_field"
+
+
+def test_a_pack_named_like_the_device_voice_is_not_a_duplicate_of_it(tmp_path: Path) -> None:
+    _runtime_lane()
+    from anki_miner.config import AudioSourceEntry
+
+    config = _hebrew_config(
+        tmp_path,
+        expression_audio_chain=[{"kind": "pack", "pack_id": "android_tts"}, {"kind": "android_tts"}],
+    )
+    assert config.expression_audio_chain == (
+        AudioSourceEntry(kind="pack", pack_id="android_tts"),
+        AudioSourceEntry(kind="android_tts"),
+    )
+
+
+def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _runtime_lane()
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    pack = SimpleNamespace(pack_id="forvo-he")
+
+    class InstalledPack:
+        packs: dict[str, object] = {}
+
+        def __init__(self, root: object) -> None:
+            pass
+
+        def load(self) -> None:
+            pass
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            return [pack]
+
+    monkeypatch.setattr("anki_miner.services.audio_packs.registry.AudioPackRegistry", InstalledPack)
+    config = _hebrew_config(
+        tmp_path,
+        anki_fields={"expression_audio": "WordAudio"},
+        expression_audio_chain=[{"kind": "pack", "pack_id": "forvo-he"}, {"kind": "android_tts"}],
+    )
+    chain = mining._build_expression_audio_source_chain(
+        config,
+        tts_callbacks=object(),
+        run_id="run_00000000000000000000000000000000",
+    )
+    assert chain is not None
+    first, second = chain._fetchers
+    assert first._fetcher is pack
+    assert isinstance(second, AndroidWordAudioFetcher)
+    assert second.media_name("ספר", "").startswith("androidtts_he_")
+    chain.close()
+
+    # Without the run's callbacks (a test double, a pre-language caller) the
+    # entry builds nothing rather than a source that cannot speak.
+    silent = mining._build_expression_audio_source_chain(config)
+    assert silent is not None
+    assert [member._fetcher for member in silent._fetchers] == [pack]
+    silent.close()
+
+
+def test_the_processor_hands_the_runs_callbacks_to_the_device_voice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _runtime_lane()
+    import anki_miner.orchestration.episode_processor as episode_processor
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    monkeypatch.setattr(episode_processor, "EpisodeProcessor", _CapturedProcessor)
+    config = _hebrew_config(
+        tmp_path,
+        anki_fields={"expression_audio": "WordAudio"},
+        expression_audio_chain=[{"kind": "android_tts"}],
+    )
+    adapters = SimpleNamespace(
+        presenter=SimpleNamespace(show_warning=lambda _message: None),
+        cancel_event=threading.Event(),
+        callbacks=object(),
+        run_id="run_00000000000000000000000000000000",
+    )
+    processor = mining._build_processor(config, adapters, object())
+    chain = processor.kwargs["expression_audio_fetcher"]
+    assert [type(member) for member in chain._fetchers] == [AndroidWordAudioFetcher]
+    chain.close()

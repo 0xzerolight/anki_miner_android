@@ -40,6 +40,40 @@ class SentenceAudioProtocolTest {
     }
 
     @Test
+    fun dispatcherHandsTheRequestLanguageToTheSynthesizer() {
+        val cache = temporary.newFolder("sentence-audio-v1")
+        val audio =
+            File(cache, "android_tts_v1_${"b".repeat(64)}.wav")
+                .also { it.writeBytes(byteArrayOf(1)) }
+        var spokenIn: String? = null
+        val dispatcher =
+            SentenceAudioCallbackDispatcher(
+                object : SentenceAudioSynthesizer {
+                    override fun synthesize(
+                        sentence: String,
+                        cancellationCheck: () -> Boolean,
+                    ): SentenceAudioSynthesis = error("the language-aware overload must be used")
+
+                    override fun synthesize(
+                        sentence: String,
+                        language: String,
+                        cancellationCheck: () -> Boolean,
+                    ): SentenceAudioSynthesis {
+                        spokenIn = language
+                        return SentenceAudioSynthesis.ready(audio)
+                    }
+                },
+            )
+
+        dispatcher.synthesizeSentenceAudio(
+            REQUEST.replace("\"sentence\":\"猫だ。\"", "\"sentence\":\"猫だ。\",\"language\":\"he\""),
+            RUN_ID,
+        ) { false }
+
+        assertEquals("he", spokenIn)
+    }
+
+    @Test
     fun cancellationDoesNotEnterSynthesizer() {
         val dispatcher =
             SentenceAudioCallbackDispatcher(

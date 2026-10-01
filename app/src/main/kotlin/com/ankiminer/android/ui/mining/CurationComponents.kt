@@ -564,7 +564,7 @@ internal fun CurationCandidateRow(
             ) {
                 Text(
                     text = text.headline,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.minedText(),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -773,8 +773,12 @@ internal fun CurationDefinitionPane(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    val contentStyle = LocalMiningContentStyle.current
                     DictionaryHtml(
-                        html = definition.entries.joinToString(separator = "\n") { it.html },
+                        html =
+                            contentStyle.wrapDefinitionHtml(
+                                definition.entries.joinToString(separator = "\n") { it.html },
+                            ),
                         modifier =
                             Modifier
                                 .fillMaxWidth()
@@ -923,14 +927,14 @@ internal fun CurationSentenceChoice(
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro)) {
-                    Text(text = sentenceText, style = MaterialTheme.typography.bodyMedium)
+                    Text(text = sentenceText, style = MaterialTheme.typography.bodyMedium.minedText())
                     if (
                         sentence.sentenceFurigana.isNotBlank() &&
                         sentence.sentenceFurigana != sentence.sentence
                     ) {
                         Text(
                             text = sentence.sentenceFurigana,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodySmall.minedText(),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

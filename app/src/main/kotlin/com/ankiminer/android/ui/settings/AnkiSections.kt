@@ -138,7 +138,9 @@ internal fun AnkiTargetCard(
                     val noneLabel = stringResource(R.string.anki_field_none)
                     val expandedLabel = stringResource(R.string.disclosure_expanded)
                     val collapsedLabel = stringResource(R.string.disclosure_collapsed)
-                    val mappedCount = AnkiFieldKeys.ALL.count { !state.fieldMap[it].isNullOrEmpty() }
+                    // The language's own card fields (Hebrew transliteration, ...) are rows too.
+                    val fieldKeys = state.fieldKeys
+                    val mappedCount = fieldKeys.count { !state.fieldMap[it].isNullOrEmpty() }
                     // Only `word` is actually required, so a partial map is a valid setup. Force the
                     // mapper open for real blockers only; otherwise every dropdown sits collapsed.
                     val mappingBlocked =
@@ -162,7 +164,7 @@ internal fun AnkiTargetCard(
                             stringResource(
                                 R.string.anki_field_mapping_summary,
                                 mappedCount,
-                                AnkiFieldKeys.ALL.size,
+                                fieldKeys.size,
                             ),
                         )
                     }
@@ -178,8 +180,12 @@ internal fun AnkiTargetCard(
                     }
                     SupportingText(stringResource(R.string.anki_field_mapping_remap_help))
                     if (showMapping) {
-                    AnkiFieldKeys.ALL.forEach { key ->
-                        val base = key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
+                    fieldKeys.forEach { key ->
+                        // A language field is named by its profile's suggestion, which is the Anki
+                        // field name it auto-maps to.
+                        val base =
+                            state.extraCardFields.firstOrNull { it.key == key }?.placeholder
+                                ?: key.replace('_', ' ').replaceFirstChar { it.uppercaseChar() }
                         val label = if (key in AnkiFieldKeys.REQUIRED) "$base *" else base
                         NoteTypeDropdown(
                             label = label,
@@ -200,6 +206,7 @@ internal fun AnkiTargetCard(
                                         fieldNames = fields,
                                         reservedDestinations =
                                             setOfNotNull(state.cardTypeMarkerField),
+                                        extraKeys = state.extraFieldKeys,
                                     )
                             },
                         )

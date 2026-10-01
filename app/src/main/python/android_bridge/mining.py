@@ -39,6 +39,7 @@ from .languages import (
     known_words_db_path,
     language_kwarg,
     requires_unidic,
+    speech_language_for,
     unavailable_reason_code,
     validated_language,
 )
@@ -54,6 +55,7 @@ from .unicode_contract import (
     is_category_c,
     is_nfc,
 )
+from .word_audio import ANDROID_TTS_KIND, AndroidWordAudioFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -78,10 +80,11 @@ _SUBTITLE_SUFFIXES = frozenset({".ass", ".srt", ".ssa", ".vtt"})
 # Desktop's spin box range for the translation track's offset
 # (gui/constants.py SUBTITLE_OFFSET_MIN/MAX, +-300 s).
 _MAX_SECONDARY_OFFSET_MS = 300_000
-# Imported local packs are the only expression-audio source the Android
-# builder can construct. The cut network kinds (jpod101/googletts) and the
-# removed URL-template kinds are rejected before any allocation.
-_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack"})
+# Imported local packs and the bridge-only device voice (``android_tts``,
+# android_bridge.word_audio) are the only expression-audio sources the Android
+# builder can construct. The cut network kinds (jpod101/googletts/edgetts) and
+# the removed URL-template kinds are rejected before any allocation.
+_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack", ANDROID_TTS_KIND})
 _JISHO_TOTAL_DEADLINE_SECONDS = 10.0
 _JISHO_IO_TIMEOUT_SECONDS = 1.0
 _JISHO_WATCH_POLL_SECONDS = 0.05
@@ -199,7 +202,8 @@ class _DiagnosedPackFetcher:
 class _ExpressionAudioSourceChain:
     """Source-priority composite over the ordered expression-audio fetchers.
 
-    Members are the imported local packs in config order. Each member is
+    Members are the imported local packs and, outside Japanese, the device
+    voice (``AndroidWordAudioFetcher``), in config order. Each member is
     tried in turn; the first hit wins. A member raising is logged and skipped
     so one broken pack falls through to the next.
 
@@ -518,23 +522,28 @@ def _close_without_masking(resource: object | None, label: str) -> None:
 def _build_expression_audio_source_chain(
     config: object,
     diagnostic_callback: Callable[[str], None] | None = None,
+    *,
+    tts_callbacks: object | None = None,
+    run_id: str | None = None,
 ) -> _ExpressionAudioSourceChain | None:
     """Compose the ordered expression-audio source chain for one run.
 
     Mirrors the desktop ``_build_expression_audio_fetcher`` composition minus
     the cut network kinds. Config order is source priority: the imported local
-    packs are tried in the user's chosen order.
+    packs are tried in the user's chosen order, and an enabled ``android_tts``
+    entry speaks the word with the device voice through ``tts_callbacks`` (the
+    run's EngineCallbacks). Without them that entry builds nothing.
     """
 
     entries = tuple(getattr(config, "expression_audio_chain", ()))
 
-    # Reject-before-allocate: any non-pack kind raises, and BEFORE any
+    # Reject-before-allocate: any unsupported kind raises, and BEFORE any
     # Session/import/packs-dir scan. Validate every entry first so a bad kind
     # cannot slip through after a valid one has already allocated resources.
     if any(getattr(entry, "kind", None) not in _SUPPORTED_EXPRESSION_AUDIO_KINDS for entry in entries):
         raise BridgeProtocolError(
             "unsupported_android_feature",
-            "Android expression audio supports local packs only",
+            "Android expression audio supports local packs and the device voice only",
         )
 
     # Two-part fetch-gate mirror (audio_stage.py): the expression_audio Anki
@@ -574,10 +583,26 @@ def _build_expression_audio_source_chain(
     # Config order = source priority. This loop never raises: an unknown or
     # missing pack is skipped (matching desktop), so combined with the
     # validate-all-first check the reject-before-allocate invariant holds.
+    language = config_language(config)
+    audio = None if language == JAPANESE else get_profile(language).audio
     fetchers: list[object] = []
     unavailable_pack_ids: list[str] = []
     for entry in entries:
         if not getattr(entry, "enabled", False):
+            continue
+        if getattr(entry, "kind", None) == ANDROID_TTS_KIND:
+            # config_map admits this kind only outside Japanese.
+            if tts_callbacks is not None and run_id is not None and audio is not None:
+                fetchers.append(
+                    AndroidWordAudioFetcher(
+                        tts_callbacks,
+                        run_id,
+                        Path(config.media_temp_folder).parent,
+                        cache_root / ANDROID_TTS_KIND,
+                        language=speech_language_for(language),
+                        speakable=audio.speakable,
+                    )
+                )
             continue
         pack_id = getattr(entry, "pack_id", None)
         if pack_id is None:
@@ -591,14 +616,13 @@ def _build_expression_audio_source_chain(
             continue
         fetchers.append(resolved)
 
-    language = config_language(config)
     return _ExpressionAudioSourceChain(
         fetchers,
         diagnostic_callback=diagnostic_callback,
         cache_lifetime=cache_lifetime,
         unavailable_pack_ids=unavailable_pack_ids,
         pack_registry=pack_registry,
-        candidates=None if language == JAPANESE else get_profile(language).audio.candidates,
+        candidates=None if audio is None else audio.candidates,
     )
 
 
@@ -1058,6 +1082,8 @@ def _build_processor(
         expression_audio_fetcher = _build_expression_audio_source_chain(
             config,
             diagnostic_callback=adapters.presenter.show_warning,
+            tts_callbacks=getattr(adapters, "callbacks", None),
+            run_id=getattr(adapters, "run_id", None),
         )
         # Same staleness-gate reason as pitch_registry below, one step removed:
         # the chain builder owns the scan (it must stay behind the kind

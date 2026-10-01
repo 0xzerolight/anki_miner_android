@@ -2362,10 +2362,19 @@ class ResourceManagerTest {
             val request = harness.bridge.requestsOfType("resource.languagedata.install").single()
             assertTrue(request.contains("\"resourceId\":\"ar-calima-msa\""))
             assertTrue(request.contains("\"archivePath\":\"/"))
-            // No Japanese member ran: the set is the requested language's.
-            assertTrue(harness.bridge.requestTypes.none { it.endsWith(".import") })
+            // The engine data leads, and every member is the requested language's own.
+            assertEquals(
+                listOf("resource.languagedata.install", "resource.dictionary.import", "resource.frequency.import"),
+                harness.bridge.requestTypes.filter { it.endsWith(".install") || it.endsWith(".import") },
+            )
+            for (type in listOf("resource.dictionary.import", "resource.frequency.import")) {
+                assertTrue(type, harness.bridge.requestsOfType(type).single().contains("\"language\":\"ar\""))
+            }
             assertEquals(setOf("ar-calima-msa"), harness.manager.state.value.installedLanguageData)
-            assertTrue(harness.manager.state.value.recommendedPlan("ar").isSatisfied)
+            assertEquals(
+                RecommendedResourceAction.SKIP,
+                harness.manager.state.value.recommendedPlan("ar").items.first().action,
+            )
             assertFalse(harness.manager.state.value.recommendedPlan.isSatisfied)
 
             harness.bridge.clearRequests()
@@ -2434,7 +2443,7 @@ class ResourceManagerTest {
     @Test
     fun aLanguageWithNoCatalogOffersNothingToDownload() =
         runTest {
-            val harness = Harness(activeLanguage = { "th" })
+            val harness = Harness(activeLanguage = { "ko" })
 
             assertNull(harness.manager.state.value.catalog)
             assertFalse(harness.manager.state.value.recommendedPlan.isActionable)
@@ -2466,6 +2475,57 @@ class ResourceManagerTest {
             )
             assertNull(state.activeOperation)
             assertNull(state.failure)
+        }
+
+    @Test
+    fun aLanguageSwitchDuringAnotherOperationIsAppliedWhenItFinishes() =
+        runTest {
+            var language = JAPANESE
+            val executor = PausableExecutor()
+            val harness = Harness(resourceExecutor = executor, activeLanguage = { language })
+            executor.paused = true
+            val search = launch { harness.manager.searchKnownWords("", loadMore = false) }
+            runCurrent()
+            // The search holds the operation lock with its work queued.
+            assertEquals(1, executor.queued.size)
+
+            // The follower wakes as soon as the work lease is released, which can be before the
+            // lock is: the refresh has to wait for it, not give up.
+            language = "he"
+            val refresh = launch { harness.manager.refreshLanguage() }
+            runCurrent()
+            executor.paused = false
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            search.join()
+            refresh.join()
+
+            val state = harness.manager.state.value
+            assertEquals("he", state.language)
+            assertEquals("he", state.catalog?.language)
+            assertNull(state.activeOperation)
+            assertNull(state.failure)
+        }
+
+    @Test
+    fun aLanguageSwitchDropsTheKnownWordsSearchMadeUnderTheOldLanguage() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(initialUserCount = 3, activeLanguage = { language })
+            harness.manager.searchKnownWords(query = "", loadMore = false)
+            assertNotNull(harness.manager.state.value.knownWordsPage)
+
+            harness.manager.refreshLanguage()
+            // Same language: the open search stays.
+            assertNotNull(harness.manager.state.value.knownWordsPage)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            // Its words are Japanese database rows; a remove from it would hit Hebrew's.
+            assertNull(harness.manager.state.value.knownWordsPage)
         }
 
     @Test

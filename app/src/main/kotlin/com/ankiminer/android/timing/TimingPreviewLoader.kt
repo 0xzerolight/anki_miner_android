@@ -1,6 +1,7 @@
 package com.ankiminer.android.timing
 
 import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.media.FileCopyCancellation
 import com.ankiminer.android.media.ProviderIoCancellationController
@@ -8,6 +9,7 @@ import com.ankiminer.android.media.ProviderIoCancellationRegistration
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.media.SafJobFileOwner
 import com.ankiminer.android.mining.TokenizerConfigurator
+import com.ankiminer.android.mining.languageRequiresUnidic
 import com.ankiminer.android.subtitles.SubtitleCueLookupService
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CancellationException
@@ -34,6 +36,8 @@ internal class TimingPreviewLoader(
     private val cueLookup: SubtitleCueLookupService,
     private val io: CoroutineDispatcher,
     private val resourceDispatcher: CoroutineDispatcher = io,
+    /** The mining language [cueLookup] parses in; only Japanese needs UniDic configured first. */
+    private val language: () -> String = { LanguageScope.JAPANESE },
 ) : TimingPreviewOpener {
     override suspend fun open(subtitle: SafDocument): Result<TimingPreviewSession> {
         val lease =
@@ -54,8 +58,10 @@ internal class TimingPreviewLoader(
                     subtitle = subtitle,
                     cancellation = copyCancellation,
                 )
-            withContext(resourceDispatcher) {
-                tokenizer.configureInstalled()
+            if (languageRequiresUnidic(language())) {
+                withContext(resourceDispatcher) {
+                    tokenizer.configureInstalled()
+                }
             }
             val cues = cueLookup.cues(runId = null, subtitlePath = subtitlePath).getOrThrow()
             return Result.success(

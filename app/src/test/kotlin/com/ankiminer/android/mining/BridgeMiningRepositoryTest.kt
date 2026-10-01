@@ -31,6 +31,9 @@ import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
+import com.ankiminer.android.tts.SentenceAudioSynthesis
+import com.ankiminer.android.tts.SentenceAudioSynthesizer
+import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.CancellationException
@@ -1473,6 +1476,28 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `a run in a language without UniDic reaches the engine with no tokenizer installed`() {
+        val harness =
+            harness(
+                tokenizerResourceProvider = InstalledTokenizerResourceProvider { null },
+                configSnapshotResolver =
+                    MiningConfigSnapshotResolver {
+                        MiningConfigSnapshot(mapOf("language" to BridgeJsonValue.Text("he")), false)
+                    },
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1, harness.bridge.videoRuns.get())
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `settings snapshot is captured only after mining excludes resource publication`() {
         val coordinator = RuntimeWorkCoordinator()
         val resolverReached = CountDownLatch(1)
@@ -1946,6 +1971,8 @@ class BridgeMiningRepositoryTest {
             MiningConfigSnapshotResolver { MiningConfigSnapshot(emptyMap(), false) },
         copyProgress: List<SafCopyProgress> = emptyList(),
         lane: MiningLane = MiningLane.VIDEO,
+        wordAudioFactory: SentenceAudioSynthesizerFactory? = null,
+        wordAudioRequest: String? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val runTaskCompleted = CountDownLatch(1)
@@ -1966,6 +1993,7 @@ class BridgeMiningRepositoryTest {
                 pauseAfterTerminalCallback = pauseAfterTerminalCallback,
                 cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
                 pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
+                wordAudioRequest = wordAudioRequest,
             )
         val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
         val foreground = FakeForegroundStarter(foregroundFailure, pendingForegroundStart)
@@ -2022,6 +2050,7 @@ class BridgeMiningRepositoryTest {
                 foregroundStartTimeoutSeconds = 2,
                 interruptionStore = interruptionStore,
                 lane = lane,
+                wordAudioSynthesizerFactory = wordAudioFactory,
             )
         return Harness(
             repository,
@@ -2033,6 +2062,87 @@ class BridgeMiningRepositoryTest {
             controlTaskCompleted,
             runTaskCompleted,
         )
+    }
+
+    @Test
+    fun `a run whose chain names the device voice speaks its words through it`() {
+        val audio =
+            File(java.nio.file.Files.createTempDirectory("word-tts").toFile(), "android_tts_v1_${"d".repeat(64)}.wav")
+                .apply { writeBytes(byteArrayOf(1, 2)) }
+        val spoken = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
+        val closed = AtomicBoolean()
+        val opened = AtomicInteger()
+        val synthesizer =
+            object : SentenceAudioSynthesizer {
+                override fun synthesize(
+                    sentence: String,
+                    cancellationCheck: () -> Boolean,
+                ): SentenceAudioSynthesis = error("word audio names its language")
+
+                override fun synthesize(
+                    sentence: String,
+                    language: String,
+                    cancellationCheck: () -> Boolean,
+                ): SentenceAudioSynthesis {
+                    spoken += sentence to language
+                    return SentenceAudioSynthesis.ready(audio)
+                }
+
+                override fun close() {
+                    closed.set(true)
+                }
+            }
+        val harness =
+            harness(
+                configSnapshotResolver = MiningConfigSnapshotResolver { DEVICE_VOICE_SNAPSHOT },
+                wordAudioFactory =
+                    SentenceAudioSynthesizerFactory {
+                        opened.incrementAndGet()
+                        synthesizer
+                    },
+                wordAudioRequest = WORD_AUDIO_REQUEST,
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, FIRST_SELECTION)
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, opened.get())
+        assertEquals(listOf("ספר" to "he"), spoken.toList())
+        assertTrue(requireNotNull(harness.bridge.wordAudioResult.get()).contains("\"outcome\":\"ready\""))
+        assertTrue(closed.get())
+    }
+
+    @Test
+    fun `a run without the device voice opens none and refuses the callback`() {
+        val opened = AtomicInteger()
+        val harness =
+            harness(
+                wordAudioFactory =
+                    SentenceAudioSynthesizerFactory {
+                        opened.incrementAndGet()
+                        error("no device voice in this run")
+                    },
+                wordAudioRequest = WORD_AUDIO_REQUEST,
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, FIRST_SELECTION)
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Failed)
+        assertEquals(0, opened.get())
     }
 
     private fun foregroundFailure(
@@ -2397,8 +2507,10 @@ class BridgeMiningRepositoryTest {
         private val pauseAfterTerminalCallback: Boolean = false,
         private val cancelFailuresBeforeSuccess: Int = 0,
         private val pauseCancellationUntilTerminal: Boolean = false,
+        private val wordAudioRequest: String? = null,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
+        val wordAudioResult = AtomicReference<String?>()
         val videoRequest = AtomicReference<VideoMiningWireRequest?>()
         val curationSubmitted = CountDownLatch(1)
         val intermediateCurationSubmitted = CountDownLatch(1)
@@ -2506,6 +2618,8 @@ class BridgeMiningRepositoryTest {
                 callbacks.onComplete(CANCELLED_TERMINAL)
                 return CANCELLED_TERMINAL
             }
+            // Phase 3: the device voice speaking one word through the run's callbacks.
+            wordAudioRequest?.let { wordAudioResult.set(callbacks.synthesizeSentenceAudio(it)) }
             progressError?.let { callbacks.onError(it) }
             val terminal = terminalPayload()
             val callbackTerminal =
@@ -2546,6 +2660,23 @@ class BridgeMiningRepositoryTest {
     }
 
     private companion object {
+        val DEVICE_VOICE_SNAPSHOT =
+            MiningConfigSnapshot(
+                mapOf(
+                    "language" to BridgeJsonValue.Text("he"),
+                    "anki_fields" to
+                        BridgeJsonValue.ObjectValue(mapOf("expression_audio" to BridgeJsonValue.Text("WordAudio"))),
+                    "expression_audio_chain" to
+                        BridgeJsonValue.ArrayValue(
+                            listOf(BridgeJsonValue.ObjectValue(mapOf("kind" to BridgeJsonValue.Text("android_tts")))),
+                        ),
+                ),
+                false,
+            )
+        val WORD_AUDIO_REQUEST =
+            "{\"schemaVersion\":1,\"type\":\"tts.sentence.request\",\"payload\":{" +
+                "\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"," +
+                "\"requestId\":\"tts_${"0".repeat(32)}\",\"sentence\":\"ספר\",\"language\":\"he\"}}"
         const val RUN_ID = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val REQUEST_ID = "curation_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         const val CANDIDATE_ID = "candidate_cccccccccccccccccccccccccccccccc"

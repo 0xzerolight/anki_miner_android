@@ -155,4 +155,17 @@ class EngineNoticeRewriterTest {
 
         assertEquals(huge, rewriter.rewrite(huge))
     }
+
+    @Test
+    fun aRunRefusedForItsLanguageSaysWhyAndEveryOtherRefusalKeepsTheGenericText() {
+        assertEquals(
+            "resource:${R.string.mining_failure_language_unavailable}",
+            rewriter.runRefusalMessage("language_unavailable"),
+        )
+        assertEquals(
+            "resource:${R.string.mining_failure_unsupported_language}",
+            rewriter.runRefusalMessage("unsupported_language"),
+        )
+        assertNull(rewriter.runRefusalMessage("invalid_config_field"))
+    }
 }

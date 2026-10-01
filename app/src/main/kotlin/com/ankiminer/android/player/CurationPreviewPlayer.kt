@@ -63,6 +63,8 @@ interface CurationPreviewPlayer {
 @OptIn(UnstableApi::class)
 class ExoCurationPreviewPlayer(
     context: Context,
+    /** The mining language's `audio_track_codes`: the track the engine will mine from. */
+    private val audioLanguageCodes: Collection<String> = JAPANESE_AUDIO_TRACK_CODES,
 ) : CurationPreviewPlayer {
     private val exo =
         ExoPlayer.Builder(
@@ -99,7 +101,7 @@ class ExoCurationPreviewPlayer(
 
                 override fun onTracksChanged(tracks: Tracks) {
                     selectPreferredAudio(tracks)
-                    val failure = previewFailureFor(tracks, audioTrackOverride)
+                    val failure = previewFailureFor(tracks, audioTrackOverride, audioLanguageCodes)
                     if (failure != null) {
                         val format = firstFormatOfType(tracks, C.TRACK_TYPE_VIDEO)
                             ?: firstFormatOfType(tracks, C.TRACK_TYPE_AUDIO)
@@ -169,7 +171,7 @@ class ExoCurationPreviewPlayer(
      * can decode (there `isTrackSelected` would stay false forever).
      */
     private fun selectPreferredAudio(tracks: Tracks) {
-        val desired = preferredAudioGroup(tracks, audioTrackOverride) ?: return
+        val desired = preferredAudioGroup(tracks, audioTrackOverride, audioLanguageCodes) ?: return
         val override = TrackSelectionOverride(desired.mediaTrackGroup, 0)
         if (exo.trackSelectionParameters.overrides[desired.mediaTrackGroup] == override) return
 
@@ -290,13 +292,17 @@ private fun firstFormatOfType(
  * engine-preferred group, so a supported dub cannot mask an unsupported Japanese track.
  */
 @OptIn(UnstableApi::class)
-fun previewFailureFor(tracks: Tracks, audioTrackOverride: Long? = null): PreviewFailure? {
+fun previewFailureFor(
+    tracks: Tracks,
+    audioTrackOverride: Long? = null,
+    audioLanguageCodes: Collection<String> = JAPANESE_AUDIO_TRACK_CODES,
+): PreviewFailure? {
     if (!tracks.isTypeSupportedOrEmpty(C.TRACK_TYPE_VIDEO)) {
         return PreviewFailure.VideoTrackUnsupported(
             codecLabel(firstFormatOfType(tracks, C.TRACK_TYPE_VIDEO)),
         )
     }
-    val preferredAudio = preferredAudioGroup(tracks, audioTrackOverride)
+    val preferredAudio = preferredAudioGroup(tracks, audioTrackOverride, audioLanguageCodes)
     if (preferredAudio != null && !preferredAudio.isTrackSupported(0)) {
         return PreviewFailure.AudioTrackUnsupported(
             codecLabel(preferredAudio.getTrackFormat(0)),

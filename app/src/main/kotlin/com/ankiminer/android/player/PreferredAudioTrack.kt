@@ -17,19 +17,24 @@ import androidx.media3.common.util.Util
  */
 
 /**
- * Engine parity: `audio_track_detector.JAPANESE_LANGUAGE_CODES`.
- *
+ * Engine parity: `audio_track_detector.JAPANESE_LANGUAGE_CODES`, the ja profile's
+ * `audio_track_codes`. Every other language passes its own profile's codes.
+ */
+val JAPANESE_AUDIO_TRACK_CODES: List<String> = listOf("jpn", "ja", "japanese", "jp")
+
+/**
  * Normalized, because media3's [Format] constructor runs its language through
  * [Util.normalizeLanguageCode] — a container tagged `jpn` reaches us as `ja`, so comparing the raw
  * container codes would silently never match.
  */
 @OptIn(UnstableApi::class)
-private val JAPANESE_LANGUAGE_CODES: Set<String> =
-    setOf("jpn", "ja", "japanese", "jp").mapNotNull(Util::normalizeLanguageCode).toSet()
+private fun normalizedLanguageCodes(codes: Collection<String>): Set<String> =
+    codes.mapNotNull(Util::normalizeLanguageCode).toSet()
 
 /**
- * The audio track the preview should play, mirroring the engine's rule: the first Japanese-tagged
- * audio stream (`find_japanese_audio_stream`), else the first audio stream (its `-map 0:a:0`
+ * The audio track the preview should play, mirroring the engine's rule: the first audio stream
+ * tagged in the mining language (`find_japanese_audio_stream`, or the profile's
+ * `audio_track_codes` for another language), else the first audio stream (its `-map 0:a:0`
  * fallback). Returns null when the media has no audio.
  *
  * Progressive media groups carry numeric IDs in extractor/source order, but [Tracks.groups] is
@@ -49,7 +54,11 @@ private val JAPANESE_LANGUAGE_CODES: Set<String> =
  * honest answer; quietly dropping to another track is the behaviour this replaces.
  */
 @OptIn(UnstableApi::class)
-fun preferredAudioGroup(tracks: Tracks, audioTrackOverride: Long? = null): Tracks.Group? {
+fun preferredAudioGroup(
+    tracks: Tracks,
+    audioTrackOverride: Long? = null,
+    languageCodes: Collection<String> = JAPANESE_AUDIO_TRACK_CODES,
+): Tracks.Group? {
     val audioGroups = tracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO }
     val sourceIndexes = audioGroups.map { it.mediaTrackGroup.id.toIntOrNull() }
     val sourceOrderedGroups =
@@ -61,7 +70,8 @@ fun preferredAudioGroup(tracks: Tracks, audioTrackOverride: Long? = null): Track
     if (audioTrackOverride != null && audioTrackOverride in 0 until sourceOrderedGroups.size.toLong()) {
         return sourceOrderedGroups[audioTrackOverride.toInt()]
     }
+    val preferred = normalizedLanguageCodes(languageCodes)
     return sourceOrderedGroups.firstOrNull { group ->
-        JAPANESE_LANGUAGE_CODES.contains(group.getTrackFormat(0).language ?: "")
+        preferred.contains(group.getTrackFormat(0).language ?: "")
     } ?: sourceOrderedGroups.firstOrNull()
 }

@@ -111,4 +111,48 @@ class SubtitleCueLookupTest {
             assertTrue(record, record.contains(" D run=- c=bridge op=dispatch "))
             assertEquals(STALE_RUN_ID, LogContext.runId())
         }
+
+    @Test
+    fun `a pre-run request names the mining language, japanese stays unchanged`() =
+        runTest {
+            val sent = mutableListOf<String>()
+            var language = "he"
+            val bridge =
+                PyBridge { raw, _ ->
+                    sent += raw
+                    result(runId = null)
+                }
+            val service = BridgeSubtitleCueLookupService(bridge, direct) { language }
+
+            service.cues(null, SUBTITLE_PATH).getOrThrow()
+            language = "ja"
+            service.cues(null, SUBTITLE_PATH).getOrThrow()
+
+            assertEquals(
+                listOf(
+                    com.ankiminer.android.engine.BridgeJsonCodec
+                        .encodeSubtitleCuesRequest(null, SUBTITLE_PATH, "he"),
+                    com.ankiminer.android.engine.BridgeJsonCodec
+                        .encodeSubtitleCuesRequest(null, SUBTITLE_PATH),
+                ),
+                sent,
+            )
+        }
+
+    @Test
+    fun `a run's cues leave the language to the run`() =
+        runTest {
+            var sent: String? = null
+            val bridge =
+                PyBridge { raw, _ ->
+                    sent = raw
+                    result()
+                }
+            BridgeSubtitleCueLookupService(bridge, direct) { "he" }.cues(RUN_ID, SUBTITLE_PATH).getOrThrow()
+
+            assertEquals(
+                com.ankiminer.android.engine.BridgeJsonCodec.encodeSubtitleCuesRequest(RUN_ID, SUBTITLE_PATH),
+                sent,
+            )
+        }
 }

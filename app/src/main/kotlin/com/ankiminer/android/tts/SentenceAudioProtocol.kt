@@ -67,6 +67,7 @@ internal data class SentenceAudioSynthesis(
                 "network_voice_rejected",
                 "offline_japanese_voice_unavailable",
                 "offline_voice_changed",
+                "offline_voice_unavailable",
                 "synthesis_failed",
                 "synthesis_timeout",
                 "synthesizer_closed",
@@ -94,6 +95,13 @@ internal fun interface SentenceAudioSynthesizer : AutoCloseable {
         cancellationCheck: () -> Boolean,
     ): SentenceAudioSynthesis
 
+    /** Speaks [sentence] in [language], a BCP-47 tag. A single-voice fake ignores the tag. */
+    fun synthesize(
+        sentence: String,
+        language: String,
+        cancellationCheck: () -> Boolean,
+    ): SentenceAudioSynthesis = synthesize(sentence, cancellationCheck)
+
     override fun close() = Unit
 }
 
@@ -117,7 +125,7 @@ internal class SentenceAudioCallbackDispatcher(
                 SentenceAudioSynthesis.cancelled()
             } else {
                 try {
-                    synthesizer.synthesize(request.sentence, cancellationCheck)
+                    synthesizer.synthesize(request.sentence, request.language, cancellationCheck)
                 } catch (_: RuntimeException) {
                     SentenceAudioSynthesis.failed("internal_error")
                 }

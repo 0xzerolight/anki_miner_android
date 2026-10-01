@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.engine.LanguageExtraCardField
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -270,6 +271,123 @@ class AnkiFieldMapPolicyTest {
                 "sentence",
                 listOf("Expression", "Meaning"),
             ),
+        )
+    }
+
+    private val transliteration =
+        LanguageExtraCardField(
+            key = "transliteration",
+            capability = "hebrew_transliteration",
+            placeholder = "Transliteration",
+            rawHtml = false,
+        )
+    private val root =
+        LanguageExtraCardField(
+            key = "root",
+            capability = "word_root",
+            placeholder = "Root",
+            rawHtml = false,
+        )
+
+    @Test
+    fun `a profile field maps to the note field spelled like its placeholder`() {
+        val mapped =
+            AnkiFieldMapPolicy.autoMapProfileFields(
+                fieldNames = listOf("Expression", "transliteration", "Word Root"),
+                specs = listOf(transliteration, root),
+                claimed = setOf("Expression"),
+            )
+
+        // Desktop auto_map_profile_fields: the keyword table's normalisation, and a spec with no
+        // match is absent rather than "".
+        assertEquals(mapOf("transliteration" to "transliteration"), mapped)
+    }
+
+    @Test
+    fun `a profile field never takes a field another key already holds`() {
+        val mapped =
+            AnkiFieldMapPolicy.autoMapProfileFields(
+                fieldNames = listOf("Expression", "Reading"),
+                specs = listOf(LanguageExtraCardField("thai_reading", "romanization", "Reading", false)),
+                claimed = setOf("Expression", "Reading"),
+            )
+
+        assertTrue(mapped.isEmpty())
+    }
+
+    @Test
+    fun `a new note type maps the language's own fields after the keyword pass`() {
+        val result =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = null,
+                selectedNoteType = "Hebrew",
+                fieldNames = listOf("Expression", "Sentence", "Transliteration", "Root"),
+                currentFieldMap = emptyMap(),
+                extraFields = listOf(transliteration, root),
+            )
+
+        assertEquals("Expression", result.fieldMap["word"])
+        assertEquals("Sentence", result.fieldMap["sentence"])
+        assertEquals("Transliteration", result.fieldMap["transliteration"])
+        assertEquals("Root", result.fieldMap["root"])
+    }
+
+    @Test
+    fun `a note type change keeps a valid manual choice for a language field`() {
+        val result =
+            AnkiFieldMapPolicy.merge(
+                currentNoteType = "Old",
+                selectedNoteType = "New",
+                fieldNames = listOf("Expression", "Latin", "Transliteration"),
+                currentFieldMap = mapOf("word" to "Expression", "transliteration" to "Latin"),
+                extraFields = listOf(transliteration),
+            )
+
+        assertEquals("Latin", result.fieldMap["transliteration"])
+        assertTrue(result.changes.isEmpty())
+    }
+
+    @Test
+    fun `remap overwrites a language field its placeholder matches`() {
+        val result =
+            AnkiFieldMapPolicy.remap(
+                fieldNames = listOf("Expression", "Latin", "Transliteration"),
+                currentFieldMap = mapOf("word" to "Expression", "transliteration" to "Latin"),
+                extraFields = listOf(transliteration),
+            )
+
+        assertEquals("Transliteration", result.fieldMap["transliteration"])
+        assertEquals(
+            listOf(AnkiFieldMappingChange("transliteration", "Latin", "Transliteration")),
+            result.changes.filter { it.logicalKey == "transliteration" },
+        )
+    }
+
+    @Test
+    fun `japanese merge is unchanged by an empty extra field list`() {
+        val fields = listOf("Expression", "Sentence", "Reading")
+        assertEquals(
+            AnkiFieldMapPolicy.merge(null, "Lapis", fields, emptyMap()),
+            AnkiFieldMapPolicy.merge(null, "Lapis", fields, emptyMap(), extraFields = emptyList()),
+        )
+    }
+
+    @Test
+    fun `a language field may be assigned only when the language declares it`() {
+        val fields = listOf("Expression", "Transliteration")
+        val base = mapOf("word" to "Expression")
+
+        assertNull(AnkiFieldMapPolicy.assign(base, "transliteration", "Transliteration", fields))
+        assertEquals(
+            "Transliteration",
+            AnkiFieldMapPolicy
+                .assign(
+                    base,
+                    "transliteration",
+                    "Transliteration",
+                    fields,
+                    extraKeys = setOf("transliteration"),
+                )?.get("transliteration"),
         )
     }
 }

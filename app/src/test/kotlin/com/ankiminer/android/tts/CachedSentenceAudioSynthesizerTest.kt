@@ -92,7 +92,7 @@ class CachedSentenceAudioSynthesizerTest {
             CachedSentenceAudioSynthesizer(
                 cacheRoot(),
                 backendFactory =
-                    OfflineTtsBackendFactory {
+                    OfflineTtsBackendFactory { _, _ ->
                         opens += 1
                         OfflineTtsBackendOpenResult.Unavailable("offline_japanese_voice_unavailable")
                     },
@@ -122,6 +122,68 @@ class CachedSentenceAudioSynthesizerTest {
         assertEquals(1, backend.closeCalls)
     }
 
+    @Test
+    fun eachLanguageOpensItsOwnVoiceOnceAndAllAreClosed() {
+        val opened = mutableListOf<String>()
+        val backends = mutableMapOf<String, FakeBackend>()
+        val synthesizer =
+            CachedSentenceAudioSynthesizer(
+                cacheRoot(),
+                backendFactory =
+                    OfflineTtsBackendFactory { language, _ ->
+                        opened += language
+                        if (language == "th") {
+                            OfflineTtsBackendOpenResult.Unavailable("offline_voice_unavailable")
+                        } else {
+                            val backend = FakeBackend(voiceIdentity = "engine\u0000$language\u0000offline")
+                            backends[language] = backend
+                            OfflineTtsBackendOpenResult.Ready(backend)
+                        }
+                    },
+                availableBytes = { Long.MAX_VALUE },
+                cacheBudgetBytes = 12,
+                maxFileBytes = 8,
+                reserveBytes = 0,
+            )
+
+        val hebrew = synthesizer.synthesize("ספר", "he") { false }
+        val japanese = synthesizer.synthesize("猫", "ja") { false }
+        synthesizer.synthesize("ספרים", "he") { false }
+        val thai = synthesizer.synthesize("แมว", "th") { false }
+        synthesizer.synthesize("หมา", "th") { false }
+
+        assertEquals(SentenceAudioOutcome.READY, hebrew.outcome)
+        assertEquals(SentenceAudioOutcome.READY, japanese.outcome)
+        assertEquals("offline_voice_unavailable", thai.errorCode)
+        assertEquals(listOf("he", "ja", "th"), opened)
+        assertEquals(2, backends.getValue("he").calls)
+        synthesizer.close()
+        assertEquals(1, backends.getValue("he").closeCalls)
+        assertEquals(1, backends.getValue("ja").closeCalls)
+    }
+
+    @Test
+    fun theTwoArgumentCallStillSpeaksJapanese() {
+        var language: String? = null
+        val synthesizer =
+            CachedSentenceAudioSynthesizer(
+                cacheRoot(),
+                backendFactory =
+                    OfflineTtsBackendFactory { requested, _ ->
+                        language = requested
+                        OfflineTtsBackendOpenResult.Ready(FakeBackend())
+                    },
+                availableBytes = { Long.MAX_VALUE },
+                cacheBudgetBytes = 12,
+                maxFileBytes = 8,
+                reserveBytes = 0,
+            )
+
+        synthesizer.synthesize("猫。") { false }
+
+        assertEquals("ja", language)
+    }
+
     private fun synthesizer(
         backend: FakeBackend,
         budget: Long = 12,
@@ -129,7 +191,7 @@ class CachedSentenceAudioSynthesizerTest {
     ): CachedSentenceAudioSynthesizer =
         CachedSentenceAudioSynthesizer(
             cacheRoot(),
-            backendFactory = OfflineTtsBackendFactory { OfflineTtsBackendOpenResult.Ready(backend) },
+            backendFactory = OfflineTtsBackendFactory { _, _ -> OfflineTtsBackendOpenResult.Ready(backend) },
             availableBytes = { Long.MAX_VALUE },
             cacheBudgetBytes = budget,
             maxFileBytes = maxFile,

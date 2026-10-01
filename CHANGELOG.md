@@ -12,6 +12,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **"Treat kana spellings of known words as known" (Settings -> Word filters).** On by default, as before; it can now be turned off.
 - **"Mine full sentences across subtitle lines" (Settings -> Sentences).** Joins subtitle lines that do not end a sentence, so the card gets the whole sentence. Off by default; Reading sources ignore it.
 - **"Create cards in order of appearance" (Settings -> Cards & Anki).** Cards follow the order the words first appear even with "Always mine whitelisted words" on, which otherwise puts whitelisted words first.
+- **Mining in Hebrew, Indonesian, Arabic, Persian and Thai (Settings -> Language).** Each language keeps its own dictionaries, filters, deck and card fields. Arabic and Persian offer "Download and switch" for their language data. After a switch the Cards & Anki tab opens on the note type to pick, and the field map lists the language's own fields, such as Hebrew's transliteration.
+- **Hebrew, Arabic and Persian text reads right to left in curation, definitions and pasted Reading text.**
+- **Recommended dictionaries and frequency lists for Hebrew, Arabic, Persian, Indonesian and Thai (Settings -> Resources).**
+- **Outside Japanese, words no audio pack has are spoken by the device's offline text-to-speech voice (Settings -> Resources -> Word audio).** The card shows whether the device has a voice for the language.
 
 ### Changed
 
@@ -28,6 +32,10 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Gradle is no longer pinned to one worker and a 2 GiB heap.** `--no-parallel --max-workers=1 -Dorg.gradle.jvmargs=-Xmx2g` was passed by both CI and `ANKI_MINER_GRADLE_ARGS`, and lint analysis and R8 are precisely the two tasks that scale with workers and heap. The rationale was whole-system OOM kills, retired when swap went 8 GiB -> 40 GiB on 2026-07-30; the two commits that introduced the pinning recorded no reason, and no decision record covers it. The flags come off both lanes, `org.gradle.parallel` and `org.gradle.workers.max` are deleted rather than raised so the worker count tracks whatever host runs the build, and the heap moves to `org.gradle.jvmargs` in `gradle.properties` — until now dead config, because the command line overrode every line of that file except `org.gradle.caching`. `--dependency-verification strict` is untouched and remains the reason the shared argument array exists; `test_android_test_resources.py` now pins that, `--no-daemon` and the task position, and fails if the worker pinning returns.
 - **Curation opens on the full sentence when "Mine full sentences across subtitle lines" is on.** "+ Previous line" and "+ Next line" extend that sentence, and "Reset lines" returns to the single line.
 - **Curation shows each sentence's translation when a translation subtitle is picked.**
+- **Curation definitions open on the sense that matches the word's part of speech, as on desktop.**
+- **Importing a dictionary whose own data names another language says so (Settings -> Resources).** It is still imported.
+- **Jisho is offered only while mining Japanese.** A settings backup cannot turn it on for another language.
+- **Japanese words, sentences and definitions in curation and Reading use Japanese character shapes.** On a phone set to another language some kanji used to show their Chinese forms.
 
 ### Removed
 
@@ -39,6 +47,7 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **Curation previews UTF-16 and EUC-JP subtitles again (Video and Audio tabs).** Since 1.0.0 any subtitle that was neither UTF-8 nor Shift-JIS showed "Subtitles unavailable for preview" and gave the line-widening controls no cue list: the encoding detector was handed a file path where the engine now takes bytes.
 - **A run stopped by a resource that needs re-importing says so in your language and names Settings -> Resources.** It used to show English text pointing at desktop menus.
 - **The update check's status no longer goes stale (Settings -> Diagnostics).** A rare race could show the check running after it finished, keeping Check now disabled, or idle while it ran.
+- **A word whose only card is in an excluded deck gets a new card (Settings -> Word filters).** It used to reach curation and then be skipped as already in Anki. As on desktop, a word is now skipped only when a deck outside the exclusions knows it.
 - **Known words come from the word field of note types that do not start with it, such as Migaku (sentence first) and Core 2k/6k (index first).** Each note type's first 200 notes decide which field holds the word, as on desktop. The scan used to read every note type's first field, so Migaku sentences counted as known and its target words never did.
 
 ## [1.1.0] - 2026-09-08

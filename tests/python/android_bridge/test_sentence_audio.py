@@ -87,6 +87,23 @@ def test_optional_tts_failure_never_raises(tmp_path: Path, outcome: str) -> None
     ]
 
 
+def test_another_languages_missing_voice_is_not_called_japanese(tmp_path: Path) -> None:
+    warnings: list[str] = []
+    fetcher = AndroidSentenceAudioFetcher(
+        ResultCallbacks(tmp_path, "unavailable", "offline_voice_unavailable"),
+        RUN_ID,
+        tmp_path,
+        warning_callback=warnings.append,
+        language="he",
+    )
+
+    assert fetcher.fetch("הילד קרא ספר.") is None
+    assert warnings == [
+        "Offline sentence audio is unavailable. Install an offline voice for the mining "
+        "language in Android speech settings."
+    ]
+
+
 @pytest.mark.parametrize(
     "error_code",
     ["tts_engine_unavailable", "tts_initialization_timeout"],

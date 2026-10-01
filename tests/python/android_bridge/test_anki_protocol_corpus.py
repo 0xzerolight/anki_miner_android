@@ -667,6 +667,7 @@ def test_corpus_freezes_all_operation_and_result_variants() -> None:
     }
     assert {payload["duplicateScope"]["kind"] for payload in accepted_payloads if "duplicateScope" in payload} == {
         "collection",
+        "allowDuplicates",
     }
     assert {row["status"] for payload in accepted_payloads for row in payload.get("results", [])} == {
         "stored",

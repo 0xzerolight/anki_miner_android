@@ -12,6 +12,7 @@ import com.ankiminer.android.data.resources.KnownWordsSourceFormat
 import com.ankiminer.android.data.resources.LanguageInventoryFixtures
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceManager
+import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceImportFileKind
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -1271,6 +1272,107 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun `a language that needs its data is not switched to directly`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = FakeResourceManager(ResourceManagerState()),
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+
+            assertFalse(viewModel.switchLanguage("ar"))
+            advanceUntilIdle()
+
+            assertEquals("ja", repository.current.language)
+        }
+
+    @Test
+    fun `an open known-words preview blocks a switch, including one after a download`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val preview =
+                KnownWordsImportPreview(
+                    format = "plain",
+                    importedCount = 1,
+                    totalEntries = 1,
+                    isGeneric = true,
+                    sampleWords = listOf("猫"),
+                )
+            val resources = FakeResourceManager(ResourceManagerState(knownWordsImportPreview = preview))
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = resources,
+                    languageProfileSource = {
+                        Result.success(LanguageProfileFixtures.all.map { it.copy(unavailableReason = null) })
+                    },
+                )
+            advanceUntilIdle()
+
+            // Its words would land in the new language's database once confirmed.
+            assertFalse(viewModel.switchLanguage("he"))
+            advanceUntilIdle()
+            assertEquals("ja", repository.current.language)
+        }
+
+    @Test
+    fun `download and switch installs the language's set, then switches once it is available`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val resources = FakeResourceManager(ResourceManagerState())
+            var installed = false
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = resources,
+                    languageProfileSource = {
+                        Result.success(
+                            LanguageProfileFixtures.all.map { profile ->
+                                if (installed && profile.code == "ar") profile.copy(unavailableReason = null) else profile
+                            },
+                        )
+                    },
+                )
+            advanceUntilIdle()
+
+            installed = true
+            viewModel.downloadAndSwitchLanguage("ar")
+            assertEquals("ar", viewModel.languageDownload.value)
+            advanceUntilIdle()
+
+            assertEquals(listOf("ar"), resources.recommendedInstalls)
+            assertEquals("ar", repository.current.language)
+            assertNull(viewModel.languageDownload.value)
+        }
+
+    @Test
+    fun `a download that leaves the language unavailable keeps the current one`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeAppSettingsRepository(AppSettings())
+            val resources = FakeResourceManager(ResourceManagerState())
+            val viewModel =
+                SettingsViewModel(
+                    repository = repository,
+                    resources = resources,
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+
+            viewModel.downloadAndSwitchLanguage("ar")
+            advanceUntilIdle()
+            // Hebrew needs no download: the offer is only for a data-required language.
+            viewModel.downloadAndSwitchLanguage("he")
+            advanceUntilIdle()
+
+            assertEquals(listOf("ar"), resources.recommendedInstalls)
+            assertEquals("ja", repository.current.language)
+            assertNull(viewModel.languageDownload.value)
+        }
+
+    @Test
     fun `switching language saves pending edits to the outgoing language first`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeAppSettingsRepository(AppSettings(jishoEnabled = true))
@@ -1633,6 +1735,12 @@ class SettingsViewModelTest {
 
         fun emit(value: ResourceManagerState) {
             mutableState.value = value
+        }
+
+        val recommendedInstalls = mutableListOf<String>()
+
+        override suspend fun installRecommendedResources(language: String) {
+            recommendedInstalls += language
         }
 
         override suspend fun recoverAndRefresh() = Unit

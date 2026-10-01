@@ -9,6 +9,8 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
+private const val JAPANESE = "ja"
+
 fun interface SubtitleCueLookupService {
     suspend fun cues(
         runId: String?,
@@ -19,6 +21,8 @@ fun interface SubtitleCueLookupService {
 class BridgeSubtitleCueLookupService(
     private val bridge: PyBridge,
     private val executor: Executor,
+    /** The mining language; a run's cues follow the run's own language instead. */
+    private val language: () -> String = { JAPANESE },
 ) : SubtitleCueLookupService {
     override suspend fun cues(
         runId: String?,
@@ -35,6 +39,9 @@ class BridgeSubtitleCueLookupService(
                                     BridgeJsonCodec.encodeSubtitleCuesRequest(
                                         runId,
                                         subtitlePath,
+                                        // Absent means ja, so a Japanese request is unchanged; with a
+                                        // run id the bridge reads the run's language itself.
+                                        language().takeIf { runId == null && it != JAPANESE },
                                     ),
                                     null,
                                 )

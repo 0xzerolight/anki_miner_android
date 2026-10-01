@@ -25,8 +25,10 @@ import com.ankiminer.android.anki.journal.RoutingCardObservation
 import com.ankiminer.android.anki.journal.RoutingIntentDraft
 import com.ankiminer.android.anki.journal.RoutingIntentRecord
 import com.ankiminer.android.anki.journal.RoutingIntentState
+import com.ankiminer.android.anki.protocol.AllowDuplicatesCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiErrorDetail
+import com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CommittedFailedNote
 import com.ankiminer.android.anki.protocol.CreateNote
 import com.ankiminer.android.anki.protocol.CreateNotesRequest
@@ -272,26 +274,35 @@ internal class JournalBackedNoteMutationService(
         val prepared = request.notes.mapIndexed { index, note -> prepareMaterialization(owner, index, note, target, baseline) }
         journal.begin(durableRequest, target)
 
+        // Admitted notes are created whatever the collection already holds, so they need no
+        // duplicate read: there is no duplicate to find.
+        val checkDuplicates =
+            when (request.duplicateScope) {
+                CollectionCreateDuplicateScope -> true
+                AllowDuplicatesCreateDuplicateScope -> false
+            }
         for ((index, note) in request.notes.withIndex()) {
-            val candidate = prepared[index].candidate
-            val fresh =
-                try {
-                    reads.readDuplicateBeforeEntry(owner, target, candidate)
-                } catch (failure: AnkiReadFailure) {
-                    val error = failure.toStableNoteError("The final duplicate check failed before note insertion")
-                    journal.append(
-                        durableRequest.key,
-                        AlignedResult.NoteFailed(index, note.clientNoteId, error, "providerEntry=false;duplicateRead=failed"),
-                    )
-                    return finishStopped(request, durableRequest, index, error)
+            if (checkDuplicates) {
+                val candidate = prepared[index].candidate
+                val fresh =
+                    try {
+                        reads.readDuplicateBeforeEntry(owner, target, candidate)
+                    } catch (failure: AnkiReadFailure) {
+                        val error = failure.toStableNoteError("The final duplicate check failed before note insertion")
+                        journal.append(
+                            durableRequest.key,
+                            AlignedResult.NoteFailed(index, note.clientNoteId, error, "providerEntry=false;duplicateRead=failed"),
+                        )
+                        return finishStopped(request, durableRequest, index, error)
+                    }
+                val uniqueIndex = baseline.occurrences[note.duplicateCandidate.occurrence]
+                if (
+                    baseline.normalizedMatchingNoteIds[uniqueIndex].isNotEmpty() ||
+                    fresh.normalizedMatchingNoteIds.single().isNotEmpty()
+                ) {
+                    journal.append(durableRequest.key, AlignedResult.NoteDuplicate(index, note.clientNoteId))
+                    continue
                 }
-            val uniqueIndex = baseline.occurrences[note.duplicateCandidate.occurrence]
-            if (
-                baseline.normalizedMatchingNoteIds[uniqueIndex].isNotEmpty() ||
-                fresh.normalizedMatchingNoteIds.single().isNotEmpty()
-            ) {
-                journal.append(durableRequest.key, AlignedResult.NoteDuplicate(index, note.clientNoteId))
-                continue
             }
 
             val materialization = prepared[index].materialization

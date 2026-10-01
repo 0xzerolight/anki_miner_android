@@ -30,6 +30,8 @@ CATALOG_LANGUAGES: tuple[str, ...] = (
     "ar",
     "fa",
     "he",
+    "id",
+    "th",
     "tr",
     "en",
     "ca",

@@ -162,8 +162,8 @@ def test_a_non_ja_snapshot_starts_from_its_profile_not_from_ja_defaults(code: st
         if name == "anki_note_type":
             assert actual == "Basic"
         elif name == "expression_audio_chain":
-            # The profile's default network voice is a cut kind: Android forces ().
-            assert actual == ()
+            # The profile's default network voice is a cut kind: the device voice stands in.
+            assert [entry.kind for entry in actual] == ["android_tts"]
         elif name == "anki_fields":
             assert dict(actual) == dict(expected)
         else:

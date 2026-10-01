@@ -273,6 +273,9 @@
     <string name="mining_failure_job_registration">L\'enregistrement de tâche Python a enfreint le protocole du pont</string>
     <string name="mining_failure_anki_callback">Le rappel Anki a échoué inopinément</string>
     <string name="mining_failure_sentence_audio_callback">Le rappel d\'audio de phrase a échoué inopinément</string>
+    <string name="mining_failure_word_audio_preparation">Impossible de préparer l\'audio du mot hors ligne</string>
+    <string name="mining_failure_word_audio_cleanup">Échec du nettoyage de l\'audio du mot hors ligne</string>
+    <string name="mining_failure_word_audio_callback">Le rappel d\'audio du mot a échoué inopinément</string>
     <string name="mining_failure_control_worker">Le processus de contrôle de l\'extraction est indisponible</string>
     <string name="mining_admission_not_checked">L\'état de préparation d\'AnkiDroid n\'a pas été vérifié</string>
     <string name="mining_admission_install_ankidroid">Installez AnkiDroid avant l\'extraction</string>
@@ -724,6 +727,11 @@
     <string name="settings_reading_audio">Audio des phrases de lecture</string>
     <string name="settings_reading_tts">Synthèse vocale Android hors ligne</string>
     <string name="settings_open_speech_services">Gérer les services vocaux</string>
+    <string name="settings_word_audio_device_voice">Voix de l\'appareil</string>
+    <string name="settings_word_audio_device_voice_help">Les mots absents de tous les packs audio sont lus par la voix de synthèse vocale hors ligne de l\'appareil.</string>
+    <string name="settings_word_audio_voice_available">Une voix est installée pour cette langue.</string>
+    <string name="settings_word_audio_voice_missing_data">La voix de cette langue n\'est pas encore téléchargée. Téléchargez-la dans Gérer les services vocaux.</string>
+    <string name="settings_word_audio_voice_unsupported">Cet appareil n\'a aucune voix de synthèse vocale pour cette langue.</string>
     <string name="settings_jisho">Solution de repli de définition Jisho</string>
     <string name="settings_jisho_disclosure">Désactivé par défaut. Une fois activé et cette solution de repli atteinte, les termes recherchés depuis vos sous-titres ou votre contenu de lecture sont envoyés à jisho.org.</string>
     <string name="settings_validation_card_type_marker">Le champ Anki \'%1$s\' est déjà mappé depuis \'%2$s\'</string>
@@ -817,7 +825,7 @@
     <string name="settings_backup_import_failed">Les paramètres n\'ont pas pu être lus depuis ce fichier.</string>
     <string name="settings_backup_not_a_backup">Ce fichier n\'est pas un fichier de paramètres Anki Miner.</string>
     <string name="settings_backup_too_large">Ce fichier est trop volumineux pour être un fichier de paramètres.</string>
-    <string name="settings_backup_unknown_language">Cette version ne peut pas extraire la langue du fichier (%1$s) ; votre langue d\'extraction a donc été conservée.</string>
+    <string name="settings_backup_unknown_language">Cette version ne prend pas en charge l\'extraction dans la langue du fichier (%1$s) ; votre langue d\'extraction a donc été conservée.</string>
     <string name="b3_settings_android_override_state">Remplacement personnalisé</string>
     <string name="b3_validation_numeric_incomplete">Renseignez ou effacez ce nombre</string>
     <string name="b3_validation_finite">Saisissez un nombre fini</string>
@@ -865,4 +873,26 @@
     <string name="b3_wizard_customize_fields">Personnaliser les champs dans Paramètres</string>
     <string name="b3_wizard_ready_title">Prêt à extraire</string>
     <string name="b3_wizard_incomplete_title">Configuration incomplète</string>
+    <string name="b3_settings_category_language">Langue</string>
+    <string name="language_settings_title">Langue d\'extraction</string>
+    <string name="language_settings_help">Changer de langue remplace les dictionnaires, filtres, paquet et champs de carte par les réglages propres à cette langue. La langue d\'affichage de l\'application est distincte.</string>
+    <string name="language_unavailable_data_required">Nécessite un téléchargement unique de données linguistiques.</string>
+    <string name="language_unavailable_unsupported">Cette version ne prend pas en charge l\'extraction dans cette langue.</string>
+    <string name="language_download_and_switch">Télécharger et changer</string>
+    <string name="language_downloading">Téléchargement de ses données linguistiques…</string>
+    <string name="language_switch_blocked_known_words">Terminez ou abandonnez l\'importation de mots connus avant de changer de langue.</string>
+    <string name="language_note_type_needed">Choisissez un type de note pour %1$s avant l\'extraction.</string>
+    <string name="language_choose_note_type">Choisir le type de note</string>
+    <string name="language_script_variant">Jeu de caractères</string>
+    <string name="language_script_variant_as_written">Tel qu\'écrit</string>
+    <string name="language_script_variant_simplified">Simplifié (简体)</string>
+    <string name="language_script_variant_traditional">Traditionnel (繁體)</string>
+    <string name="language_regional_variety">Variété régionale</string>
+    <string name="language_variety_br">Portugais brésilien</string>
+    <string name="language_variety_pt">Portugais européen</string>
+    <string name="settings_reading_tone_color">Colorer les lectures selon le ton</string>
+    <string name="mining_failure_language_unavailable">Cette langue d\'extraction a besoin de ses données linguistiques. Téléchargez-les dans Paramètres → Langue.</string>
+    <string name="mining_failure_unsupported_language">Cette version ne prend pas en charge l\'extraction dans la langue choisie. Choisissez-en une autre dans Paramètres → Langue.</string>
+    <string name="resource_panel_other_language_slots">Installé pour d\'autres langues d\'extraction, non utilisé ici : %1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s indique que sa langue est %2$s, et non la langue d\'extraction.</string>
 </resources>

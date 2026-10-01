@@ -44,10 +44,12 @@ sealed interface CurationDefinition {
  * Failure is a [Result], never a throw: the preview degrades; curation continues.
  */
 fun interface DefinitionLookupService {
+    /** [partOfSpeech] is the candidate's tag; a profile that ranks senses by it (he, id) uses it. */
     suspend fun define(
         runId: String,
         term: String,
         fallbackTerm: String?,
+        partOfSpeech: String?,
     ): Result<DefinitionResult>
 }
 
@@ -59,6 +61,7 @@ class BridgeDefinitionLookupService(
         runId: String,
         term: String,
         fallbackTerm: String?,
+        partOfSpeech: String?,
     ): Result<DefinitionResult> =
         suspendCancellableCoroutine { continuation ->
             executor.execute {
@@ -72,6 +75,7 @@ class BridgeDefinitionLookupService(
                                         runId,
                                         term,
                                         fallbackTerm,
+                                        partOfSpeech,
                                     ),
                                     null,
                                 )

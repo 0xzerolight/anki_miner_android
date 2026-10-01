@@ -23,6 +23,7 @@ import zipfile
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from . import resources as core
 from .bootstrap import require_initialized
@@ -508,19 +509,49 @@ def _frequency_import_payload(result: object, source_id: str, archive_sha256: st
     }
 
 
+def _catalog_frequency_spec(language: str, source_id: str, archive_sha256: str) -> Any | None:
+    """The desktop catalogue row a pinned download installs, or None for any other list.
+
+    A list is the catalogue's when it fills a pinned frequency slot with that
+    entry's pinned bytes; a hand-picked file replacing the slot is not. Each
+    pinned slot is named after its desktop ``ResourceSpec`` id.
+    """
+
+    from .resource_catalog import CATALOG_LANGUAGES, FrequencyResource, load_resource_catalog
+
+    if language not in CATALOG_LANGUAGES:
+        return None
+    if not any(
+        isinstance(resource, FrequencyResource)
+        and resource.source_id == source_id
+        and resource.archive.sha256 == archive_sha256
+        for resource in load_resource_catalog(language).resources
+    ):
+        return None
+    return next(
+        (spec for spec in get_profile(language).catalog if spec.kind == "freq" and spec.id == source_id),
+        None,
+    )
+
+
 def _frequency_import_options(
     language: str,
     *,
     rebuild_slot: Path | None,
     dicts_root: Path,
+    source_id: str,
+    archive_sha256: str,
 ) -> dict[str, object]:
     """``import_frequency_source``'s lemmatisation and declared mode (S17).
 
     A rebuild replays how the slot's list was built (``slot_import_options``, as
     ``repair_frequency_source`` does), or a lemmatised list would come back
-    re-ranked by surface counts. A new hand-picked list is lemmatised only for a
-    language that declares ``lemmatised_frequency`` (desktop
-    ``manual_import_lemmatizer``). Empty for an ordinary Japanese import.
+    re-ranked by surface counts. A catalogue download follows its desktop row
+    (``resource_download_worker._lemmatise_kwargs``): a ``lemmatise`` row is
+    summed per lemma, which only occurrence counts allow, so it declares that
+    mode. Any other new list is lemmatised only for a language that declares
+    ``lemmatised_frequency`` (desktop ``manual_import_lemmatizer``). Empty for an
+    ordinary Japanese import.
     """
 
     if rebuild_slot is None and language == JAPANESE:
@@ -531,9 +562,18 @@ def _frequency_import_options(
         manual_import_lemmatizer,
     )
 
+    declared: dict[str, object] = {}
     if rebuild_slot is None:
-        lemmatize = manual_import_lemmatizer(language, dicts_root)
-        declared: dict[str, object] = {}
+        spec = _catalog_frequency_spec(language, source_id, archive_sha256)
+        if spec is None:
+            lemmatize = manual_import_lemmatizer(language, dicts_root)
+        elif spec.lemmatise:
+            from anki_miner.services.frequency.mode_probe import OCCURRENCE_BASED
+
+            lemmatize = build_frequency_lemmatizer(language, dicts_root)
+            declared = {"declared_mode": OCCURRENCE_BASED}
+        else:
+            lemmatize = None
     else:
         from anki_miner.services.frequency.source_importer import slot_import_options
 
@@ -622,6 +662,8 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
                 language,
                 rebuild_slot=rebuild_slot,
                 dicts_root=core._dictionary_root(home),
+                source_id=source_id,
+                archive_sha256=copied.sha256,
             )
             try:
                 result = import_frequency_source(

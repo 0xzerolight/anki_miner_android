@@ -10,6 +10,8 @@ its profile needs no download. Everything here runs on the runtime lane.
 
 from __future__ import annotations
 
+import dataclasses
+import hashlib
 import json
 import shutil
 import sqlite3
@@ -194,6 +196,72 @@ def test_a_new_list_for_a_lemmatising_language_is_lemmatised(
 
     # Asked for he (which answers None); never for ja, whose call keeps its pre-S17 shape.
     assert asked == ["he"]
+
+
+def test_a_catalog_list_follows_its_desktop_row(
+    home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Desktop ``_lemmatise_kwargs``: a ``lemmatise=True`` row is summed per lemma in occurrence mode.
+
+    id declares no ``lemmatised_frequency``, so only the catalogue's own bytes in its own slot take
+    the row's rule; a hand-picked file replacing that slot keeps the manual one.
+    """
+    import android_bridge.resource_catalog as catalog
+    import anki_miner.services.frequency.lemmatize as lemmatize
+    import anki_miner.services.frequency.source_importer as source_importer
+
+    pinned_source = tmp_path / "id_50k.txt"
+    pinned_source.write_text("kamu 10\n", encoding="utf-8")
+    real_load = catalog.load_resource_catalog
+    indonesian = real_load("id")
+    pinned_bytes = dataclasses.replace(
+        indonesian,
+        resources=tuple(
+            (
+                dataclasses.replace(
+                    resource,
+                    archive=dataclasses.replace(
+                        resource.archive,
+                        sha256=hashlib.sha256(pinned_source.read_bytes()).hexdigest(),
+                    ),
+                )
+                if isinstance(resource, catalog.FrequencyResource)
+                else resource
+            )
+            for resource in indonesian.resources
+        ),
+    )
+    monkeypatch.setattr(
+        catalog,
+        "load_resource_catalog",
+        lambda language="ja": pinned_bytes if language == "id" else real_load(language),
+    )
+    monkeypatch.setattr(lemmatize, "build_frequency_lemmatizer", lambda language, dicts_root=None: list)
+    calls: list[dict[str, object]] = []
+    real_import = source_importer.import_frequency_source
+
+    def recording_import(*args: object, **kwargs: object):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+        return real_import(*args, **kwargs)
+
+    monkeypatch.setattr(source_importer, "import_frequency_source", recording_import)
+    request = {
+        **_frequency_request(pinned_source, language="id"),
+        "sourceId": "opensubtitles-id",
+        "sourceFormat": "txt",
+    }
+    local_resources.import_frequency(request)
+    hand_picked = tmp_path / "mine.txt"
+    hand_picked.write_text("saya 10\n", encoding="utf-8")
+    local_resources.import_frequency(
+        {**request, "operationId": "hand-picked", "sourcePath": str(hand_picked), "overwrite": True}
+    )
+
+    assert calls[0]["declared_mode"] == "occurrence-based"
+    assert calls[0]["lemmatize"] is list
+    assert "declared_mode" not in calls[1] and "lemmatize" not in calls[1]
 
 
 # ---------------------------------------------------------------- pitch
@@ -542,3 +610,50 @@ def test_a_japanese_list_only_euc_jp_decodes_is_imported(home: Path, tmp_path: P
     from anki_miner.services.known_word_db import KnownWordDB
 
     assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる", "日本語"}
+
+
+def _declaring_dictionary(path: Path, source_language: str) -> Path:
+    index = {"title": "Declaring Fixture", "revision": "1", "format": 3, "sourceLanguage": source_language}
+    rows = [["猫", "ねこ", "", "", 0, ["cat"], 1, ""]]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+def _imported(source: Path, **extra: object) -> dict[str, object]:
+    return decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dictionary-op",
+                "sourcePath": str(source),
+                "slotId": "declaring-dict",
+                "overwrite": False,
+                "catalogResourceId": None,
+                **extra,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    ).payload
+
+
+def test_a_japanese_dictionary_imported_for_hebrew_says_so(home: Path, tmp_path: Path) -> None:
+    """Desktop's receipt note; the slot is still imported and stamped for Hebrew."""
+    payload = _imported(_declaring_dictionary(tmp_path / "ja.zip", "ja-JP"), language="he")
+
+    assert payload["sourceLanguage"] == "ja"
+    assert payload["sourceLanguageMismatch"] is True
+    assert _meta_language(home / "dicts" / "declaring-dict") == "he"
+
+
+def test_a_dictionary_declaring_the_mining_language_is_no_mismatch(home: Path, tmp_path: Path) -> None:
+    payload = _imported(_declaring_dictionary(tmp_path / "ja.zip", "ja"))
+
+    assert payload["sourceLanguage"] == "ja"
+    assert payload["sourceLanguageMismatch"] is False
+
+
+def test_an_undeclared_or_malformed_language_crosses_as_empty(home: Path, tmp_path: Path) -> None:
+    payload = _imported(_declaring_dictionary(tmp_path / "odd.zip", "<b>klingon</b>"), language="he")
+
+    assert payload["sourceLanguage"] == ""

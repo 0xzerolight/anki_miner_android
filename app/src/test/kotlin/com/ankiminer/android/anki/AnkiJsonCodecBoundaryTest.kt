@@ -11,6 +11,7 @@ import com.ankiminer.android.anki.protocol.AnkiProtocolException
 import com.ankiminer.android.anki.protocol.AnkiRequest
 import com.ankiminer.android.anki.protocol.AnkiResponse
 import com.ankiminer.android.anki.protocol.AnkiValidators
+import com.ankiminer.android.anki.protocol.AllowDuplicatesCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CommittedFailedNote
 import com.ankiminer.android.anki.protocol.CreateDuplicateCandidate
@@ -1468,6 +1469,7 @@ class AnkiJsonCodecBoundaryTest {
                 val typedScope =
                     when (scope.string("kind")) {
                         "collection" -> CollectionCreateDuplicateScope
+                        "allowDuplicates" -> AllowDuplicatesCreateDuplicateScope
                         else -> error("unsupported accepted create scope")
                     }
                 CreateNotesRequest(

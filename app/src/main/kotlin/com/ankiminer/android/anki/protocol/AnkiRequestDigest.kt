@@ -166,6 +166,7 @@ private class CanonicalRequestWriter {
         fieldName("duplicateScope", leadingComma = true)
         when (request.duplicateScope) {
             CollectionCreateDuplicateScope -> ascii("{\"kind\":\"collection\"}")
+            AllowDuplicatesCreateDuplicateScope -> ascii("{\"kind\":\"allowDuplicates\"}")
         }
         fieldName("notes", leadingComma = true)
         ascii("[")

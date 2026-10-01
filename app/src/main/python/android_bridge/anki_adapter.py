@@ -2846,12 +2846,40 @@ class AndroidAnkiAdapter:
             "maxEnvelopeUtf8Bytes": _MAX_CREATE_ENVELOPE_UTF8_BYTES,
         }
 
+    def _excluded_deck_admission(self) -> bool:
+        """Desktop ``create_cards_batch``'s rule: excluded decks admit notes against the known words."""
+        return bool(self.config.excluded_decks and not self.config.allow_duplicate_cards)
+
+    def _admit_against_excluded_decks(
+        self, pending_notes: Sequence[_PendingNote]
+    ) -> tuple[tuple[_PendingNote, ...], int]:
+        """Desktop ``AnkiService._admit_against_excluded_decks``: admitted notes and the refused count.
+
+        A note is refused when its folded front is already known outside the
+        excluded decks, or another note of this call took it first. Kotlin then
+        creates every admitted note even if an excluded deck holds the same
+        front. The known words authorise that, so an unreadable scan raises
+        rather than degrading.
+        """
+
+        existing = self.get_existing_vocabulary(allow_degraded=False)
+        seen: set[str] = set()
+        admitted: list[_PendingNote] = []
+        for pending in pending_notes:
+            key = self._dedup_key(pending.key)
+            if not (key and (key in existing or key in seen)):
+                admitted.append(pending)
+            if key:
+                seen.add(key)
+        return tuple(admitted), len(pending_notes) - len(admitted)
+
     def _create_duplicate_scope(self) -> dict[str, Any]:
         snapshot_limits = {
             "maxNoteIdsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
             "maxTotalNoteIds": _MAX_DUPLICATE_TOTAL_HITS,
         }
-        return {"kind": "collection", "limits": snapshot_limits}
+        kind = "allowDuplicates" if self._excluded_deck_admission() else "collection"
+        return {"kind": kind, "limits": snapshot_limits}
 
     @staticmethod
     def _wire_note(pending: _PendingNote, client_id: str, occurrence: int) -> dict[str, Any]:
@@ -3410,14 +3438,20 @@ class AndroidAnkiAdapter:
         if progress_callback:
             progress_callback.on_start(len(word_data_list), "Creating Anki cards")
 
+        pending_notes = preflight_plan.pending_notes
+        allow_duplicates = self._excluded_deck_admission()
+        if allow_duplicates:
+            pending_notes, refused = self._admit_against_excluded_decks(pending_notes)
+            skipped_duplicates += refused
+
         from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
 
         try:
-            callback_batches = self._chunk_pending_notes(preflight_plan.pending_notes)
+            callback_batches = self._chunk_pending_notes(pending_notes)
             # Outgoing duplicates were removed by structural preflight. Hash
             # the remaining call graph once to retain the cross-batch content
             # and provider-namespace proof, but do not store any asset yet.
-            survivor_payloads = [pending.payload for pending in preflight_plan.pending_notes]
+            survivor_payloads = [pending.payload for pending in pending_notes]
             survivor_plan = self._preflight_create_call(survivor_payloads)
             media_work_budget = _MediaWorkBudget()
             prepared_card_media = self._prepare_card_media(
@@ -3460,7 +3494,7 @@ class AndroidAnkiAdapter:
                         duplicate_probes,
                         strict=True,
                     )
-                    if not probe.is_duplicate
+                    if allow_duplicates or not probe.is_duplicate
                 ]
                 skipped_duplicates += len(original_batch) - len(submissions)
 
@@ -3579,7 +3613,7 @@ class AndroidAnkiAdapter:
                                 duplicate_probes,
                                 strict=True,
                             )
-                            if not probe.is_duplicate
+                            if allow_duplicates or not probe.is_duplicate
                         ]
                         skipped_duplicates += len(submit_notes) - len(rewritten_submissions)
                         submit_notes = [pending for pending, _occurrence in rewritten_submissions]

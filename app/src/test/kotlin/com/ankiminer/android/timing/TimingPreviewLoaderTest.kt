@@ -141,6 +141,17 @@ class TimingPreviewLoaderTest {
     }
 
     @Test
+    fun aLanguageWithoutUnidicLoadsCuesWithNoTokenizerInstalled() = runTest {
+        withHarness(tokenizerInstalled = false, language = "he") { harness ->
+            val result = harness.loader().open(SUBTITLE)
+
+            assertTrue(result.isSuccess)
+            assertEquals(listOf("stage", "cues"), harness.events)
+            result.getOrThrow().close()
+        }
+    }
+
+    @Test
     fun sessionCloseIsIdempotentAndRunsTeardownOffTheCallerThread() = runTest {
         withHarness { harness ->
             val callerThread = Thread.currentThread().name
@@ -171,6 +182,7 @@ class TimingPreviewLoaderTest {
         blockingStage: ((FileCopyCancellation) -> OwnedDescriptor)? = null,
         cueFailure: Boolean = false,
         tokenizerInstalled: Boolean = true,
+        language: String = "ja",
         block: suspend (Harness) -> Unit,
     ) {
         val ioExecutor =
@@ -190,6 +202,7 @@ class TimingPreviewLoaderTest {
                     blockingStage = blockingStage,
                     cueFailure = cueFailure,
                     tokenizerInstalled = tokenizerInstalled,
+                    language = language,
                 ),
             )
         } finally {
@@ -207,6 +220,7 @@ class TimingPreviewLoaderTest {
         private val blockingStage: ((FileCopyCancellation) -> OwnedDescriptor)?,
         private val cueFailure: Boolean,
         private val tokenizerInstalled: Boolean,
+        private val language: String,
     ) {
         val coordinator = RuntimeWorkCoordinator()
         val events = mutableListOf<String>()
@@ -264,7 +278,7 @@ class TimingPreviewLoaderTest {
                         }
                     },
             )
-        private val cueLookup = BridgeSubtitleCueLookupService(bridge, resourceExecutor)
+        private val cueLookup = BridgeSubtitleCueLookupService(bridge, resourceExecutor) { language }
 
         fun loader(): TimingPreviewLoader =
             TimingPreviewLoader(
@@ -274,6 +288,7 @@ class TimingPreviewLoaderTest {
                 cueLookup = cueLookup,
                 io = io,
                 resourceDispatcher = resource,
+                language = { language },
             )
 
         private fun createOwner(cancellation: FileCopyCancellation): SafJobFileOwner {
