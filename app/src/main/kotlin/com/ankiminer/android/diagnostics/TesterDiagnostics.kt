@@ -99,6 +99,8 @@ internal object TesterDiagnosticsBuilder {
                 line("python.readiness", pythonReadiness(setup.python))
                 line("wizard.seen", setup.wizardSeen.toString())
                 line("setup.mining_ready", setup.isMiningReady.toString())
+                // The resource counts below are this language's slots only.
+                line("mining.language", safeCode(setup.language))
                 line("resources.startup", setup.resourceStartup.name.lowercase(Locale.ROOT))
                 line("resources.unidic", if (setup.uniDicInstalled) "installed" else "missing")
                 setup.catalogDictionaries.forEach { status ->
