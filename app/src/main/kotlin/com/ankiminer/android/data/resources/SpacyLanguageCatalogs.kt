@@ -865,8 +865,53 @@ internal val norwegianBokmalCatalog =
                             ),
                         ),
                 ),
+                YomitanCatalogResource(
+                    resourceId = "wty-nb-en-2026.09.20",
+                    displayName = "Wiktionary (Norwegian Bokmål-English) 2026-09-20",
+                    slotId = "wty-nb-en",
+                    archive =
+                        ResourceArchive(
+                            url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/nb/en/wty-nb-en.zip",
+                            sha256 = "9d63021cc2d8781a8909e2f85c4fa0bc8a34d552ff11aae5cacc751eec409fc5",
+                            sizeBytes = 3_471_080,
+                            format = "zip",
+                        ),
+                    dictionary =
+                        YomitanDictionaryIdentity(
+                            title = "wty-nb-en",
+                            revision = "2026.09.20",
+                            format = 3,
+                            memberCount = 8,
+                            uncompressedBytes = 38_192_067,
+                            archiveMemberLimit = 4096,
+                            uncompressedBytesLimit = 2_147_483_648,
+                            fileBytesLimit = 33_554_432,
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                            ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                        ),
+                ),
+                FrequencyCatalogResource(
+                    resourceId = "opensubtitles-no-2018",
+                    displayName = "OpenSubtitles 2018 frequency (Norwegian)",
+                    sourceId = "opensubtitles-no",
+                    archive =
+                        ResourceArchive(
+                            url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/no/no_50k.txt",
+                            sha256 = "d5808d8ec04603b765c09c06a03f0273ccf36bb35a3902287e56b7e7d872ca92",
+                            sizeBytes = 601_916,
+                            format = "txt",
+                        ),
+                    attribution =
+                        listOf(
+                            ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                            ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                        ),
+                ),
             ),
-        recommended = emptyList(),
+        recommended = listOf("wty-nb-en-2026.09.20", "opensubtitles-no-2018"),
     )
 
 internal val romanianCatalog =
