@@ -52,12 +52,16 @@ def test_local_codes_name_their_pinned_language_data() -> None:
     assert harness.archive_name("fa") == "hazm-0.12.1-py3-none-any.whl"
 
 
-@pytest.mark.parametrize("code", ["he", "id", "th"])
+#: The package each CI code's tagger needs beyond the engine (runtime dependency lane only).
+_TAGGER_PACKAGES = {"th": "pythainlp", "tr": "zeyrek", "zh": "jieba"}
+
+
+@pytest.mark.parametrize("code", ["he", "id", "th", "tr", "zh"])
 def test_ci_code_tokenises_its_smoke_sentence_as_expected(code: str, initialized_bridge_home: Path) -> None:
     del initialized_bridge_home
     pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
-    if code == "th":
-        pytest.importorskip("pythainlp", reason="runtime dependency lane: Thai tokenises with pythainlp")
+    if code in _TAGGER_PACKAGES:
+        pytest.importorskip(_TAGGER_PACKAGES[code], reason=f"runtime dependency lane: {code} needs its tagger")
     assert code in harness.CI_CODES
     result = json.loads(harness.smoke(code))
     assert result["unavailable_reason"] is None

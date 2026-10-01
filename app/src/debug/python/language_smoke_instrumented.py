@@ -7,17 +7,19 @@ a1259f4e5b8f97385660389eef6d76fb403c1e38):
 * he: desktop ``tests/fixtures/he/tokens.jsonl`` row ``he01``, verbatim.
 * id: desktop ``tests/fixtures/id/tokens.jsonl`` row ``id01`` plus the trailing ``.`` PUNCT row
   that desktop's own test filters out before comparing.
-* th, ar, fa: no desktop row pins the whole smoke sentence with the full hazm data. th
+* tr: desktop ``tests/fixtures/tr/lemma_gold.jsonl`` row ``a01`` pins every surface and lemma;
+  the POS column and the trailing ``.`` PUNCT row come from the host exporter.
+* th, ar, fa, zh: no desktop row pins the whole smoke sentence with the full hazm data. th
   ``pos_corpus.jsonl`` ``th01`` and ar ``ar01`` list only the lemmas to mine, which these rows
-  contain; fa ``tokens.jsonl``'s first row lists these content rows, but over a trimmed lexicon.
-  Exported on the host from the vendored engine at the pinned versions, with ar and fa reading
-  their pinned catalog archives::
+  contain; fa ``tokens.jsonl``'s first row lists these content rows, but over a trimmed lexicon;
+  zh has no tokens fixture. Exported on the host from the vendored engine at the pinned versions,
+  with ar and fa reading their pinned catalog archives::
 
       PYTHONPATH=app/src/debug/python:app/src/main/python \\
         "$ANKI_MINER_ANDROID_TOOLCHAIN_ROOT/runtime-host-tests/bin/python" \\
         -c 'import language_smoke_instrumented as s; print(s.export("<home>", "<archive dir>"))'
 
-he, id and th need no downloaded data, so the CI lane runs them. ar and fa need their
+he, id, th, tr and zh need no downloaded data, so the CI lane runs them. ar and fa need their
 ``language-data`` archives, so they run only on a local lane that pushes the archives first.
 
 Engine imports stay function-local: ``bootstrap`` must set ``ANKI_MINER_HOME`` first.
@@ -29,7 +31,7 @@ import json
 import os
 from pathlib import Path
 
-CI_CODES = ("he", "id", "th")
+CI_CODES = ("he", "id", "th", "tr", "zh")
 #: Code -> the pinned ``language-data`` catalog entry its tagger reads.
 LOCAL_RESOURCES = {"ar": "ar-calima-msa", "fa": "fa-hazm-data"}
 
@@ -55,6 +57,25 @@ EXPECTED: dict[str, list[list[str]]] = {
         ["วันนี้", "NOUN", "", "วันนี้"],
         ["อากาศ", "NOUN", "", "อากาศ"],
         ["ดีมาก", "ADV", "", "ดีมาก"],
+    ],
+    "tr": [
+        ["Öğrenci", "NOUN", "", "öğrenci"],
+        ["dün", "ADV", "", "dün"],
+        ["ilginç", "ADJ", "", "ilginç"],
+        ["bir", "DET", "", "bir"],
+        ["kitap", "NOUN", "", "kitap"],
+        ["okudu", "VERB", "", "okumak"],
+        [".", "PUNCT", "", "."],
+    ],
+    "zh": [
+        ["我", "r", "", "我"],
+        ["今天", "t", "", "今天"],
+        ["早上", "t", "", "早上"],
+        ["吃", "v", "", "吃"],
+        ["了", "u", "ul", "了"],
+        ["三个", "m", "", "三个"],
+        ["苹果", "n", "", "苹果"],
+        ["。", "x", "", "。"],
     ],
     "ar": [
         ["ذهب", "verb", "", "ذهب"],
