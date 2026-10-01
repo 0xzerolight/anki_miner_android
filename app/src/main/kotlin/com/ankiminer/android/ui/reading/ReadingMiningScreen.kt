@@ -32,6 +32,7 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -41,6 +42,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -98,6 +100,8 @@ import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PhaseTitle
 import com.ankiminer.android.ui.theme.PrimaryActionButton
 import com.ankiminer.android.ui.theme.SecondaryActionButton
+import com.ankiminer.android.ui.theme.SupportingText
+import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.segmentedActionColors
 
 @Composable
@@ -539,6 +543,8 @@ fun ReadingMiningScreen(
     }
 }
 
+private const val PASTED_TEXT_MAX_LINES = 8
+
 private fun LazyListScope.setupItems(
     state: ReadingMiningUiState,
     onPickSource: () -> Unit,
@@ -672,48 +678,68 @@ private fun LazyListScope.setupItems(
         }
     } else {
         item(key = "reading_pasted_text", contentType = "actions") {
-            OutlinedTextField(
-                value = state.pastedText,
-                onValueChange = onPastedTextChanged,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .testTag(ReadingMiningTestTags.PASTE_TEXT),
-                enabled = !state.startPending,
-                singleLine = false,
-                minLines = 6,
-                // Pasted source text in the mining language: its glyphs and its direction.
-                textStyle = LocalTextStyle.current.minedText(),
-                placeholder = { Text(stringResource(R.string.reading_paste_placeholder)) },
-                trailingIcon = {
-                    if (state.pastedText.isNotEmpty()) {
-                        IconButton(
-                            onClick = onClearPastedText,
-                            enabled = !state.startPending,
-                            modifier = Modifier.testTag(ReadingMiningTestTags.CLEAR_PASTED_TEXT),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.ic_remove),
-                                contentDescription =
-                                    stringResource(R.string.reading_paste_clear),
-                            )
+            val context = LocalContext.current
+            val clipboardHasText = rememberClipboardHasText()
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.micro),
+            ) {
+                OutlinedTextField(
+                    value = state.pastedText,
+                    onValueChange = onPastedTextChanged,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag(ReadingMiningTestTags.PASTE_TEXT),
+                    enabled = !state.startPending,
+                    singleLine = false,
+                    minLines = 6,
+                    // A pasted chapter scrolls inside the field instead of pushing Mine off the screen.
+                    maxLines = PASTED_TEXT_MAX_LINES,
+                    // Pasted source text in the mining language: its glyphs and its direction.
+                    textStyle = LocalTextStyle.current.minedText(),
+                    placeholder = { Text(stringResource(R.string.reading_paste_placeholder)) },
+                    trailingIcon = {
+                        if (state.pastedText.isNotEmpty()) {
+                            IconButton(
+                                onClick = onClearPastedText,
+                                enabled = !state.startPending,
+                                modifier = Modifier.testTag(ReadingMiningTestTags.CLEAR_PASTED_TEXT),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_remove),
+                                    contentDescription =
+                                        stringResource(R.string.reading_paste_clear),
+                                )
+                            }
                         }
+                    },
+                )
+                if (state.pastedTextTruncated) {
+                    SupportingText(
+                        stringResource(
+                            R.string.reading_paste_counter,
+                            state.pastedText.codePointCount(0, state.pastedText.length),
+                        ),
+                    )
+                    SupportingText(stringResource(R.string.reading_paste_truncated))
+                }
+                if (clipboardHasText) {
+                    // Replaces the field without focusing it, so no keyboard opens.
+                    TextButton(
+                        onClick = { context.clipboardText()?.let(onPastedTextChanged) },
+                        enabled = !state.startPending,
+                        modifier =
+                            Modifier
+                                .align(Alignment.End)
+                                .heightIn(min = 48.dp)
+                                .testTag(ReadingMiningTestTags.PASTE_FROM_CLIPBOARD),
+                        colors = accentTextButtonColors(),
+                    ) {
+                        Text(stringResource(android.R.string.paste))
                     }
-                },
-                supportingText = {
-                    Column {
-                        Text(
-                            stringResource(
-                                R.string.reading_paste_counter,
-                                state.pastedText.codePointCount(0, state.pastedText.length),
-                            ),
-                        )
-                        if (state.pastedTextTruncated) {
-                            Text(stringResource(R.string.reading_paste_truncated))
-                        }
-                    }
-                },
-            )
+                }
+            }
         }
     }
     item(key = "reading_start", contentType = "actions") {

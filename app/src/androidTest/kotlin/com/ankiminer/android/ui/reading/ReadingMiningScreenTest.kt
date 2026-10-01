@@ -1,5 +1,6 @@
 package com.ankiminer.android.ui.reading
 
+import android.content.ClipData
 import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
@@ -177,6 +178,55 @@ class ReadingMiningScreenTest {
             .onNodeWithTag(ReadingMiningTestTags.CONTENT)
             .performScrollToNode(hasTestTag(ReadingMiningTestTags.START))
         composeRule.onNodeWithTag(ReadingMiningTestTags.START).assertIsNotEnabled()
+    }
+
+    @Test
+    fun pasteReplacesTheTextFromTheClipboardWithoutTheKeyboard() {
+        val clip = "吾輩は猫である。"
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            instrumentation.targetContext
+                .getSystemService(ClipboardManager::class.java)
+                .setPrimaryClip(ClipData.newPlainText("test", clip))
+        }
+        var pasted: String? = null
+        composeRule.setContent {
+            AnkiMinerTheme {
+                ScreenUnderTest(
+                    state =
+                        ReadingMiningUiState(
+                            sourceMode = ReadingSourceMode.PASTED_TEXT,
+                            pastedText = "old",
+                        ),
+                    onPastedTextChanged = { pasted = it },
+                )
+            }
+        }
+
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasTestTag(ReadingMiningTestTags.PASTE_FROM_CLIPBOARD))
+        composeRule.onNodeWithTag(ReadingMiningTestTags.PASTE_FROM_CLIPBOARD).performClick()
+        composeRule.runOnIdle { assertEquals(clip, pasted) }
+    }
+
+    @Test
+    fun theCharacterCountShowsOnlyWithTheTruncationNotice() {
+        var state by
+            mutableStateOf(
+                ReadingMiningUiState(sourceMode = ReadingSourceMode.PASTED_TEXT, pastedText = "猫"),
+            )
+        composeRule.setContent { AnkiMinerTheme { ScreenUnderTest(state = state) } }
+        val counter =
+            InstrumentationRegistry.getInstrumentation().targetContext
+                .getString(R.string.reading_paste_counter, 1)
+
+        composeRule.onNodeWithText(counter).assertDoesNotExist()
+        composeRule.runOnIdle { state = state.copy(pastedTextTruncated = true) }
+        composeRule
+            .onNodeWithTag(ReadingMiningTestTags.CONTENT)
+            .performScrollToNode(hasText(counter))
+        composeRule.onNodeWithText(counter).assertExists()
     }
 
     @Test

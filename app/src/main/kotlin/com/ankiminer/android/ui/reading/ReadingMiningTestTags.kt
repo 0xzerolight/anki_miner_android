@@ -11,6 +11,7 @@ object ReadingMiningTestTags {
     const val CLEAR_ARCHIVE = "reading_clear_archive"
     const val PASTE_TEXT = "reading_paste_text"
     const val CLEAR_PASTED_TEXT = "reading_clear_pasted_text"
+    const val PASTE_FROM_CLIPBOARD = "reading_paste_from_clipboard"
     const val SERIES_NAME = "reading_series_name"
     const val START = "reading_start_mining"
     const val PROGRESS = "reading_mining_progress"
