@@ -602,7 +602,11 @@ internal class BridgeMiningRepository(
             when (returned) {
                 is BridgeMessage.Terminal -> returned
                 is BridgeMessage.Error -> {
-                    recordFault(generation, strings.resolve(R.string.mining_failure_video_request_rejected))
+                    recordFault(
+                        generation,
+                        noticeRewriter.runRefusalMessage(returned.code)
+                            ?: strings.resolve(R.string.mining_failure_video_request_rejected),
+                    )
                     return null
                 }
                 else -> {

@@ -18,8 +18,10 @@ import org.junit.Test
 class LanguageScopeTest {
     @Test
     fun `the stash set is exactly the settings that move a language-scoped snapshot key`() {
+        // The language itself is the scope, never a member of it (a switch away from Japanese moves
+        // the Jisho entry, which is Japanese-only).
         val scoped =
-            ALTERNATIVES.keys.filterTo(linkedSetOf()) { property ->
+            ALTERNATIVES.keys.filter { it != "language" }.filterTo(linkedSetOf()) { property ->
                 BASES.any { base ->
                     ALTERNATIVES.getValue(property).any { candidate ->
                         val changed = changedSnapshotKeys(base, base.with(property, candidate))
@@ -395,6 +397,8 @@ class LanguageScopeTest {
                 "minFrequencyRank" to listOf(null, 100),
                 "frequencyKeepUnranked" to BOOLEANS,
                 "knownWordsMatchKanaVariants" to BOOLEANS,
+                "scriptVariant" to listOf("simplified", ""),
+                "readingToneColor" to BOOLEANS,
                 "strictCardOrder" to BOOLEANS,
                 "mergeIncompleteCues" to BOOLEANS,
                 "secondarySubtitleEnabled" to listOf(true, false),

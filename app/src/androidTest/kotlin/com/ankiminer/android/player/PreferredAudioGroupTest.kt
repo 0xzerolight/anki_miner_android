@@ -163,4 +163,16 @@ class PreferredAudioGroupTest {
             intArrayOf(C.FORMAT_HANDLED),
             booleanArrayOf(true),
         )
+
+    @Test
+    fun anotherMiningLanguagePrefersItsOwnTrackOverAJapaneseOne() {
+        // The Hebrew profile's audio_track_codes; the engine picks by the same list.
+        val hebrewCodes = listOf("he", "heb", "hebrew", "iw")
+        val japanese = audioGroup("a", "jpn")
+        val hebrew = audioGroup("b", "heb")
+        val tracks = Tracks(listOf(videoGroup(), japanese, hebrew))
+
+        assertSame(hebrew, preferredAudioGroup(tracks, languageCodes = hebrewCodes))
+        assertSame(japanese, preferredAudioGroup(tracks))
+    }
 }

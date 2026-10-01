@@ -152,6 +152,13 @@ data class AppSettings(
     val minFrequencyRank: Int? = null,
     val frequencyKeepUnranked: Boolean? = null,
     val knownWordsMatchKanaVariants: Boolean? = null,
+    /**
+     * The script or regional variety the language mines in (zh simplified/traditional, pt br/pt).
+     * Null leaves the profile's default; only a profile that offers variants shows the picker.
+     */
+    val scriptVariant: String? = null,
+    /** Colour readings by tone, for a language with the `tone_color` capability. Null = profile. */
+    val readingToneColor: Boolean? = null,
     val strictCardOrder: Boolean? = null,
     val mergeIncompleteCues: Boolean? = null,
     /**
@@ -209,6 +216,8 @@ data class AppSettings(
             minFrequencyRank = null,
             frequencyKeepUnranked = null,
             knownWordsMatchKanaVariants = null,
+            scriptVariant = null,
+            readingToneColor = null,
             strictCardOrder = null,
             mergeIncompleteCues = null,
             secondarySubtitleEnabled = false,
@@ -333,6 +342,10 @@ object AppSettingsValidator {
                 !LanguageScope.LANGUAGE_CODE.matches(it.language) ||
                     it.languageStash.keys.any { code -> !LanguageScope.LANGUAGE_CODE.matches(code) }
             ) {
+                invalid(InvalidAppSettingCode.UNKNOWN, "Saved setting is invalid")
+            }
+            // The profile's own offer is the bridge's check; this is the shape every offer has.
+            if (it.scriptVariant != null && it.scriptVariant !in SCRIPT_VARIANTS) {
                 invalid(InvalidAppSettingCode.UNKNOWN, "Saved setting is invalid")
             }
             it.deckName?.let { value ->
@@ -692,6 +705,9 @@ object AppSettingsValidator {
     private val RESOURCE_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
     private val PROFILE_FIELD_KEY = Regex("[a-z][a-z0-9_]*")
     private const val MAX_CHAIN_ENTRIES = 128
+
+    /** Every value `language.profiles` may list in `scriptVariants`. */
+    val SCRIPT_VARIANTS = setOf("", "simplified", "traditional", "br", "pt")
     private const val MAX_WORDSET_SELECTIONS = 32
 }
 
@@ -797,6 +813,8 @@ internal object EngineSettingsSnapshotMapper {
         settings.knownWordsMatchKanaVariants?.let {
             values["known_words_match_kana_variants"] = bool(it)
         }
+        settings.scriptVariant?.let { values["script_variant"] = text(it) }
+        settings.readingToneColor?.let { values["reading_tone_color"] = bool(it) }
         settings.strictCardOrder?.let { values["strict_card_order"] = bool(it) }
         settings.mergeIncompleteCues?.let { values["merge_incomplete_cues"] = bool(it) }
         // secondarySubtitleEnabled is deliberately absent: it only gates the Video tab's picker.
@@ -825,7 +843,9 @@ internal object EngineSettingsSnapshotMapper {
                         ),
                     )
                     }
-                if (settings.jishoEnabled) {
+                // Jisho is a Japanese dictionary and the declared egress is Japanese lookups: another
+                // language's terms never go to jisho.org, whatever a restored backup says.
+                if (settings.jishoEnabled && settings.language == LanguageScope.JAPANESE) {
                     // Android's settled network budget is at most 10 requests per 10 seconds.
                     // The desktop 0.5-second floor is intentionally tightened for this port.
                     values["jisho_delay"] = decimal(1.0)

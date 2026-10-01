@@ -1761,6 +1761,8 @@ class MediaMiningViewModel internal constructor(
                         it.lemma.takeIf { lemma ->
                             lemma.isNotBlank() && lemma != it.minedForm
                         },
+                    // The pane opens on the sense row the card opens on (desktop curator parity).
+                    partOfSpeech = it.partOfSpeech,
                 )
             }
         val transition = rebound.request(query)
@@ -1779,7 +1781,7 @@ class MediaMiningViewModel internal constructor(
             viewModelScope.launch {
                 delay(DEFINITION_DEBOUNCE_MS)
                 val outcome =
-                    lookup.define(runId, query.term, query.fallbackTerm).fold(
+                    lookup.define(runId, query.term, query.fallbackTerm, query.partOfSpeech).fold(
                         onSuccess = { result ->
                             if (result.entries.isEmpty()) {
                                 CurationDefinition.Missing

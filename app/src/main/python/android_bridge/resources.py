@@ -2095,11 +2095,24 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     "attribution": (
                         [item.payload() for item in catalog_resource.attribution] if catalog_resource else []
                     ),
+                    # Desktop's import receipt: "This dictionary says its language is X, not the
+                    # language you are mining." Only a well-formed primary subtag crosses.
+                    "sourceLanguage": _declared_source_language(result.source_language),
+                    "sourceLanguageMismatch": bool(result.source_language_mismatch),
                 },
             )
         finally:
             if operation_root.exists():
                 _safe_rmtree(operation_root)
+
+
+def _declared_source_language(value: str) -> str:
+    """The primary subtag an ``index.json`` declares, casefolded; "" when absent or not a code."""
+    primary = value.strip().split("-", 1)[0].casefold()
+    return primary if _SOURCE_LANGUAGE_RE.fullmatch(primary) else ""
+
+
+_SOURCE_LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
 
 
 def _sidecar_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

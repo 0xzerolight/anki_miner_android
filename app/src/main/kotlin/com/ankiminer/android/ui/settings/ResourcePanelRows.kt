@@ -57,6 +57,8 @@ internal fun dictionaryPanelRows(
     chain: List<ResourceChainSelection>,
     installed: List<InstalledDictionary>,
     jishoEnabled: Boolean,
+    /** Jisho is Japanese: another language's panel has no Jisho row. */
+    offersJisho: Boolean = true,
     strings: DictionaryRowStrings,
     onChainChange: (List<ResourceChainSelection>) -> Unit,
     onJishoChange: (Boolean) -> Unit,
@@ -82,15 +84,17 @@ internal fun dictionaryPanelRows(
             }
         },
     ) +
-        ResourceRowSpec(
-            id = JISHO_ROW_ID,
-            title = strings.jishoTitle,
-            metadata = listOf(strings.jishoMeta),
-            enabled = jishoEnabled,
-            onToggle = onJishoChange,
-            warning = strings.jishoWarning,
-            movable = false,
-            removable = false,
+        listOfNotNull(
+            ResourceRowSpec(
+                id = JISHO_ROW_ID,
+                title = strings.jishoTitle,
+                metadata = listOf(strings.jishoMeta),
+                enabled = jishoEnabled,
+                onToggle = onJishoChange,
+                warning = strings.jishoWarning,
+                movable = false,
+                removable = false,
+            ).takeIf { offersJisho },
         )
 }
 

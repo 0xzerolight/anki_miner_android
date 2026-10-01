@@ -97,6 +97,7 @@ internal data class SettingsScreenCallbacks(
     val onUpdateCheckEnabledChange: (Boolean) -> Unit,
     val onCheckForUpdates: () -> Unit,
     val onSkipUpdate: () -> Unit,
+    val language: LanguageSettingsActions = LanguageSettingsActions(),
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -136,6 +137,8 @@ internal fun LazyListScope.settingsCategoryContent(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    language: LanguageSettingsState = LanguageSettingsState(),
+    otherLanguageSlots: OtherLanguageSlots = OtherLanguageSlots(),
 ) {
     when (category) {
         SettingsCategory.ANKI ->
@@ -161,6 +164,8 @@ internal fun LazyListScope.settingsCategoryContent(
                 recorder,
                 expansion,
                 callbacks,
+                language,
+                otherLanguageSlots,
             )
         SettingsCategory.WORD_FILTERS ->
             wordFilterSettings(
@@ -176,6 +181,23 @@ internal fun LazyListScope.settingsCategoryContent(
                 draft,
                 recorder,
                 callbacks.onDraftChange,
+            )
+        SettingsCategory.LANGUAGE ->
+            languageSettings(
+                language = language,
+                draft = draft,
+                recorder = recorder,
+                onDraftChange = callbacks.onDraftChange,
+                actions = callbacks.language,
+                inlineFailure = {
+                    // A failed "Download and switch" reports here, where it was asked for.
+                    ResourceOriginFailure(
+                        setup,
+                        setOf(ResourceFailureOrigin.RECOMMENDED_SET),
+                        setupViewModel,
+                        callbacks,
+                    )
+                },
             )
         SettingsCategory.UI ->
             uiSettings(
@@ -546,11 +568,46 @@ private fun LazyListScope.resourceSettings(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    language: LanguageSettingsState,
+    otherLanguageSlots: OtherLanguageSlots,
 ) {
-    dictionarySourcesCard(draft, resources, setup, setupViewModel, recorder, expansion, callbacks)
-    pitchSourcesCard(draft, resources, setup, setupViewModel, recorder, expansion, callbacks)
-    audioSourcesCard(draft, resources, setup, setupViewModel, recorder, expansion, callbacks)
-    frequencySourcesCard(draft, resources, setup, setupViewModel, recorder, expansion, callbacks)
+    dictionarySourcesCard(
+        draft,
+        resources,
+        setup,
+        setupViewModel,
+        recorder,
+        expansion,
+        callbacks,
+        offersJisho = language.offersJisho,
+        otherLanguageSlots = otherLanguageSlots.dictionaries,
+    )
+    // Pitch accent is a Japanese capability: a language without it has no pitch sources to rank
+    // and no pitch format to choose. Deep links resolve by card key, so audio and frequency still
+    // land on their own cards when this one is absent.
+    if (language.showsPitch) {
+        pitchSourcesCard(
+            draft,
+            resources,
+            setup,
+            setupViewModel,
+            recorder,
+            expansion,
+            callbacks,
+            otherLanguageSlots.pitch,
+        )
+    }
+    audioSourcesCard(draft, resources, setup, setupViewModel, recorder, expansion, callbacks, otherLanguageSlots.audio)
+    frequencySourcesCard(
+        draft,
+        resources,
+        setup,
+        setupViewModel,
+        recorder,
+        expansion,
+        callbacks,
+        otherLanguageSlots.frequencies,
+    )
     // Conditional cards trail every deep-link target on this tab so settingsCardIndexFor stays a
     // table of constants. Adding a conditional card ahead of one, or moving this behind one,
     // silently shifts that target's index whenever this card is hidden.
@@ -567,6 +624,8 @@ private fun LazyListScope.dictionarySourcesCard(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    offersJisho: Boolean,
+    otherLanguageSlots: List<Pair<String, String>>,
 ) {
     // One panel for every dictionary the engine may consult, in the order it consults them. The
     // catalog install cards are gone from here: the wizard still renders CatalogDictionaryCards,
@@ -580,6 +639,7 @@ private fun LazyListScope.dictionarySourcesCard(
                 chain = draft.dictionarySources,
                 installed = resources.dictionaries,
                 jishoEnabled = draft.jisho,
+                offersJisho = offersJisho,
                 strings = dictionaryRowStrings(),
                 onChainChange = {
                     callbacks.onDraftChange(draft.copy(dictionarySources = it))
@@ -644,9 +704,29 @@ private fun LazyListScope.dictionarySourcesCard(
                         setupViewModel,
                         callbacks,
                     )
+                    resources.dictionaryLanguageMismatch
+                        ?.takeIf { mismatch -> resources.dictionaries.any { it.slotId == mismatch.slotId } }
+                        ?.let { mismatch ->
+                            val declared =
+                                java.util.Locale.forLanguageTag(mismatch.sourceLanguage)
+                                    .getDisplayLanguage(currentUiLocale())
+                                    .ifBlank { mismatch.sourceLanguage }
+                            Text(
+                                stringResource(
+                                    R.string.resource_dictionary_language_mismatch,
+                                    mismatch.sourceName,
+                                    declared,
+                                ),
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                    OtherLanguageSlotsNote(otherLanguageSlots)
                     // The pinned Jisho row is the only network dictionary; the disclosure it carries
                     // is what the Play data-safety declaration promises the user can read here.
-                    SupportingText(stringResource(R.string.settings_jisho_disclosure))
+                    if (offersJisho) {
+                        SupportingText(stringResource(R.string.settings_jisho_disclosure))
+                    }
                 },
             )
         }
@@ -661,6 +741,7 @@ private fun LazyListScope.pitchSourcesCard(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    otherLanguageSlots: List<Pair<String, String>>,
 ) {
     settingsCard(SettingsCategory.RESOURCES, recorder, PITCH_SOURCES_KEY) {
         val installedSourceIds = resources.pitchSources.mapTo(mutableSetOf()) { it.sourceId }
@@ -711,6 +792,7 @@ private fun LazyListScope.pitchSourcesCard(
                         setupViewModel,
                         callbacks,
                     )
+                    OtherLanguageSlotsNote(otherLanguageSlots)
                     // Belongs to the sources above it, not to a card of its own: it only decides how
                     // the pitch a source supplies is written onto the card.
                     NullableChoice(
@@ -835,6 +917,7 @@ private fun LazyListScope.audioSourcesCard(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    otherLanguageSlots: List<Pair<String, String>>,
 ) {
     // One card: the pack priority list, its importer, and the reading text-to-speech switch
     // that decides what happens when no pack has the word.
@@ -890,6 +973,7 @@ private fun LazyListScope.audioSourcesCard(
                         setupViewModel,
                         callbacks,
                     )
+                    OtherLanguageSlotsNote(otherLanguageSlots)
                     SettingsSection(stringResource(R.string.settings_reading_audio)) {
                         BooleanSetting(
                             label = stringResource(R.string.settings_reading_tts),
@@ -919,6 +1003,7 @@ private fun LazyListScope.frequencySourcesCard(
     recorder: SettingsCardIndexRecorder,
     expansion: SettingsPanelExpansion,
     callbacks: SettingsScreenCallbacks,
+    otherLanguageSlots: List<Pair<String, String>>,
 ) {
     settingsCard(SettingsCategory.RESOURCES, recorder, FREQUENCY_SOURCES_KEY) {
         val installedSourceIds = resources.frequencySources.mapTo(mutableSetOf()) { it.sourceId }
@@ -969,6 +1054,7 @@ private fun LazyListScope.frequencySourcesCard(
                         setupViewModel,
                         callbacks,
                     )
+                    OtherLanguageSlotsNote(otherLanguageSlots)
                 },
             )
         }
@@ -1372,7 +1458,8 @@ private fun LazyListScope.diagnosticsSettings(
     // Only shown when the tokenizer needs something. A healthy install has nothing to say here,
     // and a permanently visible "Japanese tokenizer - required" card with a Repair button reads
     // as a fault report. Repair re-downloads ~45 MiB and then no-ops when nothing is wrong.
-    if (!setup.uniDicInstalled || setup.failure?.origin == ResourceFailureOrigin.UNIDIC) {
+    // A language that tokenizes without UniDic (every one but Japanese) never needs the card.
+    if (!setup.tokenizerReady || setup.failure?.origin == ResourceFailureOrigin.UNIDIC) {
         settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "unidic") {
             ResourceCard(
                 title = stringResource(R.string.unidic_resource_title),

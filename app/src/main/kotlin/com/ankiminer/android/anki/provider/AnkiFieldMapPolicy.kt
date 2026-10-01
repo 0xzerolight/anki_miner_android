@@ -1,5 +1,7 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.engine.LanguageExtraCardField
+
 /** One non-empty Anki destination assigned to multiple logical engine fields. */
 internal data class AnkiFieldMapConflict(
     val destination: String,
@@ -24,6 +26,10 @@ internal data class AnkiFieldMapMergeResult(
  * Every non-empty Anki destination has at most one logical owner. The note type's first field is
  * reserved for [AnkiFieldKeys.WORD]. Note-type changes retain valid manual choices, then auto-fill
  * only unowned destinations. A same-type reselection returns the exact input map.
+ *
+ * A mining language's own card fields (Hebrew `transliteration`, `root`, ...) come in as
+ * `extraFields`: they are matched on their own placeholder spelling after the keyword pass, the rule
+ * desktop's `auto_map_profile_fields` applies. Japanese passes none, so its maps are unchanged.
  */
 internal object AnkiFieldMapPolicy {
     const val CARD_TYPE_MARKER_KEY = "card_type_marker"
@@ -34,6 +40,7 @@ internal object AnkiFieldMapPolicy {
         fieldNames: List<String>,
         currentFieldMap: Map<String, String>,
         reservedDestinations: Set<String> = emptySet(),
+        extraFields: List<LanguageExtraCardField> = emptyList(),
     ): AnkiFieldMapMergeResult {
         if (currentNoteType == selectedNoteType) {
             return AnkiFieldMapMergeResult(currentFieldMap, emptyList())
@@ -69,10 +76,24 @@ internal object AnkiFieldMapPolicy {
             }
         }
 
+        val extraKeys = extraFields.map(LanguageExtraCardField::key)
+        extraKeys.forEach { key ->
+            val current = currentFieldMap[key].orEmpty()
+            if (current.isNotEmpty() && current in fieldNames && current !in usedDestinations) {
+                merged[key] = current
+                usedDestinations += current
+            }
+        }
+        autoMapProfileFields(fieldNames, extraFields.filterNot { it.key in merged }, usedDestinations)
+            .forEach { (key, destination) ->
+                merged[key] = destination
+                usedDestinations += destination
+            }
+
         val changes =
-            AnkiFieldKeys.ALL.mapNotNull { key ->
+            (AnkiFieldKeys.ALL + extraKeys).mapNotNull { key ->
                 val previous = currentFieldMap[key].orEmpty()
-                val replacement = merged.getValue(key)
+                val replacement = merged[key].orEmpty()
                 if (previous.isNotEmpty() && previous != replacement) {
                     AnkiFieldMappingChange(key, previous, replacement)
                 } else {
@@ -96,6 +117,7 @@ internal object AnkiFieldMapPolicy {
         fieldNames: List<String>,
         currentFieldMap: Map<String, String>,
         reservedDestinations: Set<String> = emptySet(),
+        extraFields: List<LanguageExtraCardField> = emptyList(),
     ): AnkiFieldMapMergeResult {
         val firstField =
             fieldNames.firstOrNull()
@@ -118,8 +140,14 @@ internal object AnkiFieldMapPolicy {
             }
         }
 
-        AnkiFieldKeys.OPTIONAL.forEach { key ->
-            if (merged.getValue(key).isNotEmpty()) return@forEach
+        autoMapProfileFields(fieldNames, extraFields, usedDestinations).forEach { (key, destination) ->
+            merged[key] = destination
+            usedDestinations += destination
+        }
+
+        val extraKeys = extraFields.map(LanguageExtraCardField::key)
+        (AnkiFieldKeys.OPTIONAL + extraKeys).forEach { key ->
+            if (merged[key].orEmpty().isNotEmpty()) return@forEach
             val current = currentFieldMap[key].orEmpty()
             if (current.isNotEmpty() && current in fieldNames && current !in usedDestinations) {
                 merged[key] = current
@@ -128,9 +156,9 @@ internal object AnkiFieldMapPolicy {
         }
 
         val changes =
-            AnkiFieldKeys.ALL.mapNotNull { key ->
+            (AnkiFieldKeys.ALL + extraKeys).mapNotNull { key ->
                 val previous = currentFieldMap[key].orEmpty()
-                val replacement = merged.getValue(key)
+                val replacement = merged[key].orEmpty()
                 if (previous != replacement) {
                     AnkiFieldMappingChange(key, previous, replacement)
                 } else {
@@ -147,8 +175,10 @@ internal object AnkiFieldMapPolicy {
         destination: String,
         fieldNames: List<String>,
         reservedDestinations: Set<String> = emptySet(),
+        /** The active language's own card-field keys, assignable beside [AnkiFieldKeys.ALL]. */
+        extraKeys: Collection<String> = emptyList(),
     ): Map<String, String>? {
-        if (logicalKey !in AnkiFieldKeys.ALL) return null
+        if (logicalKey !in AnkiFieldKeys.ALL && logicalKey !in extraKeys) return null
         val firstField = fieldNames.firstOrNull() ?: return null
         if (logicalKey == AnkiFieldKeys.WORD && destination.isEmpty()) return null
         if (destination.isNotEmpty()) {
@@ -187,6 +217,7 @@ internal object AnkiFieldMapPolicy {
         destination: String,
         fieldNames: List<String>,
         reservedDestinations: Set<String> = emptySet(),
+        extraKeys: Collection<String> = emptyList(),
     ): Boolean =
         assign(
             currentFieldMap,
@@ -194,7 +225,32 @@ internal object AnkiFieldMapPolicy {
             destination,
             fieldNames,
             reservedDestinations,
+            extraKeys,
         ) != null
+
+    /**
+     * Desktop `note_presets.auto_map_profile_fields`: each spec takes the first field, in
+     * [fieldNames] order, whose normalised name equals its placeholder's, unless [claimed] or an
+     * earlier spec holds it. A spec with no match is absent, never `""`.
+     */
+    fun autoMapProfileFields(
+        fieldNames: List<String>,
+        specs: List<LanguageExtraCardField>,
+        claimed: Set<String>,
+    ): Map<String, String> {
+        val taken = claimed.filterTo(mutableSetOf()) { it.isNotEmpty() }
+        val mapping = linkedMapOf<String, String>()
+        specs.forEach { spec ->
+            val placeholder = AnkiFieldAutoMap.normalize(spec.placeholder)
+            fieldNames
+                .firstOrNull { it !in taken && AnkiFieldAutoMap.normalize(it) == placeholder }
+                ?.let { match ->
+                    mapping[spec.key] = match
+                    taken += match
+                }
+        }
+        return mapping
+    }
 
     fun firstConflict(fieldMap: Map<String, String>): AnkiFieldMapConflict? {
         val ownersByDestination = linkedMapOf<String, MutableList<String>>()

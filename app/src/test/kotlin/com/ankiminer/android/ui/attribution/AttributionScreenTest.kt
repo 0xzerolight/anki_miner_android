@@ -69,6 +69,17 @@ class AttributionScreenTest {
         )
     }
 
+    @Test
+    fun installedLanguageDataCarriesItsLicenceNotice() {
+        val calima = FrozenResourceCatalog.forLanguage("ar")!!.languageData.single()
+
+        assertTrue(installedLocalCatalogAttributions(emptyList(), emptyList(), emptySet()).isEmpty())
+        val notices =
+            installedLocalCatalogAttributions(emptyList(), emptyList(), setOf(calima.resourceId))
+        assertEquals(calima.attribution, notices)
+        assertEquals("GPL-2.0-only", notices.single().license)
+    }
+
     private fun frequencySource(sourceId: String) =
         InstalledFrequencySource(
             sourceId = sourceId,

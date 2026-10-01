@@ -22,6 +22,7 @@ class SettingsScreenModelTest {
                 SettingsCategory.RESOURCES,
                 SettingsCategory.WORD_FILTERS,
                 SettingsCategory.SENTENCES,
+                SettingsCategory.LANGUAGE,
                 SettingsCategory.UI,
                 SettingsCategory.DIAGNOSTICS,
             ),

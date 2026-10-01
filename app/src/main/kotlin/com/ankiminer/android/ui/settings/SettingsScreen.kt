@@ -53,6 +53,9 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
+/** The Anki tab's note-type card, where a language switch without a note type is finished. */
+private const val NOTE_TYPE_CARD_KEY = "anki-target"
+
 // This is a dwell, not a transition. At a 120–220 ms motion-token duration, the mark would be
 // gone before the eye arrived at the jumped-to card.
 private const val HIGHLIGHT_MILLIS = 1_200L
@@ -247,6 +250,9 @@ internal fun SettingsRoute(
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val resources by viewModel.resourceState.collectAsStateWithLifecycle()
     val setup by setupViewModel.uiState.collectAsStateWithLifecycle()
+    val inventory by setupViewModel.inventory.collectAsStateWithLifecycle()
+    val languageProfiles by viewModel.languageProfiles.collectAsStateWithLifecycle()
+    val languageDownload by viewModel.languageDownload.collectAsStateWithLifecycle()
     val diagnosticsExport by diagnosticsViewModel.state.collectAsStateWithLifecycle()
     if (!draftState.loaded) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -312,10 +318,23 @@ internal fun SettingsRoute(
         launchedDeliveryRequest = request
         diagnosticsViewModel.deliverShare(onShareDiagnosticsBundle)
     }
+    val language =
+        LanguageSettingsState(
+            activeCode = setup.language,
+            profiles = languageProfiles,
+            downloadingCode = languageDownload,
+            knownWordsPreviewOpen = setup.knownWordsImportPreview != null,
+            busy = setup.busy,
+            noteTypeMissing = setup.noteType.isNullOrEmpty(),
+        )
     SettingsScreen(
         draft = draftState.draft,
         resources = resources,
         setup = setup,
+        language = language,
+        otherLanguageSlots = inventory.otherLanguageSlots(setup.language),
+        onSwitchLanguage = viewModel::switchLanguage,
+        onDownloadAndSwitchLanguage = viewModel::downloadAndSwitchLanguage,
         setupViewModel = setupViewModel,
         saveState = saveState,
         saveError = saveError,
@@ -397,6 +416,10 @@ private fun SettingsScreen(
     draft: SettingsDraft,
     resources: ResourceManagerState,
     setup: SetupUiState,
+    language: LanguageSettingsState,
+    otherLanguageSlots: OtherLanguageSlots,
+    onSwitchLanguage: (String) -> Boolean,
+    onDownloadAndSwitchLanguage: (String) -> Unit,
     setupViewModel: SetupViewModel,
     saveState: SettingsSaveState,
     saveError: LocalizedStringResource?,
@@ -454,6 +477,7 @@ private fun SettingsScreen(
             entries = SETTINGS_SEARCH_INDEX,
             setup = setup,
             dynamicColorSupported = dynamicColorSupported(),
+            language = language,
         ).map { entry ->
             val title = stringResource(entry.title)
             val detail = entry.detail?.let { stringResource(it) }.orEmpty()
@@ -474,6 +498,36 @@ private fun SettingsScreen(
         }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     val searchResults = searchSettings(resolvedEntries, searchQuery)
+
+    // A switch into a language with no note type is finished on the Anki tab: no run can start
+    // until one is picked (config_map refuses a blank note type).
+    var pendingLanguageRoute by rememberSaveable { mutableStateOf<String?>(null) }
+    val noteTypeJumps = rememberNoteTypeJumpRequests()
+    LanguageSwitchNoteTypeRoute(
+        pending = pendingLanguageRoute,
+        language = setup.language,
+        noteType = setup.noteType,
+        onRoute = noteTypeJumps::request,
+        onConsumed = { pendingLanguageRoute = null },
+    )
+    LaunchedEffect(noteTypeJumps.requested) {
+        if (!noteTypeJumps.take()) return@LaunchedEffect
+        cardIndexRecorder.begin(SettingsCategory.ANKI)
+        selectedCategory = SettingsCategory.ANKI
+        searchQuery = ""
+        val index =
+            withTimeoutOrNull(2_000) {
+                snapshotFlow { cardIndexRecorder.indexOf(SettingsCategory.ANKI, NOTE_TYPE_CARD_KEY) }
+                    .filterNotNull()
+                    .first()
+            }
+        if (index != null) {
+            listStates.getValue(SettingsCategory.ANKI).scrollToItem(index)
+            cardIndexRecorder.highlightedKey = NOTE_TYPE_CARD_KEY
+            delay(HIGHLIGHT_MILLIS)
+            cardIndexRecorder.highlightedKey = null
+        }
+    }
 
     LaunchedEffect(requestedCategory, requestedCategoryItemIndex) {
         val jump =
@@ -566,6 +620,17 @@ private fun SettingsScreen(
                 onUpdateCheckEnabledChange = onUpdateCheckEnabledChange,
                 onCheckForUpdates = onCheckForUpdates,
                 onSkipUpdate = onSkipUpdate,
+                language =
+                    LanguageSettingsActions(
+                        onSwitch = { code ->
+                            if (onSwitchLanguage(code)) pendingLanguageRoute = code
+                        },
+                        onDownloadAndSwitch = { code ->
+                            pendingLanguageRoute = code
+                            onDownloadAndSwitchLanguage(code)
+                        },
+                        onChooseNoteType = noteTypeJumps::request,
+                    ),
             )
         SettingsSearchJumpHandler(
             entries = resolvedEntries,
@@ -684,6 +749,8 @@ private fun SettingsScreen(
                     recorder = cardIndexRecorder,
                     expansion = panelExpansion,
                     callbacks = callbacks,
+                    language = language,
+                    otherLanguageSlots = otherLanguageSlots,
                 )
             }
         }

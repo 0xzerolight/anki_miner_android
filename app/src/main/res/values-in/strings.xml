@@ -861,4 +861,26 @@
     <string name="b3_wizard_customize_fields">Sesuaikan bidang di Pengaturan</string>
     <string name="b3_wizard_ready_title">Siap untuk mining</string>
     <string name="b3_wizard_incomplete_title">Penyiapan belum lengkap</string>
+    <string name="b3_settings_category_language">Bahasa</string>
+    <string name="language_settings_title">Bahasa penambangan</string>
+    <string name="language_settings_help">Beralih akan menukar kamus, filter, dek, dan kolom kartu ke pengaturan milik bahasa itu. Bahasa tampilan aplikasi terpisah.</string>
+    <string name="language_unavailable_data_required">Memerlukan unduhan data bahasa satu kali.</string>
+    <string name="language_unavailable_unsupported">Versi ini tidak dapat menambang bahasa ini.</string>
+    <string name="language_download_and_switch">Unduh dan beralih</string>
+    <string name="language_downloading">Mengunduh data bahasanya…</string>
+    <string name="language_switch_blocked_known_words">Selesaikan atau buang impor kata yang dikenal sebelum beralih bahasa.</string>
+    <string name="language_note_type_needed">Pilih jenis catatan untuk %1$s sebelum menambang.</string>
+    <string name="language_choose_note_type">Pilih jenis catatan</string>
+    <string name="language_script_variant">Set karakter</string>
+    <string name="language_script_variant_as_written">Sesuai tulisan</string>
+    <string name="language_script_variant_simplified">Sederhana (简体)</string>
+    <string name="language_script_variant_traditional">Tradisional (繁體)</string>
+    <string name="language_regional_variety">Varietas regional</string>
+    <string name="language_variety_br">Portugis Brasil</string>
+    <string name="language_variety_pt">Portugis Eropa</string>
+    <string name="settings_reading_tone_color">Warnai bacaan menurut nada</string>
+    <string name="mining_failure_language_unavailable">Bahasa penambangan ini memerlukan data bahasanya. Unduh di Pengaturan → Bahasa.</string>
+    <string name="mining_failure_unsupported_language">Versi ini tidak dapat menambang bahasa yang dipilih. Pilih bahasa lain di Pengaturan → Bahasa.</string>
+    <string name="resource_panel_other_language_slots">Terpasang untuk bahasa penambangan lain, tidak dipakai di sini: %1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s menyatakan bahasanya %2$s, bukan bahasa yang sedang Anda tambang.</string>
 </resources>

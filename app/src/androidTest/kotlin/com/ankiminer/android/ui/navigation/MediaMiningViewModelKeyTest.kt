@@ -52,7 +52,7 @@ class MediaMiningViewModelKeyTest {
             safBroker = NoOpSafBroker,
             lane = lane,
             definitionLookup =
-                DefinitionLookupService { _, _, _ ->
+                DefinitionLookupService { _, _, _, _ ->
                     Result.failure(UnsupportedOperationException("unused by key test"))
                 },
             savedStateHandleFactory = { SavedStateHandle() },

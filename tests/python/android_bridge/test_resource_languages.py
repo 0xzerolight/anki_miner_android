@@ -542,3 +542,50 @@ def test_a_japanese_list_only_euc_jp_decodes_is_imported(home: Path, tmp_path: P
     from anki_miner.services.known_word_db import KnownWordDB
 
     assert KnownWordDB(home / "known_words.db").get_known_words() == {"食べる", "日本語"}
+
+
+def _declaring_dictionary(path: Path, source_language: str) -> Path:
+    index = {"title": "Declaring Fixture", "revision": "1", "format": 3, "sourceLanguage": source_language}
+    rows = [["猫", "ねこ", "", "", 0, ["cat"], 1, ""]]
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("index.json", json.dumps(index, ensure_ascii=False))
+        archive.writestr("term_bank_1.json", json.dumps(rows, ensure_ascii=False))
+    return path
+
+
+def _imported(source: Path, **extra: object) -> dict[str, object]:
+    return decode_envelope(
+        resources.import_dictionary(
+            {
+                "operationId": "dictionary-op",
+                "sourcePath": str(source),
+                "slotId": "declaring-dict",
+                "overwrite": False,
+                "catalogResourceId": None,
+                **extra,
+            }
+        ),
+        expected_type="resource.dictionary.imported",
+    ).payload
+
+
+def test_a_japanese_dictionary_imported_for_hebrew_says_so(home: Path, tmp_path: Path) -> None:
+    """Desktop's receipt note; the slot is still imported and stamped for Hebrew."""
+    payload = _imported(_declaring_dictionary(tmp_path / "ja.zip", "ja-JP"), language="he")
+
+    assert payload["sourceLanguage"] == "ja"
+    assert payload["sourceLanguageMismatch"] is True
+    assert _meta_language(home / "dicts" / "declaring-dict") == "he"
+
+
+def test_a_dictionary_declaring_the_mining_language_is_no_mismatch(home: Path, tmp_path: Path) -> None:
+    payload = _imported(_declaring_dictionary(tmp_path / "ja.zip", "ja"))
+
+    assert payload["sourceLanguage"] == "ja"
+    assert payload["sourceLanguageMismatch"] is False
+
+
+def test_an_undeclared_or_malformed_language_crosses_as_empty(home: Path, tmp_path: Path) -> None:
+    payload = _imported(_declaring_dictionary(tmp_path / "odd.zip", "<b>klingon</b>"), language="he")
+
+    assert payload["sourceLanguage"] == ""

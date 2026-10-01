@@ -1,5 +1,5 @@
 path	lines	reason
-app/src/main/kotlin/com/ankiminer/android/MainActivity.kt	331,333,350,352,376,378	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/MainActivity.kt	359,361,378,380,404,406	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/protocol/AnkiValidators.kt	121	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AndroidAnkiMediaStaging.kt	187	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/anki/provider/AnkiMediaStaging.kt	271,276,345,416,443,457	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -17,7 +17,7 @@ app/src/main/kotlin/com/ankiminer/android/anki/provider/ProviderMutationContract
 app/src/main/kotlin/com/ankiminer/android/anki/provider/TargetSnapshots.kt	330,349,367	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/anki/AnkiSetupManager.kt	149,200,317,331	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/resources/PinnedResourceDownloader.kt	677	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettingsRepository.kt	148,552,561,616,619	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/data/settings/AppSettingsRepository.kt	148,559,568,623,626	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/DiagnosticsSettingsRepository.kt	53,121,128	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/data/settings/SubtitleRegexCheck.kt	59	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/diagnostics/DiagnosticsBundleCapture.kt	48	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -32,9 +32,9 @@ app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogRedactor.kt	540	Exi
 app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogSink.kt	76,90	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/media/BoundedFileCopier.kt	253,263	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/media/SafBroker.kt	224,235,350	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt	260,290,437,597,767,782,873,923,1074,1085,1124,1136,1206,1213,1328,1815,1820,1874	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown, and the tokenizer sealed-failure sites map each typed failure to a recorded fault plus a rethrown mining error.
+app/src/main/kotlin/com/ankiminer/android/mining/BridgeMiningRepository.kt	260,290,437,597,771,786,877,927,1078,1089,1128,1140,1210,1217,1332,1819,1824,1878	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown, and the tokenizer sealed-failure sites map each typed failure to a recorded fault plus a rethrown mining error.
 app/src/main/kotlin/com/ankiminer/android/mining/MiningRuntimeContracts.kt	65,283	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt	325,355,501,697,867,882,982,1032,1183,1194,1233,1245,1314,1321,1465,2009,2014,2068	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown.
+app/src/main/kotlin/com/ankiminer/android/reading/BridgeReadingMiningRepository.kt	325,355,501,697,871,886,986,1036,1187,1198,1237,1249,1318,1325,1469,2013,2018,2072	Existing discarded catches are pinned; foreground and late-ack cancellation are control flow with orderly teardown.
 app/src/main/kotlin/com/ankiminer/android/reading/ReadingSourceStager.kt	735,887,1025	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/service/MiningForegroundSessionController.kt	136	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/tts/AndroidTextToSpeechBackend.kt	89,144,148,277,281,309,318	Existing discarded catches are pinned at audit introduction; new sites require review.
@@ -43,5 +43,5 @@ app/src/main/kotlin/com/ankiminer/android/tts/SentenceAudioProtocol.kt	121	Exist
 app/src/main/kotlin/com/ankiminer/android/vm/DiagnosticsViewModel.kt	71,95	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/MediaMiningViewModel.kt	1439,1461	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	1064,1227	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	1287,1375	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	377,522,1592	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.
+app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	1297,1385	Existing discarded catches are pinned at audit introduction; new sites require review.
+app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	448,595,1676	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.

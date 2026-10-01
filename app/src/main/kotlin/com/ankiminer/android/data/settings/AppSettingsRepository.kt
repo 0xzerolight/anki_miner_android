@@ -272,6 +272,8 @@ class DataStoreAppSettingsRepository internal constructor(
                     Keys.knownWordsMatchKanaVariants,
                     value.knownWordsMatchKanaVariants,
                 )
+                candidate.setOrRemove(Keys.scriptVariant, value.scriptVariant)
+                candidate.setOrRemove(Keys.readingToneColor, value.readingToneColor)
                 candidate.setOrRemove(Keys.strictCardOrder, value.strictCardOrder)
                 candidate.setOrRemove(Keys.mergeIncompleteCues, value.mergeIncompleteCues)
                 candidate[Keys.secondarySubtitleEnabled] = value.secondarySubtitleEnabled
@@ -491,6 +493,11 @@ class DataStoreAppSettingsRepository internal constructor(
                     frequencyKeepUnranked = decoder.read(Keys.frequencyKeepUnranked, null, { it }),
                     knownWordsMatchKanaVariants =
                         decoder.read(Keys.knownWordsMatchKanaVariants, null, { it }),
+                    scriptVariant =
+                        decoder.read(Keys.scriptVariant, null, { it }) { value ->
+                            value?.let { AppSettingsValidator.validate(AppSettings(scriptVariant = it)) }
+                        },
+                    readingToneColor = decoder.read(Keys.readingToneColor, null, { it }),
                     strictCardOrder = decoder.read(Keys.strictCardOrder, null, { it }),
                     mergeIncompleteCues = decoder.read(Keys.mergeIncompleteCues, null, { it }),
                     secondarySubtitleEnabled =
@@ -693,6 +700,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val frequencyKeepUnranked = register(booleanPreferencesKey("frequency_keep_unranked"))
             val knownWordsMatchKanaVariants =
                 register(booleanPreferencesKey("known_words_match_kana_variants"))
+            val scriptVariant = register(stringPreferencesKey("script_variant"))
+            val readingToneColor = register(booleanPreferencesKey("reading_tone_color"))
             val strictCardOrder = register(booleanPreferencesKey("strict_card_order"))
             val mergeIncompleteCues = register(booleanPreferencesKey("merge_incomplete_cues"))
             val secondarySubtitleEnabled =

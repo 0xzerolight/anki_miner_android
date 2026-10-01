@@ -260,7 +260,7 @@ class AnkiMinerApplication : Application() {
 
     val subtitleCueLookupService: SubtitleCueLookupService by
         lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-            BridgeSubtitleCueLookupService(pyBridge, resourceExecutor)
+            BridgeSubtitleCueLookupService(pyBridge, resourceExecutor) { miningLanguage.value }
         }
 
     val audioTrackLookupService: AudioTrackLookupService by
@@ -269,7 +269,7 @@ class AnkiMinerApplication : Application() {
                 pyBridge,
                 resourceExecutor,
                 requireNotNull(applicationInfo.nativeLibraryDir),
-            )
+            ) { miningLanguage.value }
         }
 
     private val resourceControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {

@@ -527,6 +527,28 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun importedDictionaryCarriesTheDeclaredLanguageReceipt() {
+        val imported =
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"jmdict-he","catalogResourceId":null,"sourceName":"JMdict","sourceRevision":"1","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[],"sourceLanguage":"ja","sourceLanguageMismatch":true}}""",
+            )
+
+        assertEquals("ja", imported.sourceLanguage)
+        assertTrue(imported.sourceLanguageMismatch)
+        // An older bridge sends neither key: no receipt.
+        val revisionless =
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"revisionless","catalogResourceId":null,"sourceName":"Revisionless","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[]}}""",
+            )
+        assertTrue(!revisionless.sourceLanguageMismatch)
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"x","catalogResourceId":null,"sourceName":"X","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[],"sourceLanguage":"<b>","sourceLanguageMismatch":true}}""",
+            )
+        }
+    }
+
+    @Test
     fun importedPitchAcceptsDesktopYomitanInstalledFormat() {
         val imported =
             ResourceBridgeCodec.decodeImportedPitch(

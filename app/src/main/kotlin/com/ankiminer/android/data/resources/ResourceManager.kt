@@ -849,21 +849,37 @@ internal class AndroidResourceManager(
                 updateProgress(operation, ResourceOperationPhase.IMPORTING)
                 operation.cancellation.check()
                 operation.pythonStarted.set(true)
-                decodePublishedMutation(
-                    raw =
-                        bridge.dispatch(
-                            ResourceBridgeCodec.encodeDictionaryImportRequest(
-                                operation.id,
-                                staged.file.canonicalPath,
-                                slotId,
-                                replace,
-                                catalogResourceId = null,
-                                language = activeLanguage(),
+                val imported =
+                    decodePublishedMutation(
+                        raw =
+                            bridge.dispatch(
+                                ResourceBridgeCodec.encodeDictionaryImportRequest(
+                                    operation.id,
+                                    staged.file.canonicalPath,
+                                    slotId,
+                                    replace,
+                                    catalogResourceId = null,
+                                    language = activeLanguage(),
+                                ),
+                                ResourceProgressSink(operation),
                             ),
-                            ResourceProgressSink(operation),
-                        ),
-                    decode = ResourceBridgeCodec::decodeImportedDictionary,
-                )
+                        decode = ResourceBridgeCodec::decodeImportedDictionary,
+                    )
+                mutableState.update {
+                    it.copy(
+                        dictionaryLanguageMismatch =
+                            imported
+                                .takeIf { result ->
+                                    result.sourceLanguageMismatch && result.sourceLanguage.isNotEmpty()
+                                }?.let { result ->
+                                    DictionaryLanguageMismatch(
+                                        result.slotId,
+                                        result.sourceName,
+                                        result.sourceLanguage,
+                                    )
+                                },
+                    )
+                }
                 refreshAfterCommittedMutation(completesFailedStartupRecovery)
             } finally {
                 staged?.file?.delete()
@@ -2770,6 +2786,9 @@ internal class AndroidResourceManager(
                         it.startupReadiness
                     },
                 language = language,
+                // A search or receipt made under another language does not describe this one.
+                knownWordsPage = it.knownWordsPage.takeIf { _ -> language == it.language },
+                dictionaryLanguageMismatch = it.dictionaryLanguageMismatch.takeIf { _ -> language == it.language },
                 // A language with no catalog file yet has nothing pinned to offer.
                 catalog = catalogs.firstOrNull { catalog -> catalog.language == language },
                 dictionaries = dictionaries,
@@ -3123,6 +3142,10 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_dictionary_invalid)
             "resource_cleanup_failed" ->
                 strings.resolve(R.string.resource_failure_delete)
+            "language_unavailable" ->
+                strings.resolve(R.string.mining_failure_language_unavailable)
+            "unsupported_language" ->
+                strings.resolve(R.string.mining_failure_unsupported_language)
             else -> strings.resolve(R.string.resource_failure_unknown_bridge_code, listOf(code))
         }
 

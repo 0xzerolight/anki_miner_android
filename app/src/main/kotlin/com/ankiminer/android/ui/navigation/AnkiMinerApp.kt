@@ -790,10 +790,14 @@ internal fun AnkiMinerApp(
                 KnownWordsManagerRoute(setupViewModel)
             }
             composable(AnkiMinerDestination.ATTRIBUTION.route) {
+                // Every language's installs: a notice is owed for data on the device, not only for
+                // what the active language mines with.
+                val inventory by setupViewModel.inventory.collectAsStateWithLifecycle()
                 AttributionScreen(
-                    installedDictionaries = setup.dictionaries,
-                    installedFrequencySources = setup.frequencySources,
-                    installedPitchSources = setup.pitchSources,
+                    installedDictionaries = inventory.dictionaries,
+                    installedFrequencySources = inventory.frequencySources,
+                    installedPitchSources = inventory.pitchSources,
+                    installedLanguageData = inventory.installedLanguageData,
                     onOpenNotices = {
                         navController.navigate(AnkiMinerDestination.NOTICES.route)
                     },
@@ -945,7 +949,7 @@ internal fun miningReadinessMessage(state: SetupUiState): Int =
         !state.pythonReady -> R.string.readiness_python_pending
         state.resourceStartup != com.ankiminer.android.data.resources.ResourceStartupReadiness.READY ->
             R.string.readiness_resources_pending
-        !state.uniDicInstalled -> R.string.readiness_unidic_required
+        !state.tokenizerReady -> R.string.readiness_unidic_required
         !state.dictionaryReady ->
             if (state.dictionaries.any { it.occupied }) {
                 R.string.readiness_dictionary_disabled

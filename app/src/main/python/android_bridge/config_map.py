@@ -614,7 +614,13 @@ def map_config_settings(
         elif field_name in _MAPPING_FIELDS:
             updates[field_name] = _anki_mapping_overlay(field_name, value, getattr(base, field_name))
         elif field_name == "dictionary_chain":
-            updates[field_name] = _dictionary_chain(value, ChainEntry)
+            chain = _dictionary_chain(value, ChainEntry)
+            # Jisho is a Japanese dictionary, and the declared network egress is Japanese
+            # lookups: the engine would send any language's terms to jisho.org, so a Jisho
+            # entry under another language is refused rather than dropped.
+            if language != JAPANESE and any(getattr(entry, "kind", None) == "jisho" for entry in chain):
+                raise _invalid("dictionary_chain.kind", "jisho is offered only for Japanese")
+            updates[field_name] = chain
         elif field_name == "frequency_chain":
             updates[field_name] = _frequency_chain(value, FreqEntry)
         elif field_name == "pitch_chain":
