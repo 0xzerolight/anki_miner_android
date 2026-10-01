@@ -2469,6 +2469,38 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aLanguageSwitchDuringAnotherOperationIsAppliedWhenItFinishes() =
+        runTest {
+            var language = JAPANESE
+            val executor = PausableExecutor()
+            val harness = Harness(resourceExecutor = executor, activeLanguage = { language })
+            executor.paused = true
+            val search = launch { harness.manager.searchKnownWords("", loadMore = false) }
+            runCurrent()
+            // The search holds the operation lock with its work queued.
+            assertEquals(1, executor.queued.size)
+
+            // The follower wakes as soon as the work lease is released, which can be before the
+            // lock is: the refresh has to wait for it, not give up.
+            language = "he"
+            val refresh = launch { harness.manager.refreshLanguage() }
+            runCurrent()
+            executor.paused = false
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            search.join()
+            refresh.join()
+
+            val state = harness.manager.state.value
+            assertEquals("he", state.language)
+            assertEquals("he", state.catalog?.language)
+            assertNull(state.activeOperation)
+            assertNull(state.failure)
+        }
+
+    @Test
     fun replacingHebrewsWordListLeavesJapanesesByteIdentical() =
         runTest {
             var language = JAPANESE
