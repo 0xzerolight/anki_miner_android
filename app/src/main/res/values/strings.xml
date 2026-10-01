@@ -659,7 +659,7 @@
     <string name="settings_subtitle_preset_speaker">Speaker prefix</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">If the engine rejects this pattern, the filter is skipped.</string>
-    <string name="settings_filtering">Filtering</string>
+    <string name="settings_filtering">Word filters</string>
     <string name="settings_search">Search settings</string>
     <string name="settings_search_no_results">No setting matches that.</string>
     <string name="settings_search_clear">Clear search</string>
@@ -669,12 +669,26 @@
     <string name="settings_bold_target">Bold the target in its sentence</string>
     <string name="settings_deduplicate">Deduplicate sentences</string>
     <string name="settings_i_plus_one">Use the i+1 filter</string>
-    <string name="settings_sentence_length">Limit sentence length</string>
-    <string name="settings_max_duration">Maximum sentence duration (0 = unlimited)</string>
-    <string name="settings_max_characters">Maximum sentence characters (0 = unlimited)</string>
+    <string name="settings_max_duration">Maximum sentence duration (seconds)</string>
+    <string name="settings_max_characters">Maximum sentence characters</string>
     <string name="settings_reading_occurrence">Reading minimum occurrences</string>
-    <string name="settings_max_frequency">Maximum frequency rank (0 = unlimited)</string>
+    <string name="settings_max_frequency">Maximum frequency rank</string>
     <string name="settings_workers">Parallel media workers (1–20)</string>
+    <string name="settings_min_frequency">Minimum frequency rank</string>
+    <string name="settings_frequency_band_help">Mine only words ranked inside this band. Rank 1 is the most common word. 0 leaves that end open.</string>
+    <string name="settings_frequency_keep_unranked">Include words missing from the frequency list</string>
+    <string name="settings_known_words_match_kana_variants">Treat kana spellings of known words as known</string>
+    <string name="settings_known_words_match_kana_variants_help">When a subtitle spells a word in kana (e.g. うなずく) and the kanji dictionary form (頷く) is already in your collection or known list, skip it instead of creating a second card. Kanji spellings are never merged this way.</string>
+    <string name="settings_card_creation">Card creation</string>
+    <string name="settings_strict_card_order">Create cards in order of appearance</string>
+    <string name="settings_strict_card_order_help">Adds cards to Anki in the order the words appear in the media, instead of the order their media finished extracting.</string>
+    <string name="settings_sentence_options">Sentence options</string>
+    <string name="settings_max_duration_help">Drops cards whose example sentence audio is longer than this many seconds. Set to 0 for no limit.</string>
+    <string name="settings_max_characters_help">Drops cards whose sentence text exceeds this many characters. Set to 0 for no limit.</string>
+    <string name="settings_secondary_subtitle">Secondary subtitles</string>
+    <string name="settings_secondary_subtitle_help">Adds a picker for a translation subtitle track to the Video tab. When the Sentence translation field is mapped under Cards &amp; Anki, its line goes on the card.</string>
+    <string name="settings_merge_incomplete_cues">Mine full sentences across subtitle lines</string>
+    <string name="settings_merge_incomplete_cues_help">Joins neighbouring subtitle lines when a line does not end a sentence, so the card carries the whole sentence instead of a fragment. Reading sources have no subtitle timings and ignore it.</string>
     <string name="settings_no_dictionaries">No dictionary installed.</string>
     <string name="settings_no_frequency_sources">No frequency source installed.</string>
     <string name="settings_no_audio_packs">No audio pack installed.</string>
@@ -692,7 +706,7 @@
     <string name="resource_panel_dictionaries_explanation">Tried top to bottom; the first dictionary with an entry wins.</string>
     <string name="resource_panel_pitch_heading">Active pitch accent sources</string>
     <string name="resource_panel_pitch_explanation">Tried top to bottom; the first source with a pitch entry wins.</string>
-    <string name="resource_panel_audio_heading">Active audio sources</string>
+    <string name="resource_panel_audio_heading">Word audio</string>
     <string name="resource_panel_audio_explanation">Tried top to bottom; the first source with audio wins.</string>
     <string name="resource_panel_frequency_heading">Active frequency sources</string>
     <string name="resource_panel_frequency_explanation">Lowest rank filters; harmonic mean sorts. Order only sets the card\'s source list.</string>
@@ -783,12 +797,13 @@
     <string name="notices_documents_heading">Bundled notice documents</string>
 
     <!-- Batch 3: Settings and wizard -->
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Cards &amp; Anki</string>
     <string name="b3_settings_category_media">Media</string>
     <string name="b3_settings_category_resources">Resources</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Frequency</string>
-    <string name="b3_settings_category_filtering">Filtering</string>
+    <string name="b3_settings_category_word_filters">Word filters</string>
+    <string name="b3_settings_category_sentences">Sentences</string>
     <string name="b3_settings_category_ui">UI</string>
     <string name="b3_settings_category_diagnostics">Diagnostics</string>
     <string name="b3_settings_save_pending">Changes pending</string>

@@ -650,7 +650,7 @@
     <string name="settings_subtitle_preset_speaker">Préfixe de locuteur</string>
     <string name="settings_subtitle_preset_description">%1$s : %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Si le moteur rejette ce motif, le filtre est ignoré.</string>
-    <string name="settings_filtering">Filtrage</string>
+    <string name="settings_filtering">Filtres de mots</string>
     <string name="settings_search">Rechercher dans les paramètres</string>
     <string name="settings_search_no_results">Aucun paramètre ne correspond.</string>
     <string name="settings_search_clear">Effacer la recherche</string>
@@ -660,12 +660,26 @@
     <string name="settings_bold_target">Mettre la cible en gras dans sa phrase</string>
     <string name="settings_deduplicate">Dédupliquer les phrases</string>
     <string name="settings_i_plus_one">Utiliser le filtre i+1</string>
-    <string name="settings_sentence_length">Limiter la longueur des phrases</string>
-    <string name="settings_max_duration">Durée maximale des phrases (0 = illimitée)</string>
-    <string name="settings_max_characters">Nombre maximal de caractères par phrase (0 = illimité)</string>
+    <string name="settings_max_duration">Durée maximale des phrases (secondes)</string>
+    <string name="settings_max_characters">Nombre maximal de caractères par phrase</string>
     <string name="settings_reading_occurrence">Occurrences minimales de lecture</string>
-    <string name="settings_max_frequency">Rang de fréquence maximal (0 = illimité)</string>
+    <string name="settings_max_frequency">Rang de fréquence maximal</string>
     <string name="settings_workers">Agents média parallèles (1–20)</string>
+    <string name="settings_min_frequency">Rang de fréquence minimal</string>
+    <string name="settings_frequency_band_help">N\'extrait que les mots classés dans cette plage. Le rang 1 est le mot le plus courant. 0 laisse cette borne ouverte.</string>
+    <string name="settings_frequency_keep_unranked">Inclure les mots absents de la liste de fréquence</string>
+    <string name="settings_known_words_match_kana_variants">Traiter les orthographes en kana des mots connus comme connus</string>
+    <string name="settings_known_words_match_kana_variants_help">Lorsqu\'un sous-titre orthographie un mot en kana (par exemple うなずく) et que la forme kanji du dictionnaire (頷く) figure déjà dans votre collection ou votre liste de mots connus, ce mot est ignoré au lieu de créer une seconde carte. Les orthographes en kanji ne sont jamais fusionnées de cette manière.</string>
+    <string name="settings_card_creation">Création des cartes</string>
+    <string name="settings_strict_card_order">Créer les cartes dans l\'ordre d\'apparition</string>
+    <string name="settings_strict_card_order_help">Ajoute les cartes à Anki dans l\'ordre d\'apparition des mots dans le média, plutôt que dans l\'ordre où l\'extraction de leur média s\'est terminée.</string>
+    <string name="settings_sentence_options">Options des phrases</string>
+    <string name="settings_max_duration_help">Élimine les cartes dont l\'audio de la phrase d\'exemple dépasse ce nombre de secondes. Définissez 0 pour aucune limite.</string>
+    <string name="settings_max_characters_help">Élimine les cartes dont le texte de la phrase dépasse ce nombre de caractères. Définissez 0 pour aucune limite.</string>
+    <string name="settings_secondary_subtitle">Sous-titres secondaires</string>
+    <string name="settings_secondary_subtitle_help">Ajoute à l\'onglet Vidéo un sélecteur pour une piste de sous-titres de traduction. Quand le champ « Sentence translation » est mappé dans Cartes et Anki, sa ligne figure sur la carte.</string>
+    <string name="settings_merge_incomplete_cues">Extraire des phrases complètes sur plusieurs lignes de sous-titres</string>
+    <string name="settings_merge_incomplete_cues_help">Fusionne les lignes de sous-titres voisines lorsqu\'une ligne ne termine pas une phrase, afin que la carte porte la phrase entière plutôt qu\'un fragment. Les sources de lecture n\'ont pas de minutage de sous-titres et l\'ignorent.</string>
     <string name="settings_no_dictionaries">Aucun dictionnaire installé.</string>
     <string name="settings_no_frequency_sources">Aucune source de fréquence installée.</string>
     <string name="settings_no_audio_packs">Aucun pack audio installé.</string>
@@ -683,7 +697,7 @@
     <string name="resource_panel_dictionaries_explanation">Testés de haut en bas ; le premier dictionnaire ayant une entrée l\'emporte.</string>
     <string name="resource_panel_pitch_heading">Sources d\'accent de hauteur actives</string>
     <string name="resource_panel_pitch_explanation">Testées de haut en bas ; la première source ayant une entrée d\'accent de hauteur l\'emporte.</string>
-    <string name="resource_panel_audio_heading">Sources audio actives</string>
+    <string name="resource_panel_audio_heading">Audio des mots</string>
     <string name="resource_panel_audio_explanation">Testées de haut en bas ; la première source ayant de l\'audio l\'emporte.</string>
     <string name="resource_panel_frequency_heading">Sources de fréquence actives</string>
     <string name="resource_panel_frequency_explanation">Le rang le plus bas filtre ; la moyenne harmonique trie. L\'ordre ne définit que la liste des sources de la carte.</string>
@@ -772,12 +786,13 @@
     <string name="anki_setup_schedule_failed">La configuration Anki n\'a pas pu être planifiée</string>
     <string name="notices_title">Avis tiers</string>
     <string name="notices_documents_heading">Documents d\'avis inclus</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Cartes et Anki</string>
     <string name="b3_settings_category_media">Média</string>
     <string name="b3_settings_category_resources">Ressources</string>
     <string name="b3_settings_category_audio">Audio</string>
     <string name="b3_settings_category_frequency">Fréquence</string>
-    <string name="b3_settings_category_filtering">Filtrage</string>
+    <string name="b3_settings_category_word_filters">Filtres de mots</string>
+    <string name="b3_settings_category_sentences">Phrases</string>
     <string name="b3_settings_category_ui">Interface</string>
     <string name="b3_settings_category_diagnostics">Diagnostic</string>
     <string name="b3_settings_save_pending">Modifications en attente</string>

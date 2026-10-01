@@ -884,6 +884,7 @@ class SettingsViewModelTest {
             EngineDefaults.READING_MINIMUM_OCCURRENCE.toString(),
             draft.readingOccurrence,
         )
+        assertEquals(EngineDefaults.MIN_FREQUENCY_RANK.toString(), draft.minFrequency)
         assertEquals(EngineDefaults.MAX_FREQUENCY_RANK.toString(), draft.maxFrequency)
         assertEquals(EngineDefaults.MAX_PARALLEL_WORKERS.toString(), draft.workers)
         // A prefilled value the validators reject would block every settings write behind a field
@@ -907,6 +908,7 @@ class SettingsViewModelTest {
         assertNull(saved.maxSentenceDurationSeconds)
         assertNull(saved.maxSentenceCharacters)
         assertNull(saved.readingMinimumOccurrence)
+        assertNull(saved.minFrequencyRank)
         assertNull(saved.maxFrequencyRank)
         assertNull(saved.maxParallelWorkers)
         // Nothing else drifted either: the prefill is display text, not stored state.

@@ -648,7 +648,7 @@
     <string name="settings_subtitle_preset_speaker">Tiền tố người nói</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Nếu công cụ từ chối mẫu này, bộ lọc sẽ bị bỏ qua.</string>
-    <string name="settings_filtering">Bộ lọc</string>
+    <string name="settings_filtering">Bộ lọc từ</string>
     <string name="settings_search">Tìm cài đặt</string>
     <string name="settings_search_no_results">Không có cài đặt nào khớp.</string>
     <string name="settings_search_clear">Xóa tìm kiếm</string>
@@ -658,12 +658,26 @@
     <string name="settings_bold_target">In đậm từ mục tiêu trong câu</string>
     <string name="settings_deduplicate">Loại bỏ câu trùng lặp</string>
     <string name="settings_i_plus_one">Dùng bộ lọc i+1</string>
-    <string name="settings_sentence_length">Giới hạn độ dài câu</string>
-    <string name="settings_max_duration">Thời lượng câu tối đa (0 = không giới hạn)</string>
-    <string name="settings_max_characters">Số ký tự câu tối đa (0 = không giới hạn)</string>
+    <string name="settings_max_duration">Thời lượng câu tối đa (giây)</string>
+    <string name="settings_max_characters">Số ký tự câu tối đa</string>
     <string name="settings_reading_occurrence">Số lần xuất hiện tối thiểu của cách đọc</string>
-    <string name="settings_max_frequency">Hạng tần suất tối đa (0 = không giới hạn)</string>
+    <string name="settings_max_frequency">Hạng tần suất tối đa</string>
     <string name="settings_workers">Trình xử lý phương tiện song song (1–20)</string>
+    <string name="settings_min_frequency">Hạng tần suất tối thiểu</string>
+    <string name="settings_frequency_band_help">Chỉ khai thác từ có hạng nằm trong dải này. Hạng 1 là từ phổ biến nhất. 0 để đầu đó không giới hạn.</string>
+    <string name="settings_frequency_keep_unranked">Bao gồm từ thiếu trong danh sách tần suất</string>
+    <string name="settings_known_words_match_kana_variants">Coi cách viết kana của từ đã biết là đã biết</string>
+    <string name="settings_known_words_match_kana_variants_help">Khi phụ đề viết một từ bằng kana (ví dụ: うなずく) và dạng từ điển bằng kanji (頷く) đã có trong bộ sưu tập hoặc danh sách từ đã biết, bỏ qua từ đó thay vì tạo thêm thẻ thứ hai. Cách viết kanji không bao giờ được gộp theo cách này.</string>
+    <string name="settings_card_creation">Tạo thẻ</string>
+    <string name="settings_strict_card_order">Tạo thẻ theo thứ tự xuất hiện</string>
+    <string name="settings_strict_card_order_help">Thêm thẻ vào Anki theo thứ tự các từ xuất hiện trong phương tiện, thay vì theo thứ tự phương tiện của chúng được trích xuất xong.</string>
+    <string name="settings_sentence_options">Tùy chọn câu</string>
+    <string name="settings_max_duration_help">Loại bỏ các thẻ mà âm thanh câu ví dụ dài hơn số giây này. Đặt 0 để không giới hạn.</string>
+    <string name="settings_max_characters_help">Loại bỏ các thẻ mà văn bản câu vượt quá số ký tự này. Đặt 0 để không giới hạn.</string>
+    <string name="settings_secondary_subtitle">Phụ đề thứ hai</string>
+    <string name="settings_secondary_subtitle_help">Thêm bộ chọn rãnh phụ đề bản dịch vào tab Video. Khi trường “Sentence translation” đã được ánh xạ trong Thẻ &amp; Anki, dòng của nó sẽ có trên thẻ.</string>
+    <string name="settings_merge_incomplete_cues">Khai thác câu đầy đủ qua các dòng phụ đề</string>
+    <string name="settings_merge_incomplete_cues_help">Ghép các dòng phụ đề liền kề khi một dòng không kết thúc câu, để thẻ chứa cả câu thay vì một đoạn rời. Nguồn tài liệu đọc không có mốc thời gian phụ đề nên bỏ qua tùy chọn này.</string>
     <string name="settings_no_dictionaries">Chưa cài từ điển nào.</string>
     <string name="settings_no_frequency_sources">Chưa cài nguồn tần suất nào.</string>
     <string name="settings_no_audio_packs">Chưa cài gói âm thanh nào.</string>
@@ -681,7 +695,7 @@
     <string name="resource_panel_dictionaries_explanation">Thử theo thứ tự từ trên xuống; từ điển đầu tiên có mục được dùng.</string>
     <string name="resource_panel_pitch_heading">Nguồn trọng âm cao độ đang hoạt động</string>
     <string name="resource_panel_pitch_explanation">Thử theo thứ tự từ trên xuống; nguồn đầu tiên có mục trọng âm được dùng.</string>
-    <string name="resource_panel_audio_heading">Nguồn âm thanh đang hoạt động</string>
+    <string name="resource_panel_audio_heading">Âm thanh từ</string>
     <string name="resource_panel_audio_explanation">Thử theo thứ tự từ trên xuống; nguồn đầu tiên có âm thanh được dùng.</string>
     <string name="resource_panel_frequency_heading">Nguồn tần suất đang hoạt động</string>
     <string name="resource_panel_frequency_explanation">Bộ lọc dùng hạng thấp nhất; sắp xếp dùng trung bình điều hòa. Thứ tự chỉ quyết định danh sách nguồn trên thẻ.</string>
@@ -770,12 +784,13 @@
     <string name="anki_setup_schedule_failed">Không thể lên lịch thiết lập Anki</string>
     <string name="notices_title">Thông báo bên thứ ba</string>
     <string name="notices_documents_heading">Tài liệu thông báo đi kèm</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Thẻ &amp; Anki</string>
     <string name="b3_settings_category_media">Phương tiện</string>
     <string name="b3_settings_category_resources">Tài nguyên</string>
     <string name="b3_settings_category_audio">Âm thanh</string>
     <string name="b3_settings_category_frequency">Tần suất</string>
-    <string name="b3_settings_category_filtering">Bộ lọc</string>
+    <string name="b3_settings_category_word_filters">Bộ lọc từ</string>
+    <string name="b3_settings_category_sentences">Câu</string>
     <string name="b3_settings_category_ui">Giao diện</string>
     <string name="b3_settings_category_diagnostics">Chẩn đoán</string>
     <string name="b3_settings_save_pending">Thay đổi đang chờ</string>

@@ -650,7 +650,7 @@
     <string name="settings_subtitle_preset_speaker">Prefixo do falante</string>
     <string name="settings_subtitle_preset_description">%1$s: %2$s</string>
     <string name="settings_subtitle_regex_uncompilable">Se o mecanismo rejeitar este padrão, o filtro é ignorado.</string>
-    <string name="settings_filtering">Filtragem</string>
+    <string name="settings_filtering">Filtros de palavras</string>
     <string name="settings_search">Pesquisar configurações</string>
     <string name="settings_search_no_results">Nenhuma configuração corresponde a isto.</string>
     <string name="settings_search_clear">Limpar pesquisa</string>
@@ -660,12 +660,26 @@
     <string name="settings_bold_target">Destacar o alvo na frase</string>
     <string name="settings_deduplicate">Remover frases duplicadas</string>
     <string name="settings_i_plus_one">Usar o filtro i+1</string>
-    <string name="settings_sentence_length">Limitar o comprimento da frase</string>
-    <string name="settings_max_duration">Duração máxima da frase (0 = ilimitada)</string>
-    <string name="settings_max_characters">Máximo de caracteres na frase (0 = ilimitado)</string>
+    <string name="settings_max_duration">Duração máxima da frase (segundos)</string>
+    <string name="settings_max_characters">Máximo de caracteres na frase</string>
     <string name="settings_reading_occurrence">Ocorrências mínimas de leitura</string>
-    <string name="settings_max_frequency">Classificação máxima de frequência (0 = ilimitada)</string>
+    <string name="settings_max_frequency">Classificação máxima de frequência</string>
     <string name="settings_workers">Processos de mídia paralelos (1–20)</string>
+    <string name="settings_min_frequency">Classificação mínima de frequência</string>
+    <string name="settings_frequency_band_help">Minere apenas palavras classificadas dentro desta faixa. A posição 1 é a palavra mais comum. 0 deixa essa ponta aberta.</string>
+    <string name="settings_frequency_keep_unranked">Incluir palavras ausentes da lista de frequência</string>
+    <string name="settings_known_words_match_kana_variants">Tratar grafias em kana de palavras conhecidas como conhecidas</string>
+    <string name="settings_known_words_match_kana_variants_help">Quando uma legenda grafa uma palavra em kana (ex.: うなずく) e a forma de dicionário em kanji (頷く) já está na sua coleção ou lista de palavras conhecidas, ela é ignorada em vez de criar um segundo cartão. Grafias em kanji nunca são mescladas dessa forma.</string>
+    <string name="settings_card_creation">Criação de cartões</string>
+    <string name="settings_strict_card_order">Criar cartões na ordem em que aparecem</string>
+    <string name="settings_strict_card_order_help">Adiciona cartões ao Anki na ordem em que as palavras aparecem na mídia, em vez da ordem em que a extração da mídia terminou.</string>
+    <string name="settings_sentence_options">Opções de frase</string>
+    <string name="settings_max_duration_help">Descarta cartões cujo áudio da frase de exemplo é mais longo que este número de segundos. Defina como 0 para sem limite.</string>
+    <string name="settings_max_characters_help">Descarta cartões cujo texto da frase excede este número de caracteres. Defina como 0 para sem limite.</string>
+    <string name="settings_secondary_subtitle">Legendas secundárias</string>
+    <string name="settings_secondary_subtitle_help">Adiciona à aba Vídeo um seletor para uma faixa de legenda de tradução. Quando o campo “Sentence translation” está mapeado em Cartões e Anki, a linha dela vai para o cartão.</string>
+    <string name="settings_merge_incomplete_cues">Minerar frases completas entre linhas de legenda</string>
+    <string name="settings_merge_incomplete_cues_help">Junta linhas de legenda vizinhas quando uma linha não termina uma frase, para que o cartão traga a frase inteira em vez de um fragmento. Fontes de leitura não têm marcação de tempo de legenda e ignoram esta opção.</string>
     <string name="settings_no_dictionaries">Nenhum dicionário instalado.</string>
     <string name="settings_no_frequency_sources">Nenhuma fonte de frequência instalada.</string>
     <string name="settings_no_audio_packs">Nenhum pacote de áudio instalado.</string>
@@ -683,7 +697,7 @@
     <string name="resource_panel_dictionaries_explanation">Tentados de cima para baixo; o primeiro dicionário com uma entrada vence.</string>
     <string name="resource_panel_pitch_heading">Fontes de acento tonal ativas</string>
     <string name="resource_panel_pitch_explanation">Tentadas de cima para baixo; a primeira fonte com entrada de acento tonal vence.</string>
-    <string name="resource_panel_audio_heading">Fontes de áudio ativas</string>
+    <string name="resource_panel_audio_heading">Áudio da palavra</string>
     <string name="resource_panel_audio_explanation">Tentadas de cima para baixo; a primeira fonte com áudio vence.</string>
     <string name="resource_panel_frequency_heading">Fontes de frequência ativas</string>
     <string name="resource_panel_frequency_explanation">A classificação mais baixa filtra; a média harmônica ordena. A ordem só define a lista de fontes do cartão.</string>
@@ -772,12 +786,13 @@
     <string name="anki_setup_schedule_failed">Não foi possível agendar a configuração do Anki</string>
     <string name="notices_title">Avisos de terceiros</string>
     <string name="notices_documents_heading">Documentos de aviso incluídos</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">Cartões e Anki</string>
     <string name="b3_settings_category_media">Mídia</string>
     <string name="b3_settings_category_resources">Recursos</string>
     <string name="b3_settings_category_audio">Áudio</string>
     <string name="b3_settings_category_frequency">Frequência</string>
-    <string name="b3_settings_category_filtering">Filtragem</string>
+    <string name="b3_settings_category_word_filters">Filtros de palavras</string>
+    <string name="b3_settings_category_sentences">Frases</string>
     <string name="b3_settings_category_ui">Interface</string>
     <string name="b3_settings_category_diagnostics">Diagnósticos</string>
     <string name="b3_settings_save_pending">Alterações pendentes</string>

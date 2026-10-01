@@ -648,7 +648,7 @@
     <string name="settings_subtitle_preset_speaker">說話者前綴</string>
     <string name="settings_subtitle_preset_description">%1$s：%2$s</string>
     <string name="settings_subtitle_regex_uncompilable">若引擎拒絕此模式，將略過此篩選器。</string>
-    <string name="settings_filtering">篩選器</string>
+    <string name="settings_filtering">單字篩選</string>
     <string name="settings_search">搜尋設定</string>
     <string name="settings_search_no_results">沒有符合的設定。</string>
     <string name="settings_search_clear">清除搜尋</string>
@@ -658,12 +658,26 @@
     <string name="settings_bold_target">在句子中將目標單字加粗</string>
     <string name="settings_deduplicate">依句子去除重複</string>
     <string name="settings_i_plus_one">使用 i+1 篩選器</string>
-    <string name="settings_sentence_length">限制句子長度</string>
-    <string name="settings_max_duration">最大句子時長（0 = 無限制）</string>
-    <string name="settings_max_characters">最大句子字元數（0 = 無限制）</string>
+    <string name="settings_max_duration">最大句子時長（秒）</string>
+    <string name="settings_max_characters">最大句子字元數</string>
     <string name="settings_reading_occurrence">讀音最少出現次數</string>
-    <string name="settings_max_frequency">最大頻率排名（0 = 無限制）</string>
+    <string name="settings_max_frequency">最大頻率排名</string>
     <string name="settings_workers">平行媒體工作執行緒（1–20）</string>
+    <string name="settings_min_frequency">最小頻率排名</string>
+    <string name="settings_frequency_band_help">僅採集排名在此範圍內的單字。排名 1 為最常見的單字。0 表示該端不設限。</string>
+    <string name="settings_frequency_keep_unranked">納入不在頻率清單中的單字</string>
+    <string name="settings_known_words_match_kana_variants">將已知單字的假名拼寫視為已知</string>
+    <string name="settings_known_words_match_kana_variants_help">當字幕以假名拼寫單字（例如 うなずく），而該單字的漢字字典形（頷く）已在您的收藏或已知單字清單中時，則略過該單字，而不建立第二張卡片。漢字拼寫絕不會以此方式合併。</string>
+    <string name="settings_card_creation">卡片建立</string>
+    <string name="settings_strict_card_order">依出現順序建立卡片</string>
+    <string name="settings_strict_card_order_help">依單字在媒體中出現的順序，而非依媒體擷取完成的順序，將卡片加入 Anki。</string>
+    <string name="settings_sentence_options">句子選項</string>
+    <string name="settings_max_duration_help">捨棄例句音訊長度超過此秒數的卡片。設為 0 表示無限制。</string>
+    <string name="settings_max_characters_help">捨棄句子文字超過此字元數的卡片。設為 0 表示無限制。</string>
+    <string name="settings_secondary_subtitle">次要語言字幕</string>
+    <string name="settings_secondary_subtitle_help">在影片分頁中加入翻譯字幕軌選擇器。若已在「卡片與 Anki」中對應「Sentence translation」欄位，其字幕行會寫入卡片。</string>
+    <string name="settings_merge_incomplete_cues">跨字幕行採集完整例句</string>
+    <string name="settings_merge_incomplete_cues_help">當某行字幕未結束一個句子時，將相鄰的字幕行合併，讓卡片承載完整句子而非片段。閱讀來源沒有字幕時間資訊，會忽略此設定。</string>
     <string name="settings_no_dictionaries">未安裝字典。</string>
     <string name="settings_no_frequency_sources">未安裝頻率來源。</string>
     <string name="settings_no_audio_packs">未安裝音訊包。</string>
@@ -681,7 +695,7 @@
     <string name="resource_panel_dictionaries_explanation">由上而下嘗試；第一個含該條目的字典勝出。</string>
     <string name="resource_panel_pitch_heading">使用中的高低音調來源</string>
     <string name="resource_panel_pitch_explanation">由上而下嘗試；第一個含高低音調條目的來源勝出。</string>
-    <string name="resource_panel_audio_heading">使用中的音訊來源</string>
+    <string name="resource_panel_audio_heading">單字發音</string>
     <string name="resource_panel_audio_explanation">由上而下嘗試；第一個含音訊的來源勝出。</string>
     <string name="resource_panel_frequency_heading">使用中的頻率來源</string>
     <string name="resource_panel_frequency_explanation">篩選採用最低排名；排序採用調和平均數。順序僅決定卡片的來源清單。</string>
@@ -770,12 +784,13 @@
     <string name="anki_setup_schedule_failed">無法排定 Anki 設定</string>
     <string name="notices_title">第三方聲明</string>
     <string name="notices_documents_heading">內含的聲明文件</string>
-    <string name="b3_settings_category_anki">Anki</string>
+    <string name="b3_settings_category_anki">卡片與 Anki</string>
     <string name="b3_settings_category_media">媒體</string>
     <string name="b3_settings_category_resources">資源</string>
     <string name="b3_settings_category_audio">音訊</string>
     <string name="b3_settings_category_frequency">頻率</string>
-    <string name="b3_settings_category_filtering">篩選器</string>
+    <string name="b3_settings_category_word_filters">單字篩選</string>
+    <string name="b3_settings_category_sentences">句子</string>
     <string name="b3_settings_category_ui">介面</string>
     <string name="b3_settings_category_diagnostics">診斷</string>
     <string name="b3_settings_save_pending">有待儲存的變更</string>
