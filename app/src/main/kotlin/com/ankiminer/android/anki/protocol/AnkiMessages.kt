@@ -158,6 +158,13 @@ internal sealed interface CreateDuplicateScope
 
 internal data object CollectionCreateDuplicateScope : CreateDuplicateScope
 
+/**
+ * Desktop's excluded-deck admission (AnkiConnect `allowDuplicate`): Python admitted every note
+ * against the known-word scan, which leaves the excluded decks out, so each note is created even
+ * when the collection already holds its first field.
+ */
+internal data object AllowDuplicatesCreateDuplicateScope : CreateDuplicateScope
+
 internal data class CreateNotesRequest(
     override val runId: String,
     override val requestId: String,

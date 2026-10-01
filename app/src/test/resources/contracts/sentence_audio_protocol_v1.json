@@ -12,6 +12,16 @@
     },
     {
       "schemaVersion": 1,
+      "type": "tts.sentence.request",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sentence": "הילד קרא ספר.",
+        "language": "he"
+      }
+    },
+    {
+      "schemaVersion": 1,
       "type": "tts.sentence.result",
       "payload": {
         "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -85,6 +95,16 @@
         "outcome": "ready",
         "path": "/outside.wav",
         "errorCode": null
+      }
+    },
+    {
+      "schemaVersion": 1,
+      "type": "tts.sentence.request",
+      "payload": {
+        "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "requestId": "tts_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "sentence": "猫だ。",
+        "language": "Japanese"
       }
     }
   ]

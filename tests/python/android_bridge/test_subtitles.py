@@ -342,7 +342,7 @@ def test_regex_expansion_limit_rejects_before_parser_materialization(
     )
     _install_subtitle_parser(monkeypatch, _Parser)
     monkeypatch.setattr(subtitles, "MAX_RESULT_UTF8_BYTES", 5)
-    monkeypatch.setattr(subtitles, "_resolve_config", lambda _run_id: config)
+    monkeypatch.setattr(subtitles, "_resolve_config", lambda _run_id, _language: config)
     sub = tmp_path / "ep.srt"
     sub.write_text("1\n00:00:01,000 --> 00:00:02,000\na\n", encoding="utf-8")
 

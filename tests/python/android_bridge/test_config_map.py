@@ -348,7 +348,10 @@ def test_wave_b_fields_are_exposed_and_the_exposed_set_is_pinned() -> None:
     assert set(_WAVE_B_FIELDS) <= exposed
     assert "secondary_subtitle_enabled" not in exposed
     assert "use_sentence_length_filter" not in exposed
-    assert len(exposed) == 49
+    # 49 after Wave B, plus Wave C's language, script_variant and reading_tone_color.
+    assert {"language", "script_variant", "reading_tone_color"} <= exposed
+    assert "language_stash" not in exposed
+    assert len(exposed) == 52
     assert exposed <= {field.name for field in fields(AnkiMinerConfig)}
 
 
@@ -567,11 +570,13 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
     defaults = AnkiMinerConfig()
 
     assert definitions["ankiFields"]["additionalProperties"] is False
-    assert set(definitions["ankiFields"]["properties"]) == set(defaults.anki_fields)
+    assert set(defaults.anki_fields) <= set(definitions["ankiFields"]["properties"])
     assert set(definitions["cardTypeMarkerFields"]["properties"]) == set(defaults.card_type_marker_fields)
     assert definitions["indexedDictionary"]["required"] == ["kind", "dict_id"]
     assert definitions["frequencySource"]["required"] == ["source_id"]
     assert definitions["audioPack"]["properties"]["kind"] == {"const": "pack"}
+    assert definitions["androidTtsAudio"]["properties"]["kind"] == {"const": "android_tts"}
+    assert definitions["androidTtsAudio"]["additionalProperties"] is False
     assert definitions["absolutePathOrNull"]["oneOf"][1]["pattern"] == "^/"
     assert definitions["settings"]["properties"]["excluded_decks"]["uniqueItems"] is True
     assert definitions["settings"]["properties"]["anki_deck_name"] == {"$ref": "#/$defs/canonicalNonEmptyString"}
@@ -615,3 +620,16 @@ def test_contract_validators_do_not_use_host_unicode_or_strip_tables() -> None:
 
         assert "unicodedata" not in imported_roots, filename
         assert forbidden_calls == [], filename
+
+
+def test_the_device_voice_is_not_a_japanese_audio_source(tmp_path: Path) -> None:
+    with pytest.raises(BridgeProtocolError) as error:
+        map_config_settings(
+            {"expression_audio_chain": [{"kind": "android_tts", "enabled": True}]},
+            _paths(tmp_path),
+        )
+    assert error.value.code == "unsupported_audio_source"
+
+
+def test_a_japanese_snapshot_without_a_chain_still_mines_no_word_audio(tmp_path: Path) -> None:
+    assert map_config_settings({}, _paths(tmp_path)).engine_config.expression_audio_chain == ()

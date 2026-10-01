@@ -18,6 +18,8 @@ import com.ankiminer.android.data.settings.EngineDefaults
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.InvalidAppSettingCode
 import com.ankiminer.android.data.settings.InvalidAppSettingException
+import com.ankiminer.android.data.settings.LanguageDefaults
+import com.ankiminer.android.data.settings.LanguageProfileSource
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ResourceChainSelection
 import com.ankiminer.android.data.settings.SettingsBackupCodec
@@ -28,8 +30,11 @@ import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.settings.SettingsDocumentWriter
 import com.ankiminer.android.data.settings.SubtitleRegexCheck
 import com.ankiminer.android.data.settings.ThemeMode
+import com.ankiminer.android.data.settings.switchLanguage
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.engine.LanguageProfileInfo
+import com.ankiminer.android.engine.LanguageUnavailableReason
 import com.ankiminer.android.localization.LocalizedStringResource
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -125,6 +130,8 @@ internal sealed interface SettingsBackupState {
         val applied: Int,
         val ignored: Int,
         val rejected: Int,
+        /** The file's mining language when this build cannot mine it; the current one was kept. */
+        val unknownLanguage: String? = null,
     ) : SettingsBackupState
 
     data class Failed(
@@ -228,6 +235,8 @@ internal data class SettingsDraft(
     val knownWordsMatchKanaVariants: Boolean?,
     val strictCardOrder: Boolean?,
     val mergeIncompleteCues: Boolean?,
+    val scriptVariant: String? = null,
+    val readingToneColor: Boolean? = null,
     val secondarySubtitleEnabled: Boolean,
     val pitchFormat: PitchCategoryFormat?,
     val theme: ThemeMode,
@@ -386,8 +395,10 @@ internal data class SettingsDraft(
             audioBitrateKbps =
                 AppSettingsDraftParser.optionalInt(bitrate)
                     ?.takeUnless { it == EngineDefaults.AUDIO_BITRATE_KBPS },
-            // Blank text inherits the engine default, which is the empty pattern and the empty
-            // replacement — so an explicit empty override would mean exactly the same thing.
+            // Blank text inherits the active language's default. For Japanese that is the empty
+            // pattern and replacement, so an explicit empty override would mean the same thing;
+            // another language can inherit a real pattern (he strips bracketed captions), so a
+            // blank field keeps filtering with it until the filter toggle is turned off.
             subtitleRegexFilter = subtitleRegex.takeIf(String::isNotEmpty),
             subtitleRegexReplacement = subtitleRegexReplacement.takeIf(String::isNotEmpty),
             useSubtitleRegexFilter = useSubtitleRegex,
@@ -403,6 +414,8 @@ internal data class SettingsDraft(
             knownWordsMatchKanaVariants = knownWordsMatchKanaVariants,
             strictCardOrder = strictCardOrder,
             mergeIncompleteCues = mergeIncompleteCues,
+            scriptVariant = scriptVariant,
+            readingToneColor = readingToneColor,
             secondarySubtitleEnabled = secondarySubtitleEnabled,
             maxSentenceDurationSeconds =
                 AppSettingsDraftParser.optionalDouble(maxDuration)
@@ -533,28 +546,34 @@ internal data class SettingsDraft(
      * scalar edit (including raw numeric text). [EngineSettingsSnapshotMapper.resolveResourceChain]
      * keeps the draft's own order and enable choices and only appends newly installed resources, so
      * merging the same inventory twice is a fixed point.
+     *
+     * Only slots stamped for [language] can enter a chain, so an edit made under one language never
+     * saves another language's slot ids into its settings.
      */
-    fun withInventory(resources: ResourceManagerState): SettingsDraft {
+    fun withInventory(
+        resources: ResourceManagerState,
+        language: String,
+    ): SettingsDraft {
         return copy(
             dictionarySources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     dictionarySources,
-                    resources.usableDictionaryIds(),
+                    resources.usableDictionaryIds(language),
                 ),
             frequencySources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     frequencySources,
-                    resources.usableFrequencyIds(),
+                    resources.usableFrequencyIds(language),
                 ),
             pitchSources =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     pitchSources,
-                    resources.usablePitchIds(),
+                    resources.usablePitchIds(language),
                 ),
             audioPacks =
                 EngineSettingsSnapshotMapper.resolveResourceChain(
                     audioPacks,
-                    resources.usableAudioPackIds(),
+                    resources.usableAudioPackIds(language),
                 ),
         )
     }
@@ -635,6 +654,8 @@ internal data class SettingsDraft(
                 knownWordsMatchKanaVariants = settings.knownWordsMatchKanaVariants,
                 strictCardOrder = settings.strictCardOrder,
                 mergeIncompleteCues = settings.mergeIncompleteCues,
+                scriptVariant = settings.scriptVariant,
+                readingToneColor = settings.readingToneColor,
                 secondarySubtitleEnabled = settings.secondarySubtitleEnabled,
                 pitchFormat = settings.pitchCategoryFormat,
                 theme = settings.theme,
@@ -648,7 +669,7 @@ internal data class SettingsDraft(
                 enabledWordsets = settings.enabledWordsets,
                 readingTts = settings.readingTtsEnabled,
                 jisho = settings.jishoEnabled,
-            ).withInventory(resources)
+            ).withInventory(resources, settings.language)
     }
 }
 
@@ -741,6 +762,9 @@ private fun SettingsDraft.rebaseChangesSince(
                 mergeIncompleteCues,
                 persisted.mergeIncompleteCues,
             ),
+        scriptVariant = changedValue(baseline.scriptVariant, scriptVariant, persisted.scriptVariant),
+        readingToneColor =
+            changedValue(baseline.readingToneColor, readingToneColor, persisted.readingToneColor),
         secondarySubtitleEnabled =
             changedValue(
                 baseline.secondarySubtitleEnabled,
@@ -792,18 +816,6 @@ private fun <T> changedValue(
     current: T,
     persisted: T,
 ): T = if (current != baseline) current else persisted
-
-private fun ResourceManagerState.usableDictionaryIds(): List<String> =
-    dictionaries.filter { it.isChainEligible }.map { it.slotId }
-
-private fun ResourceManagerState.usableFrequencyIds(): List<String> =
-    frequencySources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
-
-private fun ResourceManagerState.usablePitchIds(): List<String> =
-    pitchSources.filter { it.schemaOk && it.entryCount > 0 }.map { it.sourceId }
-
-private fun ResourceManagerState.usableAudioPackIds(): List<String> =
-    audioPacks.filter { it.contentAvailable && it.entryCount > 0 }.map { it.packId }
 
 internal data class SettingsDraftState(
     val draft: SettingsDraft,
@@ -882,7 +894,7 @@ internal class SettingsDraftStore(
                 val persistedDraft = SettingsDraft.from(settings, resources)
                 val persistedDeckName = persistedDraft.deckName
                 val deckDirty = current.deckDirty && current.draft.deckName != persistedDeckName
-                val mergedDraft = current.draft.withInventory(resources)
+                val mergedDraft = current.draft.withInventory(resources, settings.language)
                 SettingsDraftState(
                     draft =
                         if (deckDirty) {
@@ -968,8 +980,8 @@ internal class SettingsDraftStore(
                         writeCadence = SettingsWriteCadence.IMMEDIATE,
                     )
                 } else {
-                    val baseline = started.draft.withInventory(resources)
-                    val currentDraft = current.draft.withInventory(resources)
+                    val baseline = started.draft.withInventory(resources, settings.language)
+                    val currentDraft = current.draft.withInventory(resources, settings.language)
                     val rebased = currentDraft.rebaseChangesSince(baseline, persistedDraft)
                     val dirty = rebased != persistedDraft
                     SettingsDraftState(
@@ -1123,6 +1135,7 @@ internal class SettingsViewModel(
     private val backupWriter: SettingsBackupWriter? =
         documentWriter?.let(::SettingsDocumentWriter),
     private val appVersion: String = "",
+    private val languageProfileSource: LanguageProfileSource? = null,
 ) : ViewModel() {
     private val settings: StateFlow<AppSettings?> =
         repository.settings
@@ -1141,7 +1154,12 @@ internal class SettingsViewModel(
     private val mutableBackupState =
         MutableStateFlow<SettingsBackupState>(SettingsBackupState.Idle)
     val backupState: StateFlow<SettingsBackupState> = mutableBackupState.asStateFlow()
-    val resourceState: StateFlow<ResourceManagerState> = resources.state
+
+    /** The inventory as the active language's settings see it: only slots stamped for it. */
+    val resourceState: StateFlow<ResourceManagerState> =
+        combine(settings, resources.state) { persisted, inventory ->
+            persisted?.let { inventory.slotsFor(it.language) } ?: inventory
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, resources.state.value)
     private val persistenceMutex = Mutex()
     private val successfulWrites = SuccessfulSettingsWriteTracker()
     private val draftStore =
@@ -1150,8 +1168,22 @@ internal class SettingsViewModel(
             initiallyLoaded = false,
         )
     val draftState: StateFlow<SettingsDraftState> = draftStore.state
+    private val mutableLanguageProfiles = MutableStateFlow<List<LanguageProfileInfo>>(emptyList())
+
+    /** The vendored mining languages in registry order; empty until the bridge answers. */
+    val languageProfiles: StateFlow<List<LanguageProfileInfo>> = mutableLanguageProfiles.asStateFlow()
+
+    /**
+     * What the active language's unset scoped settings resolve to, and the Anki field keys it maps.
+     * Null until settings load, or while a non-Japanese language's profile has not.
+     */
+    val languageDefaults: StateFlow<LanguageDefaults?> =
+        combine(settings, mutableLanguageProfiles) { persisted, profiles ->
+            persisted?.let { LanguageDefaults.forLanguage(it.language, profiles) }
+        }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     init {
+        refreshLanguageProfiles()
         viewModelScope.launch {
             combine(settings, resources.state) { persisted, inventory -> persisted to inventory }
                 .collect { (persisted, inventory) ->
@@ -1435,13 +1467,20 @@ internal class SettingsViewModel(
                     return@launch
                 }
 
+            val minableLanguages = minableLanguages()
             val saveCompletion = CompletableDeferred<Boolean>()
             var report: AppliedSettingsBackup? = null
             val accepted =
                 save(
                     transform = { current ->
                         with(SettingsBackupCodec) {
-                            parsed.applyTo(current, resources.state.value)
+                            parsed.applyTo(
+                                current,
+                                resources.state.value,
+                                // Without the profiles nothing proves another code is minable, so
+                                // only the current language may stay.
+                                knownLanguages = minableLanguages ?: setOf(current.language),
+                            )
                         }
                             .also { report = it }
                             .settings
@@ -1469,12 +1508,94 @@ internal class SettingsViewModel(
                         applied = applied.appliedCount,
                         ignored = applied.ignoredKeys.size,
                         rejected = applied.rejectedKeys.size,
+                        unknownLanguage = applied.unknownLanguage,
                     )
             }
         }
     }
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
+
+    /**
+     * The codes this build can mine: the loaded profiles, or the bridge's answer awaited now when
+     * none have loaded (an import right after a cold start). Null when the bridge cannot answer.
+     */
+    private suspend fun minableLanguages(): Set<String>? {
+        mutableLanguageProfiles.value.takeIf { it.isNotEmpty() }?.let { loaded ->
+            return loaded.mapTo(mutableSetOf(), LanguageProfileInfo::code)
+        }
+        val source = languageProfileSource ?: return null
+        return source.profiles()
+            .onSuccess { mutableLanguageProfiles.value = it }
+            .onFailure { failure ->
+                AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+            }
+            .getOrNull()
+            ?.mapTo(mutableSetOf(), LanguageProfileInfo::code)
+    }
+
+    /** Ask the bridge again, e.g. after a language pack was installed. */
+    fun refreshLanguageProfiles() {
+        val source = languageProfileSource ?: return
+        viewModelScope.launch {
+            source.profiles()
+                .onSuccess { mutableLanguageProfiles.value = it }
+                .onFailure { failure ->
+                    AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+                }
+        }
+    }
+
+    /**
+     * Make [code] the mining language: pending edits are saved to the outgoing language first, then
+     * its scoped settings are parked and the incoming language's come back (or start from its
+     * profile). `false` when settings have not loaded or [code] is not a loaded profile.
+     */
+    fun switchLanguage(code: String): Boolean {
+        val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return false
+        // A language whose data is missing, or that this build cannot mine, offers no switch: its
+        // runs would all be refused (`language_unavailable` / `unsupported_language`).
+        if (profile.unavailableReason != null) return false
+        // An open known-words preview would import into the new language's database once
+        // confirmed. The Language tab blocks the picker too; this covers the post-download switch.
+        if (resources.state.value.knownWordsImportPreview != null) return false
+        return save { current -> current.switchLanguage(profile) }
+    }
+
+    private val mutableLanguageDownload = MutableStateFlow<String?>(null)
+
+    /** The language whose data a "Download and switch" is fetching, if any. */
+    val languageDownload: StateFlow<String?> = mutableLanguageDownload.asStateFlow()
+
+    /**
+     * Desktop's "Download and switch": install [code]'s recommended set (its language data first,
+     * C.4's `RecommendedResources(code)`), ask the bridge again, and switch once the profile reads
+     * available. A failed or cancelled install leaves the language where it was; the resource
+     * failure it recorded carries the retry.
+     */
+    fun downloadAndSwitchLanguage(code: String) {
+        if (mutableLanguageDownload.value != null) return
+        val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return
+        if (profile.unavailableReason != LanguageUnavailableReason.DATA_REQUIRED) return
+        val source = languageProfileSource ?: return
+        mutableLanguageDownload.value = code
+        viewModelScope.launch {
+            try {
+                resources.installRecommendedResources(code)
+                source.profiles()
+                    .onSuccess { profiles ->
+                        mutableLanguageProfiles.value = profiles
+                        if (profiles.firstOrNull { it.code == code }?.unavailableReason == null) {
+                            switchLanguage(code)
+                        }
+                    }.onFailure { failure ->
+                        AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+                    }
+            } finally {
+                mutableLanguageDownload.value = null
+            }
+        }
+    }
 
     fun retrySave() {
         if (saving.value) return
@@ -1491,6 +1612,7 @@ internal class SettingsViewModel(
         private val documentReader: SettingsDocumentReader? = null,
         private val documentWriter: ResourceDocumentWriter? = null,
         private val appVersion: String = "",
+        private val languageProfileSource: LanguageProfileSource? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -1501,6 +1623,7 @@ internal class SettingsViewModel(
                 documentReader = documentReader,
                 documentWriter = documentWriter,
                 appVersion = appVersion,
+                languageProfileSource = languageProfileSource,
             ) as T
         }
     }

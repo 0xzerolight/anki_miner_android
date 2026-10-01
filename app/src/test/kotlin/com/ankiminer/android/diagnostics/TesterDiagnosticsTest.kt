@@ -198,6 +198,20 @@ class TesterDiagnosticsTest {
     }
 
     @Test
+    fun `the resource counts name the mining language they cover`() {
+        val diagnostics =
+            TesterDiagnosticsBuilder.build(
+                build = plainIdentity(),
+                setup = SetupUiState(language = "he"),
+                video = VideoMiningUiState(),
+                audio = VideoMiningUiState(),
+                reading = ReadingMiningUiState(),
+            )
+
+        assertTrue(diagnostics.report.contains("mining.language=he"))
+    }
+
+    @Test
     fun `mapped pitch fields are reported by logical key and never by the user's field name`() {
         val unmapped =
             TesterDiagnosticsBuilder.build(

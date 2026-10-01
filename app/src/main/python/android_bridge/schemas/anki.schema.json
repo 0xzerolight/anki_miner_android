@@ -629,6 +629,16 @@
         "limits": {"$ref": "#/$defs/createSnapshotLimits"}
       }
     },
+    "allowDuplicatesCreateDuplicateScope": {
+      "type": "object",
+      "additionalProperties": false,
+      "$comment": "Desktop's excluded-deck admission (AnkiConnect allowDuplicate). Python admitted every note against the known-word scan, which leaves out the excluded decks, so Kotlin creates each note even when the collection already holds its normalized first field and never reports a duplicate row. The baseline is still consumed and bound exactly as for collection.",
+      "required": ["kind", "limits"],
+      "properties": {
+        "kind": {"const": "allowDuplicates"},
+        "limits": {"$ref": "#/$defs/createSnapshotLimits"}
+      }
+    },
     "createSnapshotLimits": {
       "type": "object",
       "additionalProperties": false,
@@ -650,7 +660,12 @@
         "modelName": {"$ref": "#/$defs/modelName"},
         "firstFieldName": {"$ref": "#/$defs/fieldName"},
         "baselineToken": {"$ref": "#/$defs/baselineToken"},
-        "duplicateScope": {"$ref": "#/$defs/collectionCreateDuplicateScope"},
+        "duplicateScope": {
+          "oneOf": [
+            {"$ref": "#/$defs/collectionCreateDuplicateScope"},
+            {"$ref": "#/$defs/allowDuplicatesCreateDuplicateScope"}
+          ]
+        },
         "limits": {"$ref": "#/$defs/createNotesLimits"},
         "notes": {
           "type": "array",

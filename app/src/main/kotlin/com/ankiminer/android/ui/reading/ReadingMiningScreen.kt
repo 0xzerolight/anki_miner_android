@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -65,6 +66,7 @@ import com.ankiminer.android.ui.mining.CurationPageImagePane
 import com.ankiminer.android.ui.mining.CurationRowActions
 import com.ankiminer.android.ui.mining.CurationSentenceChoice
 import com.ankiminer.android.ui.mining.curationSentenceLayout
+import com.ankiminer.android.ui.mining.minedText
 import com.ankiminer.android.ui.mining.CurationSort
 import com.ankiminer.android.ui.mining.DocumentReadKind
 import com.ankiminer.android.ui.mining.MiningFailureAction
@@ -726,6 +728,8 @@ private fun LazyListScope.setupItems(
                 enabled = !state.startPending,
                 singleLine = false,
                 minLines = 6,
+                // Pasted source text in the mining language: its glyphs and its direction.
+                textStyle = LocalTextStyle.current.minedText(),
                 placeholder = { Text(stringResource(R.string.reading_paste_placeholder)) },
                 trailingIcon = {
                     if (state.pastedText.isNotEmpty()) {

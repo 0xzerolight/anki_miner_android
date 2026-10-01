@@ -107,6 +107,55 @@ data class AudioTrackInfo(
     val isDefault: Boolean,
 )
 
+/** Why a vendored mining language cannot mine on this device; Kotlin says the sentence itself. */
+enum class LanguageUnavailableReason(
+    val wireName: String,
+) {
+    /** It can mine once its downloadable data (a language-data resource) is installed. */
+    DATA_REQUIRED("language_data_required"),
+
+    /** Nothing the user can download fixes it: offer no switch. */
+    UNSUPPORTED("language_unsupported"),
+}
+
+enum class ContentDirection(
+    val wireName: String,
+) {
+    LTR("ltr"),
+    RTL("rtl"),
+}
+
+/** One profile-specific Anki field (he `transliteration`); [placeholder] is an untranslated suggestion. */
+data class LanguageExtraCardField(
+    val key: String,
+    val capability: String,
+    val placeholder: String,
+    val rawHtml: Boolean,
+)
+
+/**
+ * The `language.profiles` view of one vendored mining language.
+ *
+ * [scopedDefaults] holds the profile's first-visit value for every language-scoped setting, keyed
+ * and shaped exactly as the settings snapshot carries it, so a language switch can store it and
+ * send it back unchanged. A blank `anki_note_type` there means the user must pick a note type.
+ */
+data class LanguageProfileInfo(
+    val code: String,
+    val displayName: String,
+    val englishName: String,
+    val unavailableReason: LanguageUnavailableReason?,
+    val scriptVariants: List<String>,
+    val contentDirection: ContentDirection,
+    val contentLanguage: String,
+    val speechLanguage: String,
+    val audioTrackCodes: List<String>,
+    val capabilities: Set<String>,
+    val requiresUnidic: Boolean,
+    val scopedDefaults: Map<String, BridgeJsonValue>,
+    val extraCardFields: List<LanguageExtraCardField>,
+)
+
 data class TerminalError(
     val code: String,
     val message: String,
@@ -180,6 +229,8 @@ sealed interface BridgeMessage {
         val runId: String,
         val term: String,
         val fallbackTerm: String?,
+        /** The focused token's part of speech, which a profile's sense ranking reads; null omits it. */
+        val partOfSpeech: String? = null,
     ) : BridgeMessage
 
     data class DictionaryDefineResult(
@@ -192,6 +243,8 @@ sealed interface BridgeMessage {
     data class SubtitleCuesRequest(
         val runId: String?,
         val subtitlePath: String,
+        /** The mining language; null leaves the key off the wire, which the bridge reads as ja. */
+        val language: String? = null,
     ) : BridgeMessage
 
     data class SubtitleCuesResult(
@@ -200,9 +253,15 @@ sealed interface BridgeMessage {
         val cues: List<SubtitleCue>,
     ) : BridgeMessage
 
+    data object LanguageProfilesRequest : BridgeMessage
+
+    data class LanguageProfilesResult(val profiles: List<LanguageProfileInfo>) : BridgeMessage
+
     data class AudioTracksRequest(
         val videoPath: String,
         val nativeLibraryDir: String,
+        /** The mining language whose tracks the auto pick prefers; null is read as ja. */
+        val language: String? = null,
     ) : BridgeMessage
 
     data class AudioTracksResult(

@@ -36,6 +36,7 @@ _ERROR_CODES = frozenset(
         "network_voice_rejected",
         "offline_japanese_voice_unavailable",
         "offline_voice_changed",
+        "offline_voice_unavailable",
         "synthesis_failed",
         "synthesis_timeout",
         "synthesizer_closed",
@@ -66,9 +67,15 @@ class AndroidSentenceAudioFetcher:
         run_id: str,
         cache_dir: Path,
         warning_callback: Callable[[str], None] | None = None,
+        *,
+        language: str = "ja",
     ) -> None:
         self._callbacks = callbacks
         self._run_id = run_id
+        # The BCP-47 tag Kotlin's TextToSpeech speaks the run's sentences in
+        # (``languages.speech_language``); a Japanese voice reading Hebrew is
+        # worse than no sentence audio at all.
+        self._language = language
         self._cache_root = (cache_dir / _CACHE_DIRECTORY).resolve(strict=False)
         self._warning_callback = warning_callback
         self._warning_reported = False
@@ -99,6 +106,7 @@ class AndroidSentenceAudioFetcher:
                     "runId": self._run_id,
                     "requestId": request_id,
                     "sentence": sentence,
+                    "language": self._language,
                 },
             )
             if _utf8_size(raw_request, context="TTS request") > _MAX_REQUEST_UTF8_BYTES:
@@ -185,6 +193,11 @@ class AndroidSentenceAudioFetcher:
             message = (
                 "Offline Japanese sentence audio is unavailable. Install an offline "
                 "Japanese voice in Android speech settings."
+            )
+        elif error_code == "offline_voice_unavailable":
+            message = (
+                "Offline sentence audio is unavailable. Install an offline voice for "
+                "the mining language in Android speech settings."
             )
         elif error_code in {"cache_full", "cache_unavailable", "cache_publish_failed"}:
             message = "Offline sentence audio was skipped because private cache storage is " "unavailable or full."

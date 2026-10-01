@@ -56,11 +56,28 @@ class AttributionScreenTest {
                 listOf(pitchSource(pitch.sourceId)),
             ),
         )
+        // Another language's pinned list carries its notices too.
+        val hebrew = FrozenResourceCatalog.forLanguage("he")!!.frequencies.single()
+        assertEquals(
+            hebrew.attribution,
+            installedLocalCatalogAttributions(listOf(frequencySource(hebrew.sourceId)), emptyList()),
+        )
         // A source id the catalog does not pin carries no notices of its own.
         assertTrue(
             installedLocalCatalogAttributions(listOf(frequencySource("hand-rolled")), emptyList())
                 .isEmpty(),
         )
+    }
+
+    @Test
+    fun installedLanguageDataCarriesItsLicenceNotice() {
+        val calima = FrozenResourceCatalog.forLanguage("ar")!!.languageData.single()
+
+        assertTrue(installedLocalCatalogAttributions(emptyList(), emptyList(), emptySet()).isEmpty())
+        val notices =
+            installedLocalCatalogAttributions(emptyList(), emptyList(), setOf(calima.resourceId))
+        assertEquals(calima.attribution, notices)
+        assertEquals("GPL-2.0-only", notices.single().license)
     }
 
     private fun frequencySource(sourceId: String) =

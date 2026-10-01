@@ -54,6 +54,35 @@ _JA_NOTE_BUILDER_KWARGS: Mapping[str, Any] = {
     "content_lang": "ja",
     "card_lang": None,
 }
+
+
+def _note_builder_kwargs(config: Any) -> Mapping[str, Any]:
+    """``build_note``'s language kwargs for *config*'s mining language.
+
+    Japanese keeps the spelled-out ``_JA_NOTE_BUILDER_KWARGS`` (no profile
+    import, so the host lane can build ja notes). Any other language derives
+    them exactly as desktop's ``AnkiService.__init__`` does from its profile.
+    """
+
+    from .languages import JAPANESE, config_language, get_profile
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return _JA_NOTE_BUILDER_KWARGS
+    from anki_miner.services.anki_note_builder import _RAW_HTML_FIELD_KEYS, OPTIONAL_FIELD_KEYS
+
+    profile = get_profile(language)
+    declared = frozenset(spec.key for spec in profile.extra_card_fields)
+    return {
+        "extra_optional_keys": declared - OPTIONAL_FIELD_KEYS,
+        "extra_raw_html_keys": frozenset(spec.key for spec in profile.extra_card_fields if spec.raw_html)
+        - frozenset(_RAW_HTML_FIELD_KEYS),
+        "content_direction": profile.content_style.direction,
+        "content_lang": profile.code,
+        "card_lang": profile.content_style.card_lang,
+    }
+
+
 _NAME_LIMITS = ANKI_LIMITS_V1["names"]
 _SCAN_LIMITS = ANKI_LIMITS_V1["scanFirstFields"]
 _MEDIA_LIMITS = ANKI_LIMITS_V1["storeMedia"]
@@ -153,6 +182,25 @@ def _ja_expression_field_resolver() -> Any:
             closers=sentence_splitter._CLOSERS,
         ),
     )
+
+
+def _expression_field_resolver(config: Any) -> Any:
+    """A fresh vendored ``ExpressionFieldResolver`` for *config*'s mining language.
+
+    Desktop's AnkiService builds it from the profile's script and sentence rules.
+    Japanese keeps the spelled-out ``_ja_expression_field_resolver`` (no profile
+    import, so the host lane can scan); any other language takes its profile's.
+    """
+
+    from .languages import JAPANESE, config_language, get_profile
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return _ja_expression_field_resolver()
+    from anki_miner.services.expression_field import ExpressionFieldResolver
+
+    profile = get_profile(language)
+    return ExpressionFieldResolver(script=profile.script, sentence_rules=profile.sentence_rules)
 
 
 def _expression_field_ordinals(note_types: Mapping[int, _NoteType]) -> dict[int, tuple[int, ...]]:
@@ -708,6 +756,24 @@ def _raise_callback_error(error: AnkiCallbackError) -> NoReturn:
     raise AnkiConnectionError(error.message) from error
 
 
+def _vocabulary_seams(config: Any) -> tuple[Callable[[str], str] | None, Callable[[str], bool]]:
+    """The known-vocabulary scan's ``(dedup_fold, is_target_script)`` for *config*'s language.
+
+    Japanese: no fold and ``_JAPANESE_RE``, the codepoint test desktop's
+    ``JaScriptSupport.contains_target_script`` is (A.5). Any other language: its
+    profile's ``dedup_fold`` and ``script.contains_target_script``, so a Hebrew
+    run knows its vocalised Anki fronts and never counts a Japanese note.
+    """
+
+    from .languages import JAPANESE, config_language, get_profile
+
+    language = config_language(config)
+    if language == JAPANESE:
+        return None, lambda text: _JAPANESE_RE.search(text) is not None
+    profile = get_profile(language)
+    return profile.dedup_fold, profile.script.contains_target_script
+
+
 class AndroidAnkiAdapter:
     """Duck-typed replacement for the desktop ``AnkiService`` on Android."""
 
@@ -729,6 +795,11 @@ class AndroidAnkiAdapter:
         validate_anki_request_config(config)
         self.config = config
         self._callbacks = callbacks
+        # Desktop AnkiService's language seams: the note builder's card-field,
+        # direction and language kwargs, and the vocabulary scan's comparison
+        # key (Anki's strip, then the profile's fold) and script gate.
+        self._note_builder_kwargs = _note_builder_kwargs(config)
+        self._dedup_fold, self._is_target_script = _vocabulary_seams(config)
         # The M0 seam can run standalone; the mining composition layer supplies
         # JobHandle.cancel_event.is_set once it owns adapter construction.
         self._cancellation_check = cancellation_check or (lambda: False)
@@ -772,6 +843,10 @@ class AndroidAnkiAdapter:
 
     def __enter__(self) -> AndroidAnkiAdapter:
         return self
+
+    def _dedup_key(self, stripped: str) -> str:
+        """Desktop ``AnkiService._dedup_key`` after its strip: the language fold, when it has one."""
+        return self._dedup_fold(stripped) if stripped and self._dedup_fold is not None else stripped
 
     def __exit__(self, *_: object) -> None:
         self.close()
@@ -1254,12 +1329,12 @@ class AndroidAnkiAdapter:
 
         excluded_decks = self._known_vocabulary_excluded_decks()
         existing: set[str] = set()
-        resolver = _ja_expression_field_resolver()
+        resolver = _expression_field_resolver(self.config)
 
         def collect(ready: list[tuple[Mapping[str, Any], str]]) -> None:
             for fields, field_name in ready:
-                normalized = _strip_for_dedup(fields[field_name]["value"])
-                if normalized and _JAPANESE_RE.search(normalized):
+                normalized = self._dedup_key(_strip_for_dedup(fields[field_name]["value"]))
+                if normalized and self._is_target_script(normalized):
                     existing.add(normalized)
 
         notes_read = 0
@@ -2496,7 +2571,7 @@ class AndroidAnkiAdapter:
         built_fields: list[dict[str, str]] = []
         note_utf8_bytes = 0
         for payload in word_data_list:
-            built = build_note(payload, self.config, intended_stored_files, **_JA_NOTE_BUILDER_KWARGS)
+            built = build_note(payload, self.config, intended_stored_files, **self._note_builder_kwargs)
             fields, tags, content_bytes = self._validated_note_content(built.note)
             built_notes.append({"fields": fields, "tags": tags})
             built_fields.append(fields)
@@ -2771,12 +2846,40 @@ class AndroidAnkiAdapter:
             "maxEnvelopeUtf8Bytes": _MAX_CREATE_ENVELOPE_UTF8_BYTES,
         }
 
+    def _excluded_deck_admission(self) -> bool:
+        """Desktop ``create_cards_batch``'s rule: excluded decks admit notes against the known words."""
+        return bool(self.config.excluded_decks and not self.config.allow_duplicate_cards)
+
+    def _admit_against_excluded_decks(
+        self, pending_notes: Sequence[_PendingNote]
+    ) -> tuple[tuple[_PendingNote, ...], int]:
+        """Desktop ``AnkiService._admit_against_excluded_decks``: admitted notes and the refused count.
+
+        A note is refused when its folded front is already known outside the
+        excluded decks, or another note of this call took it first. Kotlin then
+        creates every admitted note even if an excluded deck holds the same
+        front. The known words authorise that, so an unreadable scan raises
+        rather than degrading.
+        """
+
+        existing = self.get_existing_vocabulary(allow_degraded=False)
+        seen: set[str] = set()
+        admitted: list[_PendingNote] = []
+        for pending in pending_notes:
+            key = self._dedup_key(pending.key)
+            if not (key and (key in existing or key in seen)):
+                admitted.append(pending)
+            if key:
+                seen.add(key)
+        return tuple(admitted), len(pending_notes) - len(admitted)
+
     def _create_duplicate_scope(self) -> dict[str, Any]:
         snapshot_limits = {
             "maxNoteIdsPerCandidate": _MAX_DUPLICATE_HITS_PER_CANDIDATE,
             "maxTotalNoteIds": _MAX_DUPLICATE_TOTAL_HITS,
         }
-        return {"kind": "collection", "limits": snapshot_limits}
+        kind = "allowDuplicates" if self._excluded_deck_admission() else "collection"
+        return {"kind": kind, "limits": snapshot_limits}
 
     @staticmethod
     def _wire_note(pending: _PendingNote, client_id: str, occurrence: int) -> dict[str, Any]:
@@ -3335,14 +3438,20 @@ class AndroidAnkiAdapter:
         if progress_callback:
             progress_callback.on_start(len(word_data_list), "Creating Anki cards")
 
+        pending_notes = preflight_plan.pending_notes
+        allow_duplicates = self._excluded_deck_admission()
+        if allow_duplicates:
+            pending_notes, refused = self._admit_against_excluded_decks(pending_notes)
+            skipped_duplicates += refused
+
         from anki_miner.services.anki_note_builder import _strip_for_dedup, build_note
 
         try:
-            callback_batches = self._chunk_pending_notes(preflight_plan.pending_notes)
+            callback_batches = self._chunk_pending_notes(pending_notes)
             # Outgoing duplicates were removed by structural preflight. Hash
             # the remaining call graph once to retain the cross-batch content
             # and provider-namespace proof, but do not store any asset yet.
-            survivor_payloads = [pending.payload for pending in preflight_plan.pending_notes]
+            survivor_payloads = [pending.payload for pending in pending_notes]
             survivor_plan = self._preflight_create_call(survivor_payloads)
             media_work_budget = _MediaWorkBudget()
             prepared_card_media = self._prepare_card_media(
@@ -3385,7 +3494,7 @@ class AndroidAnkiAdapter:
                         duplicate_probes,
                         strict=True,
                     )
-                    if not probe.is_duplicate
+                    if allow_duplicates or not probe.is_duplicate
                 ]
                 skipped_duplicates += len(original_batch) - len(submissions)
 
@@ -3469,7 +3578,7 @@ class AndroidAnkiAdapter:
                             item,
                             self.config,
                             stored_card_filenames,
-                            **_JA_NOTE_BUILDER_KWARGS,
+                            **self._note_builder_kwargs,
                         )
                         if built.used_precomputed_bold:
                             bold_used += 1
@@ -3504,7 +3613,7 @@ class AndroidAnkiAdapter:
                                 duplicate_probes,
                                 strict=True,
                             )
-                            if not probe.is_duplicate
+                            if allow_duplicates or not probe.is_duplicate
                         ]
                         skipped_duplicates += len(submit_notes) - len(rewritten_submissions)
                         submit_notes = [pending for pending, _occurrence in rewritten_submissions]
@@ -3588,8 +3697,8 @@ class AndroidAnkiAdapter:
             self.last_skipped_duplicates = skipped_duplicates
             if self._existing_vocab_cache is not None:
                 for first_field in created_first_fields:
-                    key = _strip_for_dedup(first_field)
-                    if key and _JAPANESE_RE.search(key):
+                    key = self._dedup_key(_strip_for_dedup(first_field))
+                    if key and self._is_target_script(key):
                         self._existing_vocab_cache.add(key)
 
         if skipped_duplicates:

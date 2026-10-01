@@ -3,6 +3,7 @@ package com.ankiminer.android.ui.settings
 import androidx.annotation.StringRes
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.vm.SetupUiState
 
 internal data class SettingsSearchEntry(
@@ -35,6 +36,7 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
                 "filtering-import-result",
             ),
         SettingsCategory.SENTENCES to setOf("subtitle-text", "sentence-options"),
+        SettingsCategory.LANGUAGE to setOf(MINING_LANGUAGE_KEY, LANGUAGE_VARIANT_KEY, LANGUAGE_TONE_COLOR_KEY),
         SettingsCategory.UI to setOf("ui-options"),
         SettingsCategory.DIAGNOSTICS to
             setOf(
@@ -205,6 +207,13 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_reading_tts,
             R.string.settings_reading_audio,
         ),
+        entry(
+            "resources.device_voice",
+            SettingsCategory.RESOURCES,
+            "audio-sources",
+            R.string.settings_word_audio_device_voice,
+            R.string.settings_word_audio_device_voice_help,
+        ),
 
         // Frequency lists
         entry(
@@ -305,6 +314,27 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "word-lists",
             R.string.settings_use_whitelist,
             R.string.word_list_whitelist_scope,
+        ),
+
+        // Language
+        entry(
+            "language.mining_language",
+            SettingsCategory.LANGUAGE,
+            MINING_LANGUAGE_KEY,
+            R.string.language_settings_title,
+            R.string.language_settings_help,
+        ),
+        entry(
+            "language.script_variant",
+            SettingsCategory.LANGUAGE,
+            LANGUAGE_VARIANT_KEY,
+            R.string.language_script_variant,
+        ),
+        entry(
+            "language.reading_tone_color",
+            SettingsCategory.LANGUAGE,
+            LANGUAGE_TONE_COLOR_KEY,
+            R.string.settings_reading_tone_color,
         ),
 
         // Sentences
@@ -425,12 +455,23 @@ internal fun availableSettingsSearchEntries(
     entries: List<SettingsSearchEntry>,
     setup: SetupUiState,
     dynamicColorSupported: Boolean,
+    language: LanguageSettingsState = LanguageSettingsState(),
 ): List<SettingsSearchEntry> =
     entries.filter { entry ->
         when (entry.id) {
             "resources.lookup_test" -> setup.dictionaries.any { it.isUsable }
+            // The cards these find exist only for a language that has them.
+            "resources.pitch_import", "resources.pitch_chain", "resources.pitch_format" -> language.showsPitch
+            "resources.jisho" -> language.offersJisho
+            // The device voice speaks word audio only outside Japanese.
+            "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
+            "language.script_variant" -> language.scriptVariants.isNotEmpty()
+            "language.reading_tone_color" -> language.showsToneColor
+            "word_filters.kana_variants", "word_filters.exclude_hiragana", "word_filters.exclude_katakana" ->
+                language.showsKanaFilters
+            "word_filters.wordsets" -> language.showsNameWordsets
             "diagnostics.unidic" ->
-                !setup.uniDicInstalled ||
+                !setup.tokenizerReady ||
                     setup.failure?.origin == ResourceFailureOrigin.UNIDIC
             "ui.dynamic_color" -> dynamicColorSupported
             else -> true

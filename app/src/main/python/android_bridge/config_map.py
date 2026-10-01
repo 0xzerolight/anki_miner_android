@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import cast
 
 from .bootstrap import require_initialized
+from .languages import JAPANESE, accepted_script_variants, base_config, get_profile, validated_language
 from .protocol import (
     BridgeProtocolError,
     decode_message,
@@ -69,6 +70,9 @@ _BOOL_FIELDS = frozenset(
         "strict_card_order",
         "frequency_keep_unranked",
         "known_words_match_kana_variants",
+        # Language-scoped; only a profile's card render hook reads it (zh). Kotlin
+        # shows its toggle only where the profile has the tone_color capability.
+        "reading_tone_color",
     }
 )
 _FLOAT_RANGES: Mapping[str, tuple[float | None, float | None]] = {
@@ -108,6 +112,11 @@ _STRING_TUPLE_FIELDS = frozenset({"excluded_decks", "allowed_pos", "excluded_sub
 _OPTIONAL_PATH_FIELDS = frozenset({"blacklist_path", "whitelist_path"})
 _MAPPING_FIELDS = frozenset({"anki_fields", "card_type_marker_fields"})
 _CHAIN_FIELDS = frozenset({"dictionary_chain", "frequency_chain", "pitch_chain", "expression_audio_chain"})
+# The mining language picks the config the snapshot is overlaid onto (see
+# ``languages.base_config``); ``script_variant`` is checked against that
+# language's own offer. ``language_stash`` is Kotlin's and never crosses.
+_LANGUAGE_FIELD = "language"
+_SCRIPT_VARIANT_FIELD = "script_variant"
 
 _EXPOSED_CONFIG_FIELDS = frozenset(
     _STRING_FIELDS
@@ -119,6 +128,7 @@ _EXPOSED_CONFIG_FIELDS = frozenset(
     | _OPTIONAL_PATH_FIELDS
     | _MAPPING_FIELDS
     | _CHAIN_FIELDS
+    | {_LANGUAGE_FIELD, _SCRIPT_VARIANT_FIELD}
 )
 
 # Compatibility-only input.  It is captured into AndroidConfigSnapshot and is
@@ -237,6 +247,16 @@ def _string_tuple(field_name: str, value: object) -> tuple[str, ...]:
     if any(not isinstance(item, str) for item in value):
         raise _invalid(field_name, "expected an array of strings")
     return tuple(value)
+
+
+def _script_variant(value: object, language: str) -> str:
+    # Desktop shows a variant combo only for a profile with the capability, so
+    # nothing else ever writes one; a stale value from another language would
+    # otherwise reach a profile that reads it (zh, pt).
+    allowed = ("",) if language == JAPANESE else accepted_script_variants(get_profile(language))
+    if not isinstance(value, str) or value not in allowed:
+        raise _invalid(_SCRIPT_VARIANT_FIELD, f"expected one of {list(allowed)!r}")
+    return value
 
 
 def _excluded_decks(value: object) -> tuple[str, ...]:
@@ -440,20 +460,54 @@ def _pitch_chain(value: object, constructor: Callable[..., object]) -> tuple[obj
     return tuple(result)
 
 
-def _expression_audio_chain(value: object, constructor: Callable[..., object]) -> tuple[object, ...]:
+# The bridge-only word-audio source (``android_bridge.word_audio``): the device's
+# offline TextToSpeech voice. It rides in the engine chain as a plain
+# AudioSourceEntry, which the vendored engine skips like every non-pack kind
+# (``AudioPackRegistry`` slots only ``pack``; the audio stage only labels it);
+# the bridge's own chain builder is the one place it becomes a fetcher.
+_ANDROID_TTS_AUDIO_KIND = "android_tts"
+# The profile defaults it stands in for: every non-ja profile's word audio is
+# Google or Edge read-aloud, network services Android does not ship.
+_SYNTHETIC_PROFILE_AUDIO_KINDS = frozenset({"googletts", "edgetts"})
+
+
+def _unsupported_audio_source() -> BridgeProtocolError:
+    return BridgeProtocolError(
+        "unsupported_audio_source",
+        "Android expression audio supports local packs and, outside Japanese, the device voice",
+    )
+
+
+def _expression_audio_chain(
+    value: object,
+    constructor: Callable[..., object],
+    language: str = JAPANESE,
+) -> tuple[object, ...]:
     result: list[object] = []
-    identities: set[str] = set()
+    pack_ids: set[str] = set()
+    has_device_voice = False
     for raw in _chain_items("expression_audio_chain", value):
+        if isinstance(raw, Mapping) and raw.get("kind") == _ANDROID_TTS_AUDIO_KIND and language != JAPANESE:
+            item = _entry_mapping("expression_audio_chain", raw, frozenset({"kind", "enabled"}))
+            if has_device_voice:
+                raise _invalid("expression_audio_chain", "duplicate device voice")
+            has_device_voice = True
+            result.append(
+                constructor(
+                    kind=_ANDROID_TTS_AUDIO_KIND,
+                    pack_id=None,
+                    url=None,
+                    enabled=_enabled("expression_audio_chain.enabled", item),
+                )
+            )
+            continue
         item = _entry_mapping("expression_audio_chain", raw, frozenset({"kind", "pack_id", "enabled"}))
         if item.get("kind") != "pack":
-            raise BridgeProtocolError(
-                "unsupported_audio_source",
-                "Android expression audio supports local packs only",
-            )
+            raise _unsupported_audio_source()
         pack_id = _resource_id("expression_audio_chain.pack_id", item.get("pack_id"))
-        if pack_id in identities:
+        if pack_id in pack_ids:
             raise _invalid("expression_audio_chain", "duplicate pack")
-        identities.add(pack_id)
+        pack_ids.add(pack_id)
         result.append(
             constructor(
                 kind="pack",
@@ -463,6 +517,37 @@ def _expression_audio_chain(value: object, constructor: Callable[..., object]) -
             )
         )
     return tuple(result)
+
+
+def _default_expression_audio_chain(
+    base: object,
+    language: str,
+    constructor: Callable[..., object],
+) -> tuple[object, ...]:
+    """The chain a snapshot without ``expression_audio_chain`` mines with.
+
+    Japanese keeps nothing (jpod101 and googletts are cut). Any other language
+    keeps its profile's synthetic voice as ``android_tts``, enabled as the first
+    one it replaces; every other default kind is a cut network source.
+    """
+
+    if language == JAPANESE:
+        return ()
+    synthetic = [
+        entry
+        for entry in getattr(base, "expression_audio_chain", ())
+        if getattr(entry, "kind", None) in _SYNTHETIC_PROFILE_AUDIO_KINDS
+    ]
+    if not synthetic:
+        return ()
+    return (
+        constructor(
+            kind=_ANDROID_TTS_AUDIO_KIND,
+            pack_id=None,
+            url=None,
+            enabled=bool(getattr(synthetic[0], "enabled", True)),
+        ),
+    )
 
 
 def _android_path_overrides(paths: AndroidPaths) -> dict[str, Path]:
@@ -553,17 +638,20 @@ def map_config_settings(
     require_initialized(paths.files_dir)
 
     from anki_miner.config import (
-        AnkiMinerConfig,
         AudioSourceEntry,
         ChainEntry,
         FreqEntry,
         PitchSourceEntry,
     )
 
-    base = AnkiMinerConfig()
+    language = validated_language(settings.get(_LANGUAGE_FIELD, JAPANESE))
+    base = base_config(language)
     updates: dict[str, object] = {}
     for field_name, value in settings.items():
-        if field_name == _LEGACY_ANDROID_TTS_FIELD:
+        if field_name in {_LEGACY_ANDROID_TTS_FIELD, _LANGUAGE_FIELD}:
+            continue
+        if field_name == _SCRIPT_VARIANT_FIELD:
+            updates[field_name] = _script_variant(value, language)
             continue
         if field_name in _STRING_FIELDS:
             updates[field_name] = (
@@ -591,13 +679,19 @@ def map_config_settings(
         elif field_name in _MAPPING_FIELDS:
             updates[field_name] = _anki_mapping_overlay(field_name, value, getattr(base, field_name))
         elif field_name == "dictionary_chain":
-            updates[field_name] = _dictionary_chain(value, ChainEntry)
+            chain = _dictionary_chain(value, ChainEntry)
+            # Jisho is a Japanese dictionary, and the declared network egress is Japanese
+            # lookups: the engine would send any language's terms to jisho.org, so a Jisho
+            # entry under another language is refused rather than dropped.
+            if language != JAPANESE and any(getattr(entry, "kind", None) == "jisho" for entry in chain):
+                raise _invalid("dictionary_chain.kind", "jisho is offered only for Japanese")
+            updates[field_name] = chain
         elif field_name == "frequency_chain":
             updates[field_name] = _frequency_chain(value, FreqEntry)
         elif field_name == "pitch_chain":
             updates[field_name] = _pitch_chain(value, PitchSourceEntry)
         elif field_name == "expression_audio_chain":
-            updates[field_name] = _expression_audio_chain(value, AudioSourceEntry)
+            updates[field_name] = _expression_audio_chain(value, AudioSourceEntry, language)
         else:  # pragma: no cover - guarded by the allowlist union
             raise BridgeProtocolError("unknown_config_field", field_name)
 
@@ -607,7 +701,12 @@ def map_config_settings(
     # cut network kinds the Android builder rejects at run start. Force the
     # field so the default can never leak through: expression audio on Android
     # is exactly the imported local packs the snapshot names, or nothing.
-    updates["expression_audio_chain"] = updates.get("expression_audio_chain", ())
+    # Another language's default is googletts or edgetts alone; its device
+    # voice takes their place.
+    updates["expression_audio_chain"] = updates.get(
+        "expression_audio_chain",
+        _default_expression_audio_chain(base, language, AudioSourceEntry),
+    )
     # Pinned rather than exposed.  fps/height stay at the desktop defaults so a
     # card mined on the phone matches one mined on the desktop.  The format is
     # deliberately NOT pinned here: Kotlin resolves it from the device MIME

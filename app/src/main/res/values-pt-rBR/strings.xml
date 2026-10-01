@@ -273,6 +273,9 @@
     <string name="mining_failure_job_registration">O registro de tarefa do Python violou o protocolo da ponte</string>
     <string name="mining_failure_anki_callback">O retorno de chamada do Anki falhou inesperadamente</string>
     <string name="mining_failure_sentence_audio_callback">O retorno de chamada do áudio de frase falhou inesperadamente</string>
+    <string name="mining_failure_word_audio_preparation">Não foi possível preparar o áudio de palavra sem conexão</string>
+    <string name="mining_failure_word_audio_cleanup">Falha na limpeza do áudio de palavra sem conexão</string>
+    <string name="mining_failure_word_audio_callback">O retorno de chamada do áudio de palavra falhou inesperadamente</string>
     <string name="mining_failure_control_worker">O processo de controle da mineração não está disponível</string>
     <string name="mining_admission_not_checked">A prontidão do AnkiDroid não foi verificada</string>
     <string name="mining_admission_install_ankidroid">Instale o AnkiDroid antes de minerar</string>
@@ -504,6 +507,9 @@
     <string name="jpdb_frequency_resource_title">Frequência de kana JPDB v2.2</string>
     <string name="kanjium_pitch_resource_title">Acentos tonais Kanjium</string>
     <string name="jmdict_resource_title">Dicionário JMdict (inglês)</string>
+    <string name="language_dictionary_resource_title">Dicionário</string>
+    <string name="language_frequency_resource_title">Lista de frequência de palavras</string>
+    <string name="language_data_resource_title">Dados do idioma</string>
     <string name="jmdict_resource_description">Dicionário Yomitan offline com definições em inglês · download de cerca de 15 MiB e até 163 MiB durante a importação</string>
     <string name="resource_installed">Instalado</string>
     <string name="resource_not_installed">Não instalado</string>
@@ -721,6 +727,11 @@
     <string name="settings_reading_audio">Áudio da frase de leitura</string>
     <string name="settings_reading_tts">Texto para fala offline do Android</string>
     <string name="settings_open_speech_services">Gerenciar serviços de fala</string>
+    <string name="settings_word_audio_device_voice">Voz do dispositivo</string>
+    <string name="settings_word_audio_device_voice_help">Palavras que nenhum pacote de áudio tem são faladas pela voz de texto para fala offline do dispositivo.</string>
+    <string name="settings_word_audio_voice_available">Há uma voz instalada para este idioma.</string>
+    <string name="settings_word_audio_voice_missing_data">A voz deste idioma ainda não foi baixada. Baixe-a em Gerenciar serviços de fala.</string>
+    <string name="settings_word_audio_voice_unsupported">Este dispositivo não tem voz de texto para fala para este idioma.</string>
     <string name="settings_jisho">Alternativa de definição do Jisho</string>
     <string name="settings_jisho_disclosure">Desativado por padrão. Quando ativado e esta alternativa é usada, termos de pesquisa das suas legendas ou conteúdo de leitura são enviados a jisho.org.</string>
     <string name="settings_validation_card_type_marker">O campo do Anki \'%1$s\' já está mapeado de \'%2$s\'</string>
@@ -814,6 +825,7 @@
     <string name="settings_backup_import_failed">Não foi possível ler as configurações desse arquivo.</string>
     <string name="settings_backup_not_a_backup">Esse arquivo não é um arquivo de configurações do Anki Miner.</string>
     <string name="settings_backup_too_large">Esse arquivo é grande demais para ser um arquivo de configurações.</string>
+    <string name="settings_backup_unknown_language">Esta versão não consegue minerar o idioma do arquivo (%1$s), então seu idioma de mineração foi mantido.</string>
     <string name="b3_settings_android_override_state">Substituição personalizada</string>
     <string name="b3_validation_numeric_incomplete">Preencha ou limpe este número</string>
     <string name="b3_validation_finite">Insira um número finito</string>
@@ -861,4 +873,26 @@
     <string name="b3_wizard_customize_fields">Personalizar campos em Configurações</string>
     <string name="b3_wizard_ready_title">Pronto para minerar</string>
     <string name="b3_wizard_incomplete_title">Configuração incompleta</string>
+    <string name="b3_settings_category_language">Idioma</string>
+    <string name="language_settings_title">Idioma de mineração</string>
+    <string name="language_settings_help">A troca substitui dicionários, filtros, baralho e campos do cartão pelas configurações próprias desse idioma. O idioma de exibição do app é separado.</string>
+    <string name="language_unavailable_data_required">Requer um download único dos dados do idioma.</string>
+    <string name="language_unavailable_unsupported">Esta versão não consegue minerar este idioma.</string>
+    <string name="language_download_and_switch">Baixar e trocar</string>
+    <string name="language_downloading">Baixando os dados do idioma…</string>
+    <string name="language_switch_blocked_known_words">Conclua ou descarte a importação de palavras conhecidas antes de trocar de idioma.</string>
+    <string name="language_note_type_needed">Escolha um tipo de nota para %1$s antes de minerar.</string>
+    <string name="language_choose_note_type">Escolher tipo de nota</string>
+    <string name="language_script_variant">Conjunto de caracteres</string>
+    <string name="language_script_variant_as_written">Como escrito</string>
+    <string name="language_script_variant_simplified">Simplificado (简体)</string>
+    <string name="language_script_variant_traditional">Tradicional (繁體)</string>
+    <string name="language_regional_variety">Variedade regional</string>
+    <string name="language_variety_br">Português brasileiro</string>
+    <string name="language_variety_pt">Português europeu</string>
+    <string name="settings_reading_tone_color">Colorir leituras pelo tom</string>
+    <string name="mining_failure_language_unavailable">Este idioma de mineração precisa dos dados do idioma. Baixe-os em Configurações → Idioma.</string>
+    <string name="mining_failure_unsupported_language">Esta versão não consegue minerar o idioma selecionado. Escolha outro em Configurações → Idioma.</string>
+    <string name="resource_panel_other_language_slots">Instalado para outros idiomas de mineração, não usado aqui: %1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s diz que seu idioma é %2$s, não o idioma que você está minerando.</string>
 </resources>

@@ -19,6 +19,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -26,6 +27,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
+import com.ankiminer.android.data.resources.InstalledAudioPack
+import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.diagnostics.AnkiFaultRecorder
@@ -37,6 +40,8 @@ import com.ankiminer.android.mining.MiningRunUndoManagerFactory
 import com.ankiminer.android.mining.MiningRuntimePermissions
 import com.ankiminer.android.reading.ReadingRepositoryFactory
 import com.ankiminer.android.service.MiningForegroundService
+import com.ankiminer.android.ui.mining.LocalMiningContentStyle
+import com.ankiminer.android.ui.mining.MiningContentStyle
 import com.ankiminer.android.ui.navigation.AnkiMinerApp
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import com.ankiminer.android.ui.theme.LaunchNeutral
@@ -52,6 +57,7 @@ import com.ankiminer.android.vm.SettingsViewModel
 import com.ankiminer.android.vm.SetupViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 
 /**
@@ -62,6 +68,19 @@ import kotlinx.coroutines.flow.map
  */
 internal fun AppSettingsRepository.appShellSettings(): Flow<AppSettings> =
     settingsOrNull.map { it ?: AppSettings() }
+
+/**
+ * The audio packs the mining language's runs consult. Another language's pack is never in its
+ * chain, so it must not raise the Video and Audio tabs' word-audio warnings either.
+ */
+internal fun activeLanguageAudioPacks(
+    settings: Flow<AppSettings>,
+    resources: Flow<ResourceManagerState>,
+): Flow<List<InstalledAudioPack>> =
+    combine(settings, resources) { current, state -> state.slotsFor(current.language).audioPacks }
+
+private fun AnkiMinerApplication.activeLanguageAudioPacks(): Flow<List<InstalledAudioPack>> =
+    activeLanguageAudioPacks(settingsRepository.settings, resourceManager.state)
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
@@ -81,7 +100,7 @@ class MainActivity : ComponentActivity() {
             audioPaddingSeconds =
                 app.settingsRepository.settings.map { it.audioPaddingSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
-            audioPacks = app.resourceManager.state.map { it.audioPacks },
+            audioPacks = app.activeLanguageAudioPacks(),
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
             audioTrackProbeOpener = app.audioTrackProbeLoader,
@@ -104,7 +123,7 @@ class MainActivity : ComponentActivity() {
             audioPaddingSeconds =
                 app.settingsRepository.settings.map { it.audioPaddingSeconds },
             fieldMap = app.settingsRepository.settings.map { it.fieldMap },
-            audioPacks = app.resourceManager.state.map { it.audioPacks },
+            audioPacks = app.activeLanguageAudioPacks(),
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
             audioTrackProbeOpener = app.audioTrackProbeLoader,
@@ -121,6 +140,7 @@ class MainActivity : ComponentActivity() {
             runtimeWorkState = app.runtimeWorkState,
             refreshExternalReadiness = app::refreshExternalReadiness,
             strings = app.stringResourceResolver,
+            languageProfileSource = app.languageProfileSource,
         )
     }
     private val settingsViewModelFactory by lazy {
@@ -131,6 +151,7 @@ class MainActivity : ComponentActivity() {
             app.settingsDocumentReader,
             app.resourceDocumentWriter,
             BuildConfig.VERSION_NAME,
+            app.languageProfileSource,
         )
     }
     private val readingViewModelFactory by lazy {
@@ -248,31 +269,39 @@ class MainActivity : ComponentActivity() {
                     ) {
                         setupViewModel.permissionsReturned()
                     }
-                AnkiMinerApp(
-                    videoViewModel = videoMiningViewModel,
-                    audioViewModel = audioMiningViewModel,
-                    readingViewModel = readingViewModel,
-                    setupViewModel = setupViewModel,
-                    settingsViewModel = settingsViewModel,
-                    diagnosticsViewModel = diagnosticsViewModel,
-                    notificationRunId = openedRunId,
-                    onNotificationRunHandled = { notificationRunId.value = null },
-                    onRequestPermissions = {
-                        if (permissions.isEmpty()) app.refreshExternalReadiness()
-                        else permissionLauncher.launch(permissions)
-                    },
-                    onOpenAppSettings = ::openAppSettings,
-                    onInstallAnkiDroid = ::installAnkiDroid,
-                    onOpenAnkiDroid = ::openAnkiDroid,
-                    onOpenSpeechSettings = ::openSpeechSettings,
-                    onShareDiagnosticsBundle = ::shareDiagnosticsBundle,
-                    verboseLogging = verboseLogging,
-                    onVerboseLoggingChange = app::setVerboseLogging,
-                    updateCheck = updateCheck,
-                    onUpdateCheckEnabledChange = app::setUpdateCheckEnabled,
-                    onCheckForUpdates = app::checkForUpdates,
-                    onSkipUpdate = app::skipAvailableUpdate,
-                )
+                val languageProfiles =
+                    settingsViewModel.languageProfiles.collectAsStateWithLifecycle().value
+                val contentStyle =
+                    remember(settings.language, languageProfiles) {
+                        MiningContentStyle.forLanguage(settings.language, languageProfiles)
+                    }
+                CompositionLocalProvider(LocalMiningContentStyle provides contentStyle) {
+                    AnkiMinerApp(
+                        videoViewModel = videoMiningViewModel,
+                        audioViewModel = audioMiningViewModel,
+                        readingViewModel = readingViewModel,
+                        setupViewModel = setupViewModel,
+                        settingsViewModel = settingsViewModel,
+                        diagnosticsViewModel = diagnosticsViewModel,
+                        notificationRunId = openedRunId,
+                        onNotificationRunHandled = { notificationRunId.value = null },
+                        onRequestPermissions = {
+                            if (permissions.isEmpty()) app.refreshExternalReadiness()
+                            else permissionLauncher.launch(permissions)
+                        },
+                        onOpenAppSettings = ::openAppSettings,
+                        onInstallAnkiDroid = ::installAnkiDroid,
+                        onOpenAnkiDroid = ::openAnkiDroid,
+                        onOpenSpeechSettings = ::openSpeechSettings,
+                        onShareDiagnosticsBundle = ::shareDiagnosticsBundle,
+                        verboseLogging = verboseLogging,
+                        onVerboseLoggingChange = app::setVerboseLogging,
+                        updateCheck = updateCheck,
+                        onUpdateCheckEnabledChange = app::setUpdateCheckEnabled,
+                        onCheckForUpdates = app::checkForUpdates,
+                        onSkipUpdate = app::skipAvailableUpdate,
+                    )
+                }
             }
         }
     }

@@ -1052,7 +1052,7 @@ def _stub_run(
 ) -> tuple[object, object]:
     config = SimpleNamespace()
     document = object()
-    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     def map_config(request: object, files_dir: Path) -> object:
         assert files_dir == Path("/files")
@@ -1172,7 +1172,7 @@ def test_cancellation_after_document_load_stops_before_processor(
 ) -> None:
     registry = JobRegistry()
     callbacks = RecordingCallbacks(registry=registry)
-    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(
         reading_mining,
         "_map_config",
@@ -1210,7 +1210,7 @@ def test_reading_curation_parks_and_preserves_none_vs_empty_semantics(
 ) -> None:
     registry = JobRegistry()
     monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
-    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(
         reading_mining,
         "_map_config",
@@ -1308,7 +1308,7 @@ def test_reading_curation_rejects_line_expansion_and_survives_clean_resend(
 ) -> None:
     registry = JobRegistry()
     monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
-    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
     emitted = threading.Event()
@@ -1405,7 +1405,7 @@ def test_reading_curation_rejects_clip_override_and_survives_clean_resend(
 ) -> None:
     registry = JobRegistry()
     monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
-    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: object())
     emitted = threading.Event()
@@ -1506,7 +1506,7 @@ def _run_reading_and_capture_curation_request(
 
     registry = JobRegistry()
     monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
-    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(reading_mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(reading_mining, "_map_config", lambda *_: SimpleNamespace())
     monkeypatch.setattr(reading_mining, "_load_document", lambda *_, **_kwargs: document)
 

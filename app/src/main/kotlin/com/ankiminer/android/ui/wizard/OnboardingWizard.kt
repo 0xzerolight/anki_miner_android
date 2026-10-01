@@ -122,11 +122,25 @@ internal fun wizardStepRequirement(step: WizardStep): WizardStepRequirement? =
         -> null
     }
 
-internal fun nextWizardStep(step: WizardStep): WizardStep =
-    WizardStep.entries.getOrElse(step.ordinal + 1) { step }
+/** The steps this language walks: only Japanese tokenizes with UniDic, so only it gets that step. */
+internal fun wizardSteps(uniDicRequired: Boolean): List<WizardStep> =
+    if (uniDicRequired) WizardStep.entries else WizardStep.entries - WizardStep.TOKENIZER
 
-internal fun previousWizardStep(step: WizardStep): WizardStep =
-    WizardStep.entries.getOrElse(step.ordinal - 1) { step }
+internal fun nextWizardStep(
+    step: WizardStep,
+    steps: List<WizardStep> = WizardStep.entries,
+): WizardStep = steps.firstOrNull { it.ordinal > step.ordinal } ?: step
+
+internal fun previousWizardStep(
+    step: WizardStep,
+    steps: List<WizardStep> = WizardStep.entries,
+): WizardStep = steps.lastOrNull { it.ordinal < step.ordinal } ?: step
+
+/** One-based position of [step] among [steps], for the "Step N of M" line and the progress bar. */
+private fun wizardStepNumber(
+    step: WizardStep,
+    steps: List<WizardStep>,
+): Int = steps.count { it.ordinal <= step.ordinal }
 
 internal sealed interface WizardBackAction {
     data class Previous(
@@ -136,11 +150,14 @@ internal sealed interface WizardBackAction {
     data object ConfirmSkip : WizardBackAction
 }
 
-internal fun wizardBackAction(step: WizardStep): WizardBackAction =
+internal fun wizardBackAction(
+    step: WizardStep,
+    steps: List<WizardStep> = WizardStep.entries,
+): WizardBackAction =
     if (step == WizardStep.WELCOME) {
         WizardBackAction.ConfirmSkip
     } else {
-        WizardBackAction.Previous(previousWizardStep(step))
+        WizardBackAction.Previous(previousWizardStep(step, steps))
     }
 
 internal enum class WizardFinalState {
@@ -230,8 +247,9 @@ internal fun OnboardingWizardContent(
     scrollState: ScrollState = rememberScrollState(),
 ) {
     var showSkipConfirmation by rememberSaveable { mutableStateOf(false) }
+    val steps = wizardSteps(state.uniDicRequired)
     val requestBack = {
-        when (val action = wizardBackAction(step)) {
+        when (val action = wizardBackAction(step, steps)) {
             WizardBackAction.ConfirmSkip -> showSkipConfirmation = true
             is WizardBackAction.Previous -> callbacks.onStep(action.step)
         }
@@ -277,7 +295,7 @@ internal fun OnboardingWizardContent(
     val title = wizardTitle(step, state.isMiningReady)
     val animatedProgress by
         animateFloatAsState(
-            targetValue = (step.ordinal + 1).toFloat() / WizardStep.entries.size.toFloat(),
+            targetValue = wizardStepNumber(step, steps).toFloat() / steps.size.toFloat(),
             animationSpec = tween(durationMillis = 150),
             label = "wizard progress",
         )
@@ -313,6 +331,7 @@ internal fun OnboardingWizardContent(
             ) {
                 WizardNavigation(
                     step = step,
+                    steps = steps,
                     saving = state.wizardCompletion == WizardCompletionStatus.SAVING,
                     onStep = callbacks.onStep,
                     onRequestSkip = callbacks.onFinished,
@@ -358,8 +377,8 @@ internal fun OnboardingWizardContent(
                     Text(
                         stringResource(
                             R.string.wizard_step_position,
-                            targetStep.ordinal + 1,
-                            WizardStep.entries.size,
+                            wizardStepNumber(targetStep, steps),
+                            steps.size,
                         ),
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -671,6 +690,7 @@ private fun AnkiDroidActionButtons(
 @Composable
 private fun WizardNavigation(
     step: WizardStep,
+    steps: List<WizardStep>,
     saving: Boolean,
     onStep: (WizardStep) -> Unit,
     onRequestSkip: () -> Unit,
@@ -682,7 +702,7 @@ private fun WizardNavigation(
             AdaptiveActionGroup(
                 primary = { actionModifier ->
                     PrimaryActionButton(
-                        onClick = { onStep(nextWizardStep(step)) },
+                        onClick = { onStep(nextWizardStep(step, steps)) },
                         enabled = !saving,
                         modifier = actionModifier,
                     ) { Text(stringResource(R.string.wizard_set_up_now)) }
@@ -707,7 +727,7 @@ private fun WizardNavigation(
                 },
                 secondary = { actionModifier ->
                     SecondaryActionButton(
-                        onClick = { onStep(previousWizardStep(step)) },
+                        onClick = { onStep(previousWizardStep(step, steps)) },
                         enabled = !saving,
                         modifier = actionModifier,
                     ) { Text(stringResource(R.string.wizard_back)) }
@@ -718,14 +738,14 @@ private fun WizardNavigation(
             AdaptiveActionGroup(
                 primary = { actionModifier ->
                     PrimaryActionButton(
-                        onClick = { onStep(nextWizardStep(step)) },
+                        onClick = { onStep(nextWizardStep(step, steps)) },
                         enabled = !saving,
                         modifier = actionModifier,
                     ) { Text(stringResource(R.string.wizard_next)) }
                 },
                 secondary = { actionModifier ->
                     SecondaryActionButton(
-                        onClick = { onStep(previousWizardStep(step)) },
+                        onClick = { onStep(previousWizardStep(step, steps)) },
                         enabled = !saving,
                         modifier = actionModifier,
                     ) { Text(stringResource(R.string.wizard_back)) }

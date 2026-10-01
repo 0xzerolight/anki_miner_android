@@ -3,6 +3,9 @@ package com.ankiminer.android.data.resources
 import java.io.IOException
 import java.util.Locale
 
+/** The mining language every request without one means, as on the Python side. */
+internal const val JAPANESE = "ja"
+
 data class ResourceAttribution(
     val name: String,
     val copyright: String,
@@ -95,12 +98,54 @@ data class PitchCatalogResource(
         }
 }
 
+data class LanguageDataInnerDigest(
+    val path: String,
+    val sha256: String,
+)
+
+/** How the vendored pack installer unpacks one data component (its `ArtifactSpec`). */
+data class LanguageDataInstallIdentity(
+    val memberPrefix: String,
+    val exclude: List<String>,
+    val sentinels: List<String>,
+    val innerSha256: List<LanguageDataInnerDigest>,
+)
+
+/**
+ * A data-only component of a vendored language pack, installed through
+ * `resource.languagedata.install` into `language_packs/<language>/<importName>/`.
+ *
+ * Generated from the vendored `pack.py`; engine code is never downloaded.
+ */
+data class LanguageDataCatalogResource(
+    override val resourceId: String,
+    override val displayName: String,
+    val importName: String,
+    override val archive: ResourceArchive,
+    val install: LanguageDataInstallIdentity,
+    override val attribution: List<ResourceAttribution>,
+) : CatalogResource
+
+data class InstalledLanguageData(
+    val resourceId: String,
+    val language: String,
+    val importName: String,
+)
+
+/**
+ * One mining language's pinned resources (`resource_catalog/<language>.json`, schema 3).
+ *
+ * Resource ids are unique across every language's catalog, so a persisted id (a retry target, a
+ * dictionary's `catalogResourceId`) names one resource without a language beside it.
+ */
 data class ResourceCatalog(
     val schemaVersion: Long,
+    val language: String,
     val resources: List<CatalogResource>,
     /** Resource ids of the recommended set, in the order they are installed. */
     val recommended: List<String>,
 ) {
+    /** Japanese only: no other language tokenizes with UniDic. */
     val unidic: UniDicCatalogResource
         get() = resources.filterIsInstance<UniDicCatalogResource>().single()
 
@@ -112,6 +157,10 @@ data class ResourceCatalog(
 
     val pitchSources: List<PitchCatalogResource>
         get() = resources.filterIsInstance<PitchCatalogResource>()
+
+    /** Engine data the language cannot mine without; installed with the language, never recommended. */
+    val languageData: List<LanguageDataCatalogResource>
+        get() = resources.filterIsInstance<LanguageDataCatalogResource>()
 
     fun dictionary(resourceId: String): YomitanCatalogResource? =
         dictionaries.singleOrNull { it.resourceId == resourceId }
@@ -141,6 +190,17 @@ data class ImportedDictionary(
     val mediaWarnings: List<String>,
     val archiveSha256: String,
     val attribution: List<ResourceAttribution>,
+    /** The language the archive's `index.json` declares (primary subtag), or "". */
+    val sourceLanguage: String = "",
+    /** The declared language is not the one the slot was imported for. */
+    val sourceLanguageMismatch: Boolean = false,
+)
+
+/** A custom dictionary whose own index names another language than the one it was imported for. */
+data class DictionaryLanguageMismatch(
+    val slotId: String,
+    val sourceName: String,
+    val sourceLanguage: String,
 )
 
 data class InstalledDictionary(
@@ -159,6 +219,8 @@ data class InstalledDictionary(
     val attribution: List<ResourceAttribution>,
     /** See [InstalledFrequencySource.rebuildSourcePath]. */
     val rebuildSourcePath: String?,
+    /** The mining language the slot was imported for; unstamped legacy slots are Japanese. */
+    val language: String = JAPANESE,
 ) {
     val isUsable: Boolean
         get() = occupied && valid && schemaOk
@@ -299,7 +361,8 @@ private const val OCTET_STREAM_MIME_TYPE = "application/octet-stream"
  * A plain-text word list the engine reads by path at the start of every run.
  *
  * Unlike dictionaries and known words, Python never ingests these into a store of its own, so the
- * imported file is kept rather than deleted once the operation ends.
+ * imported file is kept rather than deleted once the operation ends. Each mining language has its
+ * own pair, as desktop scopes `blacklist_path` and `whitelist_path` per language.
  */
 enum class WordListKind(val fileName: String) {
     BLACKLIST("blacklist.txt"),
@@ -342,6 +405,8 @@ data class InstalledFrequencySource(
      * user re-picking the original file; null means the slot is unrecoverable.
      */
     val rebuildSourcePath: String?,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 data class ImportedPitchSource(
@@ -365,6 +430,8 @@ data class InstalledPitchSource(
     val schemaVersion: Long,
     /** See [InstalledFrequencySource.rebuildSourcePath]. */
     val rebuildSourcePath: String?,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 /**
@@ -395,6 +462,8 @@ data class InstalledAudioPack(
     val format: String,
     val entryCount: Long,
     val contentAvailable: Boolean,
+    /** See [InstalledDictionary.language]. */
+    val language: String = JAPANESE,
 )
 
 data class ImportedKnownWords(
@@ -465,6 +534,8 @@ data class LocalResourceInventory(
     val audioPacks: List<InstalledAudioPack>,
     val knownWords: KnownWordsInventory,
     val wordsets: List<BundledWordset>,
+    /** Resource ids of the pinned language-data components complete on disk. */
+    val languageData: Set<String> = emptySet(),
 )
 
 data class DictionaryLookup(
@@ -616,7 +687,12 @@ data class ResourceFailure(
 
 data class ResourceManagerState(
     val startupReadiness: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
+    /** The mining language [catalog], [knownWords] and [wordLists] were last read for. */
+    val language: String = JAPANESE,
+    /** The active mining language's catalog. */
     val catalog: ResourceCatalog? = null,
+    /** Every language's catalog, Japanese first; empty before the first refresh. */
+    val catalogs: List<ResourceCatalog> = emptyList(),
     val installedUniDic: InstalledUniDic? = null,
     val dictionaries: List<InstalledDictionary> = emptyList(),
     val frequencySources: List<InstalledFrequencySource> = emptyList(),
@@ -624,10 +700,15 @@ data class ResourceManagerState(
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val wordsets: List<BundledWordset> = emptyList(),
+    /** Resource ids of the pinned language-data components complete on disk. */
+    val installedLanguageData: Set<String> = emptySet(),
+    /** [language]'s own word lists. */
     val wordLists: List<InstalledWordList> = emptyList(),
     val lastLocalImport: LocalResourceImportResult? = null,
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
     val knownWordsPage: KnownWordsPage? = null,
+    /** Desktop's import receipt note, kept until the next dictionary import or language switch. */
+    val dictionaryLanguageMismatch: DictionaryLanguageMismatch? = null,
     val activeOperation: ResourceOperationProgress? = null,
     val failure: ResourceFailure? = null,
     val lastLookup: DictionaryLookup? = null,
@@ -637,9 +718,55 @@ data class ResourceManagerState(
 
     fun wordList(kind: WordListKind): InstalledWordList? = wordLists.firstOrNull { it.kind == kind }
 
+    /**
+     * Slot ids a [language] chain may name: usable, and stamped for [language]. A slot imported for
+     * another language never enters the chain, as desktop's `usable_enabled` skips it; an unstamped
+     * legacy slot is Japanese.
+     */
+    fun usableDictionaryIds(language: String): List<String> =
+        dictionaries.filter { it.isChainEligible && it.language == language }.map { it.slotId }
+
+    /** See [usableDictionaryIds]. */
+    fun usableFrequencyIds(language: String): List<String> =
+        frequencySources
+            .filter { it.schemaOk && it.entryCount > 0 && it.language == language }
+            .map { it.sourceId }
+
+    /** See [usableDictionaryIds]. */
+    fun usablePitchIds(language: String): List<String> =
+        pitchSources
+            .filter { it.schemaOk && it.entryCount > 0 && it.language == language }
+            .map { it.sourceId }
+
+    /** See [usableDictionaryIds]. */
+    fun usableAudioPackIds(language: String): List<String> =
+        audioPacks
+            .filter { it.contentAvailable && it.entryCount > 0 && it.language == language }
+            .map { it.packId }
+
+    /** Only [language]'s slots, broken ones included: what that language's resource panels list. */
+    fun slotsFor(language: String): ResourceManagerState =
+        copy(
+            dictionaries = dictionaries.filter { it.language == language },
+            frequencySources = frequencySources.filter { it.language == language },
+            pitchSources = pitchSources.filter { it.language == language },
+            audioPacks = audioPacks.filter { it.language == language },
+        )
+
     /** What one press of the recommended-set download would install right now. */
     val recommendedPlan: RecommendedResourcePlan
-        get() = recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources)
+        get() = recommendedResourcePlan(catalog)
+
+    /**
+     * The set one press would install for [language] — its engine data first, then its
+     * recommended dictionary and lists. Empty before the first refresh or for a language with no
+     * catalog.
+     */
+    fun recommendedPlan(language: String): RecommendedResourcePlan =
+        recommendedResourcePlan(catalogs.firstOrNull { it.language == language })
+
+    private fun recommendedResourcePlan(catalog: ResourceCatalog?): RecommendedResourcePlan =
+        recommendedResourcePlan(catalog, dictionaries, frequencySources, pitchSources, installedLanguageData)
 
     val catalogDictionaries: List<CatalogDictionaryStatus>
         get() =

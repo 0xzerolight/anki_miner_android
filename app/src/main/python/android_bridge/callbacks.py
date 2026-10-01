@@ -10,7 +10,13 @@ from typing import Any
 from uuid import uuid4
 
 from .anki_limits import ANKI_ENVELOPE_LIMITS_V1
-from .jobs import JobHandle, JobRegistry, SentencePageContext, SentencePreview
+from .jobs import (
+    JobHandle,
+    JobRegistry,
+    KnownWordsTarget,
+    SentencePageContext,
+    SentencePreview,
+)
 from .protocol import (
     BridgeProtocolError,
     DecodedMessage,
@@ -460,6 +466,8 @@ class CallbackAdapters:
         self.anki = AndroidAnkiCallbacks(callbacks, handle.run_id)
         self.sentence_context: Callable[[object], SentencePageContext | None] | None = None
         self.sentence_preview: Callable[[object], SentencePreview] | None = None
+        # Set once the run's config is mapped: the language's own known-words file.
+        self.known_words_target: KnownWordsTarget | None = None
 
     @property
     def run_id(self) -> str:
@@ -511,6 +519,7 @@ class CallbackAdapters:
             allow_clip_override=self._supports_clip_override,
             sentence_context=self.sentence_context,
             sentence_preview=self.sentence_preview,
+            known_words_target=self.known_words_target,
         )
 
     def cancellation_requested(self) -> bool:

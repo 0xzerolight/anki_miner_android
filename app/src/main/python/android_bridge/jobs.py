@@ -46,20 +46,36 @@ def _reject(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
 
 
-def _known_words_db_path() -> Path:
-    """Mirror ``config_map``'s fixed known-words location."""
+@dataclass(frozen=True)
+class KnownWordsTarget:
+    """The database a run's curation "mark known" writes to, and the language keying it.
+
+    Desktop writes the marks to the ACTIVE language's file
+    (``resolve_known_words_db_path``) under that language's fold
+    (``add_user_known_words(..., language=)``): a Hebrew mark in the Japanese
+    file would never filter a Hebrew word and could filter a Japanese one.
+    """
+
+    db_path: Path
+    language: str = "ja"
+
+
+def _default_known_words_target() -> KnownWordsTarget:
+    """Mirror ``config_map``'s fixed Japanese known-words location."""
 
     from .bootstrap import require_initialized
 
-    return Path(require_initialized()) / "known_words.db"
+    return KnownWordsTarget(Path(require_initialized()) / "known_words.db")
 
 
-def _write_user_known_words(db_path: Path, forms: set[str]) -> int:
+def _write_user_known_words(target: KnownWordsTarget, forms: set[str]) -> int:
     """Module-level seam over the engine helper, imported after bootstrap."""
 
     from anki_miner.services.known_word_db import add_user_known_words
 
-    return add_user_known_words(db_path, forms)
+    from .languages import language_kwarg
+
+    return add_user_known_words(target.db_path, forms, **language_kwarg(target.language))
 
 
 @dataclass(frozen=True)
@@ -132,6 +148,7 @@ class _CurationGate:
     allow_clip_override: bool = False
     sentence_context: Callable[[object], SentencePageContext | None] | None = None
     sentence_preview: Callable[[object], SentencePreview] | None = None
+    known_words_target: KnownWordsTarget | None = None
 
     @property
     def paged(self) -> bool:
@@ -503,6 +520,7 @@ class JobRegistry:
         allow_clip_override: bool = False,
         sentence_context: Callable[[object], SentencePageContext | None] | None = None,
         sentence_preview: Callable[[object], SentencePreview] | None = None,
+        known_words_target: KnownWordsTarget | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.
 
@@ -585,6 +603,7 @@ class JobRegistry:
                 allow_clip_override=allow_clip_override,
                 sentence_context=sentence_context,
                 sentence_preview=sentence_preview,
+                known_words_target=known_words_target,
             )
             state.curation = gate
 
@@ -761,7 +780,10 @@ class JobRegistry:
                     pending_forms = gate.known_forms | new_forms
                     if gate.final_page and pending_forms:
                         try:
-                            _write_user_known_words(_known_words_db_path(), pending_forms)
+                            _write_user_known_words(
+                                gate.known_words_target or _default_known_words_target(),
+                                pending_forms,
+                            )
                         except Exception as error:
                             gate.failure = BridgeProtocolError(
                                 "known_words_write_failed",

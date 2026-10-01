@@ -8,6 +8,7 @@ internal const val MAX_DEFINITION_CACHE = 64
 internal data class DefinitionQuery(
     val term: String,
     val fallbackTerm: String?,
+    val partOfSpeech: String? = null,
 )
 
 /**

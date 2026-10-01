@@ -79,6 +79,7 @@ internal class SessionSettingsRepository(initial: AppSettings) : AppSettingsRepo
 internal class SessionResourceManager(
     initial: ResourceManagerState =
         ResourceManagerState(startupReadiness = ResourceStartupReadiness.READY),
+    private val wordListPaths: (WordListKind, String) -> String? = { _, _ -> null },
 ) : ResourceManager {
     override val state: StateFlow<ResourceManagerState> = MutableStateFlow(initial).asStateFlow()
 
@@ -121,7 +122,7 @@ internal class SessionResourceManager(
 
     override suspend fun removeWordList(kind: WordListKind) = Unit
 
-    override fun wordListPath(kind: WordListKind): String? = null
+    override fun wordListPath(kind: WordListKind, language: String): String? = wordListPaths(kind, language)
 
     override suspend fun previewKnownWords(uri: String, fileKind: ResourceImportFileKind) = Unit
 

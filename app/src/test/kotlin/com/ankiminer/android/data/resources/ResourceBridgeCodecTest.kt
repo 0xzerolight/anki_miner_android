@@ -73,7 +73,119 @@ class ResourceBridgeCodecTest {
     @Test
     fun committedPythonCatalogJsonMatchesTheFrozenKotlinCatalog() {
         // decodeCatalog throws resource_catalog_mismatch on any divergence.
-        assertEquals(FrozenResourceCatalog.value, ResourceBridgeCodec.decodeCatalog(committedCatalogEnvelope()))
+        assertEquals(FrozenResourceCatalog.all, ResourceBridgeCodec.decodeCatalogs(committedCatalogEnvelope()))
+    }
+
+    @Test
+    fun everyLanguageHasOneCatalogAndResourceIdsAreUniqueAcrossThem() {
+        val catalogs = FrozenResourceCatalog.all
+
+        assertEquals("ja", catalogs.first().language)
+        assertEquals(catalogs.map { it.language }.distinct(), catalogs.map { it.language })
+        val ids = catalogs.flatMap { catalog -> catalog.resources.map { it.resourceId } }
+        assertEquals(ids.distinct(), ids)
+        catalogs.forEach { catalog ->
+            assertEquals(3L, catalog.schemaVersion)
+            assertEquals(catalog, FrozenResourceCatalog.forLanguage(catalog.language))
+            catalog.resources.forEach { assertEquals(catalog, FrozenResourceCatalog.catalogOf(it.resourceId)) }
+        }
+    }
+
+    @Test
+    fun catalogRejectsAFileThatNamesAnotherLanguage() {
+        val raw = committedCatalogEnvelope().replaceFirst(""""language": "ja"""", """"language": "xx"""")
+
+        val failure =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeCatalogs(raw)
+            }
+        assertEquals("resource_catalog_mismatch", failure.code)
+    }
+
+    @Test
+    fun languageDataInstallsByPinnedIdAndItsResponseMustNameThatPin() {
+        val request = ResourceBridgeCodec.encodeLanguageDataInstallRequest("op-1", "ar-calima-msa", "/staged/a.zip")
+        assertEquals(
+            """{"schemaVersion":1,"type":"resource.languagedata.install","payload":{"operationId":"op-1","resourceId":"ar-calima-msa","archivePath":"/staged/a.zip"}}""",
+            request,
+        )
+
+        fun installed(id: String, language: String, importName: String) =
+            """{"schemaVersion":1,"type":"resource.languagedata.installed","payload":{"resourceId":"$id","language":"$language","importName":"$importName"}}"""
+
+        assertEquals(
+            InstalledLanguageData("ar-calima-msa", "ar", "calima_msa"),
+            ResourceBridgeCodec.decodeInstalledLanguageData(installed("ar-calima-msa", "ar", "calima_msa"), "ar-calima-msa"),
+        )
+        for (raw in listOf(
+            installed("fa-hazm-data", "fa", "hazm_data"),
+            installed("ar-calima-msa", "fa", "calima_msa"),
+            installed("ar-calima-msa", "ar", "hazm_data"),
+        )) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeInstalledLanguageData(raw, "ar-calima-msa")
+                }
+            assertEquals("resource_identity_mismatch", failure.code)
+        }
+    }
+
+    @Test
+    fun theInventoryReportsOnlyPinnedLanguageData() {
+        fun listed(languageData: String) =
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":$languageData}}"""
+
+        assertEquals(setOf("fa-hazm-data"), ResourceBridgeCodec.decodeLocalResourceList(listed("""["fa-hazm-data"]""")).languageData)
+        for (bad in listOf("""["jmdict-en-2026-07-17"]""", """["fa-hazm-data","fa-hazm-data"]""", """["unknown"]""")) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeLocalResourceList(listed(bad))
+                }
+            assertEquals("invalid_resource_response", failure.code)
+        }
+    }
+
+    @Test
+    fun everyInventoryCarriesEachSlotsLanguageStamp() {
+        val listed =
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"opensubtitles-he","sourceName":"OS","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":3,"isCategorical":false,"rebuildSourcePath":null,"language":"he"}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
+        assertEquals("he", ResourceBridgeCodec.decodeLocalResourceList(listed).frequencies.single().language)
+
+        for (bad in listOf("\"HE\"", "\"\"", "null")) {
+            val failure =
+                assertThrows(ResourceBridgeException::class.java) {
+                    ResourceBridgeCodec.decodeLocalResourceList(listed.replace("\"language\":\"he\"", "\"language\":$bad"))
+                }
+            assertEquals("invalid_resource_response", failure.code)
+        }
+        // Exact keys: a Python inventory without the stamp is refused rather than guessed.
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeLocalResourceList(listed.replace(",\"language\":\"he\"", ""))
+        }
+    }
+
+    @Test
+    fun languageBearingRequestsSendTheirLanguage() {
+        val requests =
+            listOf(
+                ResourceBridgeCodec.encodeLocalResourceListRequest("he"),
+                ResourceBridgeCodec.encodeKnownWordsExportRequest("op", language = "he"),
+                ResourceBridgeCodec.encodeKnownWordsResetRequest("op", KnownWordsResetScope.USER, language = "he"),
+                ResourceBridgeCodec.encodeFrequencyImportRequest(
+                    "op",
+                    "/a.csv",
+                    "freq",
+                    "Freq",
+                    FrequencySourceFormat.CSV,
+                    overwrite = false,
+                    language = "he",
+                ),
+                ResourceBridgeCodec.encodeDictionaryImportRequest("op", "/a.zip", "slot", false, null, language = "he"),
+            )
+
+        requests.forEach { assertTrue(it, it.contains("\"language\":\"he\"")) }
+        assertTrue(ResourceBridgeCodec.encodeLocalResourceListRequest().contains("\"language\":\"ja\""))
+        assertThrows(IllegalArgumentException::class.java) { ResourceBridgeCodec.encodeLocalResourceListRequest("Hebrew") }
     }
 
     @Test
@@ -83,7 +195,7 @@ class ResourceBridgeCodecTest {
 
         val failure =
             assertThrows(ResourceBridgeException::class.java) {
-                ResourceBridgeCodec.decodeCatalog(raw)
+                ResourceBridgeCodec.decodeCatalogs(raw)
             }
         assertEquals("invalid_resource_response", failure.code)
     }
@@ -92,24 +204,18 @@ class ResourceBridgeCodecTest {
     fun catalogRejectsARecommendedIdThatNamesNoResource() {
         val raw =
             committedCatalogEnvelope()
-                .replace(""""recommended": [""", """"recommended": ["not-in-the-catalog",""")
+                .replaceFirst(""""recommended": [""", """"recommended": ["not-in-the-catalog",""")
 
         // The Kotlin mirror is the authority here: an id the frozen copy does not list makes the
         // decoded catalog differ, which is the mismatch the equality check exists to catch.
         val failure =
             assertThrows(ResourceBridgeException::class.java) {
-                ResourceBridgeCodec.decodeCatalog(raw)
+                ResourceBridgeCodec.decodeCatalogs(raw)
             }
         assertEquals("resource_catalog_mismatch", failure.code)
     }
 
-    private fun committedCatalogEnvelope(): String {
-        val payload =
-            checkNotNull(javaClass.getResourceAsStream("/resource_catalog_v1.json")) {
-                "resource_catalog_v1.json missing from the test classpath"
-            }.bufferedReader().use { it.readText() }
-        return """{"schemaVersion":1,"type":"resource.catalog","payload":${payload.trim()}}"""
-    }
+    private fun committedCatalogEnvelope(): String = CommittedCatalogs.envelope()
 
     @Test
     fun lookupResponsePreservesEngineHtmlByteForByte() {
@@ -123,7 +229,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun dictionaryInventoryPreservesInvalidOccupiedSlots() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":false,"sourceName":"jitendex","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":"/data/user/0/files/dicts/jitendex/source.zip"}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":false,"sourceName":"jitendex","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":"/data/user/0/files/dicts/jitendex/source.zip","language":"ja"}]}}"""
 
         val installed = ResourceBridgeCodec.decodeDictionaryList(raw).single()
 
@@ -148,16 +254,19 @@ class ResourceBridgeCodecTest {
     @Test
     fun dictionaryInventoryRejectsInconsistentFlagsAndForgedAttribution() {
         val unoccupied =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":false,"valid":false,"sourceName":"fixture","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":null}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":false,"valid":false,"sourceName":"fixture","sourceRevision":"","format":"unknown","entryCount":0,"schemaOk":false,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":null,"language":"ja"}]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeDictionaryList(unoccupied)
         }
 
         val forgedAttribution =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":true,"valid":true,"sourceName":"Fixture","sourceRevision":"1","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[{"name":"Fake","copyright":"Fake","license":"MIT","url":"https://example.com"}],"rebuildSourcePath":null}]}}"""
-        assertThrows(ResourceBridgeException::class.java) {
-            ResourceBridgeCodec.decodeDictionaryList(forgedAttribution)
-        }
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"fixture","occupied":true,"valid":true,"sourceName":"Fixture","sourceRevision":"1","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[{"name":"Fake","copyright":"Fake","license":"MIT","url":"https://example.com"}],"rebuildSourcePath":null,"language":"ja"}]}}"""
+        val forged =
+            assertThrows(ResourceBridgeException::class.java) {
+                ResourceBridgeCodec.decodeDictionaryList(forgedAttribution)
+            }
+        // The attribution check itself refused it, not the exact-key check before it.
+        assertEquals("Uncatalogued dictionary cannot claim catalog attribution", forged.message)
     }
 
     @Test
@@ -205,7 +314,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun installedDictionaryWithUnknownCatalogIdentityIsRejected() {
         val unknownCatalogId =
-            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[],"rebuildSourcePath":null}]}}"""
+            """{"schemaVersion":1,"type":"resource.dictionary.listed","payload":{"dictionaries":[{"slotId":"jitendex","occupied":true,"valid":true,"sourceName":"Jitendex.org [2026-07-09]","sourceRevision":"2026.07.09.0","format":"yomitan","entryCount":1,"schemaOk":true,"embeddedAttribution":{},"catalogResourceId":"not-in-catalog","attribution":[],"rebuildSourcePath":null,"language":"ja"}]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeDictionaryList(unknownCatalogId)
         }
@@ -418,6 +527,28 @@ class ResourceBridgeCodecTest {
     }
 
     @Test
+    fun importedDictionaryCarriesTheDeclaredLanguageReceipt() {
+        val imported =
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"jmdict-he","catalogResourceId":null,"sourceName":"JMdict","sourceRevision":"1","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[],"sourceLanguage":"ja","sourceLanguageMismatch":true}}""",
+            )
+
+        assertEquals("ja", imported.sourceLanguage)
+        assertTrue(imported.sourceLanguageMismatch)
+        // An older bridge sends neither key: no receipt.
+        val revisionless =
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"revisionless","catalogResourceId":null,"sourceName":"Revisionless","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[]}}""",
+            )
+        assertTrue(!revisionless.sourceLanguageMismatch)
+        assertThrows(ResourceBridgeException::class.java) {
+            ResourceBridgeCodec.decodeImportedDictionary(
+                """{"schemaVersion":1,"type":"resource.dictionary.imported","payload":{"slotId":"x","catalogResourceId":null,"sourceName":"X","sourceRevision":"","entryCount":1,"skippedMalformed":0,"mediaWarnings":[],"archiveSha256":"${"0".repeat(64)}","attribution":[],"sourceLanguage":"<b>","sourceLanguageMismatch":true}}""",
+            )
+        }
+    }
+
+    @Test
     fun importedPitchAcceptsDesktopYomitanInstalledFormat() {
         val imported =
             ResourceBridgeCodec.decodeImportedPitch(
@@ -560,7 +691,7 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryDecodesEveryInstalledClass() {
         val raw =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"jpdb","sourceName":"JPDB","format":"yomitan-freq","entryCount":100,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}],"pitchSources":[{"sourceId":"nhk","sourceName":"NHK","sourceRevision":"1","format":"csv","entryCount":20,"schemaOk":true,"schemaVersion":1,"rebuildSourcePath":null,"language":"ja"}],"audioPacks":[{"packId":"nhk16","sourceName":"nhk16","format":"nhk16","entryCount":30,"contentAvailable":true,"language":"ja"}],"knownWords":{"totalCount":12,"userCount":2,"ankiCount":9,"minedCount":1,"schemaOk":true},"wordsets":[{"wordsetId":"surnames","displayName":"Surnames","entryCount":98406}],"languageData":[]}}"""
 
         val inventory = ResourceBridgeCodec.decodeLocalResourceList(raw)
 
@@ -574,13 +705,13 @@ class ResourceBridgeCodecTest {
     @Test
     fun localResourceInventoryRejectsDuplicateIdsAndInconsistentCounts() {
         val duplicateFrequency =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[{"sourceId":"same","sourceName":"One","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"},{"sourceId":"same","sourceName":"Two","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":0,"userCount":0,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(duplicateFrequency)
         }
 
         val inconsistentKnownWords =
-            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":1,"userCount":1,"ankiCount":1,"minedCount":0,"schemaOk":true},"wordsets":[]}}"""
+            """{"schemaVersion":1,"type":"resource.local.listed","payload":{"frequencies":[],"pitchSources":[],"audioPacks":[],"knownWords":{"totalCount":1,"userCount":1,"ankiCount":1,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":[]}}"""
         assertThrows(ResourceBridgeException::class.java) {
             ResourceBridgeCodec.decodeLocalResourceList(inconsistentKnownWords)
         }

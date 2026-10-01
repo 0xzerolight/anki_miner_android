@@ -25,9 +25,13 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AndroidSettingsDocumentReader
+import com.ankiminer.android.data.settings.BridgeLanguageProfileSource
 import com.ankiminer.android.data.settings.DataStoreAppSettingsRepository
 import com.ankiminer.android.data.settings.DataStoreDiagnosticsSettingsRepository
 import com.ankiminer.android.data.settings.DiagnosticsSettingsRepository
+import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
+import com.ankiminer.android.data.settings.LanguageProfileSource
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.data.settings.SettingsDocumentReader
 import com.ankiminer.android.data.update.DataStoreUpdateCheckRepository
 import com.ankiminer.android.data.update.GitHubUpdateCheckClient
@@ -47,6 +51,7 @@ import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.LogcatSink
 import com.ankiminer.android.engine.ChaquopyPyBridge
 import com.ankiminer.android.engine.ChaquopyPythonRuntime
+import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.engine.applyPythonLogLevelSafely
 import com.ankiminer.android.localization.AndroidStringResourceResolver
@@ -93,13 +98,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -113,24 +121,30 @@ import kotlin.coroutines.suspendCoroutine
  * Every persisted local-resource chain is intersected with this inventory before crossing the
  * bridge. Keep all installed-id kinds here so adding a call-site default cannot silently disable a
  * configured source in one mining mode.
+ *
+ * The settings are read once, and the inventory is the slots stamped for their language: a slot
+ * imported for another mining language never reaches this run.
  */
 internal suspend fun ResourceManager.snapshotProductionSettings(
     settingsRepository: AppSettingsRepository,
     /** Injectable only because `MimeTypeMap` is not mocked under the JVM android.jar stub. */
     canNameFilesFor: (String) -> Boolean = ::platformCanNameFilesFor,
-) =
-    settingsRepository.snapshot(
-        installedDictionaryIds = installedDictionaryIds(),
-        installedFrequencyIds = installedFrequencyIds(),
-        installedPitchIds = installedPitchIds(),
-        installedAudioPackIds = installedAudioPackIds(),
+): MiningConfigSnapshot {
+    val settings = settingsRepository.settings.first()
+    return EngineSettingsSnapshotMapper.map(
+        settings,
+        installedDictionaryIds = installedDictionaryIds(settings.language),
+        installedFrequencyIds = installedFrequencyIds(settings.language),
+        installedPitchIds = installedPitchIds(settings.language),
+        installedAudioPackIds = installedAudioPackIds(settings.language),
         availableWordsetIds = bundledWordsetIds(),
-        blacklistPath = wordListPath(WordListKind.BLACKLIST),
-        whitelistPath = wordListPath(WordListKind.WHITELIST),
+        blacklistPath = wordListPath(WordListKind.BLACKLIST, settings.language),
+        whitelistPath = wordListPath(WordListKind.WHITELIST, settings.language),
         // Asked here rather than defaulted in the mapper: a default would silently put every device
         // on the WebP path, which is what shipped and what nobody noticed.
         avifNameable = canNameFilesFor("avif"),
     )
+}
 
 /**
  * Startup re-verification of the persisted Anki target.
@@ -154,6 +168,33 @@ internal suspend fun refreshAnkiSetupFromSettings(
         return
     }
     refresh(settings)
+}
+
+/**
+ * Re-read the resource state that belongs to the mining [language] whenever it changes, once the
+ * runtime is [idle]: startup recovery finished and no run or resource operation holding it. A
+ * switch made during a run, or before recovery finished, is caught up when the runtime frees up
+ * instead of being lost. [refresh] is a no-op while the state already describes the language, so
+ * the re-checks are cheap.
+ *
+ * A switch also brings in the language's own note type and field map, which the Anki target and
+ * admission were verified against under the previous language. [reverify] runs after [refresh]
+ * whenever the language differs from the one last followed; the first one is startup recovery's.
+ */
+internal suspend fun followMiningLanguage(
+    language: Flow<String>,
+    idle: Flow<Boolean>,
+    reverify: suspend () -> Unit = {},
+    refresh: suspend () -> Unit,
+) {
+    var followed: String? = null
+    combine(language, idle.distinctUntilChanged()) { code, isIdle -> code to isIdle }
+        .collect { (code, isIdle) ->
+            if (!isIdle) return@collect
+            refresh()
+            if (followed != null && followed != code) reverify()
+            followed = code
+        }
 }
 
 internal suspend fun runStartupRecoverySequence(
@@ -224,9 +265,13 @@ class AnkiMinerApplication : Application() {
             BridgeDefinitionLookupService(pyBridge, resourceExecutor)
         }
 
+    val languageProfileSource: LanguageProfileSource by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        BridgeLanguageProfileSource(pyBridge)
+    }
+
     val subtitleCueLookupService: SubtitleCueLookupService by
         lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-            BridgeSubtitleCueLookupService(pyBridge, resourceExecutor)
+            BridgeSubtitleCueLookupService(pyBridge, resourceExecutor) { miningLanguage.value }
         }
 
     val audioTrackLookupService: AudioTrackLookupService by
@@ -235,7 +280,7 @@ class AnkiMinerApplication : Application() {
                 pyBridge,
                 resourceExecutor,
                 requireNotNull(applicationInfo.nativeLibraryDir),
-            )
+            ) { miningLanguage.value }
         }
 
     private val resourceControlExecutor by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -321,6 +366,7 @@ class AnkiMinerApplication : Application() {
             cueLookup = subtitleCueLookupService,
             io = Dispatchers.IO,
             resourceDispatcher = resourceExecutor.asCoroutineDispatcher(),
+            language = { miningLanguage.value },
         )
     }
     internal val audioTrackProbeLoader: AudioTrackProbeLoader by lazy(
@@ -355,6 +401,13 @@ class AnkiMinerApplication : Application() {
 
     internal val settingsRepository: AppSettingsRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         DataStoreAppSettingsRepository(this)
+    }
+
+    /** The mining language as last read from settings; Japanese until the first read lands. */
+    private val miningLanguage: StateFlow<String> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        settingsRepository.settingsOrNull
+            .mapNotNull { it?.language }
+            .stateIn(applicationScope, SharingStarted.Eagerly, LanguageScope.JAPANESE)
     }
 
     internal val diagnosticsSettings: DiagnosticsSettingsRepository by lazy(
@@ -425,6 +478,7 @@ class AnkiMinerApplication : Application() {
             documentWriter = resourceDocumentWriter,
             foregroundLease = AndroidResourceForegroundLease(this),
             strings = stringResourceResolver,
+            activeLanguage = { miningLanguage.value },
         )
     }
     internal val resourceStartupReadiness: StateFlow<ResourceStartupReadiness> by lazy(
@@ -481,6 +535,7 @@ class AnkiMinerApplication : Application() {
             },
             strings = stringResourceResolver,
             interruptionStore = miningRunInterruptionStore,
+            wordAudioSynthesizerFactory = AndroidSentenceAudioSynthesizerFactory(this),
         )
 
     internal val miningRepository: MiningRepository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
@@ -641,6 +696,20 @@ class AnkiMinerApplication : Application() {
                 recoverResources = resourceManager::recoverAndRefresh,
                 refreshSetup = ::refreshAnkiSetupAndAwait,
                 refreshAdmission = ::refreshMiningAdmissionAndAwait,
+            )
+        }
+        applicationScope.launch {
+            followMiningLanguage(
+                language = miningLanguage,
+                idle =
+                    combine(resourceManager.state, runtimeWorkCoordinator.activeKind) { resources, work ->
+                        resources.startupReadiness == ResourceStartupReadiness.READY && work == null
+                    },
+                reverify = {
+                    refreshAnkiSetupAndAwait()
+                    refreshMiningAdmissionAndAwait()
+                },
+                refresh = resourceManager::refreshLanguage,
             )
         }
     }

@@ -726,6 +726,10 @@ internal object AnkiJsonCodec {
                     requireExactSeen(seen, setOf("kind", "limits"), "collection duplicate scope")
                     CollectionCreateDuplicateScope
                 }
+                "allowDuplicates" -> {
+                    requireExactSeen(seen, setOf("kind", "limits"), "allowDuplicates duplicate scope")
+                    AllowDuplicatesCreateDuplicateScope
+                }
                 else -> fail(AnkiProtocolCategory.INVALID_VALUE, "create duplicate scope kind is invalid")
             }
         }

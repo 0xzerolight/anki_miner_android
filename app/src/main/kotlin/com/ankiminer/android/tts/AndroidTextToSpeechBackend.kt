@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
-internal data class OfflineJapaneseVoiceCandidate(
+internal data class OfflineVoiceCandidate(
     val id: String,
     val languageTag: String,
     val quality: Int,
@@ -24,27 +24,66 @@ internal data class OfflineJapaneseVoiceCandidate(
     val installed: Boolean,
 )
 
-/** Deterministic selector: exact ja-JP, quality, latency, then stable voice ID. */
-internal fun selectOfflineJapaneseVoice(
-    candidates: List<OfflineJapaneseVoiceCandidate>,
+/**
+ * The ISO 639 language of a BCP-47 tag, in its current code.
+ *
+ * Java and older Android builds still name three languages by their withdrawn codes (`iw` Hebrew,
+ * `in` Indonesian, `ji` Yiddish), and a TTS engine may report a voice either way, so a voice and a
+ * request are only compared after both are folded to the current code.
+ */
+internal fun ttsLanguage(tag: String): String =
+    when (val language = Locale.forLanguageTag(tag).language.lowercase(Locale.ROOT)) {
+        "iw" -> "he"
+        "in" -> "id"
+        "ji" -> "yi"
+        else -> language
+    }
+
+/** The regional voice preferred for a language when several are installed. */
+private val PREFERRED_VOICE_TAGS = mapOf("ja" to "ja-JP")
+
+/**
+ * Deterministic selector for [language]: offline and installed only, then the preferred regional
+ * voice (ja-JP for Japanese), quality, latency, and stable voice ID.
+ */
+internal fun selectOfflineVoice(
+    candidates: List<OfflineVoiceCandidate>,
+    language: String,
     trySelect: (String) -> Boolean = { true },
-): String? =
-    candidates
+): String? {
+    val wanted = ttsLanguage(language)
+    val preferredTag = PREFERRED_VOICE_TAGS[wanted]
+    return candidates
         .asSequence()
         .filter { candidate ->
             !candidate.networkRequired &&
                 candidate.installed &&
-                Locale.forLanguageTag(candidate.languageTag).language == Locale.JAPANESE.language
+                ttsLanguage(candidate.languageTag) == wanted
         }
         .sortedWith(
-            compareByDescending<OfflineJapaneseVoiceCandidate> {
-                it.languageTag.equals(Locale.JAPAN.toLanguageTag(), ignoreCase = true)
+            compareByDescending<OfflineVoiceCandidate> {
+                preferredTag != null && it.languageTag.equals(preferredTag, ignoreCase = true)
             }.thenByDescending { it.quality }
                 .thenBy { it.latency }
                 .thenBy { it.id },
         )
         .map { it.id }
         .firstOrNull(trySelect)
+}
+
+internal fun Voice.offlineVoiceCandidate(): OfflineVoiceCandidate =
+    OfflineVoiceCandidate(
+        id = name,
+        languageTag = locale.toLanguageTag(),
+        quality = quality,
+        latency = latency,
+        networkRequired = isNetworkConnectionRequired,
+        installed = TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in features.orEmpty(),
+    )
+
+/** The unavailable code for a language with no offline voice; Japanese keeps its own. */
+internal fun offlineVoiceUnavailableCode(language: String): String =
+    if (ttsLanguage(language) == "ja") "offline_japanese_voice_unavailable" else "offline_voice_unavailable"
 
 /** Factory intended for injection into the process-owned reading repository. */
 internal class AndroidSentenceAudioSynthesizerFactory(
@@ -60,7 +99,7 @@ internal class AndroidSentenceAudioSynthesizerFactory(
     override fun open(): SentenceAudioSynthesizer =
         CachedSentenceAudioSynthesizer(
             cacheRoot = cacheRoot,
-            backendFactory = AndroidOfflineJapaneseTtsBackendFactory(appContext),
+            backendFactory = AndroidOfflineTtsBackendFactory(appContext),
         )
 
     private companion object {
@@ -68,11 +107,14 @@ internal class AndroidSentenceAudioSynthesizerFactory(
     }
 }
 
-private class AndroidOfflineJapaneseTtsBackendFactory(
+private class AndroidOfflineTtsBackendFactory(
     private val context: Context,
     private val initializationTimeoutMillis: Long = INITIALIZATION_TIMEOUT_MILLIS,
 ) : OfflineTtsBackendFactory {
-    override fun open(cancellationCheck: () -> Boolean): OfflineTtsBackendOpenResult {
+    override fun open(
+        language: String,
+        cancellationCheck: () -> Boolean,
+    ): OfflineTtsBackendOpenResult {
         if (Looper.myLooper() == Looper.getMainLooper()) {
             return OfflineTtsBackendOpenResult.Failed("main_thread_forbidden")
         }
@@ -110,32 +152,20 @@ private class AndroidOfflineJapaneseTtsBackendFactory(
                 return OfflineTtsBackendOpenResult.Cancelled
             }
             val voices = textToSpeech.voices.orEmpty()
-            val candidates =
-                voices.map { voice ->
-                    OfflineJapaneseVoiceCandidate(
-                        id = voice.name,
-                        languageTag = voice.locale.toLanguageTag(),
-                        quality = voice.quality,
-                        latency = voice.latency,
-                        networkRequired = voice.isNetworkConnectionRequired,
-                        installed =
-                            TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in
-                                voice.features.orEmpty(),
-                    )
-                }
+            val candidates = voices.map(Voice::offlineVoiceCandidate)
             val selectedId =
-                selectOfflineJapaneseVoice(candidates) { candidateId ->
+                selectOfflineVoice(candidates, language) { candidateId ->
                     val candidate = voices.singleOrNull { voice -> voice.name == candidateId }
                     candidate != null && textToSpeech.setVoice(candidate) == TextToSpeech.SUCCESS
                 }
             val selected = voices.singleOrNull { voice -> voice.name == selectedId }
             if (selected == null) {
                 textToSpeech.shutdownQuietly()
-                return OfflineTtsBackendOpenResult.Unavailable("offline_japanese_voice_unavailable")
+                return OfflineTtsBackendOpenResult.Unavailable(offlineVoiceUnavailableCode(language))
             }
             val engine = textToSpeech.defaultEngine.orEmpty()
             return OfflineTtsBackendOpenResult.Ready(
-                AndroidOfflineJapaneseTtsBackend(
+                AndroidOfflineTtsBackend(
                     textToSpeech = textToSpeech,
                     selectedVoice = selected,
                     voiceIdentity = "$engine\u0000${selected.locale.toLanguageTag()}\u0000${selected.name}",
@@ -158,7 +188,7 @@ private class AndroidOfflineJapaneseTtsBackendFactory(
 }
 
 @Suppress("DEPRECATION")
-private class AndroidOfflineJapaneseTtsBackend(
+private class AndroidOfflineTtsBackend(
     private val textToSpeech: TextToSpeech,
     selectedVoice: Voice,
     override val voiceIdentity: String,

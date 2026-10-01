@@ -307,7 +307,7 @@ class S5VideoMiningAcceptanceInstrumentedTest {
         assertEquals(TERMS.size.toLong(), imported.entryCount)
 
         runBlocking { application.resourceManager.recoverAndRefresh() }
-        assertEquals(listOf(DICTIONARY_SLOT), application.resourceManager.installedDictionaryIds())
+        assertEquals(listOf(DICTIONARY_SLOT), application.resourceManager.installedDictionaryIds("ja"))
         assertEquals(
             BuiltInInstalledTokenizerResourceProvider.TREE_SHA_256,
             application.resourceManager.state.value.installedUniDic?.treeSha256,

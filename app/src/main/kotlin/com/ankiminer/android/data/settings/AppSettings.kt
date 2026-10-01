@@ -152,6 +152,13 @@ data class AppSettings(
     val minFrequencyRank: Int? = null,
     val frequencyKeepUnranked: Boolean? = null,
     val knownWordsMatchKanaVariants: Boolean? = null,
+    /**
+     * The script or regional variety the language mines in (zh simplified/traditional, pt br/pt).
+     * Null leaves the profile's default; only a profile that offers variants shows the picker.
+     */
+    val scriptVariant: String? = null,
+    /** Colour readings by tone, for a language with the `tone_color` capability. Null = profile. */
+    val readingToneColor: Boolean? = null,
     val strictCardOrder: Boolean? = null,
     val mergeIncompleteCues: Boolean? = null,
     /**
@@ -169,6 +176,14 @@ data class AppSettings(
     val enabledWordsets: List<String> = DEFAULT_ENABLED_WORDSETS,
     val readingTtsEnabled: Boolean = false,
     val jishoEnabled: Boolean = false,
+    /** The mining language's registry code; the settings in [LanguageScope.SETTINGS] are its own. */
+    val language: String = LanguageScope.JAPANESE,
+    /**
+     * The scoped settings of every language that is not active, keyed by code, each held as its
+     * stored preference values (`null` = unset). Machine-local: kept out of backups and never sent
+     * to the engine. See [switchLanguage].
+     */
+    val languageStash: Map<String, Map<String, Any?>> = emptyMap(),
 ) {
     /** Restore processing behavior without changing onboarding, appearance, target, or resources. */
     fun restoreMiningDefaults(): AppSettings =
@@ -201,6 +216,8 @@ data class AppSettings(
             minFrequencyRank = null,
             frequencyKeepUnranked = null,
             knownWordsMatchKanaVariants = null,
+            scriptVariant = null,
+            readingToneColor = null,
             strictCardOrder = null,
             mergeIncompleteCues = null,
             secondarySubtitleEnabled = false,
@@ -321,6 +338,16 @@ internal object AppSettingsDraftParser {
 object AppSettingsValidator {
     fun validate(settings: AppSettings): AppSettings =
         settings.also {
+            if (
+                !LanguageScope.LANGUAGE_CODE.matches(it.language) ||
+                    it.languageStash.keys.any { code -> !LanguageScope.LANGUAGE_CODE.matches(code) }
+            ) {
+                invalid(InvalidAppSettingCode.UNKNOWN, "Saved setting is invalid")
+            }
+            // The profile's own offer is the bridge's check; this is the shape every offer has.
+            if (it.scriptVariant != null && it.scriptVariant !in SCRIPT_VARIANTS) {
+                invalid(InvalidAppSettingCode.UNKNOWN, "Saved setting is invalid")
+            }
             it.deckName?.let { value ->
                 canonicalName(
                     "Deck name",
@@ -361,7 +388,7 @@ object AppSettingsValidator {
                     AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES,
                 )
             }
-            fieldMap(it.fieldMap)
+            fieldMap(it.fieldMap, it.language)
             cardTypeMarker(it.cardTypeMarkerField, it.fieldMap)
             tags(it.tags)
             it.subtitleRegexFilter?.let { value -> validScalarText("Subtitle regex filter", value) }
@@ -554,9 +581,20 @@ object AppSettingsValidator {
         }
     }
 
-    private fun fieldMap(values: Map<String, String>) {
+    /**
+     * Japanese maps exactly [AnkiFieldKeys.ALL]. Another language adds its profile's own card fields
+     * (he `transliteration`); the bridge holds that exact set, so only their shape is checked here,
+     * the same rule the snapshot codec applies.
+     */
+    private fun fieldMap(
+        values: Map<String, String>,
+        language: String,
+    ) {
         values.forEach { (key, value) ->
-            if (key !in AnkiFieldKeys.ALL) {
+            if (
+                key !in AnkiFieldKeys.ALL &&
+                (language == LanguageScope.JAPANESE || !PROFILE_FIELD_KEY.matches(key))
+            ) {
                 invalid(
                     InvalidAppSettingCode.FIELD_MAP_UNKNOWN_KEY,
                     "Field map contains an unknown key",
@@ -665,9 +703,16 @@ object AppSettingsValidator {
     ): Nothing = throw InvalidAppSettingException(code, arguments.toList(), message)
 
     private val RESOURCE_ID = Regex("(?!.*(?:\\.\\.|--))[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?")
+    private val PROFILE_FIELD_KEY = Regex("[a-z][a-z0-9_]*")
     private const val MAX_CHAIN_ENTRIES = 128
+
+    /** Every value `language.profiles` may list in `scriptVariants`. */
+    val SCRIPT_VARIANTS = setOf("", "simplified", "traditional", "br", "pt")
     private const val MAX_WORDSET_SELECTIONS = 32
 }
+
+/** The bridge-only `expression_audio_chain` kind: the device's offline TextToSpeech voice. */
+internal const val ANDROID_TTS_AUDIO_KIND = "android_tts"
 
 internal object EngineSettingsSnapshotMapper {
     private val dictionaryId = Regex("(?!.*\\.\\.)[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
@@ -706,6 +751,11 @@ internal object EngineSettingsSnapshotMapper {
         require(availableWordsetIds.distinct() == availableWordsetIds)
         require(availableWordsetIds.all(dictionaryId::matches))
         val values = linkedMapOf<String, BridgeJsonValue>()
+        // The bridge overlays the snapshot on this language's first-visit config, so every key the
+        // snapshot leaves out resolves to the active profile's value. Japanese is the bridge's
+        // default, so a Japanese snapshot stays byte-for-byte what it was before languages
+        // existed. The stash never crosses.
+        if (settings.language != LanguageScope.JAPANESE) values["language"] = text(settings.language)
         // The deck keeps an Android-owned default, but the note type and field map are the user's.
         // Emit them fail-closed rather than inheriting the desktop Lapis default or the first-party
         // model, so an unconfigured target can never silently mine into "Anki Miner".
@@ -716,9 +766,14 @@ internal object EngineSettingsSnapshotMapper {
         // mining admission blocks upstream, so a blank here never injects "Anki Miner".
         values["anki_note_type"] = text(settings.noteType ?: "")
         // Emit a complete map over every logical key so config_map's {**defaults, **value} overlay
-        // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "".
+        // cannot let an unmapped key inherit a desktop default. Unmatched keys emit "". A
+        // language's own extra card fields default to "" in every profile, so only the mapped
+        // ones need to cross.
         values["anki_fields"] =
-            stringMap(AnkiFieldKeys.ALL.associateWith { settings.fieldMap[it] ?: "" })
+            stringMap(
+                (AnkiFieldKeys.ALL + settings.fieldMap.keys.filterNot(AnkiFieldKeys.ALL::contains))
+                    .associateWith { settings.fieldMap[it] ?: "" },
+            )
         // Emit all four modes explicitly, blank unless the user picked one. An absent key would let
         // config_map's overlay reinstate the engine's JP Mining Note field names on a note type that
         // may not have them.
@@ -761,6 +816,8 @@ internal object EngineSettingsSnapshotMapper {
         settings.knownWordsMatchKanaVariants?.let {
             values["known_words_match_kana_variants"] = bool(it)
         }
+        settings.scriptVariant?.let { values["script_variant"] = text(it) }
+        settings.readingToneColor?.let { values["reading_tone_color"] = bool(it) }
         settings.strictCardOrder?.let { values["strict_card_order"] = bool(it) }
         settings.mergeIncompleteCues?.let { values["merge_incomplete_cues"] = bool(it) }
         // secondarySubtitleEnabled is deliberately absent: it only gates the Video tab's picker.
@@ -789,7 +846,9 @@ internal object EngineSettingsSnapshotMapper {
                         ),
                     )
                     }
-                if (settings.jishoEnabled) {
+                // Jisho is a Japanese dictionary and the declared egress is Japanese lookups: another
+                // language's terms never go to jisho.org, whatever a restored backup says.
+                if (settings.jishoEnabled && settings.language == LanguageScope.JAPANESE) {
                     // Android's settled network budget is at most 10 requests per 10 seconds.
                     // The desktop 0.5-second floor is intentionally tightened for this port.
                     values["jisho_delay"] = decimal(1.0)
@@ -830,8 +889,9 @@ internal object EngineSettingsSnapshotMapper {
             }
         values["pitch_chain"] = BridgeJsonValue.ArrayValue(pitchChain)
 
-        // Only private local packs cross this boundary. Network audio kinds remain mechanically
-        // unrepresentable even if a desktop default or stale preference tries to introduce one.
+        // Only private local packs and, outside Japanese, the device's own offline voice cross this
+        // boundary. Network audio kinds remain mechanically unrepresentable even if a desktop default
+        // or stale preference tries to introduce one.
         val expressionAudioChain =
             resolveResourceChain(settings.audioPacks, installedAudioPackIds).map { selection ->
                 BridgeJsonValue.ObjectValue(
@@ -842,7 +902,15 @@ internal object EngineSettingsSnapshotMapper {
                     ),
                 )
             }
-        values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain)
+        // Every other language's desktop default is Google or Edge read-aloud; Android speaks with
+        // the device voice instead, after the packs, so a recording always outranks synthesis.
+        val deviceVoice =
+            if (settings.language == LanguageScope.JAPANESE) {
+                emptyList()
+            } else {
+                listOf(BridgeJsonValue.ObjectValue(mapOf("kind" to text(ANDROID_TTS_AUDIO_KIND))))
+            }
+        values["expression_audio_chain"] = BridgeJsonValue.ArrayValue(expressionAudioChain + deviceVoice)
         // Emitted unconditionally so the key set does not depend on user settings; the tuning is
         // emitted only when the feature is on, because the bridge pins fps/height and would reject
         // a stray value anyway.

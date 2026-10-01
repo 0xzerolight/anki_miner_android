@@ -21,7 +21,8 @@
       "required": ["runId", "subtitlePath"],
       "properties": {
         "runId": {"$ref": "#/$defs/nullableRunId"},
-        "subtitlePath": {"type": "string", "minLength": 1}
+        "subtitlePath": {"type": "string", "minLength": 1},
+        "language": {"type": "string", "pattern": "^[a-z]{2,3}$", "$comment": "The mining language; absent means ja. The bridge refuses a code with no vendored profile (unsupported_language)."}
       }
     },
     "result": {

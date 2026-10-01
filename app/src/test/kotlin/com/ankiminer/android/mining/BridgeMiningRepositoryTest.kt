@@ -13,6 +13,7 @@ import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import com.ankiminer.android.engine.BridgeJsonCodec
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.ContentDirection
 import com.ankiminer.android.engine.EngineCallbacks
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
@@ -30,6 +31,9 @@ import com.ankiminer.android.service.MiningForegroundProgress
 import com.ankiminer.android.service.MiningForegroundProgressUnit
 import com.ankiminer.android.service.MiningForegroundSessionIdentity
 import com.ankiminer.android.service.MiningForegroundSessionListener
+import com.ankiminer.android.tts.SentenceAudioSynthesis
+import com.ankiminer.android.tts.SentenceAudioSynthesizer
+import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.CancellationException
@@ -76,6 +80,20 @@ class BridgeMiningRepositoryTest {
             )
         }
         AppLog.install(NoOpSink)
+    }
+
+    @Test
+    fun `the fake bridge answers language profiles with the runtime lane's ja and he entries`() {
+        val raw = FakePyBridge(mismatchedTerminal = false).dispatch(BridgeJsonCodec.encodeLanguageProfilesRequest(), null)
+        val profiles = (BridgeJsonCodec.decode(raw) as BridgeMessage.LanguageProfilesResult).profiles
+
+        assertEquals(listOf("ja", "he"), profiles.map { it.code })
+        val hebrew = profiles.last()
+        assertEquals(ContentDirection.RTL, hebrew.contentDirection)
+        assertFalse(hebrew.requiresUnidic)
+        assertEquals(BridgeJsonValue.Text(""), hebrew.scopedDefaults["anki_note_type"])
+        assertEquals(BridgeJsonValue.ArrayValue(emptyList()), hebrew.scopedDefaults["expression_audio_chain"])
+        assertTrue(profiles.first().requiresUnidic)
     }
 
     @Test
@@ -1458,6 +1476,28 @@ class BridgeMiningRepositoryTest {
     }
 
     @Test
+    fun `a run in a language without UniDic reaches the engine with no tokenizer installed`() {
+        val harness =
+            harness(
+                tokenizerResourceProvider = InstalledTokenizerResourceProvider { null },
+                configSnapshotResolver =
+                    MiningConfigSnapshotResolver {
+                        MiningConfigSnapshot(mapOf("language" to BridgeJsonValue.Text("he")), false)
+                    },
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+
+        assertEquals(1, harness.bridge.videoRuns.get())
+        runBlocking { harness.repository.cancel(curating.request.runId) }
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+        awaitState(harness.repository, MiningRunState::isTerminal)
+    }
+
+    @Test
     fun `settings snapshot is captured only after mining excludes resource publication`() {
         val coordinator = RuntimeWorkCoordinator()
         val resolverReached = CountDownLatch(1)
@@ -1931,6 +1971,8 @@ class BridgeMiningRepositoryTest {
             MiningConfigSnapshotResolver { MiningConfigSnapshot(emptyMap(), false) },
         copyProgress: List<SafCopyProgress> = emptyList(),
         lane: MiningLane = MiningLane.VIDEO,
+        wordAudioFactory: SentenceAudioSynthesizerFactory? = null,
+        wordAudioRequest: String? = null,
     ): Harness {
         val runExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val runTaskCompleted = CountDownLatch(1)
@@ -1951,6 +1993,7 @@ class BridgeMiningRepositoryTest {
                 pauseAfterTerminalCallback = pauseAfterTerminalCallback,
                 cancelFailuresBeforeSuccess = cancelFailuresBeforeSuccess,
                 pauseCancellationUntilTerminal = pauseCancellationUntilTerminal,
+                wordAudioRequest = wordAudioRequest,
             )
         val anki = FakeAnkiCallbacks(fallbackState, ankiFailure)
         val foreground = FakeForegroundStarter(foregroundFailure, pendingForegroundStart)
@@ -2007,6 +2050,7 @@ class BridgeMiningRepositoryTest {
                 foregroundStartTimeoutSeconds = 2,
                 interruptionStore = interruptionStore,
                 lane = lane,
+                wordAudioSynthesizerFactory = wordAudioFactory,
             )
         return Harness(
             repository,
@@ -2018,6 +2062,87 @@ class BridgeMiningRepositoryTest {
             controlTaskCompleted,
             runTaskCompleted,
         )
+    }
+
+    @Test
+    fun `a run whose chain names the device voice speaks its words through it`() {
+        val audio =
+            File(java.nio.file.Files.createTempDirectory("word-tts").toFile(), "android_tts_v1_${"d".repeat(64)}.wav")
+                .apply { writeBytes(byteArrayOf(1, 2)) }
+        val spoken = Collections.synchronizedList(mutableListOf<Pair<String, String>>())
+        val closed = AtomicBoolean()
+        val opened = AtomicInteger()
+        val synthesizer =
+            object : SentenceAudioSynthesizer {
+                override fun synthesize(
+                    sentence: String,
+                    cancellationCheck: () -> Boolean,
+                ): SentenceAudioSynthesis = error("word audio names its language")
+
+                override fun synthesize(
+                    sentence: String,
+                    language: String,
+                    cancellationCheck: () -> Boolean,
+                ): SentenceAudioSynthesis {
+                    spoken += sentence to language
+                    return SentenceAudioSynthesis.ready(audio)
+                }
+
+                override fun close() {
+                    closed.set(true)
+                }
+            }
+        val harness =
+            harness(
+                configSnapshotResolver = MiningConfigSnapshotResolver { DEVICE_VOICE_SNAPSHOT },
+                wordAudioFactory =
+                    SentenceAudioSynthesizerFactory {
+                        opened.incrementAndGet()
+                        synthesizer
+                    },
+                wordAudioRequest = WORD_AUDIO_REQUEST,
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, FIRST_SELECTION)
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Success)
+        assertEquals(1, opened.get())
+        assertEquals(listOf("ספר" to "he"), spoken.toList())
+        assertTrue(requireNotNull(harness.bridge.wordAudioResult.get()).contains("\"outcome\":\"ready\""))
+        assertTrue(closed.get())
+    }
+
+    @Test
+    fun `a run without the device voice opens none and refuses the callback`() {
+        val opened = AtomicInteger()
+        val harness =
+            harness(
+                wordAudioFactory =
+                    SentenceAudioSynthesizerFactory {
+                        opened.incrementAndGet()
+                        error("no device voice in this run")
+                    },
+                wordAudioRequest = WORD_AUDIO_REQUEST,
+            )
+
+        runBlocking { harness.repository.startVideo(INPUT) }
+        val curating =
+            awaitState(harness.repository) { it is MiningRunState.Curating } as MiningRunState.Curating
+        runBlocking {
+            harness.repository.confirmCuration(curating.request.runId, curating.request.requestId, FIRST_SELECTION)
+        }
+        assertTrue(harness.bridge.curationSubmitted.await(2, TimeUnit.SECONDS))
+        harness.bridge.allowTerminal.countDown()
+
+        assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Failed)
+        assertEquals(0, opened.get())
     }
 
     private fun foregroundFailure(
@@ -2382,8 +2507,10 @@ class BridgeMiningRepositoryTest {
         private val pauseAfterTerminalCallback: Boolean = false,
         private val cancelFailuresBeforeSuccess: Int = 0,
         private val pauseCancellationUntilTerminal: Boolean = false,
+        private val wordAudioRequest: String? = null,
     ) : PyBridge {
         val videoRuns = AtomicInteger()
+        val wordAudioResult = AtomicReference<String?>()
         val videoRequest = AtomicReference<VideoMiningWireRequest?>()
         val curationSubmitted = CountDownLatch(1)
         val intermediateCurationSubmitted = CountDownLatch(1)
@@ -2420,6 +2547,7 @@ class BridgeMiningRepositoryTest {
                             totalBytes = 1024,
                         ),
                     )
+                is BridgeMessage.LanguageProfilesRequest -> LANGUAGE_PROFILES_RESULT
                 is BridgeMessage.VideoRun -> {
                     videoRunFailure?.let { throw it }
                     runVideo(request.request, requireNotNull(callbacks))
@@ -2490,6 +2618,8 @@ class BridgeMiningRepositoryTest {
                 callbacks.onComplete(CANCELLED_TERMINAL)
                 return CANCELLED_TERMINAL
             }
+            // Phase 3: the device voice speaking one word through the run's callbacks.
+            wordAudioRequest?.let { wordAudioResult.set(callbacks.synthesizeSentenceAudio(it)) }
             progressError?.let { callbacks.onError(it) }
             val terminal = terminalPayload()
             val callbackTerminal =
@@ -2530,6 +2660,23 @@ class BridgeMiningRepositoryTest {
     }
 
     private companion object {
+        val DEVICE_VOICE_SNAPSHOT =
+            MiningConfigSnapshot(
+                mapOf(
+                    "language" to BridgeJsonValue.Text("he"),
+                    "anki_fields" to
+                        BridgeJsonValue.ObjectValue(mapOf("expression_audio" to BridgeJsonValue.Text("WordAudio"))),
+                    "expression_audio_chain" to
+                        BridgeJsonValue.ArrayValue(
+                            listOf(BridgeJsonValue.ObjectValue(mapOf("kind" to BridgeJsonValue.Text("android_tts")))),
+                        ),
+                ),
+                false,
+            )
+        val WORD_AUDIO_REQUEST =
+            "{\"schemaVersion\":1,\"type\":\"tts.sentence.request\",\"payload\":{" +
+                "\"runId\":\"run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"," +
+                "\"requestId\":\"tts_${"0".repeat(32)}\",\"sentence\":\"ספר\",\"language\":\"he\"}}"
         const val RUN_ID = "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val REQUEST_ID = "curation_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         const val CANDIDATE_ID = "candidate_cccccccccccccccccccccccccccccccc"
@@ -2629,6 +2776,9 @@ class BridgeMiningRepositoryTest {
         val CANCELLED_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"cancelled","result":null,"error":{"code":"cancelled","message":"Mining was cancelled"}}}"""
         const val TERMINAL_FAULT_ID = "f0123abcd"
+        /** What `language.profiles` answers on the runtime lane for ja and he, verbatim. */
+        val LANGUAGE_PROFILES_RESULT =
+            """{"schemaVersion":1,"type":"language.profiles.result","payload":{"profiles":[{"code":"ja","displayName":"日本語","englishName":"Japanese","unavailableReason":null,"scriptVariants":[],"contentDirection":"ltr","contentLanguage":"ja","speechLanguage":"ja","audioTrackCodes":["ja","japanese","jp","jpn"],"capabilities":["deinflection","furigana","kana_filters","manga_ocr","name_wordsets","note_presets","pitch"],"requiresUnidic":true,"scopedDefaults":{"dictionary_chain":[{"kind":"indexed","dict_id":"jmdict-english","enabled":true},{"kind":"jisho","dict_id":null,"enabled":false}],"frequency_chain":[],"pitch_chain":[],"expression_audio_chain":[],"allowed_pos":["名詞","動詞","形容詞","副詞","形状詞","代名詞"],"excluded_subtypes":["非自立","数詞","接尾","助動詞","接頭","固有名詞"],"excluded_wordsets":["surnames","given-names","place-names","org-product"],"exclude_hiragana_only_words":false,"exclude_katakana_only_words":false,"known_words_match_kana_variants":true,"anki_fields":{"word":"Expression","sentence":"Sentence","definition":"MainDefinition","glossary":"","picture":"Picture","audio":"SentenceAudio","expression_furigana":"ExpressionFurigana","expression_reading":"","sentence_furigana":"SentenceFurigana","sentence_reading":"","pitch_position":"","pitch_category":"","pitch_graph":"","pitch_text":"","frequency":"","frequency_sort":"","source":"","expression_audio":"","sentence_translation":""},"anki_deck_name":"Anki Miner","anki_note_type":"Lapis","card_type":"","blacklist_path":null,"whitelist_path":null,"use_blacklist":false,"use_whitelist":false,"excluded_decks":[],"script_variant":"","reading_tone_color":false,"use_subtitle_regex_filter":false,"subtitle_regex_filter":"","subtitle_regex_replacement":"","min_frequency_rank":0,"max_frequency_rank":0,"frequency_keep_unranked":false},"extraCardFields":[]},{"code":"he","displayName":"עברית","englishName":"Hebrew","unavailableReason":null,"scriptVariants":[],"contentDirection":"rtl","contentLanguage":"he","speechLanguage":"he","audioTrackCodes":["he","heb","hebrew","iw"],"capabilities":["hebrew_binyan","hebrew_transliteration","noun_gender","noun_plural","pos_tag","rtl","vocalised_reading","word_root"],"requiresUnidic":false,"scopedDefaults":{"dictionary_chain":[],"frequency_chain":[],"pitch_chain":[],"expression_audio_chain":[],"allowed_pos":["WORD","NOUN","VERB","ADJ","ADV"],"excluded_subtypes":["stopword"],"excluded_wordsets":[],"exclude_hiragana_only_words":false,"exclude_katakana_only_words":false,"known_words_match_kana_variants":false,"anki_fields":{"word":"Expression","sentence":"Sentence","definition":"MainDefinition","glossary":"","picture":"Picture","audio":"SentenceAudio","expression_furigana":"","expression_reading":"Reading","sentence_furigana":"","sentence_reading":"","pitch_position":"","pitch_category":"","pitch_graph":"","pitch_text":"","frequency":"","frequency_sort":"","source":"","expression_audio":"","sentence_translation":"","transliteration":"","root":"","binyan":"","noun_gender":"","noun_plural":"","pos":""},"anki_deck_name":"Anki Miner","anki_note_type":"","card_type":"","blacklist_path":null,"whitelist_path":null,"use_blacklist":false,"use_whitelist":false,"excluded_decks":[],"script_variant":"","reading_tone_color":false,"use_subtitle_regex_filter":true,"subtitle_regex_filter":"\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…׃]\\s))[-–—]\\s+","subtitle_regex_replacement":"","min_frequency_rank":0,"max_frequency_rank":0,"frequency_keep_unranked":false},"extraCardFields":[{"key":"transliteration","capability":"hebrew_transliteration","placeholder":"Transliteration","rawHtml":false},{"key":"root","capability":"word_root","placeholder":"Root","rawHtml":false},{"key":"binyan","capability":"hebrew_binyan","placeholder":"Binyan","rawHtml":false},{"key":"noun_gender","capability":"noun_gender","placeholder":"Gender","rawHtml":false},{"key":"noun_plural","capability":"noun_plural","placeholder":"Plural","rawHtml":false},{"key":"pos","capability":"pos_tag","placeholder":"POS","rawHtml":false}]}]}}"""
         val RAISED_FAILURE_TERMINAL =
             """{"schemaVersion":1,"type":"mining.terminal","payload":{"runId":"$RUN_ID","outcome":"failed","result":null,"error":{"code":"engine_error","message":"Mining failed","faultId":"$TERMINAL_FAULT_ID"}}}"""
     }

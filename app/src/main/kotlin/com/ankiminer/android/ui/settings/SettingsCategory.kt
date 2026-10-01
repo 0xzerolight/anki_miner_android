@@ -52,6 +52,7 @@ internal enum class SettingsCategory(
     RESOURCES(R.string.b3_settings_category_resources),
     WORD_FILTERS(R.string.b3_settings_category_word_filters),
     SENTENCES(R.string.b3_settings_category_sentences),
+    LANGUAGE(R.string.b3_settings_category_language),
     UI(R.string.b3_settings_category_ui),
     DIAGNOSTICS(R.string.b3_settings_category_diagnostics),
 }
@@ -224,7 +225,7 @@ internal fun SettingsCategoryLayout(
                     )
                     PrimaryScrollableTabRow(
                         selectedTabIndex = selectedCategory.ordinal,
-                        // Seven labels overrun a 320dp screen, so the strip scrolls.
+                        // Eight labels overrun a 320dp screen, so the strip scrolls.
                         // These fades are the affordance that the rest of it exists; shortening
                         // the labels would buy ~40dp and cost clarity on the two least
                         // self-evident tabs.

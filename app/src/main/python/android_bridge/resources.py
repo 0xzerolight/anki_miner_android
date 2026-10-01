@@ -35,6 +35,8 @@ from .protocol import BridgeProtocolError, encode_message
 from .resource_catalog import (
     UniDicResource,
     YomitanResource,
+    catalogs_payload,
+    find_catalog_resource,
     load_resource_catalog,
 )
 from .resource_progress import make_reporter
@@ -102,6 +104,21 @@ _STORAGE_EXHAUSTION_ERRNOS = frozenset(
 
 def _fail(code: str, message: str) -> BridgeProtocolError:
     return BridgeProtocolError(code, message)
+
+
+_STAMP_RE = re.compile(r"[a-z]{2,3}")
+
+
+def _inventory_language(stamp: object) -> str:
+    """A slot's language stamp as inventory reports it.
+
+    Unstamped (every pre-transition slot) is Japanese, exactly as the engine
+    registries read it. A malformed stamp matches no language's chain in the
+    engine either; it is reported as Japanese rather than failing the whole
+    inventory Kotlin decodes.
+    """
+
+    return stamp if isinstance(stamp, str) and _STAMP_RE.fullmatch(stamp) else "ja"
 
 
 def _exact(payload: Mapping[str, object], keys: set[str], *, code: str) -> None:
@@ -1858,8 +1875,10 @@ def preflight_dictionary(payload: Mapping[str, object]) -> str:
 
 
 def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
+    from .languages import language_kwarg, payload_language, without_language
+
     _exact(
-        payload,
+        without_language(payload),
         {"operationId", "sourcePath", "slotId", "overwrite", "catalogResourceId"},
         code="invalid_resource_request",
     )
@@ -1871,11 +1890,12 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
         raise _fail("invalid_resource_request", "overwrite must be a boolean")
     raw_catalog_id = payload["catalogResourceId"]
     catalog_resource: YomitanResource | None
+    catalog_language = "ja"
     if raw_catalog_id is None:
         catalog_resource = None
     else:
         catalog_id = _bounded_text(raw_catalog_id, name="catalogResourceId", max_bytes=64)
-        selected = load_resource_catalog().get(catalog_id)
+        catalog_language, selected = find_catalog_resource(catalog_id)
         if not isinstance(selected, YomitanResource):
             raise _fail(
                 "invalid_resource_kind",
@@ -1889,6 +1909,18 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
         catalog_resource = selected
 
     home = Path(require_initialized())
+    # A pinned dictionary belongs to its catalog's language; stamping it for
+    # another would hide it from the chain it was downloaded for. A rebuild
+    # replays the slot's own stamp instead (below), whatever the request says.
+    if (
+        catalog_resource is not None
+        and _dictionary_root(home) not in source.parents
+        and payload_language(payload) != catalog_language
+    ):
+        raise _fail(
+            "invalid_resource_request",
+            "Pinned dictionary must be imported for its catalog's language",
+        )
     final = _dictionary_root(home) / slot_id
     if _path_occupied(final) and not overwrite:
         raise _fail("resource_already_installed", f"Dictionary slot {slot_id!r} already exists")
@@ -1910,6 +1942,16 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
             # streamed-rewrite path later move the slot's only copy into the
             # candidate, where a failed publication destroys it.
             in_place_rebuild = _dictionary_root(home) in source.parents
+            # A rebuild replays the slot's own stamp (desktop slot_language_kwarg):
+            # importing it as the request's language would restamp a Hebrew index
+            # "ja" and drop it from the Hebrew chain. Read before the import
+            # replaces the slot.
+            if in_place_rebuild:
+                from anki_miner.services._sqlite_index import read_slot_language
+
+                language = read_slot_language(final)
+            else:
+                language = payload_language(payload)
             if in_place_rebuild:
                 copied = _copy_archive(
                     source,
@@ -1947,11 +1989,10 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     "resource_archive_mismatch",
                     "Pinned dictionary layout differs from the catalog",
                 )
-            # A catalog archive's banks are pinned under the catalog's own
-            # file_bytes_limit, so it has never needed the rewrite. A custom one
-            # needs it only when some bank is too large for the engine importer
-            # to read whole.
-            streamed_rewrite = catalog_resource is None and identity.max_bank_bytes > _YOMITAN_BANK_INLINE_LIMIT_BYTES
+            # Only an archive with a bank too large for the engine importer to
+            # read whole needs the rewrite. Pinned or not: the Japanese pins keep
+            # every bank under it, but wty builds put 20 MB in term_bank_1.
+            streamed_rewrite = identity.max_bank_bytes > _YOMITAN_BANK_INLINE_LIMIT_BYTES
             _check_free_space(
                 operation_root,
                 _yomitan_import_peak_bytes(
@@ -1984,6 +2025,7 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     overwrite=False,
                     cancel_check=operation.cancelled.is_set,
                     dict_id=slot_id,
+                    **language_kwarg(language),
                 )
             except Exception as exc:
                 operation.check()
@@ -2053,11 +2095,24 @@ def import_dictionary(payload: Mapping[str, object], *, callbacks: object | None
                     "attribution": (
                         [item.payload() for item in catalog_resource.attribution] if catalog_resource else []
                     ),
+                    # Desktop's import receipt: "This dictionary says its language is X, not the
+                    # language you are mining." Only a well-formed primary subtag crosses.
+                    "sourceLanguage": _declared_source_language(result.source_language),
+                    "sourceLanguageMismatch": bool(result.source_language_mismatch),
                 },
             )
         finally:
             if operation_root.exists():
                 _safe_rmtree(operation_root)
+
+
+def _declared_source_language(value: str) -> str:
+    """The primary subtag an ``index.json`` declares, casefolded; "" when absent or not a code."""
+    primary = value.strip().split("-", 1)[0].casefold()
+    return primary if _SOURCE_LANGUAGE_RE.fullmatch(primary) else ""
+
+
+_SOURCE_LANGUAGE_RE = re.compile(r"[a-z]{2,3}")
 
 
 def _sidecar_object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -2154,7 +2209,7 @@ def _read_dictionary_sidecar(
         if catalog_text is None:
             return None
         try:
-            selected = load_resource_catalog().get(catalog_text)
+            _language, selected = find_catalog_resource(catalog_text)
         except BridgeProtocolError:
             return None
         if not isinstance(selected, YomitanResource):
@@ -2209,6 +2264,7 @@ def _invalid_dictionary_payload(
         # rebuild source for it would re-import into a slot whose state is
         # unknown instead of steering the user to an explicit replace.
         "rebuildSourcePath": None,
+        "language": _inventory_language(None),
     }
 
 
@@ -2312,6 +2368,7 @@ def _dictionary_payload(slot: Path) -> dict[str, object]:
         "catalogResourceId": sidecar.catalog_resource_id if sidecar else None,
         "attribution": sidecar.attribution if sidecar else [],
         "rebuildSourcePath": _dictionary_rebuild_source_path(slot),
+        "language": _inventory_language(values.get("language")),
     }
 
 
@@ -2394,7 +2451,15 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
         raise _fail("dictionary_not_found", f"Dictionary slot {slot_id!r} is not installed")
     if not meta.schema_ok:
         raise _fail("dictionary_schema_mismatch", "Dictionary must be reimported")
-    provider = IndexedDictProvider(meta.dict_id, meta.db_path, meta.source_name)
+    # Keyed with the slot's own language folding, as the registry builds it for a
+    # run of that language: a Hebrew index stores unpointed keys, so a pointed
+    # term misses under the ja defaults. Unstamped slots are ja (keys=None).
+    keys = {}
+    if meta.language != "ja":
+        from anki_miner.languages.registry import get_profile
+
+        keys = {"keys": get_profile(meta.language).dict_keys}
+    provider = IndexedDictProvider(meta.dict_id, meta.db_path, meta.source_name, **keys)
     if not provider.load():
         raise _fail("dictionary_unavailable", "Dictionary index cannot be opened")
     lookup_key = unicodedata.normalize("NFC", term)
@@ -2413,7 +2478,7 @@ def lookup_dictionary(payload: Mapping[str, object]) -> str:
 
 def catalog_response(payload: Mapping[str, object]) -> str:
     _exact(payload, set(), code="invalid_resource_request")
-    return encode_message("resource.catalog", load_resource_catalog().payload())
+    return encode_message("resource.catalog", catalogs_payload())
 
 
 def cancel_operation(payload: Mapping[str, object]) -> str:

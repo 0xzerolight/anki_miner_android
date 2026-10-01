@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 3,
+  "language": "fa",
+  "resources": [
+    {
+      "resourceId": "fa-hazm-data",
+      "kind": "language-data",
+      "displayName": "hazm 0.12.1 Persian lexicon tables",
+      "importName": "hazm_data",
+      "archive": {
+        "url": "https://files.pythonhosted.org/packages/14/85/02f95ca414a5d629239a3fde8f4134a2355dd023044219192e48562dee71/hazm-0.12.1-py3-none-any.whl",
+        "sha256": "91507896f5b77dcfe26c710b457801e1204ab0d86dcb756a7ab5912719108db0",
+        "sizeBytes": 887193,
+        "format": "wheel"
+      },
+      "install": {
+        "memberPrefix": "hazm/data/",
+        "exclude": [],
+        "sentinels": [
+          "words.dat",
+          "verbs.dat",
+          "iverbs.dat",
+          "iwords.dat",
+          "stopwords.dat"
+        ],
+        "innerSha256": []
+      },
+      "attribution": [
+        {
+          "name": "hazm 0.12.1 data tables",
+          "copyright": "Copyright (c) 2013 Alireza Nourian and hazm contributors",
+          "license": "MIT",
+          "url": "https://github.com/roshan-research/hazm"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-fa-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Persian-English) 2026-09-20",
+      "slotId": "wty-fa-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/fa/en/wty-fa-en.zip",
+        "sha256": "28231d44d3dc2ce127d3bd1e4dae1f252d304c3fbe9218f1212a98ab73b12ba1",
+        "sizeBytes": 3328547,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-fa-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 9,
+        "uncompressedBytes": 37260443,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-fa-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Persian)",
+      "sourceId": "opensubtitles-fa",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/fa/fa_50k.txt",
+        "sha256": "96ea178f77022cdb2d358feb75a4fc474754daa224a4beba296ad777a514bdf7",
+        "sizeBytes": 764003,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-fa-en-2026.09.20",
+    "opensubtitles-fa-2018"
+  ]
+}

@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 3,
+  "language": "th",
+  "resources": [
+    {
+      "resourceId": "wty-th-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Thai-English) 2026-09-20",
+      "slotId": "wty-th-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/th/en/wty-th-en.zip",
+        "sha256": "d3e6d75acde52ba9d9d80054cb46479a362cb9e121d9598035c6e1890534c96d",
+        "sizeBytes": 2704086,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-th-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 5,
+        "uncompressedBytes": 28503853,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "tnc-th-2026-09-20",
+      "kind": "frequency",
+      "displayName": "Thai National Corpus frequency",
+      "sourceId": "tnc-th",
+      "archive": {
+        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
+        "sha256": "dc38af9e6c016b6ff165a863f969ec384bb5c05f9df98ee961b0eb870585756c",
+        "sizeBytes": 688439,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "Thai National Corpus word list",
+          "copyright": "PyThaiNLP project (word list bundled with pythainlp 5.3.7)",
+          "license": "CC0-1.0",
+          "url": "https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md"
+        },
+        {
+          "name": "Anki Miner Thai frequency build",
+          "copyright": "Built by Anki Miner's scripts/convert_tnc_thai_frequency.py",
+          "license": "CC0-1.0",
+          "url": "https://github.com/0xzerolight/anki_miner"
+        }
+      ]
+    },
+    {
+      "resourceId": "ttc-th-2026-09-20",
+      "kind": "frequency",
+      "displayName": "Thai textbook corpus frequency",
+      "sourceId": "ttc-th",
+      "archive": {
+        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
+        "sha256": "90a97a56f1b5375bb10b7fa9e36a79bd7fef2659d8525fa889a74e0a281e98ff",
+        "sizeBytes": 125981,
+        "format": "zip"
+      },
+      "attribution": [
+        {
+          "name": "Thai Textbook Corpus word list",
+          "copyright": "PyThaiNLP project (word list bundled with pythainlp 5.3.7)",
+          "license": "CC0-1.0",
+          "url": "https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md"
+        },
+        {
+          "name": "Anki Miner Thai frequency build",
+          "copyright": "Built by Anki Miner's scripts/convert_tnc_thai_frequency.py",
+          "license": "CC0-1.0",
+          "url": "https://github.com/0xzerolight/anki_miner"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-th-en-2026.09.20",
+    "tnc-th-2026-09-20",
+    "ttc-th-2026-09-20"
+  ]
+}

@@ -35,8 +35,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -424,7 +426,7 @@ class ResourceManagerTest {
             harness.manager.recoverAndRefresh()
 
             assertEquals(1, harness.bridge.requestsOfType("resource.dictionary.import").size)
-            assertTrue(resource.slotId in harness.manager.installedDictionaryIds())
+            assertTrue(resource.slotId in harness.manager.installedDictionaryIds(JAPANESE))
             assertNull(harness.manager.state.value.failure)
         }
 
@@ -780,7 +782,7 @@ class ResourceManagerTest {
                 )
             harness.stager.sourceText = "old\n"
             harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
-            val path = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST))
+            val path = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE))
             assertEquals("old\n", File(path).readText())
 
             harness.stager.sourceText = "new\n"
@@ -803,7 +805,7 @@ class ResourceManagerTest {
 
             assertEquals(
                 "new\n",
-                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST))).readText(),
+                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE))).readText(),
             )
             assertFalse(File(wordListRoot, "blacklist.txt.backup").exists())
             assertFalse(File(wordListRoot, "blacklist.txt.candidate").exists())
@@ -1672,7 +1674,7 @@ class ResourceManagerTest {
             WordListKind.entries.forEach { kind ->
                 val installed = harness.manager.state.value.wordLists.single { it.kind == kind }
                 assertEquals(1, installed.entryCount)
-                val path = requireNotNull(harness.manager.wordListPath(kind))
+                val path = requireNotNull(harness.manager.wordListPath(kind, JAPANESE))
                 assertEquals("\u732b\n", File(path).readText(Charsets.UTF_8))
             }
         }
@@ -2261,7 +2263,7 @@ class ResourceManagerTest {
             val dictionary = harness.manager.state.value.dictionaries.single()
             assertTrue(dictionary.isUsable)
             assertFalse(dictionary.isChainEligible)
-            assertTrue(harness.manager.installedDictionaryIds().isEmpty())
+            assertTrue(harness.manager.installedDictionaryIds(JAPANESE).isEmpty())
         }
 
     @Test
@@ -2346,6 +2348,257 @@ class ResourceManagerTest {
                 harness.bridge.requestTypes.filter { it.endsWith(".import") },
             )
             assertTrue(harness.manager.state.value.recommendedPlan.isSatisfied)
+        }
+
+    @Test
+    fun anotherLanguagesSetInstallsItsEngineDataFromThePinnedDownload() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+            assertTrue(harness.manager.state.value.recommendedPlan("ar").isActionable)
+
+            harness.manager.installRecommendedResources("ar")
+
+            assertNull(harness.manager.state.value.failure)
+            val request = harness.bridge.requestsOfType("resource.languagedata.install").single()
+            assertTrue(request.contains("\"resourceId\":\"ar-calima-msa\""))
+            assertTrue(request.contains("\"archivePath\":\"/"))
+            // The engine data leads, and every member is the requested language's own.
+            assertEquals(
+                listOf("resource.languagedata.install", "resource.dictionary.import", "resource.frequency.import"),
+                harness.bridge.requestTypes.filter { it.endsWith(".install") || it.endsWith(".import") },
+            )
+            for (type in listOf("resource.dictionary.import", "resource.frequency.import")) {
+                assertTrue(type, harness.bridge.requestsOfType(type).single().contains("\"language\":\"ar\""))
+            }
+            assertEquals(setOf("ar-calima-msa"), harness.manager.state.value.installedLanguageData)
+            assertEquals(
+                RecommendedResourceAction.SKIP,
+                harness.manager.state.value.recommendedPlan("ar").items.first().action,
+            )
+            assertFalse(harness.manager.state.value.recommendedPlan.isSatisfied)
+
+            harness.bridge.clearRequests()
+            harness.manager.installRecommendedResources("ar")
+            assertTrue(harness.bridge.requestsOfType("resource.languagedata.install").isEmpty())
+        }
+
+    @Test
+    fun everyRequestMadeForTheUserCarriesTheActiveLanguage() =
+        runTest {
+            val harness = Harness(activeLanguage = { "he" })
+
+            harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.manager.searchKnownWords("")
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            for (type in listOf("resource.local.list", "resource.knownwords.import", "resource.knownwords.list")) {
+                val requests = harness.bridge.requestsOfType(type)
+                assertTrue(type, requests.isNotEmpty())
+                assertTrue(type, requests.all { it.contains("\"language\":\"he\"") })
+            }
+            // The active language's own catalog is the one the state offers.
+            assertEquals("he", harness.manager.state.value.catalog?.language)
+            assertEquals(
+                FrozenResourceCatalog.forLanguage("he")!!.recommended,
+                harness.manager.state.value.recommendedPlan.items.map { it.resource.resourceId },
+            )
+        }
+
+    @Test
+    fun aPinnedDictionaryIsImportedForItsCatalogsLanguageWhateverIsActive() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+
+            harness.manager.installCatalogDictionary("wty-he-en-2026.09.20", replace = false)
+
+            assertNull(harness.manager.state.value.failure)
+            val request = harness.bridge.requestsOfType("resource.dictionary.import").single()
+            assertTrue(request.contains("\"catalogResourceId\":\"wty-he-en-2026.09.20\""))
+            assertTrue(request.contains("\"language\":\"he\""))
+        }
+
+    @Test
+    fun aRebuildThatCannotRunForMissingLanguageDataDoesNotFailStartup() =
+        runTest {
+            // An Arabic list is lemmatised by a tagger its downloaded data feeds. With that data
+            // gone the bridge refuses the rebuild; recovery must finish and keep the slot listed.
+            val harness =
+                Harness(
+                    staleFrequency = "opensubtitles-ar" to "ar",
+                    frequencyImportFailureCode = "language_unavailable",
+                    autoRecover = false,
+                )
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            val rebuild = harness.bridge.requestsOfType("resource.frequency.import").single()
+            assertTrue(rebuild.contains("\"language\":\"ar\""))
+            assertTrue(rebuild.contains("\"overwrite\":true"))
+            val stale = harness.manager.state.value.frequencySources.single()
+            assertEquals("opensubtitles-ar" to false, stale.sourceId to stale.schemaOk)
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun aLanguageWithNoCatalogOffersNothingToDownload() =
+        runTest {
+            val harness = Harness(activeLanguage = { "ko" })
+
+            assertNull(harness.manager.state.value.catalog)
+            assertFalse(harness.manager.state.value.recommendedPlan.isActionable)
+            assertEquals(FrozenResourceCatalog.all, harness.manager.state.value.catalogs)
+        }
+
+    @Test
+    fun aLanguageSwitchRereadsWhatBelongsToTheLanguageAndJapaneseStaysPut() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(activeLanguage = { language })
+            harness.bridge.clearRequests()
+
+            harness.manager.refreshLanguage()
+
+            // Nothing changed: no operation, no bridge call.
+            assertTrue(harness.bridge.requestTypes.isEmpty())
+            assertEquals(JAPANESE, harness.manager.state.value.language)
+            assertEquals(JAPANESE, harness.manager.state.value.catalog?.language)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            val state = harness.manager.state.value
+            assertEquals("he", state.language)
+            assertEquals("he", state.catalog?.language)
+            assertTrue(
+                harness.bridge.requestsOfType("resource.local.list").single().contains("\"language\":\"he\""),
+            )
+            assertNull(state.activeOperation)
+            assertNull(state.failure)
+        }
+
+    @Test
+    fun aLanguageSwitchDuringAnotherOperationIsAppliedWhenItFinishes() =
+        runTest {
+            var language = JAPANESE
+            val executor = PausableExecutor()
+            val harness = Harness(resourceExecutor = executor, activeLanguage = { language })
+            executor.paused = true
+            val search = launch { harness.manager.searchKnownWords("", loadMore = false) }
+            runCurrent()
+            // The search holds the operation lock with its work queued.
+            assertEquals(1, executor.queued.size)
+
+            // The follower wakes as soon as the work lease is released, which can be before the
+            // lock is: the refresh has to wait for it, not give up.
+            language = "he"
+            val refresh = launch { harness.manager.refreshLanguage() }
+            runCurrent()
+            executor.paused = false
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            search.join()
+            refresh.join()
+
+            val state = harness.manager.state.value
+            assertEquals("he", state.language)
+            assertEquals("he", state.catalog?.language)
+            assertNull(state.activeOperation)
+            assertNull(state.failure)
+        }
+
+    @Test
+    fun aLanguageSwitchDropsTheKnownWordsSearchMadeUnderTheOldLanguage() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(initialUserCount = 3, activeLanguage = { language })
+            harness.manager.searchKnownWords(query = "", loadMore = false)
+            assertNotNull(harness.manager.state.value.knownWordsPage)
+
+            harness.manager.refreshLanguage()
+            // Same language: the open search stays.
+            assertNotNull(harness.manager.state.value.knownWordsPage)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            // Its words are Japanese database rows; a remove from it would hit Hebrew's.
+            assertNull(harness.manager.state.value.knownWordsPage)
+        }
+
+    @Test
+    fun replacingHebrewsWordListLeavesJapanesesByteIdentical() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { language })
+            harness.stager.sourceText = "食べる\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            // An upgrading Japanese user keeps the file every earlier build wrote.
+            val japanesePath = File(harness.root, "resource-word-lists/blacklist.txt")
+            assertEquals(
+                japanesePath.canonicalPath,
+                harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE),
+            )
+            val japaneseBytes = japanesePath.readBytes()
+
+            language = "he"
+            harness.manager.refreshLanguage()
+            harness.stager.sourceText = "שלום\nספר\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+            harness.stager.sourceText = "מים\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            assertArrayEquals(japaneseBytes, japanesePath.readBytes())
+            val hebrewPath = requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "he"))
+            assertEquals("מים\n", File(hebrewPath).readText())
+            assertEquals(1, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
+
+            harness.manager.removeWordList(WordListKind.BLACKLIST)
+
+            assertNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "he"))
+            assertArrayEquals(japaneseBytes, japanesePath.readBytes())
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun switchingLanguageSelectsThatLanguagesWordLists() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { language })
+            harness.stager.sourceText = "食べる\n飲む\n"
+            harness.manager.importWordList(INPUT_URI, WordListKind.WHITELIST)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            assertTrue(harness.manager.state.value.wordLists.isEmpty())
+            assertNull(harness.manager.wordListPath(WordListKind.WHITELIST, "he"))
+
+            language = JAPANESE
+            harness.manager.refreshLanguage()
+
+            assertEquals(2, harness.manager.state.value.wordList(WordListKind.WHITELIST)?.entryCount)
+            assertNotNull(harness.manager.wordListPath(WordListKind.WHITELIST, JAPANESE))
+        }
+
+    @Test
+    fun startupCompletesAnInterruptedWordListPublishForEveryLanguage() =
+        runTest {
+            val harness = Harness(autoRecover = false, activeLanguage = { "he" })
+            val hebrewRoot = File(harness.root, "resource-word-lists/he").apply { mkdirs() }
+            File(hebrewRoot, "blacklist.txt.backup").writeText("old\n")
+            File(hebrewRoot, "blacklist.txt.candidate").writeText("new\n")
+
+            harness.manager.recoverAndRefresh()
+
+            assertEquals(
+                "new\n",
+                File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "he"))).readText(),
+            )
+            assertFalse(File(hebrewRoot, "blacklist.txt.backup").exists())
+            assertEquals(1, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
         }
 
     @Test
@@ -2516,6 +2769,9 @@ class ResourceManagerTest {
         audioContainer: AudioArchiveContainer = AudioArchiveContainer.ZIP,
         safSelectionInventory: SafSelectionInventory = TransientSafSelectionInventory(),
         foregroundStartFailure: Boolean = false,
+        activeLanguage: () -> String = { JAPANESE },
+        staleFrequency: Pair<String, String>? = null,
+        frequencyImportFailureCode: String? = null,
     ) {
         val root = temporary.newFolder(rootName)
         val bridgeRoot = File(root, "bridge").apply { mkdirs() }
@@ -2568,6 +2824,8 @@ class ResourceManagerTest {
                 committedDictionaryDecodeFailure,
                 committedFrequencyDecodeFailure,
                 committedPitchDecodeFailure,
+                staleFrequency,
+                frequencyImportFailureCode,
             )
         val manager =
             AndroidResourceManager(
@@ -2611,6 +2869,7 @@ class ResourceManagerTest {
                     },
                 wordListMover = wordListMover,
                 resourceDirectorySync = resourceDirectorySync,
+                activeLanguage = activeLanguage,
             )
 
         init {
@@ -2846,6 +3105,9 @@ class ResourceManagerTest {
         private val committedDictionaryDecodeFailure: Boolean = false,
         private val committedFrequencyDecodeFailure: Boolean = false,
         private val committedPitchDecodeFailure: Boolean = false,
+        /** A schema-stale frequency slot (sourceId to its language stamp) with a rebuild source. */
+        private val staleFrequency: Pair<String, String>? = null,
+        private val frequencyImportFailureCode: String? = null,
     ) : PyBridge {
         private val requests = mutableListOf<String>()
         var userCount = initialUserCount
@@ -2855,6 +3117,7 @@ class ResourceManagerTest {
         private var installedPitchSourceId: String? = installedPitchSourceId
         private var installedPitchSchemaOk: Boolean = installedPitchSchemaOk
         private var installedFrequencySourceId: String? = null
+        private val installedLanguageData = mutableListOf<String>()
         private var installedAudioPackId: String? = null
         private var catalogDictionaryInstalled = installedCatalogDictionaryValid != null
 
@@ -2906,6 +3169,16 @@ class ResourceManagerTest {
                 "resource.local.list" -> inventoryResponse()
                 "resource.cleanup" ->
                     envelope("resource.cleanup.result", """{"clean":true}""")
+                "resource.languagedata.install" -> {
+                    val resourceId = stringField(rawRequest, "resourceId")
+                    val catalog = checkNotNull(FrozenResourceCatalog.catalogOf(resourceId))
+                    val data = catalog.languageData.single { it.resourceId == resourceId }
+                    installedLanguageData += resourceId
+                    envelope(
+                        "resource.languagedata.installed",
+                        """{"resourceId":"$resourceId","language":"${catalog.language}","importName":"${data.importName}"}""",
+                    )
+                }
                 "resource.unidic.install" -> {
                     val expected = FrozenResourceCatalog.value.unidic
                     envelope(
@@ -2950,6 +3223,7 @@ class ResourceManagerTest {
                         """{"slotId":"fixture-dictionary-2026-08"}""",
                     )
                 "resource.frequency.import" -> {
+                    frequencyImportFailureCode?.let { throw ResourceBridgeException(it, "simulated rebuild failure") }
                     if (failFrequencyImport) {
                         throw ResourceBridgeException(
                             "frequency_import_failed",
@@ -3099,13 +3373,13 @@ class ResourceManagerTest {
                 // The decoder checks an installed catalog dictionary against the frozen
                 // catalog identity, attribution included, so echo the catalog's own list.
                 entries +=
-                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null}"""
+                    """{"slotId":"${resource.slotId}","occupied":true,"valid":$catalogDictionaryValid,"sourceName":"${resource.dictionary.title}","sourceRevision":"${resource.dictionary.revision}","format":"${if (catalogDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (catalogDictionaryValid) 1 else 0},"schemaOk":$catalogDictionaryValid,"embeddedAttribution":{},"catalogResourceId":"${resource.resourceId}","attribution":${attributionJson(resource.attribution)},"rebuildSourcePath":null,"language":"ja"}"""
             }
             if (customDictionaryInstalled) {
                 val rebuildPath =
                     installedCustomDictionaryRebuildPath?.let { "\"$it\"" } ?: "null"
                 entries +=
-                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath}"""
+                    """{"slotId":"fixture-dictionary","occupied":true,"valid":$customDictionaryValid,"sourceName":"Fixture Dictionary","sourceRevision":"1","format":"${if (customDictionaryValid) "yomitan" else "unknown"}","entryCount":${if (customDictionaryValid) installedCustomDictionaryEntryCount else 0},"schemaOk":$customDictionaryValid,"embeddedAttribution":{},"catalogResourceId":null,"attribution":[],"rebuildSourcePath":$rebuildPath,"language":"ja"}"""
             }
             val dictionaries = entries.joinToString(",", prefix = "[", postfix = "]")
             return envelope(
@@ -3115,7 +3389,7 @@ class ResourceManagerTest {
         }
 
         private fun catalogDictionaryOf(resourceId: String): YomitanCatalogResource =
-            FrozenResourceCatalog.value.dictionary(resourceId)
+            FrozenResourceCatalog.dictionary(resourceId)
                 ?: error("fake asked for a dictionary outside the frozen catalog: $resourceId")
 
         private fun importedDictionaryResponse(): String {
@@ -3133,19 +3407,21 @@ class ResourceManagerTest {
             }
             val frequencies =
                 installedFrequencySourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false,"rebuildSourcePath":null}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Fixture Frequency","format":"csv","entryCount":1,"schemaOk":true,"schemaVersion":1,"isCategorical":false,"rebuildSourcePath":null,"language":"ja"}]"""
+                } ?: staleFrequency?.let { (sourceId, language) ->
+                    """[{"sourceId":"$sourceId","sourceName":"Stale Frequency","format":"txt","entryCount":1,"schemaOk":false,"schemaVersion":2,"isCategorical":false,"rebuildSourcePath":"/data/user/0/files/freqs/$sourceId/source.txt","language":"$language"}]"""
                 } ?: "[]"
             val pitchSources =
                 installedPitchSourceId?.let { sourceId ->
-                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1,"rebuildSourcePath":${installedPitchRebuildPath?.let { "\"$it\"" } ?: "null"}}]"""
+                    """[{"sourceId":"$sourceId","sourceName":"Kanjium","sourceRevision":"1","format":"yomitan","entryCount":10,"schemaOk":$installedPitchSchemaOk,"schemaVersion":1,"rebuildSourcePath":${installedPitchRebuildPath?.let { "\"$it\"" } ?: "null"},"language":"ja"}]"""
                 } ?: "[]"
             val audioPacks =
                 installedAudioPackId?.let { packId ->
-                    """[{"packId":"$packId","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"contentAvailable":true}]"""
+                    """[{"packId":"$packId","sourceName":"jpod_files","format":"jpod_legacy","entryCount":12,"contentAvailable":true,"language":"ja"}]"""
                 } ?: "[]"
             return envelope(
                 "resource.local.listed",
-                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[]}""",
+                """{"frequencies":$frequencies,"pitchSources":$pitchSources,"audioPacks":$audioPacks,"knownWords":{"totalCount":$userCount,"userCount":$userCount,"ankiCount":0,"minedCount":0,"schemaOk":true},"wordsets":[],"languageData":${installedLanguageData.joinToString(",", "[", "]") { "\"$it\"" }}}""",
             )
         }
 
@@ -3186,15 +3462,7 @@ class ResourceManagerTest {
             )
         }
 
-        private fun catalogResponse(): String {
-            val payload =
-                checkNotNull(
-                    ResourceManagerTest::class.java.getResourceAsStream("/resource_catalog_v1.json"),
-                ) { "resource catalog fixture missing" }
-                    .bufferedReader()
-                    .use { it.readText().trim() }
-            return envelope("resource.catalog", payload)
-        }
+        private fun catalogResponse(): String = envelope("resource.catalog", CommittedCatalogs.payload())
     }
 
     companion object {

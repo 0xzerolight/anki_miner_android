@@ -29,6 +29,8 @@ SELECTOR_GATED_TESTS = (
     "com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_note_removes_created_note",
     "com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest"
     "#delete_missing_note_still_reports_request_count",
+    "com.ankiminer.android.tts.DeviceVoiceSynthesisInstrumentedTest#anInstalledOfflineVoiceSpeaksAHebrewWord",
+    "com.ankiminer.android.LanguageDataSmokeInstrumentedTest#downloadedLanguageDataTokenisesAndRecordsPeakPss",
 )
 UI_AUDIT_TESTS = (
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop",
@@ -52,7 +54,7 @@ SOURCE_DECLARED_TEST_COUNT = sum(
     len(TEST_ANNOTATION.findall(source.read_text(encoding="utf-8"))) for source in ANDROID_TEST_ROOT.rglob("*.kt")
 )
 EXPECTED_EXECUTED_COUNT = SOURCE_DECLARED_TEST_COUNT - len(UNEXECUTED_TESTS)
-PINNED_EXECUTED_COUNT = 364
+PINNED_EXECUTED_COUNT = 372
 
 
 class Api26InstrumentationScriptTest(unittest.TestCase):

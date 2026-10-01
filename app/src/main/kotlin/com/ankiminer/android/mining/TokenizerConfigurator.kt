@@ -1,9 +1,24 @@
 package com.ankiminer.android.mining
 
+import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.engine.BridgeJsonCodec
+import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.BridgeMessage
+import com.ankiminer.android.engine.MiningConfigSnapshot
 import com.ankiminer.android.engine.PyBridge
 import com.ankiminer.android.engine.TokenizerConfiguration
+
+/**
+ * Only Japanese tokenizes with the installed UniDic (the bridge's `requires_unidic`); every other
+ * language brings its own tokenizer, so its runs and previews neither need nor configure one.
+ */
+internal fun languageRequiresUnidic(language: String): Boolean = language == LanguageScope.JAPANESE
+
+/** Whether this run's language tokenizes with UniDic; the snapshot omits `language` for ja. */
+internal fun MiningConfigSnapshot.requiresUnidic(): Boolean =
+    languageRequiresUnidic(
+        (settings["language"] as? BridgeJsonValue.Text)?.value ?: LanguageScope.JAPANESE,
+    )
 
 internal sealed class TokenizerConfigurationFailure(
     message: String,

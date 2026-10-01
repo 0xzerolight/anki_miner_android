@@ -58,6 +58,7 @@ def _dispatch_validated(
         "curation.response",
         "bridge.shutdown.request",
         "diagnostics.loglevel.set",
+        "language.profiles",
         "mining.reading.run",
         "mining.video.run",
         "resource.catalog.get",
@@ -76,6 +77,7 @@ def _dispatch_validated(
         "resource.knownwords.remove",
         "resource.knownwords.reset",
         "resource.knownwords.export",
+        "resource.languagedata.install",
         "resource.minedwords.remove",
         "resource.local.delete",
         "resource.local.list",
@@ -133,6 +135,11 @@ def _dispatch_validated(
                 return local_handlers[request_type](payload, callbacks=callbacks)
             return local_handlers[request_type](payload)
 
+        if request_type == "resource.languagedata.install":
+            from .language_data import install_language_data
+
+            return install_language_data(payload)
+
         handlers = {
             "resource.catalog.get": resources.catalog_response,
             "resource.cleanup": resources.cleanup_resources,
@@ -157,6 +164,11 @@ def _dispatch_validated(
         from .tokenizer_runtime import configure_tokenizer
 
         return configure_tokenizer(payload)
+
+    if request_type == "language.profiles":
+        from .languages import language_profiles
+
+        return language_profiles(payload)
 
     if request_type == "dictionary.define":
         from .definitions import define_word

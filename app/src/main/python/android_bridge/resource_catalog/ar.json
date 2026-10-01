@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 3,
+  "language": "ar",
+  "resources": [
+    {
+      "resourceId": "ar-calima-msa",
+      "kind": "language-data",
+      "displayName": "CAMeL Tools calima-msa-r13 morphology database",
+      "importName": "calima_msa",
+      "archive": {
+        "url": "https://github.com/CAMeL-Lab/camel-tools-data/releases/download/2022.03.21/morphology_db_calima-msa-r13-0.4.0.zip",
+        "sha256": "fe6531250c5529307627cc63ed56447cbb9968020d6ea3ab867e6ad9af94c738",
+        "sizeBytes": 40488532,
+        "format": "zip"
+      },
+      "install": {
+        "memberPrefix": "",
+        "exclude": [],
+        "sentinels": [
+          "morphology.db",
+          "LICENSE"
+        ],
+        "innerSha256": [
+          {
+            "path": "morphology.db",
+            "sha256": "195bc25a333237a2126470da888d7936b59ed3729f9210e0a4194ba43497dd70"
+          }
+        ]
+      },
+      "attribution": [
+        {
+          "name": "calima-msa-r13 (camel-tools-data 2022.03.21)",
+          "copyright": "CAMeL Lab, New York University Abu Dhabi; derived from Aramorph 1.2.1 (Linguistic Data Consortium, QAMUS LLC, University of Pennsylvania, Jon Dehdari)",
+          "license": "GPL-2.0-only",
+          "url": "https://github.com/CAMeL-Lab/camel-tools-data"
+        }
+      ]
+    },
+    {
+      "resourceId": "wty-ar-en-2026.09.20",
+      "kind": "yomitan-dictionary",
+      "displayName": "Wiktionary (Arabic-English) 2026-09-20",
+      "slotId": "wty-ar-en",
+      "archive": {
+        "url": "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ar/en/wty-ar-en.zip",
+        "sha256": "c3566fe6e3d3ab158cc313df605e6858171e252b9d1bb2ff17b9ee9897719176",
+        "sizeBytes": 13584376,
+        "format": "zip"
+      },
+      "dictionary": {
+        "title": "wty-ar-en",
+        "revision": "2026.09.20",
+        "format": 3,
+        "memberCount": 45,
+        "uncompressedBytes": 188677618,
+        "archiveMemberLimit": 4096,
+        "uncompressedBytesLimit": 2147483648,
+        "fileBytesLimit": 33554432
+      },
+      "attribution": [
+        {
+          "name": "Wiktionary",
+          "copyright": "Wiktionary contributors",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"
+        },
+        {
+          "name": "wiktionary-to-yomitan",
+          "copyright": "wty contributors (Yomitan build of kaikki.org extracts)",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/yomidevs/wiktionary-to-yomitan"
+        }
+      ]
+    },
+    {
+      "resourceId": "opensubtitles-ar-2018",
+      "kind": "frequency",
+      "displayName": "OpenSubtitles 2018 frequency (Arabic)",
+      "sourceId": "opensubtitles-ar",
+      "archive": {
+        "url": "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ar/ar_50k.txt",
+        "sha256": "bbe98b4b92902b392bdefa2e555a108fdb42a5dd79d261674be5ab666229e19f",
+        "sizeBytes": 805779,
+        "format": "txt"
+      },
+      "attribution": [
+        {
+          "name": "FrequencyWords",
+          "copyright": "Copyright (c) 2016 Hermit Dave",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://github.com/hermitdave/FrequencyWords"
+        },
+        {
+          "name": "OpenSubtitles 2018 corpus",
+          "copyright": "OPUS (opus.nlpl.eu) and OpenSubtitles.org",
+          "license": "CC-BY-SA-4.0",
+          "url": "https://opus.nlpl.eu/OpenSubtitles2018.php"
+        }
+      ]
+    }
+  ],
+  "recommended": [
+    "wty-ar-en-2026.09.20",
+    "opensubtitles-ar-2018"
+  ]
+}

@@ -43,6 +43,7 @@ import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.ExoCurationPreviewPlayer
 import com.ankiminer.android.player.shiftedWindow
 import com.ankiminer.android.ui.mining.CurationVideoPreview
+import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.TimingPreviewState
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
@@ -63,7 +64,10 @@ internal fun TimingPreviewOverlay(
     onCancel: () -> Unit,
     audioOnly: Boolean = false,
     modifier: Modifier = Modifier,
-    playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
+    playerFactory: (Context) -> CurationPreviewPlayer =
+        LocalMiningContentStyle.current.audioTrackCodes.let { codes ->
+            { context -> ExoCurationPreviewPlayer(context, codes) }
+        },
     seekabilityProbe: suspend (Context, Uri) -> Boolean = ::isSeekableVideoSource,
 ) {
     val context = LocalContext.current

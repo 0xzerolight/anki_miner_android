@@ -31,7 +31,18 @@ from .config_map import (
     map_config_settings,
 )
 from .faults import record_fault
-from .jobs import JobRegistry, SentencePreview, registry
+from .jobs import JobRegistry, KnownWordsTarget, SentencePreview, registry
+from .languages import (
+    JAPANESE,
+    config_language,
+    get_profile,
+    known_words_db_path,
+    language_kwarg,
+    requires_unidic,
+    speech_language_for,
+    unavailable_reason_code,
+    validated_language,
+)
 from .protocol import (
     BridgeProtocolError,
     decode_message,
@@ -44,6 +55,7 @@ from .unicode_contract import (
     is_category_c,
     is_nfc,
 )
+from .word_audio import ANDROID_TTS_KIND, AndroidWordAudioFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -68,10 +80,11 @@ _SUBTITLE_SUFFIXES = frozenset({".ass", ".srt", ".ssa", ".vtt"})
 # Desktop's spin box range for the translation track's offset
 # (gui/constants.py SUBTITLE_OFFSET_MIN/MAX, +-300 s).
 _MAX_SECONDARY_OFFSET_MS = 300_000
-# Imported local packs are the only expression-audio source the Android
-# builder can construct. The cut network kinds (jpod101/googletts) and the
-# removed URL-template kinds are rejected before any allocation.
-_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack"})
+# Imported local packs and the bridge-only device voice (``android_tts``,
+# android_bridge.word_audio) are the only expression-audio sources the Android
+# builder can construct. The cut network kinds (jpod101/googletts/edgetts) and
+# the removed URL-template kinds are rejected before any allocation.
+_SUPPORTED_EXPRESSION_AUDIO_KINDS = frozenset({"pack", ANDROID_TTS_KIND})
 _JISHO_TOTAL_DEADLINE_SECONDS = 10.0
 _JISHO_IO_TIMEOUT_SECONDS = 1.0
 _JISHO_WATCH_POLL_SECONDS = 0.05
@@ -189,9 +202,15 @@ class _DiagnosedPackFetcher:
 class _ExpressionAudioSourceChain:
     """Source-priority composite over the ordered expression-audio fetchers.
 
-    Members are the imported local packs in config order. Each member is
+    Members are the imported local packs and, outside Japanese, the device
+    voice (``AndroidWordAudioFetcher``), in config order. Each member is
     tried in turn; the first hit wins. A member raising is logged and skipped
     so one broken pack falls through to the next.
+
+    ``candidates`` is the active profile's ``AudioDefaults.candidates`` ladder
+    builder, exactly as desktop's ``ChainedExpressionAudioFetcher`` takes it.
+    The engine's audio stage probes ``candidates_for`` on this TYPE and, finding
+    none, would feed every language the Japanese kana ladder.
     """
 
     def __init__(
@@ -202,8 +221,10 @@ class _ExpressionAudioSourceChain:
         cache_lifetime: object | None = None,
         unavailable_pack_ids: Sequence[str] = (),
         pack_registry: object | None = None,
+        candidates: Callable[[object], list[tuple[str, str]]] | None = None,
     ) -> None:
         self._fetchers = tuple(fetchers)
+        self._candidates = candidates
         self._diagnostic_callback = diagnostic_callback
         self._diagnostic_reported = False
         self._cache_lifetime = cache_lifetime
@@ -230,6 +251,14 @@ class _ExpressionAudioSourceChain:
         if self._unavailable_pack_ids:
             details.append("enabled packs unavailable: " + ", ".join(sorted(self._unavailable_pack_ids)))
         return f"Expression audio: {'; '.join(details)}" if details else None
+
+    def candidates_for(self, word: object) -> list[tuple[str, str]]:
+        """The ``(term, reading)`` ladder for :meth:`fetch_candidates` (desktop ``candidates_for``)."""
+        if self._candidates is not None:
+            return self._candidates(word)
+        from anki_miner.services.audio_fetch_common import expression_audio_candidates
+
+        return expression_audio_candidates(word)  # type: ignore[arg-type]
 
     def fetch(
         self,
@@ -410,14 +439,28 @@ def _parse_request(raw_request: str) -> _VideoRequest:
     )
 
 
-def _ensure_runtime_ready() -> Path:
-    """Fail before admission unless every process-global prerequisite is fixed."""
+def _ensure_runtime_ready(settings: Mapping[str, object]) -> Path:
+    """Fail before admission unless every prerequisite of the run's language is fixed.
+
+    Only Japanese tokenizes with UniDic through the S1a tagger; every other
+    vendored language brings its own tokenizer. A language whose profile says it
+    cannot mine here (its data pack is not installed) is refused with its Android
+    reason code, instead of failing deep inside parser construction.
+    """
 
     from .bootstrap import require_initialized
+
+    home = Path(require_initialized())
+    language = validated_language(settings.get("language", JAPANESE))
+    if not requires_unidic(language):
+        reason = unavailable_reason_code(get_profile(language))
+        if reason is not None:
+            raise BridgeProtocolError("language_unavailable", reason)
+        return home
+
     from .tokenizer_selection import selected_tokenizer_backend
     from .unidic_resource import require_registered_unidic
 
-    home = Path(require_initialized())
     require_registered_unidic()
     if selected_tokenizer_backend() != "s1a":
         raise BridgeProtocolError(
@@ -437,6 +480,20 @@ def _map_config(request: _VideoRequest, files_dir: Path) -> object:
         ),
         android_tts_enabled=request.android_tts_enabled,
     ).engine_config
+
+
+def _known_words_target(config: object) -> KnownWordsTarget | None:
+    """Where this run's curation "mark known" writes: its language's own file and fold.
+
+    None (the registry's Japanese default, ``filesDir/known_words.db``) only for
+    a config double that carries no path; a mapped config always does.
+    """
+
+    base = getattr(config, "known_words_db_path", None)
+    if base is None:
+        return None
+    language = config_language(config)
+    return KnownWordsTarget(known_words_db_path(Path(base), language), language)
 
 
 def _show_optional_failure(
@@ -465,23 +522,28 @@ def _close_without_masking(resource: object | None, label: str) -> None:
 def _build_expression_audio_source_chain(
     config: object,
     diagnostic_callback: Callable[[str], None] | None = None,
+    *,
+    tts_callbacks: object | None = None,
+    run_id: str | None = None,
 ) -> _ExpressionAudioSourceChain | None:
     """Compose the ordered expression-audio source chain for one run.
 
     Mirrors the desktop ``_build_expression_audio_fetcher`` composition minus
     the cut network kinds. Config order is source priority: the imported local
-    packs are tried in the user's chosen order.
+    packs are tried in the user's chosen order, and an enabled ``android_tts``
+    entry speaks the word with the device voice through ``tts_callbacks`` (the
+    run's EngineCallbacks). Without them that entry builds nothing.
     """
 
     entries = tuple(getattr(config, "expression_audio_chain", ()))
 
-    # Reject-before-allocate: any non-pack kind raises, and BEFORE any
+    # Reject-before-allocate: any unsupported kind raises, and BEFORE any
     # Session/import/packs-dir scan. Validate every entry first so a bad kind
     # cannot slip through after a valid one has already allocated resources.
     if any(getattr(entry, "kind", None) not in _SUPPORTED_EXPRESSION_AUDIO_KINDS for entry in entries):
         raise BridgeProtocolError(
             "unsupported_android_feature",
-            "Android expression audio supports local packs only",
+            "Android expression audio supports local packs and the device voice only",
         )
 
     # Two-part fetch-gate mirror (audio_stage.py): the expression_audio Anki
@@ -521,10 +583,26 @@ def _build_expression_audio_source_chain(
     # Config order = source priority. This loop never raises: an unknown or
     # missing pack is skipped (matching desktop), so combined with the
     # validate-all-first check the reject-before-allocate invariant holds.
+    language = config_language(config)
+    audio = None if language == JAPANESE else get_profile(language).audio
     fetchers: list[object] = []
     unavailable_pack_ids: list[str] = []
     for entry in entries:
         if not getattr(entry, "enabled", False):
+            continue
+        if getattr(entry, "kind", None) == ANDROID_TTS_KIND:
+            # config_map admits this kind only outside Japanese.
+            if tts_callbacks is not None and run_id is not None and audio is not None:
+                fetchers.append(
+                    AndroidWordAudioFetcher(
+                        tts_callbacks,
+                        run_id,
+                        Path(config.media_temp_folder).parent,
+                        cache_root / ANDROID_TTS_KIND,
+                        language=speech_language_for(language),
+                        speakable=audio.speakable,
+                    )
+                )
             continue
         pack_id = getattr(entry, "pack_id", None)
         if pack_id is None:
@@ -544,6 +622,7 @@ def _build_expression_audio_source_chain(
         cache_lifetime=cache_lifetime,
         unavailable_pack_ids=unavailable_pack_ids,
         pack_registry=pack_registry,
+        candidates=None if audio is None else audio.candidates,
     )
 
 
@@ -842,6 +921,33 @@ def _android_dictionary_provider_chain(
     ]
 
 
+def _word_filter_seams(profile: object, config: object) -> dict[str, object]:
+    """``service_factory.create_services``' WordFilterService seams for a non-ja profile."""
+
+    from anki_miner.languages.registry import bound_mined_form
+
+    return {
+        "mined_form": bound_mined_form(profile, config),
+        "script": profile.script,
+        "dedup_fold": profile.dedup_fold,
+        "expression_tracks_surface": getattr(profile.mined_form, "expression_tracks_surface", None),
+        "sentence_annotation": profile.sentence_annotator is not None,
+    }
+
+
+def _word_list_seams(profile: object) -> dict[str, object]:
+    """The word lists' fold and decode ladder for a non-ja profile (``import_decode_ladder``)."""
+
+    from anki_miner.utils.subtitle_encoding import script_check_kwarg
+
+    ladder = profile.import_encodings
+    return {
+        "dedup_fold": profile.dedup_fold,
+        "encodings": ladder,
+        **script_check_kwarg(ladder, profile.script),
+    }
+
+
 def _build_processor(
     config: object,
     adapters: CallbackAdapters,
@@ -849,7 +955,14 @@ def _build_processor(
     *,
     sentence_audio_fetcher: object | None = None,
 ) -> object:
-    """Mirror the desktop service factory without importing cut fetchers."""
+    """Mirror the desktop service factory without importing cut fetchers.
+
+    A Japanese run keeps desktop's Japanese call shapes exactly: desktop omits
+    each language seam whose ja value is the engine default (``_lookup_kwarg``,
+    ``language_kwarg``), and the word-filter seams' ja values are proven equal to
+    its defaults in the A.5 sweep. Every other language gets what
+    ``service_factory.create_services`` hands it from the profile.
+    """
 
     # These imports intentionally name only the vendored execution closure.
     # Importing desktop gui.utils.service_factory would eagerly pull YouTube and
@@ -876,6 +989,8 @@ def _build_processor(
     definition_service: object | None = None
     frequency_service: object | None = None
     expression_audio_fetcher: _ExpressionAudioSourceChain | None = None
+    language = config_language(config)
+    profile = None if language == JAPANESE else get_profile(language)
     try:
         dictionary_registry = DictionaryRegistry(config.dicts_root)
         try:
@@ -894,7 +1009,12 @@ def _build_processor(
         # registry= is load-bearing, not decoration: the processor's pre-flight
         # check_offline_dictionary asks has_usable_offline_provider, which
         # returns False for a registry-less service and aborts the whole run.
-        definition_service = DefinitionService(config, providers=providers, registry=dictionary_registry)
+        definition_service = DefinitionService(
+            config,
+            providers=providers,
+            registry=dictionary_registry,
+            **({} if profile is None else {"lookup": profile.lookup}),
+        )
 
         has_indexed_dictionary = any(entry.kind == "indexed" and entry.enabled for entry in config.dictionary_chain)
         if has_indexed_dictionary:
@@ -931,7 +1051,11 @@ def _build_processor(
                 )
                 wordset_service = None
 
-        subtitle_parser = SubtitleParserService(
+        # Desktop's _create_subtitle_parser: the profile factory injects the card
+        # front, reading, normaliser and script gate a non-ja language needs; the
+        # literal class is the ja factory's bare forward.
+        parser_factory = SubtitleParserService if profile is None else profile.create_parser
+        subtitle_parser = parser_factory(
             config,
             term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
             # Merges multi-token name spans before the proper-noun and name-list
@@ -949,11 +1073,17 @@ def _build_processor(
             # has one resolves its card fronts.
             form_lookup=(definition_service.offline_term_rows if has_indexed_dictionary else None),
         )
-        word_filter = WordFilterService(config, tagger=subtitle_parser.tagger)
+        word_filter = WordFilterService(
+            config,
+            tagger=subtitle_parser.tagger,
+            **({} if profile is None else _word_filter_seams(profile, config)),
+        )
         media_extractor = MediaExtractorService(config)
         expression_audio_fetcher = _build_expression_audio_source_chain(
             config,
             diagnostic_callback=adapters.presenter.show_warning,
+            tts_callbacks=getattr(adapters, "callbacks", None),
+            run_id=getattr(adapters, "run_id", None),
         )
         # Same staleness-gate reason as pitch_registry below, one step removed:
         # the chain builder owns the scan (it must stay behind the kind
@@ -1037,7 +1167,10 @@ def _build_processor(
                 frequency_registry = None
 
         try:
-            known_word_db = KnownWordDB(config.known_words_db_path)
+            known_word_db = KnownWordDB(
+                known_words_db_path(config.known_words_db_path, language),
+                **language_kwarg(language),
+            )
             if config.use_known_words_db:
                 known_word_db.initialize()
         except MemoryError:
@@ -1057,6 +1190,7 @@ def _build_processor(
                 word_list_service = WordListService(
                     blacklist_path=(config.blacklist_path if config.use_blacklist else None),
                     whitelist_path=(config.whitelist_path if config.use_whitelist else None),
+                    **({} if profile is None else _word_list_seams(profile)),
                 )
                 word_list_service.load()
             except MemoryError:
@@ -1070,7 +1204,7 @@ def _build_processor(
                 )
                 word_list_service = None
 
-        stats_service = StatsService(config.stats_db_path)
+        stats_service = StatsService(config.stats_db_path, **language_kwarg(language))
         if not stats_service.load():
             stats_service = None
 
@@ -1095,6 +1229,7 @@ def _build_processor(
             pitch_registry=pitch_registry,
             audio_pack_registry=audio_pack_registry,
             sentence_audio_fetcher=sentence_audio_fetcher,
+            **({} if profile is None else {"profile": profile}),
         )
     except BaseException:
         _close_without_masking(expression_audio_fetcher, "expression-audio chain")
@@ -1427,7 +1562,7 @@ def run_video(
     """Run one local video through the unchanged desktop ``process_episode``."""
 
     request = _parse_request(raw_request)
-    files_dir = _ensure_runtime_ready()
+    files_dir = _ensure_runtime_ready(request.settings)
     from .anki_adapter import AnkiOperationCancelled
 
     owner = job_registry or registry()
@@ -1445,6 +1580,7 @@ def run_video(
             if adapters.cancel_event.is_set():
                 raise AnkiOperationCancelled("runVideo", "Mining was cancelled", False)
             config = _map_config(request, files_dir)
+            adapters.known_words_target = _known_words_target(config)
             from anki_miner.utils.ffmpeg_resolver import resolve_ffmpeg
 
             if resolve_ffmpeg(config) == "ffmpeg":

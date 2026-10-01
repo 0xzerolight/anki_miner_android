@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(19, len(records))
+        self.assertEqual(21, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -35,7 +35,9 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "lxml": "6.1.1",
                 "pillow": "12.2.0",
                 "pysubs2": "1.8.1",
+                "pythainlp": "5.3.7",
                 "requests": "2.34.2",
+                "tzdata": "2026.3",
                 "urllib3": "2.7.0",
             },
             {
@@ -47,7 +49,9 @@ class RuntimeHostLaneTests(unittest.TestCase):
                     "lxml",
                     "pillow",
                     "pysubs2",
+                    "pythainlp",
                     "requests",
+                    "tzdata",
                     "urllib3",
                 )
             },

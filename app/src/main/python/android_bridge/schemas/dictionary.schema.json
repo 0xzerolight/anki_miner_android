@@ -16,7 +16,11 @@
       "properties": {
         "runId": {"$ref": "#/$defs/runId"},
         "term": {"type": "string", "minLength": 1, "pattern": "\\S"},
-        "fallbackTerm": {"type": ["string", "null"]}
+        "fallbackTerm": {"type": ["string", "null"]},
+        "partOfSpeech": {
+          "type": ["string", "null"],
+          "$comment": "The focused token's part of speech, for a profile's sense ranking; absent or null is no tag."
+        }
       }
     },
     "result": {

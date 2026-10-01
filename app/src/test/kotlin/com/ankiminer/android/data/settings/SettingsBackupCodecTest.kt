@@ -190,10 +190,87 @@ class SettingsBackupCodecTest {
     }
 
     @Test
-    fun `a backup with resources is written as format 4`() {
+    fun `a backup with resources is written as format 5`() {
         val json = SettingsBackupCodec.encode(populated, "0.7.0", ResourceManagerState())
 
-        assertTrue(json, "\"ankiMinerAndroidSettings\" : 4" in json)
+        assertTrue(json, "\"ankiMinerAndroidSettings\" : 5" in json)
+    }
+
+    @Test
+    fun `the mining language travels and the parked languages stay on this device`() {
+        val hebrew =
+            populated.copy(
+                language = "he",
+                fieldMap = mapOf("word" to "Word", "transliteration" to "Translit"),
+                languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese")),
+            )
+        val json = SettingsBackupCodec.encode(hebrew, "0.8.0", ResourceManagerState())
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(json).applyTo(AppSettings(), ResourceManagerState(), knownLanguages = setOf("ja", "he"))
+            }
+
+        assertTrue(json, "language_stash" !in json)
+        assertEquals("he", applied.settings.language)
+        assertEquals(hebrew.fieldMap, applied.settings.fieldMap)
+        assertEquals(emptyMap<String, Map<String, Any?>>(), applied.settings.languageStash)
+        assertEquals(null, applied.unknownLanguage)
+    }
+
+    @Test
+    fun `an import never replaces this device's parked languages`() {
+        val local = AppSettings(languageStash = mapOf("he" to mapOf("deck_name" to "Hebrew")))
+        val json = SettingsBackupCodec.encode(populated, "0.8.0", ResourceManagerState())
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(local, ResourceManagerState()) }
+
+        assertEquals(local.languageStash, applied.settings.languageStash)
+    }
+
+    @Test
+    fun `a language this build cannot mine keeps the current one and is reported`() {
+        val json =
+            """{"ankiMinerAndroidSettings":5,"appVersion":"9.9.9","schemaVersion":3,""" +
+                """"settings":{"mining_language":"zh","deck_name":"Chinese","dictionary_sources_v1":null,""" +
+                """"frequency_sources_v1":null,"pitch_sources_v1":null,"audio_packs_v1":null},""" +
+                """"resourceChains":{"dictionary_sources_v1":[],"frequency_sources_v1":[],""" +
+                """"pitch_sources_v1":[],"audio_packs_v1":[]}}"""
+        val current = AppSettings(language = "he")
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(json).applyTo(current, ResourceManagerState(), knownLanguages = setOf("ja", "he"))
+            }
+
+        assertEquals("he", applied.settings.language)
+        assertEquals("zh", applied.unknownLanguage)
+        assertEquals("Chinese", applied.settings.deckName)
+        assertEquals(listOf("mining_language"), applied.rejectedKeys)
+    }
+
+    @Test
+    fun `a malformed language code is reported the same way`() {
+        val json =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"9.9.9","schemaVersion":3,""" +
+                """"settings":{"mining_language":"Klingon"}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings()) }
+
+        assertEquals("ja", applied.settings.language)
+        assertEquals("Klingon", applied.unknownLanguage)
+    }
+
+    @Test
+    fun `a file from before languages keeps the current language`() {
+        val json =
+            """{"ankiMinerAndroidSettings":2,"appVersion":"0.5.0","schemaVersion":2,""" +
+                """"settings":{"deck_name":"Mining"}}"""
+
+        val applied = with(SettingsBackupCodec) { parse(json).applyTo(AppSettings(language = "he")) }
+
+        assertEquals("he", applied.settings.language)
+        assertEquals(null, applied.unknownLanguage)
     }
 
     @Test

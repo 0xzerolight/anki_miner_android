@@ -22,6 +22,7 @@ import re
 import threading
 from collections.abc import Mapping
 
+from .languages import JAPANESE, config_language, get_profile
 from .protocol import BridgeProtocolError, encode_message
 
 logger = logging.getLogger(__name__)
@@ -31,6 +32,9 @@ _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
 
 #: Longest term the UI may ask about. A mined form is a few characters.
 MAX_TERM_BYTES = 256
+
+#: Longest part-of-speech tag the UI may send: a UniDic POS1 or a UD tag.
+MAX_POS_BYTES = 64
 
 #: Total rendered HTML one preview may return across all providers. The
 #: WebView is the display bound; this is the transport bound.
@@ -83,7 +87,10 @@ def _build_service(config: object) -> object:
     providers = [
         provider for provider in registry.build_provider_chain(config) if not getattr(provider, "is_online", False)
     ]
-    service = DefinitionService(config, providers=providers, registry=registry)
+    # Desktop's _lookup_kwarg: the run language's miss ladder; ja's is the default.
+    language = config_language(config)
+    lookup = {} if language == JAPANESE else {"lookup": get_profile(language).lookup}
+    service = DefinitionService(config, providers=providers, registry=registry, **lookup)
     service.ensure_loaded()
     return service
 
@@ -99,10 +106,10 @@ def _close(service: object) -> None:
 
 
 def define_word(payload: Mapping[str, object]) -> str:
-    if set(payload) != {"runId", "term", "fallbackTerm"}:
+    if set(payload) - {"partOfSpeech"} != {"runId", "term", "fallbackTerm"}:
         raise _fail(
             "invalid_definition_request",
-            "Expected payload fields: ['fallbackTerm', 'runId', 'term']",
+            "Expected payload fields: ['fallbackTerm', 'runId', 'term'] and an optional 'partOfSpeech'",
         )
     run_id = payload["runId"]
     if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
@@ -112,6 +119,11 @@ def define_word(payload: Mapping[str, object]) -> str:
         raise _fail("invalid_definition_request", "term must not be blank")
     raw_fallback = payload["fallbackTerm"]
     fallback = None if raw_fallback is None else _text(raw_fallback, name="fallbackTerm", max_bytes=MAX_TERM_BYTES)
+    # The focused token's part of speech, as the card path hands get_definitions_batch
+    # its pos_context: a profile's sense_rank (he, id) orders a word's senses by it,
+    # so without it the pane and the card beside it can lead with different senses.
+    raw_pos = payload.get("partOfSpeech")
+    pos_kwarg = {} if raw_pos is None else {"pos": _text(raw_pos, name="partOfSpeech", max_bytes=MAX_POS_BYTES)}
 
     with _lock:
         config = _run_configs.get(run_id)
@@ -127,12 +139,12 @@ def define_word(payload: Mapping[str, object]) -> str:
         # name different lexemes for a kana front (ゆう, lemma 言う). The caller
         # already sends None when the lemma is blank or equals the mined form,
         # which is exactly when the engine skips the probe and stays pre-A'.
-        hits = service.lookup_all_offline(term, fallback)
+        hits = service.lookup_all_offline(term, fallback, **pos_kwarg)
         # Miss-only. A hit on the mined form always wins: unidic's canonical
         # lemma collapses kanji variants (殺る → 遣る), so a lemma entry painted
         # over a word that has its own would be the wrong homograph.
         if not hits and fallback and fallback != term:
-            fallback_hits = service.lookup_all_offline(fallback)
+            fallback_hits = service.lookup_all_offline(fallback, **pos_kwarg)
             if fallback_hits:
                 matched = fallback
                 hits = fallback_hits

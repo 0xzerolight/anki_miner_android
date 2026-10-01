@@ -102,7 +102,7 @@ class MediaMiningViewModelTest {
             val repository = RecordingRepository()
             val lookups = mutableListOf<Triple<String, String, String?>>()
             val lookup =
-                DefinitionLookupService { runId, term, fallback ->
+                DefinitionLookupService { runId, term, fallback, _ ->
                     lookups += Triple(runId, term, fallback)
                     Result.success(
                         DefinitionResult(
@@ -154,7 +154,7 @@ class MediaMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
             val lookup =
-                DefinitionLookupService { _, term, _ ->
+                DefinitionLookupService { _, term, _, _ ->
                     Result.success(DefinitionResult(term, term, emptyList()))
                 }
             val viewModel =
@@ -182,7 +182,7 @@ class MediaMiningViewModelTest {
         runTest(mainDispatcherRule.dispatcher) {
             val repository = RecordingRepository()
             val lookup =
-                DefinitionLookupService { _, _, _ ->
+                DefinitionLookupService { _, _, _, _ ->
                     Result.failure(IllegalStateException("boom"))
                 }
             val viewModel =
@@ -214,7 +214,7 @@ class MediaMiningViewModelTest {
             val repository = RecordingRepository()
             val lookups = mutableListOf<String>()
             val lookup =
-                DefinitionLookupService { _, term, _ ->
+                DefinitionLookupService { _, term, _, _ ->
                     lookups += term
                     Result.success(DefinitionResult(term, term, emptyList()))
                 }
@@ -247,7 +247,7 @@ class MediaMiningViewModelTest {
     @Test
     fun productionFactoryPassesTheDefinitionLookup() {
         val lookup =
-            DefinitionLookupService { _, term, _ ->
+            DefinitionLookupService { _, term, _, _ ->
                 Result.success(DefinitionResult(term, term, emptyList()))
             }
         val factory =
@@ -3867,7 +3867,7 @@ class MediaMiningViewModelTest {
 
     private companion object {
         val NO_DEFINITION_LOOKUP =
-            DefinitionLookupService { _, term, _ ->
+            DefinitionLookupService { _, term, _, _ ->
                 Result.success(DefinitionResult(term, term, emptyList()))
             }
 

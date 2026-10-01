@@ -7,11 +7,13 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
+import com.ankiminer.android.engine.LanguageProfileInfo
 import com.ankiminer.android.ui.theme.ThemePalettes
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -52,6 +54,9 @@ interface AppSettingsRepository {
     suspend fun update(settings: AppSettings)
 
     suspend fun update(transform: (AppSettings) -> AppSettings)
+
+    /** Make [target] the mining language in one transaction; see [AppSettings.switchLanguage]. */
+    suspend fun switchLanguage(target: LanguageProfileInfo) = update { it.switchLanguage(target) }
 
     suspend fun snapshot(
         installedDictionaryIds: List<String>,
@@ -267,6 +272,8 @@ class DataStoreAppSettingsRepository internal constructor(
                     Keys.knownWordsMatchKanaVariants,
                     value.knownWordsMatchKanaVariants,
                 )
+                candidate.setOrRemove(Keys.scriptVariant, value.scriptVariant)
+                candidate.setOrRemove(Keys.readingToneColor, value.readingToneColor)
                 candidate.setOrRemove(Keys.strictCardOrder, value.strictCardOrder)
                 candidate.setOrRemove(Keys.mergeIncompleteCues, value.mergeIncompleteCues)
                 candidate[Keys.secondarySubtitleEnabled] = value.secondarySubtitleEnabled
@@ -299,7 +306,38 @@ class DataStoreAppSettingsRepository internal constructor(
                 candidate -= Keys.legacyUseSentenceLength
                 candidate[Keys.readingTtsEnabled] = value.readingTtsEnabled
                 candidate[Keys.jishoEnabled] = value.jishoEnabled
+                candidate[Keys.miningLanguage] = value.language
+                candidate.setOrRemove(
+                    Keys.languageStash,
+                    LanguageStashPreferenceCodec.encode(value.languageStash),
+                )
             }
+
+        /** [settings]' stored value for every language-scoped preference, `null` where unset. */
+        internal fun parkScoped(settings: AppSettings): Map<String, Any?> {
+            val stored = encodePreferences(settings, emptyPreferences()).asMap().mapKeys { it.key.name }
+            return LanguageScope.PREFERENCE_NAMES.associateWith { stored[it] }
+        }
+
+        /**
+         * [settings] with [parked] written over its language-scoped preferences and decoded back,
+         * so a parked value passes the same validation a stored one does. Other names are ignored.
+         */
+        internal fun overlayScoped(
+            settings: AppSettings,
+            parked: Map<String, Any?>,
+        ): AppSettings {
+            val preferences =
+                stagePreferenceWrite(encodePreferences(settings, emptyPreferences())) { candidate ->
+                    parked.forEach { (name, value) ->
+                        if (name !in LanguageScope.PREFERENCE_NAMES) return@forEach
+                        @Suppress("UNCHECKED_CAST")
+                        val key = Keys.byName.getValue(name) as Preferences.Key<Any>
+                        if (value == null) candidate -= key else candidate[key] = value
+                    }
+                }
+            return decodeWithReport(preferences).settings
+        }
 
         internal fun decodeWithReport(preferences: Preferences): DecodedPreferences {
             val decoder = IndependentPreferenceDecoder(preferences)
@@ -316,10 +354,15 @@ class DataStoreAppSettingsRepository internal constructor(
             // A corrupt combination is then quarantined like any other key instead of throwing out
             // of the read path.
             // Read ahead for the same reason: the marker's conflict rule is only meaningful against
-            // the field map it must not collide with.
+            // the field map it must not collide with, and the keys that map may hold depend on the
+            // mining language.
+            val storedLanguage =
+                decoder.read(Keys.miningLanguage, LanguageScope.JAPANESE, { stored ->
+                    stored.takeIf(LanguageScope.LANGUAGE_CODE::matches) ?: invalidStoredPreference()
+                })
             val storedFieldMap =
                 decoder.read(Keys.fieldMap, emptyMap(), FieldMapPreferenceCodec::decode) {
-                    AppSettingsValidator.validate(AppSettings(fieldMap = it))
+                    AppSettingsValidator.validate(AppSettings(language = storedLanguage, fieldMap = it))
                 }
             val storedSubtitleRegex =
                 decoder.read(Keys.subtitleRegexFilter, null, { it }) { value ->
@@ -366,6 +409,7 @@ class DataStoreAppSettingsRepository internal constructor(
                             value?.let {
                                 AppSettingsValidator.validate(
                                     AppSettings(
+                                        language = storedLanguage,
                                         fieldMap = storedFieldMap,
                                         cardTypeMarkerField = it,
                                     ),
@@ -449,6 +493,11 @@ class DataStoreAppSettingsRepository internal constructor(
                     frequencyKeepUnranked = decoder.read(Keys.frequencyKeepUnranked, null, { it }),
                     knownWordsMatchKanaVariants =
                         decoder.read(Keys.knownWordsMatchKanaVariants, null, { it }),
+                    scriptVariant =
+                        decoder.read(Keys.scriptVariant, null, { it }) { value ->
+                            value?.let { AppSettingsValidator.validate(AppSettings(scriptVariant = it)) }
+                        },
+                    readingToneColor = decoder.read(Keys.readingToneColor, null, { it }),
                     strictCardOrder = decoder.read(Keys.strictCardOrder, null, { it }),
                     mergeIncompleteCues = decoder.read(Keys.mergeIncompleteCues, null, { it }),
                     secondarySubtitleEnabled =
@@ -489,6 +538,13 @@ class DataStoreAppSettingsRepository internal constructor(
                     enabledWordsets = decodeEnabledWordsets(preferences, decoder),
                     readingTtsEnabled = decoder.read(Keys.readingTtsEnabled, false, { it }),
                     jishoEnabled = decoder.read(Keys.jishoEnabled, false, { it }),
+                    language = storedLanguage,
+                    languageStash =
+                        decoder.read(
+                            Keys.languageStash,
+                            emptyMap(),
+                            LanguageStashPreferenceCodec::decode,
+                        ),
                 )
             return DecodedPreferences(
                 settings = AppSettingsValidator.validate(settings),
@@ -644,6 +700,8 @@ class DataStoreAppSettingsRepository internal constructor(
             val frequencyKeepUnranked = register(booleanPreferencesKey("frequency_keep_unranked"))
             val knownWordsMatchKanaVariants =
                 register(booleanPreferencesKey("known_words_match_kana_variants"))
+            val scriptVariant = register(stringPreferencesKey("script_variant"))
+            val readingToneColor = register(booleanPreferencesKey("reading_tone_color"))
             val strictCardOrder = register(booleanPreferencesKey("strict_card_order"))
             val mergeIncompleteCues = register(booleanPreferencesKey("merge_incomplete_cues"))
             val secondarySubtitleEnabled =
@@ -660,9 +718,13 @@ class DataStoreAppSettingsRepository internal constructor(
             val legacyAllowDuplicateCards = booleanPreferencesKey("allow_duplicate_cards")
             val readingTtsEnabled = register(booleanPreferencesKey("reading_tts_enabled"))
             val jishoEnabled = register(booleanPreferencesKey("jisho_enabled"))
+            val miningLanguage = register(stringPreferencesKey("mining_language"))
+            val languageStash = register(stringPreferencesKey("language_stash_v1"))
 
             val all: Set<Preferences.Key<*>>
                 get() = registered
+
+            val byName: Map<String, Preferences.Key<*>> by lazy { registered.associateBy { it.name } }
         }
     }
 }

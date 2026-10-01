@@ -23,9 +23,20 @@ import zipfile
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from . import resources as core
 from .bootstrap import require_initialized
+from .language_data import installed_language_data
+from .languages import (
+    JAPANESE,
+    get_profile,
+    known_words_db_path,
+    language_kwarg,
+    payload_language,
+    unavailable_reason_code,
+    without_language,
+)
 from .protocol import BridgeProtocolError, encode_message
 from .resource_progress import make_reporter
 
@@ -121,6 +132,48 @@ def _display_name(value: object, *, label: str) -> str:
     if text != text.strip() or any(ord(character) < 0x20 for character in text):
         raise _fail("invalid_resource_request", f"{label} is invalid")
     return text
+
+
+def _rebuild_slot(source: Path, slot: Path) -> bool:
+    """True when *source* is *slot*'s own persisted ``source.<ext>`` copy.
+
+    That is the startup rebuild of a schema-stale slot (``rebuildSourcePath``):
+    Kotlin re-sends the import against the copy the importer kept, so the slot
+    is rebuilt in place and keeps the language it was stamped for.
+    """
+
+    return slot in source.parents
+
+
+def _import_language(payload: Mapping[str, object], source: Path, slot: Path) -> str:
+    """The language an import stamps: the slot's own for a rebuild, else the request's.
+
+    A rebuild replays the slot's stamp (desktop ``slot_language_kwarg``), so a
+    Hebrew index comes back Hebrew rather than defaulting to "ja" and dropping
+    out of the Hebrew chain. Any other import, including an overwrite that
+    replaces a slot stamped for another language, stamps the active language.
+    """
+
+    if not _rebuild_slot(source, slot):
+        return payload_language(payload)
+    from anki_miner.services._sqlite_index import read_slot_language
+
+    stamp = read_slot_language(slot)
+    requested = payload.get("language")
+    if requested is not None and requested != stamp:
+        logger.info(
+            "resource_rebuild_keeps_slot_language outcome=ok slot=%s stamp=%s requested=%s",
+            slot.name,
+            stamp,
+            requested,
+        )
+    return stamp
+
+
+def _known_words_path(home: Path, language: str) -> Path:
+    """The language's own known-words database (``known_words.<lang>.db`` beside ja's)."""
+
+    return known_words_db_path(home / "known_words.db", language)
 
 
 def _work_root(home: Path, operation_id: str) -> Path:
@@ -456,9 +509,91 @@ def _frequency_import_payload(result: object, source_id: str, archive_sha256: st
     }
 
 
+def _catalog_frequency_spec(language: str, source_id: str, archive_sha256: str) -> Any | None:
+    """The desktop catalogue row a pinned download installs, or None for any other list.
+
+    A list is the catalogue's when it fills a pinned frequency slot with that
+    entry's pinned bytes; a hand-picked file replacing the slot is not. Each
+    pinned slot is named after its desktop ``ResourceSpec`` id.
+    """
+
+    from .resource_catalog import CATALOG_LANGUAGES, FrequencyResource, load_resource_catalog
+
+    if language not in CATALOG_LANGUAGES:
+        return None
+    if not any(
+        isinstance(resource, FrequencyResource)
+        and resource.source_id == source_id
+        and resource.archive.sha256 == archive_sha256
+        for resource in load_resource_catalog(language).resources
+    ):
+        return None
+    return next(
+        (spec for spec in get_profile(language).catalog if spec.kind == "freq" and spec.id == source_id),
+        None,
+    )
+
+
+def _frequency_import_options(
+    language: str,
+    *,
+    rebuild_slot: Path | None,
+    dicts_root: Path,
+    source_id: str,
+    archive_sha256: str,
+) -> dict[str, object]:
+    """``import_frequency_source``'s lemmatisation and declared mode (S17).
+
+    A rebuild replays how the slot's list was built (``slot_import_options``, as
+    ``repair_frequency_source`` does), or a lemmatised list would come back
+    re-ranked by surface counts. A catalogue download follows its desktop row
+    (``resource_download_worker._lemmatise_kwargs``): a ``lemmatise`` row is
+    summed per lemma, which only occurrence counts allow, so it declares that
+    mode. Any other new list is lemmatised only for a language that declares
+    ``lemmatised_frequency`` (desktop ``manual_import_lemmatizer``). Empty for an
+    ordinary Japanese import.
+    """
+
+    if rebuild_slot is None and language == JAPANESE:
+        return {}
+    from anki_miner.services.frequency.lemmatize import (
+        build_frequency_lemmatizer,
+        lemmatize_kwarg,
+        manual_import_lemmatizer,
+    )
+
+    declared: dict[str, object] = {}
+    if rebuild_slot is None:
+        spec = _catalog_frequency_spec(language, source_id, archive_sha256)
+        if spec is None:
+            lemmatize = manual_import_lemmatizer(language, dicts_root)
+        elif spec.lemmatise:
+            from anki_miner.services.frequency.mode_probe import OCCURRENCE_BASED
+
+            lemmatize = build_frequency_lemmatizer(language, dicts_root)
+            declared = {"declared_mode": OCCURRENCE_BASED}
+        else:
+            lemmatize = None
+    else:
+        from anki_miner.services.frequency.source_importer import slot_import_options
+
+        declared_mode, lemmatised = slot_import_options(rebuild_slot)
+        lemmatize = build_frequency_lemmatizer(language, dicts_root) if lemmatised else None
+        declared = {"declared_mode": declared_mode} if declared_mode else {}
+    if lemmatize is not None:
+        # The tagger is built lazily, mid-import: with the language's data
+        # missing (ar/fa before their download, or after it is deleted) it would
+        # raise from inside the importer. Refuse up front with the reason code,
+        # so a startup rebuild fails this one slot and nothing else.
+        reason = unavailable_reason_code(get_profile(language))
+        if reason is not None:
+            raise _fail("language_unavailable", reason)
+    return {**declared, **lemmatize_kwarg(lemmatize)}
+
+
 def import_frequency(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
-        payload,
+        without_language(payload),
         {
             "operationId",
             "sourcePath",
@@ -476,6 +611,9 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
     source_format = _format(payload["sourceFormat"], _FREQUENCY_FORMATS, label="sourceFormat")
     overwrite = _boolean(payload["overwrite"], label="overwrite")
     home = Path(require_initialized())
+    slot = _frequency_root(home) / source_id
+    language = _import_language(payload, source, slot)
+    rebuild_slot = slot if _rebuild_slot(source, slot) else None
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
@@ -520,6 +658,13 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
             )
 
             import_root = operation_root / "publication"
+            import_options = _frequency_import_options(
+                language,
+                rebuild_slot=rebuild_slot,
+                dicts_root=core._dictionary_root(home),
+                source_id=source_id,
+                archive_sha256=copied.sha256,
+            )
             try:
                 result = import_frequency_source(
                     import_source,
@@ -528,6 +673,8 @@ def import_frequency(payload: Mapping[str, object], *, callbacks: object | None 
                     source_name=source_name,
                     progress=reporter.items_fn(),
                     cancel_check=operation.cancelled.is_set,
+                    **language_kwarg(language),
+                    **import_options,
                 )
             except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
                 operation.check()
@@ -582,7 +729,7 @@ def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = No
     """
 
     core._exact(
-        payload,
+        without_language(payload),
         {
             "operationId",
             "sourcePath",
@@ -600,6 +747,7 @@ def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = No
     source_format = _format(payload["sourceFormat"], _PITCH_FORMATS, label="sourceFormat")
     overwrite = _boolean(payload["overwrite"], label="overwrite")
     home = Path(require_initialized())
+    language = _import_language(payload, source, _pitch_root(home) / source_id)
     operation_root = _work_root(home, operation_id)
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
@@ -652,6 +800,7 @@ def import_pitch(payload: Mapping[str, object], *, callbacks: object | None = No
                     source_name=requested_name,
                     progress=reporter.items_fn(),
                     cancel_check=operation.cancelled.is_set,
+                    **language_kwarg(language),
                 )
             except (SetupError, UnicodeError, csv.Error, OSError, sqlite3.Error) as exc:
                 operation.check()
@@ -1250,6 +1399,7 @@ def _register_android_audio_db(
     index_root: Path,
     pack_id: str,
     operation: core._Operation,
+    language: str = JAPANESE,
 ):
     """Run the engine's android.db registration, mapping its failures to codes."""
     from anki_miner.exceptions import SetupError
@@ -1262,6 +1412,7 @@ def _register_android_audio_db(
             pack_id=pack_id,
             cancel_check=operation.cancelled.is_set,
             overwrite=False,
+            **language_kwarg(language),
         )
     except (SetupError, ValueError, OSError, sqlite3.Error) as exc:
         operation.check()
@@ -1454,6 +1605,7 @@ def _import_android_audio_db(
     operation_id: str,
     overwrite: bool,
     reporter: object,
+    language: str = JAPANESE,
 ) -> str:
     """Publish a local-audio-yomichan android.db as a metadata-only pack.
 
@@ -1477,7 +1629,7 @@ def _import_android_audio_db(
     operation.check()
 
     index_root = operation_root / "index"
-    result = _register_android_audio_db(db_dest, index_root, pack_id, operation)
+    result = _register_android_audio_db(db_dest, index_root, pack_id, operation, language)
     operation.check()
     built = index_root / pack_id
     index_db = built / "index.sqlite"
@@ -1537,10 +1689,12 @@ def _import_android_audio_db(
 
 def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
-        payload,
+        without_language(payload),
         {"operationId", "sourcePath", "packId", "packPath", "overwrite"},
         code="invalid_resource_request",
     )
+    # Audio packs have no in-place rebuild: every import stamps the active language.
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
     pack_id = core._slot_id(payload["packId"])
@@ -1581,6 +1735,7 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
                     operation_id=operation_id,
                     overwrite=overwrite,
                     reporter=reporter,
+                    language=language,
                 )
             extracted = operation_root / "extracted"
             # Only the chosen subtree is extracted, so importing one pack out of
@@ -1623,6 +1778,7 @@ def import_audio_pack(payload: Mapping[str, object], *, callbacks: object | None
                     pack_id=pack_id,
                     cancel_check=operation.cancelled.is_set,
                     overwrite=False,
+                    **language_kwarg(language),
                 )
             except (
                 SetupError,
@@ -1701,6 +1857,7 @@ def _parse_known_words_copy(
     operation_root: Path,
     *,
     progress: Callable[[int, int], None] | None = None,
+    language: str = JAPANESE,
 ):
     copied = core._copy_archive(
         source,
@@ -1714,12 +1871,24 @@ def _parse_known_words_copy(
         parse_known_words_file,
     )
 
+    # Desktop's Manage Known Words reads a file with the mining language's
+    # ladder, Japanese included: utf-8-sig, cp932, then euc_jp. The third leg
+    # is tried only after the first two fail, so a file either already read
+    # decodes exactly as before.
+    from anki_miner.utils.subtitle_encoding import script_check_kwarg
+
+    profile = get_profile(language)
+    ladder: dict[str, object] = {
+        "encodings": profile.import_encodings,
+        **script_check_kwarg(profile.import_encodings, profile.script),
+    }
     try:
         parsed = parse_known_words_file(
             copied.path,
             max_words=_MAX_KNOWN_WORDS,
             max_word_bytes=_MAX_WORD_BYTES,
             cancel_check=operation.cancelled.is_set,
+            **ladder,
         )
     except KnownWordsImportError as exc:
         operation.check()
@@ -1731,15 +1900,19 @@ def _parse_known_words_copy(
             ),
         )
         raise _fail(code, message) from exc
-    from anki_miner.utils.ja_normalize import (
-        normalize_for_tokenization,
-        standardize_kanji_variants,
-    )
+    if language == JAPANESE:
+        # The Japanese tokenizer's own pre-normalisation, so an imported word
+        # meets the form mining produces. Another language's words are keyed by
+        # the database's fold alone, as desktop keys them.
+        from anki_miner.utils.ja_normalize import (
+            normalize_for_tokenization,
+            standardize_kanji_variants,
+        )
 
-    parsed = replace(
-        parsed,
-        words=frozenset(standardize_kanji_variants(normalize_for_tokenization(word)) for word in parsed.words),
-    )
+        parsed = replace(
+            parsed,
+            words=frozenset(standardize_kanji_variants(normalize_for_tokenization(word)) for word in parsed.words),
+        )
     if len(parsed.words) > _MAX_KNOWN_WORDS or any(
         not word
         or len(word.encode("utf-8")) > _MAX_WORD_BYTES
@@ -1753,10 +1926,11 @@ def _parse_known_words_copy(
 
 def preview_known_words(payload: Mapping[str, object]) -> str:
     core._exact(
-        payload,
+        without_language(payload),
         {"operationId", "sourcePath", "sourceFormat"},
         code="invalid_resource_request",
     )
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
     source_format = _format(payload["sourceFormat"], _KNOWN_WORD_FORMATS, label="sourceFormat")
@@ -1767,7 +1941,7 @@ def preview_known_words(payload: Mapping[str, object]) -> str:
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
         try:
-            parsed = _parse_known_words_copy(source, source_format, operation, operation_root)
+            parsed = _parse_known_words_copy(source, source_format, operation, operation_root, language=language)
             operation.check()
             return encode_message(
                 "resource.knownwords.previewed",
@@ -1786,10 +1960,11 @@ def preview_known_words(payload: Mapping[str, object]) -> str:
 
 def import_known_words(payload: Mapping[str, object], *, callbacks: object | None = None) -> str:
     core._exact(
-        payload,
+        without_language(payload),
         {"operationId", "sourcePath", "sourceFormat"},
         code="invalid_resource_request",
     )
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     source = core._absolute_path(payload["sourcePath"], name="sourcePath")
     source_format = _format(payload["sourceFormat"], _KNOWN_WORD_FORMATS, label="sourceFormat")
@@ -1809,12 +1984,13 @@ def import_known_words(payload: Mapping[str, object], *, callbacks: object | Non
                 operation,
                 operation_root,
                 progress=reporter.bytes_fn(),
+                language=language,
             )
             operation.check()
-            db_path = home / "known_words.db"
+            db_path = _known_words_path(home, language)
             if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):
                 raise _fail("known_words_database_unsafe", "Known-word database path is unsafe")
-            database = KnownWordDB(db_path)
+            database = KnownWordDB(db_path, **language_kwarg(language))
             database.initialize()
             # Last point before the write becomes durable. Parsing and schema setup
             # both run after the previous check, so without this a Cancel delivered
@@ -1838,15 +2014,15 @@ def import_known_words(payload: Mapping[str, object], *, callbacks: object | Non
                 core._safe_rmtree(operation_root)
 
 
-def _known_words_database(home: Path):
+def _known_words_database(home: Path, language: str = JAPANESE):
     from anki_miner.services.known_word_db import KnownWordDB
 
-    db_path = home / "known_words.db"
+    db_path = _known_words_path(home, language)
     if db_path.exists() and (db_path.is_symlink() or not db_path.is_file()):
         raise _fail("known_words_database_unsafe", "Known-word database path is unsafe")
-    database = KnownWordDB(db_path)
+    database = KnownWordDB(db_path, **language_kwarg(language))
     database.initialize()
-    if not _known_words_inventory(home)["schemaOk"]:
+    if not _known_words_inventory(home, language)["schemaOk"]:
         raise _fail("known_words_database_unsafe", "Known-word database schema is invalid")
     return database, db_path
 
@@ -1870,7 +2046,8 @@ def _known_word_query(value: object) -> str:
 
 
 def list_known_words(payload: Mapping[str, object]) -> str:
-    core._exact(payload, {"operationId", "query", "offset", "limit"}, code="invalid_resource_request")
+    core._exact(without_language(payload), {"operationId", "query", "offset", "limit"}, code="invalid_resource_request")
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     query = _known_word_query(payload["query"])
     offset = _bounded_non_negative_int(payload["offset"], label="offset", maximum=_MAX_KNOWN_WORDS)
@@ -1880,7 +2057,7 @@ def list_known_words(payload: Mapping[str, object]) -> str:
     home = Path(require_initialized())
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
-        database, db_path = _known_words_database(home)
+        database, db_path = _known_words_database(home, language)
         del database
         search_query = unicodedata.normalize("NFC", query)
         escaped = search_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -1922,13 +2099,14 @@ def _known_word_list(value: object) -> list[str]:
 
 
 def remove_known_words(payload: Mapping[str, object]) -> str:
-    core._exact(payload, {"operationId", "words"}, code="invalid_resource_request")
+    core._exact(without_language(payload), {"operationId", "words"}, code="invalid_resource_request")
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     words = _known_word_list(payload["words"])
     home = Path(require_initialized())
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
-        database, db_path = _known_words_database(home)
+        database, db_path = _known_words_database(home, language)
         operation.check()
         removed = database.remove_words(set(words), source="user")
         _fsync_file(db_path)
@@ -1937,13 +2115,14 @@ def remove_known_words(payload: Mapping[str, object]) -> str:
 
 
 def remove_mined_words(payload: Mapping[str, object]) -> str:
-    core._exact(payload, {"operationId", "words"}, code="invalid_resource_request")
+    core._exact(without_language(payload), {"operationId", "words"}, code="invalid_resource_request")
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     words = _known_word_list(payload["words"])
     home = Path(require_initialized())
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
-        database, db_path = _known_words_database(home)
+        database, db_path = _known_words_database(home, language)
         operation.check()
         removed = database.remove_words(set(words), source="mined")
         _fsync_file(db_path)
@@ -1952,7 +2131,8 @@ def remove_mined_words(payload: Mapping[str, object]) -> str:
 
 
 def reset_known_words(payload: Mapping[str, object]) -> str:
-    core._exact(payload, {"operationId", "scope"}, code="invalid_resource_request")
+    core._exact(without_language(payload), {"operationId", "scope"}, code="invalid_resource_request")
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     scope = core._bounded_text(payload["scope"], name="scope", max_bytes=8)
     if scope not in {"user", "cache"}:
@@ -1960,7 +2140,7 @@ def reset_known_words(payload: Mapping[str, object]) -> str:
     home = Path(require_initialized())
     with core._OPERATIONS.begin(operation_id) as operation:
         operation.check()
-        database, db_path = _known_words_database(home)
+        database, db_path = _known_words_database(home, language)
         operation.check()
         removed = database.clear_user() if scope == "user" else database.clear(preserve_user=True)
         _fsync_file(db_path)
@@ -1972,7 +2152,8 @@ def reset_known_words(payload: Mapping[str, object]) -> str:
 
 
 def export_known_words(payload: Mapping[str, object]) -> str:
-    core._exact(payload, {"operationId"}, code="invalid_resource_request")
+    core._exact(without_language(payload), {"operationId"}, code="invalid_resource_request")
+    language = payload_language(payload)
     operation_id = core._operation_id(payload["operationId"])
     home = Path(require_initialized())
     operation_root = _work_root(home, operation_id)
@@ -1980,7 +2161,7 @@ def export_known_words(payload: Mapping[str, object]) -> str:
         operation.check()
         core._safe_rmtree(operation_root)
         operation_root.mkdir(parents=True)
-        _database, db_path = _known_words_database(home)
+        _database, db_path = _known_words_database(home, language)
         export_path = operation_root / "known_words.txt"
         size_bytes = 0
         exported_count = 0
@@ -2035,6 +2216,7 @@ def _invalid_pitch_inventory_entry(source_id: str) -> dict[str, object]:
         # An entry only reaches here when its index could not be read at all,
         # which is the "missing" case, not the rebuildable "stale" one.
         "rebuildSourcePath": None,
+        "language": core._inventory_language(None),
     }
 
 
@@ -2177,6 +2359,7 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaOk": version == core._PITCH_SCHEMA_VERSION,
                 "schemaVersion": max(version, 0),
                 "rebuildSourcePath": _rebuild_source_path(child),
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     if legacy_occupied and not any(item["sourceId"] == _LEGACY_PITCH_SOURCE_ID for item in result):
@@ -2185,8 +2368,8 @@ def _pitch_inventory(home: Path) -> list[dict[str, object]]:
     return result
 
 
-def _known_words_inventory(home: Path) -> dict[str, object]:
-    database = home / "known_words.db"
+def _known_words_inventory(home: Path, language: str = JAPANESE) -> dict[str, object]:
+    database = _known_words_path(home, language)
     counts = {"user": 0, "anki": 0, "mined": 0}
     total = 0
     if not database.exists():
@@ -2317,6 +2500,7 @@ def _frequency_inventory(home: Path) -> list[dict[str, object]]:
                 "schemaVersion": max(version, 0),
                 "isCategorical": meta.get("is_categorical") == "1",
                 "rebuildSourcePath": _rebuild_source_path(child),
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     return result
@@ -2347,6 +2531,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                     "format": "unknown",
                     "entryCount": 0,
                     "contentAvailable": False,
+                    "language": core._inventory_language(None),
                 }
             )
             continue
@@ -2387,6 +2572,7 @@ def _audio_inventory(home: Path) -> list[dict[str, object]]:
                 "format": meta.get("format", "unknown"),
                 "entryCount": max(count, 0),
                 "contentAvailable": content_available,
+                "language": core._inventory_language(meta.get("language")),
             }
         )
     return result
@@ -2438,7 +2624,9 @@ def _wordset_inventory() -> list[dict[str, object]]:
 
 
 def list_local_resources(payload: Mapping[str, object]) -> str:
-    core._exact(payload, set(), code="invalid_resource_request")
+    core._exact(without_language(payload), set(), code="invalid_resource_request")
+    # Only the known-words counts depend on it: they are the language's own file.
+    language = payload_language(payload)
     home = Path(require_initialized())
     with core._PROMOTION_LOCK:
         _recover_indexed_backups(
@@ -2460,8 +2648,9 @@ def list_local_resources(payload: Mapping[str, object]) -> str:
             "frequencies": _frequency_inventory(home),
             "pitchSources": _pitch_inventory(home),
             "audioPacks": _audio_inventory(home),
-            "knownWords": _known_words_inventory(home),
+            "knownWords": _known_words_inventory(home, language),
             "wordsets": _wordset_inventory(),
+            "languageData": installed_language_data(home),
         },
     )
 

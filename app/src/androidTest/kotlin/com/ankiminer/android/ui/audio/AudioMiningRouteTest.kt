@@ -73,7 +73,7 @@ class AudioMiningRouteTest {
         safBroker = FakeSafBroker(document),
         lane = MiningLane.AUDIO,
         definitionLookup =
-            DefinitionLookupService { _, _, _ ->
+            DefinitionLookupService { _, _, _, _ ->
                 Result.failure(UnsupportedOperationException("unused by route wiring test"))
             },
         audioTrackProbeOpener =

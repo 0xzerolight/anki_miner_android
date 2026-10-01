@@ -444,6 +444,8 @@ class AppSettingsRepositoryTest {
                 minFrequencyRank = null,
                 frequencyKeepUnranked = null,
                 knownWordsMatchKanaVariants = null,
+                scriptVariant = null,
+                readingToneColor = null,
                 strictCardOrder = null,
                 mergeIncompleteCues = null,
                 secondarySubtitleEnabled = false,
@@ -658,6 +660,8 @@ class AppSettingsRepositoryTest {
             minFrequencyRank = 500,
             frequencyKeepUnranked = true,
             knownWordsMatchKanaVariants = false,
+            scriptVariant = "simplified",
+            readingToneColor = true,
             strictCardOrder = true,
             mergeIncompleteCues = true,
             // Non-default, or corrupting the key would quarantine to the value already stored.
@@ -671,6 +675,9 @@ class AppSettingsRepositoryTest {
             enabledWordsets = listOf("place-names"),
             readingTtsEnabled = true,
             jishoEnabled = true,
+            // Non-default, or corrupting the key would quarantine to the value already stored.
+            language = "he",
+            languageStash = mapOf("ja" to mapOf("deck_name" to "Japanese", "jisho_enabled" to true)),
         )
 
     private fun unreadableDataStore(): DataStore<Preferences> =
@@ -828,6 +835,8 @@ class AppSettingsRepositoryTest {
                 "known_words_match_kana_variants",
                 original.copy(knownWordsMatchKanaVariants = defaults.knownWordsMatchKanaVariants),
             ),
+            corruptString("script_variant", original.copy(scriptVariant = defaults.scriptVariant)),
+            corruptBoolean("reading_tone_color", original.copy(readingToneColor = defaults.readingToneColor)),
             corruptBoolean(
                 "strict_card_order",
                 original.copy(strictCardOrder = defaults.strictCardOrder),
@@ -871,6 +880,8 @@ class AppSettingsRepositoryTest {
                 original.copy(readingTtsEnabled = defaults.readingTtsEnabled),
             ),
             corruptBoolean("jisho_enabled", original.copy(jishoEnabled = defaults.jishoEnabled)),
+            corruptString("mining_language", original.copy(language = defaults.language)),
+            corruptString("language_stash_v1", original.copy(languageStash = defaults.languageStash)),
         )
     }
 

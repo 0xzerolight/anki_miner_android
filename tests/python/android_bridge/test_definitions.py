@@ -157,3 +157,40 @@ def test_clearing_an_unregistered_run_is_a_no_op() -> None:
 def test_define_word_rejects_malformed_payloads(payload: dict[str, object]) -> None:
     with pytest.raises(BridgeProtocolError):
         definitions.define_word(payload)
+
+
+class _PosRecordingService(_FakeService):
+    def __init__(self, hits: dict[str, list[tuple[str, str]]]) -> None:
+        super().__init__(hits)
+        self.pos: list[str | None] = []
+
+    def lookup_all_offline(self, word: str, lemma: str | None = None, pos: str | None = None) -> list[tuple[str, str]]:
+        self.pos.append(pos)
+        return super().lookup_all_offline(word, lemma)
+
+
+def test_define_word_forwards_the_tokens_part_of_speech(monkeypatch) -> None:
+    service = _PosRecordingService({"לב": [("wty", "<div>heart</div>")]})
+    monkeypatch.setattr(definitions, "_build_service", lambda config: service)
+    definitions.register_run_dictionaries(RUN_A, object())
+
+    definitions.define_word({**_request(RUN_A, "לבבות", "לב"), "partOfSpeech": "NOUN"})
+
+    # The miss on the mined form and the lemma retry both carry the tag.
+    assert service.pos == ["NOUN", "NOUN"]
+
+
+def test_define_word_without_a_part_of_speech_keeps_the_two_argument_call(monkeypatch) -> None:
+    service = _FakeService({"猫": [("JMdict", "<div>cat</div>")]})
+    monkeypatch.setattr(definitions, "_build_service", lambda config: service)
+    definitions.register_run_dictionaries(RUN_A, object())
+
+    for payload in (_request(RUN_A, "猫"), {**_request(RUN_A, "猫"), "partOfSpeech": None}):
+        assert json.loads(definitions.define_word(payload))["payload"]["matchedTerm"] == "猫"
+
+
+def test_define_word_bounds_the_part_of_speech() -> None:
+    definitions.register_run_dictionaries(RUN_A, object())
+    with pytest.raises(BridgeProtocolError) as excinfo:
+        definitions.define_word({**_request(RUN_A, "猫"), "partOfSpeech": "x" * 65})
+    assert excinfo.value.code == "invalid_definition_request"

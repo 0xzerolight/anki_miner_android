@@ -103,7 +103,7 @@ def _stub_execution(
     events: list[str] | None = None,
 ) -> object:
     config = object()
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     def map_config(request: object, files_dir: Path) -> object:
         assert files_dir == Path("/files")
@@ -271,7 +271,7 @@ def test_registration_failure_releases_python_job_without_composition(
 ) -> None:
     registry = JobRegistry()
     composed = False
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     def map_config(*_: object) -> object:
         nonlocal composed
@@ -299,7 +299,7 @@ def test_registration_callback_exception_is_protocol_error_and_releases_job(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = JobRegistry()
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     class ExplodingCallbacks(RecordingCallbacks):
         def registerJob(self, raw: str) -> str:
@@ -322,7 +322,7 @@ def test_synchronous_callback_failure_has_one_terminal_stack_owner(
     from anki_miner.utils import ffmpeg_resolver
 
     registry = JobRegistry()
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(mining, "_map_config", lambda *_: object())
     monkeypatch.setattr(ffmpeg_resolver, "resolve_ffmpeg", lambda _config: "/native/libffmpeg.so")
 
@@ -372,7 +372,7 @@ def test_cancellation_raced_through_registration_skips_expensive_composition(
 ) -> None:
     registry = JobRegistry()
     events: list[str] = []
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     class CancelOnRegistration(RecordingCallbacks):
         def registerJob(self, raw: str) -> str:
@@ -408,7 +408,7 @@ def test_cancellation_during_config_mapping_stops_before_processor_composition(
 ) -> None:
     registry = JobRegistry()
     callbacks = RecordingCallbacks(registry=registry)
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     def map_then_cancel(*_: object) -> object:
         run_id = registry.active_run_id
@@ -442,7 +442,7 @@ def test_run_video_threaded_curation_parks_and_resumes_through_control_seams(
 ) -> None:
     registry = JobRegistry()
     monkeypatch.setattr(jobs_module, "_REGISTRY", registry)
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(mining, "_map_config", lambda *_: object())
     curation_emitted = threading.Event()
     curation_returned = threading.Event()
@@ -546,7 +546,7 @@ def test_preflight_and_single_job_admission_fail_before_register_callback(
     registry = JobRegistry()
     callbacks = RecordingCallbacks(registry=registry)
 
-    def not_ready() -> Path:
+    def not_ready(_settings: object) -> Path:
         raise BridgeProtocolError("unidic_registration_required", "missing")
 
     monkeypatch.setattr(mining, "_ensure_runtime_ready", not_ready)
@@ -556,7 +556,7 @@ def test_preflight_and_single_job_admission_fail_before_register_callback(
     assert callbacks.register_requests == []
     assert registry.active_run_id is None
 
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     first = registry.begin()
     with pytest.raises(BridgeProtocolError) as concurrent:
         mining.run_video(_request(), callbacks, job_registry=registry)
@@ -572,7 +572,7 @@ def test_ordinary_failure_after_admission_becomes_failed_terminal(
 ) -> None:
     registry = JobRegistry()
     callbacks = RecordingCallbacks(registry=registry)
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
 
     def map_config(*_: object) -> object:
         if during == "map":
@@ -608,7 +608,7 @@ def test_anki_baseexception_is_clean_cancellation_but_other_baseexceptions_escap
 ) -> None:
     registry = JobRegistry()
     callbacks = RecordingCallbacks(registry=registry)
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(mining, "_map_config", lambda *_: object())
 
     def cancelled(*_: object) -> object:
@@ -1085,7 +1085,7 @@ def test_post_process_cleanup_failure_preserves_result_and_partial_card_ids(
     registry = JobRegistry()
     callbacks = RecordingCallbacks(registry=registry)
     result = FakeResult(errors=["write warning"], card_ids=[501, 502])
-    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda: Path("/files"))
+    monkeypatch.setattr(mining, "_ensure_runtime_ready", lambda _settings: Path("/files"))
     monkeypatch.setattr(mining, "_map_config", lambda *_: object())
 
     def cleanup_failed(*_: object) -> object:
@@ -2127,7 +2127,9 @@ def test_bridge_passes_every_new_engine_seam() -> None:
     merging; omitting either registry narrows the staleness gate back to
     dictionaries. None of the three raises, and none shows up in a run report.
     """
-    parser_kwargs = _bridge_call_keywords("_build_processor", "SubtitleParserService")
+    # One call builds the parser for every language: the literal class for ja,
+    # the profile's factory otherwise, with the same lookups.
+    parser_kwargs = _bridge_call_keywords("_build_processor", "parser_factory")
     assert {"name_lookup", "term_rules_lookup", "form_lookup"} <= parser_kwargs
 
     # Every registry EpisodeProcessor.check_resource_staleness folds into its

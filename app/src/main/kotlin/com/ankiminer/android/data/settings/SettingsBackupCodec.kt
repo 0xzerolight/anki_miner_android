@@ -48,11 +48,13 @@ internal data class AppliedSettingsBackup(
     val appliedCount: Int,
     val ignoredKeys: List<String>,
     val rejectedKeys: List<String>,
+    /** The file's mining language when this build cannot mine it; the current one was kept. */
+    val unknownLanguage: String? = null,
 )
 
 internal object SettingsBackupCodec {
     const val MAX_DOCUMENT_BYTES = 512 * 1024
-    private const val BACKUP_FORMAT_VERSION = 4
+    private const val BACKUP_FORMAT_VERSION = 5
     private const val LEGACY_BACKUP_FORMAT_VERSION = 2
 
     /** From this format on the document must carry `resourceChains`. */
@@ -60,6 +62,12 @@ internal object SettingsBackupCodec {
 
     /** From this format on the sentence-length caps stand alone, without the toggle below. */
     private const val CAPS_ONLY_SENTENCE_LENGTH_FORMAT_VERSION = 4
+
+    /**
+     * Format 5 adds the mining language. A file without it (any older format) keeps the current
+     * language, and its language-scoped values land in that language, as desktop imports do.
+     */
+    private const val MINING_LANGUAGE_KEY = "mining_language"
 
     /** The retired toggle older formats carry; see [foldSentenceLengthToggle]. */
     private const val LEGACY_SENTENCE_LENGTH_KEY = "use_sentence_length"
@@ -71,13 +79,16 @@ internal object SettingsBackupCodec {
      * importing it would suppress onboarding on a device that never ran it.
      * `wordset_defaults_policy` records how this store came to hold its wordsets and is meaningless
      * elsewhere. `settings_schema_version` rides in the envelope instead, so a file can never write
-     * a schema marker the receiving app has not migrated to.
+     * a schema marker the receiving app has not migrated to. `language_stash_v1` holds the other
+     * languages' parked resource chains and word-list choices, machine-local for the same reasons
+     * the live chains travel only by match key; desktop strips its `language_stash` likewise.
      */
     val NON_PORTABLE_KEY_NAMES: Set<String> =
         setOf(
             "setup_wizard_seen",
             "wordset_defaults_policy",
             "settings_schema_version",
+            "language_stash_v1",
         )
 
     private val booleanKeyNames =
@@ -97,6 +108,7 @@ internal object SettingsBackupCodec {
             "jisho_enabled",
             "frequency_keep_unranked",
             "known_words_match_kana_variants",
+            "reading_tone_color",
             "strict_card_order",
             "merge_incomplete_cues",
             "secondary_subtitle_enabled",
@@ -140,12 +152,14 @@ internal object SettingsBackupCodec {
             "audio_format",
             "subtitle_regex_filter",
             "subtitle_regex_replacement",
+            "script_variant",
             "pitch_category_format",
             "dictionary_sources_v1",
             "frequency_sources_v1",
             "pitch_sources_v1",
             "audio_packs_v1",
             "enabled_wordsets_v2",
+            MINING_LANGUAGE_KEY,
         )
 
     private val resourceChainKeyNames =
@@ -269,13 +283,23 @@ internal object SettingsBackupCodec {
         }
     }
 
+    /**
+     * [knownLanguages] are the codes this build can mine; a file naming another keeps the current
+     * language and reports it. Null (the profiles have not loaded) leaves the code to the shape
+     * check, and the bridge refuses a run in a language it does not vendor.
+     */
     fun ParsedSettingsBackup.applyTo(
         current: AppSettings,
         resources: ResourceManagerState? = null,
+        knownLanguages: Set<String>? = null,
     ): AppliedSettingsBackup {
         val base =
             DataStoreAppSettingsRepository.encodePreferences(current, emptyPreferences())
         val effectiveValues = values.toMutableMap()
+        val requestedLanguage = values[MINING_LANGUAGE_KEY] as? String
+        if (requestedLanguage != null && knownLanguages != null && requestedLanguage !in knownLanguages) {
+            effectiveValues[MINING_LANGUAGE_KEY] = RejectedValue
+        }
         if (formatVersion >= RESOURCE_CHAINS_FORMAT_VERSION) {
             if (resources == null) {
                 resourceChainKeyNames.forEach { name -> effectiveValues[name] = RejectedValue }
@@ -317,6 +341,7 @@ internal object SettingsBackupCodec {
                     appliedCount = effectiveValues.size - rejectedKeys.size,
                     ignoredKeys = ignoredKeys,
                     rejectedKeys = rejectedKeys,
+                    unknownLanguage = requestedLanguage?.takeIf { it != settings.language },
                 )
             }
             val rejectedName = selectConflictKey(base, effectiveValues, activeNames, attempt)

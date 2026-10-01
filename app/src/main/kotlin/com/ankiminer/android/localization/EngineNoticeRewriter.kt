@@ -42,7 +42,23 @@ internal class EngineNoticeRewriter(
             else -> message
         }
 
+    /**
+     * The text for a run request the bridge refused before the run began, when the refusal is the
+     * mining language's: `language_unavailable` (its data is not installed) or
+     * `unsupported_language` (this build cannot mine it). Null for every other code, which keeps the
+     * caller's generic "request rejected" text.
+     */
+    fun runRefusalMessage(code: String): String? =
+        when (code) {
+            LANGUAGE_UNAVAILABLE -> strings.resolve(R.string.mining_failure_language_unavailable)
+            UNSUPPORTED_LANGUAGE -> strings.resolve(R.string.mining_failure_unsupported_language)
+            else -> null
+        }
+
     private companion object {
+        const val LANGUAGE_UNAVAILABLE = "language_unavailable"
+        const val UNSUPPORTED_LANGUAGE = "unsupported_language"
+
         /** Terminal code `mining._exception_terminal` gives a resource-staleness `SetupError`. */
         const val RESOURCES_STALE = "resources_stale"
 

@@ -1,4 +1,10 @@
-"""media.audiotracks: enumerate audio streams for the per-run track picker."""
+"""media.audiotracks: enumerate audio streams for the per-run track picker.
+
+The auto pick is the stream the run would take: the default-disposition track
+among those tagged in the mining language, else the first such track
+(``find_japanese_audio_stream``'s rule, keyed by the profile's
+``audio_track_codes``). The optional ``language`` (absent = ja) names it.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +12,7 @@ import logging
 from collections.abc import Mapping
 from pathlib import Path
 
+from .languages import JAPANESE, get_profile, payload_language, without_language
 from .protocol import BridgeProtocolError, encode_message
 
 logger = logging.getLogger(__name__)
@@ -18,10 +25,10 @@ def _fail(code: str, message: str) -> BridgeProtocolError:
 
 
 def get_audio_tracks(payload: Mapping[str, object]) -> str:
-    if set(payload) != {"videoPath", "nativeLibraryDir"}:
+    if set(without_language(payload)) != {"videoPath", "nativeLibraryDir"}:
         raise _fail(
             "invalid_audio_tracks_request",
-            "Expected payload fields: ['nativeLibraryDir', 'videoPath']",
+            "Expected payload fields: ['nativeLibraryDir', 'videoPath'] and an optional 'language'",
         )
     raw_path = payload["videoPath"]
     raw_native = payload["nativeLibraryDir"]
@@ -31,12 +38,23 @@ def get_audio_tracks(payload: Mapping[str, object]) -> str:
         if not Path(value).is_absolute():
             raise _fail("invalid_audio_tracks_request", f"{name} must be absolute")
 
+    language = payload_language(payload)
+
     # Deferred: ANKI_MINER_HOME freezes at anki_miner import time.
     from anki_miner.utils.audio_track_detector import (
         _run_ffprobe_json,
         is_japanese_language_tag,
         list_audio_streams,
+        matches_language_tag,
     )
+
+    if language == JAPANESE:
+        in_language = is_japanese_language_tag
+    else:
+        codes = get_profile(language).audio_track_codes
+
+        def in_language(tag: str | None) -> bool:
+            return matches_language_tag(tag, codes)
 
     video_path = Path(raw_path)
     ffprobe = str(Path(raw_native) / "libffprobe.so")
@@ -47,8 +65,8 @@ def get_audio_tracks(payload: Mapping[str, object]) -> str:
     if len(streams) > MAX_TRACKS:
         raise _fail("audio_tracks_probe_failed", f"More than {MAX_TRACKS} audio tracks")
 
-    japanese = [s for s in streams if is_japanese_language_tag(s.language_tag)]
-    auto = next((s for s in japanese if s.is_default), japanese[0] if japanese else None)
+    matching = [s for s in streams if in_language(s.language_tag)]
+    auto = next((s for s in matching if s.is_default), matching[0] if matching else None)
 
     return encode_message(
         "media.audiotracks.result",

@@ -37,13 +37,18 @@ internal fun AttributionScreen(
     installedDictionaries: List<InstalledDictionary> = emptyList(),
     installedFrequencySources: List<InstalledFrequencySource> = emptyList(),
     installedPitchSources: List<InstalledPitchSource> = emptyList(),
+    installedLanguageData: Set<String> = emptySet(),
 ) {
     val catalog = FrozenResourceCatalog.value
     val uriHandler = LocalUriHandler.current
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
     val installedDataAttribution =
-        installedLocalCatalogAttributions(installedFrequencySources, installedPitchSources)
+        installedLocalCatalogAttributions(
+            installedFrequencySources,
+            installedPitchSources,
+            installedLanguageData,
+        )
     val jitendexInstalled = hasInstalledJitendex(occupiedDictionaries)
     LazyColumn(
         modifier = modifier.fillMaxSize(),
@@ -203,22 +208,25 @@ internal fun installedCatalogAttributions(
         .distinctBy { listOf(it.name, it.copyright, it.license, it.url) }
 
 /**
- * Attributions for pinned frequency and pitch data that is actually installed.
+ * Attributions for pinned frequency, pitch and language data that is actually installed.
  *
- * Matched by source id against the frozen catalog rather than trusted from the inventory: unlike a
- * dictionary, a local resource carries no attribution field of its own.
+ * Matched by id against the frozen catalogs rather than trusted from the inventory: unlike a
+ * dictionary, a local resource carries no attribution field of its own. Language data (Arabic
+ * CALiMa, GPL-2.0-only; Persian hazm data, MIT) carries its licence in its catalog entry.
  */
 internal fun installedLocalCatalogAttributions(
     frequencySources: List<InstalledFrequencySource>,
     pitchSources: List<InstalledPitchSource>,
+    languageData: Set<String> = emptySet(),
 ): List<ResourceAttribution> {
-    val catalog = FrozenResourceCatalog.value
+    val catalogs = FrozenResourceCatalog.all
     val frequencyIds = frequencySources.mapTo(mutableSetOf()) { it.sourceId }
     val pitchIds = pitchSources.mapTo(mutableSetOf()) { it.sourceId }
-    return (
-        catalog.frequencies.filter { it.sourceId in frequencyIds } +
-            catalog.pitchSources.filter { it.sourceId in pitchIds }
-    ).flatMap { it.attribution }
+    return catalogs.flatMap { catalog ->
+        catalog.frequencies.filter { it.sourceId in frequencyIds }.flatMap { it.attribution } +
+            catalog.pitchSources.filter { it.sourceId in pitchIds }.flatMap { it.attribution } +
+            catalog.languageData.filter { it.resourceId in languageData }.flatMap { it.attribution }
+    }
         .distinctBy { listOf(it.name, it.copyright, it.license, it.url) }
 }
 

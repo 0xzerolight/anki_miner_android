@@ -199,6 +199,96 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `video run settings carry the mining language and its profile card fields`() {
+        val settings =
+            mapOf(
+                "language" to BridgeJsonValue.Text("he"),
+                "script_variant" to BridgeJsonValue.Text(""),
+                "reading_tone_color" to BridgeJsonValue.Bool(false),
+                "anki_fields" to
+                    BridgeJsonValue.ObjectValue(
+                        mapOf("transliteration" to BridgeJsonValue.Text("Transliteration")),
+                    ),
+            )
+        val request = videoRequest(audioOnly = false).copy(configSnapshot = MiningConfigSnapshot(settings))
+
+        assertEquals(
+            BridgeMessage.VideoRun(request),
+            BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(request)),
+        )
+    }
+
+    @Test
+    fun `a Japanese snapshot refuses another language's card field`() {
+        val settings =
+            mapOf(
+                "anki_fields" to
+                    BridgeJsonValue.ObjectValue(
+                        mapOf("transliteration" to BridgeJsonValue.Text("Transliteration")),
+                    ),
+            )
+        val request = videoRequest(audioOnly = false).copy(configSnapshot = MiningConfigSnapshot(settings))
+
+        // The encoder self-checks through the decoder, so it already refuses to write this snapshot.
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.encodeVideoRun(request) }
+    }
+
+    @Test
+    fun `only another language's snapshot carries the device voice`() {
+        val deviceVoice =
+            BridgeJsonValue.ArrayValue(
+                listOf(
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("pack"),
+                            "pack_id" to BridgeJsonValue.Text("forvo-he"),
+                        ),
+                    ),
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("android_tts"),
+                            "enabled" to BridgeJsonValue.Bool(true),
+                        ),
+                    ),
+                ),
+            )
+        val hebrew =
+            videoRequest(audioOnly = false).copy(
+                configSnapshot =
+                    MiningConfigSnapshot(
+                        mapOf("language" to BridgeJsonValue.Text("he"), "expression_audio_chain" to deviceVoice),
+                    ),
+            )
+        assertEquals(BridgeMessage.VideoRun(hebrew), BridgeJsonCodec.decode(BridgeJsonCodec.encodeVideoRun(hebrew)))
+
+        val japanese =
+            videoRequest(audioOnly = false).copy(
+                configSnapshot = MiningConfigSnapshot(mapOf("expression_audio_chain" to deviceVoice)),
+            )
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.encodeVideoRun(japanese) }
+
+        val namedVoice =
+            BridgeJsonValue.ArrayValue(
+                listOf(
+                    BridgeJsonValue.ObjectValue(
+                        mapOf(
+                            "kind" to BridgeJsonValue.Text("android_tts"),
+                            "pack_id" to BridgeJsonValue.Text("voice"),
+                        ),
+                    ),
+                ),
+            )
+        val malformed =
+            videoRequest(audioOnly = false).copy(
+                configSnapshot =
+                    MiningConfigSnapshot(
+                        mapOf("language" to BridgeJsonValue.Text("he"), "expression_audio_chain" to namedVoice),
+                    ),
+            )
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.encodeVideoRun(malformed) }
+    }
+
+    @Test
     fun `video run decoder rejects a missing audio only field`() {
         val fixture =
             fixtures("contracts/mining_protocol_v1.json", "invalid")
@@ -1042,6 +1132,19 @@ class BridgeJsonCodecTest {
     }
 
     @Test
+    fun `a dictionary define request carries the token's part of speech only when known`() {
+        val raw = BridgeJsonCodec.encodeDictionaryDefineRequest(DEFINE_RUN_ID, "לבבות", "לב", partOfSpeech = "NOUN")
+        assertEquals(
+            """{"schemaVersion":1,"type":"dictionary.define","payload":{"runId":"$DEFINE_RUN_ID","term":"לבבות","fallbackTerm":"לב","partOfSpeech":"NOUN"}}""",
+            raw,
+        )
+        assertEquals(
+            BridgeMessage.DictionaryDefineRequest(DEFINE_RUN_ID, "לבבות", "לב", "NOUN"),
+            BridgeJsonCodec.decode(raw),
+        )
+    }
+
+    @Test
     fun `encodes a dictionary define request without a fallback`() {
         val raw = BridgeJsonCodec.encodeDictionaryDefineRequest(DEFINE_RUN_ID, "猫", null)
         assertEquals(
@@ -1149,6 +1252,63 @@ class BridgeJsonCodecTest {
         val raw =
             """{"schemaVersion":1,"type":"subtitle.cues.result","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","cues":[{"start":2.5,"end":1.25,"text":"猫だ。"}]}}"""
         assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(raw) }
+    }
+
+    @Test
+    fun `encodes a language profiles request with an empty payload`() {
+        val raw = BridgeJsonCodec.encodeLanguageProfilesRequest()
+        assertEquals("""{"schemaVersion":1,"type":"language.profiles","payload":{}}""", raw)
+        assertEquals(BridgeMessage.LanguageProfilesRequest, BridgeJsonCodec.decode(raw))
+    }
+
+    @Test
+    fun `decodes the committed language profiles result into typed profiles`() {
+        val fixture =
+            fixtures("contracts/mining_protocol_v1.json", "valid").first { it.name == "language profiles result" }
+        val profiles = (BridgeJsonCodec.decode(fixture.message) as BridgeMessage.LanguageProfilesResult).profiles
+
+        assertEquals(listOf("ja", "he", "ar"), profiles.map { it.code })
+        val (japanese, hebrew, arabic) = profiles
+        assertNull(japanese.unavailableReason)
+        assertTrue(japanese.requiresUnidic)
+        assertTrue("pitch" in japanese.capabilities)
+        assertEquals(ContentDirection.RTL, hebrew.contentDirection)
+        assertEquals("he", hebrew.speechLanguage)
+        assertEquals(
+            LanguageExtraCardField("transliteration", "hebrew_transliteration", "Transliteration", rawHtml = false),
+            hebrew.extraCardFields.first(),
+        )
+        assertEquals(LanguageUnavailableReason.DATA_REQUIRED, arabic.unavailableReason)
+    }
+
+    @Test
+    fun `a language profile with an engine sentence for its reason fails closed`() {
+        val fixture =
+            fixtures("contracts/mining_protocol_v1.json", "invalid")
+                .first { it.name == "language profile reason is an Android code, never engine text" }
+
+        assertThrows(BridgeProtocolException::class.java) { BridgeJsonCodec.decode(fixture.message) }
+    }
+
+    @Test
+    fun `cue and track requests carry the mining language only when one is given`() {
+        val cues = BridgeJsonCodec.encodeSubtitleCuesRequest(null, "/cache/subtitle.srt", language = "he")
+        assertEquals(
+            """{"schemaVersion":1,"type":"subtitle.cues","payload":{"runId":null,"subtitlePath":"/cache/subtitle.srt","language":"he"}}""",
+            cues,
+        )
+        assertEquals(BridgeMessage.SubtitleCuesRequest(null, "/cache/subtitle.srt", "he"), BridgeJsonCodec.decode(cues))
+
+        val tracks = BridgeJsonCodec.encodeAudioTracksRequest("/cache/v.mkv", "/native", language = "he")
+        assertEquals(
+            """{"schemaVersion":1,"type":"media.audiotracks","payload":{"videoPath":"/cache/v.mkv","nativeLibraryDir":"/native","language":"he"}}""",
+            tracks,
+        )
+        assertEquals(BridgeMessage.AudioTracksRequest("/cache/v.mkv", "/native", "he"), BridgeJsonCodec.decode(tracks))
+
+        assertThrows(BridgeProtocolException::class.java) {
+            BridgeJsonCodec.encodeAudioTracksRequest("/cache/v.mkv", "/native", language = "Hebrew")
+        }
     }
 
     @Test

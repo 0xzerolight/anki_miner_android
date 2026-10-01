@@ -6,6 +6,10 @@ Two callers, one op:
   timeline as the ``CurationSentence`` payload. No offset math in Kotlin.
 - Pre-run workbench: ``runId`` is null; a default config with the offset forced
   to 0.0 yields unshifted times and Kotlin applies the candidate offset itself.
+  The optional ``language`` (absent = ja) picks that config's mining language:
+  the cues are cleaned by a parser built like that language's run would build it.
+  With a ``runId`` the run's own language decides, and a ``language`` that
+  disagrees with it is refused.
 
 The parser's ``__init__`` builds the shared tagger, which requires
 ``tokenizer.configure`` to have run this process; the pre-run caller does that
@@ -21,6 +25,7 @@ import re
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 
+from .languages import JAPANESE, base_config, config_language, payload_language, profile_parser
 from .protocol import BridgeProtocolError, encode_message
 
 logger = logging.getLogger(__name__)
@@ -187,7 +192,14 @@ def _cleaned_cue_utf8_size(
 ) -> int:
     from anki_miner.services import subtitle_parser
 
-    cleaned = subtitle_parser.clean_subtitle_text(raw_text)
+    # The engine's _clean_line_text passes the parser's normaliser and cue-line
+    # gate; both are None for ja, whose call keeps its pre-transition shape.
+    seams = (
+        {}
+        if config_language(config) == JAPANESE
+        else {"normalize": parser.normalize, "has_target_script": parser.has_target_script}
+    )
+    cleaned = subtitle_parser.clean_subtitle_text(raw_text, **seams)
     pattern = getattr(parser, "_filter_pattern", None)
     if pattern is None:
         size = len(cleaned.encode("utf-8"))
@@ -203,8 +215,11 @@ def _cleaned_cue_utf8_size(
 
 
 def get_cues(payload: Mapping[str, object]) -> str:
-    if set(payload) != {"runId", "subtitlePath"}:
-        raise _fail("invalid_subtitle_cues_request", "Expected payload fields: ['runId', 'subtitlePath']")
+    if set(payload) - {"language"} != {"runId", "subtitlePath"}:
+        raise _fail(
+            "invalid_subtitle_cues_request",
+            "Expected payload fields: ['runId', 'subtitlePath'] and an optional 'language'",
+        )
     run_id = payload["runId"]
     if run_id is not None and (not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id)):
         raise _fail("invalid_subtitle_cues_request", "runId must be null or an opaque run ID")
@@ -217,7 +232,10 @@ def get_cues(payload: Mapping[str, object]) -> str:
     if path.suffix.lower() not in ALLOWED_SUFFIXES:
         raise _fail("invalid_subtitle_cues_request", f"Unsupported subtitle suffix: {path.suffix!r}")
 
-    config = _resolve_config(run_id)
+    language = payload_language(payload)
+    config = _resolve_config(run_id, language)
+    if "language" in payload and config_language(config) != language:
+        raise _fail("invalid_subtitle_cues_request", "language does not match the run's mining language")
 
     try:
         if path.stat().st_size > MAX_SUBTITLE_BYTES:
@@ -276,13 +294,11 @@ def get_cues(payload: Mapping[str, object]) -> str:
     )
 
 
-def _resolve_config(run_id: str | None) -> object:
+def _resolve_config(run_id: str | None, language: str = JAPANESE) -> object:
     if run_id is None:
         from dataclasses import replace
 
-        from anki_miner.config.config import AnkiMinerConfig
-
-        return replace(AnkiMinerConfig(), subtitle_offset=0.0)
+        return replace(base_config(language), subtitle_offset=0.0)
     from .definitions import get_run_config
 
     config = get_run_config(run_id)
@@ -292,6 +308,4 @@ def _resolve_config(run_id: str | None) -> object:
 
 
 def _build_parser(config: object):
-    from anki_miner.services.subtitle_parser import SubtitleParserService
-
-    return SubtitleParserService(config)
+    return profile_parser(config)

@@ -72,6 +72,38 @@
       }
     },
     {
+      "name": "video run in a non-ja mining language with its profile card fields",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {
+              "language": "he",
+              "script_variant": "",
+              "reading_tone_color": false,
+              "anki_note_type": "Basic",
+              "anki_fields": {
+                "transliteration": "Transliteration",
+                "root": ""
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "txt reading run",
       "message": {
         "schemaVersion": 1,
@@ -362,6 +394,369 @@
           }
         }
       }
+    },
+    {
+      "name": "language profiles request",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles",
+        "payload": {}
+      }
+    },
+    {
+      "name": "language profiles result",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles.result",
+        "payload": {
+          "profiles": [
+            {
+              "code": "ja",
+              "displayName": "日本語",
+              "englishName": "Japanese",
+              "unavailableReason": null,
+              "scriptVariants": [],
+              "contentDirection": "ltr",
+              "contentLanguage": "ja",
+              "speechLanguage": "ja",
+              "audioTrackCodes": [
+                "ja",
+                "japanese",
+                "jp",
+                "jpn"
+              ],
+              "capabilities": [
+                "deinflection",
+                "furigana",
+                "kana_filters",
+                "manga_ocr",
+                "name_wordsets",
+                "note_presets",
+                "pitch"
+              ],
+              "requiresUnidic": true,
+              "scopedDefaults": {
+                "dictionary_chain": [
+                  {
+                    "kind": "indexed",
+                    "dict_id": "jmdict-english",
+                    "enabled": true
+                  },
+                  {
+                    "kind": "jisho",
+                    "dict_id": null,
+                    "enabled": false
+                  }
+                ],
+                "frequency_chain": [],
+                "pitch_chain": [],
+                "expression_audio_chain": [],
+                "allowed_pos": [
+                  "名詞",
+                  "動詞",
+                  "形容詞",
+                  "副詞",
+                  "形状詞",
+                  "代名詞"
+                ],
+                "excluded_subtypes": [
+                  "非自立",
+                  "数詞",
+                  "接尾",
+                  "助動詞",
+                  "接頭",
+                  "固有名詞"
+                ],
+                "excluded_wordsets": [
+                  "surnames",
+                  "given-names",
+                  "place-names",
+                  "org-product"
+                ],
+                "exclude_hiragana_only_words": false,
+                "exclude_katakana_only_words": false,
+                "known_words_match_kana_variants": true,
+                "anki_fields": {
+                  "word": "Expression",
+                  "sentence": "Sentence",
+                  "definition": "MainDefinition",
+                  "glossary": "",
+                  "picture": "Picture",
+                  "audio": "SentenceAudio",
+                  "expression_furigana": "ExpressionFurigana",
+                  "expression_reading": "",
+                  "sentence_furigana": "SentenceFurigana",
+                  "sentence_reading": "",
+                  "pitch_position": "",
+                  "pitch_category": "",
+                  "pitch_graph": "",
+                  "pitch_text": "",
+                  "frequency": "",
+                  "frequency_sort": "",
+                  "source": "",
+                  "expression_audio": "",
+                  "sentence_translation": ""
+                },
+                "anki_deck_name": "Anki Miner",
+                "anki_note_type": "Lapis",
+                "card_type": "",
+                "blacklist_path": null,
+                "whitelist_path": null,
+                "use_blacklist": false,
+                "use_whitelist": false,
+                "excluded_decks": [],
+                "script_variant": "",
+                "reading_tone_color": false,
+                "use_subtitle_regex_filter": false,
+                "subtitle_regex_filter": "",
+                "subtitle_regex_replacement": "",
+                "min_frequency_rank": 0,
+                "max_frequency_rank": 0,
+                "frequency_keep_unranked": false
+              },
+              "extraCardFields": []
+            },
+            {
+              "code": "he",
+              "displayName": "עברית",
+              "englishName": "Hebrew",
+              "unavailableReason": null,
+              "scriptVariants": [],
+              "contentDirection": "rtl",
+              "contentLanguage": "he",
+              "speechLanguage": "he",
+              "audioTrackCodes": [
+                "he",
+                "heb",
+                "hebrew",
+                "iw"
+              ],
+              "capabilities": [
+                "hebrew_binyan",
+                "hebrew_transliteration",
+                "noun_gender",
+                "noun_plural",
+                "pos_tag",
+                "rtl",
+                "vocalised_reading",
+                "word_root"
+              ],
+              "requiresUnidic": false,
+              "scopedDefaults": {
+                "dictionary_chain": [],
+                "frequency_chain": [],
+                "pitch_chain": [],
+                "expression_audio_chain": [],
+                "allowed_pos": [
+                  "WORD",
+                  "NOUN",
+                  "VERB",
+                  "ADJ",
+                  "ADV"
+                ],
+                "excluded_subtypes": [
+                  "stopword"
+                ],
+                "excluded_wordsets": [],
+                "exclude_hiragana_only_words": false,
+                "exclude_katakana_only_words": false,
+                "known_words_match_kana_variants": false,
+                "anki_fields": {
+                  "word": "Expression",
+                  "sentence": "Sentence",
+                  "definition": "MainDefinition",
+                  "glossary": "",
+                  "picture": "Picture",
+                  "audio": "SentenceAudio",
+                  "expression_furigana": "",
+                  "expression_reading": "Reading",
+                  "sentence_furigana": "",
+                  "sentence_reading": "",
+                  "pitch_position": "",
+                  "pitch_category": "",
+                  "pitch_graph": "",
+                  "pitch_text": "",
+                  "frequency": "",
+                  "frequency_sort": "",
+                  "source": "",
+                  "expression_audio": "",
+                  "sentence_translation": "",
+                  "transliteration": "",
+                  "root": "",
+                  "binyan": "",
+                  "noun_gender": "",
+                  "noun_plural": "",
+                  "pos": ""
+                },
+                "anki_deck_name": "Anki Miner",
+                "anki_note_type": "",
+                "card_type": "",
+                "blacklist_path": null,
+                "whitelist_path": null,
+                "use_blacklist": false,
+                "use_whitelist": false,
+                "excluded_decks": [],
+                "script_variant": "",
+                "reading_tone_color": false,
+                "use_subtitle_regex_filter": true,
+                "subtitle_regex_filter": "\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…׃]\\s))[-–—]\\s+",
+                "subtitle_regex_replacement": "",
+                "min_frequency_rank": 0,
+                "max_frequency_rank": 0,
+                "frequency_keep_unranked": false
+              },
+              "extraCardFields": [
+                {
+                  "key": "transliteration",
+                  "capability": "hebrew_transliteration",
+                  "placeholder": "Transliteration",
+                  "rawHtml": false
+                },
+                {
+                  "key": "root",
+                  "capability": "word_root",
+                  "placeholder": "Root",
+                  "rawHtml": false
+                },
+                {
+                  "key": "binyan",
+                  "capability": "hebrew_binyan",
+                  "placeholder": "Binyan",
+                  "rawHtml": false
+                },
+                {
+                  "key": "noun_gender",
+                  "capability": "noun_gender",
+                  "placeholder": "Gender",
+                  "rawHtml": false
+                },
+                {
+                  "key": "noun_plural",
+                  "capability": "noun_plural",
+                  "placeholder": "Plural",
+                  "rawHtml": false
+                },
+                {
+                  "key": "pos",
+                  "capability": "pos_tag",
+                  "placeholder": "POS",
+                  "rawHtml": false
+                }
+              ]
+            },
+            {
+              "code": "ar",
+              "displayName": "العربية",
+              "englishName": "Arabic",
+              "unavailableReason": "language_data_required",
+              "scriptVariants": [],
+              "contentDirection": "rtl",
+              "contentLanguage": "ar",
+              "speechLanguage": "ar",
+              "audioTrackCodes": [
+                "acm",
+                "aeb",
+                "afb",
+                "apc",
+                "ar",
+                "ara",
+                "arabic",
+                "arb",
+                "ary",
+                "arz"
+              ],
+              "capabilities": [
+                "arabic_clitics",
+                "arabic_grammar",
+                "lemmatised_frequency",
+                "rtl",
+                "word_root"
+              ],
+              "requiresUnidic": false,
+              "scopedDefaults": {
+                "dictionary_chain": [],
+                "frequency_chain": [],
+                "pitch_chain": [],
+                "expression_audio_chain": [],
+                "allowed_pos": [
+                  "noun",
+                  "adj",
+                  "adj_comp",
+                  "verb",
+                  "adv",
+                  "noun_quant",
+                  "interj"
+                ],
+                "excluded_subtypes": [],
+                "excluded_wordsets": [],
+                "exclude_hiragana_only_words": false,
+                "exclude_katakana_only_words": false,
+                "known_words_match_kana_variants": false,
+                "anki_fields": {
+                  "word": "Expression",
+                  "sentence": "Sentence",
+                  "definition": "MainDefinition",
+                  "glossary": "",
+                  "picture": "Picture",
+                  "audio": "SentenceAudio",
+                  "expression_furigana": "",
+                  "expression_reading": "Reading",
+                  "sentence_furigana": "",
+                  "sentence_reading": "",
+                  "pitch_position": "",
+                  "pitch_category": "",
+                  "pitch_graph": "",
+                  "pitch_text": "",
+                  "frequency": "",
+                  "frequency_sort": "",
+                  "source": "",
+                  "expression_audio": "",
+                  "sentence_translation": "",
+                  "root": "",
+                  "expression_grammar": "",
+                  "clitic_segmentation": ""
+                },
+                "anki_deck_name": "Anki Miner",
+                "anki_note_type": "",
+                "card_type": "",
+                "blacklist_path": null,
+                "whitelist_path": null,
+                "use_blacklist": false,
+                "use_whitelist": false,
+                "excluded_decks": [],
+                "script_variant": "",
+                "reading_tone_color": false,
+                "use_subtitle_regex_filter": true,
+                "subtitle_regex_filter": "\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…\\N{ARABIC QUESTION MARK}]\\s))[-–—]\\s+",
+                "subtitle_regex_replacement": "",
+                "min_frequency_rank": 0,
+                "max_frequency_rank": 0,
+                "frequency_keep_unranked": false
+              },
+              "extraCardFields": [
+                {
+                  "key": "root",
+                  "capability": "word_root",
+                  "placeholder": "Root",
+                  "rawHtml": false
+                },
+                {
+                  "key": "expression_grammar",
+                  "capability": "arabic_grammar",
+                  "placeholder": "Grammar",
+                  "rawHtml": false
+                },
+                {
+                  "key": "clitic_segmentation",
+                  "capability": "arabic_clitics",
+                  "placeholder": "Segmentation",
+                  "rawHtml": false
+                }
+              ]
+            }
+          ]
+        }
+      }
     }
   ],
   "invalid": [
@@ -532,6 +927,81 @@
           "configSnapshot": {
             "settings": {
               "unknown": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "mining language must be a lowercase code",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {
+              "language": "Hebrew"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "script variant stays in the engine vocabulary",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {
+              "script_variant": "cyrillic"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reading tone color is a boolean",
+      "message": {
+        "schemaVersion": 1,
+        "type": "mining.video.run",
+        "payload": {
+          "videoPath": "/video.mkv",
+          "subtitlePath": "/subtitle.srt",
+          "secondarySubtitlePath": null,
+          "secondarySubtitleOffsetMs": 0,
+          "episodeName": "Episode",
+          "seriesName": "Series",
+          "sourceLabel": null,
+          "audioTrackOverride": null,
+          "audioOnly": false,
+          "cacheDir": "/cache",
+          "nativeLibraryDir": "/native",
+          "configSnapshot": {
+            "settings": {
+              "reading_tone_color": "yes"
             }
           }
         }
@@ -1167,6 +1637,398 @@
         "type": "mining.video.preview",
         "payload": {
           "runId": "run_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    {
+      "name": "language profiles request takes no fields",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles",
+        "payload": {
+          "language": "ja"
+        }
+      }
+    },
+    {
+      "name": "language profile reason is an Android code, never engine text",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles.result",
+        "payload": {
+          "profiles": [
+            {
+              "code": "ar",
+              "displayName": "العربية",
+              "englishName": "Arabic",
+              "unavailableReason": "Arabic mining needs the Arabic language pack. Download it in Settings -> Mining Language.",
+              "scriptVariants": [],
+              "contentDirection": "rtl",
+              "contentLanguage": "ar",
+              "speechLanguage": "ar",
+              "audioTrackCodes": [
+                "acm",
+                "aeb",
+                "afb",
+                "apc",
+                "ar",
+                "ara",
+                "arabic",
+                "arb",
+                "ary",
+                "arz"
+              ],
+              "capabilities": [
+                "arabic_clitics",
+                "arabic_grammar",
+                "lemmatised_frequency",
+                "rtl",
+                "word_root"
+              ],
+              "requiresUnidic": false,
+              "scopedDefaults": {
+                "dictionary_chain": [],
+                "frequency_chain": [],
+                "pitch_chain": [],
+                "expression_audio_chain": [],
+                "allowed_pos": [
+                  "noun",
+                  "adj",
+                  "adj_comp",
+                  "verb",
+                  "adv",
+                  "noun_quant",
+                  "interj"
+                ],
+                "excluded_subtypes": [],
+                "excluded_wordsets": [],
+                "exclude_hiragana_only_words": false,
+                "exclude_katakana_only_words": false,
+                "known_words_match_kana_variants": false,
+                "anki_fields": {
+                  "word": "Expression",
+                  "sentence": "Sentence",
+                  "definition": "MainDefinition",
+                  "glossary": "",
+                  "picture": "Picture",
+                  "audio": "SentenceAudio",
+                  "expression_furigana": "",
+                  "expression_reading": "Reading",
+                  "sentence_furigana": "",
+                  "sentence_reading": "",
+                  "pitch_position": "",
+                  "pitch_category": "",
+                  "pitch_graph": "",
+                  "pitch_text": "",
+                  "frequency": "",
+                  "frequency_sort": "",
+                  "source": "",
+                  "expression_audio": "",
+                  "sentence_translation": "",
+                  "root": "",
+                  "expression_grammar": "",
+                  "clitic_segmentation": ""
+                },
+                "anki_deck_name": "Anki Miner",
+                "anki_note_type": "",
+                "card_type": "",
+                "blacklist_path": null,
+                "whitelist_path": null,
+                "use_blacklist": false,
+                "use_whitelist": false,
+                "excluded_decks": [],
+                "script_variant": "",
+                "reading_tone_color": false,
+                "use_subtitle_regex_filter": true,
+                "subtitle_regex_filter": "\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…\\N{ARABIC QUESTION MARK}]\\s))[-–—]\\s+",
+                "subtitle_regex_replacement": "",
+                "min_frequency_rank": 0,
+                "max_frequency_rank": 0,
+                "frequency_keep_unranked": false
+              },
+              "extraCardFields": [
+                {
+                  "key": "root",
+                  "capability": "word_root",
+                  "placeholder": "Root",
+                  "rawHtml": false
+                },
+                {
+                  "key": "expression_grammar",
+                  "capability": "arabic_grammar",
+                  "placeholder": "Grammar",
+                  "rawHtml": false
+                },
+                {
+                  "key": "clitic_segmentation",
+                  "capability": "arabic_clitics",
+                  "placeholder": "Segmentation",
+                  "rawHtml": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "language profile carries every scoped default",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles.result",
+        "payload": {
+          "profiles": [
+            {
+              "code": "he",
+              "displayName": "עברית",
+              "englishName": "Hebrew",
+              "unavailableReason": null,
+              "scriptVariants": [],
+              "contentDirection": "rtl",
+              "contentLanguage": "he",
+              "speechLanguage": "he",
+              "audioTrackCodes": [
+                "he",
+                "heb",
+                "hebrew",
+                "iw"
+              ],
+              "capabilities": [
+                "hebrew_binyan",
+                "hebrew_transliteration",
+                "noun_gender",
+                "noun_plural",
+                "pos_tag",
+                "rtl",
+                "vocalised_reading",
+                "word_root"
+              ],
+              "requiresUnidic": false,
+              "scopedDefaults": {
+                "dictionary_chain": [],
+                "frequency_chain": [],
+                "pitch_chain": [],
+                "expression_audio_chain": [],
+                "allowed_pos": [
+                  "WORD",
+                  "NOUN",
+                  "VERB",
+                  "ADJ",
+                  "ADV"
+                ],
+                "excluded_subtypes": [
+                  "stopword"
+                ],
+                "excluded_wordsets": [],
+                "exclude_hiragana_only_words": false,
+                "exclude_katakana_only_words": false,
+                "known_words_match_kana_variants": false,
+                "anki_deck_name": "Anki Miner",
+                "anki_note_type": "",
+                "card_type": "",
+                "blacklist_path": null,
+                "whitelist_path": null,
+                "use_blacklist": false,
+                "use_whitelist": false,
+                "excluded_decks": [],
+                "script_variant": "",
+                "reading_tone_color": false,
+                "use_subtitle_regex_filter": true,
+                "subtitle_regex_filter": "\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…׃]\\s))[-–—]\\s+",
+                "subtitle_regex_replacement": "",
+                "min_frequency_rank": 0,
+                "max_frequency_rank": 0,
+                "frequency_keep_unranked": false
+              },
+              "extraCardFields": [
+                {
+                  "key": "transliteration",
+                  "capability": "hebrew_transliteration",
+                  "placeholder": "Transliteration",
+                  "rawHtml": false
+                },
+                {
+                  "key": "root",
+                  "capability": "word_root",
+                  "placeholder": "Root",
+                  "rawHtml": false
+                },
+                {
+                  "key": "binyan",
+                  "capability": "hebrew_binyan",
+                  "placeholder": "Binyan",
+                  "rawHtml": false
+                },
+                {
+                  "key": "noun_gender",
+                  "capability": "noun_gender",
+                  "placeholder": "Gender",
+                  "rawHtml": false
+                },
+                {
+                  "key": "noun_plural",
+                  "capability": "noun_plural",
+                  "placeholder": "Plural",
+                  "rawHtml": false
+                },
+                {
+                  "key": "pos",
+                  "capability": "pos_tag",
+                  "placeholder": "POS",
+                  "rawHtml": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "language profile direction is ltr or rtl",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles.result",
+        "payload": {
+          "profiles": [
+            {
+              "code": "he",
+              "displayName": "עברית",
+              "englishName": "Hebrew",
+              "unavailableReason": null,
+              "scriptVariants": [],
+              "contentDirection": "ttb",
+              "contentLanguage": "he",
+              "speechLanguage": "he",
+              "audioTrackCodes": [
+                "he",
+                "heb",
+                "hebrew",
+                "iw"
+              ],
+              "capabilities": [
+                "hebrew_binyan",
+                "hebrew_transliteration",
+                "noun_gender",
+                "noun_plural",
+                "pos_tag",
+                "rtl",
+                "vocalised_reading",
+                "word_root"
+              ],
+              "requiresUnidic": false,
+              "scopedDefaults": {
+                "dictionary_chain": [],
+                "frequency_chain": [],
+                "pitch_chain": [],
+                "expression_audio_chain": [],
+                "allowed_pos": [
+                  "WORD",
+                  "NOUN",
+                  "VERB",
+                  "ADJ",
+                  "ADV"
+                ],
+                "excluded_subtypes": [
+                  "stopword"
+                ],
+                "excluded_wordsets": [],
+                "exclude_hiragana_only_words": false,
+                "exclude_katakana_only_words": false,
+                "known_words_match_kana_variants": false,
+                "anki_fields": {
+                  "word": "Expression",
+                  "sentence": "Sentence",
+                  "definition": "MainDefinition",
+                  "glossary": "",
+                  "picture": "Picture",
+                  "audio": "SentenceAudio",
+                  "expression_furigana": "",
+                  "expression_reading": "Reading",
+                  "sentence_furigana": "",
+                  "sentence_reading": "",
+                  "pitch_position": "",
+                  "pitch_category": "",
+                  "pitch_graph": "",
+                  "pitch_text": "",
+                  "frequency": "",
+                  "frequency_sort": "",
+                  "source": "",
+                  "expression_audio": "",
+                  "sentence_translation": "",
+                  "transliteration": "",
+                  "root": "",
+                  "binyan": "",
+                  "noun_gender": "",
+                  "noun_plural": "",
+                  "pos": ""
+                },
+                "anki_deck_name": "Anki Miner",
+                "anki_note_type": "",
+                "card_type": "",
+                "blacklist_path": null,
+                "whitelist_path": null,
+                "use_blacklist": false,
+                "use_whitelist": false,
+                "excluded_decks": [],
+                "script_variant": "",
+                "reading_tone_color": false,
+                "use_subtitle_regex_filter": true,
+                "subtitle_regex_filter": "\\[[^\\]]*\\]|\\([^)]*\\)|[♪♫♬]+|(?:^|(?<=[.!?…׃]\\s))[-–—]\\s+",
+                "subtitle_regex_replacement": "",
+                "min_frequency_rank": 0,
+                "max_frequency_rank": 0,
+                "frequency_keep_unranked": false
+              },
+              "extraCardFields": [
+                {
+                  "key": "transliteration",
+                  "capability": "hebrew_transliteration",
+                  "placeholder": "Transliteration",
+                  "rawHtml": false
+                },
+                {
+                  "key": "root",
+                  "capability": "word_root",
+                  "placeholder": "Root",
+                  "rawHtml": false
+                },
+                {
+                  "key": "binyan",
+                  "capability": "hebrew_binyan",
+                  "placeholder": "Binyan",
+                  "rawHtml": false
+                },
+                {
+                  "key": "noun_gender",
+                  "capability": "noun_gender",
+                  "placeholder": "Gender",
+                  "rawHtml": false
+                },
+                {
+                  "key": "noun_plural",
+                  "capability": "noun_plural",
+                  "placeholder": "Plural",
+                  "rawHtml": false
+                },
+                {
+                  "key": "pos",
+                  "capability": "pos_tag",
+                  "placeholder": "POS",
+                  "rawHtml": false
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "language profiles result lists at least one language",
+      "message": {
+        "schemaVersion": 1,
+        "type": "language.profiles.result",
+        "payload": {
+          "profiles": []
         }
       }
     }

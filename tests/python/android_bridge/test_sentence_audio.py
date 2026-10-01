@@ -53,10 +53,20 @@ def test_fetch_sends_strict_correlated_request_and_returns_verified_private_wav(
     assert result is not None
     assert result.read_bytes() == b"RIFFaudio"
     request = decode_envelope(callbacks.requests[0], expected_type="tts.sentence.request")
-    assert set(request.payload) == {"runId", "requestId", "sentence"}
+    assert set(request.payload) == {"runId", "requestId", "sentence", "language"}
     assert request.payload["runId"] == RUN_ID
     assert request.payload["requestId"].startswith("tts_")
     assert request.payload["sentence"] == "猫だ。"
+    assert request.payload["language"] == "ja"
+
+
+def test_fetch_asks_for_the_run_languages_voice(tmp_path: Path) -> None:
+    callbacks = ResultCallbacks(tmp_path)
+    fetcher = AndroidSentenceAudioFetcher(callbacks, RUN_ID, tmp_path, language="he")
+
+    assert fetcher.fetch("הילד קרא ספר.", lambda: False) is not None
+    request = decode_envelope(callbacks.requests[0], expected_type="tts.sentence.request")
+    assert request.payload["language"] == "he"
 
 
 @pytest.mark.parametrize("outcome", ["unavailable", "failed"])
@@ -74,6 +84,23 @@ def test_optional_tts_failure_never_raises(tmp_path: Path, outcome: str) -> None
     assert warnings == [
         "Offline Japanese sentence audio is unavailable. Install an offline Japanese "
         "voice in Android speech settings."
+    ]
+
+
+def test_another_languages_missing_voice_is_not_called_japanese(tmp_path: Path) -> None:
+    warnings: list[str] = []
+    fetcher = AndroidSentenceAudioFetcher(
+        ResultCallbacks(tmp_path, "unavailable", "offline_voice_unavailable"),
+        RUN_ID,
+        tmp_path,
+        warning_callback=warnings.append,
+        language="he",
+    )
+
+    assert fetcher.fetch("הילד קרא ספר.") is None
+    assert warnings == [
+        "Offline sentence audio is unavailable. Install an offline voice for the mining "
+        "language in Android speech settings."
     ]
 
 

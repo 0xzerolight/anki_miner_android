@@ -26,6 +26,11 @@ object ResourceBridgeCodec {
     private val resourceId = Regex("[A-Za-z0-9](?:[A-Za-z0-9._-]{0,126}[A-Za-z0-9_-])?")
     private val sha256 = Regex("[0-9a-f]{64}")
     private val messageType = Regex("[a-z][a-z0-9]*(?:\\.[a-z][a-z0-9]*)+")
+    private val languageCode = Regex("[a-z]{2,3}")
+    private val importName = Regex("[a-z_][a-z0-9_]{0,63}")
+
+    /** Pack artifact kinds a data-only component may use (`resource_catalog._LANGUAGE_DATA_FORMATS`). */
+    private val LANGUAGE_DATA_FORMATS = setOf("zip", "wheel")
     private val pitchInstalledFormats = setOf("yomitan-pitch", "csv", "tsv")
 
     /**
@@ -63,7 +68,11 @@ object ResourceBridgeCodec {
 
     fun encodeDictionaryListRequest(): String = encode("resource.dictionary.list") {}
 
-    fun encodeLocalResourceListRequest(): String = encode("resource.local.list") {}
+    /** [language] picks whose known-words file the counts describe; every slot is listed regardless. */
+    fun encodeLocalResourceListRequest(language: String = JAPANESE): String {
+        requireLanguage(language)
+        return encode("resource.local.list") { generator -> generator.writeStringField("language", language) }
+    }
 
     fun encodeDictionaryPreflightRequest(
         operation: String,
@@ -92,13 +101,53 @@ object ResourceBridgeCodec {
         }
     }
 
+    fun encodeLanguageDataInstallRequest(
+        operation: String,
+        selectedResourceId: String,
+        archivePath: String,
+    ): String {
+        requireOperationId(operation)
+        requireResourceId(selectedResourceId)
+        requireAbsolutePath(archivePath)
+        return encode("resource.languagedata.install") { generator ->
+            generator.writeStringField("operationId", operation)
+            generator.writeStringField("resourceId", selectedResourceId)
+            generator.writeStringField("archivePath", archivePath)
+        }
+    }
+
+    /** The installed component must be the pinned one the request named. */
+    fun decodeInstalledLanguageData(raw: String, expectedResourceId: String): InstalledLanguageData {
+        val value = payload(raw, "resource.languagedata.installed")
+        exact(value, setOf("resourceId", "language", "importName"), "installed language data")
+        val installed =
+            InstalledLanguageData(
+                resourceId = requireResourceId(text(value.getValue("resourceId"), "resourceId")),
+                language = text(value.getValue("language"), "language"),
+                importName = text(value.getValue("importName"), "importName"),
+            )
+        val catalog = FrozenResourceCatalog.catalogOf(installed.resourceId)
+        val expected = catalog?.languageData?.singleOrNull { it.resourceId == installed.resourceId }
+        if (
+            installed.resourceId != expectedResourceId ||
+                expected == null ||
+                installed.language != catalog.language ||
+                installed.importName != expected.importName
+        ) {
+            throw ResourceBridgeException("resource_identity_mismatch", "Installed language data identity is invalid")
+        }
+        return installed
+    }
+
     fun encodeDictionaryImportRequest(
         operation: String,
         sourcePath: String,
         selectedSlotId: String,
         overwrite: Boolean,
         catalogResourceId: String?,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(selectedSlotId)
@@ -110,6 +159,7 @@ object ResourceBridgeCodec {
             generator.writeBooleanField("overwrite", overwrite)
             if (catalogResourceId == null) generator.writeNullField("catalogResourceId")
             else generator.writeStringField("catalogResourceId", catalogResourceId)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -120,7 +170,9 @@ object ResourceBridgeCodec {
         sourceName: String,
         sourceFormat: FrequencySourceFormat,
         overwrite: Boolean,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(sourceId)
@@ -132,6 +184,7 @@ object ResourceBridgeCodec {
             generator.writeStringField("sourceName", sourceName)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
             generator.writeBooleanField("overwrite", overwrite)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -142,7 +195,9 @@ object ResourceBridgeCodec {
         sourceName: String,
         sourceFormat: PitchAccentSourceFormat,
         overwrite: Boolean,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(sourceId)
@@ -154,6 +209,7 @@ object ResourceBridgeCodec {
             generator.writeStringField("sourceName", sourceName)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
             generator.writeBooleanField("overwrite", overwrite)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -178,7 +234,9 @@ object ResourceBridgeCodec {
         packId: String,
         packPath: String,
         overwrite: Boolean,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         requireSlotId(packId)
@@ -190,6 +248,7 @@ object ResourceBridgeCodec {
             generator.writeStringField("packId", packId)
             generator.writeStringField("packPath", packPath)
             generator.writeBooleanField("overwrite", overwrite)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -197,13 +256,16 @@ object ResourceBridgeCodec {
         operation: String,
         sourcePath: String,
         sourceFormat: KnownWordsSourceFormat,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         return encode("resource.knownwords.import") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("sourcePath", sourcePath)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -211,13 +273,16 @@ object ResourceBridgeCodec {
         operation: String,
         sourcePath: String,
         sourceFormat: KnownWordsSourceFormat,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         requireAbsolutePath(sourcePath)
         return encode("resource.knownwords.preview") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("sourcePath", sourcePath)
             generator.writeStringField("sourceFormat", sourceFormat.wireValue)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -226,7 +291,9 @@ object ResourceBridgeCodec {
         query: String,
         offset: Int,
         limit: Int,
+        language: String = JAPANESE,
     ): String {
+        requireLanguage(language)
         requireOperationId(operation)
         require(query.toByteArray(Charsets.UTF_8).size <= 1024 && '\u0000' !in query)
         require(offset >= 0)
@@ -236,10 +303,12 @@ object ResourceBridgeCodec {
             generator.writeStringField("query", query)
             generator.writeNumberField("offset", offset)
             generator.writeNumberField("limit", limit)
+            generator.writeStringField("language", language)
         }
     }
 
-    fun encodeKnownWordsRemoveRequest(operation: String, words: List<String>): String {
+    fun encodeKnownWordsRemoveRequest(operation: String, words: List<String>, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         require(words.size in 1..MAX_KNOWN_WORDS_MUTATION && words.distinct().size == words.size)
         require(
@@ -254,11 +323,13 @@ object ResourceBridgeCodec {
             generator.writeArrayFieldStart("words")
             words.forEach(generator::writeString)
             generator.writeEndArray()
+            generator.writeStringField("language", language)
         }
     }
 
     /** Mirrors encodeKnownWordsRemoveRequest: same bounds, distinct wire type and payload. */
-    fun encodeMinedWordsRemoveRequest(operation: String, words: List<String>): String {
+    fun encodeMinedWordsRemoveRequest(operation: String, words: List<String>, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         require(words.size in 1..MAX_KNOWN_WORDS_MUTATION && words.distinct().size == words.size)
         require(
@@ -273,21 +344,26 @@ object ResourceBridgeCodec {
             generator.writeArrayFieldStart("words")
             words.forEach(generator::writeString)
             generator.writeEndArray()
+            generator.writeStringField("language", language)
         }
     }
 
-    fun encodeKnownWordsResetRequest(operation: String, scope: KnownWordsResetScope): String {
+    fun encodeKnownWordsResetRequest(operation: String, scope: KnownWordsResetScope, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         return encode("resource.knownwords.reset") { generator ->
             generator.writeStringField("operationId", operation)
             generator.writeStringField("scope", scope.wireValue)
+            generator.writeStringField("language", language)
         }
     }
 
-    fun encodeKnownWordsExportRequest(operation: String): String {
+    fun encodeKnownWordsExportRequest(operation: String, language: String = JAPANESE): String {
+        requireLanguage(language)
         requireOperationId(operation)
         return encode("resource.knownwords.export") { generator ->
             generator.writeStringField("operationId", operation)
+            generator.writeStringField("language", language)
         }
     }
 
@@ -307,23 +383,32 @@ object ResourceBridgeCodec {
         }
     }
 
-    fun decodeCatalog(raw: String): ResourceCatalog {
+    /** Every language's catalog, in the order Python lists them (Japanese first). */
+    fun decodeCatalogs(raw: String): List<ResourceCatalog> {
         val payload = payload(raw, "resource.catalog")
-        exact(payload, setOf("schemaVersion", "resources", "recommended"), "resource catalog")
-        val schema = positive(payload.getValue("schemaVersion"), "catalog schema")
-        val resources = array(payload.getValue("resources"), "catalog resources").map(::catalogResource)
-        val recommended =
-            array(payload.getValue("recommended"), "recommended set").map {
-                requireResourceId(text(it, "recommended resource id"))
-            }
-        val catalog = ResourceCatalog(schema, resources, recommended)
-        if (catalog != FrozenResourceCatalog.value) {
+        exact(payload, setOf("catalogs"), "resource catalogs")
+        val catalogs = array(payload.getValue("catalogs"), "resource catalogs").map(::catalog)
+        if (catalogs != FrozenResourceCatalog.all) {
             throw ResourceBridgeException(
                 "resource_catalog_mismatch",
                 "Bundled Python resources do not match the Android catalog contract",
             )
         }
-        return catalog
+        return catalogs
+    }
+
+    private fun catalog(raw: BridgeJsonValue): ResourceCatalog {
+        val payload = objectValue(raw, "resource catalog")
+        exact(payload, setOf("schemaVersion", "language", "resources", "recommended"), "resource catalog")
+        val schema = positive(payload.getValue("schemaVersion"), "catalog schema")
+        val language = text(payload.getValue("language"), "catalog language")
+        if (!languageCode.matches(language)) invalid("Catalog language is invalid")
+        val resources = array(payload.getValue("resources"), "catalog resources").map(::catalogResource)
+        val recommended =
+            array(payload.getValue("recommended"), "recommended set").map {
+                requireResourceId(text(it, "recommended resource id"))
+            }
+        return ResourceCatalog(schema, language, resources, recommended)
     }
 
     fun decodeInstalledUniDic(raw: String): InstalledUniDic {
@@ -365,8 +450,9 @@ object ResourceBridgeCodec {
 
     fun decodeImportedDictionary(raw: String): ImportedDictionary {
         val value = payload(raw, "resource.dictionary.imported")
+        // The declared-language receipt is optional on the wire; absent reads as no mismatch.
         exact(
-            value,
+            value.filterKeys { it !in DICTIONARY_SOURCE_LANGUAGE_KEYS },
             setOf(
                 "slotId",
                 "catalogResourceId",
@@ -390,8 +476,19 @@ object ResourceBridgeCodec {
             strings(value.getValue("mediaWarnings"), "mediaWarnings", 4096),
             requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
             attributions(value.getValue("attribution"), allowEmpty = true),
+            sourceLanguage =
+                value["sourceLanguage"]?.let { declared ->
+                    text(declared, "sourceLanguage").also {
+                        if (it.isNotEmpty() && !DECLARED_LANGUAGE.matches(it)) invalid("sourceLanguage is malformed")
+                    }
+                }.orEmpty(),
+            sourceLanguageMismatch =
+                value["sourceLanguageMismatch"]?.let { bool(it, "sourceLanguageMismatch") } ?: false,
         )
     }
+
+    private val DICTIONARY_SOURCE_LANGUAGE_KEYS = setOf("sourceLanguage", "sourceLanguageMismatch")
+    private val DECLARED_LANGUAGE = Regex("[a-z]{2,3}")
 
     fun decodeDictionaryPreflight(raw: String): String {
         val value = payload(raw, "resource.dictionary.preflighted")
@@ -656,7 +753,7 @@ object ResourceBridgeCodec {
         val value = payload(raw, "resource.local.listed")
         exact(
             value,
-            setOf("frequencies", "pitchSources", "audioPacks", "knownWords", "wordsets"),
+            setOf("frequencies", "pitchSources", "audioPacks", "knownWords", "wordsets", "languageData"),
             "local resource inventory",
         )
         val frequencies = array(value.getValue("frequencies"), "frequencies").also {
@@ -675,12 +772,22 @@ object ResourceBridgeCodec {
         if (pitchSources.map { it.sourceId }.distinct().size != pitchSources.size) invalid("Duplicate pitch source")
         if (audioPacks.map { it.packId }.distinct().size != audioPacks.size) invalid("Duplicate audio pack")
         if (wordsets.map { it.wordsetId }.distinct().size != wordsets.size) invalid("Duplicate bundled wordset")
+        val languageData =
+            array(value.getValue("languageData"), "languageData").map {
+                requireResourceId(text(it, "language-data resource id")).also { id ->
+                    if (FrozenResourceCatalog.catalogOf(id)?.languageData?.any { data -> data.resourceId == id } != true) {
+                        invalid("Installed language data is not pinned")
+                    }
+                }
+            }
+        if (languageData.distinct().size != languageData.size) invalid("Duplicate installed language data")
         return LocalResourceInventory(
             frequencies = frequencies,
             pitchSources = pitchSources,
             audioPacks = audioPacks,
             knownWords = knownWordsInventory(value.getValue("knownWords")),
             wordsets = wordsets,
+            languageData = languageData.toSet(),
         )
     }
 
@@ -866,8 +973,49 @@ object ResourceBridgeCodec {
                     attributions(value.getValue("attribution")),
                 )
             }
+            "language-data" -> {
+                exact(
+                    value,
+                    setOf("resourceId", "kind", "displayName", "importName", "archive", "install", "attribution"),
+                    "language-data catalog resource",
+                )
+                val archive = objectValue(value.getValue("archive"), "archive")
+                val format = (archive["format"] as? BridgeJsonValue.Text)?.value
+                if (format !in LANGUAGE_DATA_FORMATS) invalid("Archive format is invalid")
+                LanguageDataCatalogResource(
+                    requireResourceId(text(value.getValue("resourceId"), "resourceId")),
+                    boundedText(value.getValue("displayName"), "displayName", 256),
+                    text(value.getValue("importName"), "importName").also {
+                        if (!importName.matches(it)) invalid("Language-data import name is invalid")
+                    },
+                    archive(value.getValue("archive"), format!!),
+                    languageDataInstall(value.getValue("install")),
+                    attributions(value.getValue("attribution")),
+                )
+            }
             else -> invalid("Unsupported resource kind")
         }
+    }
+
+    private fun languageDataInstall(raw: BridgeJsonValue): LanguageDataInstallIdentity {
+        val value = objectValue(raw, "language-data install")
+        exact(value, setOf("memberPrefix", "exclude", "sentinels", "innerSha256"), "language-data install")
+        return LanguageDataInstallIdentity(
+            memberPrefix = boundedText(value.getValue("memberPrefix"), "memberPrefix", 256, allowEmpty = true),
+            exclude = strings(value.getValue("exclude"), "exclude", 256),
+            sentinels = strings(value.getValue("sentinels"), "sentinels", 256).also {
+                if (it.isEmpty()) invalid("Language data needs a sentinel")
+            },
+            innerSha256 =
+                array(value.getValue("innerSha256"), "innerSha256").map { entry ->
+                    val digest = objectValue(entry, "inner digest")
+                    exact(digest, setOf("path", "sha256"), "inner digest")
+                    LanguageDataInnerDigest(
+                        boundedText(digest.getValue("path"), "inner path", 256),
+                        requireSha256(text(digest.getValue("sha256"), "inner sha256")),
+                    )
+                },
+        )
     }
 
     /**
@@ -981,6 +1129,7 @@ object ResourceBridgeCodec {
                 "catalogResourceId",
                 "attribution",
                 "rebuildSourcePath",
+                "language",
             ),
             "installed dictionary",
         )
@@ -1001,6 +1150,7 @@ object ResourceBridgeCodec {
             catalogResourceId = nullableText(value.getValue("catalogResourceId"), "catalogResourceId")?.let(::requireResourceId),
             attribution = attributions(value.getValue("attribution"), allowEmpty = true),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
+            language = slotLanguage(value.getValue("language")),
         )
         if (!installed.occupied || installed.valid != installed.schemaOk) {
             invalid("Dictionary occupancy or validity flags are inconsistent")
@@ -1010,7 +1160,7 @@ object ResourceBridgeCodec {
         }
         installed.catalogResourceId?.let { catalogId ->
             val expected =
-                FrozenResourceCatalog.value.dictionary(catalogId)
+                FrozenResourceCatalog.dictionary(catalogId)
                     ?: invalid("Installed catalog dictionary identity is invalid")
             if (
                 installed.slotId != expected.slotId ||
@@ -1040,6 +1190,7 @@ object ResourceBridgeCodec {
                 "schemaVersion",
                 "isCategorical",
                 "rebuildSourcePath",
+                "language",
             ),
             "installed frequency source",
         )
@@ -1052,6 +1203,7 @@ object ResourceBridgeCodec {
             schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
             isCategorical = bool(value.getValue("isCategorical"), "isCategorical"),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
+            language = slotLanguage(value.getValue("language")),
         )
     }
 
@@ -1068,6 +1220,7 @@ object ResourceBridgeCodec {
                 "schemaOk",
                 "schemaVersion",
                 "rebuildSourcePath",
+                "language",
             ),
             "installed pitch source",
         )
@@ -1080,6 +1233,7 @@ object ResourceBridgeCodec {
             schemaOk = bool(value.getValue("schemaOk"), "schemaOk"),
             schemaVersion = nonNegative(value.getValue("schemaVersion"), "schemaVersion"),
             rebuildSourcePath = nullableText(value.getValue("rebuildSourcePath"), "rebuildSourcePath"),
+            language = slotLanguage(value.getValue("language")),
         )
     }
 
@@ -1087,7 +1241,7 @@ object ResourceBridgeCodec {
         val value = objectValue(raw, "installed audio pack")
         exact(
             value,
-            setOf("packId", "sourceName", "format", "entryCount", "contentAvailable"),
+            setOf("packId", "sourceName", "format", "entryCount", "contentAvailable", "language"),
             "installed audio pack",
         )
         return InstalledAudioPack(
@@ -1096,6 +1250,7 @@ object ResourceBridgeCodec {
             format = boundedText(value.getValue("format"), "format", 64),
             entryCount = nonNegative(value.getValue("entryCount"), "entryCount"),
             contentAvailable = bool(value.getValue("contentAvailable"), "contentAvailable"),
+            language = slotLanguage(value.getValue("language")),
         )
     }
 
@@ -1297,6 +1452,11 @@ object ResourceBridgeCodec {
 
     private fun requireOperationId(value: String): String = value.also { require(operationId.matches(it)) }
 
+    private fun requireLanguage(value: String): String = value.also { require(languageCode.matches(it)) }
+
+    private fun slotLanguage(value: BridgeJsonValue): String =
+        text(value, "language").also { if (!languageCode.matches(it)) invalid("Slot language stamp is invalid") }
+
     private fun requireSlotId(value: String): String = value.also { if (!slotId.matches(it)) invalid("Invalid dictionary slot") }
 
     private fun requireResourceId(value: String): String = value.also { if (!resourceId.matches(it)) invalid("Invalid resource id") }
@@ -1357,11 +1517,28 @@ object ResourceBridgeCodec {
         throw ResourceBridgeException("invalid_resource_response", message, cause = cause)
 }
 
-/** Kotlin copy of the frozen Python catalog. Equality is checked before network access. */
+/**
+ * Kotlin copy of the frozen Python catalogs, one per language. Equality is checked before network
+ * access, so Python can never point a download at anything this table does not pin.
+ */
 object FrozenResourceCatalog {
+    /** Every language's catalog, in `CATALOG_LANGUAGES` order. */
+    val all: List<ResourceCatalog> by lazy { listOf(value, arabic, persian, hebrew, indonesian, thai) }
+
+    fun forLanguage(language: String): ResourceCatalog? = all.singleOrNull { it.language == language }
+
+    /** The catalog holding [resourceId]; ids are unique across languages. */
+    fun catalogOf(resourceId: String): ResourceCatalog? =
+        all.singleOrNull { catalog -> catalog.resources.any { it.resourceId == resourceId } }
+
+    fun dictionary(resourceId: String): YomitanCatalogResource? =
+        all.firstNotNullOfOrNull { it.dictionary(resourceId) }
+
+    /** Japanese, the catalog every pre-language caller meant. */
     val value =
         ResourceCatalog(
-            schemaVersion = 2,
+            schemaVersion = 3,
+            language = "ja",
             resources =
                 listOf(
                     UniDicCatalogResource(
@@ -1498,5 +1675,359 @@ object FrozenResourceCatalog {
                     "jpdb-v2.2-kana-2024-10-13",
                     "kanjium-pitch-8a0cdaa1",
                 ),
+        )
+
+    val hebrew =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "he",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-he-en-2026.09.20",
+                        displayName = "Wiktionary (Hebrew-English) 2026-09-20",
+                        slotId = "wty-he-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/he/en/wty-he-en.zip",
+                                sha256 = "287797cd78a1561326d18b1786588a504508e107fad58f9552c08d532a9c40ea",
+                                sizeBytes = 3_310_539,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-he-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 10,
+                                uncompressedBytes = 35_681_671,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-he-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Hebrew)",
+                        sourceId = "opensubtitles-he",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/he/he_50k.txt",
+                                sha256 = "0069e931eb1ca0aaf638ea806b0d9d5810d787c51ada944da564a2fb213af41d",
+                                sizeBytes = 792_853,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-he-en-2026.09.20", "opensubtitles-he-2018"),
+        )
+
+    val arabic =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "ar",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "ar-calima-msa",
+                        displayName = "CAMeL Tools calima-msa-r13 morphology database",
+                        importName = "calima_msa",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/CAMeL-Lab/camel-tools-data/releases/download/2022.03.21/morphology_db_calima-msa-r13-0.4.0.zip",
+                                sha256 = "fe6531250c5529307627cc63ed56447cbb9968020d6ea3ab867e6ad9af94c738",
+                                sizeBytes = 40_488_532,
+                                format = "zip",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "",
+                                exclude = emptyList(),
+                                sentinels = listOf("morphology.db", "LICENSE"),
+                                innerSha256 =
+                                    listOf(
+                                        LanguageDataInnerDigest(
+                                            "morphology.db",
+                                            "195bc25a333237a2126470da888d7936b59ed3729f9210e0a4194ba43497dd70",
+                                        ),
+                                    ),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "calima-msa-r13 (camel-tools-data 2022.03.21)",
+                                    "CAMeL Lab, New York University Abu Dhabi; derived from Aramorph 1.2.1 (Linguistic Data Consortium, QAMUS LLC, University of Pennsylvania, Jon Dehdari)",
+                                    "GPL-2.0-only",
+                                    "https://github.com/CAMeL-Lab/camel-tools-data",
+                                ),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-ar-en-2026.09.20",
+                        displayName = "Wiktionary (Arabic-English) 2026-09-20",
+                        slotId = "wty-ar-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/ar/en/wty-ar-en.zip",
+                                sha256 = "c3566fe6e3d3ab158cc313df605e6858171e252b9d1bb2ff17b9ee9897719176",
+                                sizeBytes = 13_584_376,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-ar-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 45,
+                                uncompressedBytes = 188_677_618,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-ar-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Arabic)",
+                        sourceId = "opensubtitles-ar",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/ar/ar_50k.txt",
+                                sha256 = "bbe98b4b92902b392bdefa2e555a108fdb42a5dd79d261674be5ab666229e19f",
+                                sizeBytes = 805_779,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-ar-en-2026.09.20", "opensubtitles-ar-2018"),
+        )
+
+    val persian =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "fa",
+            resources =
+                listOf(
+                    LanguageDataCatalogResource(
+                        resourceId = "fa-hazm-data",
+                        displayName = "hazm 0.12.1 Persian lexicon tables",
+                        importName = "hazm_data",
+                        archive =
+                            ResourceArchive(
+                                url = "https://files.pythonhosted.org/packages/14/85/02f95ca414a5d629239a3fde8f4134a2355dd023044219192e48562dee71/hazm-0.12.1-py3-none-any.whl",
+                                sha256 = "91507896f5b77dcfe26c710b457801e1204ab0d86dcb756a7ab5912719108db0",
+                                sizeBytes = 887_193,
+                                format = "wheel",
+                            ),
+                        install =
+                            LanguageDataInstallIdentity(
+                                memberPrefix = "hazm/data/",
+                                exclude = emptyList(),
+                                sentinels = listOf("words.dat", "verbs.dat", "iverbs.dat", "iwords.dat", "stopwords.dat"),
+                                innerSha256 = emptyList(),
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution(
+                                    "hazm 0.12.1 data tables",
+                                    "Copyright (c) 2013 Alireza Nourian and hazm contributors",
+                                    "MIT",
+                                    "https://github.com/roshan-research/hazm",
+                                ),
+                            ),
+                    ),
+                    YomitanCatalogResource(
+                        resourceId = "wty-fa-en-2026.09.20",
+                        displayName = "Wiktionary (Persian-English) 2026-09-20",
+                        slotId = "wty-fa-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/fa/en/wty-fa-en.zip",
+                                sha256 = "28231d44d3dc2ce127d3bd1e4dae1f252d304c3fbe9218f1212a98ab73b12ba1",
+                                sizeBytes = 3_328_547,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-fa-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 9,
+                                uncompressedBytes = 37_260_443,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-fa-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Persian)",
+                        sourceId = "opensubtitles-fa",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/fa/fa_50k.txt",
+                                sha256 = "96ea178f77022cdb2d358feb75a4fc474754daa224a4beba296ad777a514bdf7",
+                                sizeBytes = 764_003,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-fa-en-2026.09.20", "opensubtitles-fa-2018"),
+        )
+
+    val indonesian =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "id",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-id-en-2026.09.20",
+                        displayName = "Wiktionary (Indonesian-English) 2026-09-20",
+                        slotId = "wty-id-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/id/en/wty-id-en.zip",
+                                sha256 = "5d1824bb77481719612449195e3ec9e027c182e527971ac3f67598bf093b63b7",
+                                sizeBytes = 3_919_132,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-id-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 7,
+                                uncompressedBytes = 44_842_419,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "opensubtitles-id-2018",
+                        displayName = "OpenSubtitles 2018 frequency (Indonesian)",
+                        sourceId = "opensubtitles-id",
+                        archive =
+                            ResourceArchive(
+                                url = "https://raw.githubusercontent.com/hermitdave/FrequencyWords/525f9b560de45753a5ea01069454e72e9aa541c6/content/2018/id/id_50k.txt",
+                                sha256 = "f2eea0da9735b7040efbfa813f5f875ec931de5a0ec70a6f28213ea60a87bb38",
+                                sizeBytes = 588_873,
+                                format = "txt",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("FrequencyWords", "Copyright (c) 2016 Hermit Dave", "CC-BY-SA-4.0", "https://github.com/hermitdave/FrequencyWords"),
+                                ResourceAttribution("OpenSubtitles 2018 corpus", "OPUS (opus.nlpl.eu) and OpenSubtitles.org", "CC-BY-SA-4.0", "https://opus.nlpl.eu/OpenSubtitles2018.php"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-id-en-2026.09.20", "opensubtitles-id-2018"),
+        )
+
+    val thai =
+        ResourceCatalog(
+            schemaVersion = 3,
+            language = "th",
+            resources =
+                listOf(
+                    YomitanCatalogResource(
+                        resourceId = "wty-th-en-2026.09.20",
+                        displayName = "Wiktionary (Thai-English) 2026-09-20",
+                        slotId = "wty-th-en",
+                        archive =
+                            ResourceArchive(
+                                url = "https://huggingface.co/datasets/daxida/wty-release/resolve/9ff9d2855b7346905a0db9266123e1cd79e964a1/latest/dict/th/en/wty-th-en.zip",
+                                sha256 = "d3e6d75acde52ba9d9d80054cb46479a362cb9e121d9598035c6e1890534c96d",
+                                sizeBytes = 2_704_086,
+                                format = "zip",
+                            ),
+                        dictionary =
+                            YomitanDictionaryIdentity(
+                                title = "wty-th-en",
+                                revision = "2026.09.20",
+                                format = 3,
+                                memberCount = 5,
+                                uncompressedBytes = 28_503_853,
+                                archiveMemberLimit = 4096,
+                                uncompressedBytesLimit = 2_147_483_648,
+                                fileBytesLimit = 33_554_432,
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Wiktionary", "Wiktionary contributors", "CC-BY-SA-4.0", "https://en.wiktionary.org/wiki/Wiktionary:Copyrights"),
+                                ResourceAttribution("wiktionary-to-yomitan", "wty contributors (Yomitan build of kaikki.org extracts)", "CC-BY-SA-4.0", "https://github.com/yomidevs/wiktionary-to-yomitan"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "tnc-th-2026-09-20",
+                        displayName = "Thai National Corpus frequency",
+                        sourceId = "tnc-th",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
+                                sha256 = "dc38af9e6c016b6ff165a863f969ec384bb5c05f9df98ee961b0eb870585756c",
+                                sizeBytes = 688_439,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Thai National Corpus word list", "PyThaiNLP project (word list bundled with pythainlp 5.3.7)", "CC0-1.0", "https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md"),
+                                ResourceAttribution("Anki Miner Thai frequency build", "Built by Anki Miner's scripts/convert_tnc_thai_frequency.py", "CC0-1.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                    FrequencyCatalogResource(
+                        resourceId = "ttc-th-2026-09-20",
+                        displayName = "Thai textbook corpus frequency",
+                        sourceId = "ttc-th",
+                        archive =
+                            ResourceArchive(
+                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
+                                sha256 = "90a97a56f1b5375bb10b7fa9e36a79bd7fef2659d8525fa889a74e0a281e98ff",
+                                sizeBytes = 125_981,
+                                format = "zip",
+                            ),
+                        attribution =
+                            listOf(
+                                ResourceAttribution("Thai Textbook Corpus word list", "PyThaiNLP project (word list bundled with pythainlp 5.3.7)", "CC0-1.0", "https://github.com/PyThaiNLP/pythainlp/blob/dev/pythainlp/corpus/corpus_license.md"),
+                                ResourceAttribution("Anki Miner Thai frequency build", "Built by Anki Miner's scripts/convert_tnc_thai_frequency.py", "CC0-1.0", "https://github.com/0xzerolight/anki_miner"),
+                            ),
+                    ),
+                ),
+            recommended = listOf("wty-th-en-2026.09.20", "tnc-th-2026-09-20", "ttc-th-2026-09-20"),
         )
 }
