@@ -52,11 +52,14 @@ expected = {
     "certifi": "2026.6.17",
     "charset-normalizer": "3.4.7",
     "idna": "3.18",
+    "kiwipiepy": "0.23.2",
+    "kiwipiepy-model": "0.23.0",
     "lxml": "6.1.1",
     "pillow": "12.2.0",
     "pysubs2": "1.8.1",
     "pythainlp": "5.3.7",
     "requests": "2.34.2",
+    "tqdm": "4.68.3",
     "tzdata": "2026.3",
     "urllib3": "2.7.0",
 }
@@ -96,6 +99,7 @@ trap cleanup EXIT
 PIP_NO_CACHE_DIR=1 "$staging/bin/python" -m pip install \
     --disable-pip-version-check \
     --only-binary=:all: \
+    --no-binary=kiwipiepy-model \
     --require-hashes \
     -r "$LOCK_FILE"
 verify_runtime_environment "$staging/bin/python"

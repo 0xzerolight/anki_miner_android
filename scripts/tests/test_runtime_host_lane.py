@@ -15,7 +15,7 @@ class RuntimeHostLaneTests(unittest.TestCase):
             lock,
             flags=re.MULTILINE,
         )
-        self.assertEqual(21, len(records))
+        self.assertEqual(25, len(records))
         self.assertTrue(all(len(sha256) == 64 for _, _, sha256 in records))
         versions = {name.lower(): version for name, version, _ in records}
         direct = {
@@ -32,11 +32,14 @@ class RuntimeHostLaneTests(unittest.TestCase):
                 "certifi": "2026.6.17",
                 "charset-normalizer": "3.4.7",
                 "idna": "3.18",
+                "kiwipiepy": "0.23.2",
+                "kiwipiepy-model": "0.23.0",
                 "lxml": "6.1.1",
                 "pillow": "12.2.0",
                 "pysubs2": "1.8.1",
                 "pythainlp": "5.3.7",
                 "requests": "2.34.2",
+                "tqdm": "4.68.3",
                 "tzdata": "2026.3",
                 "urllib3": "2.7.0",
             },
@@ -46,11 +49,14 @@ class RuntimeHostLaneTests(unittest.TestCase):
                     "certifi",
                     "charset-normalizer",
                     "idna",
+                    "kiwipiepy",
+                    "kiwipiepy-model",
                     "lxml",
                     "pillow",
                     "pysubs2",
                     "pythainlp",
                     "requests",
+                    "tqdm",
                     "tzdata",
                     "urllib3",
                 )
@@ -71,6 +77,8 @@ class RuntimeHostLaneTests(unittest.TestCase):
         self.assertIn('"$ANKI_MINER_CHAQUOPY_BUILD_PYTHON" -m venv', provision)
         self.assertIn("--only-binary=:all:", provision)
         self.assertIn("--require-hashes", provision)
+        # The model is published as an sdist alone; nothing else may build from source.
+        self.assertEqual(["--no-binary=kiwipiepy-model"], re.findall(r"--no-binary\S*", provision))
         self.assertIn("runtime-host-tests/bin/python", health)
         self.assertIn("check-python-runtime.py", health)
         self.assertNotIn("runtime-host-tests/bin", environment)

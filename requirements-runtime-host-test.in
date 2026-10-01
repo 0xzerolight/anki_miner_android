@@ -12,3 +12,10 @@ idna==3.18
 certifi==2026.6.17
 pythainlp==5.3.7
 tzdata==2026.3
+# Korean (D3): the upstream abi3 kiwipiepy wheel, its numpy and tqdm
+# requirements, and the model (sdist only, so the one source build in the lane;
+# app/wheels ships kiwipiepy without numpy and Android downloads the model).
+kiwipiepy==0.23.2
+kiwipiepy-model==0.23.0
+numpy==2.5.0
+tqdm==4.68.3
