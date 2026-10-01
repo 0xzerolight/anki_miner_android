@@ -540,8 +540,8 @@
     <string name="settings_use_whitelist">Luôn khai thác từ trong danh sách trắng</string>
     <string name="known_words_import_title">Nhập từ đã biết</string>
     <string name="known_words_choose_file">Chọn tệp từ đã biết</string>
+    <string name="known_words_manager_empty">Chưa có từ đã biết. Hãy nhập một danh sách từ hoặc tệp xuất từ jpdb hay Migaku, khi khai thác sẽ bỏ qua các từ đó.</string>
     <string name="known_words_search">Tìm từ của người dùng</string>
-    <string name="known_words_search_action">Tìm kiếm</string>
     <string name="known_words_load_more">Tải thêm</string>
     <string name="known_words_remove_selected">Xoá mục đã chọn (%1$d)</string>
     <string name="known_words_select_word">Chọn %1$s</string>

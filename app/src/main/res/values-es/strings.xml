@@ -542,8 +542,8 @@
     <string name="settings_use_whitelist">Minar siempre las palabras de la lista blanca</string>
     <string name="known_words_import_title">Importar palabras conocidas</string>
     <string name="known_words_choose_file">Elegir archivo de palabras conocidas</string>
+    <string name="known_words_manager_empty">Aún no hay palabras conocidas. Importe una lista de palabras o una exportación de jpdb o Migaku y la minería omitirá esas palabras.</string>
     <string name="known_words_search">Buscar palabras del usuario</string>
-    <string name="known_words_search_action">Buscar</string>
     <string name="known_words_load_more">Cargar más</string>
     <string name="known_words_remove_selected">Quitar seleccionadas (%1$d)</string>
     <string name="known_words_select_word">Seleccionar %1$s</string>

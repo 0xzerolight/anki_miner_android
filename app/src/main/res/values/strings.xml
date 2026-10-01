@@ -550,8 +550,8 @@
     <string name="settings_use_whitelist">Always mine whitelisted words</string>
     <string name="known_words_import_title">Import known words</string>
     <string name="known_words_choose_file">Choose known-words file</string>
+    <string name="known_words_manager_empty">No known words yet. Import a word list or a jpdb or Migaku export, and mining skips the words in it.</string>
     <string name="known_words_search">Search user words</string>
-    <string name="known_words_search_action">Search</string>
     <string name="known_words_load_more">Load more</string>
     <string name="known_words_remove_selected">Remove selected (%1$d)</string>
     <string name="known_words_select_word">Select %1$s</string>

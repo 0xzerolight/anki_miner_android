@@ -543,8 +543,8 @@
     <string name="settings_use_whitelist">Всегда майнить слова из белого списка</string>
     <string name="known_words_import_title">Импортировать известные слова</string>
     <string name="known_words_choose_file">Выбрать файл известных слов</string>
+    <string name="known_words_manager_empty">Известных слов пока нет. Импортируйте список слов или экспорт jpdb или Migaku, и майнинг будет пропускать эти слова.</string>
     <string name="known_words_search">Искать слова пользователя</string>
-    <string name="known_words_search_action">Искать</string>
     <string name="known_words_load_more">Показать ещё</string>
     <string name="known_words_remove_selected">Удалить выбранные (%1$d)</string>
     <string name="known_words_select_word">Выбрать %1$s</string>

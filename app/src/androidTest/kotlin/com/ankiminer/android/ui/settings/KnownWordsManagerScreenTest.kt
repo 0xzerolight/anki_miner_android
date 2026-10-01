@@ -12,6 +12,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToNode
 import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsInventory
@@ -144,6 +145,14 @@ class KnownWordsManagerScreenTest {
                     state =
                         SetupUiState(
                             resourceStartup = ResourceStartupReadiness.READY,
+                            knownWords =
+                                KnownWordsInventory(
+                                    totalCount = 101,
+                                    userCount = 101,
+                                    ankiCount = 0,
+                                    minedCount = 0,
+                                    schemaOk = true,
+                                ),
                             knownWordsPage =
                                 KnownWordsPage(
                                     query = "猫",
@@ -176,7 +185,7 @@ class KnownWordsManagerScreenTest {
             }
         }
 
-        composeRule.onNodeWithText("Search").performClick()
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.SEARCH).performImeAction()
         composeRule
             .onNodeWithTag(KnownWordsManagerTestTags.LIST)
             .performScrollToNode(hasText("Load more"))
@@ -203,6 +212,31 @@ class KnownWordsManagerScreenTest {
             assertEquals(2, imports)
             assertEquals(1, exports)
         }
+    }
+
+    @Test
+    fun anEmptyListOffersOnlyTheImport() {
+        var imports = 0
+        composeRule.setContent {
+            AnkiMinerTheme {
+                KnownWordsManagerScreen(
+                    state =
+                        SetupUiState(
+                            resourceStartup = ResourceStartupReadiness.READY,
+                            knownWordsPage =
+                                KnownWordsPage(query = "", offset = 0, totalCount = 0, words = emptyList(), hasMore = false),
+                        ),
+                    callbacks = KnownWordsManagerCallbacks(onImport = { imports += 1 }),
+                )
+            }
+        }
+
+        composeRule.onNodeWithTag(KnownWordsManagerTestTags.SEARCH).assertDoesNotExist()
+        composeRule.onNodeWithText("Export user list").assertDoesNotExist()
+        composeRule.onNodeWithText("Reset user list").assertDoesNotExist()
+        composeRule.onNodeWithText("Rebuild cached words").assertDoesNotExist()
+        composeRule.onNodeWithText("Choose known-words file").performClick()
+        composeRule.runOnIdle { assertEquals(1, imports) }
     }
 
     @Test

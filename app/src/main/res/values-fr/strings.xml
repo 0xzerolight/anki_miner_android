@@ -542,8 +542,8 @@
     <string name="settings_use_whitelist">Toujours extraire les mots de la liste blanche</string>
     <string name="known_words_import_title">Importer des mots connus</string>
     <string name="known_words_choose_file">Choisir un fichier de mots connus</string>
+    <string name="known_words_manager_empty">Aucun mot connu pour l\'instant. Importez une liste de mots ou un export jpdb ou Migaku, et l\'extraction ignorera ces mots.</string>
     <string name="known_words_search">Rechercher des mots utilisateur</string>
-    <string name="known_words_search_action">Rechercher</string>
     <string name="known_words_load_more">Charger plus</string>
     <string name="known_words_remove_selected">Supprimer la sélection (%1$d)</string>
     <string name="known_words_select_word">Sélectionner %1$s</string>
