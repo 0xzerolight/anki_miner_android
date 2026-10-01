@@ -190,6 +190,17 @@ data class ImportedDictionary(
     val mediaWarnings: List<String>,
     val archiveSha256: String,
     val attribution: List<ResourceAttribution>,
+    /** The language the archive's `index.json` declares (primary subtag), or "". */
+    val sourceLanguage: String = "",
+    /** The declared language is not the one the slot was imported for. */
+    val sourceLanguageMismatch: Boolean = false,
+)
+
+/** A custom dictionary whose own index names another language than the one it was imported for. */
+data class DictionaryLanguageMismatch(
+    val slotId: String,
+    val sourceName: String,
+    val sourceLanguage: String,
 )
 
 data class InstalledDictionary(
@@ -696,6 +707,8 @@ data class ResourceManagerState(
     val lastLocalImport: LocalResourceImportResult? = null,
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
     val knownWordsPage: KnownWordsPage? = null,
+    /** Desktop's import receipt note, kept until the next dictionary import or language switch. */
+    val dictionaryLanguageMismatch: DictionaryLanguageMismatch? = null,
     val activeOperation: ResourceOperationProgress? = null,
     val failure: ResourceFailure? = null,
     val lastLookup: DictionaryLookup? = null,

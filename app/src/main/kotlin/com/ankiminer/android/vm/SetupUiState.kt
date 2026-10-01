@@ -32,6 +32,8 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.CardType
 import com.ankiminer.android.data.settings.EngineSettingsSnapshotMapper
 import com.ankiminer.android.data.settings.ResourceChainSelection
+import com.ankiminer.android.anki.provider.AnkiFieldKeys
+import com.ankiminer.android.engine.LanguageExtraCardField
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.NotificationPermissionReadiness
@@ -89,7 +91,24 @@ internal data class SetupUiState(
     val lookupSlotId: String? = null,
     val wordListTarget: WordListKind = WordListKind.BLACKLIST,
     val knownWordsSearch: String = "",
+    /** The mining language these settings belong to. */
+    val language: String = "ja",
+    /** The mining language's own card fields (Hebrew transliteration, ...); none for Japanese. */
+    val extraCardFields: List<LanguageExtraCardField> = emptyList(),
+    /** Only Japanese tokenizes with UniDic; every other language brings its own tokenizer. */
+    val uniDicRequired: Boolean = true,
 ) {
+    /** The field-map rows: every engine key, then the language's own card fields. */
+    val fieldKeys: List<String>
+        get() = AnkiFieldKeys.ALL + extraCardFields.map { it.key }.filterNot(AnkiFieldKeys.ALL::contains)
+
+    val extraFieldKeys: List<String>
+        get() = extraCardFields.map { it.key }
+
+    /** Ready when the tokenizer this language needs is installed, or it needs none. */
+    val tokenizerReady: Boolean
+        get() = uniDicInstalled || !uniDicRequired
+
     val pythonReady: Boolean
         get() = python is PythonRuntimeReadiness.Ready
 
@@ -147,7 +166,7 @@ internal data class SetupUiState(
                 ankiReady &&
                 targetReady &&
                 recoveryReady &&
-                uniDicInstalled &&
+                tokenizerReady &&
                 dictionaryReady &&
                 operation == null &&
                 ankiOperation == null &&
@@ -191,7 +210,7 @@ internal data class SetupUiState(
                     MiningReadinessAction.WAIT
                 resourceStartup == ResourceStartupReadiness.FAILED ->
                     MiningReadinessAction.CHECK_AGAIN
-                !uniDicInstalled -> MiningReadinessAction.INSTALL_UNIDIC
+                !tokenizerReady -> MiningReadinessAction.INSTALL_UNIDIC
                 !dictionaryReady ->
                     if (dictionaries.any { it.occupied }) {
                         MiningReadinessAction.ENABLE_DICTIONARY

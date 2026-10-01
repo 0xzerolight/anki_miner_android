@@ -88,6 +88,8 @@ internal object LanguageScope {
             "minFrequencyRank" to "min_frequency_rank",
             "frequencyKeepUnranked" to "frequency_keep_unranked",
             "knownWordsMatchKanaVariants" to "known_words_match_kana_variants",
+            "scriptVariant" to "script_variant",
+            "readingToneColor" to "reading_tone_color",
             "dictionarySources" to "dictionary_sources_v1",
             "frequencySources" to "frequency_sources_v1",
             "pitchSources" to "pitch_sources_v1",

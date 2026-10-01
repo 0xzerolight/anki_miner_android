@@ -56,6 +56,7 @@ import com.ankiminer.android.mining.RuntimeWorkConflict
 import com.ankiminer.android.player.CurationPreviewPlayer
 import com.ankiminer.android.player.ExoCurationPreviewPlayer
 import com.ankiminer.android.ui.mining.ClipWindowSeconds
+import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.CurationAlternativesToggle
 import com.ankiminer.android.ui.mining.CurationCandidateRow
 import com.ankiminer.android.ui.mining.CurationCandidateRowText
@@ -145,7 +146,10 @@ fun VideoMiningScreen(
     onDismissAudioTrackPickerError: () -> Unit = {},
     onReturnToActiveRun: (() -> Unit)? = null,
     labels: MediaMiningLabels = MediaMiningLabels.VIDEO,
-    playerFactory: (Context) -> CurationPreviewPlayer = { ExoCurationPreviewPlayer(it) },
+    playerFactory: (Context) -> CurationPreviewPlayer =
+        LocalMiningContentStyle.current.audioTrackCodes.let { codes ->
+            { context -> ExoCurationPreviewPlayer(context, codes) }
+        },
     modifier: Modifier = Modifier,
     listState: LazyListState = rememberLazyListState(),
 ) {

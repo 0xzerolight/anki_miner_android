@@ -36,6 +36,8 @@ import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.AppSettingsValidator
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.data.settings.LanguageProfileFixtures
+import com.ankiminer.android.data.settings.LanguageProfileSource
 import com.ankiminer.android.engine.PythonRuntimeReadiness
 import com.ankiminer.android.mining.AnkiMiningTargetReadiness
 import com.ankiminer.android.mining.MiningRunAdmissionState
@@ -496,6 +498,118 @@ class SetupViewModelTest {
             advanceUntilIdle()
 
             assertEquals(listOf(InstalledResourceKind.PITCH to "kanjium"), resources.deletedResources)
+        }
+
+    @Test
+    fun `a hebrew note type maps the profile's own card fields by name`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = FakeSettingsRepository(AppSettings(language = "he"))
+            val setup =
+                FakeAnkiSetupManager(
+                    listOf(model("Hebrew", "Expression", "Sentence", "Transliteration")),
+                )
+            val viewModel =
+                viewModel(
+                    repository,
+                    setup,
+                    languageProfileSource = { Result.success(LanguageProfileFixtures.all) },
+                )
+            advanceUntilIdle()
+            assertEquals(
+                LanguageProfileFixtures.hebrew.extraCardFields.map { it.key },
+                viewModel.uiState.value.extraFieldKeys,
+            )
+
+            viewModel.selectNoteType("Hebrew")
+            advanceUntilIdle()
+
+            assertEquals("Transliteration", repository.current.fieldMap["transliteration"])
+            assertEquals("Expression", repository.current.fieldMap["word"])
+        }
+
+    @Test
+    fun `japanese never asks the bridge for its profile and needs UniDic`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            var asked = 0
+            val viewModel =
+                viewModel(
+                    FakeSettingsRepository(AppSettings()),
+                    FakeAnkiSetupManager(emptyList()),
+                    languageProfileSource = {
+                        asked += 1
+                        Result.success(LanguageProfileFixtures.all)
+                    },
+                )
+            advanceUntilIdle()
+
+            assertEquals(0, asked)
+            assertTrue(viewModel.uiState.value.uniDicRequired)
+            assertTrue(viewModel.uiState.value.extraCardFields.isEmpty())
+        }
+
+    @Test
+    fun `a hebrew user is not asked for UniDic`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val viewModel =
+                viewModel(
+                    FakeSettingsRepository(AppSettings(language = "he")),
+                    FakeAnkiSetupManager(emptyList()),
+                )
+            advanceUntilIdle()
+
+            assertFalse(viewModel.uiState.value.uniDicRequired)
+            assertTrue(viewModel.uiState.value.tokenizerReady)
+        }
+
+    @Test
+    fun `setup lists only the slots stamped for the mining language`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setInstalledDictionaries(
+                listOf(
+                    installedDictionary("jmdict", "JMdict"),
+                    installedDictionary("wty-he-en", "wty-he-en").copy(language = "he"),
+                ),
+            )
+            resources.setInstalledAudioPacks(emptyList())
+            val viewModel =
+                viewModel(
+                    FakeSettingsRepository(AppSettings(language = "he")),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            assertEquals(listOf("wty-he-en"), viewModel.uiState.value.dictionaries.map { it.slotId })
+            assertEquals("wty-he-en", viewModel.uiState.value.lookupSlotId)
+            assertEquals(2, viewModel.inventory.value.dictionaries.size)
+        }
+
+    @Test
+    fun `a failed recommended set retries the language it was installing`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = FakeResourceManager()
+            resources.setFailure(
+                ResourceFailure(
+                    code = "recommended_set_incomplete",
+                    message = "incomplete",
+                    retryable = true,
+                    origin = ResourceFailureOrigin.RECOMMENDED_SET,
+                    retry = ResourceFailureRetry(ResourceFailureAction.RETRY, targetId = "ar"),
+                ),
+            )
+            val model =
+                viewModel(
+                    FakeSettingsRepository(AppSettings(language = "he")),
+                    FakeAnkiSetupManager(emptyList()),
+                    resources = resources,
+                )
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertEquals(listOf<String?>("ar"), resources.recommendedInstalls)
         }
 
     @Test
@@ -1709,6 +1823,7 @@ class SetupViewModelTest {
         setup: FakeAnkiSetupManager,
         resources: FakeResourceManager = FakeResourceManager(),
         savedStateHandle: SavedStateHandle = SavedStateHandle(),
+        languageProfileSource: LanguageProfileSource? = null,
     ): SetupViewModel =
         SetupViewModel(
             resources = resources,
@@ -1728,6 +1843,7 @@ class SetupViewModelTest {
             refreshExternalReadiness = {},
             strings = testStringResourceResolver,
             savedStateHandle = savedStateHandle,
+            languageProfileSource = languageProfileSource,
         )
 
     private fun model(name: String, vararg fields: String) =
@@ -1861,6 +1977,16 @@ class SetupViewModelTest {
 
         fun setInstalledAudioPacks(packs: List<InstalledAudioPack>) {
             mutableState.value = mutableState.value.copy(audioPacks = packs)
+        }
+
+        val recommendedInstalls = mutableListOf<String?>()
+
+        override suspend fun installRecommendedResources() {
+            recommendedInstalls += null
+        }
+
+        override suspend fun installRecommendedResources(language: String) {
+            recommendedInstalls += language
         }
 
         fun setFailure(failure: ResourceFailure) {

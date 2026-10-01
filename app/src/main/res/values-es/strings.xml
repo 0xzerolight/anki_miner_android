@@ -865,4 +865,26 @@
     <string name="b3_wizard_customize_fields">Personalizar campos en Ajustes</string>
     <string name="b3_wizard_ready_title">Listo para minar</string>
     <string name="b3_wizard_incomplete_title">Configuración incompleta</string>
+    <string name="b3_settings_category_language">Idioma</string>
+    <string name="language_settings_title">Idioma de minería</string>
+    <string name="language_settings_help">Al cambiar, los diccionarios, filtros, mazo y campos de la tarjeta pasan a los ajustes propios de ese idioma. El idioma de la interfaz de la app es independiente.</string>
+    <string name="language_unavailable_data_required">Requiere descargar una vez los datos del idioma.</string>
+    <string name="language_unavailable_unsupported">Esta versión no puede minar este idioma.</string>
+    <string name="language_download_and_switch">Descargar y cambiar</string>
+    <string name="language_downloading">Descargando sus datos de idioma…</string>
+    <string name="language_switch_blocked_known_words">Termina o descarta la importación de palabras conocidas antes de cambiar de idioma.</string>
+    <string name="language_note_type_needed">Elige un tipo de nota para %1$s antes de minar.</string>
+    <string name="language_choose_note_type">Elegir tipo de nota</string>
+    <string name="language_script_variant">Juego de caracteres</string>
+    <string name="language_script_variant_as_written">Tal como está escrito</string>
+    <string name="language_script_variant_simplified">Simplificado (简体)</string>
+    <string name="language_script_variant_traditional">Tradicional (繁體)</string>
+    <string name="language_regional_variety">Variedad regional</string>
+    <string name="language_variety_br">Portugués de Brasil</string>
+    <string name="language_variety_pt">Portugués europeo</string>
+    <string name="settings_reading_tone_color">Colorear las lecturas según el tono</string>
+    <string name="mining_failure_language_unavailable">Este idioma de minería necesita sus datos de idioma. Descárgalos en Ajustes → Idioma.</string>
+    <string name="mining_failure_unsupported_language">Esta versión no puede minar el idioma seleccionado. Elige otro en Ajustes → Idioma.</string>
+    <string name="resource_panel_other_language_slots">Instalado para otros idiomas de minería, no se usa aquí: %1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s indica que su idioma es %2$s, no el idioma que estás minando.</string>
 </resources>

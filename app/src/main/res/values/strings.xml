@@ -875,4 +875,26 @@
     <string name="b3_wizard_customize_fields">Customize fields in Settings</string>
     <string name="b3_wizard_ready_title">Ready to mine</string>
     <string name="b3_wizard_incomplete_title">Setup incomplete</string>
+    <string name="b3_settings_category_language">Language</string>
+    <string name="language_settings_title">Mining language</string>
+    <string name="language_settings_help">Switching swaps dictionaries, filters, deck and card fields to that language\'s own settings. The app\'s display language is separate.</string>
+    <string name="language_unavailable_data_required">Needs a one-time language data download.</string>
+    <string name="language_unavailable_unsupported">This version can\'t mine this language.</string>
+    <string name="language_download_and_switch">Download and switch</string>
+    <string name="language_downloading">Downloading its language data…</string>
+    <string name="language_switch_blocked_known_words">Finish or discard the known-words import before switching languages.</string>
+    <string name="language_note_type_needed">Choose a note type for %1$s before mining.</string>
+    <string name="language_choose_note_type">Choose note type</string>
+    <string name="language_script_variant">Character set</string>
+    <string name="language_script_variant_as_written">As written</string>
+    <string name="language_script_variant_simplified">Simplified (简体)</string>
+    <string name="language_script_variant_traditional">Traditional (繁體)</string>
+    <string name="language_regional_variety">Regional variety</string>
+    <string name="language_variety_br">Brazilian Portuguese</string>
+    <string name="language_variety_pt">European Portuguese</string>
+    <string name="settings_reading_tone_color">Colour readings by tone</string>
+    <string name="mining_failure_language_unavailable">This mining language needs its language data. Download it in Settings → Language.</string>
+    <string name="mining_failure_unsupported_language">This version can\'t mine the selected language. Choose another in Settings → Language.</string>
+    <string name="resource_panel_other_language_slots">Installed for other mining languages, not used here: %1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s says its language is %2$s, not the language you are mining.</string>
 </resources>

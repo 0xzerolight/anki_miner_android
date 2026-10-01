@@ -34,6 +34,7 @@ import com.ankiminer.android.data.settings.switchLanguage
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.LanguageProfileInfo
+import com.ankiminer.android.engine.LanguageUnavailableReason
 import com.ankiminer.android.localization.LocalizedStringResource
 import java.io.IOException
 import kotlinx.coroutines.CancellationException
@@ -234,6 +235,8 @@ internal data class SettingsDraft(
     val knownWordsMatchKanaVariants: Boolean?,
     val strictCardOrder: Boolean?,
     val mergeIncompleteCues: Boolean?,
+    val scriptVariant: String? = null,
+    val readingToneColor: Boolean? = null,
     val secondarySubtitleEnabled: Boolean,
     val pitchFormat: PitchCategoryFormat?,
     val theme: ThemeMode,
@@ -411,6 +414,8 @@ internal data class SettingsDraft(
             knownWordsMatchKanaVariants = knownWordsMatchKanaVariants,
             strictCardOrder = strictCardOrder,
             mergeIncompleteCues = mergeIncompleteCues,
+            scriptVariant = scriptVariant,
+            readingToneColor = readingToneColor,
             secondarySubtitleEnabled = secondarySubtitleEnabled,
             maxSentenceDurationSeconds =
                 AppSettingsDraftParser.optionalDouble(maxDuration)
@@ -649,6 +654,8 @@ internal data class SettingsDraft(
                 knownWordsMatchKanaVariants = settings.knownWordsMatchKanaVariants,
                 strictCardOrder = settings.strictCardOrder,
                 mergeIncompleteCues = settings.mergeIncompleteCues,
+                scriptVariant = settings.scriptVariant,
+                readingToneColor = settings.readingToneColor,
                 secondarySubtitleEnabled = settings.secondarySubtitleEnabled,
                 pitchFormat = settings.pitchCategoryFormat,
                 theme = settings.theme,
@@ -755,6 +762,9 @@ private fun SettingsDraft.rebaseChangesSince(
                 mergeIncompleteCues,
                 persisted.mergeIncompleteCues,
             ),
+        scriptVariant = changedValue(baseline.scriptVariant, scriptVariant, persisted.scriptVariant),
+        readingToneColor =
+            changedValue(baseline.readingToneColor, readingToneColor, persisted.readingToneColor),
         secondarySubtitleEnabled =
             changedValue(
                 baseline.secondarySubtitleEnabled,
@@ -1543,7 +1553,45 @@ internal class SettingsViewModel(
      */
     fun switchLanguage(code: String): Boolean {
         val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return false
+        // A language whose data is missing, or that this build cannot mine, offers no switch: its
+        // runs would all be refused (`language_unavailable` / `unsupported_language`).
+        if (profile.unavailableReason != null) return false
         return save { current -> current.switchLanguage(profile) }
+    }
+
+    private val mutableLanguageDownload = MutableStateFlow<String?>(null)
+
+    /** The language whose data a "Download and switch" is fetching, if any. */
+    val languageDownload: StateFlow<String?> = mutableLanguageDownload.asStateFlow()
+
+    /**
+     * Desktop's "Download and switch": install [code]'s recommended set (its language data first,
+     * C.4's `RecommendedResources(code)`), ask the bridge again, and switch once the profile reads
+     * available. A failed or cancelled install leaves the language where it was; the resource
+     * failure it recorded carries the retry.
+     */
+    fun downloadAndSwitchLanguage(code: String) {
+        if (mutableLanguageDownload.value != null) return
+        val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return
+        if (profile.unavailableReason != LanguageUnavailableReason.DATA_REQUIRED) return
+        val source = languageProfileSource ?: return
+        mutableLanguageDownload.value = code
+        viewModelScope.launch {
+            try {
+                resources.installRecommendedResources(code)
+                source.profiles()
+                    .onSuccess { profiles ->
+                        mutableLanguageProfiles.value = profiles
+                        if (profiles.firstOrNull { it.code == code }?.unavailableReason == null) {
+                            switchLanguage(code)
+                        }
+                    }.onFailure { failure ->
+                        AppLog.w(LogComponent.SETTINGS, "language.profiles", failure, "outcome" to "fail")
+                    }
+            } finally {
+                mutableLanguageDownload.value = null
+            }
+        }
     }
 
     fun retrySave() {

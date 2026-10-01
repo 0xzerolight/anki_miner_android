@@ -83,4 +83,31 @@ class AudioTrackLookupTest {
                     .exceptionOrNull()
             assertTrue(failure != null && failure !is AudioTrackProbeFailedException)
         }
+
+    @Test
+    fun `the auto track follows the mining language, japanese stays unchanged`() =
+        runTest {
+            val sent = mutableListOf<String>()
+            var language = "he"
+            val bridge =
+                PyBridge { raw, _ ->
+                    sent += raw
+                    result()
+                }
+            val service = BridgeAudioTrackLookupService(bridge, direct, NATIVE_LIBRARY_DIR) { language }
+
+            service.tracks(VIDEO_PATH).getOrThrow()
+            language = "ja"
+            service.tracks(VIDEO_PATH).getOrThrow()
+
+            assertEquals(
+                listOf(
+                    com.ankiminer.android.engine.BridgeJsonCodec
+                        .encodeAudioTracksRequest(VIDEO_PATH, NATIVE_LIBRARY_DIR, "he"),
+                    com.ankiminer.android.engine.BridgeJsonCodec
+                        .encodeAudioTracksRequest(VIDEO_PATH, NATIVE_LIBRARY_DIR),
+                ),
+                sent,
+            )
+        }
 }

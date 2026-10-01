@@ -9,6 +9,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 private const val AUDIO_TRACKS_PROBE_FAILED_CODE = "audio_tracks_probe_failed"
+private const val JAPANESE = "ja"
 
 fun interface AudioTrackLookupService {
     suspend fun tracks(videoPath: String): Result<AudioTrackList>
@@ -26,6 +27,8 @@ class BridgeAudioTrackLookupService(
     private val bridge: PyBridge,
     private val executor: Executor,
     private val nativeLibraryDir: String,
+    /** The mining language, whose track codes pick the auto track. */
+    private val language: () -> String = { JAPANESE },
 ) : AudioTrackLookupService {
     override suspend fun tracks(videoPath: String): Result<AudioTrackList> =
         suspendCancellableCoroutine { continuation ->
@@ -35,7 +38,12 @@ class BridgeAudioTrackLookupService(
                     runCatching {
                         val raw =
                             bridge.dispatch(
-                                BridgeJsonCodec.encodeAudioTracksRequest(videoPath, nativeLibraryDir),
+                                BridgeJsonCodec.encodeAudioTracksRequest(
+                                    videoPath,
+                                    nativeLibraryDir,
+                                    // Absent means ja: a Japanese request stays byte-identical.
+                                    language().takeIf { it != JAPANESE },
+                                ),
                                 null,
                             )
                         val message = BridgeJsonCodec.decode(raw)

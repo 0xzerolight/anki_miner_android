@@ -33,6 +33,9 @@ import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AppSettings
 import com.ankiminer.android.data.settings.AppSettingsRepository
 import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.data.settings.LanguageProfileSource
+import com.ankiminer.android.data.settings.LanguageScope
+import com.ankiminer.android.engine.LanguageExtraCardField
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.PythonRuntimeReadiness
@@ -47,6 +50,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -65,7 +70,15 @@ internal class SetupViewModel(
     private val refreshExternalReadiness: () -> Unit,
     private val strings: StringResourceResolver,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
+    private val languageProfileSource: LanguageProfileSource? = null,
 ) : ViewModel() {
+    /** What the active mining language changes on this screen; Japanese needs no bridge call. */
+    private data class LanguageFacts(
+        val code: String,
+        val extraCardFields: List<LanguageExtraCardField>,
+        val uniDicRequired: Boolean,
+    )
+
     private enum class ResourcePickerKind {
         CUSTOM_DICTIONARY,
         FREQUENCY,
@@ -129,10 +142,40 @@ internal class SetupViewModel(
     private var pendingPicker = restorePendingPicker()
     private var pendingPickerJob: Job? = null
     private var pendingPickerRetentionJob: Job? = null
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val languageFacts =
+        settings
+            .map { it.language }
+            .distinctUntilChanged()
+            .transformLatest { code ->
+                if (code == LanguageScope.JAPANESE) {
+                    emit(LanguageFacts(code, emptyList(), uniDicRequired = true))
+                } else {
+                    // Provisional first, so the screen never waits on Python for its state: no
+                    // non-Japanese profile needs UniDic, and its card fields arrive with the answer.
+                    emit(LanguageFacts(code, emptyList(), uniDicRequired = false))
+                    val profile =
+                        languageProfileSource?.profiles()?.getOrNull()?.firstOrNull { it.code == code }
+                    if (profile != null) {
+                        emit(LanguageFacts(code, profile.extraCardFields, profile.requiresUnidic))
+                    }
+                }
+            }
     private val settingsAnkiAndRuntime =
-        combine(settings, ankiSetup.state, runtimeWorkState) { appSettings, ankiState, runtimeKind ->
-            Triple(appSettings, ankiState, runtimeKind)
+        combine(settings, ankiSetup.state, runtimeWorkState, languageFacts) { appSettings, ankiState, runtimeKind, facts ->
+            SettingsAnkiRuntime(appSettings, ankiState, runtimeKind, facts)
         }
+
+    private data class SettingsAnkiRuntime(
+        val settings: AppSettings,
+        val anki: com.ankiminer.android.data.anki.AnkiSetupManagerState,
+        val runtimeKind: RuntimeWorkCoordinator.Kind?,
+        val language: LanguageFacts,
+    )
+
+    /** Every language's installed slots, for screens that list them all (attribution). */
+    val inventory: StateFlow<com.ankiminer.android.data.resources.ResourceManagerState>
+        get() = resources.state
 
     val uiState: StateFlow<SetupUiState> =
         combine(resources.state, settingsAnkiAndRuntime, pythonReadiness, miningAdmission, local) {
@@ -142,11 +185,14 @@ internal class SetupViewModel(
                 admission,
                 localState,
             ->
-            val (appSettings, ankiState, runtimeKind) = settingsAnkiRuntimeState
+            val (appSettings, ankiState, runtimeKind, facts) = settingsAnkiRuntimeState
+            // Every list below is the active language's: another language's slots are not
+            // consulted by its runs, so the wizard and the lookup card must not offer them.
+            val scoped = resourceState.slotsFor(appSettings.language)
             val selectedSlot =
                 localState.lookupSlotId?.takeIf { selected ->
-                    resourceState.dictionaries.any { it.isUsable && it.slotId == selected }
-                } ?: resourceState.dictionaries.firstOrNull { it.isUsable }?.slotId
+                    scoped.dictionaries.any { it.isUsable && it.slotId == selected }
+                } ?: scoped.dictionaries.firstOrNull { it.isUsable }?.slotId
             SetupUiState(
                 python = python,
                 resourceStartup = resourceState.startupReadiness,
@@ -178,11 +224,11 @@ internal class SetupViewModel(
                 recommendedPlan = resourceState.recommendedPlan,
                 pendingReplace = localState.pendingReplace,
                 pendingDelete = localState.pendingDelete,
-                dictionaries = resourceState.dictionaries,
+                dictionaries = scoped.dictionaries,
                 dictionarySources = appSettings.dictionarySources,
-                frequencySources = resourceState.frequencySources,
-                pitchSources = resourceState.pitchSources,
-                audioPacks = resourceState.audioPacks,
+                frequencySources = scoped.frequencySources,
+                pitchSources = scoped.pitchSources,
+                audioPacks = scoped.audioPacks,
                 knownWords = resourceState.knownWords,
                 knownWordsImportPreview = resourceState.knownWordsImportPreview,
                 knownWordsPage = resourceState.knownWordsPage,
@@ -196,6 +242,14 @@ internal class SetupViewModel(
                 lookupSlotId = selectedSlot,
                 wordListTarget = localState.wordListTarget,
                 knownWordsSearch = localState.knownWordsSearch,
+                language = appSettings.language,
+                extraCardFields = facts.extraCardFields.takeIf { facts.code == appSettings.language }.orEmpty(),
+                uniDicRequired =
+                    if (facts.code == appSettings.language) {
+                        facts.uniDicRequired
+                    } else {
+                        appSettings.language == LanguageScope.JAPANESE
+                    },
             )
         }.stateIn(
             viewModelScope,
@@ -284,6 +338,7 @@ internal class SetupViewModel(
                             fieldNames = fields,
                             currentFieldMap = current.fieldMap,
                             reservedDestinations = setOfNotNull(retainedMarker),
+                            extraFields = state.extraCardFields,
                         )
                     changes = merged.changes
                     current.copy(
@@ -328,6 +383,7 @@ internal class SetupViewModel(
                             fieldNames = fields,
                             currentFieldMap = current.fieldMap,
                             reservedDestinations = setOfNotNull(retainedMarker),
+                            extraFields = state.extraCardFields,
                         )
                     changes = remapped.changes
                     current.copy(
@@ -398,6 +454,7 @@ internal class SetupViewModel(
                 field,
                 fields,
                 setOfNotNull(state.cardTypeMarkerField),
+                state.extraFieldKeys,
             ) ?: return
         if (map == state.fieldMap) return
         val noteTypeAtIntent = state.noteType
@@ -413,6 +470,7 @@ internal class SetupViewModel(
                             field,
                             fields,
                             setOfNotNull(current.cardTypeMarkerField),
+                            state.extraFieldKeys,
                         )
                     if (updated == null || updated == current.fieldMap) {
                         current
@@ -1535,8 +1593,17 @@ internal class SetupViewModel(
                     )
                 }
             }
+            // The failed batch recorded which language's set it was installing; a switch since then
+            // must not retry the new language's set instead.
             ResourceFailureOrigin.RECOMMENDED_SET ->
-                viewModelScope.launch { resources.installRecommendedResources() }
+                viewModelScope.launch {
+                    val language = failure.retry.targetId
+                    if (language == null) {
+                        resources.installRecommendedResources()
+                    } else {
+                        resources.installRecommendedResources(language)
+                    }
+                }
             ResourceFailureOrigin.DICTIONARY_LOOKUP -> lookup()
             ResourceFailureOrigin.KNOWN_WORDS ->
                 when (failure.knownWordsOperation) {
@@ -1630,6 +1697,7 @@ internal class SetupViewModel(
         private val strings: StringResourceResolver,
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
+        private val languageProfileSource: LanguageProfileSource? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -1644,6 +1712,7 @@ internal class SetupViewModel(
                 refreshExternalReadiness,
                 strings,
                 savedStateHandleFactory(extras),
+                languageProfileSource,
             ) as T
         }
     }

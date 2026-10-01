@@ -47,7 +47,7 @@ class DefinitionLookupTest {
     fun `returns decoded entries`() =
         runTest {
             val service = BridgeDefinitionLookupService(PyBridge { _, _ -> result() }, direct)
-            val decoded = service.define(RUN_ID, "猫", null).getOrThrow()
+            val decoded = service.define(RUN_ID, "猫", null, null).getOrThrow()
             assertEquals("猫", decoded.matchedTerm)
             assertEquals(listOf(DefinitionEntry("Jitendex", "<div>cat</div>")), decoded.entries)
         }
@@ -61,7 +61,7 @@ class DefinitionLookupTest {
                     sent = raw
                     result(term = "殺る", matchedTerm = "殺る", entries = "[]")
                 }
-            BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "殺る", "遣る")
+            BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "殺る", "遣る", null)
             assertEquals(
                 BridgeJsonCodec.encodeDictionaryDefineRequest(RUN_ID, "殺る", "遣る"),
                 sent,
@@ -72,7 +72,7 @@ class DefinitionLookupTest {
     fun `a bridge failure becomes a failed Result`() =
         runTest {
             val bridge = PyBridge { _, _ -> throw IllegalStateException("boom") }
-            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null).isFailure)
+            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null, null).isFailure)
         }
 
     @Test
@@ -82,28 +82,28 @@ class DefinitionLookupTest {
                 PyBridge { _, _ ->
                     """{"schemaVersion":1,"type":"bridge.error","payload":{"code":"definition_run_unknown","message":"no run","requestType":"dictionary.define"}}"""
                 }
-            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null).isFailure)
+            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null, null).isFailure)
         }
 
     @Test
     fun `a reply for another run is rejected`() =
         runTest {
             val bridge = PyBridge { _, _ -> result(runId = OTHER_RUN_ID) }
-            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null).isFailure)
+            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null, null).isFailure)
         }
 
     @Test
     fun `a reply echoing another term is rejected`() =
         runTest {
             val bridge = PyBridge { _, _ -> result(term = "犬", matchedTerm = "犬") }
-            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null).isFailure)
+            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null, null).isFailure)
         }
 
     @Test
     fun `a matched term outside the query is rejected`() =
         runTest {
             val bridge = PyBridge { _, _ -> result(matchedTerm = "鳥") }
-            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", "犬").isFailure)
+            assertTrue(BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", "犬", null).isFailure)
         }
 
     @Test
@@ -115,7 +115,7 @@ class DefinitionLookupTest {
                 task.run()
             }
             BridgeDefinitionLookupService(PyBridge { _, _ -> result() }, executor)
-                .define(RUN_ID, "猫", null)
+                .define(RUN_ID, "猫", null, null)
             assertTrue(ran)
         }
 
@@ -128,9 +128,25 @@ class DefinitionLookupTest {
                     result()
                 }
 
-            BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null).getOrThrow()
+            BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "猫", null, null).getOrThrow()
 
             val record = recorded.records.single { it.contains("op=dispatch") }
             assertTrue(record, record.contains(" D run=$RUN_ID c=bridge op=dispatch "))
+        }
+
+    @Test
+    fun `sends the candidate's part of speech`() =
+        runTest {
+            var sent: String? = null
+            val bridge =
+                PyBridge { raw, _ ->
+                    sent = raw
+                    result(term = "ספר", matchedTerm = "ספר", entries = "[]")
+                }
+            BridgeDefinitionLookupService(bridge, direct).define(RUN_ID, "ספר", null, "NOUN")
+            assertEquals(
+                BridgeJsonCodec.encodeDictionaryDefineRequest(RUN_ID, "ספר", null, partOfSpeech = "NOUN"),
+                sent,
+            )
         }
 }

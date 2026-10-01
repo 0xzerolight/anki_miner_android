@@ -2469,6 +2469,25 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aLanguageSwitchDropsTheKnownWordsSearchMadeUnderTheOldLanguage() =
+        runTest {
+            var language = JAPANESE
+            val harness = Harness(initialUserCount = 3, activeLanguage = { language })
+            harness.manager.searchKnownWords(query = "", loadMore = false)
+            assertNotNull(harness.manager.state.value.knownWordsPage)
+
+            harness.manager.refreshLanguage()
+            // Same language: the open search stays.
+            assertNotNull(harness.manager.state.value.knownWordsPage)
+
+            language = "he"
+            harness.manager.refreshLanguage()
+
+            // Its words are Japanese database rows; a remove from it would hit Hebrew's.
+            assertNull(harness.manager.state.value.knownWordsPage)
+        }
+
+    @Test
     fun replacingHebrewsWordListLeavesJapanesesByteIdentical() =
         runTest {
             var language = JAPANESE

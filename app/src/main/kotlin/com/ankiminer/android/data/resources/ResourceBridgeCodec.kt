@@ -450,8 +450,9 @@ object ResourceBridgeCodec {
 
     fun decodeImportedDictionary(raw: String): ImportedDictionary {
         val value = payload(raw, "resource.dictionary.imported")
+        // The declared-language receipt is optional on the wire; absent reads as no mismatch.
         exact(
-            value,
+            value.filterKeys { it !in DICTIONARY_SOURCE_LANGUAGE_KEYS },
             setOf(
                 "slotId",
                 "catalogResourceId",
@@ -475,8 +476,19 @@ object ResourceBridgeCodec {
             strings(value.getValue("mediaWarnings"), "mediaWarnings", 4096),
             requireSha256(text(value.getValue("archiveSha256"), "archiveSha256")),
             attributions(value.getValue("attribution"), allowEmpty = true),
+            sourceLanguage =
+                value["sourceLanguage"]?.let { declared ->
+                    text(declared, "sourceLanguage").also {
+                        if (it.isNotEmpty() && !DECLARED_LANGUAGE.matches(it)) invalid("sourceLanguage is malformed")
+                    }
+                }.orEmpty(),
+            sourceLanguageMismatch =
+                value["sourceLanguageMismatch"]?.let { bool(it, "sourceLanguageMismatch") } ?: false,
         )
     }
+
+    private val DICTIONARY_SOURCE_LANGUAGE_KEYS = setOf("sourceLanguage", "sourceLanguageMismatch")
+    private val DECLARED_LANGUAGE = Regex("[a-z]{2,3}")
 
     fun decodeDictionaryPreflight(raw: String): String {
         val value = payload(raw, "resource.dictionary.preflighted")

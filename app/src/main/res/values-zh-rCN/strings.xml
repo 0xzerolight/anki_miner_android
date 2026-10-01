@@ -861,4 +861,26 @@
     <string name="b3_wizard_customize_fields">在设置中自定义字段</string>
     <string name="b3_wizard_ready_title">准备挖词</string>
     <string name="b3_wizard_incomplete_title">设置未完成</string>
+    <string name="b3_settings_category_language">语言</string>
+    <string name="language_settings_title">挖词语言</string>
+    <string name="language_settings_help">切换后，词典、筛选、牌组和卡片字段会换成该语言自己的设置。应用的界面语言不受影响。</string>
+    <string name="language_unavailable_data_required">需要一次性下载语言数据。</string>
+    <string name="language_unavailable_unsupported">此版本无法对该语言挖词。</string>
+    <string name="language_download_and_switch">下载并切换</string>
+    <string name="language_downloading">正在下载语言数据…</string>
+    <string name="language_switch_blocked_known_words">切换语言前，请先完成或放弃已知词导入。</string>
+    <string name="language_note_type_needed">挖词前，请为%1$s选择笔记类型。</string>
+    <string name="language_choose_note_type">选择笔记类型</string>
+    <string name="language_script_variant">字符集</string>
+    <string name="language_script_variant_as_written">保持原文</string>
+    <string name="language_script_variant_simplified">简体</string>
+    <string name="language_script_variant_traditional">繁体 (繁體)</string>
+    <string name="language_regional_variety">地区变体</string>
+    <string name="language_variety_br">巴西葡萄牙语</string>
+    <string name="language_variety_pt">欧洲葡萄牙语</string>
+    <string name="settings_reading_tone_color">按声调为读音着色</string>
+    <string name="mining_failure_language_unavailable">此挖词语言需要语言数据。请在“设置 → 语言”中下载。</string>
+    <string name="mining_failure_unsupported_language">此版本无法对所选语言挖词。请在“设置 → 语言”中选择其他语言。</string>
+    <string name="resource_panel_other_language_slots">已为其他挖词语言安装，此处不使用：%1$s</string>
+    <string name="resource_dictionary_language_mismatch">%1$s 声明其语言为%2$s，而不是你正在挖词的语言。</string>
 </resources>

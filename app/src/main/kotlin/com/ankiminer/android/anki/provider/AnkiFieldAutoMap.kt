@@ -94,7 +94,8 @@ internal object AnkiFieldAutoMap {
             }.orEmpty()
     }
 
-    private fun normalize(fieldName: String): String =
+    /** Lowercase, no spaces or underscores: desktop `normalized_field_name`. */
+    internal fun normalize(fieldName: String): String =
         fieldName.lowercase()
             .replace(" ", "")
             .replace("_", "")

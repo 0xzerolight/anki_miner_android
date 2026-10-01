@@ -444,6 +444,8 @@ class AppSettingsRepositoryTest {
                 minFrequencyRank = null,
                 frequencyKeepUnranked = null,
                 knownWordsMatchKanaVariants = null,
+                scriptVariant = null,
+                readingToneColor = null,
                 strictCardOrder = null,
                 mergeIncompleteCues = null,
                 secondarySubtitleEnabled = false,
@@ -658,6 +660,8 @@ class AppSettingsRepositoryTest {
             minFrequencyRank = 500,
             frequencyKeepUnranked = true,
             knownWordsMatchKanaVariants = false,
+            scriptVariant = "simplified",
+            readingToneColor = true,
             strictCardOrder = true,
             mergeIncompleteCues = true,
             // Non-default, or corrupting the key would quarantine to the value already stored.
@@ -831,6 +835,8 @@ class AppSettingsRepositoryTest {
                 "known_words_match_kana_variants",
                 original.copy(knownWordsMatchKanaVariants = defaults.knownWordsMatchKanaVariants),
             ),
+            corruptString("script_variant", original.copy(scriptVariant = defaults.scriptVariant)),
+            corruptBoolean("reading_tone_color", original.copy(readingToneColor = defaults.readingToneColor)),
             corruptBoolean(
                 "strict_card_order",
                 original.copy(strictCardOrder = defaults.strictCardOrder),
