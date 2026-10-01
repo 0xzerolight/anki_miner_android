@@ -432,7 +432,7 @@ def _process_reading(
                 run_id=adapters.run_id,
                 cache_dir=Path(config.media_temp_folder).parent,
                 warning_callback=adapters.presenter.show_warning,
-                language=speech_language_for(config_language(config)),
+                language=speech_language_for(config_language(config), getattr(config, "script_variant", "")),
             )
         processor = _build_processor(
             config,

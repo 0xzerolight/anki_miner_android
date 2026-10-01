@@ -403,6 +403,20 @@ def test_hebrew_profile_entry_describes_an_rtl_language_with_its_own_card_fields
     assert defaults["allowed_pos"] == ["WORD", "NOUN", "VERB", "ADJ", "ADV"]
 
 
+def test_a_regional_varietys_run_speaks_with_that_regions_voice() -> None:
+    """Desktop ``pt_gtts_lang``: European Portuguese speaks pt-PT, Brazilian the Brazilian voice."""
+    _runtime_lane()
+    from anki_miner.languages.registry import get_profile
+
+    assert languages.speech_language_for("pt", "pt") == "pt-PT"
+    assert languages.speech_language_for("pt", "br") == "pt-BR"
+    assert languages.speech_language_for("pt") == "pt"
+    assert languages.speech_language(get_profile("pt")) == "pt"
+    assert languages.speech_language_for("zh", "traditional") == "zh"
+    assert languages.speech_language_for("yue") == "yue"
+    assert languages.speech_language_for("ja") == "ja"
+
+
 @pytest.mark.parametrize(("code", "direction"), [("ar", "rtl"), ("fa", "rtl"), ("ko", "ltr")])
 def test_a_language_waiting_for_its_data_pack_reports_a_download_reason(code: str, direction: str) -> None:
     _runtime_lane()

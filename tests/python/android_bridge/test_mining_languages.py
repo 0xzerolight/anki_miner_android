@@ -651,6 +651,51 @@ def test_the_built_chain_speaks_with_the_device_voice_after_the_packs(
     silent.close()
 
 
+@pytest.mark.parametrize(("variety", "tag"), [("pt", "pt-PT"), ("br", "pt-BR")])
+def test_a_portuguese_run_speaks_with_its_varietys_voice(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    variety: str,
+    tag: str,
+) -> None:
+    _runtime_lane()
+    from android_bridge.word_audio import AndroidWordAudioFetcher
+
+    class NoPacks:
+        packs: dict[str, object] = {}
+
+        def __init__(self, root: object) -> None:
+            pass
+
+        def load(self) -> None:
+            pass
+
+        def build_fetcher_chain(self, config: object, cache_dir: object) -> list[object]:
+            return []
+
+    monkeypatch.setattr("anki_miner.services.audio_packs.registry.AudioPackRegistry", NoPacks)
+    paths = AndroidPaths(Path(os.environ["ANKI_MINER_HOME"]), tmp_path / "cache", tmp_path / "native")
+    config = map_config_settings(
+        {
+            "language": "pt",
+            "anki_note_type": "Basic",
+            "script_variant": variety,
+            "anki_fields": {"expression_audio": "WordAudio"},
+        },
+        paths,
+    ).engine_config
+    chain = mining._build_expression_audio_source_chain(
+        config,
+        tts_callbacks=object(),
+        run_id="run_00000000000000000000000000000000",
+    )
+    assert chain is not None
+    (voice,) = chain._fetchers
+    assert isinstance(voice, AndroidWordAudioFetcher)
+    assert voice.media_name("livro", "").startswith(f"androidtts_{tag}_")
+    chain.close()
+
+
 def test_the_processor_hands_the_runs_callbacks_to_the_device_voice(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

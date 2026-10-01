@@ -599,7 +599,7 @@ def _build_expression_audio_source_chain(
                         run_id,
                         Path(config.media_temp_folder).parent,
                         cache_root / ANDROID_TTS_KIND,
-                        language=speech_language_for(language),
+                        language=speech_language_for(language, getattr(config, "script_variant", "")),
                         speakable=audio.speakable,
                     )
                 )

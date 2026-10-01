@@ -127,6 +127,19 @@ class SentenceAudioProtocolTest {
     }
 
     @Test
+    fun decoderKeepsTheRegionOfARegionalVoice() {
+        fun withLanguage(tag: String) =
+            REQUEST.replace("\"sentence\":\"猫だ。\"", "\"sentence\":\"猫だ。\",\"language\":\"$tag\"")
+
+        assertEquals("pt-PT", SentenceAudioBridgeCodec.decodeRequest(withLanguage("pt-PT"), RUN_ID).language)
+        for (malformed in listOf("pt-pt", "pt-PRT", "pt_PT", "pt-")) {
+            assertThrows(malformed, SentenceAudioProtocolException::class.java) {
+                SentenceAudioBridgeCodec.decodeRequest(withLanguage(malformed), RUN_ID)
+            }
+        }
+    }
+
+    @Test
     fun strictDecoderRejectsOversizedSentence() {
         val oversized = REQUEST.replace("猫だ。", "猫".repeat(6_000))
 

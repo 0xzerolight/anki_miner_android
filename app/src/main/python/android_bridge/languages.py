@@ -233,24 +233,36 @@ def requires_unidic(code: str) -> bool:
     return code == JAPANESE
 
 
-def speech_language(profile: Any) -> str:
-    """The BCP-47 tag Android TextToSpeech speaks *profile*'s text in.
+#: The voice a regional variety speaks with, by profile code and ``script_variant``.
+#: Desktop's ``pt_gtts_lang`` picks Google's European voice (``pt-PT``) for the
+#: ``pt`` variety and its Brazilian one (``pt``) otherwise.
+_REGIONAL_SPEECH_TAGS: Mapping[str, Mapping[str, str]] = {"pt": {"br": "pt-BR", "pt": "pt-PT"}}
 
-    The profile code itself for every vendored language. A language whose voice
-    depends on its regional variety (pt) has to extend this when it is vendored:
-    desktop resolves those through ``AudioDefaults.gtts_lang``, whose codes are
-    Google's (``iw`` for Hebrew), not BCP-47. zh does not: desktop speaks both
-    scripts with one Mandarin voice (``gtts_lang`` ``zh-CN``), and ``zh`` is
-    Android's Mandarin locale (``Locale.CHINESE``).
+
+def speech_language(profile: Any) -> str:
+    """The BCP-47 language Android TextToSpeech speaks *profile*'s text in.
+
+    The profile code itself for every vendored language; a run narrows a regional
+    variety's voice through :func:`speech_language_for`. Desktop resolves voices
+    through ``AudioDefaults.gtts_lang``, whose codes are Google's (``iw`` for
+    Hebrew), not BCP-47. zh needs no region: desktop speaks both scripts with one
+    Mandarin voice (``gtts_lang`` ``zh-CN``), and ``zh`` is Android's Mandarin
+    locale (``Locale.CHINESE``). yue is Android's Cantonese language (``yue-HK``
+    voices).
     """
 
     return str(profile.code)
 
 
-def speech_language_for(language: str) -> str:
-    """:func:`speech_language` for a validated code; Japanese needs no profile import."""
+def speech_language_for(language: str, script_variant: str = "") -> str:
+    """The run's voice tag for a validated code: :func:`speech_language`, narrowed
+    to the variety's region where the voice depends on it (``pt-PT``). Japanese
+    needs no profile import."""
 
-    return JAPANESE if language == JAPANESE else speech_language(get_profile(language))
+    if language == JAPANESE:
+        return JAPANESE
+    code = speech_language(get_profile(language))
+    return _REGIONAL_SPEECH_TAGS.get(code, {}).get(script_variant, code)
 
 
 def _missing_components_are_data(code: str) -> bool:

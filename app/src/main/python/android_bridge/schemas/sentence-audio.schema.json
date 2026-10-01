@@ -25,8 +25,8 @@
         },
         "language": {
           "type": "string",
-          "pattern": "^[a-z]{2,3}$",
-          "$comment": "The BCP-47 tag of the run's mining language (android_bridge.languages.speech_language). The bridge always sends it; Kotlin reads an absent tag as ja."
+          "pattern": "^[a-z]{2,3}(-[A-Z]{2})?$",
+          "$comment": "The BCP-47 tag of the run's mining language, with a region where the variety's voice depends on it (pt-PT; android_bridge.languages.speech_language_for). The bridge always sends it; Kotlin reads an absent tag as ja."
         }
       }
     },

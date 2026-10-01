@@ -44,7 +44,8 @@ private val PREFERRED_VOICE_TAGS = mapOf("ja" to "ja-JP")
 
 /**
  * Deterministic selector for [language]: offline and installed only, then the preferred regional
- * voice (ja-JP for Japanese), quality, latency, and stable voice ID.
+ * voice (the tag's own region, as in pt-PT, else ja-JP for Japanese), quality, latency, and stable
+ * voice ID. Another region of the language still speaks when the preferred one is not installed.
  */
 internal fun selectOfflineVoice(
     candidates: List<OfflineVoiceCandidate>,
@@ -52,7 +53,8 @@ internal fun selectOfflineVoice(
     trySelect: (String) -> Boolean = { true },
 ): String? {
     val wanted = ttsLanguage(language)
-    val preferredTag = PREFERRED_VOICE_TAGS[wanted]
+    val region = Locale.forLanguageTag(language).country
+    val preferredTag = if (region.isEmpty()) PREFERRED_VOICE_TAGS[wanted] else "$wanted-$region"
     return candidates
         .asSequence()
         .filter { candidate ->
