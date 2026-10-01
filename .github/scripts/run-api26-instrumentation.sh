@@ -24,6 +24,9 @@ readonly note_delete_removes_test="com.ankiminer.android.anki.provider.ContentRe
 readonly note_delete_missing_test="com.ankiminer.android.anki.provider.ContentResolverNoteDeleteInstrumentedTest#delete_missing_note_still_reports_request_count"
 # Hosted emulator images carry no offline TextToSpeech voices, so device-voice synthesis is local only.
 readonly device_voice_test="com.ankiminer.android.tts.DeviceVoiceSynthesisInstrumentedTest#anInstalledOfflineVoiceSpeaksAHebrewWord"
+# The ar and fa language smoke needs the pinned language-data archives pushed to the device and
+# selected by -e ankiMinerLanguageDataDir; hosted runners carry neither, so it stays UNEXECUTED.
+readonly language_data_smoke_test="com.ankiminer.android.LanguageDataSmokeInstrumentedTest#downloadedLanguageDataTokenisesAndRecordsPeakPss"
 readonly ui_audit_tests=(
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#curationList200CandidatesScrollsBottomThenTop"
     "com.ankiminer.android.uiaudit.UiAuditJankFlowTest#settingsFullScrollsDownThenUp"
@@ -48,13 +51,14 @@ readonly unexecuted_tests=(
     "$note_delete_removes_test"
     "$note_delete_missing_test"
     "$device_voice_test"
+    "$language_data_smoke_test"
     "${ui_audit_tests[@]}"
 )
-readonly expected_executed_test_count=371
+readonly expected_executed_test_count=372
 excluded_tests="$(IFS=,; echo "${unexecuted_tests[*]}")"
 readonly excluded_tests
 # The lane runs everything the runner discovers except the allowlist above. The result contract is
-# pinned at 371 executed tests: 392 source @Test methods minus the 21 explicit UNEXECUTED identities
+# pinned at 372 executed tests: 394 source @Test methods minus the 22 explicit UNEXECUTED identities
 # above. The host script test re-derives that count from source, so additions, removals, and renamed
 # annotations require an intentional count update. The terminal contract also rejects failures,
 # crashes, skips, assumption violations, and duplicate or missing terminal codes.
