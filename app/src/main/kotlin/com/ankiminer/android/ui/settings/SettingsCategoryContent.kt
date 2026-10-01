@@ -33,6 +33,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.ankiminer.android.R
 import com.ankiminer.android.anki.provider.platformCanNameFilesFor
 import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
@@ -924,8 +927,9 @@ private fun LazyListScope.audioSourcesCard(
 
 /**
  * The device voice that speaks a non-Japanese language's word audio after the packs, and whether
- * this device has one for [language]. The status is probed once per language and stays blank while
- * the engine answers.
+ * this device has one for [language]. The status is probed per language and again on every return
+ * to the screen, so a voice downloaded from the speech services shows up; it stays blank while the
+ * engine first answers.
  */
 @Composable
 internal fun DeviceVoiceSection(
@@ -933,7 +937,10 @@ internal fun DeviceVoiceSection(
     probe: suspend (Context, String) -> DeviceVoiceStatus = ::probeDeviceVoice,
 ) {
     val context = LocalContext.current
-    val status by produceState<DeviceVoiceStatus?>(null, language) { value = probe(context, language) }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val status by produceState<DeviceVoiceStatus?>(null, language, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) { value = probe(context, language) }
+    }
     SettingsSection(stringResource(R.string.settings_word_audio_device_voice)) {
         SupportingText(stringResource(R.string.settings_word_audio_device_voice_help))
         status?.let { SupportingText(stringResource(it.message)) }

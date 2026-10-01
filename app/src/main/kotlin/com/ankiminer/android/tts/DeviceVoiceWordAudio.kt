@@ -9,6 +9,7 @@ import com.ankiminer.android.diagnostics.log.LogComponent
 import com.ankiminer.android.engine.BridgeJsonValue
 import com.ankiminer.android.engine.MiningConfigSnapshot
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -89,6 +90,9 @@ internal suspend fun probeDeviceVoice(
                     hasOfflineVoice = selectOfflineVoice(candidates, language) != null,
                 )
             }
+        } catch (failure: CancellationException) {
+            // The card left the screen mid-probe: no failure to log and nobody to answer.
+            throw failure
         } catch (failure: RuntimeException) {
             // The engine service died mid-probe; the card says no voice rather than guessing.
             AppLog.w(LogComponent.SETTINGS, "deviceVoice.probe", failure, "outcome" to "fail")
