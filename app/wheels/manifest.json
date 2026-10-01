@@ -52,7 +52,7 @@
       "license": "BSD-3-Clause AND IJG AND Zlib",
       "package": "chaquopy-libjpeg",
       "path": "arm64-v8a/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_arm64_v8a.whl",
-      "sha256": "7f2194917bfc8d3e9353948927494c6c1fd1c686150c28f3d81056582a0f3621",
+      "sha256": "b06fbfba1072b3aa3b9250be1b5f6a7d703f7b27bdafcb4e5fc34618308b024b",
       "source": {
         "filename": "libjpeg-turbo-1.5.3.tar.gz",
         "kind": "runtime-source",
@@ -1147,7 +1147,7 @@
       "license": "BSD-3-Clause AND IJG AND Zlib",
       "package": "chaquopy-libjpeg",
       "path": "x86_64/chaquopy_libjpeg-1.5.3-3-py3-none-android_26_x86_64.whl",
-      "sha256": "467b22c9ccdef80b44dbbc2744a02da414b5721e12f7da8809c48a643609531a",
+      "sha256": "b41778ce9f5aa38a80c30eb6120b2d18804bd826df6d2edd2ae3ec55a5f02483",
       "source": {
         "filename": "libjpeg-turbo-1.5.3.tar.gz",
         "kind": "runtime-source",
