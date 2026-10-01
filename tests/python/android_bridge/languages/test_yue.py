@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from catalog_completeness import assert_catalog_complete
-from split_models import split_models_home
+from split_models import split_models_home, tokens_without_packaged_models
 
 pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
 
@@ -87,6 +87,23 @@ def test_the_tagger_reads_the_downloaded_models(
         ("戲", "NOUN", "", "戲"),
         ("。", "PUNCT", "", "。"),
     ]
+
+
+def test_pycantonese_without_its_models_tags_through_the_override(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path_factory: pytest.TempPathFactory,
+    tmp_path: Path,
+) -> None:
+    """The APK's pycantonese has no models: only the override's ``_MODEL_PATH`` redirect finds them."""
+    del initialized_bridge_home
+    _models(monkeypatch, tmp_path_factory)
+    from anki_miner.languages.tagger_provider import get_tagger
+
+    sentence = _profile().smoke_sentence
+    expected = [[t.surface, t.feature.pos1, t.feature.pos2, t.feature.lemma] for t in get_tagger("yue").parse(sentence)]
+
+    assert tokens_without_packaged_models("yue", sentence, tmp_path) == expected
 
 
 @pytest.mark.parametrize("row", TOKEN_ROWS, ids=[row["line"][:8] for row in TOKEN_ROWS])

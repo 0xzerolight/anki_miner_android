@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 from catalog_completeness import assert_catalog_complete
-from split_models import split_models_home
+from split_models import split_models_home, tokens_without_packaged_models
 
 pytest.importorskip("pysubs2", reason="runtime dependency lane: the registry imports the subtitle parser")
 
@@ -94,6 +94,16 @@ def test_the_tagger_reads_the_downloaded_models(models_home: Path) -> None:
         ("quá", "R", "", "quá"),
         (".", "CH", "", "."),
     ]
+
+
+def test_underthesea_without_its_models_tags_through_the_override(models_home: Path, tmp_path: Path) -> None:
+    """The APK's underthesea has no models: only the override's ``word_tokenize_model`` redirect finds them."""
+    from anki_miner.languages.tagger_provider import get_tagger
+
+    sentence = _profile().smoke_sentence
+    expected = [[t.surface, t.feature.pos1, t.feature.pos2, t.feature.lemma] for t in get_tagger("vi").parse(sentence)]
+
+    assert tokens_without_packaged_models("vi", sentence, tmp_path) == expected
 
 
 @pytest.mark.parametrize("row", TOKEN_ROWS, ids=[row["line"] for row in TOKEN_ROWS])
