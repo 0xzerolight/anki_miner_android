@@ -1455,6 +1455,9 @@ class BridgeReadingMiningRepositoryTest {
         assertTrue(harness.bridge.ttsSubmitted.await(2, TimeUnit.SECONDS))
         assertTrue(requireNotNull(harness.bridge.ttsResult.get()).contains("\"outcome\":\"cancelled\""))
         assertEquals(0, synthesizer.synthesizeCount.get())
+        // cancel() hands the engine cancellation to the control executor; a terminal
+        // released before it lands is a run that finished first, not a cancelled one.
+        assertTrue(harness.bridge.cancellationSubmitted.await(2, TimeUnit.SECONDS))
         harness.bridge.allowTerminal.countDown()
         assertTrue(awaitState(harness.repository, MiningRunState::isTerminal) is MiningRunState.Cancelled)
     }
