@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import contextlib
 import os
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -285,6 +287,64 @@ done
             self.assertIn("Gradle or emulator workload", contender.stderr)
             (Path(temporary.name) / "release-gradle").touch()
             holder.wait(timeout=2)
+
+    def test_adb_server_started_by_a_gradle_entry_does_not_keep_the_lock(self) -> None:
+        # adb's first command forks a server daemon that outlives the lane. Forked
+        # with the workload lock fd open, it held the lock until `adb kill-server`,
+        # and every later Gradle or emulator lane refused to start.
+        temporary, bin_dir, environment = self._fixture()
+        with temporary:
+            server_pid = Path(temporary.name) / "adb-server.pid"
+            self._script(
+                bin_dir / "adb",
+                """
+if [[ ! -f "$FAKE_ROOT/adb-server.pid" ]]; then
+    sleep 30 </dev/null >/dev/null 2>&1 &
+    echo "$!" > "$FAKE_ROOT/adb-server.pid"
+fi
+echo 'List of devices attached'
+""",
+            )
+            self._script(bin_dir / "pgrep", "exit 1\n")
+            gradle = bin_dir / "gradlew"
+            self._script(gradle, "exit 0\n")
+            try:
+                result = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; anki_miner_run_gradle "$2" :app:test',
+                        "resource-test",
+                        str(RESOURCE_SCRIPT),
+                        str(gradle),
+                    ],
+                    check=False,
+                    capture_output=True,
+                    env=environment,
+                    text=True,
+                )
+                self.assertEqual(0, result.returncode, result.stderr)
+                self.assertTrue(server_pid.exists(), "the fake adb server never started")
+
+                contender = subprocess.run(
+                    [
+                        "bash",
+                        "-c",
+                        'source "$1"; anki_miner_acquire_workload_lock',
+                        "resource-test",
+                        str(RESOURCE_SCRIPT),
+                    ],
+                    check=False,
+                    capture_output=True,
+                    env=environment,
+                    text=True,
+                )
+
+                self.assertEqual(0, contender.returncode, contender.stderr)
+            finally:
+                if server_pid.exists():
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(int(server_pid.read_text()), signal.SIGTERM)
 
     def test_emulator_launchers_acquire_the_shared_workload_lock(self) -> None:
         for launcher in (EMULATOR_SCRIPT, RUN_APP_SCRIPT):

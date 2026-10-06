@@ -52,12 +52,27 @@ anki_miner_require_no_emulator() {
     fi
 }
 
+# adb's first command forks a server daemon that outlives the lane. Forked while
+# a lock fd is open, the daemon inherits it and holds the lock until
+# `adb kill-server`, so every later lane refuses to start. Start the server
+# before any lock is taken; adb calls inside the lane (ours, Gradle's, the
+# emulator's) then reuse it.
+anki_miner_start_adb_server() {
+    if [[ -n "${ANKI_MINER_WORKLOAD_LOCK_FD:-}" || -n "${ANKI_MINER_EMULATOR_LOCK_FD:-}" ]]; then
+        return 0
+    fi
+    if command -v adb >/dev/null 2>&1; then
+        adb start-server >/dev/null 2>&1 || true
+    fi
+}
+
 anki_miner_acquire_workload_lock() {
     local lock_directory lock_path
 
     if [[ -n "${ANKI_MINER_WORKLOAD_LOCK_FD:-}" ]]; then
         return 0
     fi
+    anki_miner_start_adb_server
     if ! command -v flock >/dev/null 2>&1; then
         echo "Refusing to start a Gradle or emulator workload because flock is unavailable." >&2
         return 1
@@ -80,6 +95,7 @@ anki_miner_acquire_emulator_lock() {
     if [[ -n "${ANKI_MINER_EMULATOR_LOCK_FD:-}" ]]; then
         return 0
     fi
+    anki_miner_start_adb_server
     if ! command -v flock >/dev/null 2>&1; then
         echo "Refusing to start an emulator because flock is unavailable." >&2
         return 1
