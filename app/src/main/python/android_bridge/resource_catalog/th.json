@@ -44,7 +44,7 @@
       "displayName": "Thai National Corpus frequency",
       "sourceId": "tnc-th",
       "archive": {
-        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
+        "url": "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
         "sha256": "dc38af9e6c016b6ff165a863f969ec384bb5c05f9df98ee961b0eb870585756c",
         "sizeBytes": 688439,
         "format": "zip"
@@ -70,7 +70,7 @@
       "displayName": "Thai textbook corpus frequency",
       "sourceId": "ttc-th",
       "archive": {
-        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
+        "url": "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
         "sha256": "90a97a56f1b5375bb10b7fa9e36a79bd7fef2659d8525fa889a74e0a281e98ff",
         "sizeBytes": 125981,
         "format": "zip"

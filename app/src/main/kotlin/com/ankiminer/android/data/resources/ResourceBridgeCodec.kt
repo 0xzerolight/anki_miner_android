@@ -2081,7 +2081,7 @@ object FrozenResourceCatalog {
                         sourceId = "tnc-th",
                         archive =
                             ResourceArchive(
-                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
+                                url = "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/tnc-th-2026-09-20.zip",
                                 sha256 = "dc38af9e6c016b6ff165a863f969ec384bb5c05f9df98ee961b0eb870585756c",
                                 sizeBytes = 688_439,
                                 format = "zip",
@@ -2098,7 +2098,7 @@ object FrozenResourceCatalog {
                         sourceId = "ttc-th",
                         archive =
                             ResourceArchive(
-                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
+                                url = "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/ttc-th-2026-09-20.zip",
                                 sha256 = "90a97a56f1b5375bb10b7fa9e36a79bd7fef2659d8525fa889a74e0a281e98ff",
                                 sizeBytes = 125_981,
                                 format = "zip",
@@ -2300,7 +2300,7 @@ object FrozenResourceCatalog {
                         sourceId = "opensubtitles-vi-word",
                         archive =
                             ResourceArchive(
-                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
+                                url = "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
                                 sha256 = "4475a9a3c9ee8247a60f11c9fe395f8212afa86296c296b24c452e111dd8d896",
                                 sizeBytes = 402_194,
                                 format = "zip",
@@ -2442,7 +2442,7 @@ object FrozenResourceCatalog {
                         sourceId = "hkcancor-yue",
                         archive =
                             ResourceArchive(
-                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
+                                url = "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
                                 sha256 = "604ce69f9793f46f46c31d99ffa6913def344e3cac467d118ca04a94a09f7029",
                                 sizeBytes = 909_116,
                                 format = "zip",
@@ -2526,7 +2526,7 @@ object FrozenResourceCatalog {
                         sourceId = "opensubtitles-zh-word",
                         archive =
                             ResourceArchive(
-                                url = "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-21/opensubtitles-zh-word-2026.09.20.zip",
+                                url = "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-21/opensubtitles-zh-word-2026.09.20.zip",
                                 sha256 = "991da78003cf1b2c9da4022ed694b9394d6496e171f76b5c79abebd71c46ccbb",
                                 sizeBytes = 400_970,
                                 format = "zip",
@@ -2534,7 +2534,7 @@ object FrozenResourceCatalog {
                         attribution =
                             listOf(
                                 ResourceAttribution("OPUS OpenSubtitles v2024", "P. Lison and J. Tiedemann (2016); subtitles from opensubtitles.org", "ODC-BY-1.0", "https://opus.nlpl.eu/OpenSubtitles/corpus/version/OpenSubtitles"),
-                                ResourceAttribution("opensubtitles-zh-word 2026.09.20", "Anki Miner (zh_CN and zh_TW segmented with jieba)", "ODC-BY-1.0", "https://github.com/0xzerolight/anki_miner/releases/tag/resources-2026-09-21"),
+                                ResourceAttribution("opensubtitles-zh-word 2026.09.20", "Anki Miner (zh_CN and zh_TW segmented with jieba)", "ODC-BY-1.0", "https://github.com/0xzerolight/anki_miner_assets/releases/tag/resources-2026-09-21"),
                             ),
                     ),
                 ),

@@ -122,7 +122,7 @@
       "displayName": "OpenSubtitles 2024 word frequency (Vietnamese)",
       "sourceId": "opensubtitles-vi-word",
       "archive": {
-        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
+        "url": "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/opensubtitles-vi-word-2026.09.19.zip",
         "sha256": "4475a9a3c9ee8247a60f11c9fe395f8212afa86296c296b24c452e111dd8d896",
         "sizeBytes": 402194,
         "format": "zip"

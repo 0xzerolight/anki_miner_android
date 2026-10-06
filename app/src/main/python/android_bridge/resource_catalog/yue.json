@@ -144,7 +144,7 @@
       "displayName": "HKCanCor + CTCPC Cantonese frequency",
       "sourceId": "hkcancor-yue",
       "archive": {
-        "url": "https://github.com/0xzerolight/anki_miner/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
+        "url": "https://github.com/0xzerolight/anki_miner_assets/releases/download/resources-2026-09-20/hkcancor-yue-2026-09-20.zip",
         "sha256": "604ce69f9793f46f46c31d99ffa6913def344e3cac467d118ca04a94a09f7029",
         "sizeBytes": 909116,
         "format": "zip"
