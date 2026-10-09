@@ -844,6 +844,7 @@
     <string name="settings_backup_imported">Загружено настроек: %1$d.</string>
     <string name="settings_backup_imported_skipped">Загружено настроек: %1$d, пропущено: %2$d.</string>
     <string name="settings_backup_export_failed">Не удалось сохранить настройки в этот файл.</string>
+    <string name="settings_backup_export_not_ready">Настройки нельзя сохранить, пока не загрузятся словари и другие ресурсы. Повторите попытку после их загрузки.</string>
     <string name="settings_backup_import_failed">Не удалось прочитать настройки из этого файла.</string>
     <string name="settings_backup_not_a_backup">Этот файл не является файлом настроек Anki Miner.</string>
     <string name="settings_backup_too_large">Этот файл слишком большой, чтобы быть файлом настроек.</string>

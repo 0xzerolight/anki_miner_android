@@ -8,6 +8,7 @@ import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceDocumentWriter
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
 import com.ankiminer.android.data.settings.AppliedSettingsBackup
 import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.data.settings.AppSettings
@@ -1423,11 +1424,20 @@ internal class SettingsViewModel(
                             repository.settings.first()
                         }
                     } ?: throw IOException("Current settings could not be persisted")
+                val inventory =
+                    exportInventory(current) ?: run {
+                        mutableBackupState.value =
+                            SettingsBackupState.Failed(
+                                LocalizedStringResource(R.string.settings_backup_export_not_ready),
+                                SettingsBackupOperation.EXPORT,
+                            )
+                        return@launch
+                    }
                 val document =
                     SettingsBackupCodec.encode(
                         settings = current,
                         appVersion = appVersion,
-                        resources = resources.state.value,
+                        resources = inventory,
                     )
                 val bytes = document.toByteArray(Charsets.UTF_8)
                 withContext(Dispatchers.IO) {
@@ -1487,7 +1497,7 @@ internal class SettingsViewModel(
                         with(SettingsBackupCodec) {
                             parsed.applyTo(
                                 current,
-                                resources.state.value,
+                                settledInventory(),
                                 // Without the profiles nothing proves another code is minable, so
                                 // only the current language may stay.
                                 knownLanguages = minableLanguages ?: setOf(current.language),
@@ -1528,6 +1538,31 @@ internal class SettingsViewModel(
     }
 
     fun restoreMiningDefaults(): Boolean = save(AppSettings::restoreMiningDefaults)
+
+    /**
+     * The inventory a settings load may resolve chains against: null until startup has read it.
+     * Before that the lists are empty because nothing was read, not because nothing is installed,
+     * and resolving against them would erase every chain; null keeps the current chains instead.
+     */
+    private fun settledInventory(): ResourceManagerState? =
+        resources.state.value.takeIf { it.startupReadiness == ResourceStartupReadiness.READY }
+
+    /**
+     * The inventory a settings save may take match keys from, or null when the save must wait. A
+     * FAILED startup counts when its lists name every slot [settings]' chains do: recovery publishes
+     * the lists before failing on a broken slot (that slot then travels without a key, as it would
+     * from READY), but it can also fail before reading them, and empty lists would strip every key.
+     */
+    private fun exportInventory(settings: AppSettings): ResourceManagerState? {
+        val inventory = resources.state.value
+        return when (inventory.startupReadiness) {
+            ResourceStartupReadiness.READY -> inventory
+            ResourceStartupReadiness.FAILED -> inventory.takeIf { it.listsEveryChainSlot(settings) }
+            ResourceStartupReadiness.PENDING,
+            ResourceStartupReadiness.RECOVERING,
+            -> null
+        }
+    }
 
     /**
      * The codes this build can mine: the loaded profiles, or the bridge's answer awaited now when
@@ -1658,3 +1693,13 @@ private fun settingsBackupImportFailureMessage(failure: Exception): LocalizedStr
         null,
         -> LocalizedStringResource(R.string.settings_backup_import_failed)
     }
+
+private fun ResourceManagerState.listsEveryChainSlot(settings: AppSettings): Boolean {
+    val listed =
+        dictionaries.mapTo(mutableSetOf()) { it.slotId } +
+            frequencySources.map { it.sourceId } +
+            pitchSources.map { it.sourceId } +
+            audioPacks.map { it.packId }
+    return (settings.dictionarySources + settings.frequencySources + settings.pitchSources + settings.audioPacks)
+        .all { it.resourceId in listed }
+}

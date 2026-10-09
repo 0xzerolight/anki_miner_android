@@ -846,6 +846,7 @@
     <string name="settings_backup_imported">%1$d settings loaded.</string>
     <string name="settings_backup_imported_skipped">%1$d settings loaded, %2$d skipped.</string>
     <string name="settings_backup_export_failed">Settings could not be saved to that file.</string>
+    <string name="settings_backup_export_not_ready">Settings can\'t be saved until your dictionaries and other resources have loaded. Try again once they have.</string>
     <string name="settings_backup_import_failed">Settings could not be read from that file.</string>
     <string name="settings_backup_not_a_backup">That file is not an Anki Miner settings file.</string>
     <string name="settings_backup_too_large">That file is too large to be a settings file.</string>

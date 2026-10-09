@@ -829,6 +829,7 @@
     <string name="settings_backup_imported">已載入 %1$d 項設定。</string>
     <string name="settings_backup_imported_skipped">已載入 %1$d 項設定，略過 %2$d 項。</string>
     <string name="settings_backup_export_failed">無法將設定儲存至該檔案。</string>
+    <string name="settings_backup_export_not_ready">字典等資源載入完成前無法儲存設定。請在載入完成後再試一次。</string>
     <string name="settings_backup_import_failed">無法從該檔案讀取設定。</string>
     <string name="settings_backup_not_a_backup">該檔案不是 Anki Miner 設定檔案。</string>
     <string name="settings_backup_too_large">該檔案太大，不能作為設定檔案。</string>

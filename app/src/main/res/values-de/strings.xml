@@ -834,6 +834,7 @@
     <string name="settings_backup_imported">%1$d Einstellungen geladen.</string>
     <string name="settings_backup_imported_skipped">%1$d Einstellungen geladen, %2$d übersprungen.</string>
     <string name="settings_backup_export_failed">Einstellungen konnten nicht in dieser Datei gespeichert werden.</string>
+    <string name="settings_backup_export_not_ready">Einstellungen können erst gespeichert werden, wenn Ihre Wörterbücher und anderen Ressourcen geladen sind. Versuchen Sie es danach erneut.</string>
     <string name="settings_backup_import_failed">Einstellungen konnten nicht aus dieser Datei gelesen werden.</string>
     <string name="settings_backup_not_a_backup">Diese Datei ist keine Anki-Miner-Einstellungsdatei.</string>
     <string name="settings_backup_too_large">Diese Datei ist zu groß, um eine Einstellungsdatei zu sein.</string>

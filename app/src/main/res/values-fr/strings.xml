@@ -839,6 +839,7 @@
     <string name="settings_backup_imported">%1$d paramètres chargés.</string>
     <string name="settings_backup_imported_skipped">%1$d paramètres chargés, %2$d ignorés.</string>
     <string name="settings_backup_export_failed">Les paramètres n\'ont pas pu être enregistrés dans ce fichier.</string>
+    <string name="settings_backup_export_not_ready">Les paramètres ne peuvent pas être enregistrés tant que vos dictionnaires et autres ressources ne sont pas chargés. Réessayez une fois qu\'ils le sont.</string>
     <string name="settings_backup_import_failed">Les paramètres n\'ont pas pu être lus depuis ce fichier.</string>
     <string name="settings_backup_not_a_backup">Ce fichier n\'est pas un fichier de paramètres Anki Miner.</string>
     <string name="settings_backup_too_large">Ce fichier est trop volumineux pour être un fichier de paramètres.</string>

@@ -839,6 +839,7 @@
     <string name="settings_backup_imported">%1$d configurações carregadas.</string>
     <string name="settings_backup_imported_skipped">%1$d configurações carregadas, %2$d ignoradas.</string>
     <string name="settings_backup_export_failed">Não foi possível salvar as configurações nesse arquivo.</string>
+    <string name="settings_backup_export_not_ready">Não é possível salvar as configurações até que seus dicionários e outros recursos sejam carregados. Tente novamente depois que forem carregados.</string>
     <string name="settings_backup_import_failed">Não foi possível ler as configurações desse arquivo.</string>
     <string name="settings_backup_not_a_backup">Esse arquivo não é um arquivo de configurações do Anki Miner.</string>
     <string name="settings_backup_too_large">Esse arquivo é grande demais para ser um arquivo de configurações.</string>

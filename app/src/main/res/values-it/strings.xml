@@ -839,6 +839,7 @@
     <string name="settings_backup_imported">%1$d impostazioni caricate.</string>
     <string name="settings_backup_imported_skipped">%1$d impostazioni caricate, %2$d ignorate.</string>
     <string name="settings_backup_export_failed">Impossibile salvare le impostazioni in quel file.</string>
+    <string name="settings_backup_export_not_ready">Impossibile salvare le impostazioni finché i dizionari e le altre risorse non sono caricati. Riprova quando lo sono.</string>
     <string name="settings_backup_import_failed">Impossibile leggere le impostazioni da quel file.</string>
     <string name="settings_backup_not_a_backup">Quel file non è un file di impostazioni di Anki Miner.</string>
     <string name="settings_backup_too_large">Quel file è troppo grande per essere un file di impostazioni.</string>

@@ -839,6 +839,7 @@
     <string name="settings_backup_imported">Se cargaron %1$d ajustes.</string>
     <string name="settings_backup_imported_skipped">Se cargaron %1$d ajustes; se omitieron %2$d.</string>
     <string name="settings_backup_export_failed">No se pudieron guardar los ajustes en ese archivo.</string>
+    <string name="settings_backup_export_not_ready">Los ajustes no se pueden guardar hasta que se carguen sus diccionarios y demás recursos. Vuelva a intentarlo cuando se hayan cargado.</string>
     <string name="settings_backup_import_failed">No se pudieron leer los ajustes de ese archivo.</string>
     <string name="settings_backup_not_a_backup">Ese archivo no es un archivo de ajustes de Anki Miner.</string>
     <string name="settings_backup_too_large">Ese archivo es demasiado grande para ser un archivo de ajustes.</string>

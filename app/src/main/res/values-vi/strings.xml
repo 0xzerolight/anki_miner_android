@@ -829,6 +829,7 @@
     <string name="settings_backup_imported">Đã tải %1$d cài đặt.</string>
     <string name="settings_backup_imported_skipped">Đã tải %1$d cài đặt, bỏ qua %2$d.</string>
     <string name="settings_backup_export_failed">Không thể lưu cài đặt vào tệp đó.</string>
+    <string name="settings_backup_export_not_ready">Chưa thể lưu cài đặt cho đến khi từ điển và các tài nguyên khác được tải xong. Hãy thử lại sau khi tải xong.</string>
     <string name="settings_backup_import_failed">Không thể đọc cài đặt từ tệp đó.</string>
     <string name="settings_backup_not_a_backup">Tệp đó không phải là tệp cài đặt Anki Miner.</string>
     <string name="settings_backup_too_large">Tệp đó quá lớn để là tệp cài đặt.</string>
