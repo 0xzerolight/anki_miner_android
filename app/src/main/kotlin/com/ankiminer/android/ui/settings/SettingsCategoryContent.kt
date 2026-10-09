@@ -232,6 +232,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 diagnosticsExport,
                 recorder,
                 callbacks,
+                language,
             )
     }
 }
@@ -1514,6 +1515,7 @@ private fun LazyListScope.diagnosticsSettings(
     diagnosticsExport: DiagnosticsExportState,
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
+    language: LanguageSettingsState,
 ) {
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "diagnostic-runtime") {
         SettingsSection(stringResource(R.string.b3_diagnostics_runtime)) {
@@ -1585,6 +1587,7 @@ private fun LazyListScope.diagnosticsSettings(
             onExportSettings = callbacks.onExportSettings,
             onImportSettings = callbacks.onImportSettings,
             onDismissBackupState = callbacks.onDismissBackupState,
+            importEnabled = language.switchAllowed,
         )
     }
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "update-check") {
@@ -1729,6 +1732,7 @@ internal fun SettingsBackupSection(
     onExportSettings: () -> Unit,
     onImportSettings: () -> Unit,
     onDismissBackupState: () -> Unit,
+    importEnabled: Boolean = true,
 ) {
     SettingsSection(stringResource(R.string.settings_backup_section)) {
         Text(
@@ -1745,7 +1749,8 @@ internal fun SettingsBackupSection(
         }
         SecondaryActionButton(
             onClick = onImportSettings,
-            enabled = actionsEnabled,
+            // A file may carry another mining language: it loads only while a switch could start.
+            enabled = actionsEnabled && importEnabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.settings_backup_import))
