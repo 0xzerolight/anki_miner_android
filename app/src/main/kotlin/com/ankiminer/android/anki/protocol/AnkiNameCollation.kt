@@ -95,7 +95,7 @@ internal object AnkiNameCollation {
 
     private const val COMPONENT_SEPARATOR = "::"
     private const val NATIVE_DECK_SEPARATOR = "\u001f"
-    private const val IDEOGRAPHIC_SPACE = '　'
+    private const val IDEOGRAPHIC_SPACE = '\u3000'
     private const val NEXT_LINE = '\u0085'
     private const val BLANK = "blank"
     private const val DOTLESS_I = 0x0131

@@ -27,13 +27,13 @@ class AnkiNameCollationTest {
 
     @Test
     fun `tags split on ideographic space and trim components as Anki does`() {
-        assertTrue(AnkiNameCollation.sameTagSet(listOf("日本語　単語"), listOf("日本語", "単語")))
-        assertTrue(AnkiNameCollation.sameTagSet(listOf("a ::b"), listOf("a::b")))
+        assertTrue(AnkiNameCollation.sameTagSet(listOf("日本語\u3000単語"), listOf("日本語", "単語")))
+        assertTrue(AnkiNameCollation.sameTagSet(listOf("a\u00a0::b"), listOf("a::b")))
     }
 
     @Test
     fun `tags compare after Anki's NFC normalisation`() {
-        assertTrue(AnkiNameCollation.sameTagSet(listOf("café"), listOf("café")))
+        assertTrue(AnkiNameCollation.sameTagSet(listOf("cafe\u0301"), listOf("caf\u00e9")))
     }
 
     @Test
@@ -44,7 +44,7 @@ class AnkiNameCollationTest {
         assertTrue(AnkiNameCollation.sameDeck("Japanese:::Mining", "Japanese::Mining"))
         assertTrue(AnkiNameCollation.sameDeck("Japanese::", "Japanese::blank"))
         assertTrue(AnkiNameCollation.sameDeck("Straße", "STRASSE"))
-        assertTrue(AnkiNameCollation.sameDeck("Café", "café"))
+        assertTrue(AnkiNameCollation.sameDeck("Cafe\u0301", "caf\u00e9"))
     }
 
     @Test
@@ -73,9 +73,9 @@ class AnkiNameCollationTest {
     @Test
     fun `case folding is Unicode full folding`() {
         assertTrue(AnkiNameCollation.sameTagSet(listOf("straße"), listOf("STRASSE")))
-        assertTrue(AnkiNameCollation.sameTagSet(listOf("ẞ"), listOf("ss")))
+        assertTrue(AnkiNameCollation.sameTagSet(listOf("\u1e9e"), listOf("ss")))
         assertTrue(AnkiNameCollation.sameTagSet(listOf("ΣΊΣΥΦΟΣ"), listOf("σίσυφος")))
-        assertTrue(AnkiNameCollation.sameTagSet(listOf("İ"), listOf("i̇")))
-        assertTrue(AnkiNameCollation.sameTagSet(listOf("K"), listOf("k")))
+        assertTrue(AnkiNameCollation.sameTagSet(listOf("\u0130"), listOf("i\u0307")))
+        assertTrue(AnkiNameCollation.sameTagSet(listOf("\u212a"), listOf("k")))
     }
 }
