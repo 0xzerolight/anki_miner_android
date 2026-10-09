@@ -1022,6 +1022,9 @@ internal class SetupViewModel(
         val existing = pendingPicker
         if (existing != null && (existing.kind != kind || existing.uri != null)) return
         val request = existing ?: fallback().also(::savePendingPicker)
+        // The SAF result is delivered once. Until retention saves its uri, a restored reservation
+        // could never complete, so restore must know this one has already had its result.
+        savedStateHandle[STATE_PICKER_RESULT_RECEIVED] = true
         local.update { it.copy(resourcePickerFailure = null) }
         pendingPickerRetentionJob =
             viewModelScope.launch {
@@ -1238,6 +1241,7 @@ internal class SetupViewModel(
         saveString(STATE_PICKER_AUDIO_PACK_PATH, request.audioPackPath)
         saveString(STATE_PICKER_AUDIO_PACK_FORMAT, request.audioPackFormat)
         saveString(STATE_PICKER_URI, request.uri)
+        savedStateHandle.remove<Boolean>(STATE_PICKER_RESULT_RECEIVED)
     }
 
     private fun setAudioPackChoices(choices: List<AudioPackCandidate>) {
@@ -1274,6 +1278,14 @@ internal class SetupViewModel(
 
     private fun restorePendingPicker(): PendingResourcePicker? {
         val kind = savedEnum<ResourcePickerKind>(STATE_PICKER_KIND) ?: return null
+        // A result that arrived but was never retained died with its process: nothing delivers
+        // it again, and keeping the reservation would refuse every picker.
+        if (
+            savedStateHandle.get<String>(STATE_PICKER_URI) == null &&
+                savedStateHandle.get<Boolean>(STATE_PICKER_RESULT_RECEIVED) == true
+        ) {
+            return null
+        }
         val targetId = savedStateHandle.get<String>(STATE_PICKER_TARGET_ID)
         val target =
             targetId?.let {
@@ -1335,6 +1347,7 @@ internal class SetupViewModel(
             STATE_PICKER_AUDIO_PACK_PATH,
             STATE_PICKER_AUDIO_PACK_FORMAT,
             STATE_PICKER_URI,
+            STATE_PICKER_RESULT_RECEIVED,
         ).forEach { savedStateHandle.remove<Any>(it) }
     }
 
@@ -1815,6 +1828,7 @@ internal class SetupViewModel(
         const val STATE_PICKER_AUDIO_PACK_PATH = "setup.picker.audioPackPath"
         const val STATE_PICKER_AUDIO_PACK_FORMAT = "setup.picker.audioPackFormat"
         const val STATE_PICKER_URI = "setup.picker.uri"
+        const val STATE_PICKER_RESULT_RECEIVED = "setup.picker.resultReceived"
         const val STATE_AUDIO_PACK_CHOICE_IDS = "setup.audioPackChoices.ids"
         const val STATE_AUDIO_PACK_CHOICE_PATHS = "setup.audioPackChoices.paths"
         const val STATE_AUDIO_PACK_CHOICE_FORMATS = "setup.audioPackChoices.formats"

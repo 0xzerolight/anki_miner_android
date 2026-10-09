@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -201,6 +202,50 @@ class SetupResourceImportTest {
             assertNull(model.uiState.value.pendingReplace)
             assertEquals(listOf(Triple("content://test/pitch.csv", "pitch-2", false)), resources.pitchImports)
         }
+
+    @Test
+    fun `process death during the custom dictionary preflight leaves the pickers usable`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val dying = ImportResources().apply { preflightGate = CompletableDeferred() }
+            val original = viewModel(dying, savedStateHandle = savedState)
+            advanceUntilIdle()
+            assertTrue(original.beginCustomDictionaryPicker())
+            original.onCustomDictionaryPicked("content://test/dictionary.zip")
+            advanceUntilIdle()
+            assertEquals(listOf("content://test/dictionary.zip"), dying.customDictionaryPreflights)
+
+            // The SAF result was consumed by the dead process and is never delivered again.
+            val restored = viewModel(ImportResources(), savedStateHandle = savedState.processDeathCopy())
+            advanceUntilIdle()
+
+            assertTrue(restored.beginCustomDictionaryPicker())
+        }
+
+    @Test
+    fun `a picker still open across process death keeps its reservation`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val original = viewModel(ImportResources(), savedStateHandle = savedState)
+            advanceUntilIdle()
+            assertTrue(original.beginFrequencyPicker())
+
+            val resources = ImportResources()
+            val restored = viewModel(resources, savedStateHandle = savedState.processDeathCopy())
+            advanceUntilIdle()
+            assertFalse(restored.beginPitchPicker())
+            restored.onFrequencyPicked("content://test/frequency.tsv")
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf(Triple("content://test/frequency.tsv", "frequency", false)),
+                resources.frequencyImports,
+            )
+        }
+
+    /** What onSaveInstanceState captured, handed to the next process's ViewModel. */
+    private fun SavedStateHandle.processDeathCopy(): SavedStateHandle =
+        SavedStateHandle(keys().associateWith { get<Any?>(it) })
 
     private fun installedFrequency(
         sourceId: String,
