@@ -9,6 +9,8 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
+import com.ankiminer.android.data.resources.InstalledFrequencySource
+import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
 import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
@@ -38,6 +40,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -157,6 +160,79 @@ class SetupResourceImportTest {
 
             assertTrue(resources.wordListRemovals.isEmpty())
         }
+
+    @Test
+    fun `a frequency list whose id another language holds takes the next free id`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources =
+                ImportResources().apply {
+                    update {
+                        it.copy(frequencySources = listOf(installedFrequency("frequency", "frequency", "ja")))
+                    }
+                }
+            val model = viewModel(resources, AppSettings(language = "he"))
+            advanceUntilIdle()
+
+            assertTrue(model.beginFrequencyPicker())
+            model.onFrequencyPicked("content://test/frequency.csv")
+            advanceUntilIdle()
+
+            assertNull(model.uiState.value.pendingReplace)
+            assertEquals(
+                listOf(Triple("content://test/frequency.csv", "frequency-2", false)),
+                resources.frequencyImports,
+            )
+        }
+
+    @Test
+    fun `a pitch list whose id another language holds takes the next free id`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources =
+                ImportResources().apply {
+                    update { it.copy(pitchSources = listOf(installedPitch("pitch", "pitch", "ja"))) }
+                }
+            val model = viewModel(resources, AppSettings(language = "he"))
+            advanceUntilIdle()
+
+            assertTrue(model.beginPitchPicker())
+            model.onPitchPicked("content://test/pitch.csv")
+            advanceUntilIdle()
+
+            assertNull(model.uiState.value.pendingReplace)
+            assertEquals(listOf(Triple("content://test/pitch.csv", "pitch-2", false)), resources.pitchImports)
+        }
+
+    private fun installedFrequency(
+        sourceId: String,
+        sourceName: String,
+        language: String,
+    ) = InstalledFrequencySource(
+        sourceId = sourceId,
+        sourceName = sourceName,
+        format = "csv",
+        entryCount = 100,
+        schemaOk = true,
+        schemaVersion = 1,
+        isCategorical = false,
+        rebuildSourcePath = null,
+        language = language,
+    )
+
+    private fun installedPitch(
+        sourceId: String,
+        sourceName: String,
+        language: String,
+    ) = InstalledPitchSource(
+        sourceId = sourceId,
+        sourceName = sourceName,
+        sourceRevision = "1",
+        format = "csv",
+        entryCount = 100,
+        schemaOk = true,
+        schemaVersion = 1,
+        rebuildSourcePath = null,
+        language = language,
+    )
 
     private fun viewModel(
         resources: ImportResources,

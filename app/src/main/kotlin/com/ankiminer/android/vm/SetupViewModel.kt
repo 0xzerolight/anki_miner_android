@@ -953,6 +953,9 @@ internal class SetupViewModel(
                 ResourceIdentity.frequencyTarget(
                     sourceName,
                     state.frequencySources,
+                    // Slot directories are one namespace across languages, so an id another
+                    // language holds is taken even though this language's list omits it.
+                    resources.state.value.frequencySources.map { it.sourceId },
                 ),
             sourceName = sourceName,
             frequencyFormat = source.fileKind.toFrequencyFormat(),
@@ -967,7 +970,13 @@ internal class SetupViewModel(
         val sourceName = derivedSourceName(source, R.string.setup_default_pitch_name)
         return PendingResourcePicker(
             kind = ResourcePickerKind.PITCH,
-            target = ResourceIdentity.pitchTarget(sourceName, state.pitchSources),
+            target =
+                ResourceIdentity.pitchTarget(
+                    sourceName,
+                    state.pitchSources,
+                    // One slot namespace across languages, as in frequencyPickerRequest.
+                    resources.state.value.pitchSources.map { it.sourceId },
+                ),
             sourceName = sourceName,
             pitchFormat = source.fileKind.toPitchFormat(),
             uri = source.uri,

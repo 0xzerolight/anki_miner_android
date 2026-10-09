@@ -12,10 +12,11 @@ import java.util.Locale
  * inventory round-trips, the entry persisted in the priority chain, and the id the engine looks the
  * source up by. It is also not something a user should have to invent.
  *
- * Name derivation is pure for local resources. Frequency and pitch collisions resolve to the
- * existing id so their chain entries survive. Custom dictionaries differ: their base id comes from
- * archive metadata, a new import takes the next free slot, and a row-scoped replacement pins the
- * occupied id explicitly.
+ * Name derivation is pure for local resources. Frequency and pitch collisions within the importing
+ * language resolve to the existing id so their chain entries survive; an id only another language
+ * holds takes the next free slot, since slot directories are one namespace across languages.
+ * Custom dictionaries differ: their base id comes from archive metadata, a new import takes the
+ * next free slot, and a row-scoped replacement pins the occupied id explicitly.
  */
 private val PROVIDER_AUTHORITY_TOKEN = Regex("[a-z0-9][a-z0-9._-]{0,127}")
 
@@ -89,10 +90,14 @@ internal object ResourceIdentity {
      * before ids were derived reachable: it lives under an id the current derivation would never
      * produce, so without it a re-import would orphan the old directory and its chain entry
      * instead of replacing it.
+     *
+     * [installed] is the importing language's list, where a match is a replace. [allSlotIds] is
+     * every language's ids: an id only another language holds takes the next free suffix.
      */
     fun frequencyTarget(
         displayName: String,
         installed: List<InstalledFrequencySource>,
+        allSlotIds: Collection<String> = emptyList(),
     ): ResourceImportTarget {
         val derived = derive(displayName, "frequency")
         val canonicalName = canonicalDisplayName(displayName)
@@ -101,10 +106,8 @@ internal object ResourceIdentity {
                 ?: installed.firstOrNull {
                     canonicalDisplayName(it.sourceName).equals(canonicalName, ignoreCase = true)
                 }
-        return ResourceImportTarget(
-            identity = match?.sourceId ?: derived,
-            installedName = match?.sourceName,
-        )
+        if (match != null) return ResourceImportTarget(match.sourceId, match.sourceName)
+        return ResourceImportTarget(nextFreeSlot(derived, allSlotIds.toSet()), installedName = null)
     }
 
     /** Audio-pack ids come from the engine preflight; this only resolves installed collisions. */
@@ -122,16 +125,24 @@ internal object ResourceIdentity {
         installed: List<InstalledDictionary>,
     ): ResourceImportTarget {
         val occupied = installed.filter(InstalledDictionary::occupied).mapTo(mutableSetOf()) { it.slotId }
-        if (derivedSlotId !in occupied) return ResourceImportTarget(derivedSlotId, installedName = null)
+        return ResourceImportTarget(nextFreeSlot(derivedSlotId, occupied), installedName = null)
+    }
+
+    /** [derived] when free, else its first `-N` suffix (N >= 2) not in [occupied], within the slot limit. */
+    private fun nextFreeSlot(
+        derived: String,
+        occupied: Set<String>,
+    ): String {
+        if (derived !in occupied) return derived
         var suffix = 2
         while (true) {
             val tail = "-$suffix"
             val base =
-                derivedSlotId
+                derived
                     .take(MAX_SLOT_LENGTH - tail.length)
                     .trimEnd('-', '.', '_')
             val candidate = base + tail
-            if (candidate !in occupied) return ResourceImportTarget(candidate, installedName = null)
+            if (candidate !in occupied) return candidate
             suffix += 1
         }
     }
@@ -151,10 +162,13 @@ internal object ResourceIdentity {
      * Pitch became a chain of per-source slots with the engine re-pin, so it now
      * derives an id from the display name exactly like frequency; it is no longer
      * a single unnamed file that anything installed collides with.
+     *
+     * [installed] and [allSlotIds] as in [frequencyTarget].
      */
     fun pitchTarget(
         displayName: String,
         installed: List<InstalledPitchSource>,
+        allSlotIds: Collection<String> = emptyList(),
     ): ResourceImportTarget {
         val derived = derive(displayName, "pitch")
         val canonicalName = canonicalDisplayName(displayName)
@@ -163,10 +177,8 @@ internal object ResourceIdentity {
                 ?: installed.firstOrNull {
                     canonicalDisplayName(it.sourceName).equals(canonicalName, ignoreCase = true)
                 }
-        return ResourceImportTarget(
-            identity = match?.sourceId ?: derived,
-            installedName = match?.sourceName,
-        )
+        if (match != null) return ResourceImportTarget(match.sourceId, match.sourceName)
+        return ResourceImportTarget(nextFreeSlot(derived, allSlotIds.toSet()), installedName = null)
     }
 
     private fun canonicalDisplayName(value: String): String {

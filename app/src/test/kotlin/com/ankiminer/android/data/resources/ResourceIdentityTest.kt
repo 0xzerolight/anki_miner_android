@@ -203,6 +203,35 @@ class ResourceIdentityTest {
         assertEquals("Unrelated", target.installedName)
     }
 
+    /** Slot directories are one namespace: another language's id is taken, not replaced. */
+    @Test
+    fun frequencyTargetSkipsAnIdOnlyAnotherLanguageHolds() {
+        val target =
+            ResourceIdentity.frequencyTarget(
+                "Frequency",
+                emptyList(),
+                allSlotIds = listOf("frequency", "frequency-2"),
+            )
+
+        assertEquals("frequency-3", target.identity)
+        assertNull(target.installedName)
+    }
+
+    @Test
+    fun frequencyTargetPrefersThisLanguagesNameMatchOverASuffix() {
+        val installed = listOf(frequencySource(sourceId = "frequency-2", sourceName = "Frequency"))
+
+        val target =
+            ResourceIdentity.frequencyTarget(
+                "Frequency",
+                installed,
+                allSlotIds = listOf("frequency", "frequency-2"),
+            )
+
+        assertEquals("frequency-2", target.identity)
+        assertEquals("Frequency", target.installedName)
+    }
+
     @Test
     fun customDictionaryTargetUsesTheNextFreeSlotWhenTheDerivedSlotIsOccupied() {
         val installed =
@@ -369,6 +398,14 @@ class ResourceIdentityTest {
 
         assertEquals("legacy-pitch", target.identity)
         assertEquals("\u3070", target.installedName)
+    }
+
+    @Test
+    fun pitchTargetSkipsAnIdOnlyAnotherLanguageHolds() {
+        val target = ResourceIdentity.pitchTarget("Kanjium", emptyList(), allSlotIds = listOf("kanjium"))
+
+        assertEquals("kanjium-2", target.identity)
+        assertFalse(target.collides)
     }
 
     private fun pitchSource(
