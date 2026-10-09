@@ -6282,7 +6282,7 @@ def test_created_note_ids_must_remain_unique_across_batches(
     assert kotlin.release_acknowledgements == [False]
 
 
-def test_partial_create_cancellation_remains_row_local_nonretryable_cancellation(
+def test_partial_create_cancellation_returns_the_committed_rows(
     initialized_bridge_home: Path,
 ) -> None:
     kotlin = FakeKotlinAnki()
@@ -6294,121 +6294,46 @@ def test_partial_create_cancellation_remains_row_local_nonretryable_cancellation
     ]
     adapter = _adapter(_config(initialized_bridge_home), kotlin)
 
-    from anki_miner.exceptions import AnkiConnectionError
-
-    with pytest.raises(AnkiConnectionError, match="user stopped") as exc_info:
-        adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")])
-
-    assert exc_info.value.code == "cancelled"  # type: ignore[attr-defined]
-    assert exc_info.value.retryable is False  # type: ignore[attr-defined]
-    assert isinstance(exc_info.value.__cause__, AnkiOperationCancelled)
+    assert adapter.create_cards_batch([_card("猫"), _card("犬"), _card("鳥")]) == [1000]
     assert adapter.last_created_note_ids == [1000]
+    assert len(adapter.last_created_mined_forms) == 1
     assert adapter.last_skipped_duplicates == 0
 
 
-def test_cancellation_between_create_callbacks_is_a_nonretryable_partial_error(
+def test_cancellation_between_create_callbacks_returns_the_committed_notes(
     initialized_bridge_home: Path,
 ) -> None:
-    from anki_miner.exceptions import AnkiConnectionError
-
-    kotlin = FakeKotlinAnki()
-    adapter = _adapter(
-        _config(initialized_bridge_home),
-        kotlin,
-        cancellation_check=lambda: bool(kotlin.requests_for("ankiCreateNotes")),
-    )
-
-    with pytest.raises(AnkiConnectionError) as exc_info:
-        adapter.create_cards_batch([_card(f"語{index}") for index in range(101)])
-
-    assert exc_info.value.retryable is False  # type: ignore[attr-defined]
-    assert exc_info.value.code == "cancelled"  # type: ignore[attr-defined]
-    assert isinstance(exc_info.value.__cause__, AnkiOperationCancelled)
-    assert adapter.last_created_note_ids == list(range(1000, 1100))
-    assert len(kotlin.requests_for("ankiCreateNotes")) == 1
-
-
-def test_vendored_episode_processor_harvests_ids_on_intercallback_cancellation(
-    initialized_bridge_home: Path,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # episode_processor now imports anki_service at module level (for the
-    # transient-transport classifier), which pulls requests. The lean host-test
-    # env has no runtime deps; the runtime-host lane still runs this for real.
-    pytest.importorskip("requests")
-    from anki_miner.orchestration.episode_processor import (
-        EpisodeProcessor,
-        _EpisodeContext,
-    )
-
-    class Presenter:
+    class Progress:
         def __init__(self) -> None:
-            self.errors: list[str] = []
+            self.events: list[tuple[object, ...]] = []
 
-        def show_error(self, message: str) -> None:
-            self.errors.append(message)
+        def on_start(self, *args: object) -> None:
+            self.events.append(("start", *args))
+
+        def on_progress(self, *args: object) -> None:
+            self.events.append(("progress", *args))
+
+        def on_complete(self) -> None:
+            self.events.append(("complete",))
 
     kotlin = FakeKotlinAnki()
-    monkeypatch.delenv("ANKI_MINER_KEEP_TEMP", raising=False)
     adapter = _adapter(
         _config(initialized_bridge_home),
         kotlin,
         cancellation_check=lambda: bool(kotlin.requests_for("ankiCreateNotes")),
     )
-    presenter = Presenter()
-    processor = EpisodeProcessor.__new__(EpisodeProcessor)
-    processor.anki_service = adapter
-    processor.presenter = presenter
-    processor._external_cancel = None
-    # Renamed upstream when the gate grew past dictionaries to frequency and
-    # pitch; stubbing the old name lets the real one run against a processor
-    # that owns no config.
-    processor.check_resource_staleness = lambda: None
-    # _run_pipeline gained a third pre-flight gate at this pin; it asks the
-    # definition service for a usable offline provider, which this partial
-    # processor has no reason to own.
-    processor.check_offline_dictionary = lambda: None
-    processor._preflight_card_target = lambda: None
-    # _run_pipeline's finally now bounds DefinitionService's per-run cache to the
-    # item; the partial processor owns no definition service, so stand one in.
-    processor.definition_service = types.SimpleNamespace(clear_run_cache=lambda: None)
-    # Every result leaving _run_pipeline now passes _stamp_whitelist_coverage,
-    # which asks the config and the word-list service whether a whitelist is on.
-    processor.config = types.SimpleNamespace(use_whitelist=False, bypass_optional_filters=False)
-    processor.word_list_service = None
-    run_temp = tmp_path / "partial-run"
+    progress = Progress()
 
-    def allocate_temp() -> Path:
-        run_temp.mkdir()
-        return run_temp
+    created = adapter.create_cards_batch([_card(f"語{index}") for index in range(101)], progress)
 
-    processor._allocate_run_temp_folder = allocate_temp
-    ctx = _EpisodeContext(
-        start_time=time.time(),
-        video_file_str="episode.mkv",
-        subtitle_file_str="episode.srt",
-        episode_name="Episode 1",
-        series_name="Series",
-        source_label="Series - Episode 1",
-    )
-    cards = [_card(f"語{index}") for index in range(101)]
-
-    def body(_run_temp: Path) -> Any:
-        created_ids = adapter.create_cards_batch(cards)
-        return ctx.build_result(
-            cards_created=len(created_ids),
-            card_ids=list(adapter.last_created_note_ids),
-        )
-
-    result = processor._run_pipeline(ctx, None, body)
-
-    assert result.cards_created == 100
-    assert result.card_ids == list(range(1000, 1100))
-    assert any("cancelled after 100 note(s)" in error for error in result.errors)
-    assert any("remain in Anki" in error for error in result.errors)
-    assert presenter.errors
-    assert not run_temp.exists()
+    assert created == list(range(1000, 1100))
+    assert adapter.last_created_note_ids == created
+    assert len(kotlin.requests_for("ankiCreateNotes")) == 1
+    # Desktop skips on_complete when Stop breaks its batch loop.
+    assert progress.events == [
+        ("start", 101, "Creating Anki cards"),
+        ("progress", 100, "Cards created: 100/101"),
+    ]
 
 
 def test_vendored_episode_processor_preserves_clean_prewrite_cancellation(

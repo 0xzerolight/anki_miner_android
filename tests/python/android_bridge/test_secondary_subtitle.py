@@ -91,7 +91,13 @@ def _run(
     *,
     translation: str | None,
     offset_ms: int,
+    kotlin: FakeKotlinAnki | None = None,
+    cancel_event: threading.Event | None = None,
+    words: list[Any] | None = None,
+    known_word_db: object | None = None,
 ) -> tuple[Any, FakeKotlinAnki, Any]:
+    """Run the fixture; the optional doubles default to one 猫 card and a fresh Kotlin."""
+
     for module in ("pysubs2", "charset_normalizer", "requests"):
         pytest.importorskip(module, reason="runtime dependency lane")
     import anki_miner.services.subtitle_parser as parser_module
@@ -152,17 +158,18 @@ def _run(
         sentence_reading="ねこをみる。",
         pos="名詞",
     )
+    tokens = [word] if words is None else list(words)
 
     class _Parser(parser_module.SubtitleParserService):
         """The real parser with tokenizing stubbed; raw cue parsing stays real."""
 
         def parse_subtitle_file_with_index(self, subtitle_file: Path, subtitle_offset: float | None = None) -> Any:
             assert subtitle_file == primary
-            return [word], []
+            return list(tokens), []
 
         def count_lemmas(self, subtitle_file: Path) -> collections.Counter[str]:
             assert subtitle_file == primary
-            return collections.Counter({"猫": 1})
+            return collections.Counter(token.lemma for token in tokens)
 
     # Constructing the parser asks for the shared MeCab tagger; nothing here
     # tokenizes, so it never needs a real one.
@@ -179,15 +186,16 @@ def _run(
             definition_service=_DefinitionService(),
             anki_service=anki_adapter,
             presenter=presenter,
+            known_word_db=known_word_db,
         )
 
     monkeypatch.setattr(mining, "_build_processor", build_processor)
-    kotlin = FakeKotlinAnki()
+    kotlin = FakeKotlinAnki() if kotlin is None else kotlin
     kotlin.verify_fields = ["Expression", "Sentence", "Translation"]
     adapters = SimpleNamespace(
         anki=AndroidAnkiCallbacks(kotlin, RUN_ID),
         run_id=RUN_ID,
-        cancel_event=threading.Event(),
+        cancel_event=threading.Event() if cancel_event is None else cancel_event,
         progress=None,
         curate=lambda words: list(words),
     )

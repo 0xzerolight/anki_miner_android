@@ -817,6 +817,7 @@ class AndroidAnkiAdapter:
         callbacks: AndroidAnkiCallbacks,
         cancellation_check: Callable[[], bool] | None = None,
         source_prefix: str | None = None,
+        request_cancellation: Callable[[], None] | None = None,
     ) -> None:
         # Function-local by design: importing the builder freezes config paths.
         from anki_miner.services.anki_note_builder import REQUIRED_FIELD_KEYS
@@ -837,6 +838,11 @@ class AndroidAnkiAdapter:
         # The M0 seam can run standalone; the mining composition layer supplies
         # JobHandle.cancel_event.is_set once it owns adapter construction.
         self._cancellation_check = cancellation_check or (lambda: False)
+        # Sets the job's cancel event. Kotlin cancels its run token before its
+        # control dispatch reaches that event, so a callback can answer
+        # "cancelled" first, and the engine reads only the event when it
+        # classifies the run.
+        self._request_cancellation = request_cancellation or (lambda: None)
         # Engine-composed ``"<series> — "`` prefix on the card source field.
         # Android's series is a synthetic lane label with no counterpart on
         # disk, so the composition layer hands the exact prefix down here.
@@ -3731,22 +3737,16 @@ class AndroidAnkiAdapter:
                 )
             if progress_callback:
                 progress_callback.on_complete()
-        except AnkiOperationCancelled as error:
+        except AnkiOperationCancelled:
             if not all_created_ids:
                 raise
-            # BaseException is intentional for a clean pre-write stop, but it
-            # would bypass EpisodeProcessor's partial-ID harvest after an
-            # earlier callback committed notes. Convert only that temporal
-            # state to a catchable cancellation; prior commits alone do not
-            # make the active row's outcome uncertain.
-            from anki_miner.exceptions import AnkiConnectionError
-
-            partial_error = AnkiConnectionError(
-                "Anki card creation was cancelled after " f"{len(all_created_ids)} note(s) were committed: {error}"
-            )
-            partial_error.code = "cancelled"  # type: ignore[attr-defined]
-            partial_error.retryable = False  # type: ignore[attr-defined]
-            raise partial_error from error
+            # Desktop AnkiService.create_cards_batch breaks out of its batch
+            # loop when Stop lands after a commit: it returns the committed
+            # IDs and skips on_complete. _phase5 then appends CANCELLED_ERROR
+            # and records the created words as known, so the run ends
+            # cancelled with its cards. A stop before any write still escapes
+            # as the bridge-only BaseException.
+            self._request_cancellation()
         finally:
             self.last_created_note_ids = all_created_ids
             self.last_created_mined_forms = created_mined_forms
