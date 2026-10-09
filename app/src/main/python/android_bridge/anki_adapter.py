@@ -1486,11 +1486,13 @@ class AndroidAnkiAdapter:
                 if row_error.code not in _RECOVERABLE_MEDIA_ERROR_CODES:
                     _raise_callback_error(row_error)
                 # A prior successful mapping line lets a later run resolve the refusal's opaque
-                # held asset id after the adapter that created that claim has closed.
+                # held asset id after the adapter that created that claim has closed. Never the
+                # name: a card media name starts with the mined form.
                 logger.warning(
-                    "Failed to store media asset %s [%s]: %s",
-                    asset.original_name,
+                    "Failed to store media asset [%s] purpose=%s kind=%s: %s",
                     asset.asset_id,
+                    asset.purpose,
+                    asset.media_kind,
                     row_error,
                 )
             elif status == "uncertain":
@@ -1550,11 +1552,14 @@ class AndroidAnkiAdapter:
         for asset in assets:
             actual = stored.get(asset.asset_id)
             if actual is not None:
+                # The id-to-asset mapping a later run's namespace refusal needs, without a name:
+                # a card media name starts with the mined form, and a dictionary provider name
+                # is an unsalted hash of a public dictionary basename.
                 logger.info(
-                    "Stored media asset %s [%s] as %s",
-                    asset.original_name,
+                    "Stored media asset [%s] purpose=%s kind=%s",
                     asset.asset_id,
-                    actual,
+                    asset.purpose,
+                    asset.media_kind,
                 )
         return _StoreAssetsOutcome(stored, error)
 
@@ -1800,7 +1805,7 @@ class AndroidAnkiAdapter:
             if len(kinds[filename]) != 1:
                 _protocol_error(
                     "media_content_collision",
-                    f"Media filename {filename!r} is used as both audio and image",
+                    "A card media filename is used as both audio and image",
                 )
 
             readable: list[tuple[Path, _MediaDigest]] = []
@@ -1814,17 +1819,26 @@ class AndroidAnkiAdapter:
             if len(referenced_paths) > 1 and unreadable:
                 _protocol_error(
                     "media_content_collision",
-                    f"Cannot verify colliding media filename {filename!r} across all paths",
+                    "Cannot verify a colliding card media filename across all paths",
                 )
             if not readable:
                 if unreadable:
-                    logger.warning("Failed to read media file %s: %s", filename, unreadable[0][1])
+                    error = unreadable[0][1]
+                    # The OSError's text holds the path, whose leaf is the media name and starts
+                    # with the mined form, so only its class and errno are written.
+                    logger.warning(
+                        "Failed to read media file kind=%s error=%s errno=%s",
+                        next(iter(kinds[filename])),
+                        type(error).__name__,
+                        error.errno,
+                        exc_info=(OSError, OSError("Card media read failed"), error.__traceback__),
+                    )
                 continue
             source_path, digest = readable[0]
             if any((candidate.size, candidate.sha256) != (digest.size, digest.sha256) for _, candidate in readable[1:]):
                 _protocol_error(
                     "media_content_collision",
-                    f"Media filename {filename!r} refers to different file contents",
+                    "A card media filename refers to different file contents",
                 )
 
             requested_name = _content_addressed_name_from_digest(filename, digest.sha1_prefix)
@@ -2170,18 +2184,18 @@ class AndroidAnkiAdapter:
                 if planned_path is None:
                     confirmed_missing_sources.add(source)
                 else:
-                    logger.warning("Dict media file disappeared from disk: %s", source)
+                    logger.warning("Dict media file disappeared from disk")
                 unavailable_sources.add(source)
                 continue
             try:
                 resolved_path = runtime_path.resolve()
                 digest = self._stream_media_digest(resolved_path, work_budget)
             except OSError as error:
+                # Source, path and the OSError text all carry the dictionary's own basename.
                 logger.debug(
-                    "Dictionary media read failed outcome=ignored source=%s path=%s error=%s",
-                    source,
-                    runtime_path,
-                    error,
+                    "Dictionary media read failed outcome=ignored error=%s errno=%s",
+                    type(error).__name__,
+                    error.errno,
                 )
                 logger.warning(
                     "Dictionary media read failed; skipping asset outcome=skip",
