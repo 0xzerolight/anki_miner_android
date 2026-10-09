@@ -1680,12 +1680,17 @@ internal class SetupViewModel(
                     KnownWordsFailureOperation.EXPORT,
                     -> searchKnownWords()
                 }
+            // A failed removal records RETRY; a failed import records CHOOSE_ANOTHER, whose picker
+            // only the composable can open. The persisted target names the list.
+            ResourceFailureOrigin.WORD_LIST ->
+                if (failure.retry.action == ResourceFailureAction.RETRY) {
+                    viewModelScope.launch { resources.removeWordList(currentLocal().wordListTarget) }
+                }
             // Both offer a file picker instead, which only the composable can open.
             ResourceFailureOrigin.CUSTOM_DICTIONARY,
             ResourceFailureOrigin.PITCH,
             ResourceFailureOrigin.AUDIO,
             ResourceFailureOrigin.FREQUENCY,
-            ResourceFailureOrigin.WORD_LIST,
             -> Unit
         }
     }

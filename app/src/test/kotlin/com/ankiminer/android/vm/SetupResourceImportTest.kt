@@ -10,8 +10,10 @@ import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.anki.AnkiSetupManagerState
 import com.ankiminer.android.data.resources.FrequencySourceFormat
 import com.ankiminer.android.data.resources.PitchAccentSourceFormat
+import com.ankiminer.android.data.resources.ResourceFailure
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceFailureRetry
 import com.ankiminer.android.data.resources.ResourceManager
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.ResourceStartupReadiness
@@ -99,6 +101,61 @@ class SetupResourceImportTest {
                     assertTrue(begin(model))
                 }
             }
+        }
+
+    @Test
+    fun `retrying a failed word-list removal removes that list again`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = ImportResources()
+            val model = viewModel(resources)
+            advanceUntilIdle()
+            model.removeWordList(WordListKind.WHITELIST)
+            advanceUntilIdle()
+            resources.update {
+                it.copy(
+                    failure =
+                        ResourceFailure(
+                            code = "word_list_remove_failed",
+                            message = "remove failed",
+                            retryable = true,
+                            origin = ResourceFailureOrigin.WORD_LIST,
+                            retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                        ),
+                )
+            }
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertEquals(listOf(WordListKind.WHITELIST, WordListKind.WHITELIST), resources.wordListRemovals)
+            assertTrue(resources.wordListImports.isEmpty())
+        }
+
+    @Test
+    fun `a failed word-list import retry does not remove the list`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val resources = ImportResources()
+            val model = viewModel(resources)
+            advanceUntilIdle()
+            resources.update {
+                it.copy(
+                    failure =
+                        ResourceFailure(
+                            code = "word_list_invalid",
+                            message = "import failed",
+                            retryable = false,
+                            origin = ResourceFailureOrigin.WORD_LIST,
+                            retry = ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER),
+                        ),
+                )
+            }
+            advanceUntilIdle()
+
+            model.retryResourceFailure()
+            advanceUntilIdle()
+
+            assertTrue(resources.wordListRemovals.isEmpty())
         }
 
     private fun viewModel(
