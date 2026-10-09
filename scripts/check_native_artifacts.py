@@ -39,6 +39,12 @@ ABI_ELF_CLASSES = {
     "arm64-v8a": 2,
 }
 EXECUTABLE_NATIVE_NAMES = {"libffmpeg.so", "libffprobe.so"}
+# A home directory compiled into a direct lib/ ELF names whoever built it: FFmpeg bakes its
+# configure line and datadir in (tools/ffmpeg/README.md, "Path-clean release binaries").
+# Vendor prebuilts built on GitHub-hosted runners carry /home/runner/ (nextlib, Chaquopy).
+_MAINTAINER_PATH = re.compile(rb"/(?:home|Users)/(?!runner/)[A-Za-z0-9._-]+")
+# The example path in CPython's ntpath.splitroot docstring, compiled into libpython.
+_CPYTHON_DOCSTRING_PATH = b"C:/Users/Barney"
 UNIDIC_PAYLOAD_NAMES = {
     "char.bin",
     "dicrc",
@@ -379,6 +385,24 @@ def is_native_library_payload(
     native_suffix = entry_path.name.endswith(".so") or ".so." in entry_path.name
     nested_chaquopy_payload = depth > 0 or requirement_owner is not None
     return direct_apk_library or direct_aab_library or (native_suffix and nested_chaquopy_payload)
+
+
+def is_direct_native_library(entry_path: PurePosixPath, depth: int) -> bool:
+    """Whether an outer entry is extracted by the package manager: lib/<abi>/<name>, or base/lib/<abi>/<name>."""
+    parts = entry_path.parts
+    return depth == 0 and (
+        (len(parts) == 3 and parts[0] == "lib") or (len(parts) == 4 and parts[0:2] == ("base", "lib"))
+    )
+
+
+def reject_maintainer_path(data: bytes, logical_name: str) -> None:
+    for match in _MAINTAINER_PATH.finditer(data):
+        if data[match.start() - 2 : match.end()] == _CPYTHON_DOCSTRING_PATH:
+            continue
+        path = match.group().decode("ascii")
+        raise ArtifactError(
+            f"{logical_name}: embeds the build machine path {path!r}; build it under a username-free root"
+        )
 
 
 def parse_elf(
@@ -917,14 +941,10 @@ def inspect_zip(
                         f"{sorted(previous_owners)} and {requirement_owner}",
                     )
                 previous_owners.add(requirement_owner)
-            if basename in EXECUTABLE_NATIVE_NAMES:
-                parts = entry_path.parts
-                direct_apk = len(parts) == 3 and parts[0] == "lib"
-                direct_aab = len(parts) == 4 and parts[0:2] == ("base", "lib")
-                if depth != 0 or not (direct_apk or direct_aab):
-                    raise ArtifactError(
-                        f"{entry_name}: executable must be a direct Android native-library entry",
-                    )
+            if basename in EXECUTABLE_NATIVE_NAMES and not is_direct_native_library(entry_path, depth):
+                raise ArtifactError(
+                    f"{entry_name}: executable must be a direct Android native-library entry",
+                )
 
             with archive.open(info) as stream:
                 prefix = stream.read(4)
@@ -984,6 +1004,8 @@ def inspect_zip(
                     inspect_dynamic=requirement_owner is not None
                     or (inspection.require_s1a and native_package is not None),
                 )
+                if is_direct_native_library(entry_path, depth):
+                    reject_maintainer_path(payload, entry_name)
                 if requirement_owner is not None:
                     inspection.requirement_natives.append((entry_path.as_posix(), metadata))
                 if required_direct:

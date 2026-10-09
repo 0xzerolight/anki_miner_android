@@ -441,6 +441,33 @@ class NativeArtifactTest(unittest.TestCase):
         with self.assertRaisesRegex(ArtifactError, "no PT_INTERP"):
             self.inspect(archive({"lib/x86_64/libffprobe.so": executable}))
 
+    def test_direct_native_libraries_must_not_embed_a_home_directory(self) -> None:
+        ffmpeg = pie_cli() + b"--prefix=/home/light/.android-toolchain/build/ffmpeg/x86_64\0"
+        cases = {
+            "lib/x86_64/libffmpeg.so": (ffmpeg, "'/home/light'"),
+            "lib/x86_64/libanki_miner_mecab.so": (
+                elf64() + b"/Users/maintainer/src/mecab.cpp\0",
+                "'/Users/maintainer'",
+            ),
+            "lib/x86_64/libpython3.12.so": (elf64() + b"C:/Users/someone/AppData/python\0", "'/Users/someone'"),
+        }
+        for entry, (payload, leaked) in cases.items():
+            with self.subTest(entry=entry):
+                with self.assertRaisesRegex(ArtifactError, f"{entry}: embeds the build machine path {leaked}"):
+                    self.inspect(archive({entry: payload}))
+        aab = archive({"base/lib/x86_64/libffmpeg.so": ffmpeg})
+        with self.assertRaisesRegex(ArtifactError, "base/lib/x86_64/libffmpeg.so: embeds the build machine path"):
+            inspect_zip(BytesIO(aab), "fixture.aab", Inspection({"x86_64"}, ()))
+
+    def test_runner_built_vendor_libraries_and_the_neutral_build_root_pass(self) -> None:
+        vendor = elf64() + (
+            b"--prefix=/home/runner/work/nextlib/nextlib/ffmpeg/build/x86_64\0"
+            b"splitroot('C:/Users/Barney') == ('C:', '/', 'Users/Barney')\0"
+        )
+        tool = pie_cli() + b"/var/tmp/anki-miner-build/build/ffmpeg/x86_64/share/ffmpeg\0"
+        result = self.inspect(archive({"lib/x86_64/libavcodec.so": vendor, "lib/x86_64/libffmpeg.so": tool}))
+        self.assertEqual(2, result.elf_count)
+
     def test_required_direct_entry_cannot_be_satisfied_by_unrelated_elf(self) -> None:
         payload = archive({"lib/x86_64/libchaquopy.so": elf64()})
         with self.assertRaisesRegex(ArtifactError, "missing required direct"):
