@@ -1594,8 +1594,7 @@ class MediaMiningViewModel internal constructor(
 
     private fun documentSelectionError(document: SafDocument): DocumentSelectionError? {
         if (lane != MiningLane.AUDIO) return null
-        val extension = document.displayName.substringAfterLast('.', "").lowercase(Locale.ROOT)
-        return if (extension in AUDIO_EXTENSIONS) null else DocumentSelectionError.AUDIO_TYPE
+        return if (isAcceptedAudioDocument(document)) null else DocumentSelectionError.AUDIO_TYPE
     }
 
     private fun LocalState.withDocument(
@@ -2009,3 +2008,12 @@ private fun String.takeCodePoints(maximum: Int): String {
     }
     return if (end == length) this else substring(0, end)
 }
+
+/**
+ * Whether the Audio tab takes [document]. An audio MIME type settles it: MediaStore's Audio root
+ * reports the track title, not a file name, as the display name, so there may be no extension to
+ * read. Providers that say only application/octet-stream, or nothing, are judged by extension.
+ */
+internal fun isAcceptedAudioDocument(document: SafDocument): Boolean =
+    document.mimeType?.lowercase(Locale.ROOT)?.startsWith("audio/") == true ||
+        document.displayName.substringAfterLast('.', "").lowercase(Locale.ROOT) in AUDIO_EXTENSIONS
