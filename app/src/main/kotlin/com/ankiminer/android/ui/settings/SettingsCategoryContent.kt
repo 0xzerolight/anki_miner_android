@@ -1808,9 +1808,13 @@ internal fun ResourceOriginFailure(
             failure.origin == ResourceFailureOrigin.DICTIONARY_LOOKUP ->
                 setupViewModel::retryResourceFailure
             failure.origin == ResourceFailureOrigin.AUDIO -> callbacks.onImportAudioPack
-            failure.origin == ResourceFailureOrigin.WORD_LIST -> {
-                { callbacks.onImportWordList(setup.wordListTarget) }
-            }
+            // Only a failed import chooses another file; a failed removal retries the removal.
+            failure.origin == ResourceFailureOrigin.WORD_LIST ->
+                if (failure.retry.action == ResourceFailureAction.CHOOSE_ANOTHER) {
+                    { callbacks.onImportWordList(setup.wordListTarget) }
+                } else {
+                    setupViewModel::retryResourceFailure
+                }
             failure.origin == ResourceFailureOrigin.FREQUENCY -> callbacks.onImportFrequency
             failure.origin == ResourceFailureOrigin.KNOWN_WORDS &&
                 failure.retry.action == ResourceFailureAction.RESOLVE ->

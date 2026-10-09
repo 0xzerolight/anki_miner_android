@@ -44,6 +44,7 @@ import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.mining.MiningRunAdmissionState
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -952,6 +953,9 @@ internal class SetupViewModel(
                 ResourceIdentity.frequencyTarget(
                     sourceName,
                     state.frequencySources,
+                    // Slot directories are one namespace across languages, so an id another
+                    // language holds is taken even though this language's list omits it.
+                    resources.state.value.frequencySources.map { it.sourceId },
                 ),
             sourceName = sourceName,
             frequencyFormat = source.fileKind.toFrequencyFormat(),
@@ -966,7 +970,13 @@ internal class SetupViewModel(
         val sourceName = derivedSourceName(source, R.string.setup_default_pitch_name)
         return PendingResourcePicker(
             kind = ResourcePickerKind.PITCH,
-            target = ResourceIdentity.pitchTarget(sourceName, state.pitchSources),
+            target =
+                ResourceIdentity.pitchTarget(
+                    sourceName,
+                    state.pitchSources,
+                    // One slot namespace across languages, as in frequencyPickerRequest.
+                    resources.state.value.pitchSources.map { it.sourceId },
+                ),
             sourceName = sourceName,
             pitchFormat = source.fileKind.toPitchFormat(),
             uri = source.uri,
@@ -1012,6 +1022,9 @@ internal class SetupViewModel(
         val existing = pendingPicker
         if (existing != null && (existing.kind != kind || existing.uri != null)) return
         val request = existing ?: fallback().also(::savePendingPicker)
+        // The SAF result is delivered once. Until retention saves its uri, a restored reservation
+        // could never complete, so restore must know this one has already had its result.
+        savedStateHandle[STATE_PICKER_RESULT_RECEIVED] = true
         local.update { it.copy(resourcePickerFailure = null) }
         pendingPickerRetentionJob =
             viewModelScope.launch {
@@ -1027,13 +1040,32 @@ internal class SetupViewModel(
                 } catch (failure: CancellationException) {
                     throw failure
                 } catch (failure: SafAccessException) {
-                    val stillOwnsSlot =
-                        pendingPicker?.let { it.kind == kind && it.uri == null } == true
-                    if (!stillOwnsSlot) return@launch
-                    clearPendingPicker()
-                    publishResourcePickerFailure(kind, failure.kind)
+                    abandonRetention(kind, failure.kind)
+                } catch (failure: IOException) {
+                    // The leading-byte read and the selection-ledger commit fail with plain I/O
+                    // errors: a file deleted or offline since it was picked, a provider stall, a
+                    // full disk. As with a provider refusal, the only way on is another file.
+                    AppLog.w(
+                        LogComponent.SAF,
+                        "picker.retain",
+                        failure,
+                        "picker" to kind.name,
+                        "outcome" to "fail",
+                    )
+                    abandonRetention(kind, SafAccessFailureKind.PROVIDER_UNAVAILABLE)
                 }
             }
+    }
+
+    /** Frees the slot this retention still owns and offers another file. */
+    private fun abandonRetention(
+        kind: ResourcePickerKind,
+        failureKind: SafAccessFailureKind,
+    ) {
+        val stillOwnsSlot = pendingPicker?.let { it.kind == kind && it.uri == null } == true
+        if (!stillOwnsSlot) return
+        clearPendingPicker()
+        publishResourcePickerFailure(kind, failureKind)
     }
 
     private fun publishResourcePickerFailure(
@@ -1209,6 +1241,7 @@ internal class SetupViewModel(
         saveString(STATE_PICKER_AUDIO_PACK_PATH, request.audioPackPath)
         saveString(STATE_PICKER_AUDIO_PACK_FORMAT, request.audioPackFormat)
         saveString(STATE_PICKER_URI, request.uri)
+        savedStateHandle.remove<Boolean>(STATE_PICKER_RESULT_RECEIVED)
     }
 
     private fun setAudioPackChoices(choices: List<AudioPackCandidate>) {
@@ -1245,6 +1278,14 @@ internal class SetupViewModel(
 
     private fun restorePendingPicker(): PendingResourcePicker? {
         val kind = savedEnum<ResourcePickerKind>(STATE_PICKER_KIND) ?: return null
+        // A result that arrived but was never retained died with its process: nothing delivers
+        // it again, and keeping the reservation would refuse every picker.
+        if (
+            savedStateHandle.get<String>(STATE_PICKER_URI) == null &&
+                savedStateHandle.get<Boolean>(STATE_PICKER_RESULT_RECEIVED) == true
+        ) {
+            return null
+        }
         val targetId = savedStateHandle.get<String>(STATE_PICKER_TARGET_ID)
         val target =
             targetId?.let {
@@ -1306,6 +1347,7 @@ internal class SetupViewModel(
             STATE_PICKER_AUDIO_PACK_PATH,
             STATE_PICKER_AUDIO_PACK_FORMAT,
             STATE_PICKER_URI,
+            STATE_PICKER_RESULT_RECEIVED,
         ).forEach { savedStateHandle.remove<Any>(it) }
     }
 
@@ -1660,12 +1702,17 @@ internal class SetupViewModel(
                     KnownWordsFailureOperation.EXPORT,
                     -> searchKnownWords()
                 }
+            // A failed removal records RETRY; a failed import records CHOOSE_ANOTHER, whose picker
+            // only the composable can open. The persisted target names the list.
+            ResourceFailureOrigin.WORD_LIST ->
+                if (failure.retry.action == ResourceFailureAction.RETRY) {
+                    viewModelScope.launch { resources.removeWordList(currentLocal().wordListTarget) }
+                }
             // Both offer a file picker instead, which only the composable can open.
             ResourceFailureOrigin.CUSTOM_DICTIONARY,
             ResourceFailureOrigin.PITCH,
             ResourceFailureOrigin.AUDIO,
             ResourceFailureOrigin.FREQUENCY,
-            ResourceFailureOrigin.WORD_LIST,
             -> Unit
         }
     }
@@ -1781,6 +1828,7 @@ internal class SetupViewModel(
         const val STATE_PICKER_AUDIO_PACK_PATH = "setup.picker.audioPackPath"
         const val STATE_PICKER_AUDIO_PACK_FORMAT = "setup.picker.audioPackFormat"
         const val STATE_PICKER_URI = "setup.picker.uri"
+        const val STATE_PICKER_RESULT_RECEIVED = "setup.picker.resultReceived"
         const val STATE_AUDIO_PACK_CHOICE_IDS = "setup.audioPackChoices.ids"
         const val STATE_AUDIO_PACK_CHOICE_PATHS = "setup.audioPackChoices.paths"
         const val STATE_AUDIO_PACK_CHOICE_FORMATS = "setup.audioPackChoices.formats"
