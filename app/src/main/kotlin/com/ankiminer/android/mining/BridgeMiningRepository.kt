@@ -32,7 +32,6 @@ import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
 import com.ankiminer.android.tts.SentenceAudioSynthesizer
 import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import com.ankiminer.android.tts.usesDeviceVoice
-import java.text.Normalizer
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
@@ -2022,32 +2021,8 @@ internal class BridgeMiningRepository(
         // An unusable display name yields an empty episode on purpose: the bridge
         // strips "<series> — " off the card source field, so a blank episode
         // leaves a bare "@ 00:12:34" instead of repeating the lane label twice.
-        return canonicalLabel(withoutExtension) to lane.seriesLabel
+        return canonicalRunLabel(withoutExtension) to lane.seriesLabel
     }
-
-    private fun canonicalLabel(raw: String): String {
-        val filtered =
-            buildString(raw.length) {
-                var index = 0
-                while (index < raw.length) {
-                    val codePoint = raw.codePointAt(index)
-                    if (!isCategoryC(codePoint)) appendCodePoint(codePoint)
-                    index += Character.charCount(codePoint)
-                }
-            }.trim { Character.isWhitespace(it) || Character.isSpaceChar(it) }
-        return Normalizer.normalize(filtered, Normalizer.Form.NFC)
-    }
-
-    private fun isCategoryC(codePoint: Int): Boolean =
-        when (Character.getType(codePoint)) {
-            Character.CONTROL.toInt(),
-            Character.FORMAT.toInt(),
-            Character.PRIVATE_USE.toInt(),
-            Character.SURROGATE.toInt(),
-            Character.UNASSIGNED.toInt(),
-            -> true
-            else -> false
-        }
 
     private companion object {
         val RETRYABLE_TERMINAL_ERRORS =
