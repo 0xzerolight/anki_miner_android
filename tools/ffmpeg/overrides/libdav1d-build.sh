@@ -59,5 +59,10 @@ ${MESON_EXECUTABLE} setup . "${BUILD_DIRECTORY}" \
 
 cd "${BUILD_DIRECTORY}"
 
+# Without getauxval dav1d never detects dotprod/i8mm/SVE and its kernels for them are dead.
+if [[ "${ANDROID_ABI}" == arm64-v8a ]]; then
+  python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" --profile dav1d config.h || exit 1
+fi
+
 ${NINJA_EXECUTABLE} -j "${HOST_NPROC}"
 ${NINJA_EXECUTABLE} install

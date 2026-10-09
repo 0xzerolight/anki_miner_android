@@ -75,6 +75,10 @@ python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" \
 "${MAKE_EXECUTABLE}" clean
 "${MAKE_EXECUTABLE}" -j"${HOST_NPROC}"
 "${MAKE_EXECUTABLE}" install
+# The unstripped binaries attribute arm64 extension instructions to their functions when
+# ARM64_GUARDED_PAYLOADS in scripts/check_native_artifacts.py is re-judged; distclean
+# below would delete this one.
+cp ffmpeg_g "${BUILD_DIR_FFMPEG}/${ANDROID_ABI}/bin/ffmpeg_g"
 
 # Pass 2 — probe-only, for ffprobe. Every demuxer, decoder, parser and protocol
 # stays: ffprobe reads whatever container a user hands the app, and trimming that
@@ -97,3 +101,4 @@ python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" \
 
 "${MAKE_EXECUTABLE}" -j"${HOST_NPROC}"
 "${MAKE_EXECUTABLE}" install
+cp ffprobe_g "${BUILD_DIR_FFMPEG}/${ANDROID_ABI}/bin/ffprobe_g"

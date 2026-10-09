@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Assert the generated FFmpeg config contains the Android v1 media surface."""
+"""Assert the generated FFmpeg config contains the Android v1 media surface.
+
+The libaom and dav1d profiles assert that those libraries keep runtime CPU dispatch on arm64.
+"""
 
 from __future__ import annotations
 
@@ -127,6 +130,16 @@ PROBE_REQUIRED_DISABLED = frozenset(
     }
 )
 
+# Generated configs of the external libraries whose arm64 dotprod, i8mm and SVE kernels
+# only runtime CPU dispatch keeps off the many phones that lack those features. libaom with
+# CONFIG_RUNTIME_CPU_DETECT=0 binds every function to its highest compiled variant (v0.4.0
+# SIGILLed on every pre-armv9 phone); dav1d reads the features through getauxval and
+# without it never leaves plain NEON. x86_64 builds both C-only, so only arm64 is asserted.
+DEPENDENCY_REQUIRED_ENABLED = {
+    "libaom": frozenset({"CONFIG_RUNTIME_CPU_DETECT"}),
+    "dav1d": frozenset({"HAVE_GETAUXVAL"}),
+}
+
 
 class ConfigurationError(ValueError):
     pass
@@ -176,22 +189,41 @@ def assert_configuration(config_h: Path, components_h: Path, profile: str = "ful
         raise ConfigurationError("; ".join(failures))
 
 
+def assert_dependency_configuration(config_h: Path, library: str) -> None:
+    values = read_configuration((config_h,))
+    failures = [
+        f"{key}=1 required, found {values.get(key)!r}"
+        for key in sorted(DEPENDENCY_REQUIRED_ENABLED[library])
+        if values.get(key) != 1
+    ]
+    if failures:
+        raise ConfigurationError(f"{library}: " + "; ".join(failures))
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--profile", choices=("full", "probe"), default="full")
+    parser.add_argument("--profile", choices=("full", "probe", *DEPENDENCY_REQUIRED_ENABLED), default="full")
     parser.add_argument("config_h", type=Path)
-    parser.add_argument("config_components_h", type=Path)
-    return parser.parse_args()
+    parser.add_argument("config_components_h", type=Path, nargs="?")
+    args = parser.parse_args()
+    if (args.profile in DEPENDENCY_REQUIRED_ENABLED) != (args.config_components_h is None):
+        parser.error("full and probe take config.h and config_components.h; libaom and dav1d take one header")
+    return args
 
 
 def main() -> int:
     args = parse_args()
     try:
-        assert_configuration(args.config_h, args.config_components_h, args.profile)
+        if args.profile in DEPENDENCY_REQUIRED_ENABLED:
+            assert_dependency_configuration(args.config_h, args.profile)
+        else:
+            assert_configuration(args.config_h, args.config_components_h, args.profile)
     except (ConfigurationError, OSError, UnicodeError) as error:
         print(f"FFmpeg configuration check failed: {error}", file=sys.stderr)
         return 1
-    if args.profile == "probe":
+    if args.profile in DEPENDENCY_REQUIRED_ENABLED:
+        print(f"{args.profile} configuration OK: runtime CPU feature detection is on")
+    elif args.profile == "probe":
         print("FFmpeg configuration OK: ffprobe, demux and decode only, no encode surface")
     else:
         print(

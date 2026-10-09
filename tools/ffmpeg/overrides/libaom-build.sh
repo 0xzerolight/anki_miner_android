@@ -52,6 +52,11 @@ ${CMAKE_EXECUTABLE} .. \
   -DENABLE_TOOLS=0 \
   "${AOM_CPU_FLAG[@]}" || exit 1
 
+# rtcd.pl reads the generated header, not the flag above: prove it says 1.
+if [[ "${ANDROID_ABI}" == arm64-v8a ]]; then
+  python3.13 "${SCRIPTS_DIR}/assert-ffmpeg-config.py" --profile libaom config/aom_config.h || exit 1
+fi
+
 ${MAKE_EXECUTABLE} -j${HOST_NPROC}
 ${MAKE_EXECUTABLE} install
 

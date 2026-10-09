@@ -582,6 +582,17 @@ class RuntimeArtifactArchiveSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(checker.RuntimeArtifactError, "nested archive"):
                 value.audit()
 
+    def test_pip_direct_url_install_records_are_rejected(self) -> None:
+        # A wheel installed by path makes pip record its file:// URL (PEP 610), and Chaquopy
+        # packed that record, with the builder's checkout path, into the release APK.
+        with fixture() as value:
+            value.common["requests-1.0.dist-info/direct_url.json"] = (
+                b'{"archive_info": {}, "url": "file:///builder/app/wheels/common/requests-1.0-py3-none-any.whl"}'
+            )
+            value.write_artifact()
+            with self.assertRaisesRegex(checker.RuntimeArtifactError, r"requests-1\.0\.dist-info/direct_url\.json"):
+                value.audit()
+
     def test_a_judged_payload_passes_only_with_its_exact_bytes_and_release(self) -> None:
         nested = _zip({"nested": b"archive"})
         licence = b"licence of bundled code\n"

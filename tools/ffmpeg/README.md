@@ -87,3 +87,5 @@ Acceptance gate — the shipped ELFs must embed no maintainer path (prints nothi
 ```bash
 strings app/src/main/jniLibs/*/lib{ffmpeg,ffprobe}.so | grep -E '/home/|/Users/'
 ```
+
+After `--install`, the device-lane gate prints each new arm64 executable's SHA-256 and instruction census; attribute them with `build/ffmpeg/<abi>/bin/ffmpeg_g` (and `ffprobe_g`) and update `ARM64_GUARDED_PAYLOADS` in `scripts/check_native_artifacts.py`.
