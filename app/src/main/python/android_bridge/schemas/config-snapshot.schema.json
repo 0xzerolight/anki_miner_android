@@ -20,6 +20,12 @@
       "$comment": "Runtime validation additionally enforces NFC and rejects every Unicode category-C code point.",
       "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b-\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
     },
+    "canonicalTargetName": {
+      "type": "string",
+      "minLength": 1,
+      "$comment": "Deck and note-type names. As canonicalNonEmptyString, but U+200C ZWNJ and U+200D ZWJ are allowed. Runtime validation additionally enforces NFC and rejects every other Unicode category-C code point.",
+      "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001f\\u007f-\\u009f\\u00ad\\u061c\\u200b\\u200e\\u200f\\u202a-\\u202e\\u2060-\\u206f\\ufeff]).+$"
+    },
     "optionalMappedField": {
       "oneOf": [
         {"const": ""},
@@ -153,8 +159,8 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "anki_deck_name": {"$ref": "#/$defs/canonicalNonEmptyString"},
-        "anki_note_type": {"$ref": "#/$defs/canonicalNonEmptyString"},
+        "anki_deck_name": {"$ref": "#/$defs/canonicalTargetName"},
+        "anki_note_type": {"$ref": "#/$defs/canonicalTargetName"},
         "anki_fields": {"$ref": "#/$defs/ankiFields"},
         "card_type": {"enum": ["", "word_and_sentence", "click", "sentence", "audio"]},
         "card_type_marker_fields": {"$ref": "#/$defs/cardTypeMarkerFields"},
@@ -162,7 +168,7 @@
         "excluded_decks": {
           "type": "array",
           "uniqueItems": true,
-          "items": {"$ref": "#/$defs/canonicalNonEmptyString"}
+          "items": {"$ref": "#/$defs/canonicalTargetName"}
         },
         "audio_padding": {"type": "number", "minimum": 0},
         "screenshot_offset": {"type": "number", "minimum": 0},

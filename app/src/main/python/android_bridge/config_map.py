@@ -184,12 +184,25 @@ def _string(field_name: str, value: object) -> str:
     return value
 
 
-def _canonical_nonempty_string(field_name: str, value: object) -> str:
+#: Deck and note-type names may carry ZWNJ and ZWJ, ordinary in Persian words and emoji sequences in
+#: names AnkiDroid itself lists. Every other category-C code point stays refused, and field names and
+#: marker fields keep the full rule (AU-020). Kotlin mirror: ``AnkiTargetNames``.
+_TARGET_NAME_JOINERS = frozenset({0x200C, 0x200D})
+
+
+def refuses_target_name_code_point(code_point: int) -> bool:
+    """Whether a deck or note-type name may not contain ``code_point``."""
+
+    return is_category_c(code_point) and code_point not in _TARGET_NAME_JOINERS
+
+
+def _canonical_nonempty_string(field_name: str, value: object, *, target_name: bool = False) -> str:
     """Require the exact user-visible name which will cross to AnkiDroid.
 
     Trimming or Unicode-normalizing here would silently change a persisted
     deck/model/field identity. Reject non-canonical input instead so Kotlin can
-    point the user at the setting which needs correction.
+    point the user at the setting which needs correction. ``target_name`` is for
+    deck and note-type names only (see ``refuses_target_name_code_point``).
     """
 
     if not isinstance(value, str) or not value:
@@ -198,7 +211,8 @@ def _canonical_nonempty_string(field_name: str, value: object) -> str:
         raise _invalid(field_name, "must not have leading or trailing whitespace")
     if not is_nfc(value):
         raise _invalid(field_name, "must use NFC Unicode normalization")
-    if any(is_category_c(ord(character)) for character in value):
+    refuses = refuses_target_name_code_point if target_name else is_category_c
+    if any(refuses(ord(character)) for character in value):
         raise _invalid(field_name, "must not contain control or format characters")
     return value
 
@@ -261,7 +275,10 @@ def _script_variant(value: object, language: str) -> str:
 
 def _excluded_decks(value: object) -> tuple[str, ...]:
     items = _string_tuple("excluded_decks", value)
-    canonical = tuple(_canonical_nonempty_string(f"excluded_decks[{index}]", item) for index, item in enumerate(items))
+    canonical = tuple(
+        _canonical_nonempty_string(f"excluded_decks[{index}]", item, target_name=True)
+        for index, item in enumerate(items)
+    )
     if len(set(canonical)) != len(canonical):
         raise _invalid("excluded_decks", "deck names must be unique")
     return canonical
@@ -340,8 +357,8 @@ def validate_anki_request_config(
 ) -> None:
     """Validate every config value emitted by the Anki callback adapter."""
 
-    _canonical_nonempty_string("anki_deck_name", getattr(config, "anki_deck_name", None))
-    _canonical_nonempty_string("anki_note_type", getattr(config, "anki_note_type", None))
+    _canonical_nonempty_string("anki_deck_name", getattr(config, "anki_deck_name", None), target_name=True)
+    _canonical_nonempty_string("anki_note_type", getattr(config, "anki_note_type", None), target_name=True)
 
     fields = getattr(config, "anki_fields", None)
     if not isinstance(fields, Mapping) or any(
@@ -655,7 +672,7 @@ def map_config_settings(
             continue
         if field_name in _STRING_FIELDS:
             updates[field_name] = (
-                _canonical_nonempty_string(field_name, value)
+                _canonical_nonempty_string(field_name, value, target_name=True)
                 if field_name in {"anki_deck_name", "anki_note_type"}
                 else _string(field_name, value)
             )

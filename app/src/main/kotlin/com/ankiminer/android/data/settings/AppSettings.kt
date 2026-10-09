@@ -2,6 +2,7 @@ package com.ankiminer.android.data.settings
 
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.anki.protocol.AnkiTargetNames
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiFieldKeys
 import com.ankiminer.android.anki.provider.AnkiMinerNoteModel
@@ -354,6 +355,7 @@ object AppSettingsValidator {
                     value,
                     AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS,
                     AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
+                    allowNameJoiners = true,
                 )
             }
             if (
@@ -378,6 +380,7 @@ object AppSettingsValidator {
                     deck,
                     AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS,
                     AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
+                    allowNameJoiners = true,
                 )
             }
             it.noteType?.let { value ->
@@ -386,6 +389,7 @@ object AppSettingsValidator {
                     value,
                     AnkiLimitsV1.Names.Model.MAX_CODE_POINTS,
                     AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES,
+                    allowNameJoiners = true,
                 )
             }
             fieldMap(it.fieldMap, it.language)
@@ -460,13 +464,18 @@ object AppSettingsValidator {
             }
         }
 
+    /**
+     * [allowNameJoiners] is for deck and note-type names only: [AnkiTargetNames] admits ZWNJ and
+     * ZWJ there. Field names and the card-type marker keep the full category-C rule.
+     */
     fun canonicalName(
         label: String,
         value: String,
         maxCodePoints: Int = Int.MAX_VALUE,
         maxUtf8Bytes: Int = Int.MAX_VALUE,
+        allowNameJoiners: Boolean = false,
     ): String {
-        validScalarText(label, value)
+        validScalarText(label, value, allowNameJoiners)
         if (
             value.isEmpty() ||
                 !UnicodeContractV151.isNfc(value) ||
@@ -487,8 +496,15 @@ object AppSettingsValidator {
         return value
     }
 
-    private fun validScalarText(label: String, value: String) {
-        if (UnicodeContractV151.scalarCount(value) == null || containsCategoryC(value)) {
+    private fun validScalarText(
+        label: String,
+        value: String,
+        allowNameJoiners: Boolean = false,
+    ) {
+        if (
+            UnicodeContractV151.scalarCount(value) == null ||
+            (if (allowNameJoiners) AnkiTargetNames.containsRefused(value) else containsCategoryC(value))
+        ) {
             invalid(
                 InvalidAppSettingCode.INVALID_UNICODE,
                 "$label contains unsupported control or malformed Unicode characters",
