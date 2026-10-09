@@ -285,8 +285,11 @@ internal object SettingsBackupCodec {
 
     /**
      * [knownLanguages] are the codes this build can mine; a file naming another keeps the current
-     * language and reports it. Null (the profiles have not loaded) leaves the code to the shape
-     * check, and the bridge refuses a run in a language it does not vendor.
+     * language and reports it. Its language-scoped values are rejected with it: they belong to the
+     * file's language (a field map with that language's card keys, its deck, its chains), and laid
+     * over the current language they would leave a configuration every run refuses. Null (the
+     * profiles have not loaded) accepts any well-formed code, and the bridge refuses a run in a
+     * language it does not vendor.
      */
     fun ParsedSettingsBackup.applyTo(
         current: AppSettings,
@@ -297,7 +300,13 @@ internal object SettingsBackupCodec {
             DataStoreAppSettingsRepository.encodePreferences(current, emptyPreferences())
         val effectiveValues = values.toMutableMap()
         val requestedLanguage = values[MINING_LANGUAGE_KEY] as? String
-        if (requestedLanguage != null && knownLanguages != null && requestedLanguage !in knownLanguages) {
+        val languageRejected =
+            requestedLanguage != null &&
+                (
+                    knownLanguages?.let { requestedLanguage !in it }
+                        ?: !LanguageScope.LANGUAGE_CODE.matches(requestedLanguage)
+                )
+        if (languageRejected) {
             effectiveValues[MINING_LANGUAGE_KEY] = RejectedValue
         }
         if (formatVersion >= RESOURCE_CHAINS_FORMAT_VERSION) {
@@ -314,6 +323,12 @@ internal object SettingsBackupCodec {
                     effectiveValues[name] =
                         ResourceSelectionPreferenceCodec.encode(resolved) ?: ClearedValue
                 }
+            }
+        }
+        // After the chain block on purpose: the chains it resolved belong to the rejected language too.
+        if (languageRejected) {
+            LanguageScope.PREFERENCE_NAMES.forEach { name ->
+                if (name in effectiveValues) effectiveValues[name] = RejectedValue
             }
         }
         val rejectedNames =
