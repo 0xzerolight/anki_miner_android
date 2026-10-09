@@ -3045,7 +3045,7 @@ class MediaMiningViewModelTest {
         }
 
     @Test
-    fun confirmUndoMapsAPartialRevertToUndoWordsErrorAndStillSurfacesTheDeletedCount() =
+    fun confirmUndoMapsAPartialRevertToUndoWordsErrorAndKeepsUndoOfferedForTheRevert() =
         runTest(mainDispatcherRule.dispatcher) {
             val processingResult = result().copy(cardIds = listOf(1L, 2L, 3L))
             val repository = RecordingRepository(MiningRunState.Success("run", processingResult))
@@ -3062,7 +3062,8 @@ class MediaMiningViewModelTest {
             runCurrent()
 
             assertEquals(MiningCommandError.UNDO_WORDS, viewModel.uiState.value.commandError)
-            assertEquals(3, viewModel.uiState.value.undoneNoteCount)
+            assertNull(viewModel.uiState.value.undoneNoteCount)
+            assertTrue(viewModel.uiState.value.undoAvailable)
         }
 
     @Test

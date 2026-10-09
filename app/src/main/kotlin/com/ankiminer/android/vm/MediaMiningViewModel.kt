@@ -210,6 +210,15 @@ class MediaMiningViewModel internal constructor(
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
     private val receiptStore = MiningReceiptStore(savedStateHandle, "${lane.savedStateKeyPrefix}.receipt")
+
+    /**
+     * The terminal state found at construction when it is the process-start placeholder for a run an
+     * earlier process lost: no run id, no result. One durable interruption record covers every lane,
+     * so it may stand for another tab's run; it is not a run of this lane and must not replace this
+     * lane's saved receipt, which shows again once the lane is back to Idle.
+     */
+    private val startupPlaceholder: MiningRunState? =
+        repository.state.value.takeIf { it.isTerminal && it.runId == null && it.terminalResult == null }
     private val cueState = MutableStateFlow<CueState?>(null)
     private val mutableTimingPreviewState = MutableStateFlow<TimingPreviewState?>(null)
     val timingPreviewState: StateFlow<TimingPreviewState?> = mutableTimingPreviewState
@@ -300,7 +309,12 @@ class MediaMiningViewModel internal constructor(
             // delete phase releasing its ANKI_SETUP lease and the revert phase acquiring RESOURCE,
             // during which `aux.activeKind` alone would read null.
             val restored = local.restoredReceipt?.takeIf { runState == MiningRunState.Idle }
-            val undoneReceipt = (runState.runId ?: restored?.runId)?.let { aux.undoneRuns[it] }
+            // A receipt whose known-words revert is still owed is not a finished undo: Undo stays
+            // offered so it can retry the revert.
+            val undoneReceipt =
+                (runState.runId ?: restored?.runId)
+                    ?.let { aux.undoneRuns[it] }
+                    ?.takeIf { it.knownWordsReverted }
             val undoAvailable =
                 undoManager != null &&
                     (
@@ -364,7 +378,7 @@ class MediaMiningViewModel internal constructor(
         )
 
     init {
-        if (repository.state.value == MiningRunState.Idle) {
+        if (startupPlaceholder != null || repository.state.value == MiningRunState.Idle) {
             receiptStore.restore()?.let { receipt -> localState.update { it.copy(restoredReceipt = receipt) } }
         }
         viewModelScope.launch {
@@ -430,7 +444,9 @@ class MediaMiningViewModel internal constructor(
                     }
                     saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
-                    saveReceipt(runState)
+                    // Identity, not equality: only the placeholder object found at construction is
+                    // exempt, never a later run of this lane that fails the same way.
+                    if (runState !== startupPlaceholder) saveReceipt(runState)
                     definitionJob?.cancel()
                     definitionJob = null
                     requestDefinition(null, null)
@@ -1188,6 +1204,12 @@ class MediaMiningViewModel internal constructor(
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
         val target = undoTarget() ?: return
+        if (undoManager?.undoneRuns?.value?.containsKey(target.runId) == true) {
+            // The notes are already gone and only the known-words revert is retried: there is no
+            // delete left to confirm.
+            confirmUndo()
+            return
+        }
         localState.update { it.copy(undoConfirmationNoteCount = target.noteIds.size) }
     }
 
@@ -1211,8 +1233,11 @@ class MediaMiningViewModel internal constructor(
             try {
                 when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms)) {
                     is UndoRunOutcome.Undone -> {
-                        receiptStore.clear()
-                        if (!outcome.receipt.knownWordsReverted) {
+                        if (outcome.receipt.knownWordsReverted) {
+                            receiptStore.clear()
+                        } else {
+                            // The revert is still owed, so the receipt stays and Undo retries it,
+                            // after a process kill too.
                             localState.update { it.copy(commandError = MiningCommandError.UNDO_WORDS) }
                         }
                     }
@@ -1250,8 +1275,14 @@ class MediaMiningViewModel internal constructor(
         val runId = runState.runId
         val result = runState.terminalResult
         if (runId == null || result == null || result.cardIds.isEmpty()) {
-            // This run left nothing to undo, so no older receipt may stand in for it.
-            receiptStore.clear()
+            // This run left nothing to undo, so no older receipt, saved or restored, may stand in for it.
+            forgetReceipt()
+            return
+        }
+        if (undoManager?.undoneRuns?.value?.get(runId)?.knownWordsReverted == true) {
+            // Fully undone in this process. A saved copy would offer the same Undo again once a
+            // process kill empties the manager's in-memory record; a revert still owed keeps it.
+            forgetReceipt()
             return
         }
         receiptStore.save(
