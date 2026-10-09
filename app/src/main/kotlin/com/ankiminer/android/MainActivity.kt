@@ -24,6 +24,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.ankiminer.android.anki.provider.ANKIDROID_PACKAGE
@@ -97,7 +98,7 @@ internal fun activeLanguageAudioPacks(
 
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
-    private val sharedText = MutableStateFlow<String?>(null)
+    private val sharedTextPending = MutableStateFlow(false)
 
     private val viewModelFactory by lazy {
         val app = application as AnkiMinerApplication
@@ -189,7 +190,8 @@ class MainActivity : ComponentActivity() {
         notificationRunId.value =
             savedInstanceState?.getString(PENDING_NOTIFICATION_RUN_ID)
                 ?: consumeOpenedRunId(intent)
-        if (savedInstanceState == null) sharedText.value = consumeSharedText(intent)
+        sharedTextPending.value =
+            savedInstanceState?.getBoolean(PENDING_SHARED_TEXT) ?: receiveSharedText(intent)
         setContent {
             val app = application as AnkiMinerApplication
             val shellSettings = remember(app) { app.settingsRepository.appShellSettings() }
@@ -342,8 +344,8 @@ class MainActivity : ComponentActivity() {
                         diagnosticsViewModel = diagnosticsViewModel,
                         notificationRunId = openedRunId,
                         onNotificationRunHandled = { notificationRunId.value = null },
-                        sharedText = sharedText.collectAsStateWithLifecycle().value,
-                        onSharedTextHandled = { sharedText.value = null },
+                        sharedTextPending = sharedTextPending.collectAsStateWithLifecycle().value,
+                        onSharedTextHandled = { sharedTextPending.value = false },
                         onRequestPermissions = {
                             ankiPermissionLauncher.launch(MiningRuntimePermissions.ANKIDROID_DATABASE)
                         },
@@ -368,7 +370,19 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         notificationRunId.value = consumeOpenedRunId(intent)
-        consumeSharedText(intent)?.let { sharedText.value = it }
+        if (receiveSharedText(intent)) sharedTextPending.value = true
+    }
+
+    /**
+     * Hands text from another app straight to Reading's ViewModel, which outlives a recreation, and
+     * returns whether the shell still has to open Reading. Only that flag goes into the saved state:
+     * the text itself can be far larger than a Bundle may carry across Binder.
+     */
+    private fun receiveSharedText(intent: Intent?): Boolean {
+        val text = consumeSharedText(intent) ?: return false
+        ViewModelProvider(this, readingViewModelFactory)[ReadingMiningViewModel::class.java]
+            .receiveSharedText(text)
+        return true
     }
 
     /** Reads, then removes, handed-over text so Activity recreation cannot replay it. */
@@ -396,6 +410,7 @@ class MainActivity : ComponentActivity() {
         notificationRunId.value?.let { runId ->
             outState.putString(PENDING_NOTIFICATION_RUN_ID, runId)
         }
+        if (sharedTextPending.value) outState.putBoolean(PENDING_SHARED_TEXT, true)
         super.onSaveInstanceState(outState)
     }
 
@@ -493,6 +508,7 @@ class MainActivity : ComponentActivity() {
         val notificationPermissionAsked = AtomicBoolean(false)
 
         const val PENDING_NOTIFICATION_RUN_ID = "pending_notification_run_id"
+        const val PENDING_SHARED_TEXT = "pending_shared_text"
         const val ACTION_TTS_SETTINGS = "com.android.settings.TTS_SETTINGS"
         const val ANKIDROID_RELEASES_URL =
             "https://github.com/ankidroid/Anki-Android/releases"

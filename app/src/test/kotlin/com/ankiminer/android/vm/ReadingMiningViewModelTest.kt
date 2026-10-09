@@ -476,6 +476,26 @@ class ReadingMiningViewModelTest {
         }
 
     @Test
+    fun sharedTextHandedOverBeforeTheShellComposesWaitsInTheRetainedViewModel() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val repository = RecordingReadingRepository()
+            val broker = ImmediateSafBroker()
+            val store = ViewModelStore()
+            // MainActivity.onCreate: straight into the Activity's store, before setContent.
+            ViewModelProvider.create(store, factory(repository, broker))[ReadingMiningViewModel::class.java]
+                .receiveSharedText("吾輩は猫である。")
+
+            // A recreation keeps the store, so the shell's lookup finds the text waiting.
+            val shellViewModel =
+                ViewModelProvider.create(store, factory(repository, broker))[ReadingMiningViewModel::class.java]
+            runCurrent()
+
+            assertEquals(ReadingSourceMode.PASTED_TEXT, shellViewModel.uiState.value.sourceMode)
+            assertEquals("吾輩は猫である。", shellViewModel.uiState.value.pastedText)
+            assertTrue(repository.startedInputs.isEmpty())
+        }
+
+    @Test
     fun pastedTextClampsByCodePointAndClearsTruncationOnShorterEdit() =
         runTest(mainDispatcherRule.dispatcher) {
             val viewModel =

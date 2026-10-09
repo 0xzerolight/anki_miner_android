@@ -469,7 +469,7 @@ internal fun AnkiMinerApp(
     diagnosticsViewModel: DiagnosticsViewModel,
     notificationRunId: String?,
     onNotificationRunHandled: () -> Unit,
-    sharedText: String?,
+    sharedTextPending: Boolean,
     onSharedTextHandled: () -> Unit,
     onRequestPermissions: () -> Unit,
     onOpenAppSettings: () -> Unit,
@@ -581,10 +581,10 @@ internal fun AnkiMinerApp(
         onNotificationRunHandled()
     }
 
-    // Text from another app's selection menu or share sheet waits in Reading -> Text (D8).
-    LaunchedEffect(sharedText) {
-        val text = sharedText ?: return@LaunchedEffect
-        readingViewModel.receiveSharedText(text)
+    // Text from another app's selection menu or share sheet already waits in Reading -> Text (D8):
+    // MainActivity hands it to the ViewModel on arrival, so only the navigation is left here.
+    LaunchedEffect(sharedTextPending) {
+        if (!sharedTextPending) return@LaunchedEffect
         navigateTo(AnkiMinerDestination.READING)
         onSharedTextHandled()
     }
