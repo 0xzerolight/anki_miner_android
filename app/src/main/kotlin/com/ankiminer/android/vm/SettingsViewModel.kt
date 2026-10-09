@@ -1569,9 +1569,10 @@ internal class SettingsViewModel(
 
     /**
      * Desktop's "Download and switch": install [code]'s recommended set (its language data first,
-     * C.4's `RecommendedResources(code)`), ask the bridge again, and switch once the profile reads
-     * available. A failed or cancelled install leaves the language where it was; the resource
-     * failure it recorded carries the retry.
+     * C.4's `RecommendedResources(code)`), ask the bridge again, and switch once the set ran to its
+     * end and the profile reads available. A member that fails after the data still switches; its
+     * failure carries the retry. A cancelled or refused install leaves the language where it was,
+     * even when the data landed before the cancel.
      */
     fun downloadAndSwitchLanguage(code: String) {
         if (mutableLanguageDownload.value != null) return
@@ -1581,11 +1582,11 @@ internal class SettingsViewModel(
         mutableLanguageDownload.value = code
         viewModelScope.launch {
             try {
-                resources.installRecommendedResources(code)
+                val completed = resources.installRecommendedResources(code)
                 source.profiles()
                     .onSuccess { profiles ->
                         mutableLanguageProfiles.value = profiles
-                        if (profiles.firstOrNull { it.code == code }?.unavailableReason == null) {
+                        if (completed && profiles.firstOrNull { it.code == code }?.unavailableReason == null) {
                             switchLanguage(code)
                         }
                     }.onFailure { failure ->

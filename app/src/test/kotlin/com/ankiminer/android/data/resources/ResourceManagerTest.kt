@@ -2387,6 +2387,29 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aLanguageSetReportsWhetherItRanToTheEnd() =
+        runTest {
+            val harness = Harness(fakePinnedDownloads = true)
+            assertTrue(harness.manager.installRecommendedResources(JAPANESE))
+            harness.bridge.clearRequests()
+            // Nothing left to install still counts as done, or a retried switch would never land.
+            assertTrue(harness.manager.installRecommendedResources(JAPANESE))
+            assertTrue(harness.bridge.requestTypes.none { it.endsWith(".import") })
+
+            // The user cancels while the dictionary that follows the language data imports.
+            harness.bridge.progressInjector = { rawRequest, _ ->
+                if (requestType(rawRequest) == "resource.dictionary.import") harness.manager.cancelActive()
+            }
+            assertFalse(harness.manager.installRecommendedResources("ar"))
+            // The data committed before the cancel, and a cancel records no failure.
+            assertEquals(setOf("ar-calima-msa"), harness.manager.state.value.installedLanguageData)
+            assertNull(harness.manager.state.value.failure)
+
+            harness.bridge.progressInjector = null
+            assertTrue(harness.manager.installRecommendedResources("ar"))
+        }
+
+    @Test
     fun everyRequestMadeForTheUserCarriesTheActiveLanguage() =
         runTest {
             val harness = Harness(activeLanguage = { "he" })

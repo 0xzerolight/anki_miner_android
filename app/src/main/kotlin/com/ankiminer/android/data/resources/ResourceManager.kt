@@ -63,8 +63,12 @@ interface ResourceManager {
     /**
      * The same batch for [language]'s catalog: its engine data, then its recommended dictionary and
      * lists, each stamped for [language]. Lets a language be downloaded before switching to it.
+     *
+     * True when the batch ran to its end (a member that failed recorded its own failure) or nothing
+     * was left to install; false when it was refused, cancelled or ended early. Members that landed
+     * before a cancel stay installed either way.
      */
-    suspend fun installRecommendedResources(language: String) = Unit
+    suspend fun installRecommendedResources(language: String): Boolean = false
 
     /** Inspect a retained Yomitan archive and return its desktop-derived base slot. */
     suspend fun preflightCustomDictionary(uri: String): String? =
@@ -523,13 +527,16 @@ internal class AndroidResourceManager(
         }
     }
 
-    override suspend fun installRecommendedResources() = installRecommendedResources(activeLanguage())
+    override suspend fun installRecommendedResources() {
+        installRecommendedResources(activeLanguage())
+    }
 
-    override suspend fun installRecommendedResources(language: String) {
+    override suspend fun installRecommendedResources(language: String): Boolean {
         // Pre-mutex early return so a satisfied set never takes the lease or writes a journal
         // record. The plan is recomputed inside the operation because this one can be stale.
+        // Nothing left to install is a finished set: a switch waiting on it must still happen.
         val plan = mutableState.value.recommendedPlan(language)
-        if (!plan.isActionable) return
+        if (!plan.isActionable) return true
         // A broken dictionary slot and a schema-stale pitch index are exactly what fails startup,
         // and this button is the only install affordance the wizard has. Gating it on READY would
         // make the press a silent no-op in the one state its REPLACE members exist to repair --
@@ -553,6 +560,7 @@ internal class AndroidResourceManager(
         // only a run that reached the loop reports a summary. Recording it after runOperation
         // returns is deliberate: its finally clears a matching-origin failure on success first.
         if (ran) publishRecommendedSummary(outcomes, language)
+        return ran
     }
 
     private sealed interface RecommendedOutcome {

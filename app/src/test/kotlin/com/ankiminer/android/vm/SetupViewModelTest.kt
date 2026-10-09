@@ -2100,8 +2100,9 @@ class SetupViewModelTest {
             recommendedInstalls += null
         }
 
-        override suspend fun installRecommendedResources(language: String) {
+        override suspend fun installRecommendedResources(language: String): Boolean {
             recommendedInstalls += language
+            return true
         }
 
         fun setFailure(failure: ResourceFailure) {

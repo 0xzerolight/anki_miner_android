@@ -1739,8 +1739,9 @@ class SettingsViewModelTest {
 
         val recommendedInstalls = mutableListOf<String>()
 
-        override suspend fun installRecommendedResources(language: String) {
+        override suspend fun installRecommendedResources(language: String): Boolean {
             recommendedInstalls += language
+            return true
         }
 
         override suspend fun recoverAndRefresh() = Unit
