@@ -15,6 +15,7 @@ import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
 import com.ankiminer.android.mining.CurationSelection
 import com.ankiminer.android.mining.MiningCommandException
+import com.ankiminer.android.mining.MiningFailure
 import com.ankiminer.android.mining.MiningLane
 import com.ankiminer.android.mining.MiningRepository
 import com.ankiminer.android.mining.MiningRunState
@@ -227,6 +228,80 @@ class MiningUndoReceiptLifecycleTest {
             assertFalse(restored.uiState.value.undoAvailable)
         }
 
+    @Test
+    fun anotherLanesInterruptionKeepsTheVideoReceiptForWhenTheLaneIsIdleAgain() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = FakeMiningRepository(MiningRunState.Idle)
+            mediaViewModel(before, savedState, UndoHarness().manager)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            // Android killed the process during an Audio run; every lane starts on its placeholder.
+            val restoredState = savedState.rebuilt()
+            val repository = FakeMiningRepository(interruptionPlaceholder())
+            val restored = mediaViewModel(repository, restoredState, UndoHarness().manager)
+            runCurrent()
+            assertEquals("run", MiningReceiptStore(restoredState, VIDEO_RECEIPT).restore()?.runId)
+            assertNull(restored.uiState.value.restoredReceipt)
+            assertFalse(restored.uiState.value.undoAvailable)
+
+            repository.reset()
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+        }
+
+    @Test
+    fun anotherLanesInterruptionKeepsTheReadingReceiptForWhenTheLaneIsIdleAgain() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = FakeReadingRepository(MiningRunState.Idle)
+            readingViewModel(before, savedState, UndoHarness().manager)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+
+            val restoredState = savedState.rebuilt()
+            val repository = FakeReadingRepository(interruptionPlaceholder())
+            val restored = readingViewModel(repository, restoredState, UndoHarness().manager)
+            runCurrent()
+            assertEquals("run", MiningReceiptStore(restoredState, READING_RECEIPT).restore()?.runId)
+            assertNull(restored.uiState.value.restoredReceipt)
+            assertFalse(restored.uiState.value.undoAvailable)
+
+            repository.reset()
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+        }
+
+    @Test
+    fun aRunOfThisLaneAfterThePlaceholderStillReplacesTheReceipt() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val savedState = SavedStateHandle()
+            val before = FakeMiningRepository(MiningRunState.Idle)
+            mediaViewModel(before, savedState, UndoHarness().manager)
+            before.transitionTo(MiningRunState.Success("run", result()))
+            runCurrent()
+            val restoredState = savedState.rebuilt()
+            val repository = FakeMiningRepository(interruptionPlaceholder())
+            val restored = mediaViewModel(repository, restoredState, UndoHarness().manager)
+            runCurrent()
+
+            // This lane's next run fails before Python assigns a run id, and the collector never saw
+            // it start: it left nothing to undo, so the older receipt may not stand in for it.
+            repository.transitionTo(
+                MiningRunState.Failed(runId = null, failure = MiningFailure("boom", retryable = true), result = null),
+            )
+            runCurrent()
+            assertNull(MiningReceiptStore(restoredState, VIDEO_RECEIPT).restore())
+
+            repository.reset()
+            runCurrent()
+            assertNull(restored.uiState.value.restoredReceipt)
+            assertFalse(restored.uiState.value.undoAvailable)
+        }
+
     private fun mediaViewModel(
         repository: MiningRepository,
         savedStateHandle: SavedStateHandle,
@@ -364,6 +439,14 @@ class MiningUndoReceiptLifecycleTest {
     private companion object {
         const val VIDEO_RECEIPT = "videoMining.receipt"
         const val READING_RECEIPT = "readingMining.receipt"
+
+        /** What every lane's repository starts with after an earlier process lost a run of any lane. */
+        fun interruptionPlaceholder(): MiningRunState =
+            MiningRunState.Failed(
+                runId = null,
+                failure = MiningFailure("Android stopped the run", retryable = false),
+                result = null,
+            )
 
         fun result(): ProcessingResult =
             ProcessingResult(

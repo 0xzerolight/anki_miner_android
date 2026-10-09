@@ -210,6 +210,15 @@ class MediaMiningViewModel internal constructor(
         )
     private val definitionState = MutableStateFlow(CurationDefinitionState())
     private val receiptStore = MiningReceiptStore(savedStateHandle, "${lane.savedStateKeyPrefix}.receipt")
+
+    /**
+     * The terminal state found at construction when it is the process-start placeholder for a run an
+     * earlier process lost: no run id, no result. One durable interruption record covers every lane,
+     * so it may stand for another tab's run; it is not a run of this lane and must not replace this
+     * lane's saved receipt, which shows again once the lane is back to Idle.
+     */
+    private val startupPlaceholder: MiningRunState? =
+        repository.state.value.takeIf { it.isTerminal && it.runId == null && it.terminalResult == null }
     private val cueState = MutableStateFlow<CueState?>(null)
     private val mutableTimingPreviewState = MutableStateFlow<TimingPreviewState?>(null)
     val timingPreviewState: StateFlow<TimingPreviewState?> = mutableTimingPreviewState
@@ -369,7 +378,7 @@ class MediaMiningViewModel internal constructor(
         )
 
     init {
-        if (repository.state.value == MiningRunState.Idle) {
+        if (startupPlaceholder != null || repository.state.value == MiningRunState.Idle) {
             receiptStore.restore()?.let { receipt -> localState.update { it.copy(restoredReceipt = receipt) } }
         }
         viewModelScope.launch {
@@ -435,7 +444,9 @@ class MediaMiningViewModel internal constructor(
                     }
                     saveCurationSession(runState.request)
                 } else if (runState.isTerminal) {
-                    saveReceipt(runState)
+                    // Identity, not equality: only the placeholder object found at construction is
+                    // exempt, never a later run of this lane that fails the same way.
+                    if (runState !== startupPlaceholder) saveReceipt(runState)
                     definitionJob?.cancel()
                     definitionJob = null
                     requestDefinition(null, null)
@@ -1264,8 +1275,8 @@ class MediaMiningViewModel internal constructor(
         val runId = runState.runId
         val result = runState.terminalResult
         if (runId == null || result == null || result.cardIds.isEmpty()) {
-            // This run left nothing to undo, so no older receipt may stand in for it.
-            receiptStore.clear()
+            // This run left nothing to undo, so no older receipt, saved or restored, may stand in for it.
+            forgetReceipt()
             return
         }
         if (undoManager?.undoneRuns?.value?.get(runId)?.knownWordsReverted == true) {
