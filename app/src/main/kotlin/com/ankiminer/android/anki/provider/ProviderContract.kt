@@ -55,6 +55,16 @@ internal sealed interface ProviderSelection {
     /** Exact deck scope compiled to Anki browser syntax only inside the production gateway. */
     data class ExcludedDeck(val deckName: String) : ProviderSelection
 
+    /**
+     * Which of [noteIds] still have a card outside every deck in [deckNames], compiled to the
+     * browser search `nid:1,2 -deck:"A" -deck:"B"` inside the production gateway. AnkiDroid runs
+     * a deck search card by card, so a note matches when any one of its cards is outside them all.
+     */
+    data class NotesOutsideDecks(
+        val deckNames: List<String>,
+        val noteIds: List<Long>,
+    ) : ProviderSelection
+
     /** Exact positive note ID compiled to the global cards browser query inside the gateway. */
     data class CardsForNote(val noteId: Long) : ProviderSelection
 
@@ -156,6 +166,13 @@ internal object ProviderQueryShapes {
             ProviderColumn.DECK_DYNAMIC,
         )
     val CARD_ID_PROJECTION = listOf(ProviderColumn.CARD_ID)
+
+    /**
+     * IDs per outside-the-excluded-decks search. AnkiDroid inlines a `nid:` list into the search
+     * text rather than binding it, so this bounds the query string (at most 20 characters an ID)
+     * however many notes the excluded decks hold.
+     */
+    const val NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS = 1024
     // `deck:"Name"` matches a card through its home deck, so a card borrowed by a filtered deck
     // still comes back — carrying the filtered deck's ID. The card projection therefore reads the
     // home-deck link as well; without it a Custom Study session hides those cards from every
@@ -178,8 +195,7 @@ internal object ProviderQueryShapes {
             ProviderEndpoint.NOTES_BROWSER ->
                 query.endpointId == null &&
                     query.projection == NOTE_ID_PROJECTION &&
-                    query.selection is ProviderSelection.ExcludedDeck &&
-                    query.selection.deckName.isValidDeckName() &&
+                    browserSearchAllowed(query.selection) &&
                     query.sortOrder == null
             ProviderEndpoint.NOTES_V2 -> notesV2Allowed(query)
             ProviderEndpoint.NOTE_BY_ID ->
@@ -253,10 +269,22 @@ internal object ProviderQueryShapes {
                     selection.checksums.size in 1..MAX_DUPLICATE_CHECKSUMS &&
                     selection.checksums.isStrictlyIncreasingNonNegative()
             is ProviderSelection.ExcludedDeck,
+            is ProviderSelection.NotesOutsideDecks,
             is ProviderSelection.CardsForNote,
             -> false
         }
     }
+
+    private fun browserSearchAllowed(selection: ProviderSelection?): Boolean =
+        when (selection) {
+            is ProviderSelection.ExcludedDeck -> selection.deckName.isValidDeckName()
+            is ProviderSelection.NotesOutsideDecks ->
+                selection.deckNames.size in 1..AnkiLimitsV1.Names.ExcludedDecks.MAX_ITEM_COUNT &&
+                    selection.deckNames.all { it.isValidDeckName() } &&
+                    selection.noteIds.size in 1..NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS &&
+                    selection.noteIds.isStrictlyIncreasingPositive()
+            else -> false
+        }
 
     private fun List<Long>.isStrictlyIncreasingPositive(): Boolean =
         isNotEmpty() && first() > 0L && zipWithNext().all { (left, right) -> left < right }
