@@ -408,6 +408,7 @@ def test_mining_schema_accepts_text_only_with_text_suffix(
                 "sourcePath": source_path,
                 "imageArchivePath": None,
                 "seriesName": None,
+                "stagingRoot": "/cache",
                 "cacheDir": "/cache",
                 "nativeLibraryDir": "/native",
                 "configSnapshot": {"settings": {}},

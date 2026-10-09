@@ -39,7 +39,7 @@
         {"$ref": "#/$defs/absolutePath"},
         {
           "maxLength": 4096,
-          "$comment": "Runtime validation applies a stricter 4096-byte UTF-8 ceiling and requires source/archive paths to resolve inside cacheDir."
+          "$comment": "Runtime validation applies a stricter 4096-byte UTF-8 ceiling and requires source/archive paths to resolve inside stagingRoot."
         }
       ]
     },
@@ -211,6 +211,7 @@
         "sourcePath",
         "imageArchivePath",
         "seriesName",
+        "stagingRoot",
         "cacheDir",
         "nativeLibraryDir",
         "configSnapshot"
@@ -235,6 +236,7 @@
             }
           ]
         },
+        "stagingRoot": {"$ref": "#/$defs/absolutePath"},
         "cacheDir": {"$ref": "#/$defs/absolutePath"},
         "nativeLibraryDir": {"$ref": "#/$defs/absolutePath"},
         "configSnapshot": {
@@ -266,7 +268,7 @@
           "then": {"properties": {"sourcePath": {"pattern": "\\.[mM][oO][kK][uU][rR][oO]$"}, "seriesName": {"type": "null"}}}
         }
       ],
-      "$comment": "Runtime validation additionally requires sourcePath and imageArchivePath to resolve inside cacheDir. A non-null archive is only accepted for mokuro and must be an existing same-directory, same-stem companion selected by the desktop detector. seriesName is a stable Kotlin-owned subtitle label which replaces the loader's nonce job-directory-derived series; it is null for every other kind."
+      "$comment": "Runtime validation additionally requires sourcePath and imageArchivePath to resolve inside stagingRoot, the private stage under noBackupFilesDir. A non-null archive is only accepted for mokuro and must be an existing same-directory, same-stem companion selected by the desktop detector. seriesName is a stable Kotlin-owned subtitle label which replaces the loader's nonce job-directory-derived series; it is null for every other kind."
     },
     "registrationPayload": {
       "type": "object",

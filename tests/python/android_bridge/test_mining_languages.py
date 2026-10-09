@@ -377,6 +377,7 @@ def test_a_hebrew_novel_is_decoded_and_split_with_the_hebrew_seams(tmp_path: Pat
                 "sourcePath": str(source),
                 "imageArchivePath": None,
                 "seriesName": None,
+                "stagingRoot": str(tmp_path),
                 "cacheDir": str(tmp_path),
                 "nativeLibraryDir": "/native",
                 "configSnapshot": {"settings": {"language": "he", "anki_note_type": "Basic"}},

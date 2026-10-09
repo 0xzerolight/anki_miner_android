@@ -371,7 +371,7 @@ class BridgeJsonCodecTest {
         val raw = BridgeJsonCodec.encodeReadingRun(readingRequest())
 
         assertEquals(
-            "{\"schemaVersion\":1,\"type\":\"mining.reading.run\",\"payload\":{\"sourceKind\":\"text\",\"sourcePath\":\"/cache/pasted.text\",\"imageArchivePath\":null,\"seriesName\":null,\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
+            "{\"schemaVersion\":1,\"type\":\"mining.reading.run\",\"payload\":{\"sourceKind\":\"text\",\"sourcePath\":\"/cache/pasted.text\",\"imageArchivePath\":null,\"seriesName\":null,\"stagingRoot\":\"/cache\",\"cacheDir\":\"/cache\",\"nativeLibraryDir\":\"/native\",\"configSnapshot\":{\"settings\":{},\"androidTtsEnabled\":false}}}",
             raw,
         )
     }
@@ -418,7 +418,7 @@ class BridgeJsonCodecTest {
     }
 
     @Test
-    fun `text reading run rejects a source outside cache dir`() {
+    fun `text reading run rejects a source outside the staging root`() {
         assertThrows(BridgeProtocolException::class.java) {
             BridgeJsonCodec.encodeReadingRun(readingRequest(sourcePath = "/outside/pasted.text"))
         }
@@ -1567,6 +1567,7 @@ class BridgeJsonCodecTest {
             sourcePath = sourcePath,
             imageArchivePath = imageArchivePath,
             seriesName = seriesName,
+            stagingRoot = "/cache",
             cacheDir = "/cache",
             nativeLibraryDir = "/native",
             configSnapshot = MiningConfigSnapshot(emptyMap(), androidTtsEnabled = false),

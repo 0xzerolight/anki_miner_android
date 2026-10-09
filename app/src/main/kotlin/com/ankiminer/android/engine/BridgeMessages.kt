@@ -65,6 +65,8 @@ data class ReadingMiningWireRequest(
     val sourcePath: String,
     val imageArchivePath: String?,
     val seriesName: String?,
+    /** The private stage root; [sourcePath] and [imageArchivePath] must lie inside it. */
+    val stagingRoot: String,
     val cacheDir: String,
     val nativeLibraryDir: String,
     val configSnapshot: MiningConfigSnapshot,

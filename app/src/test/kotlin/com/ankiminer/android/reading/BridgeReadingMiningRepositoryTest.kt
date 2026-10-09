@@ -528,7 +528,10 @@ class BridgeReadingMiningRepositoryTest {
 
         assertTrue(stagedFile.isFile)
         assertEquals("Novel.txt", stagedFile.name)
-        assertTrue(stagedFile.toPath().startsWith(harness.cacheDir.toPath().toRealPath()))
+        assertEquals(harness.stageRoot.absolutePath, wire.stagingRoot)
+        assertTrue(stagedFile.toPath().startsWith(harness.stageRoot.toPath()))
+        // The stage outlives curation, so it must not sit in the evictable cacheDir.
+        assertFalse(stagedFile.toPath().startsWith(harness.cacheDir.toPath().toRealPath()))
         assertNull(wire.imageArchivePath)
         assertNull(curating.pageImage)
         assertNull(wire.seriesName)
@@ -1737,8 +1740,8 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
-    fun `a lone archive mines through a cache reached by a symlinked ancestor`() {
-        val cache = symlinkedCache()
+    fun `a lone archive mines through a no-backup directory reached by a symlinked ancestor`() {
+        val noBackup = symlinkedNoBackup()
         val archive =
             SafDocument(
                 uri = "content://reading/lone-linked",
@@ -1756,7 +1759,7 @@ class BridgeReadingMiningRepositoryTest {
                                 "Volume.mokuro" to "{}".toByteArray(),
                             ),
                     ),
-                cache = cache,
+                noBackup = noBackup,
             )
 
         runBlocking {
@@ -1769,7 +1772,7 @@ class BridgeReadingMiningRepositoryTest {
         val wire = requireNotNull(harness.bridge.readingRequest.get())
         assertTrue(
             wire.sourcePath,
-            File(wire.sourcePath).toPath().startsWith(cache.toPath().toRealPath()),
+            File(wire.sourcePath).toPath().startsWith(noBackup.toPath().toRealPath()),
         )
         assertEquals(ReadingMiningSourceKind.MOKURO, wire.sourceKind)
         assertNotNull(wire.imageArchivePath)
@@ -1778,8 +1781,8 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     @Test
-    fun `a sidecar and archive pair mines through a cache reached by a symlinked ancestor`() {
-        val cache = symlinkedCache()
+    fun `a sidecar and archive pair mines through a no-backup directory reached by a symlinked ancestor`() {
+        val noBackup = symlinkedNoBackup()
         val sidecar =
             SafDocument(
                 uri = "content://reading/pair-sidecar",
@@ -1801,7 +1804,7 @@ class BridgeReadingMiningRepositoryTest {
                         sidecar.uri to "{}".toByteArray(),
                         archive.uri to zipBytes("Volume/001.jpg" to "jpeg".toByteArray()),
                     ),
-                cache = cache,
+                noBackup = noBackup,
             )
 
         runBlocking {
@@ -1814,7 +1817,7 @@ class BridgeReadingMiningRepositoryTest {
         val wire = requireNotNull(harness.bridge.readingRequest.get())
         assertTrue(
             wire.sourcePath,
-            File(wire.sourcePath).toPath().startsWith(cache.toPath().toRealPath()),
+            File(wire.sourcePath).toPath().startsWith(noBackup.toPath().toRealPath()),
         )
         assertNotNull(wire.imageArchivePath)
         assertEquals(wire.imageArchivePath, curating.pageImage?.archivePath)
@@ -1822,16 +1825,16 @@ class BridgeReadingMiningRepositoryTest {
     }
 
     /**
-     * Mirrors Android's `/data/user/0 -> /data/data` app-data symlink: the cache directory itself is
-     * a real directory, reached through a symlinked ancestor, exactly as `Context.getCacheDir()`
-     * returns it on the affected devices.
+     * Mirrors Android's `/data/user/0 -> /data/data` app-data symlink: the no-backup directory itself
+     * is a real directory, reached through a symlinked ancestor, exactly as
+     * `Context.getNoBackupFilesDir()` returns it on the affected devices.
      */
-    private fun symlinkedCache(): File {
+    private fun symlinkedNoBackup(): File {
         val root = temporary.newFolder("app-storage-${executors.size}").toPath()
         val real = Files.createDirectory(root.resolve("real"))
-        Files.createDirectory(real.resolve("cache"))
+        Files.createDirectory(real.resolve("no_backup"))
         val link = Files.createSymbolicLink(root.resolve("link"), real)
-        return link.resolve("cache").toFile()
+        return link.resolve("no_backup").toFile()
     }
 
     /**
@@ -1935,7 +1938,7 @@ class BridgeReadingMiningRepositoryTest {
         invokeTtsAfterCancellation: Boolean = false,
         interruptionStore: com.ankiminer.android.mining.MiningRunInterruptionStore =
             com.ankiminer.android.mining.NoOpMiningRunInterruptionStore,
-        cache: File? = null,
+        noBackup: File? = null,
         foregroundFailure: ForegroundStartFailure? = null,
         ankiFailure: RuntimeException? = null,
         strings: StringResourceResolver = testStringResourceResolver,
@@ -1945,8 +1948,9 @@ class BridgeReadingMiningRepositoryTest {
         val controlExecutor = Executors.newSingleThreadExecutor().also(executors::add)
         val controlFailure = AtomicReference<Throwable?>()
         val controlTaskCompleted = CountDownLatch(1)
-        val cacheDir = cache ?: temporary.newFolder("cache-${executors.size}")
-        val stageRoot = readingSourceStagingRoot(cacheDir)
+        val cacheDir = temporary.newFolder("cache-${executors.size}")
+        // Production stages under noBackupFilesDir, apart from the evictable cacheDir.
+        val stageRoot = readingSourceStagingRoot(noBackup ?: temporary.newFolder("nobackup-${executors.size}"))
         val bridge =
             FakeReadingPyBridge(
                 pagedCuration = pagedCuration,
