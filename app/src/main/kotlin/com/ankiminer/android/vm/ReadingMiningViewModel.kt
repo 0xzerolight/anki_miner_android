@@ -879,6 +879,12 @@ class ReadingMiningViewModel internal constructor(
             receiptStore.clear()
             return
         }
+        if (undoManager?.undoneRuns?.value?.get(runId)?.knownWordsReverted == true) {
+            // Fully undone in this process. A saved copy would offer the same Undo again once a
+            // process kill empties the manager's in-memory record; a revert still owed keeps it.
+            forgetReceipt()
+            return
+        }
         receiptStore.save(
             MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms),
         )
