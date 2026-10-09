@@ -122,6 +122,28 @@ def test_non_scalar_strings_are_rejected(value: str) -> None:
     assert not unicode_contract.has_leading_or_trailing_python_whitespace(value)
 
 
+def test_category_cf_matches_pinned_truth_and_this_interpreter() -> None:
+    import unicodedata
+
+    pinned: set[int] = set()
+    for line in (UNICODE_ROOT / "UnicodeData.txt").read_text(encoding="ascii").splitlines():
+        fields = line.split(";")
+        if fields[2] == "Cf":
+            assert not fields[1].endswith((", First>", ", Last>"))
+            pinned.add(int(fields[0], 16))
+    assert len(pinned) == 170
+
+    generated = {code_point for code_point in range(MAX_CODE_POINT + 1) if unicode_contract.is_category_cf(code_point)}
+    assert generated == pinned
+    # The vendored strip_format_chars asks this interpreter's unicodedata; the device runs the
+    # runtime lane's CPython 3.12 (Unicode 15.0). Both lanes must agree with the pinned table, or
+    # the Kotlin duplicate key and the engine's key part ways again (AU-001).
+    live = {code_point for code_point in range(MAX_CODE_POINT + 1) if unicodedata.category(chr(code_point)) == "Cf"}
+    assert live == pinned
+    for invalid in (-1, 0xD800, 0x110000, True):
+        assert not unicode_contract.is_category_cf(invalid)
+
+
 def test_generated_runtime_has_no_host_unicode_table_dependency() -> None:
     source = Path(unicode_contract.__file__).read_text(encoding="utf-8")
 

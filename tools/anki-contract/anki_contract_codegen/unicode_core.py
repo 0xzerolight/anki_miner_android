@@ -45,6 +45,7 @@ _EXPECTED_FILES = frozenset(
 @dataclass(frozen=True)
 class UnicodeTables:
     category_c_ranges: tuple[tuple[int, int], ...]
+    category_cf_ranges: tuple[tuple[int, int], ...]
     whitespace_ranges: tuple[tuple[int, int], ...]
     combining_ranges: tuple[tuple[int, int, int], ...]
     nfc_no_ranges: tuple[tuple[int, int], ...]
@@ -289,8 +290,9 @@ def _compress_bytes(values: Sequence[int]) -> Iterable[tuple[int, int, int]]:
 
 def _parse_unicode_data(
     raw: bytes,
-) -> tuple[bytearray, bytearray, dict[int, tuple[int, ...]]]:
+) -> tuple[bytearray, bytearray, bytearray, dict[int, tuple[int, ...]]]:
     category_c = bytearray(b"\x01") * (_MAX_CODE_POINT + 1)
+    category_cf = bytearray(_MAX_CODE_POINT + 1)
     combining = bytearray(_MAX_CODE_POINT + 1)
     decompositions: dict[int, tuple[int, ...]] = {}
     pending_range: tuple[int, str, int, str] | None = None
@@ -334,6 +336,7 @@ def _parse_unicode_data(
                 _fail("UnicodeData.txt First/Last range metadata differs")
             for current in range(start, code_point + 1):
                 category_c[current] = int(category.startswith("C"))
+                category_cf[current] = int(category == "Cf")
                 combining[current] = combining_class
             pending_range = None
             continue
@@ -341,6 +344,7 @@ def _parse_unicode_data(
             _fail("UnicodeData.txt First range is not immediately closed")
 
         category_c[code_point] = int(category.startswith("C"))
+        category_cf[code_point] = int(category == "Cf")
         combining[code_point] = combining_class
         if decomposition_field and not decomposition_field.startswith("<"):
             try:
@@ -352,7 +356,7 @@ def _parse_unicode_data(
             decompositions[code_point] = mapping
     if pending_range is not None:
         _fail("UnicodeData.txt has an unterminated First range")
-    return category_c, combining, decompositions
+    return category_c, category_cf, combining, decompositions
 
 
 def _hangul_decomposition(code_point: int) -> tuple[int, ...] | None:
@@ -373,7 +377,7 @@ def _hangul_decomposition(code_point: int) -> tuple[int, ...] | None:
 
 
 def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], ...]) -> UnicodeTables:
-    category_c, combining, raw_decompositions = _parse_unicode_data(inputs["UnicodeData.txt"])
+    category_c, category_cf, combining, raw_decompositions = _parse_unicode_data(inputs["UnicodeData.txt"])
     derived = inputs["DerivedNormalizationProps.txt"]
     nfc_no = _parse_property_ranges(derived, "DerivedNormalizationProps.txt", "NFC_QC", "N")
     nfc_maybe = _parse_property_ranges(derived, "DerivedNormalizationProps.txt", "NFC_QC", "M")
@@ -430,6 +434,7 @@ def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], .
 
     tables = UnicodeTables(
         category_c_ranges=tuple(_compress_boolean(category_c)),
+        category_cf_ranges=tuple(_compress_boolean(category_cf)),
         whitespace_ranges=whitespace,
         combining_ranges=tuple(_compress_bytes(combining)),
         nfc_no_ranges=nfc_no,
@@ -444,6 +449,7 @@ def _build_tables(inputs: dict[str, bytes], whitespace: tuple[tuple[int, int], .
 def _validate_table_counts(tables: UnicodeTables) -> None:
     expected = {
         "category C ranges": (len(tables.category_c_ranges), 712),
+        "category Cf ranges": (len(tables.category_cf_ranges), 21),
         "whitespace ranges": (len(tables.whitespace_ranges), 10),
         "combining ranges": (len(tables.combining_ranges), 388),
         "NFC_QC=No ranges": (len(tables.nfc_no_ranges), 73),
@@ -495,6 +501,7 @@ def generate_python(tables: UnicodeTables) -> bytes:
     decomposition_metadata, decomposition_data = _pack_decompositions(tables.decompositions)
     blocks = [
         _render_python_tuple("_CATEGORY_C_RANGES", _pack_ranges(tables.category_c_ranges), 4),
+        _render_python_tuple("_CATEGORY_CF_RANGES", _pack_ranges(tables.category_cf_ranges), 4),
         _render_python_tuple("_WHITESPACE_RANGES", _pack_ranges(tables.whitespace_ranges), 4),
         _render_python_tuple("_COMBINING_RANGES", _pack_combining(tables.combining_ranges), 4),
         _render_python_tuple("_NFC_NO_RANGES", _pack_ranges(tables.nfc_no_ranges), 4),
@@ -543,6 +550,10 @@ def is_python_whitespace(code_point: int) -> bool:
 
 def is_category_c(code_point: int) -> bool:
     return is_unicode_scalar(code_point) and _contains_range(_CATEGORY_C_RANGES, code_point)
+
+
+def is_category_cf(code_point: int) -> bool:
+    return is_unicode_scalar(code_point) and _contains_range(_CATEGORY_CF_RANGES, code_point)
 
 
 def _scalar_values(value: str) -> list[int] | None:
@@ -709,6 +720,7 @@ def generate_kotlin(tables: UnicodeTables) -> bytes:
     decomposition_metadata, decomposition_data = _pack_decompositions(tables.decompositions)
     blocks = [
         _render_kotlin_array("CategoryCData", "ranges", "longArrayOf", _pack_ranges(tables.category_c_ranges), 4),
+        _render_kotlin_array("CategoryCfData", "ranges", "longArrayOf", _pack_ranges(tables.category_cf_ranges), 4),
         _render_kotlin_array("WhitespaceData", "ranges", "longArrayOf", _pack_ranges(tables.whitespace_ranges), 4),
         _render_kotlin_array("CombiningData", "ranges", "longArrayOf", _pack_combining(tables.combining_ranges), 4),
         _render_kotlin_array("NfcNoData", "ranges", "longArrayOf", _pack_ranges(tables.nfc_no_ranges), 4),
@@ -801,6 +813,9 @@ def generate_kotlin(tables: UnicodeTables) -> bytes:
 
     fun isCategoryC(codePoint: Int): Boolean =
         isUnicodeScalar(codePoint) && containsRange(CategoryCData.ranges, codePoint)
+
+    fun isCategoryCf(codePoint: Int): Boolean =
+        isUnicodeScalar(codePoint) && containsRange(CategoryCfData.ranges, codePoint)
 
     fun hasLeadingOrTrailingPythonWhitespace(value: String): Boolean {
         var first: Int? = null
