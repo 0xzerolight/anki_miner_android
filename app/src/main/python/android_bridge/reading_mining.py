@@ -423,6 +423,7 @@ def _process_reading(
                 adapters.anki,
                 cancellation_check=adapters.cancel_event.is_set,
                 source_prefix=source_prefix,
+                request_cancellation=adapters.cancel_event.set,
             )
         )
         sentence_audio_fetcher = None

@@ -815,11 +815,14 @@ def test_process_reading_receives_exact_desktop_contract_and_cleans_lifo(
             received_callbacks: object,
             cancellation_check: object,
             source_prefix: object,
+            request_cancellation: object,
         ) -> None:
             assert received_config is config
             assert received_callbacks is anki_callbacks
             assert callable(cancellation_check)
             assert source_prefix is None
+            # A stop Kotlin reports first must reach the event the engine reads.
+            assert request_cancellation == cancel_event.set
             events.append("adapter-init")
 
         def __enter__(self) -> FakeAdapter:

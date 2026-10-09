@@ -1339,6 +1339,7 @@ def _process_episode(
                 # lane label ("Local video"): SAF hands over a display name,
                 # never a parent folder. Strip it back off at the seam.
                 source_prefix=f"{request.series_name} — ".lstrip(),
+                request_cancellation=adapters.cancel_event.set,
             )
         )
         processor = _build_processor(config, adapters, anki_adapter)
