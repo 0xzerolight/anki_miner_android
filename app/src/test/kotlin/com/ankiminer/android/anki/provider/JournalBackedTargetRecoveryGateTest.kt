@@ -3,6 +3,8 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.journal.AnkiMutationStore
 import com.ankiminer.android.anki.journal.ChildOperation
 import com.ankiminer.android.anki.journal.ChildState
+import com.ankiminer.android.anki.journal.DurableTargetSnapshot
+import com.ankiminer.android.anki.journal.MutationCommand
 import com.ankiminer.android.anki.journal.ParentOperation
 import com.ankiminer.android.anki.journal.RecoveryInventory
 import com.ankiminer.android.anki.journal.RoutingIntentState
@@ -72,6 +74,40 @@ class JournalBackedTargetRecoveryGateTest {
         assertTrue(gateway.cardCommands.isEmpty())
     }
 
+    @Test
+    fun `entered deck recovery verifies only the exact spelling the journal froze`() {
+        // Current builds freeze AnkiDroid's spelling before entry, so the created deck matches it.
+        val frozen = ScriptedRecoveryStore(deckInventory("Japanese::Mining"))
+        val frozenGate = gate(frozen, FakeAnkiProviderGateway().apply { queryHandler = deckHandler("Japanese::Mining") })
+
+        frozenGate.ensureRecovered()
+
+        assertTrue(frozenGate.isOpen())
+        assertEquals("Japanese::Mining", frozen.verifiedTarget?.deck?.name)
+
+        // An older build froze the typed spelling. The journal schema pins the verified deck name to
+        // the frozen one (verified_target_deck_guard), so that create stays uncertain, as before.
+        val typed = ScriptedRecoveryStore(deckInventory("japanese :: mining"))
+        val typedGate = gate(typed, FakeAnkiProviderGateway().apply { queryHandler = deckHandler("Japanese::Mining") })
+
+        typedGate.ensureRecovered()
+
+        assertTrue(typedGate.isOpen())
+        assertTrue("completeUncertainDeck" in typed.calls)
+        assertEquals(null, typed.verifiedTarget)
+    }
+
+    private fun deckHandler(deckName: String): (ProviderQuery, AnkiCancellation) -> ProviderCursor? =
+        { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODEL_BY_ID -> FakeProviderCursor(query.projection, listOf(modelRow()))
+                ProviderEndpoint.MODEL_TEMPLATES -> FakeProviderCursor(query.projection, listOf(templateRow()))
+                ProviderEndpoint.DECKS, ProviderEndpoint.DECK_BY_ID ->
+                    FakeProviderCursor(query.projection, listOf(deckRow(20L, deckName)))
+                else -> error("unexpected query $query")
+            }
+        }
+
     private fun gate(
         store: ScriptedRecoveryStore,
         gateway: FakeAnkiProviderGateway,
@@ -100,15 +136,18 @@ class JournalBackedTargetRecoveryGateTest {
         return RecoveryInventory(listOf(parent), child, testRoutingIntent(parentId = parent.id, childId = child.id))
     }
 
-    private fun deckInventory(): RecoveryInventory {
+    private fun deckInventory(deckName: String = "Mining"): RecoveryInventory {
         val parent = testParent(operation = ParentOperation.VERIFY_TARGET)
-        val child = testChild(parentId = parent.id, operation = ChildOperation.DECK_CREATE, attemptCount = 1)
-        return RecoveryInventory(listOf(parent), child, null, MODEL.toDurableExpectation("Mining"))
+        val child =
+            testChild(parentId = parent.id, operation = ChildOperation.DECK_CREATE, attemptCount = 1)
+                .copy(command = MutationCommand.CreateDeck(deckName))
+        return RecoveryInventory(listOf(parent), child, null, MODEL.toDurableExpectation(deckName))
     }
 
     private class ScriptedRecoveryStore(private var inventory: RecoveryInventory) {
         val calls = mutableListOf<String>()
         val routingOutcomes = mutableListOf<Pair<Any?, Any?>>()
+        var verifiedTarget: DurableTargetSnapshot? = null
         val store: AnkiMutationStore =
             Proxy.newProxyInstance(
                 AnkiMutationStore::class.java.classLoader,
@@ -123,7 +162,12 @@ class JournalBackedTargetRecoveryGateTest {
                             inventory = DRAINED
                             null
                         }
-                        "completeUncertainDeck", "completeVerifiedDeck" -> {
+                        "completeUncertainDeck" -> {
+                            inventory = DRAINED
+                            null
+                        }
+                        "completeVerifiedDeck" -> {
+                            verifiedTarget = args!![1] as DurableTargetSnapshot
                             inventory = DRAINED
                             null
                         }

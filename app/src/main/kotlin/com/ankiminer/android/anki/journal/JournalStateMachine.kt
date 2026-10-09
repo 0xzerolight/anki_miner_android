@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.journal
 
+import com.ankiminer.android.anki.protocol.AnkiNameCollation
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 
 internal object JournalStateMachine {
@@ -126,7 +127,7 @@ internal object JournalStateMachine {
                 val typedRequest = request.protocolRequest as? VerifyTargetRequest
                     ?: throw JournalInvariantViolation("verifyTarget journal request lost its typed payload")
                 if (
-                    response.target.deck.name != typedRequest.deckName ||
+                    !AnkiNameCollation.sameDeck(response.target.deck.name, typedRequest.deckName) ||
                     response.target.model.name != typedRequest.modelName ||
                     !response.target.model.fieldNames.containsAll(typedRequest.requiredFields)
                 ) {

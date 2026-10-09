@@ -4,20 +4,51 @@ import java.text.Normalizer
 import java.util.Locale
 
 /**
- * Anki's own equality for tags. A readback must compare through this, not with String equality,
- * because AnkiDroid stores the spelling Anki resolves, not the one it was sent.
+ * Anki's own equality for tags and deck names. A readback must compare through this, not with
+ * String equality, because AnkiDroid stores the spelling Anki resolves, not the one it was sent.
  *
- * Anki keeps tags in a `COLLATE unicase` column (rslib `storage/upgrades/schema17_upgrade.sql`),
- * compared with the `unicase` crate's full Unicode case folding (CaseFolding.txt statuses C and
- * F), and canonifies every tag on save (rslib `tags/register.rs` `canonify_tags_inner`): split on
- * ' ' and U+3000; per "::" component NFC, drop ASCII controls, trim whitespace, empty becomes
- * "blank"; an existing tag or parent lends its spelling; case-insensitive duplicates collapse.
+ * Anki keeps both in `COLLATE unicase` columns (rslib `storage/upgrades/schema15_upgrade.sql`,
+ * `schema17_upgrade.sql`), compared with the `unicase` crate's full Unicode case folding
+ * (CaseFolding.txt statuses C and F), and normalises every name before a lookup or save:
+ * - tags (rslib `tags/register.rs` `canonify_tags_inner`): split on ' ' and U+3000; per "::"
+ *   component NFC, drop ASCII controls, trim whitespace, empty becomes "blank"; an existing tag
+ *   or parent lends its spelling; case-insensitive duplicates collapse.
+ * - deck names (rslib `decks/name.rs` `normalized_deck_name_component`): the same per component,
+ *   also trimming ':'; lookups compare the normalised name under unicase.
  */
 internal object AnkiNameCollation {
     fun sameTagSet(
         left: Iterable<String>,
         right: Iterable<String>,
     ): Boolean = tagKeys(left) == tagKeys(right)
+
+    fun sameDeck(
+        left: String,
+        right: String,
+    ): Boolean = deckKey(left) == deckKey(right)
+
+    /**
+     * The name Anki stores when it creates [requested] and no deck in [existingDeckNames] is
+     * already that deck: normalised components, with the deepest existing parent keeping its own
+     * spelling (rslib `decks/addupdate.rs` `match_or_create_parents`).
+     */
+    fun createdDeckName(
+        requested: String,
+        existingDeckNames: Collection<String>,
+    ): String {
+        val components = requested.split(COMPONENT_SEPARATOR).map { normalizedComponent(it, trimColons = true) }
+        for (parentCount in components.size - 1 downTo 1) {
+            val parent = components.subList(0, parentCount).joinToString(COMPONENT_SEPARATOR)
+            val existing = existingDeckNames.firstOrNull { sameDeck(it, parent) } ?: continue
+            return (listOf(existing) + components.subList(parentCount, components.size)).joinToString(COMPONENT_SEPARATOR)
+        }
+        return components.joinToString(COMPONENT_SEPARATOR)
+    }
+
+    private fun deckKey(name: String): String =
+        name.split(COMPONENT_SEPARATOR).joinToString(NATIVE_DECK_SEPARATOR) { component ->
+            foldCase(normalizedComponent(component, trimColons = true))
+        }
 
     private fun tagKeys(tags: Iterable<String>): Set<String> =
         tags.asSequence()
@@ -63,6 +94,7 @@ internal object AnkiNameCollation {
     }
 
     private const val COMPONENT_SEPARATOR = "::"
+    private const val NATIVE_DECK_SEPARATOR = "\u001f"
     private const val IDEOGRAPHIC_SPACE = '　'
     private const val NEXT_LINE = '\u0085'
     private const val BLANK = "blank"

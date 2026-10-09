@@ -15,6 +15,7 @@ import com.ankiminer.android.anki.journal.ProviderReceipt
 import com.ankiminer.android.anki.journal.ReplayResult
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiErrorResult
+import com.ankiminer.android.anki.protocol.AnkiNameCollation
 import com.ankiminer.android.anki.protocol.AnkiResponse
 import com.ankiminer.android.anki.protocol.VerifyTargetRequest
 import com.ankiminer.android.anki.protocol.VerifyTargetResult
@@ -221,9 +222,12 @@ internal class DurableTargetVerifier(
                 )
             }
 
-            journal.storeExpectation(durableRequest.key, model.toDurableExpectation(request.deckName))
-            preparedDeck = journal.prepareDeck(durableRequest.key, request.deckName)
-            val command = AnkiProviderMutationCommand.CreateDeck(request.deckName)
+            // The journal pins the verified deck to the frozen name exactly, so freeze and send the
+            // spelling AnkiDroid will store rather than the one typed in Settings.
+            val deckName = snapshots.createdDeckName(request.deckName, cancellation)
+            journal.storeExpectation(durableRequest.key, model.toDurableExpectation(deckName))
+            preparedDeck = journal.prepareDeck(durableRequest.key, deckName)
+            val command = AnkiProviderMutationCommand.CreateDeck(deckName)
             checkedProvider.preflightMutation(cancellation)
             boundaryHooks.beforeProviderEntry()
             when (registry.authorizeTargetProviderEntry(owner, reservation)) {
@@ -247,10 +251,10 @@ internal class DurableTargetVerifier(
             val receipt = DeckCreateReceiptValidator.validate(rawReceipt)
             if (receipt != null) journal.recordReceipt(preparedDeck.id, receipt)
 
-            val reconciled = reconcileEnteredCreate(model, request.deckName, receipt)
+            val reconciled = reconcileEnteredCreate(model, deckName, receipt)
             if (reconciled != null) {
                 val durableTarget = reconciled.toDurableSnapshot()
-                val evidence = deckEvidence(durableRequest, request.deckName, receipt, rawReceipt, "exact")
+                val evidence = deckEvidence(durableRequest, deckName, receipt, rawReceipt, "exact")
                 journal.completeVerifiedDeck(preparedDeck.id, durableTarget, evidence)
                 return terminalSuccess(
                     durableRequest,
@@ -261,7 +265,7 @@ internal class DurableTargetVerifier(
                 )
             }
 
-            val evidence = deckEvidence(durableRequest, request.deckName, receipt, rawReceipt, "inconclusive")
+            val evidence = deckEvidence(durableRequest, deckName, receipt, rawReceipt, "inconclusive")
             journal.completeUncertainDeck(preparedDeck.id, evidence)
             return terminalError(durableRequest, request, postCommitUncertain(), replayed = false)
         } catch (failure: AnkiReadFailure) {
@@ -378,6 +382,8 @@ internal class DurableTargetVerifier(
             val model = snapshots.readModelById(expectedModel.id, AnkiCancellation.NONE)
             if (model != expectedModel) return null
             val byName = snapshots.readDeckByName(expectedDeckName, AnkiCancellation.NONE) ?: return null
+            // The journal pins the verified deck to the frozen name exactly.
+            if (byName.name != expectedDeckName) return null
             if (receipt != null) {
                 val byReceipt = snapshots.readDeckById(receipt.deckId, AnkiCancellation.NONE)
                 if (byReceipt != byName) return null
@@ -392,7 +398,7 @@ internal class DurableTargetVerifier(
         request: VerifyTargetRequest,
         target: TargetSnapshot,
     ) {
-        if (target.deck.name != request.deckName || target.model.name != request.modelName) {
+        if (!AnkiNameCollation.sameDeck(target.deck.name, request.deckName) || target.model.name != request.modelName) {
             throw targetInvalid("The requested Anki target conflicts with this live run")
         }
         requireFields(request, target.model)

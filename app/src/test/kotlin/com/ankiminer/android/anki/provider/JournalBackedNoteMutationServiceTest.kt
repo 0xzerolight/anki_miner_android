@@ -106,6 +106,20 @@ class JournalBackedNoteMutationServiceTest {
         }
 
     @Test
+    fun `createNotes naming the verified deck in another Anki spelling is accepted`() =
+        withHarness { harness ->
+            harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, DEFAULT_DECK_ID))
+            harness.provider.routeBlock = {
+                harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, TARGET.deck.id))
+                1
+            }
+
+            val outcome = harness.service.create(harness.owner, harness.request().copy(deckName = "mining"))
+
+            assertEquals(listOf(CreatedNote(CLIENT_NOTE_ID, NOTE_ID)), outcome.result.results)
+        }
+
+    @Test
     fun `stored tags with different content remain a committed write failure`() =
         withHarness { harness ->
             harness.reads.noteTagsWire = " other "

@@ -895,7 +895,7 @@ internal class JournalBackedNoteMutationService(
     ): TargetSnapshot {
         val target = registryTargetOrConflict(baseline)
         if (
-            target.deck.name != request.deckName ||
+            !AnkiNameCollation.sameDeck(target.deck.name, request.deckName) ||
             target.model.name != request.modelName ||
             target.model.fieldNames.first() != request.firstFieldName ||
             baseline.firstFieldName != request.firstFieldName

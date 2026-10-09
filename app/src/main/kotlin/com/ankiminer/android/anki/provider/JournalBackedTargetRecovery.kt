@@ -544,6 +544,9 @@ internal class JournalBackedTargetRecoveryGate(
             val model = snapshots.readModelById(expectedModel.id, AnkiCancellation.NONE)
             if (model != expectedModel) return null
             val byName = snapshots.readDeckByName(expectedDeckName, AnkiCancellation.NONE) ?: return null
+            // The journal pins the verified deck to the frozen name exactly; an older build froze
+            // the typed spelling, which then stays uncertain.
+            if (byName.name != expectedDeckName) return null
             if (receipt != null) {
                 val byId = snapshots.readDeckById(receipt.deckId, AnkiCancellation.NONE)
                 if (byId != byName) return null

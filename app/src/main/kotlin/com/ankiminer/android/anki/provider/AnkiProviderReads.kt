@@ -3,6 +3,7 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiJsonCodec
+import com.ankiminer.android.anki.protocol.AnkiNameCollation
 import com.ankiminer.android.anki.protocol.DuplicateLookupResult
 import com.ankiminer.android.anki.protocol.DuplicateScanScope
 import com.ankiminer.android.anki.protocol.KnownNote
@@ -774,11 +775,12 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
         return matches.single()
     }
 
+    /** Anki resolves [name] case-insensitively and component-normalised; the snapshot keeps AnkiDroid's spelling. */
     fun readDeckByName(
         name: String,
         cancellation: AnkiCancellation,
     ): DeckSnapshot? {
-        val matches = readAllDecks(cancellation).filter { it.name == name }
+        val matches = readAllDecks(cancellation).filter { AnkiNameCollation.sameDeck(it.name, name) }
         if (matches.size > 1) throw targetInvalid("The selected Anki deck is ambiguous")
         return matches.singleOrNull()?.also { deck ->
             try {
@@ -812,6 +814,12 @@ internal class TargetSnapshotReader(private val provider: CheckedProvider) {
 
     fun readAllDeckNames(cancellation: AnkiCancellation): Set<String> =
         readAllDecks(cancellation).mapTo(linkedSetOf()) { it.name }
+
+    /** The spelling AnkiDroid will store when it creates the missing deck [requested]. */
+    fun createdDeckName(
+        requested: String,
+        cancellation: AnkiCancellation,
+    ): String = AnkiNameCollation.createdDeckName(requested, readAllDeckNames(cancellation))
 
     private fun readAllDecks(cancellation: AnkiCancellation): List<DeckSnapshot> {
         val decks = ArrayList<DeckSnapshot>()
