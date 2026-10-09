@@ -87,8 +87,10 @@ Python and Kotlin logs, this app's logcat tail, and up to eight recent process
 exit reasons. The manifest marks entries that were truncated, dropped, missing,
 or unavailable. Export redaction uses a fresh salt and replaces detected app
 paths, file/document identifiers, selected display names and series names,
-deck/note-type/field/tag text, Japanese text, and the build user with tokens
-which remain stable only within that ZIP. Run IDs remain for correlation.
+deck/note-type/field/tag text, Japanese, Korean, Cyrillic, Greek, Arabic,
+Hebrew and Thai text, every argument of an engine record logged while verbose
+logging is on, and the build user with tokens which remain stable only within
+that ZIP. Run IDs remain for correlation.
 `Build.SERIAL`, SSAID, accounts, IP/MAC addresses, and package inventory are
 excluded; AnkiDroid's version is the only peer-package lookup.
 

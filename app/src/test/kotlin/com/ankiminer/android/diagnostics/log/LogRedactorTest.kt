@@ -24,6 +24,96 @@ class LogRedactorTest {
     private val nativeLibDir by lazy { temporaryFolder.newFolder("lib") }
     private val externalDir by lazy { temporaryFolder.newFolder("ext") }
 
+    // Rule 0
+
+    @Test
+    fun `a span the bridge marked is hashed whole whatever its script`() {
+        // Latin-script vocabulary has no pattern, so the bridge marks every verbose engine argument
+        // (log_context.DefaultLogPrivacyFilter) and the span is hashed as one value.
+        val redacted =
+            redactor().redactRecord(
+                "outcome=ok message=\"Lemma ⟦'andare'⟧ not attested; " +
+                    "fronting the surface ⟦'andiamo'⟧\"",
+            )
+
+        assertFalse(redacted, redacted.contains("andare"))
+        assertFalse(redacted, redacted.contains("andiamo"))
+        assertFalse(redacted, redacted.contains('⟦') || redacted.contains('⟧'))
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "outcome=ok message=\"Lemma <arg-[0-9a-f]{6}> not attested; " +
+                        "fronting the surface <arg-[0-9a-f]{6}>\"",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `one marked payload carries one token across record and continuation lines`() {
+        val redactor = redactor()
+
+        val record = redactor.redactRecord("outcome=ok message=\"word ⟦'corazón'⟧\"")
+        val continuation = redactor.redact("\tValueError: ⟦'corazón'⟧")
+
+        val token = Regex("<arg-[0-9a-f]{6}>").find(record)!!.value
+        assertEquals("\tValueError: $token", continuation)
+    }
+
+    @Test
+    fun `the repr and str of one word share one token`() {
+        // %r quotes a string and %s does not, and inside a Python message a double quote is
+        // written escaped; the same word must still read as the same word.
+        val redacted =
+            redactor().redactRecord(
+                "outcome=ok message=\"a ⟦'corazón'⟧ b ⟦corazón⟧ " +
+                    "c ⟦\\\"it's\\\"⟧ d ⟦it's⟧\"",
+            )
+
+        val tokens = Regex("<arg-[0-9a-f]{6}>").findAll(redacted).map { it.value }.toList()
+        assertEquals(redacted, 4, tokens.size)
+        assertEquals(redacted, tokens[0], tokens[1])
+        assertEquals(redacted, tokens[2], tokens[3])
+        assertNotEquals(redacted, tokens[0], tokens[2])
+    }
+
+    @Test
+    fun `a marked span holding a path is hashed before the path rules can split it`() {
+        val redacted =
+            redactor().redactRecord(
+                "outcome=ok message=\"Extracted ⟦/storage/emulated/0/My Shows/andiamo 01.mkv⟧ in 3 s\"",
+            )
+
+        assertFalse(redacted, redacted.contains("andiamo"))
+        assertFalse(redacted, redacted.contains("Shows"))
+        assertTrue(redacted, redacted.matches(Regex("outcome=ok message=\"Extracted <arg-[0-9a-f]{6}> in 3 s\"")))
+    }
+
+    @Test
+    fun `an unclosed marked span is hashed to the end of the line`() {
+        // A record cut short mid-write must not publish the rest of its argument.
+        val redacted = redactor().redact("\tValueError: ⟦'andiamo' and the rest")
+
+        assertTrue(redacted, redacted.matches(Regex("\tValueError: <arg-[0-9a-f]{6}>")))
+    }
+
+    @Test
+    fun `a span cut short by the next span ends where that one opens`() {
+        val redacted = redactor().redact("\tValueError: ⟦'andi⟦'corazón'⟧ tail")
+
+        assertFalse(redacted, redacted.contains("andi"))
+        assertTrue(redacted, redacted.matches(Regex("\tValueError: <arg-[0-9a-f]{6}><arg-[0-9a-f]{6}> tail")))
+    }
+
+    @Test
+    fun `a line that starts inside a span is hashed up to its close`() {
+        // A logcat line can begin mid-span when a long stderr dump wraps.
+        val redacted = redactor().redact("ndiamo' and more⟧ rest")
+
+        assertTrue(redacted, redacted.matches(Regex("<arg-[0-9a-f]{6}> rest")))
+    }
+
     // Rule 1
 
     @Test
@@ -725,6 +815,43 @@ class LogRedactorTest {
                 Regex("a=<jp-[0-9a-f]{6}:1> b=<jp-[0-9a-f]{6}:1> c=<jp-[0-9a-f]{6}:3>"),
             ),
         )
+    }
+
+    // Rule 7b
+
+    @Test
+    fun `greek cyrillic hebrew arabic thai and hangul runs are redacted with their length`() {
+        val redactor = redactor()
+
+        listOf("αγάπη", "любовь", "שלום", "كتاب", "ความรัก", "사랑").forEach { word ->
+            val redacted = redactor.redact("I TextView: text=$word end")
+
+            val length = word.codePointCount(0, word.length)
+            assertFalse(redacted, redacted.contains(word))
+            assertTrue(redacted, redacted.matches(Regex("I TextView: text=<script-[0-9a-f]{6}:$length> end")))
+        }
+    }
+
+    @Test
+    fun `percent encoded hangul and a two byte cyrillic letter are redacted by rule 8`() {
+        val redacted = redactor().redact("GET https://example.invalid/search?q=%EC%82%AC%EB%9E%91&r=%D1%8F 200")
+
+        assertTrue(
+            redacted,
+            redacted.matches(
+                Regex(
+                    "GET https://example\\.invalid/search\\?q=<script-enc-[0-9a-f]{6}>" +
+                        "&r=<script-enc-[0-9a-f]{6}> 200",
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `latin text outside a marked span stays readable`() {
+        // No pattern tells Latin-script vocabulary from engine prose; only rule 0's marking hides it,
+        // so rule 7b must not reach into Latin-1 and swallow ordinary words.
+        assertEquals("I tts: speak café ok", redactor().redact("I tts: speak café ok"))
     }
 
     // Rule 8
