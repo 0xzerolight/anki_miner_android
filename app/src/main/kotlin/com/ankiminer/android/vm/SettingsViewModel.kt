@@ -1569,23 +1569,29 @@ internal class SettingsViewModel(
 
     /**
      * Desktop's "Download and switch": install [code]'s recommended set (its language data first,
-     * C.4's `RecommendedResources(code)`), ask the bridge again, and switch once the profile reads
-     * available. A failed or cancelled install leaves the language where it was; the resource
-     * failure it recorded carries the retry.
+     * C.4's `RecommendedResources(code)`), ask the bridge again, and switch once the set ran to its
+     * end and the profile reads available. A member that fails after the data still switches; its
+     * failure carries the retry. A cancelled or refused install leaves the language where it was,
+     * even when the data landed before the cancel.
+     *
+     * A language whose data is already in (Android ended the process mid-set, or the user cancelled
+     * after the data) runs the same way: the rest of its set installs, or nothing when none is
+     * left, and the switch follows, as the interrupted Next would have done.
      */
     fun downloadAndSwitchLanguage(code: String) {
         if (mutableLanguageDownload.value != null) return
         val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return
-        if (profile.unavailableReason != LanguageUnavailableReason.DATA_REQUIRED) return
+        // A language this build cannot mine has nothing a download could supply.
+        if (profile.unavailableReason == LanguageUnavailableReason.UNSUPPORTED) return
         val source = languageProfileSource ?: return
         mutableLanguageDownload.value = code
         viewModelScope.launch {
             try {
-                resources.installRecommendedResources(code)
+                val completed = resources.installRecommendedResources(code)
                 source.profiles()
                     .onSuccess { profiles ->
                         mutableLanguageProfiles.value = profiles
-                        if (profiles.firstOrNull { it.code == code }?.unavailableReason == null) {
+                        if (completed && profiles.firstOrNull { it.code == code }?.unavailableReason == null) {
                             switchLanguage(code)
                         }
                     }.onFailure { failure ->

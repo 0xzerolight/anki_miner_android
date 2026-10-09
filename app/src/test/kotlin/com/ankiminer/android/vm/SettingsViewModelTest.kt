@@ -1363,9 +1363,6 @@ class SettingsViewModelTest {
 
             viewModel.downloadAndSwitchLanguage("ar")
             advanceUntilIdle()
-            // Hebrew needs no download: the offer is only for a data-required language.
-            viewModel.downloadAndSwitchLanguage("he")
-            advanceUntilIdle()
 
             assertEquals(listOf("ar"), resources.recommendedInstalls)
             assertEquals("ja", repository.current.language)
@@ -1739,8 +1736,9 @@ class SettingsViewModelTest {
 
         val recommendedInstalls = mutableListOf<String>()
 
-        override suspend fun installRecommendedResources(language: String) {
+        override suspend fun installRecommendedResources(language: String): Boolean {
             recommendedInstalls += language
+            return true
         }
 
         override suspend fun recoverAndRefresh() = Unit

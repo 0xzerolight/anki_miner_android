@@ -213,6 +213,7 @@ internal fun LazyListScope.settingsCategoryContent(
                         setOf(ResourceFailureOrigin.RECOMMENDED_SET),
                         setupViewModel,
                         callbacks,
+                        language = language,
                     )
                 },
             )
@@ -1802,11 +1803,18 @@ internal fun ResourceOriginFailure(
     origins: Set<ResourceFailureOrigin>,
     setupViewModel: SetupViewModel,
     callbacks: SettingsScreenCallbacks,
+    /** Only the Language card passes it: there a failed "Download and switch" retries the switch. */
+    language: LanguageSettingsState? = null,
 ) {
     val failure = setup.failure?.takeIf { it.origin in origins } ?: return
     val targetId = failure.retry.targetId
+    val switchTarget = language?.downloadAndSwitchRetry(failure)
     val action: () -> Unit =
         when {
+            // Ahead of the targetId branch: a failed set carries its language as the target.
+            switchTarget != null -> {
+                { callbacks.language.onDownloadAndSwitch(switchTarget) }
+            }
             targetId != null -> {
                 setupViewModel::retryResourceFailure
             }
