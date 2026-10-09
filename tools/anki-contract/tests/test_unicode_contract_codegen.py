@@ -20,6 +20,7 @@ class UnicodeContractCodegenTest(unittest.TestCase):
         tables = unicode_core.load_tables(REPO_ROOT)
 
         self.assertEqual(712, len(tables.category_c_ranges))
+        self.assertEqual(21, len(tables.category_cf_ranges))
         self.assertEqual(10, len(tables.whitespace_ranges))
         self.assertEqual(388, len(tables.combining_ranges))
         self.assertEqual(73, len(tables.nfc_no_ranges))

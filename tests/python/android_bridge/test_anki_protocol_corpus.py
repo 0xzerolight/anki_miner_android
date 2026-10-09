@@ -190,6 +190,9 @@ def _plain_string(
     return scalars, utf8_bytes
 
 
+_NAME_JOINERS = frozenset({0x200C, 0x200D})
+
+
 def _canonical_name(value: str, kind: str) -> int:
     limits = ANKI_LIMITS_V1["names"][kind]
     _, utf8_bytes = _plain_string(
@@ -198,10 +201,12 @@ def _canonical_name(value: str, kind: str) -> int:
         max_scalars=limits["maxCodePoints"],
         max_utf8_bytes=limits["maxUtf8Bytes"],
     )
+    # Deck and note-type names admit ZWNJ and ZWJ; field names keep the full category-C rule.
+    allowed = _NAME_JOINERS if kind in {"deck", "model"} else frozenset()
     if (
         not is_nfc(value)
         or has_leading_or_trailing_python_whitespace(value)
-        or any(is_category_c(ord(character)) for character in value)
+        or any(is_category_c(ord(character)) and ord(character) not in allowed for character in value)
     ):
         _reject("invalid_value")
     return utf8_bytes

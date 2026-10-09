@@ -391,6 +391,7 @@
     <string name="anki_deck_picker">Baralho</string>
     <string name="anki_deck_create_or_use_default">Criar ou usar Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (salvo; não encontrado no momento)</string>
+    <string name="anki_deck_unusable_hidden">Alguns baralhos do AnkiDroid estão ocultos porque os nomes contêm caracteres não suportados.</string>
     <string name="anki_deck_saving">Salvando escolha de baralho…</string>
     <string name="anki_deck_save_failed">Não foi possível salvar a escolha de baralho.</string>
     <string name="anki_deck_save_retry">Tentar salvar o baralho novamente</string>

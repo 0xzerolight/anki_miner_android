@@ -44,7 +44,31 @@ class AnkiProviderReadsTest {
             AnkiProviderReadService(gateway, AnkiRunStateRegistry())
                 .listDeckNames(AnkiCancellation.NONE)
 
-        assertEquals(listOf("Default", "Japanese", "Japanese::Known"), names)
+        assertEquals(DeckNameListing(listOf("Default", "Japanese", "Japanese::Known"), unusableHidden = false), names)
+    }
+
+    @Test
+    fun `deck picker hides decks whose names the settings contract refuses`() {
+        val persian = "واژه‌ها"
+        val gateway = FakeAnkiProviderGateway()
+        gateway.queryHandler = { query, _ ->
+            assertEquals(ProviderEndpoint.DECKS, query.endpoint)
+            FakeProviderCursor(
+                query.projection,
+                listOf(
+                    deckRow(id = 4L, name = "﻿Known"),
+                    deckRow(id = 2L, name = persian),
+                    deckRow(id = 3L, name = "Mining‮"),
+                    deckRow(id = 1L, name = "Default"),
+                ),
+            )
+        }
+
+        val listing =
+            AnkiProviderReadService(gateway, AnkiRunStateRegistry())
+                .listDeckNames(AnkiCancellation.NONE)
+
+        assertEquals(DeckNameListing(listOf("Default", persian), unusableHidden = true), listing)
     }
 
     @Test
@@ -1463,6 +1487,51 @@ class AnkiProviderReadsTest {
         assertThrows(InvalidCapabilityException::class.java) {
             fixture.withOwner { owner -> fixture.registry.consumeBaseline(owner, first.baselineToken) }
         }
+    }
+
+    @Test
+    fun `duplicate probe accepts a format-character first field and matches its stripped key`() {
+        // Python sends key = _strip_for_dedup(firstField), which drops the ZWNJ (AU-001).
+        val persian = "دانش‌آموز"
+        val key = persian.replace("‌", "")
+        val fixture = fixture(tokens = listOf("baseline_${"c".repeat(32)}"))
+        fixture.gateway.checksum = { 42L }
+        val targetAndDuplicates = targetThenDuplicateHandler()
+        fixture.gateway.queryHandler = { query, cancellation ->
+            if (query.endpoint == ProviderEndpoint.NOTES_V2) {
+                FakeProviderCursor(
+                    query.projection,
+                    listOf(
+                        mapOf(
+                            ProviderColumn.NOTE_ID to integer(31L),
+                            ProviderColumn.NOTE_FIELDS to text("$persian\u001fstudent"),
+                            ProviderColumn.NOTE_CHECKSUM to integer(42L),
+                        ),
+                    ),
+                )
+            } else {
+                targetAndDuplicates(query, cancellation)
+            }
+        }
+        fixture.withOwner { owner -> fixture.verifyExistingTarget(owner, verifyRequest()) }
+        val scope =
+            DuplicateScanScope(
+                modelName = "Mining",
+                firstFieldName = "Expression",
+                candidates = listOf(DuplicateCandidate(key, persian)),
+                occurrences = listOf(0),
+                invalidateBaselineToken = null,
+            )
+
+        val result =
+            fixture.withOwner { owner ->
+                fixture.reads.scanFirstFields(owner, duplicateRequest(scope))
+            } as DuplicateLookupResult
+
+        assertEquals(listOf(31L), result.rawFirstFieldHits[0].map { it.noteId })
+        val baseline =
+            fixture.withOwner { owner -> fixture.registry.consumeBaseline(owner, result.baselineToken) }
+        assertEquals(listOf(setOf(31L)), baseline.normalizedMatchingNoteIds)
     }
 
     @Test

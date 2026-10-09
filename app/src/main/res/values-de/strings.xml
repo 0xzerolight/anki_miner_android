@@ -386,6 +386,7 @@
     <string name="anki_deck_picker">Stapel</string>
     <string name="anki_deck_create_or_use_default">Anki Miner erstellen oder verwenden</string>
     <string name="anki_deck_saved_unavailable">%1$s (gespeichert; derzeit nicht gefunden)</string>
+    <string name="anki_deck_unusable_hidden">Einige AnkiDroid-Stapel sind ausgeblendet, weil ihre Namen nicht unterstützte Zeichen enthalten.</string>
     <string name="anki_deck_saving">Stapelauswahl wird gespeichert…</string>
     <string name="anki_deck_save_failed">Stapelauswahl konnte nicht gespeichert werden.</string>
     <string name="anki_deck_save_retry">Stapelspeicherung erneut versuchen</string>

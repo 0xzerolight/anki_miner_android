@@ -1,6 +1,7 @@
 package com.ankiminer.android.engine
 
 import com.ankiminer.android.anki.generated.UnicodeContractV151
+import com.ankiminer.android.anki.protocol.AnkiTargetNames
 import com.ankiminer.android.data.settings.AnimatedScreenshotLimits
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
@@ -1340,7 +1341,7 @@ object BridgeJsonCodec {
         language: String,
     ) {
         when (key) {
-            "anki_deck_name", "anki_note_type" -> canonicalLabel(value, key)
+            "anki_deck_name", "anki_note_type" -> canonicalTargetName(value, key)
             // A non-ja profile adds its own card fields (he `transliteration`); config_map holds the
             // exact per-language key set, so this mirror only checks their shape.
             "anki_fields" -> validateMappedFields(value, ANKI_FIELDS, key, profileExtras = language != JAPANESE_LANGUAGE)
@@ -1351,7 +1352,7 @@ object BridgeJsonCodec {
             "card_type" -> requireOneOf(text(value, key), setOf("", "word_and_sentence", "click", "sentence", "audio"), key)
             "anki_tags", "subtitle_regex_filter", "subtitle_regex_replacement" -> text(value, key)
             "excluded_decks" -> {
-                val items = array(value, key).map { canonicalLabel(it, key) }
+                val items = array(value, key).map { canonicalTargetName(it, key) }
                 if (items.toSet().size != items.size) fail(BridgeProtocolCategory.INVALID_VALUE, "$key must be unique")
             }
             "allowed_pos", "excluded_subtypes", "excluded_wordsets" -> stringArray(value, key)
@@ -1890,6 +1891,12 @@ object BridgeJsonCodec {
         context: String,
     ): String = text(value, context).also { requireCanonical(it, context) }
 
+    /** A deck or note-type name: [AnkiTargetNames] admits ZWNJ and ZWJ there, unlike run labels. */
+    private fun canonicalTargetName(
+        value: BridgeJsonValue,
+        context: String,
+    ): String = text(value, context).also { requireCanonical(it, context, allowNameJoiners = true) }
+
     /**
      * Canonical label that may also be empty. Only the video episode name uses
      * this: an unusable SAF display name deliberately travels as "", which the
@@ -1908,12 +1915,14 @@ object BridgeJsonCodec {
     private fun requireCanonical(
         value: String,
         context: String,
+        allowNameJoiners: Boolean = false,
     ) {
+        // isNfc is false for malformed UTF-16, so the code-point scans only see valid scalars.
         if (
             value.isEmpty() ||
             !UnicodeContractV151.isNfc(value) ||
             UnicodeContractV151.hasLeadingOrTrailingPythonWhitespace(value) ||
-            containsCategoryC(value)
+            (if (allowNameJoiners) AnkiTargetNames.containsRefused(value) else containsCategoryC(value))
         ) {
             fail(BridgeProtocolCategory.INVALID_VALUE, "$context is not a canonical non-empty string")
         }

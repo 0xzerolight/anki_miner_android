@@ -81,6 +81,9 @@ internal fun AnkiDeckCard(
                 onSelect = onSelectDeck,
                 isOptionEnabled = { !state.busy && it != resolution.selectedDeckName },
             )
+            if (state.unusableDecksHidden) {
+                SupportingText(stringResource(R.string.anki_deck_unusable_hidden))
+            }
             when (state.deckPersistence) {
                 DeckPersistenceStatus.IDLE -> Unit
                 DeckPersistenceStatus.SAVING -> {

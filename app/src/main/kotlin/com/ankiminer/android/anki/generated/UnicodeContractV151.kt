@@ -190,6 +190,17 @@ internal object UnicodeContractV151 {
         )
     }
 
+    private object CategoryCfData {
+        val ranges = longArrayOf(
+            362807469L, 3221227013L, 3279947292L, 3684697821L,
+            3789555471L, 4596959377L, 4768925922L, 12914268174L,
+            17202946063L, 17267957806L, 17381204068L, 17393786991L,
+            136900050687L, 137424338939L, 146425319613L, 146458874061L,
+            165456983103L, 238706343075L, 249886265722L, 1924148363265L,
+            1924213375103L,
+        )
+    }
+
     private object WhitespaceData {
         val ranges = longArrayOf(
             18874381L, 58720288L, 278921349L, 335544480L,
@@ -1457,6 +1468,9 @@ internal object UnicodeContractV151 {
 
     fun isCategoryC(codePoint: Int): Boolean =
         isUnicodeScalar(codePoint) && containsRange(CategoryCData.ranges, codePoint)
+
+    fun isCategoryCf(codePoint: Int): Boolean =
+        isUnicodeScalar(codePoint) && containsRange(CategoryCfData.ranges, codePoint)
 
     fun hasLeadingOrTrailingPythonWhitespace(value: String): Boolean {
         var first: Int? = null

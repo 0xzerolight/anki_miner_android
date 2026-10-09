@@ -215,6 +215,7 @@ internal class SetupViewModel(
                 noteTypeStatus = ankiState.noteTypeStatus,
                 availableNoteTypes = ankiState.availableNoteTypes,
                 availableDeckNames = ankiState.availableDeckNames,
+                unusableDecksHidden = ankiState.unusableDecksHidden,
                 deckName = appSettings.deckName,
                 deckPersistence = localState.deckPersistence,
                 failedDeckName = localState.failedDeckName,

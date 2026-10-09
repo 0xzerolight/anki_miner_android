@@ -571,19 +571,21 @@ internal object AnkiValidators {
     }
 
     private fun validateDeckName(value: String): StringStats =
-        validateCanonicalString(value, "deck name", AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS, AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES)
+        validateCanonicalString(value, "deck name", AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS, AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES, allowNameJoiners = true)
 
     private fun validateModelName(value: String): StringStats =
-        validateCanonicalString(value, "model name", AnkiLimitsV1.Names.Model.MAX_CODE_POINTS, AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES)
+        validateCanonicalString(value, "model name", AnkiLimitsV1.Names.Model.MAX_CODE_POINTS, AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES, allowNameJoiners = true)
 
     private fun validateFieldName(value: String): StringStats =
         validateCanonicalString(value, "field name", AnkiLimitsV1.Names.Field.MAX_CODE_POINTS, AnkiLimitsV1.Names.Field.MAX_UTF8_BYTES)
 
-    private fun validateCanonicalString(value: String, context: String, maxScalars: Int, maxUtf8Bytes: Int): StringStats {
+    /** [allowNameJoiners]: deck and model names only, see [AnkiTargetNames]. */
+    private fun validateCanonicalString(value: String, context: String, maxScalars: Int, maxUtf8Bytes: Int, allowNameJoiners: Boolean = false): StringStats {
         val stats = validatePlainString(value, context, allowEmpty = false, maxScalars = maxScalars, maxUtf8Bytes = maxUtf8Bytes)
         if (!UnicodeContractV151.isNfc(value)) failValue("$context is not NFC")
         if (UnicodeContractV151.hasLeadingOrTrailingPythonWhitespace(value)) failValue("$context has leading or trailing whitespace")
-        if (containsCategoryC(value)) failValue("$context contains a Unicode category-C code point")
+        val refused = if (allowNameJoiners) AnkiTargetNames.containsRefused(value) else containsCategoryC(value)
+        if (refused) failValue("$context contains a Unicode category-C code point")
         return stats
     }
 

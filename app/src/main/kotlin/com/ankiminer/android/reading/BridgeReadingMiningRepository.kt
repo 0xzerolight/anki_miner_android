@@ -60,6 +60,7 @@ import com.ankiminer.android.mining.StartupInterruption
 import com.ankiminer.android.mining.isTerminal
 import com.ankiminer.android.mining.requiresUnidic
 import com.ankiminer.android.mining.runId
+import com.ankiminer.android.mining.canonicalRunLabel
 import com.ankiminer.android.service.MiningForegroundCancellationReason
 import com.ankiminer.android.service.MiningForegroundLease
 import com.ankiminer.android.service.MiningForegroundProgress
@@ -70,7 +71,6 @@ import com.ankiminer.android.tts.SentenceAudioCallbackDispatcher
 import com.ankiminer.android.tts.SentenceAudioSynthesizer
 import com.ankiminer.android.tts.SentenceAudioSynthesizerFactory
 import com.ankiminer.android.tts.usesDeviceVoice
-import java.text.Normalizer
 import java.util.Locale
 import java.util.concurrent.CancellationException
 import java.util.concurrent.CompletableFuture
@@ -636,7 +636,7 @@ internal class BridgeReadingMiningRepository(
                         imageArchivePath = stagedSource.imageArchivePath,
                         seriesName =
                             if (stagedSource.sourceKind == StagedReadingSourceKind.SUBTITLE) {
-                                canonicalLabel(
+                                canonicalRunLabel(
                                     run.input.subtitleSeriesName ?: DEFAULT_SUBTITLE_SERIES_NAME,
                                 ).ifEmpty { DEFAULT_SUBTITLE_SERIES_NAME }
                             } else {
@@ -2170,30 +2170,6 @@ internal class BridgeReadingMiningRepository(
 
     private fun ProcessingResult?.withTerminalNotices(notices: List<String>): ProcessingResult? =
         this?.copy(errors = (notices + errors).distinct().take(MAX_RESULT_ERRORS))
-
-    private fun canonicalLabel(raw: String): String {
-        val filtered =
-            buildString(raw.length) {
-                var index = 0
-                while (index < raw.length) {
-                    val codePoint = raw.codePointAt(index)
-                    if (!isCategoryC(codePoint)) appendCodePoint(codePoint)
-                    index += Character.charCount(codePoint)
-                }
-            }.trim { Character.isWhitespace(it) || Character.isSpaceChar(it) }
-        return Normalizer.normalize(filtered, Normalizer.Form.NFC)
-    }
-
-    private fun isCategoryC(codePoint: Int): Boolean =
-        when (Character.getType(codePoint)) {
-            Character.CONTROL.toInt(),
-            Character.FORMAT.toInt(),
-            Character.PRIVATE_USE.toInt(),
-            Character.SURROGATE.toInt(),
-            Character.UNASSIGNED.toInt(),
-            -> true
-            else -> false
-        }
 
     private fun StagedReadingSourceKind.toWireKind(): ReadingMiningSourceKind =
         when (this) {

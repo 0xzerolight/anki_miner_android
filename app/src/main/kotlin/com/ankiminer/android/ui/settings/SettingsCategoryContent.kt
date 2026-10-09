@@ -1153,6 +1153,7 @@ private fun LazyListScope.wordFilterSettings(
         showsKanaFilters = language.showsKanaFilters,
         showsNameWordsets = language.showsNameWordsets,
         inherited = callbacks.languageDefaults,
+        unusableDecksHidden = setup.unusableDecksHidden,
     )
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "known-words-import") {
         KnownWordsImportCard(
@@ -1213,6 +1214,7 @@ internal fun LazyListScope.wordFilterOptions(
     showsKanaFilters: Boolean = true,
     showsNameWordsets: Boolean = true,
     inherited: LanguageDefaults = LanguageDefaults.JAPANESE,
+    unusableDecksHidden: Boolean = false,
 ) {
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "filtering-options") {
         SettingsSection(stringResource(R.string.settings_filtering)) {
@@ -1299,6 +1301,9 @@ internal fun LazyListScope.wordFilterOptions(
                             },
                         )
                     }
+                }
+                if (unusableDecksHidden) {
+                    SupportingText(stringResource(R.string.anki_deck_unusable_hidden))
                 }
             }
             if (showsKanaFilters) {

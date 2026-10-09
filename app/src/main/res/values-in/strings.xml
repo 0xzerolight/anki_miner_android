@@ -381,6 +381,7 @@
     <string name="anki_deck_picker">Dek</string>
     <string name="anki_deck_create_or_use_default">Buat atau gunakan Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (disimpan; saat ini tidak ditemukan)</string>
+    <string name="anki_deck_unusable_hidden">Beberapa dek AnkiDroid disembunyikan karena namanya berisi karakter yang tidak didukung.</string>
     <string name="anki_deck_saving">Menyimpan pilihan dek…</string>
     <string name="anki_deck_save_failed">Pilihan dek tidak dapat disimpan.</string>
     <string name="anki_deck_save_retry">Coba lagi menyimpan dek</string>

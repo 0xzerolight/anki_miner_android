@@ -7,6 +7,7 @@ import com.ankiminer.android.anki.provider.AnkiReadFailure
 import com.ankiminer.android.anki.provider.AnkiPendingRemediation
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
 import com.ankiminer.android.anki.provider.AnkiRemediationType
+import com.ankiminer.android.anki.provider.DeckNameListing
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
 import com.ankiminer.android.data.RuntimeWorkCoordinator
@@ -21,6 +22,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AnkiSetupManagerTest {
@@ -66,6 +68,28 @@ class AnkiSetupManagerTest {
         assertNull(state.failure)
         assertNull(state.operation)
         mining.close()
+    }
+
+    @Test
+    fun `refresh publishes that AnkiDroid holds decks the pickers leave out`() {
+        val backend =
+            FakeBackend(
+                deckNames = listOf("Default"),
+                unusableDecksHidden = true,
+                status = NoteTypeSetupStatus.Verified(modelId = 24L),
+            )
+        val manager =
+            ProcessAnkiSetupManager(
+                backend,
+                Executor(Runnable::run),
+                RuntimeWorkCoordinator(),
+                testStringResourceResolver,
+            )
+
+        manager.refresh("Lapis", mapOf("word" to "Expression"))
+
+        assertEquals(listOf("Default"), manager.state.value.availableDeckNames)
+        assertTrue(manager.state.value.unusableDecksHidden)
     }
 
     @Test
@@ -239,6 +263,7 @@ class AnkiSetupManagerTest {
     private class FakeBackend(
         private val noteTypes: List<ModelSummary> = emptyList(),
         private val deckNames: List<String> = emptyList(),
+        private val unusableDecksHidden: Boolean = false,
         private val status: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
         private val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
         private val failList: Boolean = false,
@@ -259,7 +284,8 @@ class AnkiSetupManagerTest {
             return noteTypes
         }
 
-        override fun listDeckNames(cancellation: AnkiCancellation): List<String> = deckNames
+        override fun listDeckNames(cancellation: AnkiCancellation): DeckNameListing =
+            DeckNameListing(deckNames, unusableDecksHidden)
 
         override fun verifyNoteType(
             noteType: String?,

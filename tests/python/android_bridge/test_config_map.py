@@ -579,7 +579,7 @@ def test_checked_in_schema_has_exact_mapping_keys_chain_shapes_and_absolute_path
     assert definitions["androidTtsAudio"]["additionalProperties"] is False
     assert definitions["absolutePathOrNull"]["oneOf"][1]["pattern"] == "^/"
     assert definitions["settings"]["properties"]["excluded_decks"]["uniqueItems"] is True
-    assert definitions["settings"]["properties"]["anki_deck_name"] == {"$ref": "#/$defs/canonicalNonEmptyString"}
+    assert definitions["settings"]["properties"]["anki_deck_name"] == {"$ref": "#/$defs/canonicalTargetName"}
     assert definitions["ankiFields"]["properties"]["word"] == {"$ref": "#/$defs/optionalMappedField"}
     assert definitions["ankiFields"]["properties"]["glossary"] == {"$ref": "#/$defs/optionalMappedField"}
 

@@ -3,6 +3,7 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.anki.protocol.AnkiProtocolException
+import com.ankiminer.android.anki.protocol.AnkiTargetNames
 import com.ankiminer.android.anki.protocol.AnkiValidators
 
 internal data class TemplateSnapshot(
@@ -144,7 +145,7 @@ internal object ProviderSnapshotValidation {
         rawFieldNames: String,
     ): List<String>? =
         try {
-            validateCanonicalName(name, AnkiLimitsV1.Names.Model.MAX_CODE_POINTS, AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES)
+            validateTargetName(name, AnkiLimitsV1.Names.Model.MAX_CODE_POINTS, AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES)
             val fieldNames = splitFieldsPreservingTrailing(rawFieldNames)
             requireTarget(fieldNames.distinct().size == fieldNames.size)
             var fieldBytes = 0
@@ -173,7 +174,7 @@ internal object ProviderSnapshotValidation {
     ): ValidatedModelBase {
         requireTarget(id > 0L)
         requireTarget(type == AnkiLimitsV1.TargetModel.ALLOWED_TYPE_CODE)
-        validateCanonicalName(
+        validateTargetName(
             name,
             AnkiLimitsV1.Names.Model.MAX_CODE_POINTS,
             AnkiLimitsV1.Names.Model.MAX_UTF8_BYTES,
@@ -301,7 +302,7 @@ internal object ProviderSnapshotValidation {
 
     fun validateDeck(snapshot: DeckSnapshot) {
         requireTarget(snapshot.id > 0L)
-        validateCanonicalName(
+        validateTargetName(
             snapshot.name,
             AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS,
             AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
@@ -372,27 +373,47 @@ internal object ProviderSnapshotValidation {
         value: String,
         maxScalars: Int,
         maxBytes: Int,
-    ): Int {
-        val scalarCount =
-            UnicodeContractV151.scalarCount(value) ?: throw InvalidTargetSnapshotException()
-        val utf8Bytes =
-            UnicodeContractV151.strictUtf8Length(value) ?: throw InvalidTargetSnapshotException()
-        requireTarget(scalarCount > 0 && scalarCount <= maxScalars && utf8Bytes <= maxBytes)
-        requireTarget(UnicodeContractV151.isNfc(value))
-        requireTarget(!UnicodeContractV151.hasLeadingOrTrailingPythonWhitespace(value))
+    ): Int =
+        canonicalNameUtf8Bytes(value, maxScalars, maxBytes, UnicodeContractV151::isCategoryC)
+            ?: throw InvalidTargetSnapshotException()
+
+    /** Deck and note-type names, which [AnkiTargetNames] lets carry ZWNJ and ZWJ. */
+    private fun validateTargetName(
+        value: String,
+        maxScalars: Int,
+        maxBytes: Int,
+    ): Int =
+        canonicalNameUtf8Bytes(value, maxScalars, maxBytes, AnkiTargetNames::refuses)
+            ?: throw InvalidTargetSnapshotException()
+
+    /**
+     * Whether the settings contract accepts [name] as a deck name; the deck pickers list only these.
+     * A filtered deck's flag is not considered here, so the pickers list filtered decks as before.
+     */
+    fun isUsableDeckName(name: String): Boolean =
+        canonicalNameUtf8Bytes(
+            name,
+            AnkiLimitsV1.Names.Deck.MAX_CODE_POINTS,
+            AnkiLimitsV1.Names.Deck.MAX_UTF8_BYTES,
+            AnkiTargetNames::refuses,
+        ) != null
+
+    private fun canonicalNameUtf8Bytes(
+        value: String,
+        maxScalars: Int,
+        maxBytes: Int,
+        refuses: (Int) -> Boolean,
+    ): Int? {
+        val scalarCount = UnicodeContractV151.scalarCount(value) ?: return null
+        val utf8Bytes = UnicodeContractV151.strictUtf8Length(value) ?: return null
+        if (scalarCount == 0 || scalarCount > maxScalars || utf8Bytes > maxBytes) return null
+        if (!UnicodeContractV151.isNfc(value)) return null
+        if (UnicodeContractV151.hasLeadingOrTrailingPythonWhitespace(value)) return null
         var index = 0
         while (index < value.length) {
-            val first = value[index].code
-            val codePoint =
-                if (first in HIGH_SURROGATE_RANGE) {
-                    val second = value[index + 1].code
-                    index += 2
-                    0x10000 + ((first - 0xD800) shl 10) + (second - 0xDC00)
-                } else {
-                    index += 1
-                    first
-                }
-            requireTarget(!UnicodeContractV151.isCategoryC(codePoint))
+            val codePoint = Character.codePointAt(value, index)
+            if (refuses(codePoint)) return null
+            index += Character.charCount(codePoint)
         }
         return utf8Bytes
     }
@@ -402,7 +423,6 @@ internal object ProviderSnapshotValidation {
     }
 
     private const val FIELD_SEPARATOR = '\u001f'
-    private val HIGH_SURROGATE_RANGE = 0xD800..0xDBFF
 }
 
 internal class InvalidTargetSnapshotException : RuntimeException()

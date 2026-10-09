@@ -42,6 +42,29 @@ class UnicodeContractV151Test {
     }
 
     @Test
+    fun categoryCfMatchesPinnedTruth() {
+        val formatCharacters = HashSet<Int>()
+        unicodeResource("UnicodeData.txt").bufferedReader(Charsets.US_ASCII).useLines { lines ->
+            for (line in lines) {
+                val fields = line.split(';')
+                if (fields[2] == "Cf") {
+                    check(!fields[1].endsWith(", First>") && !fields[1].endsWith(", Last>"))
+                    formatCharacters += fields[0].toInt(16)
+                }
+            }
+        }
+        assertEquals(170, formatCharacters.size)
+        for (codePoint in 0..MAX_CODE_POINT) {
+            if (UnicodeContractV151.isCategoryCf(codePoint) != (codePoint in formatCharacters)) {
+                throw AssertionError("category Cf U+${codePoint.hex()}")
+            }
+        }
+        for (invalid in intArrayOf(-1, 0xD800, 0xDFFF, 0x110000)) {
+            assertFalse(UnicodeContractV151.isCategoryCf(invalid))
+        }
+    }
+
+    @Test
     fun completeUnicode151NormalizationCorpusPasses() {
         var rowNumber = 0
         unicodeResource("NormalizationTest.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->

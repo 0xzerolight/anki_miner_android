@@ -185,6 +185,15 @@ _CATEGORY_C_RANGES: tuple[int, ...] = (
     409158746111, 422674895695, 431477358847, 1925186650111,
 )
 
+_CATEGORY_CF_RANGES: tuple[int, ...] = (
+    362807469, 3221227013, 3279947292, 3684697821,
+    3789555471, 4596959377, 4768925922, 12914268174,
+    17202946063, 17267957806, 17381204068, 17393786991,
+    136900050687, 137424338939, 146425319613, 146458874061,
+    165456983103, 238706343075, 249886265722, 1924148363265,
+    1924213375103,
+)
+
 _WHITESPACE_RANGES: tuple[int, ...] = (
     18874381, 58720288, 278921349, 335544480,
     12079601280, 17179877386, 17263763497, 17278443567,
@@ -1397,6 +1406,10 @@ def is_python_whitespace(code_point: int) -> bool:
 
 def is_category_c(code_point: int) -> bool:
     return is_unicode_scalar(code_point) and _contains_range(_CATEGORY_C_RANGES, code_point)
+
+
+def is_category_cf(code_point: int) -> bool:
+    return is_unicode_scalar(code_point) and _contains_range(_CATEGORY_CF_RANGES, code_point)
 
 
 def _scalar_values(value: str) -> list[int] | None:

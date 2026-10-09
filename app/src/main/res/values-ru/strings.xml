@@ -396,6 +396,7 @@
     <string name="anki_deck_picker">Колода</string>
     <string name="anki_deck_create_or_use_default">Создать или использовать Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (сохранена; сейчас не найдена)</string>
+    <string name="anki_deck_unusable_hidden">Некоторые колоды AnkiDroid скрыты: их названия содержат неподдерживаемые символы.</string>
     <string name="anki_deck_saving">Сохранение выбранной колоды…</string>
     <string name="anki_deck_save_failed">Не удалось сохранить выбор колоды.</string>
     <string name="anki_deck_save_retry">Повторить сохранение колоды</string>

@@ -383,6 +383,7 @@
     <string name="anki_deck_picker">デッキ</string>
     <string name="anki_deck_create_or_use_default">Anki Minerを作成または使用</string>
     <string name="anki_deck_saved_unavailable">%1$s（保存済み、現在は見つかりません）</string>
+    <string name="anki_deck_unusable_hidden">名前に使用できない文字を含むため、一部の AnkiDroid デッキは表示されていません。</string>
     <string name="anki_deck_saving">デッキの選択を保存中…</string>
     <string name="anki_deck_save_failed">デッキの選択を保存できませんでした。</string>
     <string name="anki_deck_save_retry">デッキの保存を再試行</string>

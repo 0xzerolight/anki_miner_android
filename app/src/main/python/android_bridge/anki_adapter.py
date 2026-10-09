@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from .anki_limits import ANKI_LIMITS_V1
 from .callbacks import AndroidAnkiCallbacks, AnkiCallbackError
-from .config_map import _REQUIRED_ANKI_FIELD_KEYS, validate_anki_request_config
+from .config_map import _REQUIRED_ANKI_FIELD_KEYS, refuses_target_name_code_point, validate_anki_request_config
 from .protocol import (
     BridgeProtocolError,
     encode_message,
@@ -33,6 +33,7 @@ from .protocol import (
 from .unicode_contract import (
     has_leading_or_trailing_python_whitespace,
     is_category_c,
+    is_category_cf,
     is_nfc,
 )
 
@@ -509,17 +510,21 @@ def _expect_bounded_canonical_name(
     context: str,
     max_bytes: int,
     code: str,
+    target_name: bool = False,
 ) -> str:
+    """``target_name``: a deck or note-type name, which may carry ZWNJ and ZWJ (AU-020)."""
+
     name = _expect_bounded_utf8(
         value,
         context=context,
         max_bytes=max_bytes,
         code=code,
     )
+    refuses = refuses_target_name_code_point if target_name else is_category_c
     if (
         has_leading_or_trailing_python_whitespace(name)
         or not is_nfc(name)
-        or any(is_category_c(ord(character)) for character in name)
+        or any(refuses(ord(character)) for character in name)
     ):
         _protocol_error(code, f"{context} is not canonical")
     return name
@@ -534,6 +539,7 @@ def _expect_bounded_string_list(
     max_total_bytes: int,
     code: str,
     unique: bool = True,
+    target_names: bool = False,
 ) -> list[str]:
     if not isinstance(value, list) or len(value) > max_items:
         _protocol_error(code, f"{context} exceeds its item limit")
@@ -545,6 +551,7 @@ def _expect_bounded_string_list(
             context=f"{context}[{index}]",
             max_bytes=max_item_bytes,
             code=code,
+            target_name=target_names,
         )
         total_bytes += len(
             _strict_utf8_bytes(
@@ -593,6 +600,28 @@ def _expect_filename(value: object, *, context: str, code: str = "invalid_anki_r
     ):
         _protocol_error(code, f"{context} is not a safe provider filename")
     return filename
+
+
+def _without_format_characters(value: str) -> str:
+    """Drop Unicode format characters (Cf) by the pinned table, as the engine's strip_format_chars does."""
+
+    return "".join(character for character in value if not is_category_cf(ord(character)))
+
+
+def _expect_card_media_filename(value: object, *, context: str, code: str) -> str:
+    """Accept the engine's own card-media name, which may carry Unicode format characters.
+
+    The engine names clips after the mined form (``{mined_form}_{ms}_{seq}.mp3``) and a Persian
+    form keeps its ZWNJ. That logical name never crosses to Kotlin: the stored name drops the
+    format characters (``_content_addressed_name_from_digest``) and the note references the name
+    AnkiDroid returns. Without its format characters the name must still be a safe provider
+    filename, so controls, surrogates, private use and unassigned code points stay refused.
+    """
+
+    if not isinstance(value, str) or not value:
+        _protocol_error(code, f"{context} must be a non-empty string")
+    _expect_filename(_without_format_characters(value), context=context, code=code)
+    return value
 
 
 def _starts_with_ascii_case_insensitive(value: str, prefix: str) -> bool:
@@ -695,9 +724,14 @@ def _is_possible_provider_rename(filename: str, preferred: str) -> bool:
 
 
 def _content_addressed_name_from_digest(filename: str, sha1_prefix: str) -> str:
-    """Match the desktop ``{stem}_{sha1[:12]}{suffix}`` media name."""
+    """Match the desktop ``{stem}_{sha1[:12]}{suffix}`` media name, minus format characters.
 
-    path = Path(filename)
+    Desktop keeps a Persian ZWNJ in the stored name. The provider contract on both sides of the
+    bridge refuses every category-C code point in a stored name, so Android stores it without
+    the format characters; only the name differs, the content address does not.
+    """
+
+    path = Path(_without_format_characters(filename))
     return f"{path.stem}_{sha1_prefix}{path.suffix}"
 
 
@@ -1039,12 +1073,14 @@ class AndroidAnkiAdapter:
             context="verifyTarget deckName",
             max_bytes=_MAX_DECK_NAME_UTF8_BYTES,
             code="invalid_anki_request",
+            target_name=True,
         )
         model_name = _expect_bounded_canonical_name(
             self.config.anki_note_type,
             context="verifyTarget modelName",
             max_bytes=_MAX_MODEL_NAME_UTF8_BYTES,
             code="invalid_anki_request",
+            target_name=True,
         )
         required_fields = _expect_bounded_string_list(
             sorted(required),
@@ -1129,6 +1165,7 @@ class AndroidAnkiAdapter:
             max_item_bytes=_MAX_DECK_NAME_UTF8_BYTES,
             max_total_bytes=_MAX_EXCLUDED_DECKS_UTF8_BYTES,
             code="invalid_anki_request",
+            target_names=True,
         )
 
     def _scan_note_types(self) -> dict[int, _NoteType]:
@@ -1160,6 +1197,7 @@ class AndroidAnkiAdapter:
                 context=f"note type {index} name",
                 max_bytes=_MAX_MODEL_NAME_UTF8_BYTES,
                 code="invalid_anki_response",
+                target_name=True,
             )
             field_names = _expect_bounded_string_list(
                 entry["fieldNames"],
@@ -1671,7 +1709,12 @@ class AndroidAnkiAdapter:
                 context=f"storeMedia asset {index} requestedFilename",
                 code="invalid_anki_request",
             )
-            name_validator(
+            # A card's original name is the engine's own and never crosses to Kotlin. It may carry
+            # format characters, which its requested name has already dropped.
+            original_validator = (
+                _expect_media_basename if asset.purpose == "dictionary" else _expect_card_media_filename
+            )
+            original_validator(
                 asset.original_name,
                 context=f"storeMedia asset {index} originalName",
                 code="invalid_anki_request",
@@ -2551,7 +2594,7 @@ class AndroidAnkiAdapter:
                 source_path = getattr(payload.media, path_attr)
                 if not filename or not source_path:
                     continue
-                _expect_filename(
+                _expect_card_media_filename(
                     filename,
                     context="create-call card media filename",
                     code="invalid_note",
