@@ -30,6 +30,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextDirection
 import com.ankiminer.android.R
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.engine.ContentDirection
@@ -125,6 +127,20 @@ internal data class LanguageSettingsActions(
     val onDownloadAndSwitch: (String) -> Unit = {},
     val onChooseNoteType: () -> Unit = {},
 )
+
+/**
+ * The language a Retry on the Language card downloads and switches to, or null for the generic
+ * retry. A failed "Download and switch" records its language as the set's target; while that
+ * language still needs its data, Retry re-runs the whole action (install, re-read the profiles,
+ * switch) rather than only the install. One that reads available or is already active was left
+ * there by the user, so its Retry only finishes the install.
+ */
+internal fun LanguageSettingsState.downloadAndSwitchRetry(failure: ResourceFailure): String? {
+    if (failure.origin != ResourceFailureOrigin.RECOMMENDED_SET) return null
+    val code = failure.retry.targetId?.takeIf { it != activeCode } ?: return null
+    val profile = profiles.firstOrNull { it.code == code } ?: return null
+    return code.takeIf { profile.unavailableReason == LanguageUnavailableReason.DATA_REQUIRED }
+}
 
 /**
  * The name a language is listed under: the interface language's own name for it ("Hebrew",
