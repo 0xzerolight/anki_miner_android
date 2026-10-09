@@ -85,12 +85,30 @@ def test_duplicate_src_cannot_hide_remote_url_behind_allowed_local_name() -> Non
         "http://dictionary.example.test/entry",
         "https://dictionary.example.test/entry",
         "//dictionary.example.test/entry",
+        # Scheme-relative spellings a WHATWG parser resolves against the
+        # reviewer's http(s) base to a remote host: \ reads as /, tabs vanish.
+        "\\\\dictionary.example.test/entry",
+        "/\\dictionary.example.test",
+        "/\t/dictionary.example.test",
+        "\\/dictionary.example.test",
+        "&#92;&#92;dictionary.example.test/entry",
+        # Off-schema targets with no meaning inside an Anki card.
+        "entry.html",
+        "javascript:void(0)",
     ],
 )
-def test_external_explicit_link_loses_href(target: str) -> None:
+def test_every_non_fragment_link_loses_href(target: str) -> None:
     html = f'<a href="{target}">ordinary text</a>'
 
     assert sanitize_dictionary_html(html, local_source_allowed=lambda _: False) == "<a>ordinary text</a>"
+
+
+@pytest.mark.parametrize("target", ["#", "#sense-2", "&#35;sense-2"])
+def test_same_page_fragment_link_keeps_href(target: str) -> None:
+    # "#" is the renderer's rewrite of Yomitan-internal ?query= links.
+    html = f'<a class="gloss-sc-a" href="{target}">see also</a>'
+
+    assert sanitize_dictionary_html(html, local_source_allowed=lambda _: False) == html
 
 
 def test_external_overlay_link_loses_href_without_rewriting_scoped_css() -> None:
