@@ -847,10 +847,13 @@
     <string name="settings_backup_imported">%1$d settings loaded.</string>
     <string name="settings_backup_imported_skipped">%1$d settings loaded, %2$d skipped.</string>
     <string name="settings_backup_export_failed">Settings could not be saved to that file.</string>
+    <string name="settings_backup_export_not_ready">Settings can\'t be saved until your dictionaries and other resources have loaded. Try again once they have.</string>
     <string name="settings_backup_import_failed">Settings could not be read from that file.</string>
     <string name="settings_backup_not_a_backup">That file is not an Anki Miner settings file.</string>
     <string name="settings_backup_too_large">That file is too large to be a settings file.</string>
     <string name="settings_backup_unknown_language">This version can\'t mine the file\'s language (%1$s), so your mining language was kept.</string>
+    <string name="settings_backup_language_busy">This file is for another mining language (%1$s). Finish or cancel the running task, then load it again.</string>
+    <string name="settings_backup_language_unavailable">This file is for another mining language (%1$s), which isn\'t available yet. Check Settings → Language, then load it again.</string>
     <string name="b3_settings_android_override_state">Custom override</string>
     <string name="b3_validation_numeric_incomplete">Complete or clear this number</string>
     <string name="b3_validation_finite">Enter a finite number</string>

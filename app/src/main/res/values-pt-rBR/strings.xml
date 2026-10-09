@@ -840,10 +840,13 @@
     <string name="settings_backup_imported">%1$d configurações carregadas.</string>
     <string name="settings_backup_imported_skipped">%1$d configurações carregadas, %2$d ignoradas.</string>
     <string name="settings_backup_export_failed">Não foi possível salvar as configurações nesse arquivo.</string>
+    <string name="settings_backup_export_not_ready">Não é possível salvar as configurações até que seus dicionários e outros recursos sejam carregados. Tente novamente depois que forem carregados.</string>
     <string name="settings_backup_import_failed">Não foi possível ler as configurações desse arquivo.</string>
     <string name="settings_backup_not_a_backup">Esse arquivo não é um arquivo de configurações do Anki Miner.</string>
     <string name="settings_backup_too_large">Esse arquivo é grande demais para ser um arquivo de configurações.</string>
     <string name="settings_backup_unknown_language">Esta versão não consegue minerar o idioma do arquivo (%1$s), então seu idioma de mineração foi mantido.</string>
+    <string name="settings_backup_language_busy">Este arquivo é de outro idioma de mineração (%1$s). Conclua ou cancele a tarefa em andamento e carregue-o novamente.</string>
+    <string name="settings_backup_language_unavailable">Este arquivo é de outro idioma de mineração (%1$s), que ainda não está disponível. Verifique Configurações → Idioma e carregue-o novamente.</string>
     <string name="b3_settings_android_override_state">Substituição personalizada</string>
     <string name="b3_validation_numeric_incomplete">Preencha ou limpe este número</string>
     <string name="b3_validation_finite">Insira um número finito</string>

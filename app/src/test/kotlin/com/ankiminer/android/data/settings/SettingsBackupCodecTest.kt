@@ -229,7 +229,7 @@ class SettingsBackupCodecTest {
     }
 
     @Test
-    fun `a language this build cannot mine keeps the current one and is reported`() {
+    fun `a language this build cannot mine keeps the current one and its settings`() {
         val json =
             """{"ankiMinerAndroidSettings":5,"appVersion":"9.9.9","schemaVersion":3,""" +
                 """"settings":{"mining_language":"zh","deck_name":"Chinese","dictionary_sources_v1":null,""" +
@@ -245,8 +245,54 @@ class SettingsBackupCodecTest {
 
         assertEquals("he", applied.settings.language)
         assertEquals("zh", applied.unknownLanguage)
-        assertEquals("Chinese", applied.settings.deckName)
-        assertEquals(listOf("mining_language"), applied.rejectedKeys)
+        assertEquals(null, applied.settings.deckName)
+        assertEquals(
+            listOf(
+                "mining_language",
+                "deck_name",
+                "dictionary_sources_v1",
+                "frequency_sources_v1",
+                "pitch_sources_v1",
+                "audio_packs_v1",
+            ),
+            applied.rejectedKeys,
+        )
+    }
+
+    @Test
+    fun `a rejected language's card fields never land in the current language`() {
+        val chinese =
+            AppSettings(
+                language = "zh",
+                deckName = "Chinese",
+                noteType = "Chinese Mining",
+                fieldMap = mapOf("word" to "Hanzi", "expression_pinyin" to "Pinyin"),
+                cardTypeMarkerField = "IsClick",
+                theme = ThemeMode.DARK,
+            )
+        val hebrew =
+            AppSettings(
+                language = "he",
+                deckName = "Hebrew",
+                fieldMap = mapOf("word" to "Word", "transliteration" to "Translit"),
+            )
+        val json = SettingsBackupCodec.encode(chinese, "9.9.9", ResourceManagerState())
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(json).applyTo(hebrew, ResourceManagerState(), knownLanguages = setOf("ja", "he"))
+            }
+
+        assertEquals("he", applied.settings.language)
+        assertEquals("Hebrew", applied.settings.deckName)
+        assertEquals(hebrew.fieldMap, applied.settings.fieldMap)
+        assertEquals(null, applied.settings.cardTypeMarkerField)
+        assertEquals(ThemeMode.DARK, applied.settings.theme)
+        assertEquals("zh", applied.unknownLanguage)
+        assertEquals(
+            setOf("mining_language") + LanguageScope.PREFERENCE_NAMES,
+            applied.rejectedKeys.toSet(),
+        )
     }
 
     @Test
@@ -419,6 +465,37 @@ class SettingsBackupCodecTest {
     }
 
     @Test
+    fun `an imported chain resolves only against its own language's slots`() {
+        // zh and vi lists of one shape share a match key; a ja dictionary must not join a zh chain.
+        val inventory =
+            ResourceManagerState(
+                dictionaries = listOf(dictionary("jitendex", "Jitendex", entries = 10)),
+                frequencySources =
+                    listOf(
+                        frequency("opensubtitles-zh-word", "OpenSubtitles zh", entries = 50_000, language = "zh"),
+                        frequency("opensubtitles-vi-word", "OpenSubtitles vi", entries = 50_000, language = "vi"),
+                    ),
+            )
+        val chinese =
+            AppSettings(
+                language = "zh",
+                frequencySources = listOf(ResourceChainSelection("opensubtitles-zh-word", enabled = true)),
+            )
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(encode(chinese, "0.9.0", inventory))
+                    .applyTo(chinese, inventory, knownLanguages = setOf("ja", "zh", "vi"))
+            }.settings
+
+        assertEquals(
+            listOf(ResourceChainSelection("opensubtitles-zh-word", enabled = true)),
+            applied.frequencySources,
+        )
+        assertEquals(emptyList<ResourceChainSelection>(), applied.dictionarySources)
+    }
+
+    @Test
     fun `ambiguous portable resource identities are left visible and disabled`() {
         val sourceInventory =
             ResourceManagerState(
@@ -484,6 +561,7 @@ class SettingsBackupCodecTest {
         id: String,
         name: String,
         entries: Long,
+        language: String = LanguageScope.JAPANESE,
     ) =
         InstalledFrequencySource(
             sourceId = id,
@@ -494,6 +572,7 @@ class SettingsBackupCodecTest {
             schemaVersion = 1,
             isCategorical = false,
             rebuildSourcePath = null,
+            language = language,
         )
 
     private fun pitch(

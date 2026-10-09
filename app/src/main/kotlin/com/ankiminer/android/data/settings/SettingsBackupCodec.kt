@@ -35,7 +35,11 @@ internal data class ParsedSettingsBackup(
     val ignoredKeys: List<String>,
     val formatVersion: Int,
     val resourceChains: Map<String, List<PortableResourceSelection>>,
-)
+) {
+    /** The mining language the file names (format 5 on), unchecked; null when it names none. */
+    val miningLanguage: String?
+        get() = values[SettingsBackupCodec.MINING_LANGUAGE_KEY] as? String
+}
 
 internal data class PortableResourceSelection(
     val resourceId: String,
@@ -67,7 +71,7 @@ internal object SettingsBackupCodec {
      * Format 5 adds the mining language. A file without it (any older format) keeps the current
      * language, and its language-scoped values land in that language, as desktop imports do.
      */
-    private const val MINING_LANGUAGE_KEY = "mining_language"
+    const val MINING_LANGUAGE_KEY = "mining_language"
 
     /** The retired toggle older formats carry; see [foldSentenceLengthToggle]. */
     private const val LEGACY_SENTENCE_LENGTH_KEY = "use_sentence_length"
@@ -285,8 +289,11 @@ internal object SettingsBackupCodec {
 
     /**
      * [knownLanguages] are the codes this build can mine; a file naming another keeps the current
-     * language and reports it. Null (the profiles have not loaded) leaves the code to the shape
-     * check, and the bridge refuses a run in a language it does not vendor.
+     * language and reports it. Its language-scoped values are rejected with it: they belong to the
+     * file's language (a field map with that language's card keys, its deck, its chains), and laid
+     * over the current language they would leave a configuration every run refuses. Null (the
+     * profiles have not loaded) accepts any well-formed code, and the bridge refuses a run in a
+     * language it does not vendor.
      */
     fun ParsedSettingsBackup.applyTo(
         current: AppSettings,
@@ -297,14 +304,23 @@ internal object SettingsBackupCodec {
             DataStoreAppSettingsRepository.encodePreferences(current, emptyPreferences())
         val effectiveValues = values.toMutableMap()
         val requestedLanguage = values[MINING_LANGUAGE_KEY] as? String
-        if (requestedLanguage != null && knownLanguages != null && requestedLanguage !in knownLanguages) {
+        val languageRejected =
+            requestedLanguage != null &&
+                (
+                    knownLanguages?.let { requestedLanguage !in it }
+                        ?: !LanguageScope.LANGUAGE_CODE.matches(requestedLanguage)
+                )
+        if (languageRejected) {
             effectiveValues[MINING_LANGUAGE_KEY] = RejectedValue
         }
+        // The language the file's chains will belong to once applied.
+        val targetLanguage =
+            if (requestedLanguage != null && !languageRejected) requestedLanguage else current.language
         if (formatVersion >= RESOURCE_CHAINS_FORMAT_VERSION) {
             if (resources == null) {
                 resourceChainKeyNames.forEach { name -> effectiveValues[name] = RejectedValue }
             } else {
-                val installed = portableResourceInventory(resources)
+                val installed = chainEligibleInventory(resources, targetLanguage)
                 resourceChainKeyNames.forEach { name ->
                     val resolved =
                         resolvePortableResourceChain(
@@ -314,6 +330,12 @@ internal object SettingsBackupCodec {
                     effectiveValues[name] =
                         ResourceSelectionPreferenceCodec.encode(resolved) ?: ClearedValue
                 }
+            }
+        }
+        // After the chain block on purpose: the chains it resolved belong to the rejected language too.
+        if (languageRejected) {
+            LanguageScope.PREFERENCE_NAMES.forEach { name ->
+                if (name in effectiveValues) effectiveValues[name] = RejectedValue
             }
         }
         val rejectedNames =
@@ -669,6 +691,27 @@ internal object SettingsBackupCodec {
                         )
                     },
         )
+
+    /**
+     * [portableResourceInventory] narrowed to the slots a [language] chain may name, by the rule
+     * [ResourceManagerState.usableDictionaryIds] and its siblings own: another language's slot never
+     * enters the chain, so it can neither make a match ambiguous nor be appended to it.
+     */
+    private fun chainEligibleInventory(
+        resources: ResourceManagerState,
+        language: String,
+    ): Map<String, List<ResourceInventoryEntry>> {
+        val eligibleIds =
+            mapOf(
+                "dictionary_sources_v1" to resources.usableDictionaryIds(language).toSet(),
+                "frequency_sources_v1" to resources.usableFrequencyIds(language).toSet(),
+                "pitch_sources_v1" to resources.usablePitchIds(language).toSet(),
+                "audio_packs_v1" to resources.usableAudioPackIds(language).toSet(),
+            )
+        return portableResourceInventory(resources).mapValues { (name, entries) ->
+            entries.filter { it.resourceId in eligibleIds.getValue(name) }
+        }
+    }
 
     private fun dictionaryMatchKey(dictionary: InstalledDictionary): String =
         dictionary.catalogResourceId?.let { resourceId ->

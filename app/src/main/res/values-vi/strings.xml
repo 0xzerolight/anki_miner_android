@@ -830,10 +830,13 @@
     <string name="settings_backup_imported">Đã tải %1$d cài đặt.</string>
     <string name="settings_backup_imported_skipped">Đã tải %1$d cài đặt, bỏ qua %2$d.</string>
     <string name="settings_backup_export_failed">Không thể lưu cài đặt vào tệp đó.</string>
+    <string name="settings_backup_export_not_ready">Chưa thể lưu cài đặt cho đến khi từ điển và các tài nguyên khác được tải xong. Hãy thử lại sau khi tải xong.</string>
     <string name="settings_backup_import_failed">Không thể đọc cài đặt từ tệp đó.</string>
     <string name="settings_backup_not_a_backup">Tệp đó không phải là tệp cài đặt Anki Miner.</string>
     <string name="settings_backup_too_large">Tệp đó quá lớn để là tệp cài đặt.</string>
     <string name="settings_backup_unknown_language">Phiên bản này không thể khai thác ngôn ngữ của tệp (%1$s), nên ngôn ngữ khai thác của bạn được giữ nguyên.</string>
+    <string name="settings_backup_language_busy">Tệp này dành cho một ngôn ngữ khai thác khác (%1$s). Hãy hoàn tất hoặc hủy tác vụ đang chạy, rồi tải lại tệp.</string>
+    <string name="settings_backup_language_unavailable">Tệp này dành cho một ngôn ngữ khai thác khác (%1$s) hiện chưa khả dụng. Hãy kiểm tra Cài đặt → Ngôn ngữ, rồi tải lại tệp.</string>
     <string name="b3_settings_android_override_state">Ghi đè tùy chỉnh</string>
     <string name="b3_validation_numeric_incomplete">Hoàn tất hoặc xóa số này</string>
     <string name="b3_validation_finite">Nhập số hữu hạn</string>

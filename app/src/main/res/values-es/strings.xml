@@ -840,10 +840,13 @@
     <string name="settings_backup_imported">Se cargaron %1$d ajustes.</string>
     <string name="settings_backup_imported_skipped">Se cargaron %1$d ajustes; se omitieron %2$d.</string>
     <string name="settings_backup_export_failed">No se pudieron guardar los ajustes en ese archivo.</string>
+    <string name="settings_backup_export_not_ready">Los ajustes no se pueden guardar hasta que se carguen sus diccionarios y demás recursos. Vuelva a intentarlo cuando se hayan cargado.</string>
     <string name="settings_backup_import_failed">No se pudieron leer los ajustes de ese archivo.</string>
     <string name="settings_backup_not_a_backup">Ese archivo no es un archivo de ajustes de Anki Miner.</string>
     <string name="settings_backup_too_large">Ese archivo es demasiado grande para ser un archivo de ajustes.</string>
     <string name="settings_backup_unknown_language">Esta versión no puede minar el idioma del archivo (%1$s), así que se mantuvo su idioma de minería.</string>
+    <string name="settings_backup_language_busy">Este archivo es de otro idioma de minería (%1$s). Termine o cancele la tarea en curso y vuelva a cargarlo.</string>
+    <string name="settings_backup_language_unavailable">Este archivo es de otro idioma de minería (%1$s), que aún no está disponible. Revise Ajustes → Idioma y vuelva a cargarlo.</string>
     <string name="b3_settings_android_override_state">Anulación personalizada</string>
     <string name="b3_validation_numeric_incomplete">Complete o borre este número</string>
     <string name="b3_validation_finite">Introduzca un número finito</string>

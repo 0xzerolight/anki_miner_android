@@ -66,6 +66,7 @@ import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.FrequencyBandEnd
+import com.ankiminer.android.vm.SettingsBackupOperation
 import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsFieldKey
@@ -231,6 +232,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 diagnosticsExport,
                 recorder,
                 callbacks,
+                language,
             )
     }
 }
@@ -1518,6 +1520,7 @@ private fun LazyListScope.diagnosticsSettings(
     diagnosticsExport: DiagnosticsExportState,
     recorder: SettingsCardIndexRecorder,
     callbacks: SettingsScreenCallbacks,
+    language: LanguageSettingsState,
 ) {
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "diagnostic-runtime") {
         SettingsSection(stringResource(R.string.b3_diagnostics_runtime)) {
@@ -1589,6 +1592,7 @@ private fun LazyListScope.diagnosticsSettings(
             onExportSettings = callbacks.onExportSettings,
             onImportSettings = callbacks.onImportSettings,
             onDismissBackupState = callbacks.onDismissBackupState,
+            importEnabled = language.switchAllowed,
         )
     }
     settingsCard(SettingsCategory.DIAGNOSTICS, recorder, "update-check") {
@@ -1733,6 +1737,7 @@ internal fun SettingsBackupSection(
     onExportSettings: () -> Unit,
     onImportSettings: () -> Unit,
     onDismissBackupState: () -> Unit,
+    importEnabled: Boolean = true,
 ) {
     SettingsSection(stringResource(R.string.settings_backup_section)) {
         Text(
@@ -1749,7 +1754,8 @@ internal fun SettingsBackupSection(
         }
         SecondaryActionButton(
             onClick = onImportSettings,
-            enabled = actionsEnabled,
+            // A file may carry another mining language: it loads only while a switch could start.
+            enabled = actionsEnabled && importEnabled,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.settings_backup_import))
@@ -1785,12 +1791,23 @@ internal fun SettingsBackupSection(
                 InlineFailureContainer(
                     message = state.message.localized(),
                     actionLabel = stringResource(R.string.b3_retry),
-                    onAction = onImportSettings,
+                    onAction = settingsBackupRetry(state.operation, onExportSettings, onImportSettings),
                     onDismiss = onDismissBackupState,
                 )
         }
     }
 }
+
+/** Retry repeats the action that failed: a failed save must never open the load picker. */
+internal fun settingsBackupRetry(
+    operation: SettingsBackupOperation,
+    onExportSettings: () -> Unit,
+    onImportSettings: () -> Unit,
+): () -> Unit =
+    when (operation) {
+        SettingsBackupOperation.EXPORT -> onExportSettings
+        SettingsBackupOperation.IMPORT -> onImportSettings
+    }
 
 @StringRes
 private fun diagnosticsExportStepLabel(step: DiagnosticsExportStep): Int =
