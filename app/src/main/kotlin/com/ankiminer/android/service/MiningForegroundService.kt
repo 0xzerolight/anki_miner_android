@@ -52,6 +52,25 @@ internal fun warnMalformedForegroundIntent(
 }
 
 /**
+ * Enters the foreground, then stops, for a START the service will not run.
+ *
+ * Every START arrives through startForegroundService, and stopping such a service before it calls
+ * startForeground crashes the app ("did not then call Service.startForeground()"). File-level so the
+ * order is testable on the host. A failed promotion is logged and the service still stops.
+ */
+internal fun rejectForegroundStart(
+    enterForeground: () -> Unit,
+    stop: () -> Unit,
+) {
+    try {
+        enterForeground()
+    } catch (failure: RuntimeException) {
+        AppLog.w(LogComponent.SERVICE, "start.reject", failure, "outcome" to "fail")
+    }
+    stop()
+}
+
+/**
  * Resource and arguments for the notification's progress line, or null while indeterminate.
  *
  * Separate from the builder because the service needs a real `Context` and the host unit build has
@@ -100,6 +119,22 @@ internal fun cpuWakeStateChangeRequired(
     parked: Boolean,
     owned: Boolean,
 ): Boolean = parked == owned
+
+/**
+ * The type the mining service passes to `startForeground` on [sdkInt], API 29+ (the call takes no
+ * type below that).
+ *
+ * `mediaProcessing` exists only from API 35. API 34 checks every requested type bit against its own
+ * policy table and fails the call for a bit it does not know, so 29–34 run the same work as
+ * `dataSync`, the manifest's other type for this service.
+ */
+@SuppressLint("InlinedApi")
+internal fun miningForegroundServiceType(sdkInt: Int): Int =
+    if (sdkInt >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
+    } else {
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+    }
 
 internal fun decodeMiningForegroundIntentIdentity(
     action: String?,
@@ -189,10 +224,6 @@ class MiningForegroundService : Service() {
 
     private fun handleStart(intent: Intent) {
         val identity = decodeIdentity(intent)
-        if (identity == null) {
-            if (sessionIdentity == null) stopImmediately()
-            return
-        }
         val activeIdentity = sessionIdentity
         if (activeIdentity != null) {
             if (identity == activeIdentity) {
@@ -201,9 +232,9 @@ class MiningForegroundService : Service() {
             // A stale start must never terminate or mutate the current generation.
             return
         }
-        if (!registry.claimStart(identity, serviceToken)) {
-            // The pending registry entry belongs to another generation. Reject only this start.
-            stopImmediately()
+        if (identity == null || !registry.claimStart(identity, serviceToken)) {
+            // Malformed, abandoned, timed out, or another generation's entry. Reject only this start.
+            stopRejectedStart()
             return
         }
         sessionIdentity = identity
@@ -221,6 +252,13 @@ class MiningForegroundService : Service() {
         if (!registry.foregroundStarted(identity, serviceToken)) {
             stopImmediately()
         }
+    }
+
+    private fun stopRejectedStart() {
+        rejectForegroundStart(
+            enterForeground = { startForegroundTyped(buildRejectedStartNotification()) },
+            stop = ::stopImmediately,
+        )
     }
 
     private fun handleUpdate(
@@ -383,13 +421,12 @@ class MiningForegroundService : Service() {
         stopSelfResult(startId)
     }
 
-    @SuppressLint("InlinedApi")
     private fun startForegroundTyped(notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING,
+                miningForegroundServiceType(Build.VERSION.SDK_INT),
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)
@@ -417,6 +454,14 @@ class MiningForegroundService : Service() {
     private fun buildCancellingNotification(identity: MiningForegroundSessionIdentity): Notification =
         baseNotification(identity, getString(R.string.mining_notification_cancelling))
             .setProgress(0, 0, true)
+            .build()
+
+    /** Carries no run identity: it exists only to meet startForeground before an immediate stop. */
+    private fun buildRejectedStartNotification(): Notification =
+        NotificationCompat.Builder(this, MINING_NOTIFICATION_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_mining)
+            .setContentTitle(getString(R.string.mining_notification_title))
+            .setSilent(true)
             .build()
 
     private fun baseNotification(

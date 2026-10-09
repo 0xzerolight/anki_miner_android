@@ -58,7 +58,7 @@
         <service
             android:name=".service.MiningForegroundService"
             android:exported="false"
-            android:foregroundServiceType="mediaProcessing" />
+            android:foregroundServiceType="mediaProcessing|dataSync" />
 
         <service
             android:name=".service.ResourceImportForegroundService"

@@ -5,6 +5,7 @@ import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
 import com.ankiminer.android.diagnostics.log.RecordingLogSink
 import java.util.concurrent.Executor
+import java.util.concurrent.TimeoutException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -238,6 +239,46 @@ class ForegroundSessionRegistryTest {
         registry.serviceDestroyed(identity, SERVICE_TOKEN)
 
         assertEquals(listOf(MiningForegroundCancellationReason.USER_REQUESTED), reasons)
+    }
+
+    @Test
+    fun `abandoning a pending start leaves the stop to the service`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val registration = registry.register(identity) { _, _ -> fail("unexpected cancellation") }
+
+        assertFalse(registry.cancelAbandonedStart(identity))
+
+        assertTrue(registration.started.isCompletedExceptionally)
+        // The START already sent finds no record, so the service takes its reject path.
+        assertFalse(registry.claimStart(identity, SERVICE_TOKEN))
+        assertTrue(registry.register(identity(2)) { _, _ -> }.accepted)
+    }
+
+    @Test
+    fun `abandoning a claimed start leaves the stop to the service`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val registration = registry.register(identity) { _, _ -> fail("unexpected cancellation") }
+        assertTrue(registry.claimStart(identity, SERVICE_TOKEN))
+
+        assertFalse(registry.cancelAbandonedStart(identity))
+
+        assertTrue(registration.started.isCompletedExceptionally)
+        // The claiming service finishes its promotion, finds the record gone, and stops itself.
+        assertFalse(registry.foregroundStarted(identity, SERVICE_TOKEN))
+    }
+
+    @Test
+    fun `a timed-out start cannot be claimed by its late START`() {
+        val registry = ForegroundSessionRegistry(directExecutor)
+        val identity = identity()
+        val registration = registry.register(identity) { _, _ -> fail("unexpected cancellation") }
+
+        assertTrue(registry.failBeforeForeground(identity, TimeoutException("handshake deadline")))
+
+        assertTrue(registration.started.isCompletedExceptionally)
+        assertFalse(registry.claimStart(identity, SERVICE_TOKEN))
     }
 
     private fun activate(

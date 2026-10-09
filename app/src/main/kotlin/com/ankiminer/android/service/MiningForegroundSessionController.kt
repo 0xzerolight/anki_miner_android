@@ -36,22 +36,17 @@ class MiningForegroundSessionController private constructor(
 
         val timeout =
             Runnable {
-                if (
-                    registry.failBeforeForeground(
-                        identity,
-                        TimeoutException("Foreground service did not start within the deadline"),
-                    )
-                ) {
-                    runCatching {
-                        applicationContext.stopService(
-                            MiningForegroundService.serviceIntent(applicationContext),
-                        )
-                    }
-                }
+                // Fails the handshake only. The service still owes startForeground for the START
+                // already sent to it; that START finds no record and the service stops itself.
+                registry.failBeforeForeground(
+                    identity,
+                    TimeoutException("Foreground service did not start within the deadline"),
+                )
             }
         mainHandler.postDelayed(timeout, START_HANDSHAKE_TIMEOUT_MS)
         leaseFuture.whenComplete { _, _ ->
             mainHandler.removeCallbacks(timeout)
+            // True only for a service that already promoted; see cancelAbandonedStart.
             if (leaseFuture.isCancelled && registry.cancelAbandonedStart(identity)) {
                 val stopped =
                     runCatching {
