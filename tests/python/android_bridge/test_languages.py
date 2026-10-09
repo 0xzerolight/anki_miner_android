@@ -443,13 +443,14 @@ def test_installed_data_clears_the_reason(initialized_bridge_home: Path) -> None
     assert _profiles()["ar"]["unavailableReason"] == "language_data_required"
 
 
-def test_a_missing_bundled_engine_is_unsupported_not_downloadable() -> None:
+def test_a_missing_bundled_engine_is_unsupported_not_downloadable(monkeypatch: pytest.MonkeyPatch) -> None:
     """th's pack is wheels (pythainlp, tzdata): they ship in the APK, so no download can repair them."""
     _runtime_lane()
     from types import SimpleNamespace
 
-    broken_thai = SimpleNamespace(code="th", unavailable_reason=lambda: "Thai mining needs pythainlp.")
-    assert languages.unavailable_reason_code(broken_thai) == "language_unsupported"
+    without_pythainlp = languages.bundled_modules() - {"pythainlp"}
+    monkeypatch.setattr(languages, "bundled_modules", lambda: without_pythainlp)
+    assert languages.unavailable_reason_code(languages.get_profile("th")) == "language_unsupported"
     no_pack = SimpleNamespace(code="he", unavailable_reason=lambda: "broken")
     assert languages.unavailable_reason_code(no_pack) == "language_unsupported"
 
