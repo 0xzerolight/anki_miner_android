@@ -33,6 +33,7 @@ from .protocol import (
 from .unicode_contract import (
     has_leading_or_trailing_python_whitespace,
     is_category_c,
+    is_category_cf,
     is_nfc,
 )
 
@@ -595,6 +596,28 @@ def _expect_filename(value: object, *, context: str, code: str = "invalid_anki_r
     return filename
 
 
+def _without_format_characters(value: str) -> str:
+    """Drop Unicode format characters (Cf) by the pinned table, as the engine's strip_format_chars does."""
+
+    return "".join(character for character in value if not is_category_cf(ord(character)))
+
+
+def _expect_card_media_filename(value: object, *, context: str, code: str) -> str:
+    """Accept the engine's own card-media name, which may carry Unicode format characters.
+
+    The engine names clips after the mined form (``{mined_form}_{ms}_{seq}.mp3``) and a Persian
+    form keeps its ZWNJ. That logical name never crosses to Kotlin: the stored name drops the
+    format characters (``_content_addressed_name_from_digest``) and the note references the name
+    AnkiDroid returns. Without its format characters the name must still be a safe provider
+    filename, so controls, surrogates, private use and unassigned code points stay refused.
+    """
+
+    if not isinstance(value, str) or not value:
+        _protocol_error(code, f"{context} must be a non-empty string")
+    _expect_filename(_without_format_characters(value), context=context, code=code)
+    return value
+
+
 def _starts_with_ascii_case_insensitive(value: str, prefix: str) -> bool:
     """Compare an ASCII protocol prefix without host Unicode case tables."""
 
@@ -695,9 +718,14 @@ def _is_possible_provider_rename(filename: str, preferred: str) -> bool:
 
 
 def _content_addressed_name_from_digest(filename: str, sha1_prefix: str) -> str:
-    """Match the desktop ``{stem}_{sha1[:12]}{suffix}`` media name."""
+    """Match the desktop ``{stem}_{sha1[:12]}{suffix}`` media name, minus format characters.
 
-    path = Path(filename)
+    Desktop keeps a Persian ZWNJ in the stored name. The provider contract on both sides of the
+    bridge refuses every category-C code point in a stored name, so Android stores it without
+    the format characters; only the name differs, the content address does not.
+    """
+
+    path = Path(_without_format_characters(filename))
     return f"{path.stem}_{sha1_prefix}{path.suffix}"
 
 
@@ -1671,7 +1699,12 @@ class AndroidAnkiAdapter:
                 context=f"storeMedia asset {index} requestedFilename",
                 code="invalid_anki_request",
             )
-            name_validator(
+            # A card's original name is the engine's own and never crosses to Kotlin. It may carry
+            # format characters, which its requested name has already dropped.
+            original_validator = (
+                _expect_media_basename if asset.purpose == "dictionary" else _expect_card_media_filename
+            )
+            original_validator(
                 asset.original_name,
                 context=f"storeMedia asset {index} originalName",
                 code="invalid_anki_request",
@@ -2551,7 +2584,7 @@ class AndroidAnkiAdapter:
                 source_path = getattr(payload.media, path_attr)
                 if not filename or not source_path:
                     continue
-                _expect_filename(
+                _expect_card_media_filename(
                     filename,
                     context="create-call card media filename",
                     code="invalid_note",
