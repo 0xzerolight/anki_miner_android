@@ -100,6 +100,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -110,7 +111,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -118,6 +119,7 @@ import kotlinx.coroutines.runBlocking
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * Single production composition boundary for video and reading runs.
@@ -173,6 +175,29 @@ internal suspend fun refreshAnkiSetupFromSettings(
     }
     refresh(settings)
 }
+
+/**
+ * The mining language for the process-lifetime follower. [AppSettingsRepository.settingsOrNull]
+ * ends on an unreadable store, which suits one-shot readers, but an eagerly shared StateFlow never
+ * subscribes again and would keep its seed for the rest of the process. A failed read is retried
+ * instead, backing off from one second to a minute, so a transient failure only delays following
+ * the language. Cancellation and other failures are not retried.
+ */
+internal fun AppSettingsRepository.miningLanguageUpdates(): Flow<String> =
+    settings
+        .map { it.language }
+        .retryWhen { failure, attempt ->
+            if (failure !is IOException) return@retryWhen false
+            AppLog.w(
+                LogComponent.SETTINGS,
+                "settings.read",
+                failure,
+                "outcome" to "fail",
+                "attempt" to attempt,
+            )
+            delay(minOf(1L shl attempt.coerceAtMost(6L).toInt(), 60L).seconds)
+            true
+        }
 
 /**
  * Re-read the resource state that belongs to the mining [language] whenever it changes, once the
@@ -418,8 +443,7 @@ class AnkiMinerApplication : Application() {
 
     /** The mining language as last read from settings; Japanese until the first read lands. */
     private val miningLanguage: StateFlow<String> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        settingsRepository.settingsOrNull
-            .mapNotNull { it?.language }
+        settingsRepository.miningLanguageUpdates()
             .stateIn(applicationScope, SharingStarted.Eagerly, LanguageScope.JAPANESE)
     }
 
