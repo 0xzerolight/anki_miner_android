@@ -1,11 +1,17 @@
 package com.ankiminer.android.ui.video
 
 import android.net.Uri
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextContains
@@ -15,8 +21,10 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.dp
 import com.ankiminer.android.engine.SubtitleCue
 import com.ankiminer.android.player.FakeCurationPreviewPlayer
+import com.ankiminer.android.ui.mining.CurationPlayerTestTags
 import com.ankiminer.android.ui.mining.TimingPreviewState
 import com.ankiminer.android.ui.theme.AnkiMinerTheme
 import org.junit.Assert.assertEquals
@@ -198,6 +206,39 @@ class TimingPreviewOverlayTest {
         )
 
         composeRule.runOnIdle { assertEquals(listOf<Long?>(1L), fake.boundOverrides) }
+    }
+
+    @Test
+    fun shortLandscapePaneKeepsPlayPauseAndApplyOnScreen() {
+        val fake = FakeCurationPreviewPlayer()
+        composeRule.setContent {
+            AnkiMinerTheme {
+                // A landscape phone's pane at a fixed width, with the window insets taken out so
+                // the arithmetic does not depend on the emulator's screen or bars: uncapped, the
+                // 16:9 frame and its controls take all 210dp left under the title.
+                Box(
+                    Modifier
+                        .size(width = 320.dp, height = 282.dp)
+                        .consumeWindowInsets(WindowInsets.safeDrawing),
+                ) {
+                    TimingPreviewOverlay(
+                        state = state(),
+                        videoUri = VIDEO_URI,
+                        onSelectCue = {},
+                        onNudge = {},
+                        onSetWorking = {},
+                        onToggleUnshifted = {},
+                        onApply = {},
+                        onCancel = {},
+                        playerFactory = { fake },
+                        seekabilityProbe = { _, _ -> true },
+                    )
+                }
+            }
+        }
+
+        composeRule.onNodeWithTag(CurationPlayerTestTags.PLAY_PAUSE).assertIsDisplayed()
+        composeRule.onNodeWithTag(VideoMiningTestTags.TIMING_PREVIEW_APPLY).assertIsDisplayed()
     }
 
     private fun setOverlay(
