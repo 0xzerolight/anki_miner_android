@@ -119,8 +119,18 @@ def test_fetch_never_raises(tmp_path: Path) -> None:
 
 
 class ExhaustedTtsCallbacks:
+    def __init__(self, error: Exception) -> None:
+        self.error = error
+
     def synthesizeSentenceAudio(self, raw: str) -> str:
-        raise MemoryError("interpreter exhausted")
+        raise self.error
+
+
+def _kotlin_out_of_memory_error() -> Exception:
+    # What Chaquopy raises when Kotlin throws OutOfMemoryError: a proxy class
+    # named after the Java class, deriving from Exception rather than MemoryError.
+    throwable = type("Throwable", (Exception,), {"__module__": "java.lang"})
+    return type("OutOfMemoryError", (throwable,), {"__module__": "java.lang"})("Failed to allocate")
 
 
 def _exhausted_speakable(_term: str, _reading: str) -> str:
@@ -128,21 +138,22 @@ def _exhausted_speakable(_term: str, _reading: str) -> str:
 
 
 @pytest.mark.parametrize(
-    ("callbacks_kind", "speakable"),
+    ("callback_error", "speakable"),
     [
-        ("tts", _exhausted_speakable),
-        ("exhausted", _speak_reading_else_term),
+        (None, _exhausted_speakable),
+        (MemoryError("interpreter exhausted"), _speak_reading_else_term),
+        (_kotlin_out_of_memory_error(), _speak_reading_else_term),
     ],
-    ids=["speakable", "kotlin-callback"],
+    ids=["speakable", "callback-memory-error", "kotlin-out-of-memory-error"],
 )
 def test_memory_exhaustion_is_the_runs_to_stop_on(
     tmp_path: Path,
-    callbacks_kind: str,
+    callback_error: Exception | None,
     speakable: object,
 ) -> None:
-    callbacks = TtsCallbacks(tmp_path / "cache") if callbacks_kind == "tts" else ExhaustedTtsCallbacks()
+    callbacks = TtsCallbacks(tmp_path / "cache") if callback_error is None else ExhaustedTtsCallbacks(callback_error)
 
-    with pytest.raises(MemoryError, match="interpreter exhausted"):
+    with pytest.raises(MemoryError):
         _fetcher(tmp_path, callbacks, speakable=speakable).fetch("ספר", "")
 
 

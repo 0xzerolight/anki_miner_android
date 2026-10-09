@@ -498,14 +498,45 @@ def test_synchronous_anki_callback_requires_json_string(result: object) -> None:
     assert exc_info.value.code == "invalid_callback_result"
 
 
-def test_synchronous_callback_memory_error_is_not_a_callback_failure() -> None:
+def _java_exception(name: str, message: str) -> Exception:
+    """What Chaquopy raises when a Kotlin callback throws.
+
+    The proxy class carries the Java package as ``__module__`` and the simple
+    name as ``__name__``; ``java.lang.Throwable`` derives from ``Exception``,
+    never from ``MemoryError``.
+    """
+
+    throwable = type("Throwable", (Exception,), {"__module__": "java.lang"})
+    return type(name, (throwable,), {"__module__": "java.lang"})(message)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        MemoryError("interpreter exhausted"),
+        _java_exception("OutOfMemoryError", "Failed to allocate a 16 byte allocation"),
+    ],
+    ids=["python-memory-error", "kotlin-out-of-memory-error"],
+)
+def test_synchronous_callback_memory_exhaustion_is_not_a_callback_failure(error: Exception) -> None:
     class ExhaustedCallbacks:
         def ankiStoreMedia(self, raw: str) -> str:
-            raise MemoryError("interpreter exhausted")
+            raise error
 
     client = AndroidAnkiCallbacks(ExhaustedCallbacks(), _RUN_ID)
-    with pytest.raises(MemoryError, match="interpreter exhausted"):
+    with pytest.raises(MemoryError):
         client.store_media({})
+
+
+def test_synchronous_callback_other_kotlin_exception_is_a_callback_failure() -> None:
+    class FailingCallbacks:
+        def ankiStoreMedia(self, raw: str) -> str:
+            raise _java_exception("IllegalStateException", "provider gone")
+
+    client = AndroidAnkiCallbacks(FailingCallbacks(), _RUN_ID)
+    with pytest.raises(BridgeProtocolError) as exc_info:
+        client.store_media({})
+    assert exc_info.value.code == "callback_failed"
 
 
 def test_synchronous_anki_callback_rejects_mismatched_request_id() -> None:
