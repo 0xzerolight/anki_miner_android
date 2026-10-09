@@ -844,6 +844,8 @@
     <string name="settings_backup_not_a_backup">Ce fichier n\'est pas un fichier de paramètres Anki Miner.</string>
     <string name="settings_backup_too_large">Ce fichier est trop volumineux pour être un fichier de paramètres.</string>
     <string name="settings_backup_unknown_language">Cette version ne prend pas en charge l\'extraction dans la langue du fichier (%1$s) ; votre langue d\'extraction a donc été conservée.</string>
+    <string name="settings_backup_language_busy">Ce fichier concerne une autre langue d\'extraction (%1$s). Terminez ou annulez la tâche en cours, puis chargez-le à nouveau.</string>
+    <string name="settings_backup_language_unavailable">Ce fichier concerne une autre langue d\'extraction (%1$s), qui n\'est pas encore disponible. Vérifiez Paramètres → Langue, puis chargez-le à nouveau.</string>
     <string name="b3_settings_android_override_state">Remplacement personnalisé</string>
     <string name="b3_validation_numeric_incomplete">Renseignez ou effacez ce nombre</string>
     <string name="b3_validation_finite">Saisissez un nombre fini</string>

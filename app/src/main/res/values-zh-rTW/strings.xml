@@ -834,6 +834,8 @@
     <string name="settings_backup_not_a_backup">該檔案不是 Anki Miner 設定檔案。</string>
     <string name="settings_backup_too_large">該檔案太大，不能作為設定檔案。</string>
     <string name="settings_backup_unknown_language">此版本無法採集該檔案的語言（%1$s），因此保留了目前的採集語言。</string>
+    <string name="settings_backup_language_busy">此檔案屬於另一種採集語言（%1$s）。請先完成或取消正在執行的工作，然後重新載入。</string>
+    <string name="settings_backup_language_unavailable">此檔案屬於另一種採集語言（%1$s），該語言尚無法使用。請檢查「設定 → 語言」，然後重新載入。</string>
     <string name="b3_settings_android_override_state">自訂覆寫</string>
     <string name="b3_validation_numeric_incomplete">請完成或清除此數值</string>
     <string name="b3_validation_finite">請輸入有限數值</string>

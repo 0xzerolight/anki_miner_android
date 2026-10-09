@@ -844,6 +844,8 @@
     <string name="settings_backup_not_a_backup">Esse arquivo não é um arquivo de configurações do Anki Miner.</string>
     <string name="settings_backup_too_large">Esse arquivo é grande demais para ser um arquivo de configurações.</string>
     <string name="settings_backup_unknown_language">Esta versão não consegue minerar o idioma do arquivo (%1$s), então seu idioma de mineração foi mantido.</string>
+    <string name="settings_backup_language_busy">Este arquivo é de outro idioma de mineração (%1$s). Conclua ou cancele a tarefa em andamento e carregue-o novamente.</string>
+    <string name="settings_backup_language_unavailable">Este arquivo é de outro idioma de mineração (%1$s), que ainda não está disponível. Verifique Configurações → Idioma e carregue-o novamente.</string>
     <string name="b3_settings_android_override_state">Substituição personalizada</string>
     <string name="b3_validation_numeric_incomplete">Preencha ou limpe este número</string>
     <string name="b3_validation_finite">Insira um número finito</string>

@@ -166,6 +166,7 @@ class MainActivity : ComponentActivity() {
             app.resourceDocumentWriter,
             BuildConfig.VERSION_NAME,
             app.languageProfileSource,
+            runtimeWorkState = app.runtimeWorkState,
         )
     }
     private val readingViewModelFactory by lazy {

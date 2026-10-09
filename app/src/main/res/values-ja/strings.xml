@@ -839,6 +839,8 @@
     <string name="settings_backup_not_a_backup">このファイルは Anki Miner の設定ファイルではありません。</string>
     <string name="settings_backup_too_large">このファイルは設定ファイルとしては大きすぎます。</string>
     <string name="settings_backup_unknown_language">このバージョンではファイルの言語（%1$s）をマイニングできないため、現在のマイニング言語を維持しました。</string>
+    <string name="settings_backup_language_busy">このファイルは別のマイニング言語（%1$s）用です。実行中の処理を完了するかキャンセルしてから、もう一度読み込んでください。</string>
+    <string name="settings_backup_language_unavailable">このファイルは別のマイニング言語（%1$s）用ですが、この言語はまだ利用できません。設定 → 言語 を確認してから、もう一度読み込んでください。</string>
     <string name="b3_settings_android_override_state">カスタム上書き</string>
     <string name="b3_validation_numeric_incomplete">数値を最後まで入力するか、空欄にしてください</string>
     <string name="b3_validation_finite">有限の数値を入力してください</string>

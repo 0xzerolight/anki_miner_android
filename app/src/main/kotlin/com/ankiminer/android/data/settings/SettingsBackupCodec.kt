@@ -35,7 +35,11 @@ internal data class ParsedSettingsBackup(
     val ignoredKeys: List<String>,
     val formatVersion: Int,
     val resourceChains: Map<String, List<PortableResourceSelection>>,
-)
+) {
+    /** The mining language the file names (format 5 on), unchecked; null when it names none. */
+    val miningLanguage: String?
+        get() = values[SettingsBackupCodec.MINING_LANGUAGE_KEY] as? String
+}
 
 internal data class PortableResourceSelection(
     val resourceId: String,
@@ -67,7 +71,7 @@ internal object SettingsBackupCodec {
      * Format 5 adds the mining language. A file without it (any older format) keeps the current
      * language, and its language-scoped values land in that language, as desktop imports do.
      */
-    private const val MINING_LANGUAGE_KEY = "mining_language"
+    const val MINING_LANGUAGE_KEY = "mining_language"
 
     /** The retired toggle older formats carry; see [foldSentenceLengthToggle]. */
     private const val LEGACY_SENTENCE_LENGTH_KEY = "use_sentence_length"

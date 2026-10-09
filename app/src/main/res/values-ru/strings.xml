@@ -849,6 +849,8 @@
     <string name="settings_backup_not_a_backup">Этот файл не является файлом настроек Anki Miner.</string>
     <string name="settings_backup_too_large">Этот файл слишком большой, чтобы быть файлом настроек.</string>
     <string name="settings_backup_unknown_language">Эта версия не поддерживает майнинг на языке файла (%1$s), поэтому язык майнинга не изменён.</string>
+    <string name="settings_backup_language_busy">Этот файл для другого языка майнинга (%1$s). Завершите или отмените текущую задачу, затем загрузите его снова.</string>
+    <string name="settings_backup_language_unavailable">Этот файл для другого языка майнинга (%1$s), который пока недоступен. Проверьте раздел Настройки → Язык, затем загрузите файл снова.</string>
     <string name="b3_settings_android_override_state">Пользовательское переопределение</string>
     <string name="b3_validation_numeric_incomplete">Заполните или очистите это число</string>
     <string name="b3_validation_finite">Введите конечное число</string>
