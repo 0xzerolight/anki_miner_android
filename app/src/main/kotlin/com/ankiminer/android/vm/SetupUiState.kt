@@ -23,6 +23,7 @@ import com.ankiminer.android.data.resources.InstalledWordList
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.KnownWordsPage
+import com.ankiminer.android.data.resources.LanguageSwitchRefusal
 import com.ankiminer.android.data.resources.BundledWordset
 import com.ankiminer.android.data.resources.LocalResourceImportResult
 import com.ankiminer.android.data.resources.ResourceFailure
@@ -80,6 +81,8 @@ internal data class SetupUiState(
     val audioPacks: List<InstalledAudioPack> = emptyList(),
     val knownWords: KnownWordsInventory = KnownWordsInventory(0, 0, 0, 0, schemaOk = true),
     val knownWordsImportPreview: KnownWordsImportPreview? = null,
+    /** [com.ankiminer.android.data.resources.ResourceManagerState.languageSwitchRefusal], for the pickers. */
+    val languageSwitchRefusal: LanguageSwitchRefusal? = null,
     val knownWordsPage: KnownWordsPage? = null,
     val wordsets: List<BundledWordset> = emptyList(),
     val wordLists: List<InstalledWordList> = emptyList(),

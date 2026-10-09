@@ -685,6 +685,16 @@ data class ResourceFailure(
     val deleteTarget: ResourceDeleteTarget? = null,
 )
 
+/** Why the mining language must not switch now. */
+enum class LanguageSwitchRefusal {
+    /**
+     * A known-words import was previewed against the active language's list and still waits for
+     * its confirm (an open preview) or its Retry (a failed import, or one restored after process
+     * death). It belongs to the language it was previewed for.
+     */
+    KNOWN_WORDS_IMPORT_PENDING,
+}
+
 data class ResourceManagerState(
     val startupReadiness: ResourceStartupReadiness = ResourceStartupReadiness.PENDING,
     /** The mining language [catalog], [knownWords] and [wordLists] were last read for. */
@@ -717,6 +727,24 @@ data class ResourceManagerState(
         get() = installedUniDic != null
 
     fun wordList(kind: WordListKind): InstalledWordList? = wordLists.firstOrNull { it.kind == kind }
+
+    /**
+     * Why a mining-language switch is refused now, or null. Every path that changes the mining
+     * language asks this one check. A pending import restored after process death has no preview:
+     * recovery records its Retry as a known-words IMPORT failure, and that Retry is the only way
+     * to reach it, so the failure is what counts here.
+     */
+    fun languageSwitchRefusal(): LanguageSwitchRefusal? {
+        val importAwaitsRetry =
+            failure?.origin == ResourceFailureOrigin.KNOWN_WORDS &&
+                failure.knownWordsOperation == KnownWordsFailureOperation.IMPORT &&
+                failure.retry.action == ResourceFailureAction.RETRY
+        return if (knownWordsImportPreview != null || importAwaitsRetry) {
+            LanguageSwitchRefusal.KNOWN_WORDS_IMPORT_PENDING
+        } else {
+            null
+        }
+    }
 
     /**
      * Slot ids a [language] chain may name: usable, and stamped for [language]. A slot imported for

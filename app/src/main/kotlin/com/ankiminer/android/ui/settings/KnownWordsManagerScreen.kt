@@ -114,6 +114,17 @@ internal fun knownWordsListPresentation(
 }
 
 /**
+ * The list has nothing loaded and a search would run now. A fresh process has no page, and a
+ * removal, a reset or an import drops it. Busy states refuse the search, so the load waits for
+ * them to end. A failed search (a known-words failure with no import, preview or export behind
+ * it) keeps its failure and Retry on screen instead: searching again would only fail again.
+ */
+internal fun knownWordsListNeedsLoad(state: SetupUiState): Boolean =
+    state.knownWordsPage == null &&
+        !state.busy &&
+        !(state.failure?.origin == ResourceFailureOrigin.KNOWN_WORDS && state.failure.knownWordsOperation == null)
+
+/**
  * The one sentence the manager shows when the store holds no words. A store that fails its schema
  * check is also reported with every count at zero; calling it empty would hide that it is broken.
  */
@@ -157,7 +168,15 @@ internal fun KnownWordsManagerRoute(
         ) { uri ->
             uri?.let { setupViewModel.exportKnownWords(it.toString()) }
         }
-    LaunchedEffect(setupViewModel) { setupViewModel.searchKnownWords() }
+    // Entry re-reads a page an earlier visit loaded. A missing page loads through the effect
+    // below whenever a search can run, including after a removal or reset, or once busy clears.
+    LaunchedEffect(setupViewModel) {
+        if (!knownWordsListNeedsLoad(state)) setupViewModel.searchKnownWords()
+    }
+    val listNeedsLoad = knownWordsListNeedsLoad(state)
+    LaunchedEffect(listNeedsLoad) {
+        if (listNeedsLoad) setupViewModel.searchKnownWords()
+    }
     KnownWordsManagerScreen(
         state = state,
         callbacks =

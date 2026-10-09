@@ -1,8 +1,16 @@
 package com.ankiminer.android.ui.settings
 
 import com.ankiminer.android.R
+import com.ankiminer.android.data.RuntimeWorkCoordinator
+import com.ankiminer.android.data.resources.KnownWordsFailureOperation
 import com.ankiminer.android.data.resources.KnownWordsInventory
 import com.ankiminer.android.data.resources.KnownWordsPage
+import com.ankiminer.android.data.resources.ResourceFailure
+import com.ankiminer.android.data.resources.ResourceFailureOrigin
+import com.ankiminer.android.data.resources.ResourceOperationPhase
+import com.ankiminer.android.data.resources.ResourceOperationProgress
+import com.ankiminer.android.data.resources.ResourceStartupReadiness
+import com.ankiminer.android.vm.SetupUiState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -56,6 +64,44 @@ class KnownWordsManagerScreenTest {
         assertEquals(KnownWordsListContent.WORDS, presentation.content)
         assertTrue(presentation.showProgress)
         assertFalse(presentation.showLoadMore)
+    }
+
+    @Test
+    fun aMissingListLoadsOnceNothingHoldsTheRuntime() {
+        // A removal or a reset drops the page; so does a fresh process.
+        val idle = SetupUiState(resourceStartup = ResourceStartupReadiness.READY)
+
+        assertTrue(knownWordsListNeedsLoad(idle))
+        // The mutation that dropped the page is still finishing: the search would be refused.
+        assertFalse(
+            knownWordsListNeedsLoad(
+                idle.copy(operation = ResourceOperationProgress("op", "Removing", ResourceOperationPhase.IMPORTING)),
+            ),
+        )
+        // Opened during a run: load when it ends, not never.
+        assertFalse(knownWordsListNeedsLoad(idle.copy(runtimeWorkKind = RuntimeWorkCoordinator.Kind.MINING)))
+        assertFalse(knownWordsListNeedsLoad(idle.copy(knownWordsPage = page(words = listOf("猫"), hasMore = false))))
+    }
+
+    @Test
+    fun aFailedSearchShowsItsFailureInsteadOfSearchingAgain() {
+        val searchFailure =
+            ResourceFailure(
+                code = "resource_operation_failed",
+                message = "failed",
+                retryable = true,
+                origin = ResourceFailureOrigin.KNOWN_WORDS,
+            )
+        val failed = SetupUiState(resourceStartup = ResourceStartupReadiness.READY, failure = searchFailure)
+
+        // Searching again would fail again, and every failure would re-key the reload.
+        assertFalse(knownWordsListNeedsLoad(failed))
+        // A failed preview from Word filters is not the list's own failure; the list still loads.
+        assertTrue(
+            knownWordsListNeedsLoad(
+                failed.copy(failure = searchFailure.copy(knownWordsOperation = KnownWordsFailureOperation.PREVIEW)),
+            ),
+        )
     }
 
     @Test

@@ -44,4 +44,4 @@ app/src/main/kotlin/com/ankiminer/android/vm/DiagnosticsViewModel.kt	71,95	Exist
 app/src/main/kotlin/com/ankiminer/android/vm/MediaMiningViewModel.kt	1460,1482	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/ReadingMiningViewModel.kt	1133,1296	Existing discarded catches are pinned at audit introduction; new sites require review.
 app/src/main/kotlin/com/ankiminer/android/vm/SettingsViewModel.kt	1297,1385	Existing discarded catches are pinned at audit introduction; new sites require review.
-app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	461,608,1757	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.
+app/src/main/kotlin/com/ankiminer/android/vm/SetupViewModel.kt	462,609,1758	Existing sites are pinned; failed post-success refresh retains persisted state so the same action retries.

@@ -243,6 +243,7 @@ internal class SetupViewModel(
                 audioPacks = scoped.audioPacks,
                 knownWords = resourceState.knownWords,
                 knownWordsImportPreview = resourceState.knownWordsImportPreview,
+                languageSwitchRefusal = resourceState.languageSwitchRefusal(),
                 knownWordsPage = resourceState.knownWordsPage,
                 wordsets = resourceState.wordsets,
                 wordLists = resourceState.wordLists,

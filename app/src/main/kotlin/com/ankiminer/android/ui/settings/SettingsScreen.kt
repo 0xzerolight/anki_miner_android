@@ -331,7 +331,7 @@ internal fun SettingsRoute(
             activeCode = setup.language,
             profiles = languageProfiles,
             downloadingCode = languageDownload,
-            knownWordsPreviewOpen = setup.knownWordsImportPreview != null,
+            knownWordsPreviewOpen = setup.languageSwitchRefusal != null,
             busy = setup.busy,
             noteTypeMissing = setup.noteType.isNullOrEmpty(),
         )
