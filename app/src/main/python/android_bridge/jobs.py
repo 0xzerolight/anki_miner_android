@@ -7,7 +7,7 @@ import logging
 import re
 import threading
 import uuid
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from math import isfinite
 from pathlib import Path
@@ -27,6 +27,12 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 # BridgeJsonCodec and curation.schema.json.
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
+# The most one candidate's JSON may take: its default sentence, then the earliest
+# sentence variants that fit. The engine attaches one variant per line a word is
+# on, unbounded, so a frequent word in a long book would otherwise outgrow a page
+# and fail the run. A quarter page still holds a couple of hundred variants, and
+# a page still fits at least three such candidates (usually four).
+_CANDIDATE_MAX_UTF8_BYTES = CURATION_PAGE_MAX_UTF8_BYTES // 4
 _MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
 _MAX_LINE_EXPANSION = 100
 # Both ends of the desktop curator's clip contract: media_extractor's own
@@ -221,23 +227,15 @@ def _sentence_payload(
     return payload
 
 
-def _candidate_ref(word: object) -> _CandidateRef:
-    default_sentence_id = _opaque_id("sentence")
-    sentence_objects: dict[str, object] = {default_sentence_id: word}
+def _sentence_variants(word: object) -> Iterator[object]:
+    """The engine's sentence variants for ``word``, earliest first, minus its own sentence."""
 
     alternatives = getattr(word, "sentence_candidates", ()) or ()
     if isinstance(alternatives, Sequence) and not isinstance(alternatives, (str, bytes, bytearray)):
         for alternative in alternatives:
             if alternative is word or _same_sentence(alternative, word):
                 continue
-            sentence_id = _opaque_id("sentence")
-            sentence_objects[sentence_id] = alternative
-
-    return _CandidateRef(
-        original=word,
-        default_sentence_id=default_sentence_id,
-        sentences=sentence_objects,
-    )
+            yield alternative
 
 
 def _candidate_mined_form(reference: _CandidateRef) -> str:
@@ -279,16 +277,36 @@ def _candidate_payload_from_ref(
     }
 
 
-def _candidate_payload(
+def _bounded_candidate(
     candidate_id: str,
     word: object,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
     sentence_preview: Callable[[object], SentencePreview] | None = None,
-) -> tuple[dict[str, Any], _CandidateRef]:
-    """Retain the original raw-word helper contract used by existing tests."""
+) -> tuple[_CandidateRef, dict[str, Any], int]:
+    """Build one candidate's reference, payload and exact encoded size.
 
-    reference = _candidate_ref(word)
-    return _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview), reference
+    The default sentence always goes, even alone over the budget; a candidate
+    over a whole page is still refused when the pages are planned. Variants
+    follow earliest first and stop at the first one that would take the
+    candidate past ``_CANDIDATE_MAX_UTF8_BYTES``. The reference holds only the
+    sentences sent, so a selection still resolves to the engine's own object.
+    """
+
+    default_sentence_id = _opaque_id("sentence")
+    sentences: dict[str, object] = {default_sentence_id: word}
+    reference = _CandidateRef(original=word, default_sentence_id=default_sentence_id, sentences=sentences)
+    payload = _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview)
+    size = _encoded_size(payload)
+    for variant in _sentence_variants(word):
+        sentence_id = _opaque_id("sentence")
+        sentence_payload = _sentence_payload(sentence_id, variant, sentence_context, sentence_preview)
+        grown = size + 1 + _encoded_size(sentence_payload)
+        if grown > _CANDIDATE_MAX_UTF8_BYTES:
+            break
+        sentences[sentence_id] = variant
+        payload["sentences"].append(sentence_payload)
+        size = grown
+    return reference, payload, size
 
 
 def _utf8_size(raw: str) -> int:
@@ -430,10 +448,9 @@ def _plan_curation(
         if cancel_event.is_set():
             return None
         candidate_id = _opaque_id("candidate")
-        reference = _candidate_ref(word)
-        payload = _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview)
+        reference, payload, size = _bounded_candidate(candidate_id, word, sentence_context, sentence_preview)
         refs[candidate_id] = reference
-        sizes.append((candidate_id, _encoded_size(payload)))
+        sizes.append((candidate_id, size))
         if single_request:
             payloads.append(payload)
 
