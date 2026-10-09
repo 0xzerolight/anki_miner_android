@@ -126,9 +126,13 @@ internal fun interface ResourceInputOpener {
      * What the provider claims the document weighs, or null when it declines to say.
      *
      * Cloud providers legitimately report nothing, so null is "no agreement to check" rather
-     * than a fault. Used only to catch a copy that ended early.
+     * than a fault. Used only to catch a copy that ended early. The query must observe
+     * [cancellation], which carries the provider deadline.
      */
-    fun reportedSizeBytes(uri: String): Long? = null
+    fun reportedSizeBytes(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): Long? = null
 }
 
 private class AndroidResourceInputOpener(
@@ -212,28 +216,21 @@ private class AndroidResourceInputOpener(
         }
     }
 
-    /**
-     * A best-effort read of `OpenableColumns.SIZE`. Any provider failure answers null, because a
-     * size this is only used to cross-check must never be the thing that fails an import.
-     */
-    override fun reportedSizeBytes(uri: String): Long? =
-        runCatching {
+    /** Reads `OpenableColumns.SIZE`; the stager treats any failure here as "unknown size". */
+    override fun reportedSizeBytes(
+        uri: String,
+        cancellation: ProviderIoCancellation,
+    ): Long? =
+        CancellableProviderIo.withCancellationSignal(cancellation) { signal ->
             resolver
-                .query(Uri.parse(uri), arrayOf(OpenableColumns.SIZE), null, null, null)
+                .query(Uri.parse(uri), arrayOf(OpenableColumns.SIZE), null, null, null, signal)
                 ?.use { cursor ->
                     if (!cursor.moveToFirst()) return@use null
                     val column = cursor.getColumnIndex(OpenableColumns.SIZE)
                     if (column < 0 || cursor.isNull(column)) return@use null
                     cursor.getLong(column).takeIf { it >= 0 }
                 }
-        }.onFailure { failure ->
-            AppLog.ignored(
-                LogComponent.RESOURCES,
-                "archive.stage.reported_size",
-                "provider refused the size column",
-                failure,
-            )
-        }.getOrNull()
+        }
 }
 
 /** Keeps the provider's stable reference alive until all bytes from its descriptor are consumed. */
@@ -319,7 +316,7 @@ internal class SafArchiveStager(
         }
         val destination = File(stagingRoot, "$operationId-custom$fileSuffix")
         destination.delete()
-        val reportedBytes = inputOpener.reportedSizeBytes(sourceUri)
+        var reportedBytes: Long? = null
         try {
             val available = availableBytes(stagingRoot)
             if (available < FREE_SPACE_RESERVE_BYTES) {
@@ -347,7 +344,10 @@ internal class SafArchiveStager(
                 }
             // A provider that ended the stream early leaves a short but structurally plausible
             // file, and the engine can only report it as a corrupt archive. Catching the
-            // truncation here is what tells those two causes apart in the field.
+            // truncation here is what tells those two causes apart in the field. Asked after the
+            // copy, on its own deadline: a provider that stalls on this metadata query costs the
+            // cross-check, never the import.
+            reportedBytes = queryReportedSize(sourceUri, cancellation)
             if (reportedBytes != null && reportedBytes != staged.sizeBytes) {
                 throw ResourceDownloadException(
                     "resource_archive_mismatch",
@@ -376,6 +376,35 @@ internal class SafArchiveStager(
             throw failure
         }
     }
+
+    /**
+     * A best-effort read of the provider's reported size. A refusal, a stall past the deadline
+     * and a cancellation all answer null, because a size used only to cross-check must never be
+     * the thing that fails or hangs an import.
+     */
+    private fun queryReportedSize(
+        sourceUri: String,
+        cancellation: ResourceCancellationSignal,
+    ): Long? =
+        try {
+            runBlocking {
+                CancellableProviderIo.execute(
+                    scope = providerIoScope,
+                    timeoutMillis = providerIoTimeoutMillis,
+                    scheduler = providerIoScheduler,
+                ) { deadline ->
+                    inputOpener.reportedSizeBytes(sourceUri, cancellation.combine(deadline))
+                }
+            }
+        } catch (failure: Exception) {
+            AppLog.ignored(
+                LogComponent.RESOURCES,
+                "archive.stage.reported_size",
+                "provider did not report the size column",
+                failure,
+            )
+            null
+        }
 
     /**
      * The generic-path twin of `ResourceManager.logAudioArchiveStage`.
