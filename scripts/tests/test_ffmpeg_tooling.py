@@ -4,6 +4,7 @@ import hashlib
 import importlib.util
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -142,6 +143,50 @@ class FfmpegToolingTests(unittest.TestCase):
 
         self.assertIn("-DCONFIG_RUNTIME_CPU_DETECT=1", libaom)
         self.assertNotIn("-DCONFIG_RUNTIME_CPU_DETECT=0", libaom)
+
+    def test_dependency_profiles_require_runtime_cpu_dispatch(self) -> None:
+        config_tool = _load_python_tool("assert-ffmpeg-config.py")
+        cases = {"libaom": "CONFIG_RUNTIME_CPU_DETECT", "dav1d": "HAVE_GETAUXVAL"}
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "config.h"
+            for library, key in cases.items():
+                with self.subTest(library=library):
+                    config.write_text(f"#define ARCH_AARCH64 1\n#define {key} 1\n", encoding="utf-8")
+                    config_tool.assert_dependency_configuration(config, library)
+                    config.write_text(f"#define ARCH_AARCH64 1\n#define {key} 0\n", encoding="utf-8")
+                    with self.assertRaisesRegex(
+                        config_tool.ConfigurationError, f"{library}: {key}=1 required, found 0"
+                    ):
+                        config_tool.assert_dependency_configuration(config, library)
+                    config.write_text("#define ARCH_AARCH64 1\n", encoding="utf-8")
+                    with self.assertRaisesRegex(config_tool.ConfigurationError, f"{key}=1 required, found None"):
+                        config_tool.assert_dependency_configuration(config, library)
+
+    def test_dependency_profile_cli_takes_exactly_one_header(self) -> None:
+        tool = FFMPEG_ROOT / "assert-ffmpeg-config.py"
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "aom_config.h"
+
+            def run(*args: str) -> subprocess.CompletedProcess[str]:
+                return subprocess.run([sys.executable, str(tool), *args], capture_output=True, text=True, check=False)
+
+            config.write_text("#define CONFIG_RUNTIME_CPU_DETECT 1\n", encoding="utf-8")
+            accepted = run("--profile", "libaom", str(config))
+            self.assertEqual(0, accepted.returncode, accepted.stderr)
+            config.write_text("#define CONFIG_RUNTIME_CPU_DETECT 0\n", encoding="utf-8")
+            rejected = run("--profile", "libaom", str(config))
+            self.assertEqual(1, rejected.returncode)
+            self.assertIn("CONFIG_RUNTIME_CPU_DETECT=1 required, found 0", rejected.stderr)
+            self.assertEqual(2, run("--profile", "libaom", str(config), str(config)).returncode)
+            self.assertEqual(2, run("--profile", "full", str(config)).returncode)
+
+    def test_arm64_dependency_builds_assert_their_generated_configs(self) -> None:
+        libaom = (FFMPEG_ROOT / "overrides/libaom-build.sh").read_text(encoding="utf-8")
+        dav1d = (FFMPEG_ROOT / "overrides/libdav1d-build.sh").read_text(encoding="utf-8")
+        self.assertIn('assert-ffmpeg-config.py" --profile libaom config/aom_config.h', libaom)
+        self.assertLess(libaom.index("--profile libaom"), libaom.index("${MAKE_EXECUTABLE} -j"))
+        self.assertIn('assert-ffmpeg-config.py" --profile dav1d config.h', dav1d)
+        self.assertLess(dav1d.index("--profile dav1d"), dav1d.index("${NINJA_EXECUTABLE} -j"))
 
     def test_build_root_guard_rejects_escape_and_symlink_without_deleting(self) -> None:
         guard = FFMPEG_ROOT / "prepare-build-root.py"
