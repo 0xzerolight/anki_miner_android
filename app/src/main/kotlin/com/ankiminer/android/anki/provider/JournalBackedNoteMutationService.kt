@@ -28,6 +28,7 @@ import com.ankiminer.android.anki.journal.RoutingIntentState
 import com.ankiminer.android.anki.protocol.AllowDuplicatesCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.AnkiErrorDetail
+import com.ankiminer.android.anki.protocol.AnkiNameCollation
 import com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CommittedFailedNote
 import com.ankiminer.android.anki.protocol.CreateNote
@@ -1020,7 +1021,7 @@ private fun NoteSnapshot.matches(
     id == noteId &&
         this.modelId == modelId &&
         joinedFields == materialization.joinedFields &&
-        validateTagsFromProvider(providerTagsWire) == materialization.normalizedTags.toSet()
+        AnkiNameCollation.sameTagSet(validateTagsFromProvider(providerTagsWire), materialization.normalizedTags)
 
 private fun CardIdentity.toObservation() = RoutingCardObservation(id, noteId, ordinal, deckId)
 
