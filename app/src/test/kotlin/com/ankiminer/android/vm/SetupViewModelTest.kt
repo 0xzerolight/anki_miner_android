@@ -997,6 +997,18 @@ class SetupViewModelTest {
         }
 
     @Test
+    fun `setup state says when AnkiDroid holds decks the pickers leave out`() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val setup =
+                FakeAnkiSetupManager(emptyList(), deckNames = listOf("Japanese"), unusableDecksHidden = true)
+            val viewModel = viewModel(FakeSettingsRepository(AppSettings()), setup)
+            advanceUntilIdle()
+
+            assertEquals(listOf("Japanese"), viewModel.uiState.value.availableDeckNames)
+            assertTrue(viewModel.uiState.value.unusableDecksHidden)
+        }
+
+    @Test
     fun `deck selection persists explicit existing and create-or-use choices`() =
         runTest(mainDispatcherRule.dispatcher) {
             val repository = FakeSettingsRepository(AppSettings())
@@ -2003,12 +2015,14 @@ class SetupViewModelTest {
     private class FakeAnkiSetupManager(
         models: List<ModelSummary>,
         deckNames: List<String> = emptyList(),
+        unusableDecksHidden: Boolean = false,
     ) : AnkiSetupManager {
         private val mutableState =
             MutableStateFlow(
                 AnkiSetupManagerState(
                     availableNoteTypes = models,
                     availableDeckNames = deckNames,
+                    unusableDecksHidden = unusableDecksHidden,
                 ),
             )
         override val state: StateFlow<AnkiSetupManagerState> = mutableState.asStateFlow()

@@ -9,6 +9,15 @@ internal data class ModelSummary(
     val fieldNames: List<String>,
 )
 
+/**
+ * The deck pickers' choices: every AnkiDroid deck whose name the settings contract accepts, sorted,
+ * and whether AnkiDroid held decks the pickers therefore leave out.
+ */
+internal data class DeckNameListing(
+    val names: List<String>,
+    val unusableHidden: Boolean,
+)
+
 internal enum class NoteTypeProviderErrorReason {
     API_DISABLED,
     API_INCOMPATIBLE,

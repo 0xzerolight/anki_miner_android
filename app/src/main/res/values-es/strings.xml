@@ -391,6 +391,7 @@
     <string name="anki_deck_picker">Mazo</string>
     <string name="anki_deck_create_or_use_default">Crear o usar Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (guardado; no encontrado actualmente)</string>
+    <string name="anki_deck_unusable_hidden">Algunos mazos de AnkiDroid están ocultos porque sus nombres contienen caracteres no admitidos.</string>
     <string name="anki_deck_saving">Guardando elección de mazo…</string>
     <string name="anki_deck_save_failed">No se pudo guardar la elección de mazo.</string>
     <string name="anki_deck_save_retry">Reintentar guardar mazo</string>

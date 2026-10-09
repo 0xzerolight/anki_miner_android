@@ -6,6 +6,7 @@ import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.provider.AnkiCancellation
 import com.ankiminer.android.anki.provider.AnkiReadFailure
 import com.ankiminer.android.anki.provider.AnkiRemediationInventory
+import com.ankiminer.android.anki.provider.DeckNameListing
 import com.ankiminer.android.anki.provider.ModelSummary
 import com.ankiminer.android.anki.provider.NoteTypeProviderErrorReason
 import com.ankiminer.android.anki.provider.NoteTypeSetupStatus
@@ -42,6 +43,8 @@ internal data class AnkiSetupManagerState(
     val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
     val availableNoteTypes: List<ModelSummary> = emptyList(),
     val availableDeckNames: List<String> = emptyList(),
+    /** AnkiDroid holds decks whose names the settings contract refuses; the pickers leave them out. */
+    val unusableDecksHidden: Boolean = false,
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val recoveryInventoryStatus: AnkiRecoveryInventoryStatus =
         AnkiRecoveryInventoryStatus.NOT_CHECKED,
@@ -56,7 +59,7 @@ internal data class AnkiSetupManagerState(
 internal interface AnkiSetupBackend {
     fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary>
 
-    fun listDeckNames(cancellation: AnkiCancellation): List<String>
+    fun listDeckNames(cancellation: AnkiCancellation): DeckNameListing
 
     fun verifyNoteType(
         noteType: String?,
@@ -173,7 +176,8 @@ internal class ProcessAnkiSetupManager(
             mutableState.update { current ->
                 current.copy(
                     availableNoteTypes = available,
-                    availableDeckNames = decks,
+                    availableDeckNames = decks.names,
+                    unusableDecksHidden = decks.unusableHidden,
                     noteTypeStatus = status,
                     failure = null,
                 )
@@ -190,6 +194,7 @@ internal class ProcessAnkiSetupManager(
                 current.copy(
                     availableNoteTypes = emptyList(),
                     availableDeckNames = emptyList(),
+                    unusableDecksHidden = false,
                     noteTypeStatus = status,
                     // The status keeps the English stable message for logs and diagnostics; the
                     // failure is what the setup screens show, so it is said in the user's language.
@@ -207,6 +212,7 @@ internal class ProcessAnkiSetupManager(
                 current.copy(
                     availableNoteTypes = emptyList(),
                     availableDeckNames = emptyList(),
+                    unusableDecksHidden = false,
                     noteTypeStatus =
                         NoteTypeSetupStatus.ProviderError(
                             reason = NoteTypeProviderErrorReason.PROVIDER_UNAVAILABLE,

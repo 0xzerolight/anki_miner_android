@@ -391,6 +391,7 @@
     <string name="anki_deck_picker">Paquet</string>
     <string name="anki_deck_create_or_use_default">Créer ou utiliser Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (enregistré ; introuvable actuellement)</string>
+    <string name="anki_deck_unusable_hidden">Certains paquets AnkiDroid sont masqués, car leur nom contient des caractères non pris en charge.</string>
     <string name="anki_deck_saving">Enregistrement du choix du paquet…</string>
     <string name="anki_deck_save_failed">Impossible d\'enregistrer le paquet choisi.</string>
     <string name="anki_deck_save_retry">Réessayer d\'enregistrer le paquet</string>

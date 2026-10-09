@@ -94,7 +94,7 @@ internal class AnkiProviderRuntime(
     fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> =
         reads.listNoteTypes(cancellation)
 
-    fun listDeckNames(cancellation: AnkiCancellation): List<String> =
+    fun listDeckNames(cancellation: AnkiCancellation): DeckNameListing =
         reads.listDeckNames(cancellation)
 
     fun verifyUserNoteType(

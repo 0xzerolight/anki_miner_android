@@ -86,9 +86,12 @@ internal class AnkiProviderReadService(
     fun listNoteTypes(cancellation: AnkiCancellation): List<ModelSummary> =
         targets.listModelSummaries(cancellation)
 
-    /** Live picker read of canonical Anki deck names for known-vocabulary exclusions. */
-    fun listDeckNames(cancellation: AnkiCancellation): List<String> =
-        targets.readAllDeckNames(cancellation).sorted()
+    /** Live picker read of the deck names the settings contract accepts, for both deck pickers. */
+    fun listDeckNames(cancellation: AnkiCancellation): DeckNameListing {
+        val all = targets.readAllDeckNames(cancellation)
+        val usable = all.filter(ProviderSnapshotValidation::isUsableDeckName)
+        return DeckNameListing(usable.sorted(), unusableHidden = usable.size != all.size)
+    }
 
     /**
      * Detect/verify a user-selected note type + field mapping. Never creates a note type; the

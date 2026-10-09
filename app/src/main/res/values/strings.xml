@@ -395,6 +395,7 @@
     <string name="anki_deck_picker">Deck</string>
     <string name="anki_deck_create_or_use_default">Create or use Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s (saved; not currently found)</string>
+    <string name="anki_deck_unusable_hidden">Some AnkiDroid decks are hidden because their names contain unsupported characters.</string>
     <string name="anki_deck_saving">Saving deck choice…</string>
     <string name="anki_deck_save_failed">Deck choice could not be saved.</string>
     <string name="anki_deck_save_retry">Retry saving deck</string>

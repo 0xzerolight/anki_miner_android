@@ -49,6 +49,8 @@ internal data class SetupUiState(
     val noteTypeStatus: NoteTypeSetupStatus = NoteTypeSetupStatus.NotSelected,
     val availableNoteTypes: List<ModelSummary> = emptyList(),
     val availableDeckNames: List<String> = emptyList(),
+    /** AnkiDroid holds decks whose names the settings contract refuses; the pickers leave them out. */
+    val unusableDecksHidden: Boolean = false,
     val deckName: String? = null,
     val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
     val failedDeckName: String? = null,

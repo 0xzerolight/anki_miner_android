@@ -381,6 +381,7 @@
     <string name="anki_deck_picker">牌組</string>
     <string name="anki_deck_create_or_use_default">建立或使用 Anki Miner</string>
     <string name="anki_deck_saved_unavailable">%1$s（已儲存；目前找不到）</string>
+    <string name="anki_deck_unusable_hidden">部分 AnkiDroid 牌組已隱藏，因為名稱包含不支援的字元。</string>
     <string name="anki_deck_saving">正在儲存牌組選擇…</string>
     <string name="anki_deck_save_failed">無法儲存牌組選擇。</string>
     <string name="anki_deck_save_retry">重試儲存牌組</string>

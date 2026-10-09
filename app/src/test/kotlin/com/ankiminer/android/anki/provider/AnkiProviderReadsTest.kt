@@ -44,7 +44,31 @@ class AnkiProviderReadsTest {
             AnkiProviderReadService(gateway, AnkiRunStateRegistry())
                 .listDeckNames(AnkiCancellation.NONE)
 
-        assertEquals(listOf("Default", "Japanese", "Japanese::Known"), names)
+        assertEquals(DeckNameListing(listOf("Default", "Japanese", "Japanese::Known"), unusableHidden = false), names)
+    }
+
+    @Test
+    fun `deck picker hides decks whose names the settings contract refuses`() {
+        val persian = "واژه‌ها"
+        val gateway = FakeAnkiProviderGateway()
+        gateway.queryHandler = { query, _ ->
+            assertEquals(ProviderEndpoint.DECKS, query.endpoint)
+            FakeProviderCursor(
+                query.projection,
+                listOf(
+                    deckRow(id = 4L, name = "﻿Known"),
+                    deckRow(id = 2L, name = persian),
+                    deckRow(id = 3L, name = "Mining‮"),
+                    deckRow(id = 1L, name = "Default"),
+                ),
+            )
+        }
+
+        val listing =
+            AnkiProviderReadService(gateway, AnkiRunStateRegistry())
+                .listDeckNames(AnkiCancellation.NONE)
+
+        assertEquals(DeckNameListing(listOf("Default", persian), unusableHidden = true), listing)
     }
 
     @Test
