@@ -21,7 +21,9 @@ Engine imports are function-local: ``bootstrap.initialize`` must set
 
 from __future__ import annotations
 
+import functools
 import logging
+import pkgutil
 import re
 from collections.abc import Mapping
 from pathlib import Path
@@ -284,32 +286,61 @@ def speech_language_for(language: str, script_variant: str = "") -> str:
     return _REGIONAL_SPEECH_TAGS.get(code, {}).get(script_variant, code)
 
 
-def _missing_components_are_data(code: str) -> bool:
-    """True when every required pack component *code* lacks is downloadable data.
+@functools.cache
+def bundled_modules() -> frozenset[str]:
+    """Every top-level module this process can import: the APK's (the test venv's on the host lanes).
 
-    "Lacks" is desktop's satisfaction ladder: neither extracted on disk nor
-    importable. A missing code component (pythainlp absent from a broken APK)
-    cannot be fixed by any download, so it makes the language unsupported.
+    Read from the importers' own listing, never ``find_spec``: Chaquopy answers
+    ``find_spec`` on a top-level package by extracting every data file of it
+    into ``filesDir`` (about 74 MB for the bundled language engines, after each
+    install or update). ``pkgutil.iter_modules`` reads the zip index the
+    importer already holds. What the APK bundles is fixed at build time and the
+    bridge never extends ``sys.path``, so the listing is read once.
     """
 
-    from anki_miner.services.language_pack_installer import component_satisfied, load_pack
+    return frozenset(module.name for module in pkgutil.iter_modules())
+
+
+def _missing_components(code: str) -> list[tuple[str, str]] | None:
+    """The required components *code* lacks here, as ``(pack code, import name)``; None without a pack.
+
+    Android's satisfaction ladder (decision 2), in place of desktop's
+    ``component_satisfied`` and the profile's probe, which both ask
+    ``find_spec``: downloadable data is satisfied by its extracted directory,
+    and every other component is code, satisfied exactly when the APK bundles
+    it. The packs a manifest ``requires`` (spaCy's runtime) count too, as
+    ``is_installed`` counts them.
+    """
+
+    from anki_miner.services.language_pack_installer import component_path, load_pack
 
     pack = load_pack(code)
     if pack is None:
-        return False
-    missing = [
-        component.import_name
-        for component in pack.components
-        if component.required and not component_satisfied(code, component)
-    ]
-    return bool(missing) and all((code, name) in DOWNLOADABLE_DATA_COMPONENTS for name in missing)
+        return None
+    missing: list[tuple[str, str]] = []
+    for pack_code in (code, *pack.requires):
+        manifest = pack if pack_code == code else load_pack(pack_code)
+        if manifest is None:
+            missing.append((pack_code, pack_code))  # an unloadable requirement: no download supplies it
+            continue
+        for component in manifest.components:
+            key = (pack_code, component.import_name)
+            if not component.required:
+                continue
+            if key in DOWNLOADABLE_DATA_COMPONENTS:
+                present = component_path(pack_code, component.import_name) is not None
+            else:
+                present = component.import_name in bundled_modules()
+            if not present:
+                missing.append(key)
+    return missing
 
 
 def _missing_split_data(code: str) -> list[str]:
     """The split models *code* needs that are not installed.
 
-    The engine's own probe cannot see them: it finds the component's code
-    importable from the APK and answers that the language can mine.
+    No pack manifest declares them: they come out of a code component's wheel,
+    which the APK bundles, so only this check sees them missing.
     """
 
     from .language_data import data_component_path
@@ -324,25 +355,34 @@ def _missing_split_data(code: str) -> list[str]:
 def unavailable_reason_code(profile: Any) -> str | None:
     """Why *profile* cannot mine on this device, as an Android reason code; None when it can.
 
-    The probe runs at call time, so a language whose data was just installed
-    answers None on the next request. The engine's own sentence names desktop
-    menus ("Settings -> Mining Language"), so it stays in the log.
+    Answered from the pack manifest (:func:`_missing_components`) and the split
+    models at call time, so a language whose data was just installed answers
+    None on the next request. The profile's own ``unavailable_reason`` asks
+    ``find_spec`` (see :func:`bundled_modules`), so it runs only for a language
+    without a pack. Its sentence names desktop menus ("Settings -> Mining
+    Language"), so it stays in the log.
     """
 
-    probe = profile.unavailable_reason
-    reason = probe() if probe is not None else None
-    if reason:
-        code = LANGUAGE_DATA_REQUIRED if _missing_components_are_data(profile.code) else LANGUAGE_UNSUPPORTED
+    missing = _missing_components(profile.code)
+    if missing is None:
+        probe = profile.unavailable_reason
+        detail = probe() if probe is not None else None
+        if not detail:
+            return None
+        # No manifest names what is missing, so no download can supply it.
+        code = LANGUAGE_UNSUPPORTED
     else:
-        missing = _missing_split_data(profile.code)
+        missing += [(profile.code, name) for name in _missing_split_data(profile.code)]
         if not missing:
             return None
-        code, reason = LANGUAGE_DATA_REQUIRED, f"missing language data: {', '.join(missing)}"
+        data_only = all(key in DOWNLOADABLE_DATA_COMPONENTS for key in missing)
+        code = LANGUAGE_DATA_REQUIRED if data_only else LANGUAGE_UNSUPPORTED
+        detail = f"missing: {', '.join(name for _, name in missing)}"
     logger.info(
         "language_unavailable outcome=skip language=%s reason_code=%s detail=%s",
         profile.code,
         code,
-        reason,
+        detail,
     )
     return code
 
@@ -427,7 +467,8 @@ def language_profiles(payload: Mapping[str, object]) -> str:
 
     A profile that fails to build is left out, as desktop's language list leaves
     it out (``gui.utils.language_choices``); C.1 proved every vendored profile
-    builds, so this only guards a broken install.
+    builds, so this only guards a broken install. A language whose availability
+    check hits a storage error is left out the same way.
     """
 
     if payload:
@@ -441,5 +482,13 @@ def language_profiles(payload: Mapping[str, object]) -> str:
         except (LookupError, ValueError, ImportError) as error:
             logger.warning("language_profile_unavailable outcome=skip language=%s", code, exc_info=error)
             continue
-        profiles.append(profile_payload(profile))
+        try:
+            entry = profile_payload(profile)
+        except OSError as error:
+            # Its availability reads the device (a pack directory on a full or
+            # failing disk): that fails this language, not the list the
+            # onboarding wizard waits on.
+            logger.warning("language_profile_unavailable outcome=skip language=%s", code, exc_info=error)
+            continue
+        profiles.append(entry)
     return encode_message("language.profiles.result", {"profiles": profiles})
