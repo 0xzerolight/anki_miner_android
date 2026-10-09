@@ -136,7 +136,14 @@ internal sealed interface SettingsBackupState {
 
     data class Failed(
         val message: LocalizedStringResource,
+        /** Which action failed, so Retry repeats it rather than the other one. */
+        val operation: SettingsBackupOperation,
     ) : SettingsBackupState
+}
+
+internal enum class SettingsBackupOperation {
+    EXPORT,
+    IMPORT,
 }
 
 /**
@@ -1439,6 +1446,7 @@ internal class SettingsViewModel(
                 mutableBackupState.value =
                     SettingsBackupState.Failed(
                         LocalizedStringResource(R.string.settings_backup_export_failed),
+                        SettingsBackupOperation.EXPORT,
                     )
             }
         }
@@ -1463,7 +1471,10 @@ internal class SettingsViewModel(
                         "outcome" to "fail",
                     )
                     mutableBackupState.value =
-                        SettingsBackupState.Failed(settingsBackupImportFailureMessage(failure))
+                        SettingsBackupState.Failed(
+                            settingsBackupImportFailureMessage(failure),
+                            SettingsBackupOperation.IMPORT,
+                        )
                     return@launch
                 }
 
@@ -1491,6 +1502,7 @@ internal class SettingsViewModel(
                 mutableBackupState.value =
                     SettingsBackupState.Failed(
                         LocalizedStringResource(R.string.settings_backup_import_failed),
+                        SettingsBackupOperation.IMPORT,
                     )
                 return@launch
             }
@@ -1501,6 +1513,7 @@ internal class SettingsViewModel(
                 mutableBackupState.value =
                     SettingsBackupState.Failed(
                         LocalizedStringResource(R.string.settings_backup_import_failed),
+                        SettingsBackupOperation.IMPORT,
                     )
             } else {
                 mutableBackupState.value =

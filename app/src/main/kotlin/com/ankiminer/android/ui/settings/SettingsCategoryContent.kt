@@ -66,6 +66,7 @@ import com.ankiminer.android.ui.theme.accentTextButtonColors
 import com.ankiminer.android.ui.theme.dynamicColorSupported
 import com.ankiminer.android.vm.DiagnosticsExportState
 import com.ankiminer.android.vm.FrequencyBandEnd
+import com.ankiminer.android.vm.SettingsBackupOperation
 import com.ankiminer.android.vm.SettingsBackupState
 import com.ankiminer.android.vm.SettingsDraft
 import com.ankiminer.android.vm.SettingsFieldKey
@@ -1780,12 +1781,23 @@ internal fun SettingsBackupSection(
                 InlineFailureContainer(
                     message = state.message.localized(),
                     actionLabel = stringResource(R.string.b3_retry),
-                    onAction = onImportSettings,
+                    onAction = settingsBackupRetry(state.operation, onExportSettings, onImportSettings),
                     onDismiss = onDismissBackupState,
                 )
         }
     }
 }
+
+/** Retry repeats the action that failed: a failed save must never open the load picker. */
+internal fun settingsBackupRetry(
+    operation: SettingsBackupOperation,
+    onExportSettings: () -> Unit,
+    onImportSettings: () -> Unit,
+): () -> Unit =
+    when (operation) {
+        SettingsBackupOperation.EXPORT -> onExportSettings
+        SettingsBackupOperation.IMPORT -> onImportSettings
+    }
 
 @StringRes
 private fun diagnosticsExportStepLabel(step: DiagnosticsExportStep): Int =
