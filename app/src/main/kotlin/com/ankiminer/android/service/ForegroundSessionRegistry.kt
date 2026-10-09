@@ -153,6 +153,13 @@ internal class ForegroundSessionRegistry(
         return false
     }
 
+    /**
+     * Forgets a start the run abandoned and returns whether the caller must stop the service.
+     *
+     * Only a service that already promoted is stopped by the caller. Before promotion the service
+     * still owes Android a startForeground for the START already sent to it, and stopping it first
+     * crashes the app; that START finds no record and the service stops itself.
+     */
     fun cancelAbandonedStart(identity: MiningForegroundSessionIdentity): Boolean {
         val completion: CompletableFuture<Unit>?
         val cancellation: CancellationNotification?
@@ -172,7 +179,7 @@ internal class ForegroundSessionRegistry(
                     transition = record.removed("start_abandoned")
                     completion = record.started
                     cancellation = null
-                    shouldStop = true
+                    shouldStop = false
                 }
 
                 record.phase == Phase.ACTIVE -> {

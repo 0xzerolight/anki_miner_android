@@ -2228,7 +2228,7 @@ class BridgeReadingMiningRepositoryTest {
                             java.util.concurrent.Executor { command -> command.run() },
                         )
                     val registration = registry.register(identity, listener)
-                    check(registry.cancelAbandonedStart(identity))
+                    check(!registry.cancelAbandonedStart(identity))
                     @Suppress("UNCHECKED_CAST")
                     return registration.started as CompletableFuture<MiningForegroundLease>
                 }
