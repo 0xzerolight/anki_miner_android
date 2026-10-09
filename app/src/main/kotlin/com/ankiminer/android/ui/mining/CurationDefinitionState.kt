@@ -2,7 +2,7 @@ package com.ankiminer.android.ui.mining
 
 import com.ankiminer.android.dictionary.CurationDefinition
 
-/** Terms retained per curation request. A page holds at most 100 candidates. */
+/** Lookups retained per curation request. A page holds at most 100 candidates. */
 internal const val MAX_DEFINITION_CACHE = 64
 
 internal data class DefinitionQuery(
@@ -28,8 +28,10 @@ internal data class CurationDefinitionState(
     val generation: Long = 0,
     val inFlight: DefinitionQuery? = null,
     val pendingQuery: DefinitionQuery? = null,
-    val cache: Map<String, CurationDefinition> = emptyMap(),
-    val cacheOrder: List<String> = emptyList(),
+    // Keyed on the whole query: the bridge scopes homographs by fallbackTerm and ranks senses by
+    // partOfSpeech, so two rows sharing a mined form can get different answers.
+    val cache: Map<DefinitionQuery, CurationDefinition> = emptyMap(),
+    val cacheOrder: List<DefinitionQuery> = emptyList(),
     val visible: CurationDefinition? = null,
 )
 
@@ -67,9 +69,9 @@ internal fun CurationDefinitionState.request(
             generation = next,
         )
     }
-    cache[query.term]?.let { cached ->
+    cache[query]?.let { cached ->
         return CurationDefinitionTransition(
-            state = copy(generation = next, pendingQuery = null, visible = cached).touch(query.term),
+            state = copy(generation = next, pendingQuery = null, visible = cached).touch(query),
             dispatch = null,
             generation = next,
         )
@@ -111,7 +113,7 @@ internal fun CurationDefinitionState.completed(
         if (outcome == CurationDefinition.Unavailable) {
             this
         } else {
-            store(query.term, outcome)
+            store(query, outcome)
         }
     val current = if (generation == this.generation) outcome else resolved.visible
     val queued = resolved.pendingQuery
@@ -122,9 +124,9 @@ internal fun CurationDefinitionState.completed(
             generation = this.generation,
         )
     }
-    resolved.cache[queued.term]?.let { hit ->
+    resolved.cache[queued]?.let { hit ->
         return CurationDefinitionTransition(
-            state = resolved.copy(inFlight = null, pendingQuery = null, visible = hit).touch(queued.term),
+            state = resolved.copy(inFlight = null, pendingQuery = null, visible = hit).touch(queued),
             dispatch = null,
             generation = this.generation,
         )
@@ -137,15 +139,15 @@ internal fun CurationDefinitionState.completed(
 }
 
 private fun CurationDefinitionState.store(
-    term: String,
+    query: DefinitionQuery,
     outcome: CurationDefinition,
 ): CurationDefinitionState {
-    val order = cacheOrder.filterNot { it == term } + term
-    val entries = cache + (term to outcome)
+    val order = cacheOrder.filterNot { it == query } + query
+    val entries = cache + (query to outcome)
     if (order.size <= MAX_DEFINITION_CACHE) return copy(cache = entries, cacheOrder = order)
     val evicted = order.first()
     return copy(cache = entries - evicted, cacheOrder = order.drop(1))
 }
 
-private fun CurationDefinitionState.touch(term: String): CurationDefinitionState =
-    copy(cacheOrder = cacheOrder.filterNot { it == term } + term)
+private fun CurationDefinitionState.touch(query: DefinitionQuery): CurationDefinitionState =
+    copy(cacheOrder = cacheOrder.filterNot { it == query } + query)

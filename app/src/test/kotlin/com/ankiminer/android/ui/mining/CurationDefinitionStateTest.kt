@@ -36,7 +36,7 @@ class CurationDefinitionStateTest {
                 outcome = CurationDefinition.Missing,
             )
         assertEquals(CurationDefinition.Loading, landed.state.visible)
-        assertEquals(CurationDefinition.Missing, landed.state.cache["猫"])
+        assertEquals(CurationDefinition.Missing, landed.state.cache[DefinitionQuery("猫", null)])
     }
 
     @Test
@@ -56,7 +56,7 @@ class CurationDefinitionStateTest {
         val unavailable =
             first.state.completed(first.generation, query, CurationDefinition.Unavailable).state
 
-        assertNull(unavailable.cache[query.term])
+        assertNull(unavailable.cache[query])
         val retried = unavailable.request(query)
         assertEquals(query, retried.dispatch)
         assertEquals(CurationDefinition.Loading, retried.state.visible)
@@ -100,7 +100,7 @@ class CurationDefinitionStateTest {
         val next = loaded.forRequest("run:request:1")
         assertNull(next.visible)
         assertNull(next.inFlight)
-        assertEquals(emptyMap<String, CurationDefinition>(), next.cache)
+        assertEquals(emptyMap<DefinitionQuery, CurationDefinition>(), next.cache)
         assertEquals(DefinitionQuery("猫", null), next.request(DefinitionQuery("猫", null)).dispatch)
     }
 
@@ -120,7 +120,43 @@ class CurationDefinitionStateTest {
             state = requested.state.completed(requested.generation, query, CurationDefinition.Missing).state
         }
         assertEquals(MAX_DEFINITION_CACHE, state.cache.size)
-        assertNull(state.cache["word0"])
+        assertNull(state.cache[DefinitionQuery("word0", null)])
+    }
+
+    @Test
+    fun `rows sharing a mined form but scoped to different lemmas are cached separately`() {
+        val say = DefinitionQuery("ゆう", "言う", "動詞")
+        val tie = DefinitionQuery("ゆう", "結う", "動詞")
+        val first = fresh.request(say)
+        val loaded = first.state.completed(first.generation, say, CurationDefinition.Missing).state
+
+        val other = loaded.request(tie)
+
+        assertEquals(tie, other.dispatch)
+        assertEquals(CurationDefinition.Loading, other.state.visible)
+    }
+
+    @Test
+    fun `rows differing only in part of speech are cached separately`() {
+        val noun = DefinitionQuery("run", null, "noun")
+        val verb = DefinitionQuery("run", null, "verb")
+        val first = fresh.request(noun)
+        val loaded = first.state.completed(first.generation, noun, CurationDefinition.Missing).state
+
+        assertEquals(verb, loaded.request(verb).dispatch)
+    }
+
+    @Test
+    fun `a queued homograph is not served from its sibling's landed result`() {
+        val say = DefinitionQuery("ゆう", "言う")
+        val tie = DefinitionQuery("ゆう", "結う")
+        val first = fresh.request(say)
+        val queued = first.state.request(tie)
+
+        val drained = queued.state.completed(first.generation, say, CurationDefinition.Missing)
+
+        assertEquals(tie, drained.dispatch)
+        assertEquals(CurationDefinition.Loading, drained.state.visible)
     }
 
     @Test
@@ -129,7 +165,7 @@ class CurationDefinitionStateTest {
         val reset = first.state.forRequest("run:request:1")
         val landed = reset.completed(first.generation, DefinitionQuery("猫", null), CurationDefinition.Missing)
         assertNull(landed.state.visible)
-        assertNull(landed.state.cache["猫"])
+        assertNull(landed.state.cache[DefinitionQuery("猫", null)])
         assertNull(landed.dispatch)
     }
 }
