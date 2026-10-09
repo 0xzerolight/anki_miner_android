@@ -273,6 +273,11 @@ internal class AndroidResourceManager(
     private data class PendingKnownWordsImport(
         val staged: StagedArchive,
         val format: KnownWordsSourceFormat,
+        /**
+         * The language it was previewed for: its confirm and any Retry import there. Null for a
+         * file an earlier build retained without one, which imports into the active language.
+         */
+        val language: String?,
     )
 
     private data class PendingAudioPackImport(
@@ -280,12 +285,15 @@ internal class AndroidResourceManager(
         val packs: List<AudioPackCandidate>,
     )
 
+    /** A failed mutation's input for Retry, with the language it was made for. */
     private sealed interface PendingKnownWordsMutation {
-        data class Remove(val words: List<String>) : PendingKnownWordsMutation
+        val language: String
 
-        data class Reset(val scope: KnownWordsResetScope) : PendingKnownWordsMutation
+        data class Remove(val words: List<String>, override val language: String) : PendingKnownWordsMutation
 
-        data class RemoveMined(val words: List<String>) : PendingKnownWordsMutation
+        data class Reset(val scope: KnownWordsResetScope, override val language: String) : PendingKnownWordsMutation
+
+        data class RemoveMined(val words: List<String>, override val language: String) : PendingKnownWordsMutation
     }
 
     private class ResourceInventoryReconciliationException(cause: Exception) :
@@ -1316,6 +1324,8 @@ internal class AndroidResourceManager(
             knownWordsOperation = KnownWordsFailureOperation.IMPORT,
             persistForRecovery = true,
         ) { operation ->
+            // Captured before staging: a switch while the file copies must not redirect it.
+            val language = activeLanguage()
             val retained = runBlocking { safBroker.retainReadAccess(uri) }
             var staged: StagedArchive? = null
             try {
@@ -1340,7 +1350,7 @@ internal class AndroidResourceManager(
                                 operation.id,
                                 staged.file.canonicalPath,
                                 format,
-                                language = activeLanguage(),
+                                language = language,
                             ),
                             ResourceProgressSink(operation),
                         ),
@@ -1508,6 +1518,8 @@ internal class AndroidResourceManager(
             persistForRecovery = true,
             resourceImportUri = uri,
         ) { operation ->
+            // The preview counts against this language's list, and its confirm imports there.
+            val language = activeLanguage()
             clearPendingKnownWordsImport()
             mutableState.update { it.copy(knownWordsImportPreview = null) }
             val remainingRetainedReferences = consumeRetainedResourceImport(uri)
@@ -1542,7 +1554,7 @@ internal class AndroidResourceManager(
                                 operation.id,
                                 staged.file.canonicalPath,
                                 format,
-                                language = activeLanguage(),
+                                language = language,
                             ),
                             null,
                         ),
@@ -1553,7 +1565,9 @@ internal class AndroidResourceManager(
                         "Could not retain the known-word preview",
                     )
                 }
-                val retainedFile = File(pendingKnownWordsRoot, "${operation.id}${format.fileSuffix}")
+                // The name carries the language, so a restore after process death still knows it.
+                val retainedFile =
+                    File(pendingKnownWordsRoot, "${operation.id}.$language${format.fileSuffix}")
                 retainedFile.delete()
                 if (!staged.file.renameTo(retainedFile)) {
                     throw ResourceDownloadException(
@@ -1562,7 +1576,7 @@ internal class AndroidResourceManager(
                     )
                 }
                 pendingKnownWordsImport =
-                    PendingKnownWordsImport(staged.copy(file = retainedFile), format)
+                    PendingKnownWordsImport(staged.copy(file = retainedFile), format, language)
                 staged = null
                 mutableState.update { it.copy(knownWordsImportPreview = preview) }
             } finally {
@@ -1597,7 +1611,7 @@ internal class AndroidResourceManager(
                             operation.id,
                             pending.staged.file.canonicalPath,
                             pending.format,
-                            language = activeLanguage(),
+                            language = pending.language ?: activeLanguage(),
                         ),
                         null,
                     ),
@@ -1624,10 +1638,11 @@ internal class AndroidResourceManager(
         when (failure.knownWordsOperation) {
             KnownWordsFailureOperation.IMPORT -> confirmKnownWordsImport()
             null -> {
+                // Each into the language it was made for: a switch since must not redirect it.
                 when (val mutation = pendingKnownWordsMutation) {
-                    is PendingKnownWordsMutation.Remove -> removeKnownWords(mutation.words)
-                    is PendingKnownWordsMutation.Reset -> resetKnownWords(mutation.scope)
-                    is PendingKnownWordsMutation.RemoveMined -> removeMinedWords(mutation.words)
+                    is PendingKnownWordsMutation.Remove -> removeKnownWords(mutation.words, mutation.language)
+                    is PendingKnownWordsMutation.Reset -> resetKnownWords(mutation.scope, mutation.language)
+                    is PendingKnownWordsMutation.RemoveMined -> removeMinedWords(mutation.words, mutation.language)
                     null -> Unit
                 }
             }
@@ -1755,17 +1770,21 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun removeKnownWords(words: List<String>) {
+        removeKnownWords(words.toList(), activeLanguage())
+    }
+
+    private suspend fun removeKnownWords(words: List<String>, language: String) {
         runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_remove_known_words),
             ResourceOperationPhase.IMPORTING,
-            PendingKnownWordsMutation.Remove(words.toList()),
+            PendingKnownWordsMutation.Remove(words, language),
         ) { operation ->
             ResourceBridgeCodec.decodeKnownWordsRemoved(
                 bridge.dispatch(
                     ResourceBridgeCodec.encodeKnownWordsRemoveRequest(
                         operation.id,
                         words,
-                        language = activeLanguage(),
+                        language = language,
                     ),
                     null,
                 ),
@@ -1774,17 +1793,21 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun resetKnownWords(scope: KnownWordsResetScope) {
+        resetKnownWords(scope, activeLanguage())
+    }
+
+    private suspend fun resetKnownWords(scope: KnownWordsResetScope, language: String) {
         runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_reset_known_words),
             ResourceOperationPhase.IMPORTING,
-            PendingKnownWordsMutation.Reset(scope),
+            PendingKnownWordsMutation.Reset(scope, language),
         ) { operation ->
             ResourceBridgeCodec.decodeKnownWordsReset(
                 bridge.dispatch(
                     ResourceBridgeCodec.encodeKnownWordsResetRequest(
                         operation.id,
                         scope,
-                        language = activeLanguage(),
+                        language = language,
                     ),
                     null,
                 ),
@@ -1792,12 +1815,14 @@ internal class AndroidResourceManager(
         }
     }
 
-    override suspend fun removeMinedWords(words: List<String>): Boolean {
-        val distinctWords = words.distinct()
-        return runKnownWordsMutation(
+    override suspend fun removeMinedWords(words: List<String>): Boolean =
+        removeMinedWords(words.distinct(), activeLanguage())
+
+    private suspend fun removeMinedWords(distinctWords: List<String>, language: String): Boolean =
+        runKnownWordsMutation(
             strings.resolve(R.string.resource_operation_revert_mined_words),
             ResourceOperationPhase.IMPORTING,
-            PendingKnownWordsMutation.RemoveMined(distinctWords),
+            PendingKnownWordsMutation.RemoveMined(distinctWords, language),
         ) { operation ->
             distinctWords.chunked(MINED_WORDS_REMOVE_CHUNK_SIZE).forEach { chunk ->
                 ResourceBridgeCodec.decodeMinedWordsRemoved(
@@ -1805,14 +1830,13 @@ internal class AndroidResourceManager(
                         ResourceBridgeCodec.encodeMinedWordsRemoveRequest(
                             operation.id,
                             chunk,
-                            language = activeLanguage(),
+                            language = language,
                         ),
                         null,
                     ),
                 )
             }
         }
-    }
 
     override suspend fun exportKnownWords(uri: String) {
         runOperation(
@@ -1962,6 +1986,12 @@ internal class AndroidResourceManager(
             PendingKnownWordsImport(
                 staged = StagedArchive(file, sha256 = "", sizeBytes = file.length()),
                 format = format,
+                // "<operation>.<language><suffix>". Not activeLanguage() for an earlier build's
+                // "<operation><suffix>": startup recovery runs before the settings load.
+                language =
+                    file.name.removeSuffix(format.fileSuffix)
+                        .substringAfterLast('.', missingDelimiterValue = "")
+                        .ifEmpty { null },
             )
         return true
     }

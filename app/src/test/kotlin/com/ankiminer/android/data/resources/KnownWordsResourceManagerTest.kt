@@ -10,6 +10,7 @@ import java.util.concurrent.Executor
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Rule
@@ -71,6 +72,125 @@ class KnownWordsResourceManagerTest {
             // Imported words shift every offset after them, as a removal's do.
             assertNull(harness.manager.state.value.knownWordsPage)
         }
+
+    @Test
+    fun `a failed reset retried after a language switch resets the language it was made for`() =
+        runTest {
+            val harness = Harness()
+            harness.bridge.failOnce += "resource.knownwords.reset"
+            harness.manager.resetKnownWords(KnownWordsResetScope.USER)
+            harness.language = "ko"
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(listOf("ja", "ja"), harness.bridge.languagesOf("resource.knownwords.reset"))
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
+    fun `a failed removal retried after a language switch removes from the language it was made for`() =
+        runTest {
+            val harness = Harness()
+            harness.bridge.failOnce += "resource.knownwords.remove"
+            harness.manager.removeKnownWords(listOf("猫"))
+            harness.language = "ko"
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(listOf("ja", "ja"), harness.bridge.languagesOf("resource.knownwords.remove"))
+        }
+
+    @Test
+    fun `a failed undo retried after a language switch reverts the language active when undo ran`() =
+        runTest {
+            val harness = Harness()
+            harness.bridge.failOnce += "resource.minedwords.remove"
+            assertFalse(harness.manager.removeMinedWords(listOf("猫")))
+            harness.language = "ko"
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(listOf("ja", "ja"), harness.bridge.languagesOf("resource.minedwords.remove"))
+        }
+
+    @Test
+    fun `a failed import retried after a language switch imports into the previewed language`() =
+        runTest {
+            val harness = Harness()
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+            harness.bridge.failOnce += "resource.knownwords.import"
+            harness.manager.confirmKnownWordsImport()
+            harness.language = "ko"
+
+            harness.manager.retryKnownWordsFailure()
+
+            assertEquals(listOf("ja", "ja"), harness.bridge.languagesOf("resource.knownwords.import"))
+        }
+
+    @Test
+    fun `a switch while the file stages leaves the import in the language it was started for`() =
+        runTest {
+            val harness = Harness()
+            harness.stager.onStage = { harness.language = "ko" }
+
+            harness.manager.importKnownWords(INPUT_URI, KnownWordsSourceFormat.JSON)
+            harness.language = JAPANESE
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+            harness.manager.confirmKnownWordsImport()
+
+            assertEquals(listOf("ja"), harness.bridge.languagesOf("resource.knownwords.preview"))
+            assertEquals(listOf("ja", "ja"), harness.bridge.languagesOf("resource.knownwords.import"))
+        }
+
+    @Test
+    fun `an import interrupted by process death resumes into the language it was previewed for`() =
+        runTest {
+            val root = temporary.newFolder()
+            Harness(root).manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+            interruptConfirm(root)
+            val restarted = Harness(root)
+            assertEquals(
+                KnownWordsFailureOperation.IMPORT,
+                restarted.manager.state.value.failure?.knownWordsOperation,
+            )
+            restarted.language = "ko"
+
+            restarted.manager.retryKnownWordsFailure()
+
+            assertEquals(listOf("ja"), restarted.bridge.languagesOf("resource.knownwords.import"))
+            assertFalse(restarted.pendingRoot.exists())
+        }
+
+    @Test
+    fun `a preview retained before its language was recorded imports into the language loaded after startup`() =
+        runTest {
+            val root = temporary.newFolder()
+            // The name every earlier build gave the retained preview.
+            File(root, "resource-pending-known-words/resource_0123456789abcdef.json").apply {
+                parentFile.mkdirs()
+                writeText("犬\n")
+            }
+            interruptConfirm(root)
+            // Startup recovery runs before the settings load: the language still reads as the default.
+            val restarted = Harness(root, recover = false)
+            restarted.manager.recoverAndRefresh()
+            restarted.language = "ko"
+
+            restarted.manager.retryKnownWordsFailure()
+
+            assertEquals(listOf("ko"), restarted.bridge.languagesOf("resource.knownwords.import"))
+        }
+
+    /** The journal record a confirm leaves when the process dies mid-import. */
+    private fun interruptConfirm(root: File) {
+        ResourceOperationJournal(root, syncDirectory = {}).write(
+            PersistedResourceOperation(
+                origin = ResourceFailureOrigin.KNOWN_WORDS,
+                retry = ResourceFailureRetry(ResourceFailureAction.RETRY),
+                knownWordsOperation = KnownWordsFailureOperation.IMPORT,
+            ),
+        )
+    }
 
     /** [recover] false leaves startup recovery to the test. */
     private inner class Harness(root: File = temporary.newFolder(), recover: Boolean = true) {
