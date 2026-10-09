@@ -465,6 +465,37 @@ class SettingsBackupCodecTest {
     }
 
     @Test
+    fun `an imported chain resolves only against its own language's slots`() {
+        // zh and vi lists of one shape share a match key; a ja dictionary must not join a zh chain.
+        val inventory =
+            ResourceManagerState(
+                dictionaries = listOf(dictionary("jitendex", "Jitendex", entries = 10)),
+                frequencySources =
+                    listOf(
+                        frequency("opensubtitles-zh-word", "OpenSubtitles zh", entries = 50_000, language = "zh"),
+                        frequency("opensubtitles-vi-word", "OpenSubtitles vi", entries = 50_000, language = "vi"),
+                    ),
+            )
+        val chinese =
+            AppSettings(
+                language = "zh",
+                frequencySources = listOf(ResourceChainSelection("opensubtitles-zh-word", enabled = true)),
+            )
+
+        val applied =
+            with(SettingsBackupCodec) {
+                parse(encode(chinese, "0.9.0", inventory))
+                    .applyTo(chinese, inventory, knownLanguages = setOf("ja", "zh", "vi"))
+            }.settings
+
+        assertEquals(
+            listOf(ResourceChainSelection("opensubtitles-zh-word", enabled = true)),
+            applied.frequencySources,
+        )
+        assertEquals(emptyList<ResourceChainSelection>(), applied.dictionarySources)
+    }
+
+    @Test
     fun `ambiguous portable resource identities are left visible and disabled`() {
         val sourceInventory =
             ResourceManagerState(
@@ -530,6 +561,7 @@ class SettingsBackupCodecTest {
         id: String,
         name: String,
         entries: Long,
+        language: String = LanguageScope.JAPANESE,
     ) =
         InstalledFrequencySource(
             sourceId = id,
@@ -540,6 +572,7 @@ class SettingsBackupCodecTest {
             schemaVersion = 1,
             isCategorical = false,
             rebuildSourcePath = null,
+            language = language,
         )
 
     private fun pitch(

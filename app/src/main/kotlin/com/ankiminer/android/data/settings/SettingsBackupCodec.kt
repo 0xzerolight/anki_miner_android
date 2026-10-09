@@ -309,11 +309,14 @@ internal object SettingsBackupCodec {
         if (languageRejected) {
             effectiveValues[MINING_LANGUAGE_KEY] = RejectedValue
         }
+        // The language the file's chains will belong to once applied.
+        val targetLanguage =
+            if (requestedLanguage != null && !languageRejected) requestedLanguage else current.language
         if (formatVersion >= RESOURCE_CHAINS_FORMAT_VERSION) {
             if (resources == null) {
                 resourceChainKeyNames.forEach { name -> effectiveValues[name] = RejectedValue }
             } else {
-                val installed = portableResourceInventory(resources)
+                val installed = chainEligibleInventory(resources, targetLanguage)
                 resourceChainKeyNames.forEach { name ->
                     val resolved =
                         resolvePortableResourceChain(
@@ -684,6 +687,27 @@ internal object SettingsBackupCodec {
                         )
                     },
         )
+
+    /**
+     * [portableResourceInventory] narrowed to the slots a [language] chain may name, by the rule
+     * [ResourceManagerState.usableDictionaryIds] and its siblings own: another language's slot never
+     * enters the chain, so it can neither make a match ambiguous nor be appended to it.
+     */
+    private fun chainEligibleInventory(
+        resources: ResourceManagerState,
+        language: String,
+    ): Map<String, List<ResourceInventoryEntry>> {
+        val eligibleIds =
+            mapOf(
+                "dictionary_sources_v1" to resources.usableDictionaryIds(language).toSet(),
+                "frequency_sources_v1" to resources.usableFrequencyIds(language).toSet(),
+                "pitch_sources_v1" to resources.usablePitchIds(language).toSet(),
+                "audio_packs_v1" to resources.usableAudioPackIds(language).toSet(),
+            )
+        return portableResourceInventory(resources).mapValues { (name, entries) ->
+            entries.filter { it.resourceId in eligibleIds.getValue(name) }
+        }
+    }
 
     private fun dictionaryMatchKey(dictionary: InstalledDictionary): String =
         dictionary.catalogResourceId?.let { resourceId ->
