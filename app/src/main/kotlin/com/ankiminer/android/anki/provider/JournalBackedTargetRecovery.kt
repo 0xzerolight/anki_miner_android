@@ -237,7 +237,9 @@ internal class JournalBackedTargetRecoveryGate(
         val card =
             try {
                 cards.readById(command.cardId, AnkiCancellation.NONE)
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                // An unreadable provider says nothing about the card; the gate stays closed.
+                if (failure.isProviderAccessLoss()) throw failure
                 return ObservedCardRecovery(CardRecoveryObservation.UNVERIFIABLE_IDENTITY_OR_DECK)
             }
         if (card.id != command.cardId || card.noteId != command.noteId || card.ordinal != command.ordinal) {
@@ -547,7 +549,8 @@ internal class JournalBackedTargetRecoveryGate(
                 if (byId != byName) return null
             }
             TargetSnapshot(byName, model)
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            if (failure.isProviderAccessLoss()) throw failure
             null
         }
     }
