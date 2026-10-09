@@ -1603,7 +1603,8 @@ internal class AndroidResourceManager(
                     ),
                 )
             mutableState.update {
-                it.copy(lastLocalImport = imported)
+                // New rows shift every offset after them, as a removal's do (runKnownWordsMutation).
+                it.copy(lastLocalImport = imported, knownWordsPage = null)
             }
             try {
                 refreshAfterCommittedMutation()
@@ -1668,25 +1669,34 @@ internal class AndroidResourceManager(
         ) { operation ->
             operation.cancellation.check()
             operation.pythonStarted.set(true)
-            val page =
+            fun list(from: Int): KnownWordsPage =
                 ResourceBridgeCodec.decodeKnownWordsPage(
                     bridge.dispatch(
                         ResourceBridgeCodec.encodeKnownWordsListRequest(
                             operation.id,
                             query,
-                            offset,
+                            from,
                             KNOWN_WORD_PAGE_SIZE,
                             language = activeLanguage(),
                         ),
                         null,
                     ),
                 )
+            var from = offset
+            var page = list(from)
+            // Words added since the loaded prefix (a curation's mark-known) move every offset after
+            // them, so a continuation would repeat or skip rows: start over from the top.
+            if (from > 0 && page.totalCount != current?.totalCount) {
+                from = 0
+                page = list(from)
+            }
             mutableState.update { state ->
                 val previous = state.knownWordsPage
                 state.copy(
                     knownWordsPage =
-                        if (offset > 0 && previous?.query == query) {
-                            page.copy(words = previous.words + page.words)
+                        if (from > 0 && previous?.query == query) {
+                            // The list keys rows by word, and a repeated key crashes it.
+                            page.copy(words = (previous.words + page.words).distinct())
                         } else {
                             page
                         },
