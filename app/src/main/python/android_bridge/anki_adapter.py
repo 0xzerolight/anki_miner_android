@@ -1955,6 +1955,10 @@ class AndroidAnkiAdapter:
                 if all(binding.asset_id != asset_id for binding in bindings):
                     bindings.append(acknowledgement)
 
+        if outcome.error is not None and outcome.error.code == "cancelled":
+            # The stop lands before this batch's notes go out, so no created
+            # card is missing the assets it left unstored.
+            _raise_callback_error(outcome.error)
         self.last_media_store_failures += len(prepared.refs) - len(renamed_originals)
         if outcome.error is not None:
             _raise_callback_error(outcome.error)
@@ -2336,6 +2340,9 @@ class AndroidAnkiAdapter:
                 purpose="dictionary",
                 media_kind=asset.media_kind,
             )
+        if outcome.error is not None and outcome.error.code == "cancelled":
+            # As for card media: the interrupted batch is never submitted.
+            _raise_callback_error(outcome.error)
         failed_sources = set(prepared.unavailable_sources)
         failed_sources.update(
             source for asset_id, source in prepared.sources_by_id.items() if asset_id not in outcome.stored

@@ -1,8 +1,9 @@
-"""Create calls that break a v1 size ceiling (AU-028).
+"""Create calls that break a v1 size ceiling (AU-028), and a Stop mid-call (AU-026).
 
 A note over a per-note limit is skipped and the rest are created; a call over a
 byte budget is created in sequential sub-calls; any other invalid note still
-fails the whole call before a write.
+fails the whole call before a write. A Stop after a commit returns the written
+notes and reports nothing about the batch it interrupted.
 """
 
 from __future__ import annotations
@@ -281,3 +282,52 @@ def test_stop_between_sub_calls_returns_the_committed_notes(
 
     assert adapter.create_cards_batch([_card("猫"), _card("鳥")]) == [1000]
     assert _keys(kotlin) == [["猫"]]
+
+
+def test_stop_during_a_later_media_upload_reports_no_media_failure(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+) -> None:
+    from anki_miner.models import MediaData
+
+    cards = []
+    for index in range(101):
+        audio = tmp_path / f"clip-{index}.opus"
+        audio.write_bytes(f"audio-{index}".encode())
+        cards.append(_card(f"語{index}", media=MediaData(audio_path=audio, audio_filename=audio.name)))
+    kotlin = FakeKotlinAnki()
+    # Stop lands after batch 1 committed and batch 2's duplicate probe, so it
+    # interrupts batch 2's media upload.
+    adapter = _adapter(
+        _config(initialized_bridge_home),
+        kotlin,
+        cancellation_check=lambda: len(kotlin.requests_for("ankiScanFirstFields")) >= 2,
+    )
+
+    assert adapter.create_cards_batch(cards) == list(range(1000, 1100))
+
+    assert len(kotlin.requests_for("ankiCreateNotes")) == 1
+    # Batch 2's notes never went out, so no created card is missing media.
+    assert adapter.last_media_store_failures == 0
+
+
+def test_stop_during_a_later_dictionary_upload_reports_no_media_failure(
+    initialized_bridge_home: Path,
+) -> None:
+    cards = []
+    for index in range(101):
+        _source, definition = _shared_dictionary_image(initialized_bridge_home, f"stop-upload-{index}.png")
+        cards.append(_card(f"語{index}", definition=definition))
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(
+        _config(initialized_bridge_home),
+        kotlin,
+        cancellation_check=lambda: len(kotlin.requests_for("ankiScanFirstFields")) >= 2,
+    )
+
+    created = adapter.create_cards_batch(cards)
+
+    # Worst-case binding headroom makes batch 1 smaller than 100 notes.
+    (first_create,) = kotlin.requests_for("ankiCreateNotes")
+    assert created == list(range(1000, 1000 + len(first_create["payload"]["notes"])))
+    assert adapter.last_media_store_failures == 0
