@@ -140,8 +140,10 @@ class ExoCurationPreviewPlayer(
     }
 
     override fun bind(uri: Uri, audioTrackOverride: Long?) {
-        cancelRangeStop()
+        // Same media and track: nothing changes, so a clip playing on it keeps its stop. The inline
+        // frame binds again every time scrolling composes it.
         if (boundUri == uri && this.audioTrackOverride == audioTrackOverride) return
+        cancelRangeStop()
         boundUri = uri
         this.audioTrackOverride = audioTrackOverride
         mutableFailure.value = null

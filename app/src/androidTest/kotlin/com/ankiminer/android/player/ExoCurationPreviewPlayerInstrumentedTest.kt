@@ -331,6 +331,67 @@ class ExoCurationPreviewPlayerInstrumentedTest {
         }
     }
 
+    @Test
+    fun aSameMediaBindKeepsTheClipStopArmed() {
+        val fixture = createFixture()
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val ready = CountDownLatch(1)
+        val playbackError = AtomicReference<PlaybackException?>()
+        val listener =
+            object : Player.Listener {
+                override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playbackState == Player.STATE_READY) ready.countDown()
+                }
+
+                override fun onPlayerError(error: PlaybackException) {
+                    playbackError.set(error)
+                }
+            }
+        lateinit var player: ExoCurationPreviewPlayer
+
+        instrumentation.runOnMainSync { player = ExoCurationPreviewPlayer(context) }
+        try {
+            instrumentation.runOnMainSync {
+                player.media3Player.addListener(listener)
+                player.bind(Uri.fromFile(fixture))
+            }
+            assertTrue(
+                "Player did not reach STATE_READY for the rebind fixture",
+                ready.await(READY_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+            )
+
+            instrumentation.runOnMainSync { player.playRange(RANGE_START_SECONDS, RANGE_END_SECONDS) }
+            assertTrue(
+                "Ranged playback never started",
+                awaitIsPlaying(player, expected = true, timeoutSeconds = PLAYING_TIMEOUT_SECONDS),
+            )
+            // The inline frame binds again whenever scrolling composes it. Nothing changes, so
+            // the clip must still stop at its out point.
+            instrumentation.runOnMainSync { player.bind(Uri.fromFile(fixture)) }
+            assertTrue(
+                "Playback never stopped after the same-media bind",
+                awaitIsPlaying(player, expected = false, timeoutSeconds = FULL_PLAYBACK_TIMEOUT_SECONDS),
+            )
+            assertNull(
+                "Ranged playback raised an error: ${playbackError.get()}",
+                playbackError.get(),
+            )
+
+            val outPointMillis = (RANGE_END_SECONDS * MILLIS_PER_SECOND).toLong()
+            val stoppedAtMillis = mainThreadPositionMillis(instrumentation, player)
+            assertTrue(
+                "The same-media bind cancelled the clip stop; playback ran to ${stoppedAtMillis}ms",
+                stoppedAtMillis <= outPointMillis + RANGE_POSITION_TOLERANCE_MILLIS,
+            )
+        } finally {
+            instrumentation.runOnMainSync {
+                player.media3Player.removeListener(listener)
+                player.release()
+            }
+        }
+    }
+
     private fun awaitIsPlaying(
         player: ExoCurationPreviewPlayer,
         expected: Boolean,
