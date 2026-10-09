@@ -34,15 +34,17 @@ class _KnownWords:
         return set(words)
 
 
-def _words(count: int) -> list[Any]:
+def _words(count: int, *, oversized_sentence_at: int | None = None) -> list[Any]:
+    from android_bridge.anki_adapter import _MAX_FIELD_VALUE_UTF8_BYTES
     from anki_miner.models import TokenizedWord
 
+    oversized = "あ" * (_MAX_FIELD_VALUE_UTF8_BYTES // 3 + 1)
     return [
         TokenizedWord(
             surface=f"語{index}",
             lemma=f"語{index}",
             reading="ゴ",
-            sentence="猫を見る。",
+            sentence=oversized if index == oversized_sentence_at else "猫を見る。",
             start_time=1.0,
             end_time=3.0,
             duration=2.0,
@@ -141,3 +143,31 @@ def test_stop_reported_inside_a_create_callback_ends_cancelled(
     (create,) = kotlin.requests_for("ankiCreateNotes")
     assert known.added == [(_written_keys(create, created=1), "mined")]
     assert cancel_event.is_set()
+
+
+def test_note_over_a_size_limit_is_skipped_and_the_run_succeeds(
+    tmp_path: Path,
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # One curated word's sentence passes the per-field limit. Desktop creates
+    # every other card; so must the run.
+    known = _KnownWords()
+    result, kotlin, _presenter = _run(
+        tmp_path,
+        initialized_bridge_home,
+        monkeypatch,
+        translation=None,
+        offset_ms=0,
+        words=_words(4, oversized_sentence_at=1),
+        known_word_db=known,
+    )
+    from anki_miner.models.processing import MiningOutcome, classify_result
+
+    assert classify_result(result) is MiningOutcome.SUCCESS
+    assert result.cards_created == 3
+    (create,) = kotlin.requests_for("ankiCreateNotes")
+    written = _written_keys(create, created=3)
+    assert len(written) == 3
+    assert "語1" not in written
+    assert known.added == [(written, "mined")]

@@ -3269,13 +3269,18 @@ def test_create_call_aggregate_built_note_utf8_limit_is_pre_callback(
     )
     cards = [replace(_card(f"語{index}"), extra_fields={"source": "&" * 15_000}) for index in range(225)]
     kotlin = FakeKotlinAnki()
+    adapter = _adapter(config, kotlin)
 
     assert 225 * len(html.escape("&" * 15_000).encode("utf-8")) > (_MAX_CREATE_CALL_NOTE_UTF8_BYTES)
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(config, kotlin).create_cards_batch(cards)
+        adapter._preflight_create_call(cards)
 
     assert exc_info.value.code == "create_call_too_large"
     assert not kotlin.requests
+    # The audit's large reading-lane selection: create_cards_batch splits the
+    # call instead of failing every card (AU-028).
+    assert adapter.create_cards_batch(cards) == list(range(1000, 1225))
+    assert len(kotlin.requests_for("ankiCreateNotes")) > 1
 
 
 def test_card_provider_filename_headroom_is_reserved_before_callbacks(
@@ -3313,7 +3318,7 @@ def test_card_provider_filename_headroom_is_reserved_before_callbacks(
 
     assert current_content_bytes < _MAX_CREATE_CALL_NOTE_UTF8_BYTES
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(config, kotlin).create_cards_batch(cards)
+        _adapter(config, kotlin)._preflight_create_call(cards)
 
     assert exc_info.value.code == "create_call_too_large"
     assert not kotlin.requests
@@ -3339,31 +3344,20 @@ def test_dictionary_provider_filename_headroom_is_reserved_before_callbacks(
 
 def test_create_call_media_reference_limit_counts_marked_dictionary_html(
     initialized_bridge_home: Path,
-    tmp_path: Path,
 ) -> None:
-    from anki_miner.models import MediaData
-
-    missing = tmp_path / "missing.bin"
-    media = MediaData(
-        screenshot_path=missing,
-        screenshot_filename="picture.png",
-        audio_path=missing,
-        audio_filename="sentence.opus",
-        expression_audio_path=missing,
-        expression_audio_filename="expression.opus",
-    )
+    # Every marked reference counts, repeats included, and no note breaks a
+    # per-note limit, so the call fails on the reference cap itself. The cap
+    # stays call-wide when a call is split: it stands in for Kotlin's per-run
+    # cap on distinct stored assets.
     marked = '<img class="anki-miner-dict-media" src="dict__pic.png">'
+    per_card = _MAX_FIELD_VALUE_UTF8_BYTES // len(marked.encode("utf-8"))
     cards = [
-        _card(
-            f"語{index}",
-            definition=marked * (2 if index == 0 else 1),
-            media=media,
-        )
-        for index in range(_MAX_CREATE_CALL_SOURCE_ITEMS)
+        _card(f"語{index}", definition=marked * per_card)
+        for index in range(_MAX_CREATE_CALL_MEDIA_REFS // per_card + 1)
     ]
     kotlin = FakeKotlinAnki()
 
-    with pytest.raises(BridgeProtocolError) as exc_info:
+    with pytest.raises(BridgeProtocolError, match="too many media references") as exc_info:
         _adapter(_config(initialized_bridge_home), kotlin).create_cards_batch(cards)
 
     assert _MAX_CREATE_CALL_MEDIA_REFS == 8_000
@@ -3433,7 +3427,7 @@ def test_create_call_total_media_bytes_are_bounded_before_hashing_or_callback(
     config = replace(base, anki_fields={**base.anki_fields, "expression_audio": "WordAudio"})
 
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(config, kotlin).create_cards_batch(cards)
+        _adapter(config, kotlin)._preflight_create_call(cards)
 
     assert _MAX_CREATE_CALL_MEDIA_BYTES == 8 * _MAX_MEDIA_ASSET_BYTES
     assert exc_info.value.code == "create_call_too_large"
@@ -3468,7 +3462,7 @@ def test_create_call_media_bytes_count_distinct_logical_names_separately(
     config = replace(base, anki_fields={**base.anki_fields, "expression_audio": "WordAudio"})
 
     with pytest.raises(BridgeProtocolError) as exc_info:
-        _adapter(config, kotlin).create_cards_batch(cards)
+        _adapter(config, kotlin)._preflight_create_call(cards)
 
     assert exc_info.value.code == "create_call_too_large"
     assert not kotlin.requests
