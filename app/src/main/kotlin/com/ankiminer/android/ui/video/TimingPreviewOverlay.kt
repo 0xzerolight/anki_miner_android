@@ -66,6 +66,7 @@ internal fun TimingPreviewOverlay(
     onApply: () -> Unit,
     onCancel: () -> Unit,
     audioOnly: Boolean = false,
+    audioTrackOverride: Long? = null,
     modifier: Modifier = Modifier,
     playerFactory: (Context) -> CurationPreviewPlayer =
         LocalMiningContentStyle.current.audioTrackCodes.let { codes ->
@@ -131,6 +132,7 @@ internal fun TimingPreviewOverlay(
                 collapsed = collapsed,
                 onToggleCollapsed = { collapsed = !collapsed },
                 audioOnly = audioOnly,
+                audioTrackOverride = audioTrackOverride,
             )
             LazyColumn(
                 modifier =
@@ -256,6 +258,7 @@ private fun TimingPreviewVideo(
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
     audioOnly: Boolean,
+    audioTrackOverride: Long?,
 ) {
     when (seekable) {
         null ->
@@ -277,6 +280,7 @@ private fun TimingPreviewVideo(
                 collapsed = collapsed,
                 onToggleCollapsed = onToggleCollapsed,
                 audioOnly = audioOnly,
+                audioTrackOverride = audioTrackOverride,
             )
         false ->
             Box(

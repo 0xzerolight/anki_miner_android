@@ -186,11 +186,26 @@ class TimingPreviewOverlayTest {
         }
     }
 
+    @Test
+    fun previewBindsTheAudioTrackTheRunWillMine() {
+        val fake = FakeCurationPreviewPlayer()
+        var state by mutableStateOf(state())
+        setOverlay(
+            fake = fake,
+            state = { state },
+            update = { state = it },
+            audioTrackOverride = 1L,
+        )
+
+        composeRule.runOnIdle { assertEquals(listOf<Long?>(1L), fake.boundOverrides) }
+    }
+
     private fun setOverlay(
         fake: FakeCurationPreviewPlayer,
         state: () -> TimingPreviewState,
         update: (TimingPreviewState) -> Unit,
         seekable: Boolean = true,
+        audioTrackOverride: Long? = null,
     ) {
         composeRule.setContent {
             AnkiMinerTheme {
@@ -204,6 +219,7 @@ class TimingPreviewOverlayTest {
                     onToggleUnshifted = { update(current.toggleUnshifted()) },
                     onApply = {},
                     onCancel = {},
+                    audioTrackOverride = audioTrackOverride,
                     playerFactory = { fake },
                     seekabilityProbe = { _, _ -> seekable },
                 )
