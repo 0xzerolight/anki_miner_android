@@ -80,6 +80,36 @@ All notable project changes will be recorded here. The format follows [Keep a Ch
 - **The timing preview stays clear of the system bars (Video tab).**
 - **The Audio tab calls its subtitle file Subtitles, and a wrong subtitle file type names the accepted formats.**
 - **The community links in the Settings header stay on one line.**
+- **Runs on Android 14 no longer fail right after curation, and cancelling just after confirming curation no longer crashes the app.**
+- **Long books reach curation without failing or stalling, and Cancel responds while they load.** A word on very many lines lists only its earliest sentences.
+- **A note too large for AnkiDroid is skipped instead of failing every card in the run, and very large selections no longer fail.**
+- **A deck name or tag that differs from AnkiDroid's only in capitals, or in spacing around `::`, no longer fails every run.**
+- **Stopping a run during card creation reports it as cancelled, not failed, and marks the words of the cards already added as known.**
+- **Damaged saved settings no longer crash the app at launch.**
+- **Several runs in a row no longer fail or crash the app on older Android versions.**
+- **A settings file saved or loaded while resources are still loading keeps your dictionary choices (Settings -> Diagnostics).**
+- **Decks named with emoji sequences can be picked, and decks the app cannot use are hidden with a note instead of failing to save.**
+- **A card interrupted on its way to the target deck gets there once AnkiDroid is reachable again.**
+- **An Undo interrupted while deleting notes stays offered until it has also taken the run's words back out of known words.**
+- **A first field holding an invisible formatting mark, such as a zero-width space, no longer fails the run at card creation.**
+- **A file or series name with one of the newest emoji no longer fails every run on Android 16.**
+- **Manga and EPUB cards no longer lose their pictures when Android clears the app's cache during a run (Reading tab).**
+- **Picking a file no longer fails while another file copies, or crashes the app when the file cannot be read.**
+- **An import no longer hangs when a cloud or USB source stalls.**
+- **Import buttons keep working after Android closes the app while it checks a custom dictionary (Settings -> Resources).**
+- **Manage known words reloads its list after Remove selected or Reset, and Load more no longer crashes the app (Settings -> Word filters).**
+- **Star, Discord, View release and the attribution links no longer crash the app on a device with no browser.**
+- **Retry after a failed settings save or word-list removal repeats it instead of opening a file picker.**
+- **Test timing and the curation preview play the audio track the cards are made from.**
+- **The curation definition pane shows each word's own entry when two words share a reading, such as 言う and 結う.**
+- **Rotating the phone or switching tabs no longer scrolls curation, or a finished run's result, back to the top.**
+- **In landscape, Test timing keeps Apply, Cancel and the cue list on screen (Video tab).**
+- **The file rows wait while Audio tracks loads instead of silently dropping a file picked meanwhile (Video tab).**
+- **The Audio tab accepts audio files whose names lack an extension, such as those from the picker's Audio section.**
+- **A link in an imported dictionary can no longer open an outside website from a card.**
+- **The diagnostics bundle no longer names the dictionary images on your cards (Settings -> Diagnostics).**
+- **Third-party notices show licence texts as written, section numbers included.**
+- **A Reading run that runs out of memory while the device voice speaks sentences stops instead of making cards without audio.**
 
 ## [1.1.0] - 2026-09-08
 
