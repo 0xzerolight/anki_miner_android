@@ -107,16 +107,16 @@ internal class LogRedactor(private val rules: RedactionRules) {
      * Per-kind token counts for the bundle manifest. The mapping itself is never exposed — emitting
      * it would undo the whole exercise.
      *
-     * Pattern kinds (`path`, `file`, `doc`, `text`, `jp`, `jp-enc`, `user`) count distinct values
-     * actually found in the text redacted so far. Literal kinds (`saf`, `deck`, `notetype`, `field`,
-     * `tag`) count the literals registered for redaction, whether or not they occurred: their tokens
-     * are minted once when the rules are built.
+     * Pattern kinds (`arg`, `path`, `file`, `doc`, `text`, `jp`, `jp-enc`, `script`, `script-enc`,
+     * `user`) count distinct values actually found in the text redacted so far. Literal kinds (`saf`,
+     * `deck`, `notetype`, `field`, `tag`) count the literals registered for redaction, whether or not
+     * they occurred: their tokens are minted once when the rules are built.
      *
      * `path`, `file` and `doc` under-report where a match crossed a space: text absorbed past the
      * path is hashed as one `text` token, so a second path or a Japanese run that followed a bare
      * path on the same line is counted there instead of under its own kind.
      *
-     * The `:n` suffix on a `jp` token is a code point count. See where it is minted for why.
+     * The `:n` suffix on a `jp` or `script` token is a code point count. See where it is minted for why.
      */
     fun tokenCounts(): Map<String, Int> = rules.tokens.counts()
 }
@@ -439,6 +439,16 @@ internal object RedactionRulesFactory {
             }
         }
 
+        // Rule 0. One argument of a verbose engine record, which the bridge wrote between ⟦ and ⟧
+        // (log_context.DefaultLogPrivacyFilter). Latin-script vocabulary has no pattern a rule could
+        // match, so the bridge marks every engine payload and the span is hashed whole, whatever it
+        // holds. It runs first under every grammar: a path or script rule matching inside a span
+        // would split it and leave the rest of the span open.
+        val marked = { match: MatchResult ->
+            val payload = match.value.removePrefix(SENTINEL_OPEN).removeSuffix(SENTINEL_CLOSE)
+            tokens.token("arg", unquoted(payload))
+        }
+
         // Rules 5 to 9 read the same under every line grammar, so they are built once and appended
         // to each list rather than duplicated.
         val shared =
@@ -467,15 +477,26 @@ internal object RedactionRulesFactory {
                     },
                 )
                 add(
+                    OTHER_SCRIPT_RUN to { match ->
+                        // Rule 7b, the same shape as rule 7: normalized first so the code point count
+                        // is measured on the string the memo is keyed by.
+                        val normalized = Normalizer.normalize(match.value, Normalizer.Form.NFC)
+                        val length = normalized.codePointCount(0, normalized.length)
+                        tokens.token("script", normalized, detail = length.toString())
+                    },
+                )
+                add(
                     PERCENT_RUN to { match ->
                         val decoded = decodePercentRun(match.value)
                         // Rule 7 is blind to percent-encoding, and urllib3 logs Jisho request URLs
                         // as ?keyword=%E6%AE%BA%E3%81%99. Task 2 pins those loggers, but a bundle
-                        // also carries logcat, which third-party code writes to freely.
-                        if (decoded == null || !containsJapanese(decoded)) {
-                            match.value
-                        } else {
-                            tokens.token("jp-enc", decoded)
+                        // also carries logcat, which third-party code writes to freely. Rule 7b's
+                        // scripts get the same treatment under their own kind.
+                        when {
+                            decoded == null -> match.value
+                            containsJapanese(decoded) -> tokens.token("jp-enc", decoded)
+                            containsOtherScript(decoded) -> tokens.token("script-enc", decoded)
+                            else -> match.value
                         }
                     },
                 )
@@ -487,6 +508,7 @@ internal object RedactionRulesFactory {
 
         val recordPatterns =
             listOf(
+                MARKED_SPAN to marked,
                 QUOTED_ABSOLUTE_PATH to path,
                 RECORD_ABSOLUTE_PATH to path,
                 QUOTED_APP_ROOT_LEAF to leafOf,
@@ -496,12 +518,14 @@ internal object RedactionRulesFactory {
             ) + shared
         val continuationPatterns =
             listOf(
+                MARKED_SPAN to marked,
                 CONTINUATION_ABSOLUTE_PATH to path,
                 CONTINUATION_APP_ROOT_LEAF to leafOf,
                 CONTINUATION_CONTENT_URI to documentId,
             ) + shared
         val unstructuredPatterns =
             listOf(
+                MARKED_SPAN to marked,
                 UNSTRUCTURED_ABSOLUTE_PATH to path,
                 UNSTRUCTURED_APP_ROOT_LEAF to leafOf,
                 UNSTRUCTURED_CONTENT_URI to documentId,
@@ -911,8 +935,76 @@ private val JAPANESE_RUN =
             "\\x{30000}-\\x{3134F}\\x{31350}-\\x{323AF}\\x{2F800}-\\x{2FA1F}]+",
     )
 
-/** Rule 8. Three triplets minimum: one CJK character is three bytes in UTF-8. */
-private val PERCENT_RUN = Regex("(?:%[0-9A-Fa-f]{2}){3,}")
+/**
+ * Rule 8. Two triplets minimum: a Cyrillic, Greek, Hebrew or Arabic letter is two bytes in UTF-8,
+ * and a one-letter word is still a word. A run that decodes to ASCII is declined, so a short one
+ * costs a decode and nothing else.
+ */
+private val PERCENT_RUN = Regex("(?:%[0-9A-Fa-f]{2}){2,}")
+
+/** What the bridge writes around one verbose engine argument (`log_context.SENTINEL_OPEN`/`_CLOSE`). */
+private const val SENTINEL_OPEN = "⟦"
+private const val SENTINEL_CLOSE = "⟧"
+
+/**
+ * Rule 0. The bridge strips both sentinels from the payload, so the first close ends the span. A
+ * span that never closes runs to the end of the line, or to the next span's open, because a record
+ * cut short must not publish the rest of its argument. The second alternative is a line that starts
+ * inside a span, which a long stderr dump wrapped across logcat lines produces.
+ */
+private val MARKED_SPAN =
+    Regex("\\u27E6[^\\u27E6\\u27E7]*+(?:\\u27E7|$|(?=\\u27E6))|^[^\\u27E6\\u27E7]*+\\u27E7")
+
+/**
+ * The payload of a marked span without the one pair of quotes `%r` adds, so the `%r` and the `%s`
+ * of one word share a token. Inside a Python message a double quote is written escaped (`\"`).
+ */
+private fun unquoted(payload: String): String =
+    when {
+        payload.length >= 4 && payload.startsWith("\\\"") && payload.endsWith("\\\"") ->
+            payload.substring(2, payload.length - 2)
+        payload.length >= 2 && payload.first() == payload.last() && payload.first() in "'\"" ->
+            payload.substring(1, payload.length - 1)
+        else -> payload
+    }
+
+/**
+ * Rule 7b. The other non-Latin scripts the mining languages write in: Greek (el), Cyrillic (ru, uk),
+ * Hebrew (he), Arabic (ar, fa), Thai (th) and Hangul (ko). Han and kana stay with rule 7, whose
+ * token says `jp`. Latin-script vocabulary has no pattern at all; rule 0 is what hides it.
+ *
+ * One list feeds both the run pattern and [containsOtherScript], so rules 7b and 8 cannot drift.
+ * Every range is in the BMP, so the class needs no surrogate handling.
+ */
+private val OTHER_SCRIPT_RANGES: List<IntRange> =
+    listOf(
+        0x0370..0x03FF, // Greek and Coptic
+        0x1F00..0x1FFF, // Greek Extended
+        0x0400..0x052F, // Cyrillic, Cyrillic Supplement
+        0x1C80..0x1C8F, // Cyrillic Extended-C
+        0x2DE0..0x2DFF, // Cyrillic Extended-A
+        0xA640..0xA69F, // Cyrillic Extended-B
+        0x0590..0x05FF, // Hebrew
+        0xFB1D..0xFB4F, // Hebrew presentation forms
+        0x0600..0x06FF, // Arabic
+        0x0750..0x077F, // Arabic Supplement
+        0x0870..0x08FF, // Arabic Extended-B and -A
+        0xFB50..0xFDFF, // Arabic Presentation Forms-A
+        0xFE70..0xFEFC, // Arabic Presentation Forms-B, short of the U+FEFF byte order mark
+        0x0E00..0x0E7F, // Thai
+        0x1100..0x11FF, // Hangul Jamo
+        0x3130..0x318F, // Hangul Compatibility Jamo
+        0xA960..0xA97F, // Hangul Jamo Extended-A
+        0xAC00..0xD7FF, // Hangul Syllables, Hangul Jamo Extended-B
+        0xFFA0..0xFFDC, // Halfwidth Hangul
+    )
+
+private val OTHER_SCRIPT_RUN =
+    Regex(
+        OTHER_SCRIPT_RANGES.joinToString(separator = "", prefix = "[", postfix = "]+") { range ->
+            "\\x{${range.first.toString(16)}}-\\x{${range.last.toString(16)}}"
+        },
+    )
 
 /** Rule 9. */
 private val EMULATED_USER = Regex("/storage/emulated/(\\d+)")
@@ -1032,6 +1124,17 @@ private fun isJapanese(codePoint: Int): Boolean =
         codePoint in 0x30000..0x3134F ||
         codePoint in 0x31350..0x323AF ||
         codePoint in 0x2F800..0x2FA1F
+
+/** Whether [text] holds a code point from rule 7b's scripts; the percent-decoding twin of it. */
+private fun containsOtherScript(text: String): Boolean {
+    var index = 0
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        if (OTHER_SCRIPT_RANGES.any { codePoint in it }) return true
+        index += Character.charCount(codePoint)
+    }
+    return false
+}
 
 /**
  * Decodes a run of percent triplets. Malformed bytes become U+FFFD rather than failing the whole

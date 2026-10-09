@@ -5345,8 +5345,12 @@ def test_cross_run_media_refusal_log_names_both_colliding_assets(
     incoming = current_kotlin.requests_for("ankiStoreMedia")[0]["payload"]["assets"][0]
     mapping = next(message for message in caplog.messages if message.startswith("Stored media asset"))
     refusal = next(message for message in caplog.messages if message.startswith("Failed to store media asset"))
-    assert mapping == f"Stored media asset old-clip.opus [{held['assetId']}] as {held_actual}"
-    assert f"current-clip.opus [{incoming['assetId']}]" in refusal
+    # Ids, purpose and kind only: a card media name starts with the mined form (AU-005). The
+    # held id still resolves through the earlier run's mapping line (AM2-143).
+    assert mapping == f"Stored media asset [{held['assetId']}] purpose=card kind=audio"
+    assert refusal.startswith(f"Failed to store media asset [{incoming['assetId']}] purpose=card kind=audio: ")
+    assert "clip.opus" not in mapping + refusal
+    assert held_actual not in mapping
     assert f"held={held['assetId']}" in refusal
     assert f"incoming={incoming['assetId']}" in refusal
     assert "sameRun=false" in refusal

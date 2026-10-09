@@ -22,6 +22,11 @@ class InstrumentationAuditTest(unittest.TestCase):
         self._write(root, "tools/instrumentation/bare_catch_allowlist.tsv", "path\tlines\treason\n")
         self._write(root, "app/src/main/kotlin/example/Safe.kt", "package example\n")
         self._write(root, "app/src/main/python/android_bridge/safe.py", "value = 1\n")
+        self._write(
+            root,
+            "app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogRecord.kt",
+            'internal val ALLOWED_OUTCOMES = setOf("ok", "fail", "skip", "ignored")\n',
+        )
         self._write(root, "app/src/main/python/android_bridge/faults.py", f'FAULT_ID_PATTERN = r"{FAULT_PATTERN}"\n')
         self._write(
             root,
@@ -278,6 +283,82 @@ class InstrumentationAuditTest(unittest.TestCase):
         result = self._run_audit(root)
 
         self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_outcome_value_outside_the_wire_domain_fails(self) -> None:
+        # validateRecordGrammar require()s the value, so an illegal one degrades the record exactly
+        # like a missing one: AppLog.emit keeps class names and loses the payload. Six sites shipped
+        # "reconcile" and "page_image_decode_failed" that way. Field lists built outside the call,
+        # `d` lambdas and multi-line value expressions reach the same require(), so they count too.
+        cases = {
+            "vararg": (
+                'fun report() = AppLog.w(LogComponent.JOURNAL, "note.complete", error, "outcome" to "reconcile")\n',
+                1,
+            ),
+            "debug-lambda": (
+                'fun report() = AppLog.d(LogComponent.MEDIA, "preview") { arrayOf("outcome" to "reconcile") }\n',
+                1,
+            ),
+            "built-list": ('val fields =\n    listOf(\n        "outcome" to "reconcile",\n    )\n', 3),
+            "when-branch": (
+                "fun report(state: Int) =\n"
+                "    AppLog.i(\n"
+                "        LogComponent.MINING,\n"
+                '        "run.terminal",\n'
+                '        "outcome" to\n'
+                "            when (state) {\n"
+                '                0 -> "ok"\n'
+                '                else -> "reconcile"\n'
+                "            },\n"
+                '        "code" to "not_an_outcome",\n'
+                "    )\n",
+                8,
+            ),
+        }
+        for label, (source, line) in cases.items():
+            with self.subTest(case=label):
+                root = self._new_repo()
+                relative = "app/src/main/kotlin/example/Journal.kt"
+                self._write(root, relative, source)
+
+                result = self._run_audit(root)
+
+                self.assertNotEqual(0, result.returncode)
+                self.assertIn(
+                    f'{relative}:{line}: "outcome" value "reconcile" is outside LogRecord.ALLOWED_OUTCOMES',
+                    result.stderr,
+                )
+                # Only the outcome's own value expression is read, never the next field.
+                self.assertNotIn("not_an_outcome", result.stderr)
+
+    def test_outcome_value_in_the_domain_or_outside_code_passes(self) -> None:
+        cases = {
+            "legal-with-label": (
+                'fun report() = AppLog.i(LogComponent.MEDIA, "p", "outcome" to "skip", "result" to "reconcile")\n'
+            ),
+            "comment": '// "outcome" to "reconcile" was the AU-060 shape\nval answer = 1\n',
+            "raw-string": 'val doc = """ "outcome" to "reconcile" """\n',
+            "computed": (
+                'fun report(ok: Boolean) = AppLog.i(LogComponent.MEDIA, "p", "outcome" to if (ok) "ok" else "skip")\n'
+            ),
+            "variable": 'fun report(outcome: String) = AppLog.i(LogComponent.MEDIA, "p", "outcome" to outcome)\n',
+        }
+        for label, source in cases.items():
+            with self.subTest(case=label):
+                root = self._new_repo()
+                self._write(root, "app/src/main/kotlin/example/Journal.kt", source)
+
+                result = self._run_audit(root)
+
+                self.assertEqual(0, result.returncode, result.stderr)
+
+    def test_a_missing_outcome_domain_fails_closed(self) -> None:
+        root = self._new_repo()
+        (root / "app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogRecord.kt").unlink()
+
+        result = self._run_audit(root)
+
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("cannot read the AppLog outcome domain", result.stderr)
 
     def test_official_host_gates_invoke_the_instrumentation_audit(self) -> None:
         for relative in ("scripts/health.sh", ".github/workflows/pull-request.yml"):

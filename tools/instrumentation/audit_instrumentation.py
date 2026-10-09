@@ -54,6 +54,10 @@ DIRECT_LOG_CONSOLE_PATTERNS = (
 # cannot read. `state`, `ignored` and `boundary` supply the field themselves.
 APPLOG_VARARG_PATTERN = re.compile(r"\bAppLog\s*\.\s*(?:i|w|e)\s*\(")
 SPREAD_ARGUMENT_PATTERN = re.compile(r"\*\s*[A-Za-z_]")
+LOG_RECORD_PATH = Path("app/src/main/kotlin/com/ankiminer/android/diagnostics/log/LogRecord.kt")
+ALLOWED_OUTCOMES_PATTERN = re.compile(r"\bALLOWED_OUTCOMES\s*=\s*setOf\(([^)]*)\)")
+OUTCOME_KEY_PATTERN = re.compile(r'"outcome"(?P<infix>\s+to\b)')
+KOTLIN_STRING_LITERAL = re.compile(r'"((?:[^"\\\n]|\\.)*)"')
 
 
 class InstrumentationError(ValueError):
@@ -255,7 +259,7 @@ def _has_unconditional_top_level_throw(body: str) -> bool:
     return False
 
 
-def _audit_applog_boundary(path: Path, repo_root: Path) -> list[str]:
+def _audit_applog_boundary(path: Path, repo_root: Path, allowed_outcomes: frozenset[str]) -> list[str]:
     relative = _relative(path, repo_root)
     if Path(relative) == LOGCAT_SINK_PATH:
         return []
@@ -270,6 +274,7 @@ def _audit_applog_boundary(path: Path, repo_root: Path) -> list[str]:
                 failures.append(f"{relative}:{line}: direct Log/console usage outside AppLog")
                 reported_lines.add(line)
     failures.extend(_audit_applog_outcome(source, masked, relative))
+    failures.extend(_audit_applog_outcome_values(source, masked, relative, allowed_outcomes))
     return failures
 
 
@@ -303,6 +308,71 @@ def _audit_applog_outcome(source: str, masked: str, relative: str) -> list[str]:
         if SPREAD_ARGUMENT_PATTERN.search(masked[opening : closing + 1]):
             continue
         failures.append(f"{relative}:{line}: AppLog record is missing its outcome field")
+    return failures
+
+
+def _read_allowed_outcomes(repo_root: Path) -> frozenset[str]:
+    """Read the outcome wire domain from LogRecord.kt, its single source of truth."""
+
+    try:
+        source = (repo_root / LOG_RECORD_PATH).read_text(encoding="utf-8")
+    except OSError as failure:
+        raise InstrumentationError(f"{LOG_RECORD_PATH}: cannot read the AppLog outcome domain: {failure}") from failure
+    declaration = ALLOWED_OUTCOMES_PATTERN.search(source)
+    values = frozenset(re.findall(r'"([^"\\]*)"', declaration.group(1))) if declaration else frozenset()
+    if not values:
+        raise InstrumentationError(f"{LOG_RECORD_PATH}: cannot read the AppLog outcome domain: ALLOWED_OUTCOMES")
+    return values
+
+
+def _value_expression_end(masked: str, start: int) -> int:
+    """Offset of the top-level comma or unmatched closer that ends the expression at `start`."""
+
+    closers = {")": "(", "]": "[", "}": "{"}
+    depth = 0
+    for offset in range(start, len(masked)):
+        character = masked[offset]
+        if character in "([{":
+            depth += 1
+        elif character in closers:
+            if depth == 0:
+                return offset
+            depth -= 1
+        elif character == "," and depth == 0:
+            return offset
+    return len(masked)
+
+
+def _audit_applog_outcome_values(
+    source: str,
+    masked: str,
+    relative: str,
+    allowed: frozenset[str],
+) -> list[str]:
+    """Reject a string literal in an `"outcome" to <value>` expression outside the wire domain.
+
+    `validateRecordGrammar` require()s the value at runtime, so an illegal one degrades the
+    record exactly like a missing one: AppLog.emit writes only class names and the payload,
+    stack trace included, is lost. Six sites shipped "reconcile" and "page_image_decode_failed"
+    that way. The whole file is scanned, not only the vararg calls, because `d` lambdas and
+    field lists built elsewhere reach the same check; the whole value expression is read, up to
+    its top-level comma, because `when` and `if` branches choose the value too.
+    """
+
+    failures: list[str] = []
+    for key in OUTCOME_KEY_PATTERN.finditer(source):
+        # Strings and comments are blank in the masked text, so a real field shows exactly `to`
+        # after its key; inside a comment or a larger string nothing survives masking.
+        if masked[key.start("infix") : key.end("infix")].strip() != "to":
+            continue
+        end = _value_expression_end(masked, key.end())
+        for literal in KOTLIN_STRING_LITERAL.finditer(source, key.end(), end):
+            value = literal.group(1)
+            if value not in allowed:
+                failures.append(
+                    f'{relative}:{_line_number(source, literal.start())}: "outcome" value "{value}" '
+                    f"is outside LogRecord.ALLOWED_OUTCOMES ({', '.join(sorted(allowed))})"
+                )
     return failures
 
 
@@ -621,6 +691,7 @@ def audit(repo_root: Path) -> AuditSummary:
     if not repo_root.is_dir():
         raise InstrumentationError(f"{repo_root}: repository root is not a directory")
     allowlist = _read_allowlist(repo_root)
+    allowed_outcomes = _read_allowed_outcomes(repo_root)
     failures: list[str] = []
     found_allowlist_sites: set[tuple[str, int]] = set()
     bare_catches = 0
@@ -628,7 +699,7 @@ def audit(repo_root: Path) -> AuditSummary:
         path for source_root in KOTLIN_SOURCE_ROOTS for path in (repo_root / source_root).rglob("*.kt")
     )
     for path in production_kotlin_files:
-        failures.extend(_audit_applog_boundary(path, repo_root))
+        failures.extend(_audit_applog_boundary(path, repo_root, allowed_outcomes))
 
     kotlin_files = sorted((repo_root / KOTLIN_ROOT).rglob("*.kt"))
     for path in kotlin_files:

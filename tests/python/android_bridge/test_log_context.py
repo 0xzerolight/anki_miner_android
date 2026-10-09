@@ -166,3 +166,75 @@ def test_cross_thread_record_carries_run_id_via_the_global_fallback():
     thread.join()
 
     assert results["run_id"] == _RUN_A
+
+
+def _vendored(msg: str, args: object, level: int = logging.DEBUG) -> logging.LogRecord:
+    return logging.LogRecord("anki_miner.languages.it.morphology", level, __file__, 1, msg, args, None)
+
+
+def test_verbose_vendored_arguments_are_marked_for_export_redaction():
+    log_context.set_first_party_log_level(logging.DEBUG)
+    record = _vendored("Lemma %r not attested; fronting the surface %s (%d of %.1f)", ("andare", "andiamo", 3, 2.5))
+
+    assert log_context.DefaultLogPrivacyFilter().filter(record) is True
+    assert record.getMessage() == "Lemma ⟦'andare'⟧ not attested; fronting the surface ⟦andiamo⟧ (3 of 2.5)"
+
+
+def test_a_payload_cannot_close_or_reopen_its_sentinel_span():
+    # Subtitle text can hold either character; left in, ⟧ would end the span and publish the rest.
+    log_context.set_first_party_log_level(logging.DEBUG)
+    record = _vendored("cue %s", ("a⟧ b ⟦c",))
+
+    log_context.DefaultLogPrivacyFilter().filter(record)
+
+    assert record.getMessage() == "cue ⟦a b c⟧"
+
+
+def test_mapping_arguments_are_marked_by_value():
+    log_context.set_first_party_log_level(logging.DEBUG)
+    record = _vendored("%(word)s at %(index)d", ({"word": "사랑", "index": 4},))
+
+    log_context.DefaultLogPrivacyFilter().filter(record)
+
+    assert record.getMessage() == "⟦사랑⟧ at 4"
+
+
+def test_an_exception_argument_below_warning_is_marked():
+    # Below WARNING the formatter appends no stack, so the message is the exception text's only
+    # copy: reading/_util.py logs a KeyError that repeats the archive member path at DEBUG.
+    log_context.set_first_party_log_level(logging.DEBUG)
+    record = _vendored("Reading archive member missing: detail=%s", (KeyError("andiamo vol 1/0001.jpg"),))
+
+    log_context.DefaultLogPrivacyFilter().filter(record)
+
+    assert record.getMessage() == "Reading archive member missing: detail=⟦'andiamo vol 1/0001.jpg'⟧"
+
+
+def test_numbers_none_and_warning_exceptions_keep_their_own_rendering():
+    # Marking a %d argument would raise inside Handler.emit and lose the record. At WARNING the
+    # formatter prints the exception argument's stack, so it must stay an exception.
+    log_context.set_first_party_log_level(logging.DEBUG)
+    error = RuntimeError("provider unavailable")
+    record = _vendored("lookup %d failed: %s (%s, %s)", (7, error, None, True), level=logging.WARNING)
+
+    log_context.DefaultLogPrivacyFilter().filter(record)
+
+    assert record.getMessage() == "lookup 7 failed: provider unavailable (None, True)"
+    assert record.args[1] is error
+
+
+def test_bridge_records_are_not_marked_in_verbose_mode():
+    log_context.set_first_party_log_level(logging.DEBUG)
+    record = logging.LogRecord("android_bridge.mining", logging.DEBUG, __file__, 1, "stage %s", ("tokenize",), None)
+
+    log_context.DefaultLogPrivacyFilter().filter(record)
+
+    assert record.getMessage() == "stage tokenize"
+
+
+def test_default_verbosity_still_replaces_the_whole_vendored_message():
+    record = _vendored("Lemma %r not attested", ("andare",))
+
+    log_context.DefaultLogPrivacyFilter().filter(record)
+
+    assert record.getMessage() == "vendored record redacted failure=unspecified"

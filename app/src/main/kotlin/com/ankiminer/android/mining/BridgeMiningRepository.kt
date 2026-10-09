@@ -1577,7 +1577,7 @@ internal class BridgeMiningRepository(
             AppLog.i(
                 LogComponent.MINING,
                 "progress.clamp",
-                "outcome" to "reconcile",
+                "outcome" to "ok",
                 "current" to message.current,
                 "total" to total,
             )

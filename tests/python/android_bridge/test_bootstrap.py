@@ -380,6 +380,8 @@ print(json.dumps({"default": default_content, "verbose": verbose_content}))
     assert "vendored record redacted" in data["default"]
     assert "RuntimeError" in data["default"]
     assert "殺す" in data["verbose"]
+    # Verbose keeps the payload but marks it, so the export redactor can hash it (AU-046).
+    assert "'⟦殺す⟧'" in data["verbose"]
 
 
 def test_python_file_records_follow_the_shared_record_grammar(tmp_path: Path) -> None:
