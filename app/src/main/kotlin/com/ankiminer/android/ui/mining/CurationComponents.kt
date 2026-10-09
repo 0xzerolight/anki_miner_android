@@ -385,6 +385,14 @@ internal fun rememberCurationCandidateRowTexts(
     }
 }
 
+/** One string per curation projection. The free-text query goes last so it cannot alias a field. */
+internal fun curationProjectionKey(
+    requestId: String?,
+    query: String,
+    filter: CurationFilter,
+    sort: CurationSort,
+): String = "${requestId.orEmpty()}|${filter.name}|${sort.name}|$query"
+
 /**
  * Returns to the first result whenever the projection changes.
  *
@@ -394,6 +402,9 @@ internal fun rememberCurationCandidateRowTexts(
  *
  * Requested rather than scrolled: the anchoring happens during measure, so a plain scrollToItem
  * issued from composition is overwritten by it.
+ *
+ * Recreation (rotation, a return from another tab) restores the list position and the applied
+ * key together, so it is not a change: the user stays on the row they were reviewing.
  */
 @Composable
 internal fun ResetCurationScrollOnProjectionChange(
@@ -403,8 +414,11 @@ internal fun ResetCurationScrollOnProjectionChange(
     filter: CurationFilter,
     sort: CurationSort,
 ) {
-    LaunchedEffect(requestId, query, filter, sort) {
-        listState.requestScrollToItem(0)
+    val projectionKey = curationProjectionKey(requestId, query, filter, sort)
+    var appliedKey by rememberSaveable { mutableStateOf<String?>(null) }
+    LaunchedEffect(projectionKey) {
+        if (scrollKeyChanged(appliedKey, projectionKey)) listState.requestScrollToItem(0)
+        appliedKey = projectionKey
     }
 }
 
