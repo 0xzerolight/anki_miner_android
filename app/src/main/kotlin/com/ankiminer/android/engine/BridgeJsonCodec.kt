@@ -1149,6 +1149,7 @@ object BridgeJsonCodec {
                 "sourcePath",
                 "imageArchivePath",
                 "seriesName",
+                "stagingRoot",
                 "cacheDir",
                 "nativeLibraryDir",
                 "configSnapshot",
@@ -1164,6 +1165,7 @@ object BridgeJsonCodec {
             payload.getValue("imageArchivePath").let { value ->
                 if (value is BridgeJsonValue.Null) null else boundedAbsolutePath(value, "imageArchivePath")
             }
+        val stagingRoot = boundedAbsolutePath(payload.getValue("stagingRoot"), "stagingRoot")
         val cacheDir = boundedAbsolutePath(payload.getValue("cacheDir"), "cacheDir")
         val nativeLibraryDir =
             boundedAbsolutePath(payload.getValue("nativeLibraryDir"), "nativeLibraryDir")
@@ -1183,7 +1185,7 @@ object BridgeJsonCodec {
                 }
             }
 
-        requireReadingPathInsideCache(sourcePath, cacheDir, "sourcePath")
+        requireReadingPathInsideStagingRoot(sourcePath, stagingRoot, "sourcePath")
         requireReadingSuffix(sourcePath, sourceKind)
         when (sourceKind) {
             ReadingMiningSourceKind.MOKURO -> {
@@ -1191,7 +1193,7 @@ object BridgeJsonCodec {
                     fail(BridgeProtocolCategory.INVALID_VALUE, "seriesName is only valid for subtitles")
                 }
                 archivePath?.let { archive ->
-                    requireReadingPathInsideCache(archive, cacheDir, "imageArchivePath")
+                    requireReadingPathInsideStagingRoot(archive, stagingRoot, "imageArchivePath")
                     if (!archive.lowercase().let { it.endsWith(".cbz") || it.endsWith(".zip") }) {
                         fail(
                             BridgeProtocolCategory.INVALID_VALUE,
@@ -1229,6 +1231,7 @@ object BridgeJsonCodec {
             sourcePath = sourcePath,
             imageArchivePath = archivePath,
             seriesName = seriesName,
+            stagingRoot = stagingRoot,
             cacheDir = cacheDir,
             nativeLibraryDir = nativeLibraryDir,
             configSnapshot =
@@ -1253,15 +1256,15 @@ object BridgeJsonCodec {
         }
     }
 
-    private fun requireReadingPathInsideCache(
+    private fun requireReadingPathInsideStagingRoot(
         candidate: String,
-        cacheDir: String,
+        stagingRoot: String,
         context: String,
     ) {
         val candidatePath = normalizedPath(candidate, context)
-        val cachePath = normalizedPath(cacheDir, "cacheDir")
-        if (candidatePath == cachePath || !candidatePath.startsWith(cachePath)) {
-            fail(BridgeProtocolCategory.INVALID_VALUE, "$context must be inside cacheDir")
+        val rootPath = normalizedPath(stagingRoot, "stagingRoot")
+        if (candidatePath == rootPath || !candidatePath.startsWith(rootPath)) {
+            fail(BridgeProtocolCategory.INVALID_VALUE, "$context must be inside stagingRoot")
         }
     }
 
@@ -1579,6 +1582,7 @@ object BridgeJsonCodec {
         writeNullableString(generator, request.imageArchivePath)
         generator.writeFieldName("seriesName")
         writeNullableString(generator, request.seriesName)
+        generator.writeStringField("stagingRoot", request.stagingRoot)
         generator.writeStringField("cacheDir", request.cacheDir)
         generator.writeStringField("nativeLibraryDir", request.nativeLibraryDir)
         writeConfigSnapshot(generator, request.configSnapshot)

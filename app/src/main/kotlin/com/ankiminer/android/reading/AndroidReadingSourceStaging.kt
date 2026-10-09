@@ -6,10 +6,15 @@ import android.os.ParcelFileDescriptor
 import com.ankiminer.android.media.CancellableProviderIo
 import java.io.IOException
 
-/** Process-owned production staging graph shared by startup cleanup and reading runs. */
+/**
+ * Process-owned production staging graph shared by startup cleanup and reading runs. Sources are
+ * staged under `noBackupFilesDir`, never `cacheDir`: a run holds its copy (up to the job byte cap)
+ * through parked curation and the engine's image phase, and the OS may evict `cacheDir` at any time
+ * (the [com.ankiminer.android.media.SafJobFileOwner] KDoc records the same move for video and audio).
+ */
 internal class AndroidReadingSourceStaging(context: Context) {
     private val applicationContext = context.applicationContext
-    private val stagingRoot = readingSourceStagingRoot(applicationContext.cacheDir)
+    private val stagingRoot = readingSourceStagingRoot(applicationContext.noBackupFilesDir)
 
     val stager =
         ReadingSourceStager(
@@ -37,5 +42,8 @@ internal class AndroidReadingSourceStaging(context: Context) {
                 },
         )
 
-    val janitor = ReadingSourceStageJanitor(stagingRoot)
+    val janitor =
+        ReadingSourceStageJanitor(
+            readingSourceSweepRoots(applicationContext.noBackupFilesDir, applicationContext.cacheDir),
+        )
 }

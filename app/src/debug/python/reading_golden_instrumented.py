@@ -83,6 +83,7 @@ def _request_json(
             "sourcePath": str(source_path),
             "imageArchivePath": str(archive_path) if archive_path is not None else None,
             "seriesName": series_name,
+            "stagingRoot": str(cache_dir),
             "cacheDir": str(cache_dir),
             "nativeLibraryDir": str(cache_dir / "native"),
             "configSnapshot": {"settings": {}, "androidTtsEnabled": False},

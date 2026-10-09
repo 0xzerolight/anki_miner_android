@@ -96,6 +96,7 @@ def _reading_request(
             "sourcePath": str(source_path),
             "imageArchivePath": (str(image_archive_path) if image_archive_path is not None else None),
             "seriesName": series_name,
+            "stagingRoot": str(cache_dir),
             "cacheDir": str(cache_dir),
             "nativeLibraryDir": str(cache_dir / "native"),
             "configSnapshot": {

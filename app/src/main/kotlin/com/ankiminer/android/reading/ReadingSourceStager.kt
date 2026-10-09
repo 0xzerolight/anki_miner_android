@@ -237,7 +237,7 @@ internal class StagedReadingSource internal constructor(
  * Opening and copying block, so callers must run [stage] on a worker dispatcher.
  */
 internal class ReadingSourceStager(
-    private val stagingRoot: File,
+    val stagingRoot: File,
     private val inputOpener: ReadingSourceInputOpener,
     private val limits: ReadingSourceStageLimits = ReadingSourceStageLimits(),
     private val availableBytes: (File) -> Long = { it.usableSpace },
@@ -846,14 +846,20 @@ private fun embeddedSidecarUnreadable(cause: Exception) =
     )
 
 /**
- * Removes only direct, structurally valid orphan directories created by [ReadingSourceStager].
- * Run during startup, before admitting a reading stage; it is not an active-job sweeper.
+ * Removes only direct, structurally valid orphan directories created by [ReadingSourceStager] under
+ * each of [stagingRoots]. Run during startup, before admitting a reading stage; it is not an
+ * active-job sweeper.
  */
 internal class ReadingSourceStageJanitor(
-    private val stagingRoot: File,
+    private val stagingRoots: List<File>,
 ) {
+    constructor(stagingRoot: File) : this(listOf(stagingRoot))
+
     @Throws(IOException::class)
-    fun removeOrphans(): Int {
+    fun removeOrphans(): Int = stagingRoots.sumOf { removeOrphansFrom(it) }
+
+    @Throws(IOException::class)
+    private fun removeOrphansFrom(stagingRoot: File): Int {
         if (!stagingRoot.exists()) return 0
         if (!stagingRoot.isDirectory || Files.isSymbolicLink(stagingRoot.toPath())) {
             throw IOException("Private reading staging root is unsafe")
@@ -1044,14 +1050,24 @@ private fun selectionFailure(
 ) = ReadingSourceSelectionException(failure, message)
 
 /**
- * Resolves the `/data/user/0 -> /data/data` app-data symlink that `Context.getCacheDir()` returns,
- * so every staged reading path matches the canonical `cacheDir` the bridge sends and the codec's
- * lexical containment check ([com.ankiminer.android.engine.BridgeJsonCodec]) holds. Only the
- * framework-created parent is resolved: the staging directory itself stays unresolved so the
- * stager's and janitor's symlink guards keep rejecting a tampered root.
+ * The reading stage root under [parentDirectory]: `noBackupFilesDir` for live stages, `cacheDir` for
+ * the legacy root only the janitor still sweeps. Resolves the `/data/user/0 -> /data/data` app-data
+ * symlink of the framework-created parent, so staged paths match what Python's `resolve()` reports.
+ * Only the parent is resolved: the staging directory itself stays unresolved so the stager's and
+ * janitor's symlink guards keep rejecting a tampered root.
  */
-internal fun readingSourceStagingRoot(cacheDirectory: File): File =
-    File(cacheDirectory.canonicalFile, READING_SOURCE_STAGING_ROOT)
+internal fun readingSourceStagingRoot(parentDirectory: File): File =
+    File(parentDirectory.canonicalFile, READING_SOURCE_STAGING_ROOT)
+
+/**
+ * The roots the startup janitor sweeps: the live `noBackupFilesDir` root first, then the legacy
+ * `cacheDir` root, where a run interrupted under an older version can strand an orphan as large as
+ * the job byte cap that eviction may never reclaim on a roomy device.
+ */
+internal fun readingSourceSweepRoots(
+    noBackupFilesDir: File,
+    cacheDir: File,
+): List<File> = listOf(readingSourceStagingRoot(noBackupFilesDir), readingSourceStagingRoot(cacheDir))
 
 private const val READING_SOURCE_STAGING_ROOT = "reading-sources-v1"
 private const val STAGE_DIRECTORY_PREFIX = "reading-job-v1-"

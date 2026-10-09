@@ -220,15 +220,13 @@ class RunIdCorrelationTest {
         coordinator: RuntimeWorkCoordinator,
         control: MiningTaskExecutor = controlExecutor.asMiningTaskExecutor(),
     ): BridgeReadingMiningRepository {
-        // The codec rejects a staged path that is not inside cacheDir, so the stager's root has
-        // to be derived from the very cacheDir the repository reports.
         val paths = runtimePaths("reading")
         return BridgeReadingMiningRepository(
             pyBridge = bridge,
             anki = FakeAnkiCallbacks(),
             sourceStager =
                 ReadingSourceStager(
-                    stagingRoot = readingSourceStagingRoot(paths.cacheDir),
+                    stagingRoot = readingSourceStagingRoot(temporary.newFolder()),
                     inputOpener =
                         ReadingSourceInputOpener { _, _ ->
                             ByteArrayInputStream("novel".toByteArray())

@@ -37,6 +37,7 @@ _READING_REQUEST_FIELDS = frozenset(
         "sourcePath",
         "imageArchivePath",
         "seriesName",
+        "stagingRoot",
         "cacheDir",
         "nativeLibraryDir",
         "configSnapshot",
@@ -112,10 +113,12 @@ def _canonical_label(field_name: str, value: object) -> str:
     return value
 
 
-def _private_source_path(field_name: str, value: object, cache_dir: Path) -> Path:
+def _private_source_path(field_name: str, value: object, staging_root: Path) -> Path:
+    # Kotlin stages every reading source under its private staging root in
+    # noBackupFilesDir, which the OS never evicts; the run reads nothing else.
     path = _absolute_path(field_name, value)
-    if not path.is_relative_to(cache_dir):
-        raise _invalid_request(f"{field_name} must be inside cacheDir")
+    if not path.is_relative_to(staging_root):
+        raise _invalid_request(f"{field_name} must be inside stagingRoot")
     return path
 
 
@@ -142,8 +145,9 @@ def _parse_request(raw_request: str) -> _ReadingRequest:
     if "androidTtsEnabled" in snapshot and type(android_tts_enabled) is not bool:
         raise _invalid_request("configSnapshot.androidTtsEnabled must be a boolean")
 
+    staging_root = _absolute_path("stagingRoot", payload["stagingRoot"])
     cache_dir = _absolute_path("cacheDir", payload["cacheDir"])
-    source_path = _private_source_path("sourcePath", payload["sourcePath"], cache_dir)
+    source_path = _private_source_path("sourcePath", payload["sourcePath"], staging_root)
     if source_path.suffix.lower() not in _SOURCE_SUFFIXES[source_kind]:
         raise _invalid_request("sourcePath suffix does not match sourceKind")
 
@@ -161,7 +165,7 @@ def _parse_request(raw_request: str) -> _ReadingRequest:
     else:
         if source_kind != "mokuro":
             raise _invalid_request("imageArchivePath is only valid for a mokuro source")
-        image_archive_path = _private_source_path("imageArchivePath", raw_archive_path, cache_dir)
+        image_archive_path = _private_source_path("imageArchivePath", raw_archive_path, staging_root)
         if image_archive_path.suffix.lower() not in _ARCHIVE_SUFFIXES:
             raise _invalid_request("imageArchivePath must end in .cbz or .zip")
         if image_archive_path.parent != source_path.parent or image_archive_path.stem != source_path.stem:

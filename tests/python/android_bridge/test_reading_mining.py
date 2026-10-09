@@ -52,6 +52,7 @@ def _payload(cache_dir: Path | str = "/cache", **overrides: object) -> dict[str,
         "sourcePath": str(cache / "reading-job-v1-a" / "book.txt"),
         "imageArchivePath": None,
         "seriesName": None,
+        "stagingRoot": str(cache),
         "cacheDir": str(cache),
         "nativeLibraryDir": "/native",
         "configSnapshot": {"settings": {}, "androidTtsEnabled": False},
@@ -207,6 +208,43 @@ def test_request_parses_every_reading_kind_with_exact_private_paths(
     assert parsed.cache_dir == tmp_path
 
 
+def test_request_accepts_a_staging_root_outside_cache_dir(tmp_path: Path) -> None:
+    """Kotlin stages under noBackupFilesDir, which cacheDir does not contain."""
+
+    cache = tmp_path / "cache"
+    staging_root = tmp_path / "no_backup" / "reading-sources-v1"
+    job = staging_root / "reading-job-v1-a"
+    source = job / "volume.mokuro"
+    archive = job / "volume.cbz"
+
+    parsed = reading_mining._parse_request(
+        _request(
+            cache,
+            sourceKind="mokuro",
+            sourcePath=str(source),
+            imageArchivePath=str(archive),
+            stagingRoot=str(staging_root),
+        )
+    )
+
+    assert parsed.source_path == source
+    assert parsed.image_archive_path == archive
+    assert parsed.cache_dir == cache
+
+
+@pytest.mark.parametrize("field", ["sourcePath", "imageArchivePath"])
+def test_request_rejects_a_source_inside_cache_dir_but_outside_the_staging_root(field: str) -> None:
+    job = "/nobackup/reading-sources-v1/reading-job-v1-a"
+    paths = {"sourcePath": f"{job}/volume.mokuro", "imageArchivePath": f"{job}/volume.cbz"}
+    paths[field] = paths[field].replace("/nobackup/reading-sources-v1", "/cache")
+
+    with pytest.raises(BridgeProtocolError, match=f"{field} must be inside stagingRoot") as error:
+        reading_mining._parse_request(
+            _request(sourceKind="mokuro", stagingRoot="/nobackup/reading-sources-v1", **paths)
+        )
+    assert error.value.code == "invalid_reading_mining_request"
+
+
 @pytest.mark.parametrize(
     "overrides",
     [
@@ -216,6 +254,7 @@ def test_request_parses_every_reading_kind_with_exact_private_paths(
         {"sourcePath": "/cache/book.epub"},
         {"sourcePath": "/cache/book\x00.txt"},
         {"cacheDir": "relative"},
+        {"stagingRoot": "relative"},
         {"nativeLibraryDir": "relative"},
         {"seriesName": "Books"},
         {

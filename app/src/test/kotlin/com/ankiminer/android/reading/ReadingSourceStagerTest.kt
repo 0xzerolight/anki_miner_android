@@ -1064,21 +1064,20 @@ class ReadingSourceStagerTest {
     )
 
     /**
-     * Android's `Context.getCacheDir()` traverses the `/data/user/0 -> /data/data` app-data symlink,
-     * while the bridge sends `cacheDir.canonicalPath`. The staging root has to resolve the same way
-     * or every staged reading path lands outside the cacheDir the codec compares against.
+     * Android's `Context.getNoBackupFilesDir()` traverses the `/data/user/0 -> /data/data` app-data
+     * symlink. The staging root resolves it, so staged paths match what Python's `resolve()` reports.
      */
     @Test
-    fun `staging root resolves a cache directory reached through a symlinked ancestor`() {
+    fun `staging root resolves an app directory reached through a symlinked ancestor`() {
         val root = temporary.newFolder("app-storage").toPath()
         val real = Files.createDirectory(root.resolve("real"))
-        Files.createDirectory(real.resolve("cache"))
+        Files.createDirectory(real.resolve("no_backup"))
         val link = Files.createSymbolicLink(root.resolve("link"), real)
-        val cacheDir = link.resolve("cache").toFile()
+        val noBackupFilesDir = link.resolve("no_backup").toFile()
 
-        val stagingRoot = readingSourceStagingRoot(cacheDir)
+        val stagingRoot = readingSourceStagingRoot(noBackupFilesDir)
 
-        assertEquals(real.resolve("cache").toFile().canonicalFile, requireNotNull(stagingRoot.parentFile))
+        assertEquals(real.resolve("no_backup").toFile().canonicalFile, requireNotNull(stagingRoot.parentFile))
         assertEquals(stagingRoot.canonicalFile, stagingRoot)
     }
 
