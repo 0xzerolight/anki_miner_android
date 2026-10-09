@@ -15,7 +15,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -27,6 +26,7 @@ import com.ankiminer.android.data.resources.InstalledFrequencySource
 import com.ankiminer.android.data.resources.InstalledPitchSource
 import com.ankiminer.android.data.resources.ResourceAttribution
 import com.ankiminer.android.ui.links.AppLinks
+import com.ankiminer.android.ui.links.rememberExternalLinkOpener
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SectionTitle
 import com.ankiminer.android.ui.theme.accentTextButtonColors
@@ -41,7 +41,7 @@ internal fun AttributionScreen(
     installedLanguageData: Set<String> = emptySet(),
 ) {
     val catalog = FrozenResourceCatalog.value
-    val uriHandler = LocalUriHandler.current
+    val openLink = rememberExternalLinkOpener()
     val occupiedDictionaries = attributionDictionaries(installedDictionaries)
     val installedCatalogAttribution = installedCatalogAttributions(occupiedDictionaries)
     val installedDataAttribution =
@@ -82,7 +82,7 @@ internal fun AttributionScreen(
                     CardHeading(stringResource(R.string.attribution_icon_title))
                     Text(stringResource(R.string.attribution_icon_text))
                     TextButton(
-                        onClick = { uriHandler.openUri(SHIPPORI_URL) },
+                        onClick = { openLink(SHIPPORI_URL) },
                         colors = accentTextButtonColors(),
                     ) {
                         Text(SHIPPORI_URL, style = MaterialTheme.typography.bodySmall)
@@ -158,7 +158,7 @@ internal fun AttributionScreen(
                     Text(stringResource(R.string.privacy_network_processing))
                     Text(stringResource(R.string.privacy_retention))
                     TextButton(
-                        onClick = { uriHandler.openUri(AppLinks.PRIVACY_POLICY) },
+                        onClick = { openLink(AppLinks.PRIVACY_POLICY) },
                         colors = accentTextButtonColors(),
                     ) {
                         Text(stringResource(R.string.privacy_open_policy))
@@ -175,7 +175,7 @@ internal fun AttributionScreen(
                         Text(stringResource(R.string.source_open_notices))
                     }
                     TextButton(
-                        onClick = { uriHandler.openUri(AppLinks.REPOSITORY) },
+                        onClick = { openLink(AppLinks.REPOSITORY) },
                         colors = accentTextButtonColors(),
                     ) {
                         Text(stringResource(R.string.source_open_repository))
@@ -293,7 +293,7 @@ private fun InstalledDictionaryAttribution(dictionary: InstalledDictionary) {
 
 @Composable
 private fun AttributionGroup(title: String, entries: List<ResourceAttribution>) {
-    val uriHandler = LocalUriHandler.current
+    val openLink = rememberExternalLinkOpener()
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.group)) {
             CardHeading(title)
@@ -307,7 +307,7 @@ private fun AttributionGroup(title: String, entries: List<ResourceAttribution>) 
                 Text(entry.copyright)
                 Text(stringResource(R.string.attribution_license, entry.license))
                 TextButton(
-                    onClick = { uriHandler.openUri(entry.url) },
+                    onClick = { openLink(entry.url) },
                     colors = accentTextButtonColors(),
                 ) {
                     Text(entry.url, style = MaterialTheme.typography.bodySmall)

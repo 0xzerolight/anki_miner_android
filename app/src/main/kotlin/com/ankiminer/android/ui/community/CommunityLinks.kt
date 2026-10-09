@@ -11,13 +11,13 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import com.ankiminer.android.R
 import com.ankiminer.android.ui.links.AppLinks
+import com.ankiminer.android.ui.links.rememberExternalLinkOpener
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 
@@ -33,7 +33,7 @@ internal object CommunityLinksTestTags {
  */
 @Composable
 internal fun CommunityLinks(modifier: Modifier = Modifier) {
-    val uriHandler = LocalUriHandler.current
+    val openLink = rememberExternalLinkOpener()
     // One row at every width and text size (owner decision D10): the pair keeps its header place,
     // but stacked it cost two full-width rows on small phones and wrapped to uneven heights.
     Row(
@@ -41,7 +41,7 @@ internal fun CommunityLinks(modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
         SecondaryActionButton(
-            onClick = { uriHandler.openUri(AppLinks.REPOSITORY) },
+            onClick = { openLink(AppLinks.REPOSITORY) },
             modifier = Modifier.weight(1f).testTag(CommunityLinksTestTags.STAR),
         ) {
             Text(
@@ -51,7 +51,7 @@ internal fun CommunityLinks(modifier: Modifier = Modifier) {
             )
         }
         SecondaryActionButton(
-            onClick = { uriHandler.openUri(AppLinks.DISCORD_INVITE) },
+            onClick = { openLink(AppLinks.DISCORD_INVITE) },
             modifier = Modifier.weight(1f).testTag(CommunityLinksTestTags.DISCORD),
         ) {
             Icon(

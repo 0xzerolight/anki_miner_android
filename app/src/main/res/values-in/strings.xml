@@ -801,6 +801,7 @@
     <string name="source_open_repository">Buka repositori sumber</string>
     <string name="community_star_project">⭐ Bintangi</string>
     <string name="community_join_discord">Discord</string>
+    <string name="link_open_unavailable">Tidak ada aplikasi untuk membuka tautan ini.</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid tidak tersedia. Catatan pemulihan lokal tetap tercantum di bawah.</string>
     <string name="anki_setup_runtime_busy">Selesaikan atau batalkan operasi mining atau sumber daya aktif sebelum mengubah penyiapan Anki</string>
     <string name="anki_setup_failed">Penyiapan Anki tidak selesai. Tinjau status dan coba lagi.</string>
