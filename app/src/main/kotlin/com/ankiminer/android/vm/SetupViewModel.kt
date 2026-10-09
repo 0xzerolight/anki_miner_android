@@ -44,6 +44,7 @@ import com.ankiminer.android.localization.StringResourceResolver
 import com.ankiminer.android.media.SafAccessException
 import com.ankiminer.android.media.SafAccessFailureKind
 import com.ankiminer.android.mining.MiningRunAdmissionState
+import java.io.IOException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -1027,13 +1028,32 @@ internal class SetupViewModel(
                 } catch (failure: CancellationException) {
                     throw failure
                 } catch (failure: SafAccessException) {
-                    val stillOwnsSlot =
-                        pendingPicker?.let { it.kind == kind && it.uri == null } == true
-                    if (!stillOwnsSlot) return@launch
-                    clearPendingPicker()
-                    publishResourcePickerFailure(kind, failure.kind)
+                    abandonRetention(kind, failure.kind)
+                } catch (failure: IOException) {
+                    // The leading-byte read and the selection-ledger commit fail with plain I/O
+                    // errors: a file deleted or offline since it was picked, a provider stall, a
+                    // full disk. As with a provider refusal, the only way on is another file.
+                    AppLog.w(
+                        LogComponent.SAF,
+                        "picker.retain",
+                        failure,
+                        "picker" to kind.name,
+                        "outcome" to "fail",
+                    )
+                    abandonRetention(kind, SafAccessFailureKind.PROVIDER_UNAVAILABLE)
                 }
             }
+    }
+
+    /** Frees the slot this retention still owns and offers another file. */
+    private fun abandonRetention(
+        kind: ResourcePickerKind,
+        failureKind: SafAccessFailureKind,
+    ) {
+        val stillOwnsSlot = pendingPicker?.let { it.kind == kind && it.uri == null } == true
+        if (!stillOwnsSlot) return
+        clearPendingPicker()
+        publishResourcePickerFailure(kind, failureKind)
     }
 
     private fun publishResourcePickerFailure(
