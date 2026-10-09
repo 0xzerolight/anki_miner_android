@@ -9,10 +9,13 @@ import java.nio.charset.StandardCharsets
 
 /**
  * The word-list file format, mirroring `anki_miner/services/word_list_service.WordListService`: one
- * word per line, UTF-8, blank lines and lines starting with `#` ignored.
+ * word per line, blank lines and lines starting with `#` ignored.
  *
- * The engine opens the file with a strict UTF-8 decode and raises on failure, so an import that gets
- * this wrong would fail every later run instead of the one that chose the file.
+ * Every installed list is BOM-less NFC UTF-8. A Japanese import must already be UTF-8: a Japanese
+ * run reads lists with the engine's UTF-8 default, not the ja profile's ladder. Any other language's
+ * import reaches [normalizeForInstall] after the bridge has rewritten it as UTF-8 through that
+ * language's encoding ladder. A file this gate let through unreadable would fail every later run
+ * instead of the one that chose it.
  */
 internal object WordListFileFormat {
     /** Words the engine would load from [text]. */
@@ -32,10 +35,8 @@ internal object WordListFileFormat {
     }
 
     /**
-     * Validates staged UTF-8 and removes its optional leading encoding signature before publish.
-     *
-     * Python deliberately opens installed lists as plain UTF-8, so leaving U+FEFF in place would
-     * turn it into part of the first word or hide the first comment marker.
+     * Validates staged UTF-8, removes its optional leading encoding signature and composes it to NFC
+     * before publish. A kept U+FEFF would make [entryCount] read a leading `#` comment as a word.
      */
     fun normalizeForInstall(file: File): Int {
         val text = decode(file)

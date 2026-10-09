@@ -376,6 +376,16 @@ object ResourceBridgeCodec {
         }
     }
 
+    /** Python rewrites the staged list at [sourcePath] in place as UTF-8, decoded with [language]'s ladder. */
+    fun encodeWordListTranscodeRequest(sourcePath: String, language: String): String {
+        requireLanguage(language)
+        requireAbsolutePath(sourcePath)
+        return encode("resource.wordlist.transcode") { generator ->
+            generator.writeStringField("sourcePath", sourcePath)
+            generator.writeStringField("language", language)
+        }
+    }
+
     fun encodeCancelRequest(operation: String): String {
         requireOperationId(operation)
         return encode("resource.operation.cancel") { generator ->
@@ -880,6 +890,10 @@ object ResourceBridgeCodec {
         val payload = payload(raw, "resource.cleanup.result")
         exact(payload, setOf("clean"), "resource cleanup")
         if (!bool(payload.getValue("clean"), "clean")) invalid("Resource cleanup was not confirmed")
+    }
+
+    fun decodeWordListTranscoded(raw: String) {
+        exact(payload(raw, "resource.wordlist.transcoded"), emptySet(), "word-list transcode")
     }
 
     /**

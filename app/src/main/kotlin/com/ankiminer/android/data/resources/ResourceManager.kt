@@ -1377,9 +1377,23 @@ internal class AndroidResourceManager(
                     ) { current, total ->
                         updateProgress(operation, ResourceOperationPhase.PREPARING, current, total)
                     }
+                // Read it the way this language's runs will, before the file becomes the one every
+                // later run depends on: a file they cannot read would fail at the start of every
+                // mine. A Japanese run reads UTF-8 alone. Any other language's run decodes with its
+                // profile's encoding ladder, which only the engine implements, so the bridge first
+                // rewrites the staged copy as UTF-8 through that ladder.
+                if (language != JAPANESE) {
+                    ResourceBridgeCodec.decodeWordListTranscoded(
+                        bridge.dispatch(
+                            ResourceBridgeCodec.encodeWordListTranscodeRequest(
+                                staged.file.canonicalPath,
+                                language,
+                            ),
+                            null,
+                        ),
+                    )
+                }
                 operation.cancellation.check()
-                // Read it the way the engine will, before the file becomes the one every later run
-                // depends on. A non-UTF-8 file would otherwise fail at the start of every mine.
                 val entryCount =
                     try {
                         WordListFileFormat.normalizeForInstall(staged.file)
@@ -3118,6 +3132,8 @@ internal class AndroidResourceManager(
                 strings.resolve(R.string.resource_failure_pitch_import)
             "pitch_resource_invalid" ->
                 strings.resolve(R.string.resource_failure_pitch_invalid)
+            "word_list_not_utf8" ->
+                strings.resolve(R.string.resource_failure_word_list_not_utf8)
             "audio_pack_import_failed" ->
                 strings.resolve(R.string.resource_failure_audio_pack_import)
             "audio_pack_none_detected" ->
