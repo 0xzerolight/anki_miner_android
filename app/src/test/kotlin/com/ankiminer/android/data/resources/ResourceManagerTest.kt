@@ -26,6 +26,10 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction
 import java.util.ArrayDeque
 import java.util.concurrent.Executor
 import java.util.zip.ZipEntry
@@ -2564,6 +2568,90 @@ class ResourceManagerTest {
         }
 
     @Test
+    fun aNonJapaneseWordListIsTranscodedThroughTheBridgeBeforeItIsCounted() =
+        runTest {
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { "zh" })
+            val gb18030 = Charset.forName("GB18030")
+            harness.bridge.wordListCharset = gb18030
+            // A GB18030 signature decodes to U+FEFF, which the UTF-8 normaliser then strips.
+            harness.stager.sourceBytes = "﻿猫\n# 注释\n狗\n".toByteArray(gb18030)
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            assertNull(harness.manager.state.value.failure)
+            assertEquals(
+                listOf("zh" to harness.stager.stagedFiles.single().canonicalPath),
+                harness.bridge.wordListTranscodes,
+            )
+            val installed = File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "zh")))
+            assertArrayEquals("猫\n# 注释\n狗\n".toByteArray(Charsets.UTF_8), installed.readBytes())
+            assertEquals(2, harness.manager.state.value.wordList(WordListKind.BLACKLIST)?.entryCount)
+        }
+
+    @Test
+    fun aJapaneseWordListStaysStrictUtf8AndNeverReachesTheBridge() =
+        runTest {
+            val harness = Harness(sourceLabel = "word-list file")
+            // 猫 in Shift-JIS. A Japanese run reads UTF-8 alone, not the ja profile's ladder.
+            harness.stager.sourceBytes = byteArrayOf(0x94.toByte(), 0x4C.toByte(), 0x0A)
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("word_list_not_utf8", failure.code)
+            assertEquals("resource:${R.string.resource_failure_word_list_not_utf8}", failure.message)
+            assertTrue(harness.bridge.wordListTranscodes.isEmpty())
+            assertNull(harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE))
+        }
+
+    @Test
+    fun aListNoRungOfItsLadderDecodesFailsWithTheNotUtf8Message() =
+        runTest {
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { "ko" })
+            harness.stager.sourceBytes = byteArrayOf(0x80.toByte(), 0xFF.toByte(), 0x0A)
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.WHITELIST)
+
+            val failure = requireNotNull(harness.manager.state.value.failure)
+            assertEquals("word_list_not_utf8", failure.code)
+            assertEquals("resource:${R.string.resource_failure_word_list_not_utf8}", failure.message)
+            assertEquals(ResourceFailureOrigin.WORD_LIST, failure.origin)
+            assertEquals(listOf("ko"), harness.bridge.wordListTranscodes.map { it.first })
+            assertNull(harness.manager.wordListPath(WordListKind.WHITELIST, "ko"))
+        }
+
+    @Test
+    fun theTranscodeAndThePublishUseTheLanguageCapturedAtAdmission() =
+        runTest {
+            var language = "ru"
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { language })
+            harness.stager.sourceText = "кошка\n"
+            // The mining language switches while Python decodes.
+            harness.bridge.onWordListTranscode = { language = JAPANESE }
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            assertEquals(listOf("ru"), harness.bridge.wordListTranscodes.map { it.first })
+            val russian = File(requireNotNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "ru")))
+            assertEquals("кошка\n", russian.readText())
+            assertNull(harness.manager.wordListPath(WordListKind.BLACKLIST, JAPANESE))
+        }
+
+    @Test
+    fun aCancelDuringTheWordListTranscodePublishesNothing() =
+        runTest {
+            val harness = Harness(sourceLabel = "word-list file", activeLanguage = { "ru" })
+            harness.stager.sourceText = "кошка\n"
+            harness.bridge.onWordListTranscode = { harness.manager.cancelActive() }
+
+            harness.manager.importWordList(INPUT_URI, WordListKind.BLACKLIST)
+
+            assertEquals(1, harness.bridge.wordListTranscodes.size)
+            assertNull(harness.manager.wordListPath(WordListKind.BLACKLIST, "ru"))
+            assertNull(harness.manager.state.value.failure)
+        }
+
+    @Test
     fun switchingLanguageSelectsThatLanguagesWordLists() =
         runTest {
             var language = JAPANESE
@@ -3138,6 +3226,15 @@ class ResourceManagerTest {
             private set
         var emptyAudioPackPreflight = false
 
+        /** The fake ladder: a staged word list decodes strictly with this, or fails as Python's would. */
+        var wordListCharset: Charset = Charsets.UTF_8
+
+        /** Runs while Python would be decoding a word list. */
+        var onWordListTranscode: () -> Unit = {}
+
+        /** (language, sourcePath) of every word-list transcode, in call order. */
+        val wordListTranscodes = mutableListOf<Pair<String, String>>()
+
         /** Invoked, when set, for every dispatch that receives a non-null callbacks object. */
         var progressInjector: ((rawRequest: String, callbacks: EngineCallbacks) -> Unit)? = null
 
@@ -3223,6 +3320,28 @@ class ResourceManagerTest {
                         "resource.dictionary.preflighted",
                         """{"slotId":"fixture-dictionary-2026-08"}""",
                     )
+                "resource.wordlist.transcode" -> {
+                    val source = File(stringField(rawRequest, "sourcePath"))
+                    wordListTranscodes += stringField(rawRequest, "language") to source.path
+                    onWordListTranscode()
+                    val decoder =
+                        wordListCharset
+                            .newDecoder()
+                            .onMalformedInput(CodingErrorAction.REPORT)
+                            .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    val text =
+                        try {
+                            decoder.decode(ByteBuffer.wrap(source.readBytes())).toString()
+                        } catch (failure: CharacterCodingException) {
+                            throw ResourceBridgeException(
+                                "word_list_not_utf8",
+                                "simulated ladder exhaustion",
+                                cause = failure,
+                            )
+                        }
+                    source.writeText(text, Charsets.UTF_8)
+                    envelope("resource.wordlist.transcoded", "{}")
+                }
                 "resource.frequency.import" -> {
                     frequencyImportFailureCode?.let { throw ResourceBridgeException(it, "simulated rebuild failure") }
                     if (failFrequencyImport) {
