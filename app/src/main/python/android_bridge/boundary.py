@@ -84,6 +84,7 @@ def _dispatch_validated(
         "resource.operation.cancel",
         "resource.pitch.import",
         "resource.unidic.install",
+        "resource.wordlist.transcode",
         "tokenizer.configure",
         "dictionary.define",
         "subtitle.cues",
@@ -139,6 +140,11 @@ def _dispatch_validated(
             from .language_data import install_language_data
 
             return install_language_data(payload)
+
+        if request_type == "resource.wordlist.transcode":
+            from .word_lists import transcode_word_list
+
+            return transcode_word_list(payload)
 
         handlers = {
             "resource.catalog.get": resources.catalog_response,
