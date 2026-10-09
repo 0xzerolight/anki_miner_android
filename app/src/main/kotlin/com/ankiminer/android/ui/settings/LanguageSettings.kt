@@ -69,7 +69,10 @@ internal data class LanguageSettingsState(
     val profiles: List<LanguageProfileInfo> = emptyList(),
     /** The language whose data is downloading for a switch, if any. */
     val downloadingCode: String? = null,
-    /** A known-words import preview is open: its words would land in the other language's DB. */
+    /**
+     * A known-words import waits for its confirm or Retry
+     * ([com.ankiminer.android.data.resources.ResourceManagerState.languageSwitchRefusal]).
+     */
     val knownWordsPreviewOpen: Boolean = false,
     /** A resource or Anki operation, or a run, holds the runtime. */
     val busy: Boolean = false,

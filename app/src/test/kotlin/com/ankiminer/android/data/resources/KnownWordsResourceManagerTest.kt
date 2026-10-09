@@ -181,6 +181,59 @@ class KnownWordsResourceManagerTest {
             assertEquals(listOf("ko"), restarted.bridge.languagesOf("resource.knownwords.import"))
         }
 
+    @Test
+    fun `a restored import refuses a language switch until its Retry lands`() =
+        runTest {
+            val root = temporary.newFolder()
+            Harness(root).manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+            interruptConfirm(root)
+            val restarted = Harness(root)
+
+            // No preview survives process death: the Retry is the import's only way back.
+            assertNull(restarted.manager.state.value.knownWordsImportPreview)
+            assertEquals(
+                LanguageSwitchRefusal.KNOWN_WORDS_IMPORT_PENDING,
+                restarted.manager.state.value.languageSwitchRefusal(),
+            )
+
+            restarted.manager.retryKnownWordsFailure()
+
+            assertNull(restarted.manager.state.value.languageSwitchRefusal())
+        }
+
+    @Test
+    fun `an interrupted import whose file is gone asks for the file again`() =
+        runTest {
+            val root = temporary.newFolder()
+            interruptConfirm(root)
+            val restarted = Harness(root)
+
+            val failure = requireNotNull(restarted.manager.state.value.failure)
+            assertEquals(KnownWordsFailureOperation.IMPORT, failure.knownWordsOperation)
+            // A Retry would have nothing to replay, and would hold the language switch for nothing.
+            assertEquals(ResourceFailureAction.CHOOSE_ANOTHER, failure.retry.action)
+            assertNull(restarted.manager.state.value.languageSwitchRefusal())
+        }
+
+    @Test
+    fun `dismissing the preview of a failed import lets the language switch`() =
+        runTest {
+            val harness = Harness()
+            harness.manager.previewKnownWords(INPUT_URI, ResourceImportFileKind.JSON)
+            harness.bridge.failOnce += "resource.knownwords.import"
+            harness.manager.confirmKnownWordsImport()
+            assertEquals(
+                LanguageSwitchRefusal.KNOWN_WORDS_IMPORT_PENDING,
+                harness.manager.state.value.languageSwitchRefusal(),
+            )
+
+            harness.manager.dismissKnownWordsImportPreview()
+
+            // The staged input is gone, so that failure's Retry had nothing left to replay.
+            assertNull(harness.manager.state.value.failure)
+            assertNull(harness.manager.state.value.languageSwitchRefusal())
+        }
+
     /** The journal record a confirm leaves when the process dies mid-import. */
     private fun interruptConfirm(root: File) {
         ResourceOperationJournal(root, syncDirectory = {}).write(

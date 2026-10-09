@@ -52,7 +52,7 @@ internal fun WizardLanguagePage(
             activeCode = state.language,
             profiles = language.profiles,
             downloadingCode = language.downloadingCode,
-            knownWordsPreviewOpen = state.knownWordsImportPreview != null,
+            knownWordsPreviewOpen = state.languageSwitchRefusal != null,
             busy = state.busy,
         ).switchAllowed
     val labels =

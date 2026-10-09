@@ -349,6 +349,7 @@ internal class AndroidResourceManager(
         val retainKnownWordsInput =
             interrupted?.origin == ResourceFailureOrigin.KNOWN_WORDS &&
                 interrupted.knownWordsOperation == KnownWordsFailureOperation.IMPORT
+        val knownWordsInputRestored = AtomicBoolean(false)
         val recovered =
             runOperation(
                 strings.resolve(R.string.resource_operation_refresh),
@@ -361,7 +362,9 @@ internal class AndroidResourceManager(
                 if (clearInterruptedAudioInput || !restorePendingAudioPackImport()) {
                     clearPendingAudioPackImport()
                 }
-                if (!retainKnownWordsInput || !restorePendingKnownWordsImport()) {
+                if (retainKnownWordsInput && restorePendingKnownWordsImport()) {
+                    knownWordsInputRestored.set(true)
+                } else {
                     clearPendingKnownWordsImport()
                     mutableState.update { it.copy(knownWordsImportPreview = null) }
                 }
@@ -383,6 +386,26 @@ internal class AndroidResourceManager(
                 finishStartupRecovery()
                 startupRecoveryTailPending = false
             }
+        // Before READY: a switch admitted in between would miss a restored import's refusal.
+        if (recovered) {
+            interrupted
+                ?.takeUnless(::interruptedOperationAlreadyCommitted)
+                ?.let { operation ->
+                    recordFailure(
+                        code = "resource_operation_interrupted",
+                        message = strings.resolve(R.string.resource_failure_operation),
+                        origin = operation.origin,
+                        retry =
+                            if (retainKnownWordsInput && !knownWordsInputRestored.get()) {
+                                // Its retained file is gone: a Retry would have nothing to replay.
+                                ResourceFailureRetry(ResourceFailureAction.CHOOSE_ANOTHER)
+                            } else {
+                                operation.retry
+                            },
+                        knownWordsOperation = operation.knownWordsOperation,
+                    )
+                }
+        }
         mutableState.update {
             it.copy(
                 startupReadiness =
@@ -395,17 +418,6 @@ internal class AndroidResourceManager(
         }
         if (recovered) {
             runOnExecutor(resourceExecutor) { operationJournal.clear() }
-            interrupted
-                ?.takeUnless(::interruptedOperationAlreadyCommitted)
-                ?.let { operation ->
-                    recordFailure(
-                        code = "resource_operation_interrupted",
-                        message = strings.resolve(R.string.resource_failure_operation),
-                        origin = operation.origin,
-                        retry = operation.retry,
-                        knownWordsOperation = operation.knownWordsOperation,
-                    )
-                }
         }
     }
 
@@ -1660,7 +1672,19 @@ internal class AndroidResourceManager(
                 started.set(true)
                 try {
                     clearPendingKnownWordsImport()
-                    mutableState.update { it.copy(knownWordsImportPreview = null) }
+                    // The staged input is gone, so a failed import's Retry has nothing to replay;
+                    // left in place it would also keep the language switch refused.
+                    mutableState.update { state ->
+                        state.copy(
+                            knownWordsImportPreview = null,
+                            failure =
+                                state.failure?.takeUnless {
+                                    it.origin == ResourceFailureOrigin.KNOWN_WORDS &&
+                                        it.knownWordsOperation == KnownWordsFailureOperation.IMPORT &&
+                                        it.retry.action == ResourceFailureAction.RETRY
+                                },
+                        )
+                    }
                 } finally {
                     operationMutex.unlock()
                 }
