@@ -284,6 +284,30 @@ def test_stop_between_sub_calls_returns_the_committed_notes(
     assert _keys(kotlin) == [["猫"]]
 
 
+def test_progress_counts_the_whole_call_across_sub_calls(
+    initialized_bridge_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    kotlin = FakeKotlinAnki()
+    adapter = _adapter(_config(initialized_bridge_home), kotlin)
+    cards = [_card(f"語{index:03d}") for index in range(330)]
+    one_note = adapter._preflight_create_call(cards[:1]).note_utf8_bytes
+    monkeypatch.setattr(anki_adapter_module, "_MAX_CREATE_CALL_NOTE_UTF8_BYTES", 150 * one_note)
+    progress = _Progress()
+
+    assert adapter.create_cards_batch(cards, progress) == list(range(1000, 1330))
+
+    assert [len(keys) for keys in _keys(kotlin)] == [100, 50, 100, 50, 30]
+    assert progress.events == [
+        ("start", 330, "Creating Anki cards"),
+        ("progress", 100, "Cards created: 100/330"),
+        ("progress", 200, "Cards created: 250/330"),
+        ("progress", 300, "Cards created: 300/330"),
+        ("progress", 330, "Cards created: 330/330"),
+        ("complete",),
+    ]
+
+
 def test_stop_during_a_later_media_upload_reports_no_media_failure(
     initialized_bridge_home: Path,
     tmp_path: Path,
