@@ -8,6 +8,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -39,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.ankiminer.android.R
 import com.ankiminer.android.data.settings.AppSettingsDraftParser
@@ -48,6 +50,7 @@ import com.ankiminer.android.player.shiftedWindow
 import com.ankiminer.android.ui.mining.CurationVideoPreview
 import com.ankiminer.android.ui.mining.LocalMiningContentStyle
 import com.ankiminer.android.ui.mining.TimingPreviewState
+import com.ankiminer.android.ui.mining.curationMediaMaxHeight
 import com.ankiminer.android.ui.settings.NumericField
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
@@ -66,6 +69,7 @@ internal fun TimingPreviewOverlay(
     onApply: () -> Unit,
     onCancel: () -> Unit,
     audioOnly: Boolean = false,
+    audioTrackOverride: Long? = null,
     modifier: Modifier = Modifier,
     playerFactory: (Context) -> CurationPreviewPlayer =
         LocalMiningContentStyle.current.audioTrackCodes.let { codes ->
@@ -105,7 +109,7 @@ internal fun TimingPreviewOverlay(
                 .semantics { paneTitle = title },
         color = MaterialTheme.colorScheme.background,
     ) {
-        Column(
+        BoxWithConstraints(
             // Drawn outside the shell Scaffold: nothing else keeps the title off the status bar or
             // Apply off the gesture bar.
             modifier =
@@ -113,134 +117,143 @@ internal fun TimingPreviewOverlay(
                     .fillMaxSize()
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(AnkiMinerTokens.Space.content),
-            verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
         ) {
-            Text(
-                text = title,
-                modifier =
-                    Modifier
-                        .semantics { heading() }
-                        .testTag(VideoMiningTestTags.TIMING_PREVIEW_TITLE),
-                style = MaterialTheme.typography.headlineSmall,
-            )
-            TimingPreviewVideo(
-                seekable = seekable,
-                player = player,
-                videoUri = videoUri,
-                state = state,
-                collapsed = collapsed,
-                onToggleCollapsed = { collapsed = !collapsed },
-                audioOnly = audioOnly,
-            )
-            LazyColumn(
-                modifier =
-                    Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .testTag(VideoMiningTestTags.TIMING_PREVIEW_CONTENT),
+            // Uncapped, a full-width 16:9 frame takes a landscape pane whole and measures the
+            // controls, the cue list and Apply at zero height.
+            val mediaMaxHeight = curationMediaMaxHeight(maxHeight)
+            Column(
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
             ) {
-                item(key = "offset") {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        NudgeButton(
-                            label = stringResource(R.string.timing_preview_nudge_earlier),
-                            testTag = VideoMiningTestTags.TIMING_PREVIEW_NUDGE_EARLIER,
-                            modifier = Modifier.padding(top = AnkiMinerTokens.Space.related),
+                Text(
+                    text = title,
+                    modifier =
+                        Modifier
+                            .semantics { heading() }
+                            .testTag(VideoMiningTestTags.TIMING_PREVIEW_TITLE),
+                    style = MaterialTheme.typography.headlineSmall,
+                )
+                TimingPreviewVideo(
+                    seekable = seekable,
+                    player = player,
+                    videoUri = videoUri,
+                    state = state,
+                    collapsed = collapsed,
+                    onToggleCollapsed = { collapsed = !collapsed },
+                    audioOnly = audioOnly,
+                    audioTrackOverride = audioTrackOverride,
+                    maxSurfaceHeight = mediaMaxHeight,
+                )
+                LazyColumn(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxWidth()
+                            .testTag(VideoMiningTestTags.TIMING_PREVIEW_CONTENT),
+                    verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                ) {
+                    item(key = "offset") {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.line),
+                            verticalAlignment = Alignment.Top,
                         ) {
-                            val updated = state.nudge(-TimingPreviewState.NUDGE_SECONDS)
-                            offsetDraft = editableOffset(updated.workingOffset)
-                            onNudge(-TimingPreviewState.NUDGE_SECONDS)
-                            seekSelectedCue(player, updated, seekable == true)
+                            NudgeButton(
+                                label = stringResource(R.string.timing_preview_nudge_earlier),
+                                testTag = VideoMiningTestTags.TIMING_PREVIEW_NUDGE_EARLIER,
+                                modifier = Modifier.padding(top = AnkiMinerTokens.Space.related),
+                            ) {
+                                val updated = state.nudge(-TimingPreviewState.NUDGE_SECONDS)
+                                offsetDraft = editableOffset(updated.workingOffset)
+                                onNudge(-TimingPreviewState.NUDGE_SECONDS)
+                                seekSelectedCue(player, updated, seekable == true)
+                            }
+                            NumericField(
+                                value = offsetDraft,
+                                onChange = { value ->
+                                    offsetDraft = value
+                                    parsedOffset(value)?.let(onSetWorking)
+                                },
+                                label = stringResource(R.string.timing_preview_offset_label),
+                                allowNegative = true,
+                                error =
+                                    stringResource(R.string.b3_validation_numeric_incomplete)
+                                        .takeIf { parsedOffset(offsetDraft) == null },
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .testTag(VideoMiningTestTags.TIMING_PREVIEW_OFFSET_FIELD),
+                            )
+                            NudgeButton(
+                                label = stringResource(R.string.timing_preview_nudge_later),
+                                testTag = VideoMiningTestTags.TIMING_PREVIEW_NUDGE_LATER,
+                                modifier = Modifier.padding(top = AnkiMinerTokens.Space.related),
+                            ) {
+                                val updated = state.nudge(TimingPreviewState.NUDGE_SECONDS)
+                                offsetDraft = editableOffset(updated.workingOffset)
+                                onNudge(TimingPreviewState.NUDGE_SECONDS)
+                                seekSelectedCue(player, updated, seekable == true)
+                            }
                         }
-                        NumericField(
-                            value = offsetDraft,
-                            onChange = { value ->
-                                offsetDraft = value
-                                parsedOffset(value)?.let(onSetWorking)
+                    }
+                    item(key = "toggle") {
+                        FilterChip(
+                            selected = state.previewingUnshifted,
+                            onClick = {
+                                val updated = state.toggleUnshifted()
+                                onToggleUnshifted()
+                                seekSelectedCue(player, updated, seekable == true)
                             },
-                            label = stringResource(R.string.timing_preview_offset_label),
-                            allowNegative = true,
-                            error =
-                                stringResource(R.string.b3_validation_numeric_incomplete)
-                                    .takeIf { parsedOffset(offsetDraft) == null },
+                            label = { Text(stringResource(R.string.timing_preview_toggle_unshifted)) },
                             modifier =
                                 Modifier
-                                    .weight(1f)
-                                    .testTag(VideoMiningTestTags.TIMING_PREVIEW_OFFSET_FIELD),
+                                    .heightIn(min = 48.dp)
+                                    .testTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE),
                         )
-                        NudgeButton(
-                            label = stringResource(R.string.timing_preview_nudge_later),
-                            testTag = VideoMiningTestTags.TIMING_PREVIEW_NUDGE_LATER,
-                            modifier = Modifier.padding(top = AnkiMinerTokens.Space.related),
+                    }
+                    itemsIndexed(
+                        items = state.cues,
+                        key = { index, _ -> index },
+                    ) { index, cue ->
+                        SecondaryActionButton(
+                            onClick = {
+                                onSelectCue(index)
+                                if (seekable == true) {
+                                    player.seekAndPlay(shiftedWindow(cue, state.previewOffset).start)
+                                }
+                            },
+                            modifier =
+                                Modifier
+                                    .fillMaxWidth()
+                                    .testTag(VideoMiningTestTags.timingPreviewCue(index)),
                         ) {
-                            val updated = state.nudge(TimingPreviewState.NUDGE_SECONDS)
-                            offsetDraft = editableOffset(updated.workingOffset)
-                            onNudge(TimingPreviewState.NUDGE_SECONDS)
-                            seekSelectedCue(player, updated, seekable == true)
+                            Text(cue.text)
                         }
                     }
                 }
-                item(key = "toggle") {
-                    FilterChip(
-                        selected = state.previewingUnshifted,
-                        onClick = {
-                            val updated = state.toggleUnshifted()
-                            onToggleUnshifted()
-                            seekSelectedCue(player, updated, seekable == true)
-                        },
-                        label = { Text(stringResource(R.string.timing_preview_toggle_unshifted)) },
-                        modifier =
-                            Modifier
-                                .heightIn(min = 48.dp)
-                                .testTag(VideoMiningTestTags.TIMING_PREVIEW_TOGGLE),
-                    )
-                }
-                itemsIndexed(
-                    items = state.cues,
-                    key = { index, _ -> index },
-                ) { index, cue ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
+                ) {
                     SecondaryActionButton(
-                        onClick = {
-                            onSelectCue(index)
-                            if (seekable == true) {
-                                player.seekAndPlay(shiftedWindow(cue, state.previewOffset).start)
-                            }
-                        },
+                        onClick = onCancel,
                         modifier =
                             Modifier
-                                .fillMaxWidth()
-                                .testTag(VideoMiningTestTags.timingPreviewCue(index)),
+                                .weight(1f)
+                                .testTag(VideoMiningTestTags.TIMING_PREVIEW_CANCEL),
                     ) {
-                        Text(cue.text)
+                        Text(stringResource(R.string.timing_preview_cancel))
                     }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
-            ) {
-                SecondaryActionButton(
-                    onClick = onCancel,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .testTag(VideoMiningTestTags.TIMING_PREVIEW_CANCEL),
-                ) {
-                    Text(stringResource(R.string.timing_preview_cancel))
-                }
-                PrimaryActionButton(
-                    onClick = onApply,
-                    enabled = parsedOffset(offsetDraft) != null,
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .testTag(VideoMiningTestTags.TIMING_PREVIEW_APPLY),
-                ) {
-                    Text(stringResource(R.string.timing_preview_apply))
+                    PrimaryActionButton(
+                        onClick = onApply,
+                        enabled = parsedOffset(offsetDraft) != null,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .testTag(VideoMiningTestTags.TIMING_PREVIEW_APPLY),
+                    ) {
+                        Text(stringResource(R.string.timing_preview_apply))
+                    }
                 }
             }
         }
@@ -256,6 +269,8 @@ private fun TimingPreviewVideo(
     collapsed: Boolean,
     onToggleCollapsed: () -> Unit,
     audioOnly: Boolean,
+    audioTrackOverride: Long?,
+    maxSurfaceHeight: Dp,
 ) {
     when (seekable) {
         null ->
@@ -277,6 +292,8 @@ private fun TimingPreviewVideo(
                 collapsed = collapsed,
                 onToggleCollapsed = onToggleCollapsed,
                 audioOnly = audioOnly,
+                audioTrackOverride = audioTrackOverride,
+                maxSurfaceHeight = maxSurfaceHeight,
             )
         false ->
             Box(
