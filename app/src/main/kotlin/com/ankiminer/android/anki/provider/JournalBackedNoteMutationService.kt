@@ -319,7 +319,8 @@ internal class JournalBackedNoteMutationService(
                     LogComponent.JOURNAL,
                     "note.materialize",
                     failure,
-                    "outcome" to "reconcile",
+                    "outcome" to "fail",
+                    "result" to "reconcile",
                     "note_ordinal" to index,
                 )
                 // Everything else that reaches here rolled back: materialization runs entirely
@@ -493,7 +494,8 @@ internal class JournalBackedNoteMutationService(
                     LogComponent.JOURNAL,
                     "note.receipt.commit",
                     failure,
-                    "outcome" to "reconcile",
+                    "outcome" to "fail",
+                    "result" to "reconcile",
                     "entry_id" to noteChildId,
                     "note_ordinal" to index,
                 )
@@ -601,7 +603,8 @@ internal class JournalBackedNoteMutationService(
                 LogComponent.JOURNAL,
                 "note.complete",
                 failure,
-                "outcome" to "reconcile",
+                "outcome" to "fail",
+                "result" to "reconcile",
                 "note_id" to noteId,
                 "note_ordinal" to index,
             )

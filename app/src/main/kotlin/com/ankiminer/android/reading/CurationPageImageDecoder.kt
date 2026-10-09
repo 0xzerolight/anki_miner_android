@@ -52,8 +52,9 @@ class CurationPageImageDecoder {
                 LogComponent.READING,
                 "page_image.decode",
                 failure,
-                "outcome" to "page_image_decode_failed",
-                "entry" to entryName,
+                // No entry name: a mokuro archive member path carries the volume's title, which no
+                // export rule hides. The failure's class and message say why the decode failed.
+                "outcome" to "fail",
             )
             null
         }

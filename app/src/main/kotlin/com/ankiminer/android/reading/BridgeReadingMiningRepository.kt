@@ -1729,7 +1729,7 @@ internal class BridgeReadingMiningRepository(
             AppLog.i(
                 LogComponent.READING,
                 "progress.clamp",
-                "outcome" to "reconcile",
+                "outcome" to "ok",
                 "current" to message.current,
                 "total" to total,
             )
