@@ -22,7 +22,7 @@ import androidx.compose.ui.res.stringResource
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.KnownWordsImportPreview
 import com.ankiminer.android.data.resources.WordListKind
-import com.ankiminer.android.data.settings.EngineDefaults
+import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.ui.theme.AdaptivePairedActions
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.PrimaryActionButton
@@ -70,6 +70,7 @@ internal fun WordListImportCard(
     onRemove: (WordListKind) -> Unit,
     onBlacklistEnabledChange: (Boolean?) -> Unit,
     onWhitelistEnabledChange: (Boolean?) -> Unit,
+    inherited: LanguageDefaults = LanguageDefaults.JAPANESE,
     inlineFailure: (@Composable () -> Unit)? = null,
 ) {
     var pendingRemoval by rememberSaveable { mutableStateOf<WordListKind?>(null) }
@@ -137,6 +138,7 @@ internal fun WordListImportCard(
                 title = stringResource(R.string.word_list_blacklist),
                 toggleLabel = stringResource(R.string.settings_use_blacklist),
                 enabled = blacklistEnabled,
+                inheritedEnabled = inherited.useBlacklist,
                 onImport = onImport,
                 onRemove = {
                     pendingRemoval = removalConfirmation.request(it).pending
@@ -150,6 +152,7 @@ internal fun WordListImportCard(
                 title = stringResource(R.string.word_list_whitelist),
                 toggleLabel = stringResource(R.string.settings_use_whitelist),
                 enabled = whitelistEnabled,
+                inheritedEnabled = inherited.useWhitelist,
                 onImport = onImport,
                 onRemove = {
                     pendingRemoval = removalConfirmation.request(it).pending
@@ -169,6 +172,7 @@ private fun WordListRow(
     title: String,
     toggleLabel: String,
     enabled: Boolean?,
+    inheritedEnabled: Boolean,
     onImport: (WordListKind) -> Unit,
     onRemove: (WordListKind) -> Unit,
     onEnabledChange: (Boolean?) -> Unit,
@@ -185,12 +189,7 @@ private fun WordListRow(
     // Only once a file exists. The snapshot mapper forces the engine flag off while the list is
     // absent, so a ticked box here would claim a filter that is not running.
     if (installed != null) {
-        val engineDefault =
-            when (kind) {
-                WordListKind.BLACKLIST -> EngineDefaults.USE_BLACKLIST
-                WordListKind.WHITELIST -> EngineDefaults.USE_WHITELIST
-            }
-        NullableToggle(toggleLabel, enabled, engineDefault, onChange = onEnabledChange)
+        NullableToggle(toggleLabel, enabled, inheritedEnabled, onChange = onEnabledChange)
     }
     if (installed == null) {
         // Nothing to remove yet: one Choose button instead of a dead full-width Remove.

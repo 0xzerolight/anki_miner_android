@@ -65,6 +65,13 @@ internal data class LanguageDefaults(
                 profiles.firstOrNull { it.code == language }?.let(::from)
             }
 
+        /**
+         * What a language-scoped settings row shows while its setting is unset: [defaults] once the
+         * active language's profile has loaded, else [JAPANESE]. Until then the settings screen
+         * treats the active language as Japanese, and passes `ja` as the mining language too.
+         */
+        fun orJapanese(defaults: LanguageDefaults?): LanguageDefaults = defaults ?: JAPANESE
+
         fun from(profile: LanguageProfileInfo): LanguageDefaults {
             val defaults = profile.scopedDefaults
             val profileFieldKeys =

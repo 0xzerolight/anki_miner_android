@@ -47,6 +47,7 @@ import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
 import com.ankiminer.android.data.settings.AudioFormat
 import com.ankiminer.android.data.settings.EngineDefaults
+import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.data.settings.ThemeMode
@@ -109,6 +110,8 @@ internal data class SettingsScreenCallbacks(
     val language: LanguageSettingsActions = LanguageSettingsActions(),
     /** The active mining language; outside Japanese the Word audio card shows the device voice. */
     val miningLanguage: String = LanguageScope.JAPANESE,
+    /** What the active language's unset scoped settings resolve to; their rows show these values. */
+    val languageDefaults: LanguageDefaults = LanguageDefaults.JAPANESE,
 )
 
 internal enum class KnownWordsFailureTarget {
@@ -194,6 +197,7 @@ internal fun LazyListScope.settingsCategoryContent(
                 draft,
                 recorder,
                 callbacks.onDraftChange,
+                callbacks.languageDefaults,
             )
         SettingsCategory.LANGUAGE ->
             languageSettings(
@@ -415,6 +419,7 @@ internal fun LazyListScope.sentencesSettings(
     draft: SettingsDraft,
     recorder: SettingsCardIndexRecorder,
     onDraftChange: (SettingsDraft) -> Unit,
+    inherited: LanguageDefaults = LanguageDefaults.JAPANESE,
 ) {
     settingsCard(SettingsCategory.SENTENCES, recorder, "subtitle-text") {
         SettingsSection(stringResource(R.string.settings_subtitle_text)) {
@@ -423,6 +428,9 @@ internal fun LazyListScope.sentencesSettings(
                 onChange = { onDraftChange(draft.copy(subtitleRegex = it)) },
                 label = stringResource(R.string.settings_subtitle_regex),
                 error = validationMessage(draft, SettingsFieldKey.SUBTITLE_REGEX),
+                // An empty field runs the language's own pattern, so say which one.
+                placeholder =
+                    inherited.subtitleRegexFilter.takeIf(String::isNotEmpty)?.let(::inheritedDefault),
             )
             // Not an error: the engine compiles with Python's regex dialect, so a pattern this
             // platform cannot parse may still be valid there.
@@ -438,7 +446,7 @@ internal fun LazyListScope.sentencesSettings(
             NullableToggle(
                 stringResource(R.string.settings_use_subtitle_regex),
                 draft.useSubtitleRegex,
-                EngineDefaults.USE_SUBTITLE_REGEX_FILTER,
+                inherited.useSubtitleRegexFilter,
             ) { onDraftChange(draft.copy(useSubtitleRegex = it)) }
             Text(
                 stringResource(R.string.settings_subtitle_presets),
@@ -1143,6 +1151,7 @@ private fun LazyListScope.wordFilterSettings(
         callbacks.onDraftChange,
         showsKanaFilters = language.showsKanaFilters,
         showsNameWordsets = language.showsNameWordsets,
+        inherited = callbacks.languageDefaults,
     )
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "known-words-import") {
         KnownWordsImportCard(
@@ -1174,6 +1183,7 @@ private fun LazyListScope.wordFilterSettings(
             onWhitelistEnabledChange = {
                 callbacks.onDraftChange(draft.copy(useWhitelist = it))
             },
+            inherited = callbacks.languageDefaults,
             inlineFailure = {
                 ResourceOriginFailure(
                     setup,
@@ -1201,6 +1211,7 @@ internal fun LazyListScope.wordFilterOptions(
     onDraftChange: (SettingsDraft) -> Unit,
     showsKanaFilters: Boolean = true,
     showsNameWordsets: Boolean = true,
+    inherited: LanguageDefaults = LanguageDefaults.JAPANESE,
 ) {
     settingsCard(SettingsCategory.WORD_FILTERS, recorder, "filtering-options") {
         SettingsSection(stringResource(R.string.settings_filtering)) {
@@ -1212,7 +1223,7 @@ internal fun LazyListScope.wordFilterOptions(
                 onChange = { onDraftChange(draft.copy(minFrequency = it)) },
                 label = stringResource(R.string.settings_min_frequency),
                 error = validationMessage(draft, SettingsFieldKey.MIN_FREQUENCY),
-                placeholderValue = EngineDefaults.MIN_FREQUENCY_RANK,
+                placeholderValue = inherited.minFrequencyRank,
                 testTag = SettingsCategoryTestTags.MIN_FREQUENCY,
                 onLeave = { onDraftChange(draft.withOrderedFrequencyBand(FrequencyBandEnd.MIN)) },
             )
@@ -1221,7 +1232,7 @@ internal fun LazyListScope.wordFilterOptions(
                 onChange = { onDraftChange(draft.copy(maxFrequency = it)) },
                 label = stringResource(R.string.settings_max_frequency),
                 error = validationMessage(draft, SettingsFieldKey.MAX_FREQUENCY),
-                placeholderValue = EngineDefaults.MAX_FREQUENCY_RANK,
+                placeholderValue = inherited.maxFrequencyRank,
                 testTag = SettingsCategoryTestTags.MAX_FREQUENCY,
                 onLeave = { onDraftChange(draft.withOrderedFrequencyBand(FrequencyBandEnd.MAX)) },
             )
@@ -1230,7 +1241,7 @@ internal fun LazyListScope.wordFilterOptions(
             NullableToggle(
                 stringResource(R.string.settings_frequency_keep_unranked),
                 draft.frequencyKeepUnranked,
-                EngineDefaults.FREQUENCY_KEEP_UNRANKED,
+                inherited.frequencyKeepUnranked,
                 enabled = draft.frequencyBandSet,
             ) { onDraftChange(draft.copy(frequencyKeepUnranked = it)) }
             HorizontalDivider()
@@ -1243,7 +1254,7 @@ internal fun LazyListScope.wordFilterOptions(
                 NullableToggle(
                     stringResource(R.string.settings_known_words_match_kana_variants),
                     draft.knownWordsMatchKanaVariants,
-                    EngineDefaults.KNOWN_WORDS_MATCH_KANA_VARIANTS,
+                    inherited.knownWordsMatchKanaVariants,
                 ) { onDraftChange(draft.copy(knownWordsMatchKanaVariants = it)) }
                 SupportingText(stringResource(R.string.settings_known_words_match_kana_variants_help))
             }
@@ -1293,12 +1304,12 @@ internal fun LazyListScope.wordFilterOptions(
                 NullableToggle(
                     stringResource(R.string.settings_exclude_hiragana),
                     draft.hiragana,
-                    EngineDefaults.EXCLUDE_HIRAGANA_ONLY,
+                    inherited.excludeHiraganaOnly,
                 ) { onDraftChange(draft.copy(hiragana = it)) }
                 NullableToggle(
                     stringResource(R.string.settings_exclude_katakana),
                     draft.katakana,
-                    EngineDefaults.EXCLUDE_KATAKANA_ONLY,
+                    inherited.excludeKatakanaOnly,
                 ) { onDraftChange(draft.copy(katakana = it)) }
             }
             NumericField(

@@ -225,8 +225,9 @@ internal fun SettingTextField(
  * snapshot mapper omits them, so the engine applies its own default, and an emptied box has to say
  * which value that is.
  *
- * Pass a [com.ankiminer.android.data.settings.EngineDefaults] constant, never a re-typed literal —
- * the mirror is the side CI checks against the engine.
+ * Pass a [com.ankiminer.android.data.settings.EngineDefaults] constant, or for a language-scoped
+ * setting the active language's [com.ankiminer.android.data.settings.LanguageDefaults] value, never a
+ * re-typed literal — the mirror is the side CI checks against the engine.
  */
 internal fun inheritedDefault(value: Any): @Composable () -> Unit = { Text(value.toString()) }
 

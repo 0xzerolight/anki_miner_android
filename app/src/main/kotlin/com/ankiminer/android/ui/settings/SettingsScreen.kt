@@ -37,6 +37,7 @@ import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.data.resources.ResourceManagerState
 import com.ankiminer.android.data.resources.WordListKind
+import com.ankiminer.android.data.settings.LanguageDefaults
 import com.ankiminer.android.data.settings.LanguageScope
 import com.ankiminer.android.data.update.UpdateCheckUiState
 import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
@@ -416,6 +417,7 @@ internal fun SettingsRoute(
         onSkipUpdate = onSkipUpdate,
         onSelectedCategoryChange = onSelectedCategoryChange,
         miningLanguage = languageDefaults?.code ?: LanguageScope.JAPANESE,
+        languageDefaults = LanguageDefaults.orJapanese(languageDefaults),
         modifier = modifier,
     )
 }
@@ -476,6 +478,7 @@ private fun SettingsScreen(
     onSkipUpdate: () -> Unit,
     onSelectedCategoryChange: (SettingsCategory) -> Unit = {},
     miningLanguage: String = LanguageScope.JAPANESE,
+    languageDefaults: LanguageDefaults = LanguageDefaults.JAPANESE,
     modifier: Modifier = Modifier,
 ) {
     var selectedCategory by rememberSaveable { mutableStateOf(SettingsCategory.ANKI) }
@@ -651,6 +654,7 @@ private fun SettingsScreen(
                         onChooseNoteType = noteTypeJumps::request,
                     ),
                 miningLanguage = miningLanguage,
+                languageDefaults = languageDefaults,
             )
         SettingsSearchJumpHandler(
             entries = resolvedEntries,
