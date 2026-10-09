@@ -12,7 +12,10 @@ import com.ankiminer.android.anki.journal.RemediationKind
 import com.ankiminer.android.anki.journal.StagingDraft
 import com.ankiminer.android.anki.journal.StagingRecord
 import com.ankiminer.android.anki.journal.StagingState
+import java.io.FileDescriptor
 import java.io.FileInputStream
+import java.io.FilterInputStream
+import java.io.InputStream
 import java.io.OutputStream
 import java.nio.channels.Channels
 import java.nio.channels.FileChannel
@@ -25,6 +28,7 @@ import java.nio.file.Paths
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Production adapter over the existing durable mutation journal. */
 internal class StoreAnkiMediaStagingJournal(
@@ -93,7 +97,7 @@ internal class AndroidAnkiMediaStagingPlatform(
         return Files.exists(resolveDestination(relativePath), LinkOption.NOFOLLOW_LINKS)
     }
 
-    override fun openSource(absolutePath: String): FileInputStream {
+    override fun openSource(absolutePath: String): InputStream {
         val source =
             approveMediaSource(absolutePath, cacheRoot, filesRoot, stagingRoot, approvedSourceRoots)
 
@@ -104,7 +108,7 @@ internal class AndroidAnkiMediaStagingPlatform(
             )
         try {
             check(OsConstants.S_ISREG(Os.fstat(descriptor).st_mode)) { "Media source is not a regular file" }
-            return FileInputStream(descriptor)
+            return DescriptorOwningInputStream(descriptor, Os::close)
         } catch (error: Exception) {
             Os.close(descriptor)
             throw error
@@ -269,6 +273,29 @@ internal fun approveMediaSource(
             ?: throw IllegalArgumentException("Media source is outside approved app storage")
     validateMediaSourcePath(approvedRoot, source)
     return source
+}
+
+/**
+ * A stream that owns a descriptor this code opened with `Os.open`. Android's
+ * `FileInputStream(FileDescriptor)` treats the descriptor as borrowed and never closes it, so
+ * closing that stream alone leaks one descriptor per staged media asset. [closeDescriptor] runs
+ * once, after the wrapped stream closes; it is injected because `Os.close` does not exist on the
+ * JVM.
+ */
+internal class DescriptorOwningInputStream(
+    private val descriptor: FileDescriptor,
+    private val closeDescriptor: (FileDescriptor) -> Unit,
+) : FilterInputStream(FileInputStream(descriptor)) {
+    private val closed = AtomicBoolean(false)
+
+    override fun close() {
+        if (!closed.compareAndSet(false, true)) return
+        try {
+            super.close()
+        } finally {
+            closeDescriptor(descriptor)
+        }
+    }
 }
 
 private fun validateMediaSourcePath(

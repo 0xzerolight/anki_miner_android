@@ -48,6 +48,20 @@ internal class ManualProviderIoDeadlineScheduler : ProviderIoDeadlineScheduler {
             }
         action()
     }
+
+    /** Waits until at least [count] windows have been opened, without firing any of them. */
+    fun awaitArmCount(
+        count: Int,
+        timeoutMillis: Long = 5_000L,
+    ) {
+        lock.withLock {
+            var remaining = TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+            while (armCount.get() < count) {
+                check(remaining > 0L) { "provider deadline armed ${armCount.get()} of $count times" }
+                remaining = armedCondition.awaitNanos(remaining)
+            }
+        }
+    }
 }
 
 /** Prevent a deliberately wedged provider fake from leaking into the next JVM test. */

@@ -630,7 +630,10 @@ class SafArchiveStagerTest {
                             cancellation: ProviderIoCancellation,
                         ): InputStream = ByteArrayInputStream(payload)
 
-                        override fun reportedSizeBytes(uri: String): Long = payload.size + 1L
+                        override fun reportedSizeBytes(
+                            uri: String,
+                            cancellation: ProviderIoCancellation,
+                        ): Long = payload.size + 1L
                     },
                 )
 
@@ -670,7 +673,10 @@ class SafArchiveStagerTest {
                                 cancellation: ProviderIoCancellation,
                             ): InputStream = ByteArrayInputStream(payload)
 
-                            override fun reportedSizeBytes(uri: String): Long? = reported
+                            override fun reportedSizeBytes(
+                                uri: String,
+                                cancellation: ProviderIoCancellation,
+                            ): Long? = reported
                         },
                     )
 
@@ -682,6 +688,60 @@ class SafArchiveStagerTest {
             } finally {
                 scope.cancel()
             }
+        }
+    }
+
+    @Test
+    fun aStalledSizeQueryIsCancelledAtItsDeadlineAndTheImportStillStages() {
+        // A provider that wedges in the SIZE query (offline cloud root, unplugged OTG drive) hung
+        // the resource thread forever: the query ran with no deadline and no cancellation.
+        val root = temporary.newFolder("stalled-size")
+        val payload = ByteArray(2_048) { it.toByte() }
+        val scheduler = ManualProviderIoDeadlineScheduler()
+        val queried = CountDownLatch(1)
+        val queryCancelled = CountDownLatch(1)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val stager =
+                testStager(
+                    root,
+                    scope,
+                    object : ResourceInputOpener {
+                        override fun open(
+                            uri: String,
+                            cancellation: ProviderIoCancellation,
+                        ): InputStream = ByteArrayInputStream(payload)
+
+                        override fun reportedSizeBytes(
+                            uri: String,
+                            cancellation: ProviderIoCancellation,
+                        ): Long? {
+                            cancellation.invokeOnCancellation { queryCancelled.countDown() }
+                            queried.countDown()
+                            check(queryCancelled.await(5, TimeUnit.SECONDS)) {
+                                "size query was never cancelled"
+                            }
+                            throw IOException("provider query cancelled")
+                        }
+                    },
+                    scheduler = scheduler,
+                )
+            val staged =
+                executor.submit<StagedArchive> {
+                    stager.stage(INPUT_URI, "stalled-size", ResourceCancellationSignal()) { _, _ -> }
+                }
+            assertTrue("size query never ran", queried.await(5, TimeUnit.SECONDS))
+
+            scheduler.fireArmedDeadline()
+
+            val archive = staged.get(5, TimeUnit.SECONDS)
+            assertTrue("stalled size query was not cancelled", queryCancelled.await(1, TimeUnit.SECONDS))
+            assertEquals(payload.size.toLong(), archive.sizeBytes)
+            assertArrayEquals(payload, archive.file.readBytes())
+        } finally {
+            executor.shutdownNow()
+            scope.cancel()
         }
     }
 

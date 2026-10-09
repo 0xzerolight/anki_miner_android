@@ -121,9 +121,11 @@ internal class ProviderIoTimeoutException(
  *
  * The deadline bounds provider *stalls*, never total duration: an operation that keeps reporting
  * progress through [rearm] may run arbitrarily long, which is what multi-gigabyte SAF copies need.
- * An operation that reports nothing fails after the configured window. Detection of a stall that
- * begins immediately after a [rearm] can take up to two windows, because the deadline is only
- * re-evaluated when its timer fires.
+ * Progress is measured on the shared worker lane, so an operation queued behind a worker that keeps
+ * reporting progress is waiting, not stalled; its own window restarts when it starts. An operation
+ * that reports nothing, or that waits behind a worker that reports nothing, fails after the
+ * configured window. Detection of a stall that begins immediately after a [rearm] can take up to
+ * two windows, because the deadline is only re-evaluated when its timer fires.
  */
 internal interface ProviderIoDeadline : ProviderIoCancellation {
     /** Records provider progress, moving the deadline to the end of a fresh window. */
@@ -259,11 +261,11 @@ internal object CancellableProviderIo {
         return suspendCancellableCoroutine { continuation ->
             val cancellation = ProviderIoCancellationController()
             val completed = AtomicBoolean(false)
-            val progress = AtomicLong(0L)
             val deadline = AtomicReference<ProviderIoCancellationRegistration?>()
             val externalRegistration = AtomicReference<ProviderIoCancellationRegistration?>()
             val worker = AtomicReference<Job?>()
-            val workerStarted = AtomicBoolean(false)
+            // Taken once: by the worker as it starts, or by an abort that reaches it first.
+            val workerClaimed = AtomicBoolean(false)
             val workerFinished = AtomicBoolean(false)
 
             fun closeDeadline() {
@@ -274,22 +276,20 @@ internal object CancellableProviderIo {
                 externalRegistration.getAndSet(CLOSED_REGISTRATION)?.close()
             }
 
+            fun abandonWorker(job: Job) {
+                job.cancel()
+                // A worker aborted before it started never reaches the provider, so nothing can
+                // stay blocked; only one that started first is retained until it returns.
+                if (!workerClaimed.compareAndSet(false, true)) retainAbortedWorker(workerFinished)
+            }
+
             fun cancelWorker() {
                 val job = worker.getAndSet(CANCELLED_WORKER)
-                if (job != null && job !== CANCELLED_WORKER) {
-                    job.cancel()
-                    retainAbortedWorker(workerFinished)
-                }
+                if (job != null && job !== CANCELLED_WORKER) abandonWorker(job)
             }
 
             fun installWorker(job: Job) {
-                job.invokeOnCompletion {
-                    if (!workerStarted.get()) finishWorker(workerFinished)
-                }
-                if (!worker.compareAndSet(null, job)) {
-                    job.cancel()
-                    retainAbortedWorker(workerFinished)
-                }
+                if (!worker.compareAndSet(null, job)) abandonWorker(job)
             }
 
             fun installDeadline(scheduled: ProviderIoCancellationRegistration) {
@@ -311,11 +311,12 @@ internal object CancellableProviderIo {
             }
 
             fun armDeadline() {
-                val armedAt = progress.get()
+                val armedAt = LANE_PROGRESS.get()
                 installDeadline(
                     scheduler.schedule(timeoutMillis) {
-                        if (progress.get() != armedAt) {
-                            // The provider delivered inside this window: slow, not stalled.
+                        if (LANE_PROGRESS.get() != armedAt) {
+                            // The lane delivered inside this window: this operation, or the one
+                            // it is queued behind, is slow, not stalled.
                             armDeadline()
                         } else if (completed.compareAndSet(false, true)) {
                             closeDeadline()
@@ -359,13 +360,15 @@ internal object CancellableProviderIo {
                         cancellation.invokeOnCancellation(listener)
 
                     override fun rearm() {
-                        progress.incrementAndGet()
+                        LANE_PROGRESS.incrementAndGet()
                     }
                 }
             installWorker(
                 scope.launch(PROVIDER_WORKER_DISPATCHER) {
-                    workerStarted.set(true)
+                    if (!workerClaimed.compareAndSet(false, true)) return@launch
                     try {
+                        // Time spent queued is not this operation's budget.
+                        armDeadline()
                         val result = runCatching { operation(handle) }
                         if (completed.compareAndSet(false, true)) {
                             closeDeadline()
@@ -476,6 +479,13 @@ internal object CancellableProviderIo {
 
     /** Physical completion, which may outlive the coroutine job after cancellation. */
     private val ABORTED_WORKER = AtomicReference<AtomicBoolean?>()
+
+    /**
+     * Provider progress reported on the shared worker lane. Only one worker runs at a time, so a
+     * running operation sees its own progress and a queued one sees the progress of the worker
+     * ahead of it.
+     */
+    private val LANE_PROGRESS = AtomicLong()
 
     /**
      * Sentinel published by `cancelWorker` so a worker installed after the abort is cancelled by
