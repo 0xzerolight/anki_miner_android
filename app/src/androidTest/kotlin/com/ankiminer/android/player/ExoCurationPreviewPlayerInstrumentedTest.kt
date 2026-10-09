@@ -8,6 +8,8 @@ import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.RendererCapabilities
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -29,6 +31,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -119,17 +122,14 @@ class ExoCurationPreviewPlayerInstrumentedTest {
             )
             assertNull("Dual-audio preview raised an error: ${playbackError.get()}", playbackError.get())
 
-            instrumentation.runOnMainSync {
-                // The override is applied from onTracksChanged, which lands before STATE_READY.
-                val selected =
-                    player.media3Player.currentTracks.groups
-                        .filter { it.type == C.TRACK_TYPE_AUDIO }
-                        .also { assertEquals("fixture should carry two audio tracks", 2, it.size) }
-                        .single { it.isTrackSelected(0) }
-                // Without the override the DefaultTrackSelector breaks the tie on the device
-                // locale, and the CI emulator is en_US, so this reads "en".
-                assertEquals("ja", selected.getTrackFormat(0).language)
-            }
+            // Without the override the DefaultTrackSelector breaks the tie on the device locale,
+            // and the CI emulator is en_US, so the selection would stay on "en".
+            val selected = awaitSelectedAudioLanguages(instrumentation, player)
+            assertEquals(
+                "Selected audio never settled on ja; last selected: $selected",
+                listOf("ja"),
+                selected,
+            )
         } finally {
             instrumentation.runOnMainSync {
                 player.media3Player.removeListener(listener)
@@ -173,17 +173,15 @@ class ExoCurationPreviewPlayerInstrumentedTest {
                 playbackError.get(),
             )
 
-            instrumentation.runOnMainSync {
-                // audio_index 1 is the English track (ffprobe ordinal). The JP-auto rule can
-                // never pick "en" on this fixture, so a pass proves the Media3-group ↔ ffprobe
-                // audio_index mapping holds on a real container.
-                val selected =
-                    player.media3Player.currentTracks.groups
-                        .filter { it.type == C.TRACK_TYPE_AUDIO }
-                        .also { assertEquals("fixture should carry two audio tracks", 2, it.size) }
-                        .single { it.isTrackSelected(0) }
-                assertEquals("en", selected.getTrackFormat(0).language)
-            }
+            // audio_index 1 is the English track (ffprobe ordinal). The JP-auto rule can never
+            // pick "en" on this fixture, so a pass proves the Media3-group ↔ ffprobe audio_index
+            // mapping holds on a real container.
+            val selected = awaitSelectedAudioLanguages(instrumentation, player)
+            assertEquals(
+                "Selected audio never settled on en; last selected: $selected",
+                listOf("en"),
+                selected,
+            )
         } finally {
             instrumentation.runOnMainSync {
                 player.media3Player.removeListener(listener)
@@ -403,6 +401,49 @@ class ExoCurationPreviewPlayerInstrumentedTest {
             Thread.sleep(POLL_INTERVAL_MILLIS)
         }
         return player.isPlaying.value == expected
+    }
+
+    /**
+     * Waits until the selected audio track is the one the preview's audio override names, and
+     * returns the languages selected then. selectPreferredAudio sets that override from
+     * onTracksChanged, before STATE_READY, but the re-selected tracks reach currentTracks only
+     * after a round trip through the playback thread, so READY can still show the device-locale
+     * pick. Waiting on the override rather than on a language keeps a test whose expected track
+     * is also the locale's pick from passing before any override exists. Fails if the selection
+     * has not reached an override within READY_TIMEOUT_SECONDS.
+     */
+    private fun awaitSelectedAudioLanguages(
+        instrumentation: Instrumentation,
+        player: ExoCurationPreviewPlayer,
+    ): List<String?> {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(READY_TIMEOUT_SECONDS)
+        val audioGroups = AtomicReference<List<Tracks.Group>>()
+        val audioOverride = AtomicReference<TrackSelectionOverride?>()
+        while (true) {
+            instrumentation.runOnMainSync {
+                audioGroups.set(
+                    player.media3Player.currentTracks.groups.filter { it.type == C.TRACK_TYPE_AUDIO },
+                )
+                audioOverride.set(
+                    player.media3Player.trackSelectionParameters.overrides.values
+                        .firstOrNull { it.type == C.TRACK_TYPE_AUDIO },
+                )
+            }
+            assertEquals("fixture should carry two audio tracks", 2, audioGroups.get().size)
+            val selectedGroups = audioGroups.get().filter { it.isTrackSelected(0) }
+            val selected = selectedGroups.map { it.getTrackFormat(0).language }
+            val overrideGroup = audioOverride.get()?.mediaTrackGroup
+            val selectedGroup = selectedGroups.singleOrNull()?.mediaTrackGroup
+            if (overrideGroup != null && selectedGroup == overrideGroup) return selected
+            if (System.nanoTime() >= deadline) {
+                val seen = overrideGroup?.let { "override on ${it.getFormat(0).language}" }
+                fail(
+                    "Audio selection never reached an override (${seen ?: "none landed"}); " +
+                        "last selected: $selected",
+                )
+            }
+            Thread.sleep(POLL_INTERVAL_MILLIS)
+        }
     }
 
     private fun mainThreadPositionMillis(
