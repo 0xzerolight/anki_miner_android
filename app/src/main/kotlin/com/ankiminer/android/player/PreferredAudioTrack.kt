@@ -32,10 +32,11 @@ private fun normalizedLanguageCodes(codes: Collection<String>): Set<String> =
     codes.mapNotNull(Util::normalizeLanguageCode).toSet()
 
 /**
- * The audio track the preview should play, mirroring the engine's rule: the first audio stream
- * tagged in the mining language (`find_japanese_audio_stream`, or the profile's
- * `audio_track_codes` for another language), else the first audio stream (its `-map 0:a:0`
- * fallback). Returns null when the media has no audio.
+ * The audio track the preview should play, mirroring the engine's rule
+ * (`find_japanese_audio_stream`): among the audio streams tagged in the mining language
+ * (`matches_language_tag` against the profile's `audio_track_codes`), the first one flagged
+ * default, else the first one; with no match, the first audio stream (its `-map 0:a:0` fallback).
+ * Returns null when the media has no audio.
  *
  * Progressive media groups carry numeric IDs in extractor/source order, but [Tracks.groups] is
  * rebuilt in renderer order. Sort those IDs before applying the engine rule; retain list order for
@@ -45,9 +46,9 @@ private fun normalizedLanguageCodes(codes: Collection<String>): Set<String> =
  * outranks every other rule, `0` included — it is a real ordinal, not a falsy absence, hence the
  * explicit `null` check rather than an "if present" one. An invalid or out-of-range value (no
  * override, or an index the source doesn't have) falls back to the same rule
- * `_resolve_audio_track_global_index` uses: first Japanese-tagged, else first audio. Deliberately
- * no language veto on the overridden track — a mislabeled file, where the desired track isn't
- * tagged Japanese at all, is the reason the override exists.
+ * `_resolve_audio_track_global_index` uses, the one above. Deliberately no language veto on the
+ * overridden track — a mislabeled file, where the desired track isn't tagged Japanese at all, is
+ * the reason the override exists.
  *
  * Language only, with no renderer-support filter. If the selected track is a codec this device
  * cannot decode, selecting it anyway surfaces [PreviewFailure.AudioTrackUnsupported], which is the
@@ -71,7 +72,20 @@ fun preferredAudioGroup(
         return sourceOrderedGroups[audioTrackOverride.toInt()]
     }
     val preferred = normalizedLanguageCodes(languageCodes)
-    return sourceOrderedGroups.firstOrNull { group ->
-        preferred.contains(group.getTrackFormat(0).language ?: "")
-    } ?: sourceOrderedGroups.firstOrNull()
+    val matching =
+        sourceOrderedGroups.filter { group ->
+            matchesLanguageTag(group.getTrackFormat(0).language, preferred)
+        }
+    return matching.firstOrNull { group ->
+        group.getTrackFormat(0).selectionFlags and C.SELECTION_FLAG_DEFAULT != 0
+    } ?: matching.firstOrNull() ?: sourceOrderedGroups.firstOrNull()
 }
+
+/**
+ * Engine parity: `audio_track_detector.matches_language_tag`. The exact tag, or a regional variant
+ * whose primary subtag is wanted (`ja-jp` -> `ja`); [Format] has already lower-cased the tag.
+ */
+private fun matchesLanguageTag(
+    language: String?,
+    codes: Set<String>,
+): Boolean = language != null && (language in codes || language.substringBefore('-', "") in codes)

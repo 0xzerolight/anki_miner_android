@@ -137,11 +137,34 @@ class PreferredAudioGroupTest {
         assertSame(second, preferredAudioGroup(tracks, 1L))
     }
 
+    @Test
+    fun defaultFlaggedJapaneseTrackWinsOverAnEarlierJapaneseOne() {
+        // find_japanese_audio_stream: the default-flagged match, else the first. The flag only
+        // ranks language matches, so the default English track before them never wins.
+        val commentary = audioGroup("1", "jpn")
+        val main = audioGroup("2", "jpn", selectionFlags = C.SELECTION_FLAG_DEFAULT)
+        val englishDefault = audioGroup("0", "eng", selectionFlags = C.SELECTION_FLAG_DEFAULT)
+        val tracks = Tracks(listOf(videoGroup(), englishDefault, commentary, main))
+
+        assertSame(main, preferredAudioGroup(tracks))
+    }
+
+    @Test
+    fun regionalJapaneseTagMatchesOnItsPrimarySubtag() {
+        // matches_language_tag accepts ja-JP through its primary subtag; media3 hands it over
+        // as ja-jp.
+        val japanese = audioGroup("2", "ja-JP")
+        val tracks = Tracks(listOf(audioGroup("1", "eng"), japanese))
+
+        assertSame(japanese, preferredAudioGroup(tracks))
+    }
+
     private fun audioGroup(
         id: String,
         language: String?,
         support: Int = C.FORMAT_HANDLED,
         sampleMimeType: String = MimeTypes.AUDIO_AAC,
+        selectionFlags: Int = 0,
     ): Tracks.Group =
         Tracks.Group(
             TrackGroup(
@@ -149,6 +172,7 @@ class PreferredAudioGroupTest {
                 Format.Builder()
                     .setSampleMimeType(sampleMimeType)
                     .setLanguage(language)
+                    .setSelectionFlags(selectionFlags)
                     .build(),
             ),
             false,
