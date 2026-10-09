@@ -55,6 +55,10 @@ internal interface MiningRunUndoManager {
  * Undoes one finished mining run: the run's notes are deleted from AnkiDroid, then the words it
  * mined are taken back out of the known-words list.
  *
+ * An undo is finished only once the words are reverted. A receipt that says otherwise (the caller
+ * was cancelled mid-delete, or the revert was refused) makes the next undo of that run retry only
+ * the revert: the notes are already gone, and deleting again would recount them.
+ *
  * Process-owned, so an Activity recreation cannot start a second undo of the same run, and the
  * delete itself runs on [executor] behind a [CompletableDeferred]: a caller coroutine cancelled
  * mid-delete abandons only its own await, never a half-finished delete that nothing recorded.
@@ -85,7 +89,7 @@ internal class ProcessMiningRunUndoManager(
         noteIds: List<Long>,
         minedForms: List<String>,
     ): UndoRunOutcome {
-        mutableUndoneRuns.value[runId]?.let { recorded ->
+        mutableUndoneRuns.value[runId]?.takeIf { it.knownWordsReverted }?.let { recorded ->
             AppLog.i(
                 LogComponent.ANKI,
                 UNDO_OP,
@@ -116,23 +120,25 @@ internal class ProcessMiningRunUndoManager(
         }
         mutableUndoActive.value = true
         try {
+            val earlier = mutableUndoneRuns.value[runId]
             val deleted =
-                when (val phase = deleteNotes(runId, noteIds)) {
-                    is DeletePhase.Deleted -> phase.deletedNotes
-                    DeletePhase.LeaseBusy -> return UndoRunOutcome.Busy
-                    is DeletePhase.Failed -> {
-                        AppLog.w(
-                            LogComponent.ANKI,
-                            UNDO_OP,
-                            phase.failure,
-                            "outcome" to "fail",
-                            "reason" to "delete_failed",
-                            "runId" to runId,
-                            "notes" to noteIds.size,
-                        )
-                        return UndoRunOutcome.DeleteFailed
+                earlier?.deletedNotes
+                    ?: when (val phase = deleteNotes(runId, noteIds)) {
+                        is DeletePhase.Deleted -> phase.deletedNotes
+                        DeletePhase.LeaseBusy -> return UndoRunOutcome.Busy
+                        is DeletePhase.Failed -> {
+                            AppLog.w(
+                                LogComponent.ANKI,
+                                UNDO_OP,
+                                phase.failure,
+                                "outcome" to "fail",
+                                "reason" to "delete_failed",
+                                "runId" to runId,
+                                "notes" to noteIds.size,
+                            )
+                            return UndoRunOutcome.DeleteFailed
+                        }
                     }
-                }
             val reverted = reverter.removeMinedWords(minedForms)
             val receipt = UndoneRunReceipt(runId, deletedNotes = deleted, knownWordsReverted = reverted)
             recordReceipt(receipt)
@@ -145,6 +151,7 @@ internal class ProcessMiningRunUndoManager(
                 "deleted" to deleted,
                 "words" to minedForms.size,
                 "reverted" to reverted,
+                "revertOnly" to (earlier != null),
             )
             return UndoRunOutcome.Undone(receipt)
         } finally {

@@ -300,7 +300,12 @@ class MediaMiningViewModel internal constructor(
             // delete phase releasing its ANKI_SETUP lease and the revert phase acquiring RESOURCE,
             // during which `aux.activeKind` alone would read null.
             val restored = local.restoredReceipt?.takeIf { runState == MiningRunState.Idle }
-            val undoneReceipt = (runState.runId ?: restored?.runId)?.let { aux.undoneRuns[it] }
+            // A receipt whose known-words revert is still owed is not a finished undo: Undo stays
+            // offered so it can retry the revert.
+            val undoneReceipt =
+                (runState.runId ?: restored?.runId)
+                    ?.let { aux.undoneRuns[it] }
+                    ?.takeIf { it.knownWordsReverted }
             val undoAvailable =
                 undoManager != null &&
                     (
@@ -1188,6 +1193,12 @@ class MediaMiningViewModel internal constructor(
     fun requestUndo() {
         if (!uiState.value.undoAvailable) return
         val target = undoTarget() ?: return
+        if (undoManager?.undoneRuns?.value?.containsKey(target.runId) == true) {
+            // The notes are already gone and only the known-words revert is retried: there is no
+            // delete left to confirm.
+            confirmUndo()
+            return
+        }
         localState.update { it.copy(undoConfirmationNoteCount = target.noteIds.size) }
     }
 
@@ -1211,8 +1222,11 @@ class MediaMiningViewModel internal constructor(
             try {
                 when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms)) {
                     is UndoRunOutcome.Undone -> {
-                        receiptStore.clear()
-                        if (!outcome.receipt.knownWordsReverted) {
+                        if (outcome.receipt.knownWordsReverted) {
+                            receiptStore.clear()
+                        } else {
+                            // The revert is still owed, so the receipt stays and Undo retries it,
+                            // after a process kill too.
                             localState.update { it.copy(commandError = MiningCommandError.UNDO_WORDS) }
                         }
                     }

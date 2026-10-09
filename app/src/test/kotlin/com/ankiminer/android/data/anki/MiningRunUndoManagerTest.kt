@@ -167,6 +167,49 @@ class MiningRunUndoManagerTest {
         }
 
     @Test
+    fun `an undo cut off during the delete reverts the words on retry without deleting again`() =
+        runTest {
+            val executor = QueuedExecutor()
+            val backend = RecordingBackend()
+            val reverter = RecordingReverter()
+            val manager = undoManager(backend, executor, RuntimeWorkCoordinator(), reverter)
+            val caller = launch { manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫")) }
+            runCurrent()
+            caller.cancel()
+            caller.join()
+            executor.runNext()
+
+            val retry = manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫"))
+
+            val expected = UndoneRunReceipt("run-1", deletedNotes = 3, knownWordsReverted = true)
+            assertEquals(UndoRunOutcome.Undone(expected), retry)
+            assertEquals(expected, manager.undoneRuns.value["run-1"])
+            assertEquals(1, backend.calls.size)
+            assertTrue(executor.queued.isEmpty())
+            assertEquals(listOf(listOf("猫")), reverter.calls)
+            assertFalse(manager.undoActive.value)
+        }
+
+    @Test
+    fun `a refused revert is retried by the next undo without deleting again`() =
+        runTest {
+            val backend = RecordingBackend()
+            val reverter = RecordingReverter(result = false)
+            val manager = undoManager(backend, Executor(Runnable::run), RuntimeWorkCoordinator(), reverter)
+            manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            reverter.result = true
+
+            val retry = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            val again = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+
+            val expected = UndoneRunReceipt("run-1", deletedNotes = 2, knownWordsReverted = true)
+            assertEquals(UndoRunOutcome.Undone(expected), retry)
+            assertEquals(retry, again)
+            assertEquals(1, backend.calls.size)
+            assertEquals(2, reverter.calls.size)
+        }
+
+    @Test
     fun `the receipt map keeps the eight newest runs`() =
         runTest {
             val manager =
@@ -219,7 +262,7 @@ class MiningRunUndoManagerTest {
     }
 
     private class RecordingReverter(
-        private val result: Boolean = true,
+        var result: Boolean = true,
         private val onRevert: ((List<String>) -> Unit)? = null,
     ) : MinedWordsReverter {
         val calls = mutableListOf<List<String>>()

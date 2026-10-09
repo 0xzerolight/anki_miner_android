@@ -1,12 +1,15 @@
 package com.ankiminer.android.vm
 
 import androidx.lifecycle.SavedStateHandle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStore
 import com.ankiminer.android.MainDispatcherRule
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.MinedWordsReverter
 import com.ankiminer.android.data.anki.MiningRunUndoBackend
 import com.ankiminer.android.data.anki.MiningRunUndoManager
 import com.ankiminer.android.data.anki.ProcessMiningRunUndoManager
+import com.ankiminer.android.dictionary.DefinitionLookupService
 import com.ankiminer.android.media.SafBroker
 import com.ankiminer.android.media.SafDocument
 import com.ankiminer.android.mining.AnkiWriteState
@@ -19,6 +22,8 @@ import com.ankiminer.android.mining.ProcessingResult
 import com.ankiminer.android.mining.VideoMiningInput
 import com.ankiminer.android.reading.ReadingMiningInput
 import com.ankiminer.android.reading.ReadingMiningRepository
+import com.ankiminer.android.ui.reading.ReadingMiningCommandError
+import com.ankiminer.android.ui.video.MiningCommandError
 import java.util.concurrent.Executor
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -29,6 +34,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -101,6 +107,126 @@ class MiningUndoReceiptLifecycleTest {
             assertFalse(restored.uiState.value.undoAvailable)
         }
 
+    @Test
+    fun anUndoCutOffMidDeleteRevertsTheWordsOnRetryFromTheNextViewModel() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val executor = QueuedExecutor()
+            val undo = UndoHarness(executor = executor)
+            val repository = FakeMiningRepository(MiningRunState.Success("run", result()))
+            val store = ViewModelStore()
+            val first =
+                ViewModelProvider.create(
+                    store,
+                    MediaMiningViewModel.Factory(
+                        repository = repository,
+                        safBroker = NoSafBroker,
+                        lane = MiningLane.VIDEO,
+                        definitionLookup = DefinitionLookupService { _, _, _, _ -> error("not used") },
+                        savedStateHandleFactory = { SavedStateHandle() },
+                        undoManager = undo.manager,
+                    ),
+                )[MediaMiningViewModel::class.java]
+            runCurrent()
+            first.requestUndo()
+            first.confirmUndo()
+            runCurrent()
+
+            // The user backs out while the provider delete runs: the ViewModel is cleared
+            // mid-delete, and the delete still finishes on the worker.
+            store.clear()
+            runCurrent()
+            executor.runNext()
+            runCurrent()
+            assertEquals(listOf(listOf(42L)), undo.deleteCalls)
+            assertEquals(emptyList<List<String>>(), undo.revertCalls)
+
+            val next = mediaViewModel(repository, SavedStateHandle(), undo.manager)
+            runCurrent()
+            assertTrue(next.uiState.value.undoAvailable)
+            assertNull(next.uiState.value.undoneNoteCount)
+
+            next.requestUndo()
+            runCurrent()
+
+            // Only the revert was left, so there was no delete to confirm.
+            assertNull(next.uiState.value.undoConfirmationNoteCount)
+            assertEquals(listOf(listOf(42L)), undo.deleteCalls)
+            assertEquals(listOf(listOf("食べる")), undo.revertCalls)
+            assertEquals(1, next.uiState.value.undoneNoteCount)
+            assertFalse(next.uiState.value.undoAvailable)
+        }
+
+    @Test
+    fun aRefusedReadingRevertKeepsUndoOfferedAndTheRetryOnlyRevertsTheWords() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val undo = UndoHarness(revertResults = listOf(false))
+            val savedState = SavedStateHandle()
+            val viewModel =
+                readingViewModel(
+                    FakeReadingRepository(MiningRunState.Success("run", result())),
+                    savedState,
+                    undo.manager,
+                )
+            runCurrent()
+            viewModel.requestUndo()
+            viewModel.confirmUndo()
+            runCurrent()
+
+            assertEquals(ReadingMiningCommandError.UNDO_WORDS, viewModel.uiState.value.commandError)
+            assertTrue(viewModel.uiState.value.undoAvailable)
+            assertNull(viewModel.uiState.value.undoneNoteCount)
+            assertEquals("run", MiningReceiptStore(savedState, READING_RECEIPT).restore()?.runId)
+
+            viewModel.requestUndo()
+            runCurrent()
+
+            assertNull(viewModel.uiState.value.undoConfirmationNoteCount)
+            assertEquals(listOf(listOf(42L)), undo.deleteCalls)
+            assertEquals(listOf(listOf("食べる"), listOf("食べる")), undo.revertCalls)
+            assertNull(viewModel.uiState.value.commandError)
+            assertEquals(1, viewModel.uiState.value.undoneNoteCount)
+            assertFalse(viewModel.uiState.value.undoAvailable)
+            assertNull(MiningReceiptStore(savedState, READING_RECEIPT).restore())
+        }
+
+    @Test
+    fun aReceiptWhoseRevertIsOwedSurvivesARelaunchAndAProcessKill() =
+        runTest(mainDispatcherRule.dispatcher) {
+            val undo = UndoHarness(revertResults = listOf(false))
+            val repository = FakeMiningRepository(MiningRunState.Success("run", result()))
+            val firstState = SavedStateHandle()
+            val first = mediaViewModel(repository, firstState, undo.manager)
+            runCurrent()
+            first.requestUndo()
+            first.confirmUndo()
+            runCurrent()
+            assertEquals(MiningCommandError.UNDO_WORDS, first.uiState.value.commandError)
+            assertEquals("run", MiningReceiptStore(firstState, VIDEO_RECEIPT).restore()?.runId)
+
+            // Recreated while the process lives: the still-terminal run is saved again, revert owed.
+            val relaunched = firstState.rebuilt()
+            mediaViewModel(repository, relaunched, undo.manager)
+            runCurrent()
+            assertEquals("run", MiningReceiptStore(relaunched, VIDEO_RECEIPT).restore()?.runId)
+
+            // Android kills the process: the new manager has no record, so Undo runs in full.
+            val nextProcess = UndoHarness()
+            val restored =
+                mediaViewModel(FakeMiningRepository(MiningRunState.Idle), relaunched.rebuilt(), nextProcess.manager)
+            runCurrent()
+            assertEquals("run", restored.uiState.value.restoredReceipt?.runId)
+            assertTrue(restored.uiState.value.undoAvailable)
+
+            restored.requestUndo()
+            runCurrent()
+            assertEquals(1, restored.uiState.value.undoConfirmationNoteCount)
+            restored.confirmUndo()
+            runCurrent()
+            assertEquals(listOf(listOf(42L)), nextProcess.deleteCalls)
+            assertEquals(listOf(listOf("食べる")), nextProcess.revertCalls)
+            assertFalse(restored.uiState.value.undoAvailable)
+        }
+
     private fun mediaViewModel(
         repository: MiningRepository,
         savedStateHandle: SavedStateHandle,
@@ -157,6 +283,16 @@ class MiningUndoReceiptLifecycleTest {
                         }
                     },
             )
+    }
+
+    private class QueuedExecutor : Executor {
+        private val queued = ArrayDeque<Runnable>()
+
+        override fun execute(command: Runnable) {
+            queued.addLast(command)
+        }
+
+        fun runNext() = queued.removeFirst().run()
     }
 
     private class FakeMiningRepository(
