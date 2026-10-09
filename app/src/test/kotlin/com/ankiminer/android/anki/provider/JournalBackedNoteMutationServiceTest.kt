@@ -23,6 +23,7 @@ import com.ankiminer.android.anki.journal.RoutingIntentDraft
 import com.ankiminer.android.anki.journal.RoutingIntentRecord
 import com.ankiminer.android.anki.journal.RoutingIntentState
 import com.ankiminer.android.anki.protocol.AllowDuplicatesCreateDuplicateScope
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.anki.protocol.CollectionCreateDuplicateScope
 import com.ankiminer.android.anki.protocol.CommittedFailedNote
 import com.ankiminer.android.anki.protocol.CreateDuplicateCandidate
@@ -85,6 +86,49 @@ class JournalBackedNoteMutationServiceTest {
             assertEquals(1, harness.journal.cardReceiptCalls)
             assertEquals(NoteRoutingPhase.POSTCHECK_VERIFIED, harness.journal.phases.last())
             assertTrue(harness.journal.readyResponse?.results?.single() is AlignedResult.NoteCreated)
+        }
+
+    @Test
+    fun `tags AnkiDroid stored in an existing tag's case still verify the created note`() =
+        withHarness { harness ->
+            harness.reads.noteTagsWire = " Mined "
+            harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, DEFAULT_DECK_ID))
+            harness.provider.routeBlock = {
+                harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, TARGET.deck.id))
+                1
+            }
+
+            val outcome = harness.service.create(harness.owner, harness.request())
+
+            assertEquals(listOf(CreatedNote(CLIENT_NOTE_ID, NOTE_ID)), outcome.result.results)
+            assertNull(outcome.result.error)
+            assertEquals(1, harness.provider.routeCalls)
+        }
+
+    @Test
+    fun `createNotes naming the verified deck in another Anki spelling is accepted`() =
+        withHarness { harness ->
+            harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, DEFAULT_DECK_ID))
+            harness.provider.routeBlock = {
+                harness.reads.cards = listOf(CardIdentity(CARD_ID, NOTE_ID, 0, TARGET.deck.id))
+                1
+            }
+
+            val outcome = harness.service.create(harness.owner, harness.request().copy(deckName = "mining"))
+
+            assertEquals(listOf(CreatedNote(CLIENT_NOTE_ID, NOTE_ID)), outcome.result.results)
+        }
+
+    @Test
+    fun `stored tags with different content remain a committed write failure`() =
+        withHarness { harness ->
+            harness.reads.noteTagsWire = " other "
+
+            val outcome = harness.service.create(harness.owner, harness.request())
+
+            assertTrue(outcome.result.results.single() is CommittedFailedNote)
+            assertEquals(AnkiErrorCode.WRITE_FAILED, outcome.result.error?.code)
+            assertEquals(0, harness.provider.routeCalls)
         }
 
     @Test
@@ -568,6 +612,7 @@ class JournalBackedNoteMutationServiceTest {
         var duplicateReads = 0
         var failNextCardRead = false
         var noteJoinedFields = "猫\u001fcat"
+        var noteTagsWire = " mined "
 
         override fun readTargetBeforeEntry(
             owner: AnkiRunStateRegistry.RunOwner,
@@ -586,7 +631,7 @@ class JournalBackedNoteMutationServiceTest {
         override fun readTargetAfterEntry(expected: TargetSnapshot): TargetSnapshot = expected
 
         override fun readNoteAfterEntry(noteId: Long): NoteSnapshot =
-            NoteSnapshot(noteId, TARGET.model.id, noteJoinedFields, " mined ")
+            NoteSnapshot(noteId, TARGET.model.id, noteJoinedFields, noteTagsWire)
 
         override fun readCardsAfterEntry(noteId: Long, templateCount: Int): List<CardIdentity> = cards
 

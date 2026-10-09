@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogComponent
 
@@ -21,7 +22,10 @@ internal sealed interface AnkiProviderReadiness {
     ) : AnkiProviderReadiness
 }
 
-/** Local startup-journal recovery is independent from ContentProvider availability. */
+/**
+ * Startup-journal recovery. It reconciles entered provider mutations by reading AnkiDroid, so it
+ * runs only behind a Ready provider probe and stays [NotChecked] while AnkiDroid cannot be read.
+ */
 internal sealed interface AnkiRecoveryReadiness {
     data object NotChecked : AnkiRecoveryReadiness
 
@@ -49,14 +53,14 @@ internal class AnkiProviderReadinessProbe(
         workerThreadGuard.checkWorkerThread()
         val provider = probeProvider(cancellation)
         val recovery =
-            if (cancellation.isCancelled()) {
+            if (provider !is AnkiProviderReadiness.Ready || cancellation.isCancelled()) {
                 AnkiRecoveryReadiness.NotChecked
             } else {
                 try {
                     recoverLocalState()
                     AnkiRecoveryReadiness.Ready
-                } catch (_: RuntimeException) {
-                    AnkiRecoveryReadiness.Blocked
+                } catch (failure: RuntimeException) {
+                    if (failure.isProviderAccessLoss()) AnkiRecoveryReadiness.NotChecked else AnkiRecoveryReadiness.Blocked
                 }
             }
         return AnkiReadinessSnapshot(provider, recovery)
@@ -114,3 +118,15 @@ internal class AnkiProviderReadinessProbe(
             null
         }
 }
+
+/** AnkiDroid could not be read at all: nothing was observed, so the caller must try again later. */
+internal fun RuntimeException.isProviderAccessLoss(): Boolean = this is AnkiReadFailure && code in PROVIDER_ACCESS_LOSS
+
+private val PROVIDER_ACCESS_LOSS =
+    setOf(
+        AnkiErrorCode.PERMISSION_REQUIRED,
+        AnkiErrorCode.PROVIDER_UNAVAILABLE,
+        AnkiErrorCode.API_DISABLED,
+        AnkiErrorCode.TIMEOUT,
+        AnkiErrorCode.CANCELLED,
+    )

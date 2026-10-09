@@ -166,6 +166,32 @@ class JournalRequestAndResultTest {
     }
 
     @Test
+    fun verifiedTargetMayCarryAnkiDroidsSpellingOfTheRequestedDeck() {
+        val target = testTargetSnapshot()
+        listOf("mining", "MINING").forEach { requested ->
+            val request = JournalRequest.from(verifyRequest().copy(deckName = requested))
+            JournalStateMachine.validateTerminalResponse(
+                request,
+                JournalResponse.VerifySuccess(request.key, target),
+                emptyList(),
+            )
+        }
+        val nested = JournalRequest.from(verifyRequest().copy(deckName = "japanese :: mining"))
+        JournalStateMachine.validateTerminalResponse(
+            nested,
+            JournalResponse.VerifySuccess(nested.key, target.copy(deck = target.deck.copy(name = "Japanese::Mining"))),
+            emptyList(),
+        )
+        assertThrows(JournalInvariantViolation::class.java) {
+            JournalStateMachine.validateTerminalResponse(
+                nested,
+                JournalResponse.VerifySuccess(nested.key, target),
+                emptyList(),
+            )
+        }
+    }
+
+    @Test
     fun mediaTerminalizationRequiresExactAlignmentStrictSuffixAndMatchingErrors() {
         val request = JournalRequest.from(storeRequest())
         val (asset0, asset1, asset2) = request.itemIds

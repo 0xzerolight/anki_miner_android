@@ -332,6 +332,87 @@ class DurableTargetVerifierTest {
     }
 
     @Test
+    fun `deck spelled differently only by case or separator spacing is adopted without create`() {
+        val fixture = fixture()
+        fixture.gateway.queryHandler = targetHandler(deck = deckRow(name = "Japanese::Mining")) { true }
+
+        val outcome = fixture.execute(request(deckName = "japanese :: mining"))
+
+        assertEquals(20L, (outcome.response as VerifyTargetResult).deckId)
+        assertTrue(fixture.gateway.deckCommands.isEmpty())
+        assertEquals("Japanese::Mining", fixture.journal.storedTarget?.deck?.name)
+        assertEquals("Japanese::Mining", fixture.currentTarget()?.deck?.name)
+        assertEquals(listOf("replay", "begin", "storeTarget", "resultReady"), fixture.journal.calls)
+    }
+
+    @Test
+    fun `missing deck is created under the spelling AnkiDroid will store`() {
+        var created = false
+        val fixture = fixture()
+        fixture.gateway.queryHandler = { query, _ ->
+            when (query.endpoint) {
+                ProviderEndpoint.MODELS, ProviderEndpoint.MODEL_BY_ID ->
+                    FakeProviderCursor(query.projection, listOf(modelRow()))
+                ProviderEndpoint.MODEL_TEMPLATES ->
+                    FakeProviderCursor(query.projection, listOf(templateRow()))
+                ProviderEndpoint.DECKS ->
+                    FakeProviderCursor(
+                        query.projection,
+                        listOf(deckRow(5L, "Japanese")) + if (created) listOf(deckRow(20L, "Japanese::Mining")) else emptyList(),
+                    )
+                ProviderEndpoint.DECK_BY_ID -> FakeProviderCursor(query.projection, listOf(deckRow(20L, "Japanese::Mining")))
+                else -> error("unexpected query $query")
+            }
+        }
+        fixture.gateway.createDeckHandler = { command ->
+            assertEquals("Japanese::Mining", command.deckName)
+            created = true
+            "content://com.ichi2.anki.flashcards/decks/20"
+        }
+
+        val outcome = fixture.execute(request(deckName = "japanese :: Mining"))
+
+        assertEquals(20L, (outcome.response as VerifyTargetResult).deckId)
+        assertEquals(1, fixture.gateway.deckCommands.size)
+        assertEquals("Japanese::Mining", fixture.journal.expectation?.expectedDeckName)
+        assertEquals("Japanese::Mining", fixture.journal.verifiedTarget?.deck?.name)
+        assertTrue("completeUncertain" !in fixture.journal.calls)
+    }
+
+    @Test
+    fun `entered create stored under another spelling than the frozen one stays uncertain`() {
+        var created = false
+        val fixture = fixture()
+        fixture.gateway.queryHandler =
+            targetHandler(deck = deckRow(20L, "MINING")) { created }
+        fixture.gateway.createDeckHandler = {
+            created = true
+            "content://com.ichi2.anki.flashcards/decks/20"
+        }
+
+        val outcome = fixture.execute(request())
+
+        assertEquals(AnkiErrorCode.POST_COMMIT_UNCERTAIN, (outcome.response as AnkiErrorResult).code)
+        assertTrue("completeUncertain" in fixture.journal.calls)
+        assertEquals(null, fixture.journal.verifiedTarget)
+    }
+
+    @Test
+    fun `replayed target in AnkiDroid's spelling still answers the requested deck`() {
+        val fixture = fixture()
+        val replayed = request(deckName = "mining")
+        val durableRequest = JournalRequest.from(replayed)
+        fixture.journal.ready[durableRequest.key] =
+            JournalResponse.VerifySuccess(durableRequest.key, targetSnapshot().toDurableSnapshot())
+        fixture.gateway.queryHandler = { query, _ -> error("provider must not be queried: $query") }
+
+        val outcome = fixture.execute(replayed)
+
+        assertTrue(outcome.replayed)
+        assertEquals(targetSnapshot(), outcome.targetForAdmission)
+    }
+
+    @Test
     fun `ready replay returns exact durable target without provider or journal mutation`() {
         val fixture = fixture()
         val durableRequest = JournalRequest.from(request())
@@ -698,11 +779,12 @@ class DurableTargetVerifierTest {
     private fun request(
         requestId: String = REQUEST_ID,
         requiredFields: List<String> = listOf("Expression"),
+        deckName: String = "Mining",
     ) =
         VerifyTargetRequest(
             runId = RUN_ID,
             requestId = requestId,
-            deckName = "Mining",
+            deckName = deckName,
             modelName = "Mining",
             requiredFields = requiredFields,
         )

@@ -1,6 +1,7 @@
 package com.ankiminer.android.anki.provider
 
 import com.ankiminer.android.anki.generated.AnkiLimitsV1
+import com.ankiminer.android.anki.protocol.AnkiNameCollation
 import com.ankiminer.android.anki.protocol.AnkiProtocolException
 import com.ankiminer.android.anki.protocol.AnkiValidators
 import com.ankiminer.android.anki.protocol.CreateNotesResult
@@ -299,7 +300,7 @@ internal class AnkiRunStateRegistry(
                     fail(RunStateConflictException())
                 }
                 if (
-                    target.deck.name != reservation.request.deckName ||
+                    !AnkiNameCollation.sameDeck(target.deck.name, reservation.request.deckName) ||
                         target.model.name != reservation.request.modelName ||
                         !target.model.fieldNames.containsAll(reservation.request.requiredFields) ||
                         (state.target != null && state.target != target)

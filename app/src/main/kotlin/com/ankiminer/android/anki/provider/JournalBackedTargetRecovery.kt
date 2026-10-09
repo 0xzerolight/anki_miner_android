@@ -237,7 +237,9 @@ internal class JournalBackedTargetRecoveryGate(
         val card =
             try {
                 cards.readById(command.cardId, AnkiCancellation.NONE)
-            } catch (_: RuntimeException) {
+            } catch (failure: RuntimeException) {
+                // An unreadable provider says nothing about the card; the gate stays closed.
+                if (failure.isProviderAccessLoss()) throw failure
                 return ObservedCardRecovery(CardRecoveryObservation.UNVERIFIABLE_IDENTITY_OR_DECK)
             }
         if (card.id != command.cardId || card.noteId != command.noteId || card.ordinal != command.ordinal) {
@@ -542,12 +544,16 @@ internal class JournalBackedTargetRecoveryGate(
             val model = snapshots.readModelById(expectedModel.id, AnkiCancellation.NONE)
             if (model != expectedModel) return null
             val byName = snapshots.readDeckByName(expectedDeckName, AnkiCancellation.NONE) ?: return null
+            // The journal pins the verified deck to the frozen name exactly; an older build froze
+            // the typed spelling, which then stays uncertain.
+            if (byName.name != expectedDeckName) return null
             if (receipt != null) {
                 val byId = snapshots.readDeckById(receipt.deckId, AnkiCancellation.NONE)
                 if (byId != byName) return null
             }
             TargetSnapshot(byName, model)
-        } catch (_: RuntimeException) {
+        } catch (failure: RuntimeException) {
+            if (failure.isProviderAccessLoss()) throw failure
             null
         }
     }

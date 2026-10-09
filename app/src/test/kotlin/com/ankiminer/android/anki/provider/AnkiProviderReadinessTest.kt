@@ -1,5 +1,6 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.anki.protocol.AnkiErrorCode
 import com.ankiminer.android.diagnostics.log.AppLog
 import com.ankiminer.android.diagnostics.log.LogLevel
 import com.ankiminer.android.diagnostics.log.NoOpSink
@@ -27,7 +28,7 @@ class AnkiProviderReadinessTest {
     }
 
     @Test
-    fun `access outcomes remain distinct while local recovery is still attempted`() {
+    fun `local recovery waits until the provider probe is ready`() {
         val statuses =
             listOf(
                 ProviderAccessStatus.Absent to AnkiProviderReadiness.NotInstalled,
@@ -46,19 +47,19 @@ class AnkiProviderReadinessTest {
                     recoverLocalState = { recoveryCalls += 1 },
                 ).probe()
             assertEquals(expected, actual.provider)
-            assertEquals(AnkiRecoveryReadiness.Ready, actual.recovery)
+            assertEquals(AnkiRecoveryReadiness.NotChecked, actual.recovery)
             assertEquals(0, operationalCalls)
-            assertEquals(1, recoveryCalls)
+            assertEquals(0, recoveryCalls)
         }
     }
 
     @Test
-    fun `provider and local recovery failures stay independently visible`() {
+    fun `recovery runs and reports its own failure only behind a ready provider`() {
         val available = ProviderAccessStatus.Available("com.ichi2.anki", 2, 42L)
         val uninitialized =
             probe(available, operational = { throw ProviderGatewayException(ProviderFailureKind.QUERY_FAILED) })
         assertEquals(AnkiProviderReadiness.Uninitialized, uninitialized.provider)
-        assertEquals(AnkiRecoveryReadiness.Ready, uninitialized.recovery)
+        assertEquals(AnkiRecoveryReadiness.NotChecked, uninitialized.recovery)
 
         val blocked = probe(available, recovery = { error("pending recovery") })
         assertEquals(AnkiProviderReadiness.Ready(2, 42L), blocked.provider)
@@ -70,11 +71,26 @@ class AnkiProviderReadinessTest {
                 recovery = { error("pending recovery") },
             )
         assertEquals(AnkiProviderReadiness.NotInstalled, both.provider)
-        assertEquals(AnkiRecoveryReadiness.Blocked, both.recovery)
+        assertEquals(AnkiRecoveryReadiness.NotChecked, both.recovery)
 
         val ready = probe(available)
         assertEquals(AnkiProviderReadiness.Ready(2, 42L), ready.provider)
         assertEquals(AnkiRecoveryReadiness.Ready, ready.recovery)
+    }
+
+    @Test
+    fun `recovery that loses AnkiDroid access behind a ready probe stays retryable`() {
+        val available = ProviderAccessStatus.Available("com.ichi2.anki", 2, 42L)
+        listOf(AnkiErrorCode.TIMEOUT, AnkiErrorCode.PROVIDER_UNAVAILABLE, AnkiErrorCode.PERMISSION_REQUIRED).forEach { code ->
+            val result =
+                probe(available, recovery = { throw AnkiReadFailure(code, retryable = true, stableMessage = "lost") })
+
+            assertEquals("$code", AnkiProviderReadiness.Ready(2, 42L), result.provider)
+            assertEquals("$code", AnkiRecoveryReadiness.NotChecked, result.recovery)
+        }
+        val queryFailed =
+            probe(available, recovery = { throw AnkiReadFailure(AnkiErrorCode.QUERY_FAILED, false, "bad row") })
+        assertEquals(AnkiRecoveryReadiness.Blocked, queryFailed.recovery)
     }
 
     @Test
