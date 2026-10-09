@@ -468,6 +468,15 @@ class NativeArtifactTest(unittest.TestCase):
         result = self.inspect(archive({"lib/x86_64/libavcodec.so": vendor, "lib/x86_64/libffmpeg.so": tool}))
         self.assertEqual(2, result.elf_count)
 
+    def test_only_a_direct_arm64_library_needs_the_ndk_objdump(self) -> None:
+        with mock.patch.dict(os.environ, {"ANDROID_HOME": "/nonexistent-sdk"}):
+            self.inspect_complete(
+                self.valid_s1a_artifact(abis=("arm64-v8a",)), required=[], allowed={"arm64-v8a"}, require_s1a=True
+            )
+            tool = elf64(183, entry_point=0x4000, interpreter=True)
+            with self.assertRaisesRegex(ArtifactError, "arm64 ISA audit needs the NDK llvm-objdump"):
+                self.inspect(archive({"lib/arm64-v8a/libffmpeg.so": tool}), allowed={"arm64-v8a"})
+
     def test_required_direct_entry_cannot_be_satisfied_by_unrelated_elf(self) -> None:
         payload = archive({"lib/x86_64/libchaquopy.so": elf64()})
         with self.assertRaisesRegex(ArtifactError, "missing required direct"):
@@ -1289,6 +1298,26 @@ JUDGED = {
 }
 
 
+def fake_objdump(root: Path, rows: list[tuple[int, str, str]]) -> Path:
+    """An llvm-objdump stand-in listing ``rows`` as (address, ``+all`` text, ARMv8.0 text)."""
+    listing = root / "listing.json"
+    listing.write_text(json.dumps(rows), encoding="utf-8")
+    objdump = root / "llvm-objdump"
+    objdump.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        f"rows = json.load(open({str(listing)!r}))\n"
+        "full = '--mattr=+all' in sys.argv\n"
+        "print('payload.so:\\tfile format elf64-littleaarch64\\n')\n"
+        "print('Disassembly of section .text:\\n')\n"
+        "for address, plus_all, baseline in rows:\n"
+        "    print(f'  {address:x}: \\t' + (plus_all if full else baseline).replace(' ', '\\t', 1))\n",
+        encoding="utf-8",
+    )
+    objdump.chmod(0o755)
+    return objdump
+
+
 class Arm64IsaAuditTest(unittest.TestCase):
     def audit(
         self,
@@ -1297,22 +1326,7 @@ class Arm64IsaAuditTest(unittest.TestCase):
     ) -> dict[str, int]:
         wheel, member = module
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            listing = root / "listing.json"
-            listing.write_text(json.dumps(rows), encoding="utf-8")
-            objdump = root / "llvm-objdump"
-            objdump.write_text(
-                f"#!{sys.executable}\n"
-                "import json, sys\n"
-                f"rows = json.load(open({str(listing)!r}))\n"
-                "full = '--mattr=+all' in sys.argv\n"
-                "print('payload.so:\\tfile format elf64-littleaarch64\\n')\n"
-                "print('Disassembly of section .text:\\n')\n"
-                "for address, plus_all, baseline in rows:\n"
-                "    print(f'  {address:x}: \\t' + (plus_all if full else baseline).replace(' ', '\\t', 1))\n",
-                encoding="utf-8",
-            )
-            objdump.chmod(0o755)
+            objdump = fake_objdump(Path(temporary), rows)
             return audit_arm64_isa(b"\x7fELF fixture", wheel, member, f"fixture!{member}", objdump)
 
     def test_plain_armv8_code_and_hint_space_pass(self) -> None:
@@ -1408,6 +1422,71 @@ class Arm64IsaAuditTest(unittest.TestCase):
         report = audit_arm64_isa(data, wheel.name, "chaquopy/lib/libc++_shared.so", wheel.name, objdump)
         self.assertEqual({"lse", "mte", "instructions"}, set(report))
         self.assertGreater(report["lse"], 0)
+
+
+ARM64_TOOL = elf64(183, entry_point=0x4000, interpreter=True)
+SDOT = (0x10, "sdot v0.4s, v1.16b, v2.16b", "<unknown>")
+
+
+class DirectLibraryIsaAuditTest(unittest.TestCase):
+    def inspect(
+        self,
+        rows: list[tuple[int, str, str]],
+        entries: dict[str, bytes],
+        *,
+        allowed: str = "arm64-v8a",
+        suffix: str = ".apk",
+    ) -> Inspection:
+        with tempfile.TemporaryDirectory() as temporary:
+            inspection = Inspection({allowed}, (), llvm_objdump=fake_objdump(Path(temporary), rows))
+            inspect_zip(BytesIO(archive(entries)), f"fixture{suffix}", inspection)
+            return inspection
+
+    def test_unjudged_extensions_fail_with_the_payload_hash_and_census(self) -> None:
+        rows = [
+            SDOT,
+            (0x14, "usmmla v0.4s, v1.16b, v2.16b", "<unknown>"),
+            (0x18, "sdot v3.4s, v1.16b, v2.16b", "<unknown>"),
+        ]
+        digest = hashlib.sha256(ARM64_TOOL).hexdigest()
+        for entry, suffix in (("lib/arm64-v8a/libffmpeg.so", ".apk"), ("base/lib/arm64-v8a/libffmpeg.so", ".aab")):
+            with self.subTest(entry=entry):
+                with self.assertRaisesRegex(
+                    ArtifactError,
+                    rf"{entry} \(sha256 {digest}\): unguarded arm64 isa:sdot instruction at 0x10: .*"
+                    r"unguarded kinds \{'isa:sdot': 2, 'isa:usmmla': 1\}",
+                ):
+                    self.inspect(rows, {entry: ARM64_TOOL}, suffix=suffix)
+
+    def test_a_payload_pin_admits_only_its_hash_and_exact_counts(self) -> None:
+        digest = hashlib.sha256(ARM64_TOOL).hexdigest()
+        with mock.patch.dict(native_checker.ARM64_GUARDED_PAYLOADS, {digest: {"isa:sdot": 1}}, clear=True):
+            self.assertEqual(1, self.inspect([SDOT], {"lib/arm64-v8a/libffmpeg.so": ARM64_TOOL}).elf_count)
+            twice = [SDOT, (0x14, "sdot v3.4s, v1.16b, v2.16b", "<unknown>")]
+            with self.assertRaisesRegex(
+                ArtifactError, r"changed from \{'isa:sdot': 1\} to \{'isa:sdot': 2\}.*ARM64_GUARDED_PAYLOADS"
+            ):
+                self.inspect(twice, {"lib/arm64-v8a/libffmpeg.so": ARM64_TOOL})
+            with self.assertRaisesRegex(ArtifactError, "unguarded arm64 isa:sdot"):
+                self.inspect([SDOT], {"lib/arm64-v8a/libffmpeg.so": ARM64_TOOL + b"\0"})
+
+    def test_only_direct_arm64_libraries_are_disassembled_here(self) -> None:
+        # Wheel natives inside the requirements IMY are check_runtime_artifact's to audit.
+        nested = archive({"pkg/module.so": dynamic_elf(machine=183, soname=None, needed=("libc.so",))})
+        self.assertEqual(1, self.inspect([SDOT], {"assets/chaquopy/requirements-common.imy": nested}).elf_count)
+        self.assertEqual(1, self.inspect([SDOT], {"lib/x86_64/libffmpeg.so": pie_cli()}, allowed="x86_64").elf_count)
+
+    def test_shipped_arm64_media_tools_match_their_payload_pins(self) -> None:
+        try:
+            objdump = default_llvm_objdump()
+        except ArtifactError as error:
+            self.skipTest(str(error))
+        jni_libs = SCRIPTS_DIR.parent / "app/src/main/jniLibs/arm64-v8a"
+        for name in ("libffmpeg.so", "libffprobe.so"):
+            with self.subTest(name=name):
+                data = (jni_libs / name).read_bytes()
+                self.assertIn(hashlib.sha256(data).hexdigest(), native_checker.ARM64_GUARDED_PAYLOADS)
+                native_checker.audit_arm64_payload_isa(data, name, objdump)
 
 
 if __name__ == "__main__":

@@ -134,6 +134,63 @@ ARM64_GUARDED_KINDS: dict[tuple[str, str], dict[str, int]] = {
     ("pycantonese-5.0.0", "pycantonese/_rust.so"): {"crc": 24, "crypto": 178, "sb": 1, "sysreg:DIT": 10},
     ("rustling-0.9.0", "rustling/_lib_name.so"): {"crc": 30, "crypto": 234, "sb": 1, "sysreg:DIT": 10},
 }
+# Direct lib/arm64-v8a ELFs (tools/ffmpeg's executables, the Chaquopy runtime, nextlib, MeCab)
+# belong to no wheel release, so their judged allowances are keyed by the payload's SHA-256,
+# with the same exact per-kind counts. A rebuild or upgrade of a payload listed here fails
+# until its extension instructions are traced to runtime dispatch again (the failure prints
+# the new hash and every kind) and the new hash is pinned. Payloads whose only non-baseline
+# instructions are shape-checked need no entry.
+ARM64_GUARDED_PAYLOADS: dict[str, dict[str, int]] = {
+    # lib/arm64-v8a/libffmpeg.so, tools/ffmpeg rebuild of 2026-10-09: dotprod, i8mm and SVE
+    # kernels of libaom (rtcd, CONFIG_RUNTIME_CPU_DETECT=1), dav1d (getauxval HWCAPs) and
+    # FFmpeg (av_get_cpu_flags), and libaom's CRC32C hash behind the same rtcd.
+    "b9c78b81f2a8da16f171364c2387df8e106e6dbad54bc9295126f99541d256f8": {
+        "crc": 4,
+        "isa:addvl": 16,
+        "isa:cnth": 1,
+        "isa:cntw": 2,
+        "isa:ld1b": 60,
+        "isa:ld1d": 8,
+        "isa:ld1h": 113,
+        "isa:ld1sb": 8,
+        "isa:ldr": 574,
+        "isa:mad": 52,
+        "isa:mla": 19,
+        "isa:mov": 147,
+        "isa:movprfx": 13,
+        "isa:ptrue": 10,
+        "isa:rdvl": 3,
+        "isa:sdot": 2484,
+        "isa:st1d": 4,
+        "isa:st1h": 13,
+        "isa:str": 639,
+        "isa:sub": 19,
+        "isa:tbl": 17,
+        "isa:uaddv": 1,
+        "isa:udot": 2499,
+        "isa:usdot": 1035,
+        "isa:usmmla": 246,
+        "isa:whilelo": 10,
+        "isa:whilelt": 4,
+    },
+    # lib/arm64-v8a/libffprobe.so, same rebuild: the dav1d and FFmpeg decoder kernels.
+    "5ca126b05eda758665c2bd124b23762bd4ecfaab67d978dcc8722bf281ba9b2e": {
+        "isa:ld1sb": 8,
+        "isa:mad": 36,
+        "isa:ptrue": 2,
+        "isa:sdot": 438,
+        "isa:st1h": 13,
+        "isa:sub": 19,
+        "isa:udot": 11,
+        "isa:usdot": 594,
+        "isa:usmmla": 32,
+        "isa:whilelt": 4,
+    },
+    # lib/arm64-v8a/libcrypto_python.so and libssl_python.so, Chaquopy's OpenSSL:
+    # OPENSSL_cpuid_setup reads ID_AA64ZFR0_EL1 only after ID_AA64PFR0_EL1 reports SVE.
+    "c6c31b928c480e77ca85f9e34286ca922d6c56fd79567b34d442bbcc6817d10e": {"sysreg:ID_AA64ZFR0_EL1": 1},
+    "60b083de76e184b19bb830e80f9f6b155f6db87e309018d007db6439db45145e": {"sysreg:ID_AA64ZFR0_EL1": 1},
+}
 _ISA_LINE = re.compile(r"^\s*([0-9a-f]+):\s+(\S.*)$")
 _ISA_LSE = re.compile(
     r"^(?:casp?|ld(?:add|clr|eor|set|smax|smin|umax|umin)|st(?:add|clr|eor|set|smax|smin|umax|umin)|swp)"
@@ -214,6 +271,7 @@ class Inspection:
     expected_natives: dict[tuple[str, str], S1aNativePayload] = field(default_factory=dict)
     found_natives: dict[tuple[str, str], int] = field(default_factory=dict)
     requirement_natives: list[tuple[str, NativeMetadata]] = field(default_factory=list)
+    llvm_objdump: Path | None = None
 
 
 def _s1a_package_from_wheel(filename: str) -> str:
@@ -784,7 +842,26 @@ def audit_arm64_isa(
     """
     release = "-".join(PurePosixPath(wheel).name.split("-")[:2])
     pinned = ARM64_GUARDED_KINDS.get((release, member_path), {})
+    return _audit_arm64(data, pinned, logical_name, objdump, "ARM64_GUARDED_KINDS")
+
+
+def audit_arm64_payload_isa(data: bytes, logical_name: str, objdump: Path) -> dict[str, int]:
+    """Audit a direct lib/arm64-v8a ELF against the allowance pinned to its SHA-256."""
+    digest = hashlib.sha256(data).hexdigest()
+    pinned = ARM64_GUARDED_PAYLOADS.get(digest, {})
+    return _audit_arm64(data, pinned, f"{logical_name} (sha256 {digest})", objdump, "ARM64_GUARDED_PAYLOADS")
+
+
+def _audit_arm64(
+    data: bytes,
+    pinned: dict[str, int],
+    logical_name: str,
+    objdump: Path,
+    table: str,
+) -> dict[str, int]:
     counts: Counter[str] = Counter()
+    unguarded: Counter[str] = Counter()
+    first_unguarded = ""
     window: deque[tuple[int, str]] = deque(maxlen=ARM64_ISA_GUARD_WINDOW)
     fallbacks: list[list[object]] = []  # [address, instruction, remaining, load seen, store seen]
     instructions = 0
@@ -824,13 +901,18 @@ def audit_arm64_isa(
                         or kind in pinned
                     )
                     if not guarded:
-                        raise ArtifactError(
-                            f"{logical_name}: unguarded arm64 {kind} instruction at {address:#x}: {full}",
-                        )
-                    if outline_atomic:
-                        fallbacks.append([address, full, ARM64_LSE_FALLBACK_WINDOW, False, False])
-                    counts[kind] += 1
+                        # Counted, not raised: re-judging a payload needs every kind it holds.
+                        unguarded[kind] += 1
+                        first_unguarded = first_unguarded or f"{kind} instruction at {address:#x}: {full}"
+                    else:
+                        if outline_atomic:
+                            fallbacks.append([address, full, ARM64_LSE_FALLBACK_WINDOW, False, False])
+                        counts[kind] += 1
                 window.append((address, full))
+    if unguarded:
+        raise ArtifactError(
+            f"{logical_name}: unguarded arm64 {first_unguarded}; unguarded kinds {dict(sorted(unguarded.items()))}",
+        )
     if fallbacks:
         raise ArtifactError(f"{logical_name}: arm64 lse instruction at {fallbacks[0][0]:#x} has no LL/SC fallback")
     if instructions == 0:
@@ -839,7 +921,7 @@ def audit_arm64_isa(
     if judged != pinned:
         raise ArtifactError(
             f"{logical_name}: judged arm64 instruction counts changed from {pinned} to {judged}; "
-            "audit the new build and update ARM64_GUARDED_KINDS",
+            f"audit the new build and update {table}",
         )
     return {"instructions": instructions, **dict(sorted(counts.items()))}
 
@@ -1006,6 +1088,10 @@ def inspect_zip(
                 )
                 if is_direct_native_library(entry_path, depth):
                     reject_maintainer_path(payload, entry_name)
+                    if metadata.abi == "arm64-v8a":
+                        if inspection.llvm_objdump is None:
+                            inspection.llvm_objdump = default_llvm_objdump()
+                        audit_arm64_payload_isa(payload, entry_name, inspection.llvm_objdump)
                 if requirement_owner is not None:
                     inspection.requirement_natives.append((entry_path.as_posix(), metadata))
                 if required_direct:
