@@ -490,7 +490,7 @@ private fun LazyListScope.setupItems(
     val runState = state.runState
     // A run in flight keeps its inputs on screen, locked: they are what it is mining.
     val locked = runState is MiningRunState.Starting || runState is MiningRunState.Running
-    val sourcesEnabled = !locked && !state.startPending && !state.timingPreviewPending
+    val sourcesEnabled = state.canEditSources
     (runState as? MiningRunState.Failed)?.let { failed ->
         miningFailureBannerItem(message = failed.failure.message, key = "outcome_failure")
     }
