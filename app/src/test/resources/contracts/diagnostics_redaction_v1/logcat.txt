@@ -1,0 +1,6 @@
+10-09 12:00:10.000  4242  4310 I TextToSpeech: speak utterance 사랑해
+10-09 12:00:10.100  4242  4310 W InputMethodManager: candidate Привет люблю
+10-09 12:00:10.200  4242  4311 D chromium: [INFO:CONSOLE(1)] "كتاب كتب", source: about:blank (1)
+10-09 12:00:10.300  4242  4311 I TextView: text=αγάπη שלום
+10-09 12:00:10.400  4242  4312 I TextToSpeech: speak utterance ความรัก
+10-09 12:00:10.500  4242  4313 I okhttp.OkHttpClient: --> GET https://example.invalid/search?q=%EC%82%AC%EB%9E%91

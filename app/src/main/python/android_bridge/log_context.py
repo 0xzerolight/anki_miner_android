@@ -9,10 +9,18 @@ first.
 from __future__ import annotations
 
 import logging
+import numbers
+from collections.abc import Mapping
 from contextlib import suppress
 from contextvars import ContextVar
 
 _RUN_ID: ContextVar[str | None] = ContextVar("anki_miner_run_id", default=None)
+
+# A verbose vendored record's arguments are written between these two characters, and the export
+# redactor (LogRedactor.kt, rule 0) hashes everything between them whatever its script: Latin-script
+# vocabulary has no pattern a redaction rule could recognise, so the payload is marked at its source.
+SENTINEL_OPEN = "⟦"
+SENTINEL_CLOSE = "⟧"
 
 # The wire vocabulary of ``diagnostics.loglevel.set``. INFO is always on; DEBUG
 # is the tester switch.
@@ -102,19 +110,25 @@ class RunContextFilter(logging.Filter):
 
 
 class DefaultLogPrivacyFilter(logging.Filter):
-    """Hide vendored message payloads unless the tester enabled DEBUG.
+    """Hide vendored message payloads unless the tester enabled DEBUG, and mark them when it did.
 
     The synchronized engine can add new user-data-bearing log calls on every
     re-pin, so this boundary treats every ``anki_miner`` message as private
     instead of trying to maintain a call-site blocklist. Logger name, severity,
     and exception class remain available at default verbosity.
+
+    With DEBUG on, the message survives for the bug report, but each of its
+    arguments is written inside a sentinel span (``SENTINEL_OPEN``) so the
+    export redactor can hash it: the same vocabulary is still in it.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
         try:
             vendored = record.name == _VENDORED_LOG_TREE or record.name.startswith(f"{_VENDORED_LOG_TREE}.")
             verbose = logging.getLogger(_VENDORED_LOG_TREE).isEnabledFor(logging.DEBUG)
-            if vendored and not verbose:
+            if vendored and verbose:
+                _mark_arguments(record)
+            elif vendored:
                 failure = _record_failure_name(record)
                 record._anki_miner_failure_type = failure
                 record.msg = "vendored record redacted failure=%s"
@@ -135,6 +149,51 @@ class DefaultLogPrivacyFilter(logging.Filter):
                 record.exc_text = None
                 record.stack_info = None
         return True
+
+
+class _MarkedArgument:
+    """One vendored log argument; ``%s`` and ``%r`` both render it inside a sentinel span."""
+
+    __slots__ = ("_value",)
+
+    def __init__(self, value: object) -> None:
+        self._value = value
+
+    def __str__(self) -> str:
+        return _sentinel_span(str(self._value))
+
+    def __repr__(self) -> str:
+        return _sentinel_span(repr(self._value))
+
+
+def _sentinel_span(text: str) -> str:
+    # A payload holding either sentinel would close the span early and publish the rest, so both
+    # are dropped from it. The redactor hashes the span whole, so nothing readable is lost.
+    payload = text.replace(SENTINEL_OPEN, "").replace(SENTINEL_CLOSE, "")
+    return f"{SENTINEL_OPEN}{payload}{SENTINEL_CLOSE}"
+
+
+def _marked(value: object, level: int) -> object:
+    # Numbers carry no vocabulary, and %d/%f need the real type. From WARNING up the formatter
+    # prints an exception argument's stack, whose last line repeats its text unmarked anyway, and
+    # bootstrap._record_exception_info needs the exception itself; below WARNING no stack is
+    # printed, so the message is the only copy of that text and it is marked like any other.
+    if value is None or isinstance(value, numbers.Number):
+        return value
+    if isinstance(value, BaseException) and level >= logging.WARNING:
+        return value
+    return _MarkedArgument(value)
+
+
+def _mark_arguments(record: logging.LogRecord) -> None:
+    args = record.args
+    if not args:
+        return
+    # LogRecord keeps a lone mapping argument as the mapping, for %(name)s formats.
+    if isinstance(args, Mapping):
+        record.args = {key: _marked(value, record.levelno) for key, value in args.items()}
+    else:
+        record.args = tuple(_marked(value, record.levelno) for value in args)
 
 
 def _record_failure_name(record: logging.LogRecord) -> str:

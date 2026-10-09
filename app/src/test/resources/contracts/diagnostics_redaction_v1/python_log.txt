@@ -1,0 +1,12 @@
+2026-10-09T12:00:00.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.languages.it.morphology outcome=ok message="Lemma ⟦'andare'⟧ not attested; fronting the surface ⟦'andiamo'⟧"
+2026-10-09T12:00:01.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.languages.vi.tokenizer outcome=ok message="Vietnamese word ⟦'tiếng'⟧ not found in its line; dropped"
+2026-10-09T12:00:02.250Z W run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.services.word_filter outcome=fail message="line expansion: no cue matches ⟦'¿Dónde está mi corazón?'⟧ at 12.500s; keeping the original line"
+	RuntimeError: Python log call omitted exception context
+2026-10-09T12:00:03.250Z W run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.services.sentence_edit outcome=fail message="sentence edit: no mineable word at 7-12 in ⟦'Я тебя люблю'⟧; keeping the original word ⟦'люблю'⟧"
+	RuntimeError: Python log call omitted exception context
+2026-10-09T12:00:04.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.languages.ar.morphology outcome=ok message="Root ⟦'كتب'⟧ for surface ⟦'كتاب'⟧"
+2026-10-09T12:00:05.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.languages.ko.tokenizer outcome=ok message="Token ⟦사랑해⟧ has no dictionary form; keeping ⟦사랑⟧"
+2026-10-09T12:00:06.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.languages.th.tokenizer outcome=ok message="Thai segment ⟦'ความรัก'⟧"
+2026-10-09T12:00:07.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.services.media_extractor outcome=ok message="Extracted clip ⟦/data/user/0/com.ankiminer.android/cache/media/andiamo_91000_1.opus⟧"
+2026-10-09T12:00:08.250Z D run=run_cccccccccccccccccccccccccccccccc c=bridge op=anki_miner.services.reading._util outcome=ok message="Reading archive member missing: archive=⟦/data/user/0/com.ankiminer.android/cache/reading/volume.cbz⟧ entry=⟦andiamo vol 1/0001.jpg⟧ error=⟦KeyError⟧ detail=⟦\"There is no item named 'andiamo vol 1/0001.jpg' in the archive\"⟧"
+2026-10-09T12:00:09.250Z I run=run_cccccccccccccccccccccccccccccccc c=bridge op=android_bridge.anki_adapter outcome=ok message="Stored media asset [asset_dddddddddddddddddddddddddddddddd] purpose=card kind=audio"
