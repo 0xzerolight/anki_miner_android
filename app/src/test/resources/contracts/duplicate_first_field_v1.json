@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "description": "First-field values and the vendored engine's _strip_for_dedup key for each. The Kotlin DuplicateFirstFieldParityTest must reproduce every key. Regenerate with tools/anki-contract/generate_duplicate_key_parity.py under the runtime-lane interpreter.",
+  "python_version": "3.12",
+  "unicode_version": "15.0.0",
+  "cases": [
+    {
+      "name": "persian-zwnj-compound",
+      "value": "\u062f\u0627\u0646\u0634\u200c\u0622\u0645\u0648\u0632",
+      "key": "\u062f\u0627\u0646\u0634\u0622\u0645\u0648\u0632"
+    },
+    {
+      "name": "persian-zwnj-in-markup",
+      "value": "<b>\u062f\u0627\u0646\u0634\u200c\u0622\u0645\u0648\u0632</b>[sound:clip_1000_0.mp3]",
+      "key": "\u062f\u0627\u0646\u0634\u0622\u0645\u0648\u0632"
+    },
+    {
+      "name": "zwj-emoji-sequence",
+      "value": "\ud83e\uddd1\u200d\ud83c\udf93 vocab",
+      "key": "\ud83e\uddd1\ud83c\udf93 vocab"
+    },
+    {
+      "name": "rlm-trailing-hebrew",
+      "value": "\u05e9\u05dc\u05d5\u05dd\u200f",
+      "key": "\u05e9\u05dc\u05d5\u05dd"
+    },
+    {
+      "name": "lre-netflix-subtitle",
+      "value": "\u202a\u5bee",
+      "key": "\u5bee"
+    },
+    {
+      "name": "pdf-closing-embedding",
+      "value": "\u5bee\u202c",
+      "key": "\u5bee"
+    },
+    {
+      "name": "bom-leading",
+      "value": "\ufeff\u732b",
+      "key": "\u732b"
+    },
+    {
+      "name": "zero-width-space",
+      "value": "a\u200bb",
+      "key": "ab"
+    },
+    {
+      "name": "soft-hyphen",
+      "value": "Wort\u00adteil",
+      "key": "Wortteil"
+    },
+    {
+      "name": "arabic-letter-mark",
+      "value": "\u061c\u0643\u062a\u0627\u0628",
+      "key": "\u0643\u062a\u0627\u0628"
+    },
+    {
+      "name": "word-joiner",
+      "value": "a\u2060b",
+      "key": "ab"
+    },
+    {
+      "name": "bidi-isolates",
+      "value": "\u2066abc\u2069",
+      "key": "abc"
+    },
+    {
+      "name": "tag-sequence-flag",
+      "value": "\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f",
+      "key": "\ud83c\udff4"
+    },
+    {
+      "name": "escaped-numeric-lre",
+      "value": "&#8234;\u5bee",
+      "key": "\u5bee"
+    },
+    {
+      "name": "escaped-hex-zwnj",
+      "value": "a&#x200C;b",
+      "key": "ab"
+    },
+    {
+      "name": "escaped-named-zwnj",
+      "value": "a&zwnj;b",
+      "key": "ab"
+    },
+    {
+      "name": "escaped-named-lrm",
+      "value": "&lrm;abc",
+      "key": "abc"
+    },
+    {
+      "name": "format-only-field",
+      "value": "\u200c\u200d\ufeff",
+      "key": ""
+    },
+    {
+      "name": "format-around-whitespace",
+      "value": " \u200f a \u200e b ",
+      "key": "a b"
+    },
+    {
+      "name": "format-between-base-and-mark",
+      "value": "e\u200c\u0301",
+      "key": "\u00e9"
+    },
+    {
+      "name": "format-splits-hangul-jamo",
+      "value": "\u1100\u200c\u1161",
+      "key": "\uac00"
+    },
+    {
+      "name": "control-character-kept",
+      "value": "a\u0007b",
+      "key": "a\u0007b"
+    },
+    {
+      "name": "html-entities-and-tags",
+      "value": "<div>&lt;\u732b&gt; &amp; \u72ac</div>",
+      "key": "<\u732b> & \u72ac"
+    },
+    {
+      "name": "furigana-brackets-kept",
+      "value": "\u98df\u3079\u308b[\u305f\u3079\u308b]",
+      "key": "\u98df\u3079\u308b[\u305f\u3079\u308b]"
+    },
+    {
+      "name": "whitespace-collapse",
+      "value": "\t\u732b\u3000 \u72ac\n",
+      "key": "\u732b \u72ac"
+    },
+    {
+      "name": "nfc-composition",
+      "value": "Cafe\u0301",
+      "key": "Caf\u00e9"
+    },
+    {
+      "name": "every-format-character",
+      "value": "a\u00ad\u0600\u0601\u0602\u0603\u0604\u0605\u061c\u06dd\u070f\u0890\u0891\u08e2\u180e\u200b\u200c\u200d\u200e\u200f\u202a\u202b\u202c\u202d\u202e\u2060\u2061\u2062\u2063\u2064\u2066\u2067\u2068\u2069\u206a\u206b\u206c\u206d\u206e\u206f\ufeff\ufff9\ufffa\ufffb\ud804\udcbd\ud804\udccd\ud80d\udc30\ud80d\udc31\ud80d\udc32\ud80d\udc33\ud80d\udc34\ud80d\udc35\ud80d\udc36\ud80d\udc37\ud80d\udc38\ud80d\udc39\ud80d\udc3a\ud80d\udc3b\ud80d\udc3c\ud80d\udc3d\ud80d\udc3e\ud80d\udc3f\ud82f\udca0\ud82f\udca1\ud82f\udca2\ud82f\udca3\ud834\udd73\ud834\udd74\ud834\udd75\ud834\udd76\ud834\udd77\ud834\udd78\ud834\udd79\ud834\udd7a\udb40\udc01\udb40\udc20\udb40\udc21\udb40\udc22\udb40\udc23\udb40\udc24\udb40\udc25\udb40\udc26\udb40\udc27\udb40\udc28\udb40\udc29\udb40\udc2a\udb40\udc2b\udb40\udc2c\udb40\udc2d\udb40\udc2e\udb40\udc2f\udb40\udc30\udb40\udc31\udb40\udc32\udb40\udc33\udb40\udc34\udb40\udc35\udb40\udc36\udb40\udc37\udb40\udc38\udb40\udc39\udb40\udc3a\udb40\udc3b\udb40\udc3c\udb40\udc3d\udb40\udc3e\udb40\udc3f\udb40\udc40\udb40\udc41\udb40\udc42\udb40\udc43\udb40\udc44\udb40\udc45\udb40\udc46\udb40\udc47\udb40\udc48\udb40\udc49\udb40\udc4a\udb40\udc4b\udb40\udc4c\udb40\udc4d\udb40\udc4e\udb40\udc4f\udb40\udc50\udb40\udc51\udb40\udc52\udb40\udc53\udb40\udc54\udb40\udc55\udb40\udc56\udb40\udc57\udb40\udc58\udb40\udc59\udb40\udc5a\udb40\udc5b\udb40\udc5c\udb40\udc5d\udb40\udc5e\udb40\udc5f\udb40\udc60\udb40\udc61\udb40\udc62\udb40\udc63\udb40\udc64\udb40\udc65\udb40\udc66\udb40\udc67\udb40\udc68\udb40\udc69\udb40\udc6a\udb40\udc6b\udb40\udc6c\udb40\udc6d\udb40\udc6e\udb40\udc6f\udb40\udc70\udb40\udc71\udb40\udc72\udb40\udc73\udb40\udc74\udb40\udc75\udb40\udc76\udb40\udc77\udb40\udc78\udb40\udc79\udb40\udc7a\udb40\udc7b\udb40\udc7c\udb40\udc7d\udb40\udc7e\udb40\udc7fb",
+      "key": "ab"
+    }
+  ]
+}

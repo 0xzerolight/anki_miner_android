@@ -3,7 +3,10 @@ package com.ankiminer.android.anki.provider
 import com.ankiminer.android.anki.generated.Html5EntitiesV312
 import com.ankiminer.android.anki.generated.UnicodeContractV151
 
-/** Exact Kotlin port of desktop `anki_note_builder._strip_for_dedup`. */
+/**
+ * Exact Kotlin port of desktop `anki_note_builder._strip_for_dedup`.
+ * `DuplicateFirstFieldParityTest` holds it to the vendored function's own output.
+ */
 internal object DuplicateFirstFieldNormalizer {
     private val soundReference =
         Regex(
@@ -16,10 +19,24 @@ internal object DuplicateFirstFieldNormalizer {
         val mediaStripped = soundReference.replace(value, "")
         val markupStripped = htmlTag.replace(mediaStripped, "")
         val unescaped = unescapeHtml5(markupStripped)
+        // `strip_format_chars` runs after unescaping (an escaped `&#8234;` is caught too) and before
+        // NFC (a ZWNJ between a base and its mark no longer blocks composition), as in the engine.
+        val formatStripped = stripFormatCharacters(unescaped)
         val normalized =
-            UnicodeContractV151.normalizeNfc(unescaped)
+            UnicodeContractV151.normalizeNfc(formatStripped)
                 ?: throw IllegalArgumentException("duplicate first field is not valid Unicode")
         return collapsePythonWhitespace(normalized)
+    }
+
+    private fun stripFormatCharacters(value: String): String {
+        val result = StringBuilder(value.length)
+        var index = 0
+        while (index < value.length) {
+            val codePoint = Character.codePointAt(value, index)
+            if (!UnicodeContractV151.isCategoryCf(codePoint)) result.appendCodePoint(codePoint)
+            index += Character.charCount(codePoint)
+        }
+        return result.toString()
     }
 
     private fun unescapeHtml5(value: String): String {

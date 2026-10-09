@@ -27,10 +27,33 @@ class DuplicateFirstFieldNormalizerTest {
                 "puncsp;",
                 "thinsp;",
             )
+        // Each expands to one format character (Cf), which the engine strips after unescaping.
+        val formatEntities =
+            setOf(
+                "ApplyFunction;",
+                "InvisibleComma;",
+                "InvisibleTimes;",
+                "NegativeMediumSpace;",
+                "NegativeThickSpace;",
+                "NegativeThinSpace;",
+                "NegativeVeryThinSpace;",
+                "NoBreak;",
+                "ZeroWidthSpace;",
+                "af;",
+                "ic;",
+                "it;",
+                "lrm;",
+                "rlm;",
+                "shy",
+                "shy;",
+                "zwj;",
+                "zwnj;",
+            )
         assertEquals(2231, Html5EntitiesV312.ENTRY_COUNT)
         for (index in 0 until Html5EntitiesV312.ENTRY_COUNT) {
             val name = Html5EntitiesV312.nameAt(index)
-            val expected = if (name in whitespaceEntities) "" else Html5EntitiesV312.valueAt(index)
+            val expected =
+                if (name in whitespaceEntities || name in formatEntities) "" else Html5EntitiesV312.valueAt(index)
             assertEquals(name, expected, DuplicateFirstFieldNormalizer.normalize("&$name"))
         }
     }
@@ -91,6 +114,21 @@ class DuplicateFirstFieldNormalizerTest {
     }
 
     @Test
+    fun `format characters are dropped after unescaping and before NFC`() {
+        val persian = "دانش‌آموز"
+        assertEquals(persian.replace("‌", ""), DuplicateFirstFieldNormalizer.normalize(persian))
+        assertEquals("abc", DuplicateFirstFieldNormalizer.normalize("abc‏"))
+        assertEquals("寮", DuplicateFirstFieldNormalizer.normalize("‪寮"))
+        assertEquals("猫", DuplicateFirstFieldNormalizer.normalize("﻿猫"))
+        assertEquals("寮", DuplicateFirstFieldNormalizer.normalize("&#8234;寮"))
+        assertEquals("ab", DuplicateFirstFieldNormalizer.normalize("a&zwnj;b"))
+        assertEquals("", DuplicateFirstFieldNormalizer.normalize("‌‍﻿"))
+        assertEquals("é", DuplicateFirstFieldNormalizer.normalize("e‌́"))
+        assertEquals("가", DuplicateFirstFieldNormalizer.normalize("ᄀ‌ᅡ"))
+        assertEquals("a\u0007b", DuplicateFirstFieldNormalizer.normalize("a\u0007b"))
+    }
+
+    @Test
     fun `media markup NFC whitespace furigana and astral scalars match desktop goldens`() {
         val whitespaceScalars =
             (0x09..0x0D).toList() +
@@ -104,7 +142,7 @@ class DuplicateFirstFieldNormalizerTest {
             append("b")
         }
         assertEquals("a b", DuplicateFirstFieldNormalizer.normalize(separated))
-        assertEquals("a\u200Bb", DuplicateFirstFieldNormalizer.normalize("a\u200Bb"))
+        assertEquals("ab", DuplicateFirstFieldNormalizer.normalize("a\u200Bb"))
         assertEquals(
             "\u00E9 \uD83D\uDE3A \u98DF\u3079\u308B[\u305F\u3079\u308B]",
             DuplicateFirstFieldNormalizer.normalize(
