@@ -45,6 +45,12 @@ def _invoke(callbacks: object, method_name: str, message: str) -> None:
     method(message)
 
 
+def _is_java_out_of_memory(error: Exception) -> bool:
+    # Chaquopy names a Java exception's proxy class after it: module "java.lang",
+    # name "OutOfMemoryError". Matched by name so host tests need no JVM.
+    return any(cls.__module__ == "java.lang" and cls.__name__ == "OutOfMemoryError" for cls in type(error).__mro__)
+
+
 def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
     """Invoke a synchronous Kotlin callback and require a JSON string result."""
 
@@ -53,7 +59,15 @@ def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
         raise BridgeProtocolError("missing_callback", f"EngineCallbacks.{method_name} is required")
     try:
         result = method(message)
+    except MemoryError:
+        # Memory exhaustion is the run's to stop on, not a Kotlin callback fault.
+        raise
     except Exception as exc:
+        if _is_java_out_of_memory(exc):
+            # Chaquopy raises Kotlin's OutOfMemoryError as a java.lang proxy that
+            # derives from Exception. Raise it as the MemoryError every
+            # optional-source carve-out downstream already re-raises.
+            raise MemoryError(f"EngineCallbacks.{method_name} ran out of memory") from exc
         raise BridgeProtocolError("callback_failed", f"EngineCallbacks.{method_name} raised an exception") from exc
     if not isinstance(result, str):
         raise BridgeProtocolError(

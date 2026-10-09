@@ -54,7 +54,7 @@ def _utf8_size(value: str, *, context: str) -> int:
 
 
 class AndroidSentenceAudioFetcher:
-    """Never-raising adapter which delegates synthesis to Kotlin's offline TTS.
+    """Adapter which delegates synthesis to Kotlin's offline TTS; only MemoryError escapes.
 
     No desktop provider builder is imported or consulted. The similarly named
     desktop Google/Papago config bits are compatibility gates only; this class
@@ -86,7 +86,7 @@ class AndroidSentenceAudioFetcher:
         sentence: str,
         cancelled_check: Callable[[], bool] | None = None,
     ) -> Path | None:
-        """Return one verified private WAV path, or None. Never raises."""
+        """Return one verified private WAV path, or None. Only MemoryError escapes."""
 
         try:
             if cancelled_check is not None and cancelled_check():
@@ -150,6 +150,9 @@ class AndroidSentenceAudioFetcher:
             if outcome != "cancelled":
                 self._report_warning(error_code)
             return None
+        except MemoryError:
+            # As desktop's synthetic fetchers: memory exhaustion is the run's to stop on.
+            raise
         except Exception as error:
             # Sentence audio is optional. Never let an unavailable Android engine,
             # a callback exception, or a malformed response abort reading mining.

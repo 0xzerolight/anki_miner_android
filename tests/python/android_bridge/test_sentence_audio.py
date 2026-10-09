@@ -139,6 +139,19 @@ def test_missing_throwing_or_malformed_callback_never_raises(tmp_path: Path) -> 
         assert fetcher.fetch("猫だ。") is None
 
 
+def test_memory_exhaustion_in_the_callback_is_the_runs_to_stop_on(tmp_path: Path) -> None:
+    class Exhausted:
+        def synthesizeSentenceAudio(self, raw: str) -> str:
+            raise MemoryError("interpreter exhausted")
+
+    warnings: list[str] = []
+    fetcher = AndroidSentenceAudioFetcher(Exhausted(), RUN_ID, tmp_path, warnings.append)
+
+    with pytest.raises(MemoryError, match="interpreter exhausted"):
+        fetcher.fetch("猫だ。")
+    assert warnings == []
+
+
 def test_result_path_must_be_exact_bounded_cache_file(tmp_path: Path) -> None:
     outside = tmp_path / "outside.wav"
     outside.write_bytes(b"RIFFaudio")
