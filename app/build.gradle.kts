@@ -42,6 +42,14 @@ val commonWheels = wheelsIn("common")
 val deviceWheels = commonWheels + wheelsIn("arm64-v8a")
 val emulatorWheels = commonWheels + wheelsIn("x86_64")
 
+// A wheel installed by file path is a PEP 610 direct-URL install: pip records the path in
+// <dist>.dist-info/direct_url.json and Chaquopy packs that file, with this checkout's
+// absolute path, into the APK. name==version resolved from --find-links records nothing.
+fun pipRequirement(wheel: File): String {
+    val (name, version) = wheel.name.split("-")
+    return "$name==$version"
+}
+
 val verifyVendoredWheelManifest by tasks.registering(Exec::class) {
     group = "verification"
     description = "Verify the exact provenance and SHA-256 of app/wheels."
@@ -322,19 +330,29 @@ chaquopy {
     productFlavors {
         getByName("emulator") {
             pip {
-                emulatorWheels.forEach { install(it.absolutePath) }
+                emulatorWheels.forEach { install(pipRequirement(it)) }
                 options("--no-index")
                 options("--no-deps")
+                options("--find-links", rootProject.file("app/wheels/common").path)
+                options("--find-links", rootProject.file("app/wheels/x86_64").path)
             }
         }
         getByName("device") {
             pip {
-                deviceWheels.forEach { install(it.absolutePath) }
+                deviceWheels.forEach { install(pipRequirement(it)) }
                 options("--no-index")
                 options("--no-deps")
+                options("--find-links", rootProject.file("app/wheels/common").path)
+                options("--find-links", rootProject.file("app/wheels/arm64-v8a").path)
             }
         }
     }
+}
+
+// Chaquopy hashes a requirement given as a file path as a task input, but not a name==version
+// one; declare the wheels so a wheel rebuilt under the same version still re-runs pip.
+tasks.named { it.endsWith("PythonRequirements") }.configureEach {
+    inputs.files(deviceWheels, emulatorWheels)
 }
 
 tasks.named("preBuild") {

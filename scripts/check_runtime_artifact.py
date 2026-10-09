@@ -851,6 +851,10 @@ def _audit_requirements(
         for path, info in infos.items():
             if info.is_dir():
                 continue
+            member = PurePosixPath(path)
+            if member.name == "direct_url.json" and member.parent.name.endswith(".dist-info"):
+                # pip's PEP 610 record of a path install holds the builder's absolute wheel path.
+                raise RuntimeArtifactError(f"{label}: pip direct-URL install record {path} names the build machine")
             data = _read_member(
                 archive,
                 info,
