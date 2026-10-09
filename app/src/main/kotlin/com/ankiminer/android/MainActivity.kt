@@ -64,6 +64,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 
 /**
@@ -76,6 +77,15 @@ internal fun AppSettingsRepository.appShellSettings(): Flow<AppSettings> =
     settingsOrNull.map { it ?: AppSettings() }
 
 /**
+ * Settings the mining ViewModels read. Their collectors run in `viewModelScope`, which has no
+ * exception handler, so they read through the degraded flow as the shell does: an unreadable store
+ * ends this flow empty and leaves each input at its not-read-yet value instead of ending the process
+ * at launch. Runs snapshot their settings on their own, and every write goes through the strict flow.
+ */
+internal fun AppSettingsRepository.miningViewModelSettings(): Flow<AppSettings> =
+    settingsOrNull.filterNotNull()
+
+/**
  * The audio packs the mining language's runs consult. Another language's pack is never in its
  * chain, so it must not raise the Video and Audio tabs' word-audio warnings either.
  */
@@ -85,15 +95,13 @@ internal fun activeLanguageAudioPacks(
 ): Flow<List<InstalledAudioPack>> =
     combine(settings, resources) { current, state -> state.slotsFor(current.language).audioPacks }
 
-private fun AnkiMinerApplication.activeLanguageAudioPacks(): Flow<List<InstalledAudioPack>> =
-    activeLanguageAudioPacks(settingsRepository.settings, resourceManager.state)
-
 class MainActivity : ComponentActivity() {
     private val notificationRunId = MutableStateFlow<String?>(null)
     private val sharedText = MutableStateFlow<String?>(null)
 
     private val viewModelFactory by lazy {
         val app = application as AnkiMinerApplication
+        val settings = app.settingsRepository.miningViewModelSettings()
         MediaMiningViewModel.Factory(
             repository = MiningRepositoryFactory.create(app),
             safBroker = app.safBroker,
@@ -102,22 +110,20 @@ class MainActivity : ComponentActivity() {
             cueLookup = app.subtitleCueLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
-            effectiveSubtitleOffset =
-                app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
-            audioPaddingSeconds =
-                app.settingsRepository.settings.map { it.audioPaddingSeconds },
-            fieldMap = app.settingsRepository.settings.map { it.fieldMap },
-            audioPacks = app.activeLanguageAudioPacks(),
+            effectiveSubtitleOffset = settings.map { it.subtitleOffsetSeconds },
+            audioPaddingSeconds = settings.map { it.audioPaddingSeconds },
+            fieldMap = settings.map { it.fieldMap },
+            audioPacks = activeLanguageAudioPacks(settings, app.resourceManager.state),
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
             audioTrackProbeOpener = app.audioTrackProbeLoader,
-            secondarySubtitleEnabled =
-                app.settingsRepository.settings.map { it.secondarySubtitleEnabled },
-            deckName = app.settingsRepository.settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
+            secondarySubtitleEnabled = settings.map { it.secondarySubtitleEnabled },
+            deckName = settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
         )
     }
     private val audioViewModelFactory by lazy {
         val app = application as AnkiMinerApplication
+        val settings = app.settingsRepository.miningViewModelSettings()
         MediaMiningViewModel.Factory(
             repository = MiningRepositoryFactory.createAudio(app),
             safBroker = app.safBroker,
@@ -126,16 +132,14 @@ class MainActivity : ComponentActivity() {
             cueLookup = app.subtitleCueLookupService,
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
-            effectiveSubtitleOffset =
-                app.settingsRepository.settings.map { it.subtitleOffsetSeconds },
-            audioPaddingSeconds =
-                app.settingsRepository.settings.map { it.audioPaddingSeconds },
-            fieldMap = app.settingsRepository.settings.map { it.fieldMap },
-            audioPacks = app.activeLanguageAudioPacks(),
+            effectiveSubtitleOffset = settings.map { it.subtitleOffsetSeconds },
+            audioPaddingSeconds = settings.map { it.audioPaddingSeconds },
+            fieldMap = settings.map { it.fieldMap },
+            audioPacks = activeLanguageAudioPacks(settings, app.resourceManager.state),
             timingPreviewOpener = app.timingPreviewLoader,
             undoManager = MiningRunUndoManagerFactory.create(app),
             audioTrackProbeOpener = app.audioTrackProbeLoader,
-            deckName = app.settingsRepository.settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
+            deckName = settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
         )
     }
     private val setupViewModelFactory by lazy {
@@ -165,6 +169,7 @@ class MainActivity : ComponentActivity() {
     }
     private val readingViewModelFactory by lazy {
         val app = application as AnkiMinerApplication
+        val settings = app.settingsRepository.miningViewModelSettings()
         ReadingMiningViewModel.Factory(
             repository = ReadingRepositoryFactory.create(app),
             safBroker = app.safBroker,
@@ -172,9 +177,9 @@ class MainActivity : ComponentActivity() {
             runtimeWorkState = app.runtimeWorkState,
             selectionInventory = app.safSelectionInventory,
             undoManager = MiningRunUndoManagerFactory.create(app),
-            fieldMap = app.settingsRepository.settings.map { it.fieldMap },
-            audioPacks = app.activeLanguageAudioPacks(),
-            deckName = app.settingsRepository.settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
+            fieldMap = settings.map { it.fieldMap },
+            audioPacks = activeLanguageAudioPacks(settings, app.resourceManager.state),
+            deckName = settings.map { it.deckName ?: AnkiMinerNoteModel.DEFAULT_DECK_NAME },
         )
     }
 
