@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
 import uuid
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from math import isfinite
 from pathlib import Path
@@ -14,7 +15,7 @@ from typing import Any, cast
 
 from . import log_context
 from .anki_limits import ANKI_LIMITS_V1
-from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message
+from .protocol import BridgeProtocolError, decode_envelope, decode_message, encode_message, to_json_value
 
 _RUN_ID_RE = re.compile(r"^run_[0-9a-f]{32}$")
 _REQUEST_ID_RE = re.compile(r"^curation_[0-9a-f]{32}$")
@@ -26,6 +27,12 @@ _SENTENCE_ID_RE = re.compile(r"^sentence_[0-9a-f]{32}$")
 # BridgeJsonCodec and curation.schema.json.
 CURATION_PAGE_MAX_CANDIDATES = 100
 CURATION_PAGE_MAX_UTF8_BYTES = 512 * 1024
+# The most one candidate's JSON may take: its default sentence, then the earliest
+# sentence variants that fit. The engine attaches one variant per line a word is
+# on, unbounded, so a frequent word in a long book would otherwise outgrow a page
+# and fail the run. A quarter page still holds a couple of hundred variants, and
+# a page still fits at least three such candidates (usually four).
+_CANDIDATE_MAX_UTF8_BYTES = CURATION_PAGE_MAX_UTF8_BYTES // 4
 _MAX_CURATED_SOURCE_ITEMS = ANKI_LIMITS_V1["createCall"]["maxSourceItems"]
 _MAX_LINE_EXPANSION = 100
 # Both ends of the desktop curator's clip contract: media_extractor's own
@@ -220,23 +227,15 @@ def _sentence_payload(
     return payload
 
 
-def _candidate_ref(word: object) -> _CandidateRef:
-    default_sentence_id = _opaque_id("sentence")
-    sentence_objects: dict[str, object] = {default_sentence_id: word}
+def _sentence_variants(word: object) -> Iterator[object]:
+    """The engine's sentence variants for ``word``, earliest first, minus its own sentence."""
 
     alternatives = getattr(word, "sentence_candidates", ()) or ()
     if isinstance(alternatives, Sequence) and not isinstance(alternatives, (str, bytes, bytearray)):
         for alternative in alternatives:
             if alternative is word or _same_sentence(alternative, word):
                 continue
-            sentence_id = _opaque_id("sentence")
-            sentence_objects[sentence_id] = alternative
-
-    return _CandidateRef(
-        original=word,
-        default_sentence_id=default_sentence_id,
-        sentences=sentence_objects,
-    )
+            yield alternative
 
 
 def _candidate_mined_form(reference: _CandidateRef) -> str:
@@ -278,16 +277,36 @@ def _candidate_payload_from_ref(
     }
 
 
-def _candidate_payload(
+def _bounded_candidate(
     candidate_id: str,
     word: object,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
     sentence_preview: Callable[[object], SentencePreview] | None = None,
-) -> tuple[dict[str, Any], _CandidateRef]:
-    """Retain the original raw-word helper contract used by existing tests."""
+) -> tuple[_CandidateRef, dict[str, Any], int]:
+    """Build one candidate's reference, payload and exact encoded size.
 
-    reference = _candidate_ref(word)
-    return _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview), reference
+    The default sentence always goes, even alone over the budget; a candidate
+    over a whole page is still refused when the pages are planned. Variants
+    follow earliest first and stop at the first one that would take the
+    candidate past ``_CANDIDATE_MAX_UTF8_BYTES``. The reference holds only the
+    sentences sent, so a selection still resolves to the engine's own object.
+    """
+
+    default_sentence_id = _opaque_id("sentence")
+    sentences: dict[str, object] = {default_sentence_id: word}
+    reference = _CandidateRef(original=word, default_sentence_id=default_sentence_id, sentences=sentences)
+    payload = _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview)
+    size = _encoded_size(payload)
+    for variant in _sentence_variants(word):
+        sentence_id = _opaque_id("sentence")
+        sentence_payload = _sentence_payload(sentence_id, variant, sentence_context, sentence_preview)
+        grown = size + 1 + _encoded_size(sentence_payload)
+        if grown > _CANDIDATE_MAX_UTF8_BYTES:
+            break
+        sentences[sentence_id] = variant
+        payload["sentences"].append(sentence_payload)
+        size = grown
+    return reference, payload, size
 
 
 def _utf8_size(raw: str) -> int:
@@ -295,6 +314,16 @@ def _utf8_size(raw: str) -> int:
         return len(raw.encode("utf-8"))
     except UnicodeEncodeError as exc:
         raise _reject("invalid_utf8", "Curation payload contains an invalid Unicode scalar") from exc
+
+
+def _encoded_size(value: Mapping[str, Any]) -> int:
+    """UTF-8 size of ``value`` exactly as ``encode_message`` serializes it inside an envelope."""
+
+    try:
+        raw = json.dumps(to_json_value(value), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise _reject("invalid_payload", str(exc)) from exc
+    return _utf8_size(raw)
 
 
 def _page_payload(
@@ -347,52 +376,40 @@ def _partition_pages(
     run_id: str,
     request_id: str,
     total_candidates: int,
-    entries: Iterable[tuple[str, dict[str, Any]]],
+    entries: Iterable[tuple[str, int]],
 ) -> tuple[_CurationPagePlan, ...]:
+    """Split ``(candidate_id, encoded_size)`` entries into pages, first fit in order.
+
+    A page encodes as the empty page plus its candidates joined by commas, so a
+    running total is that page's exact upper bound; the empty page is encoded
+    once, by ``_encoded_page_upper_bound``.
+    """
+
+    empty_page = _encoded_page_upper_bound(
+        run_id=run_id,
+        request_id=request_id,
+        total_candidates=total_candidates,
+        candidates=[],
+    )
     pages: list[_CurationPagePlan] = []
     current_ids: list[str] = []
-    current_payloads: list[dict[str, Any]] = []
+    current_bytes = empty_page
     current_start = 0
 
-    for candidate_id, payload in entries:
-        proposed_payloads = [*current_payloads, payload]
-        within_count = len(proposed_payloads) <= CURATION_PAGE_MAX_CANDIDATES
-        within_bytes = (
-            _encoded_page_upper_bound(
-                run_id=run_id,
-                request_id=request_id,
-                total_candidates=total_candidates,
-                candidates=proposed_payloads,
-            )
-            <= CURATION_PAGE_MAX_UTF8_BYTES
-        )
-        if within_count and within_bytes:
-            current_ids.append(candidate_id)
-            current_payloads.append(payload)
-            continue
-
-        if not current_ids:
+    for candidate_id, size in entries:
+        if empty_page + size > CURATION_PAGE_MAX_UTF8_BYTES:
             raise _reject(
                 "curation_candidate_too_large",
                 "One curation candidate exceeds the bounded page envelope",
             )
-        pages.append(_CurationPagePlan(tuple(current_ids), current_start))
-        current_start += len(current_ids)
-        current_ids = [candidate_id]
-        current_payloads = [payload]
-        if (
-            _encoded_page_upper_bound(
-                run_id=run_id,
-                request_id=request_id,
-                total_candidates=total_candidates,
-                candidates=current_payloads,
-            )
-            > CURATION_PAGE_MAX_UTF8_BYTES
-        ):
-            raise _reject(
-                "curation_candidate_too_large",
-                "One curation candidate exceeds the bounded page envelope",
-            )
+        grown = current_bytes + size + (1 if current_ids else 0)
+        if current_ids and (len(current_ids) == CURATION_PAGE_MAX_CANDIDATES or grown > CURATION_PAGE_MAX_UTF8_BYTES):
+            pages.append(_CurationPagePlan(tuple(current_ids), current_start))
+            current_start += len(current_ids)
+            current_ids = []
+            grown = empty_page + size
+        current_ids.append(candidate_id)
+        current_bytes = grown
 
     if current_ids:
         pages.append(_CurationPagePlan(tuple(current_ids), current_start))
@@ -402,6 +419,68 @@ def _partition_pages(
             "Paged curation must contain at least two non-empty pages",
         )
     return tuple(pages)
+
+
+def _plan_curation(
+    run_id: str,
+    candidates: Sequence[object],
+    cancel_event: threading.Event,
+    *,
+    allow_line_expansion: bool,
+    allow_clip_override: bool,
+    sentence_context: Callable[[object], SentencePageContext | None] | None,
+    sentence_preview: Callable[[object], SentencePreview] | None,
+    known_words_target: KnownWordsTarget | None,
+) -> _CurationGate | None:
+    """Build the unpublished gate for ``candidates``, or ``None`` once the run is cancelled.
+
+    Runs outside the registry lock so ``cancel`` stays prompt on a large run.
+    Each candidate is built and encoded once; only a request small enough to
+    be a single page keeps its payloads, to encode it whole.
+    """
+
+    request_id = _opaque_id("curation")
+    refs: dict[str, _CandidateRef] = {}
+    sizes: list[tuple[str, int]] = []
+    payloads: list[dict[str, Any]] = []
+    single_request = len(candidates) <= CURATION_PAGE_MAX_CANDIDATES
+    for word in candidates:
+        if cancel_event.is_set():
+            return None
+        candidate_id = _opaque_id("candidate")
+        reference, payload, size = _bounded_candidate(candidate_id, word, sentence_context, sentence_preview)
+        refs[candidate_id] = reference
+        sizes.append((candidate_id, size))
+        if single_request:
+            payloads.append(payload)
+
+    request_json: str | None = None
+    pages: tuple[_CurationPagePlan, ...] = ()
+    if single_request:
+        small_request = encode_message(
+            "curation.request",
+            {"runId": run_id, "requestId": request_id, "candidates": payloads},
+        )
+        if _utf8_size(small_request) <= CURATION_PAGE_MAX_UTF8_BYTES:
+            request_json = small_request
+    if request_json is None:
+        pages = _partition_pages(
+            run_id=run_id,
+            request_id=request_id,
+            total_candidates=len(refs),
+            entries=sizes,
+        )
+    return _CurationGate(
+        request_id=request_id,
+        candidates=refs,
+        request_json=request_json,
+        pages=pages,
+        allow_line_expansion=allow_line_expansion,
+        allow_clip_override=allow_clip_override,
+        sentence_context=sentence_context,
+        sentence_preview=sentence_preview,
+        known_words_target=known_words_target,
+    )
 
 
 class JobRegistry:
@@ -550,61 +629,26 @@ class JobRegistry:
             if state.curation is not None:
                 raise _reject("curation_already_pending", "A curation request is already pending")
 
-            request_id = _opaque_id("curation")
-            refs: dict[str, _CandidateRef] = {}
-            for word in candidates:
-                candidate_id = _opaque_id("candidate")
-                reference = _candidate_ref(word)
-                refs[candidate_id] = reference
+        # Built outside the lock: a large run takes a while to encode, and
+        # cancel() must not wait behind it.
+        planned = _plan_curation(
+            run_id,
+            candidates,
+            state.handle.cancel_event,
+            allow_line_expansion=allow_line_expansion,
+            allow_clip_override=allow_clip_override,
+            sentence_context=sentence_context,
+            sentence_preview=sentence_preview,
+            known_words_target=known_words_target,
+        )
 
-            request_json: str | None = None
-            pages: tuple[_CurationPagePlan, ...] = ()
-            if len(refs) <= CURATION_PAGE_MAX_CANDIDATES:
-                payloads = [
-                    _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview)
-                    for candidate_id, reference in refs.items()
-                ]
-                small_request = encode_message(
-                    "curation.request",
-                    {
-                        "runId": run_id,
-                        "requestId": request_id,
-                        "candidates": payloads,
-                    },
-                )
-                if _utf8_size(small_request) <= CURATION_PAGE_MAX_UTF8_BYTES:
-                    request_json = small_request
-                else:
-                    pages = _partition_pages(
-                        run_id=run_id,
-                        request_id=request_id,
-                        total_candidates=len(refs),
-                        entries=zip(refs.keys(), payloads, strict=True),
-                    )
-            else:
-                pages = _partition_pages(
-                    run_id=run_id,
-                    request_id=request_id,
-                    total_candidates=len(refs),
-                    entries=(
-                        (
-                            candidate_id,
-                            _candidate_payload_from_ref(candidate_id, reference, sentence_context, sentence_preview),
-                        )
-                        for candidate_id, reference in refs.items()
-                    ),
-                )
-            gate = _CurationGate(
-                request_id=request_id,
-                candidates=refs,
-                request_json=request_json,
-                pages=pages,
-                allow_line_expansion=allow_line_expansion,
-                allow_clip_override=allow_clip_override,
-                sentence_context=sentence_context,
-                sentence_preview=sentence_preview,
-                known_words_target=known_words_target,
-            )
+        with self._lock:
+            state = self._require_active(run_id)
+            if planned is None or state.handle.cancel_event.is_set():
+                return None
+            if state.curation is not None:
+                raise _reject("curation_already_pending", "A curation request is already pending")
+            gate = planned
             state.curation = gate
 
         while True:
