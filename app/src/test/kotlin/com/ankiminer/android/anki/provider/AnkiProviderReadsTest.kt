@@ -808,10 +808,14 @@ class AnkiProviderReadsTest {
                         ),
                     )
                 ProviderEndpoint.NOTES_BROWSER ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(2L))),
-                    )
+                    if (query.selection is ProviderSelection.ExcludedDeck) {
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(mapOf(ProviderColumn.NOTE_ID to integer(2L))),
+                        )
+                    } else {
+                        null
+                    }
                 else -> pages(query, cancellation)
             }
         }
@@ -827,9 +831,16 @@ class AnkiProviderReadsTest {
         // the page's scanned notes.
         assertEquals(listOf("one", "three"), result.firstFields)
         assertEquals(3, result.scannedNotes)
-        val browserQueries = fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.NOTES_BROWSER }
-        assertEquals(1, browserQueries.size)
-        assertEquals(ProviderSelection.ExcludedDeck("Parent"), browserQueries.single().selection)
+        val browserSelections =
+            fixture.gateway.queries.filter { it.endpoint == ProviderEndpoint.NOTES_BROWSER }.map { it.selection }
+        // One forward search on the minimal scope, then that scope negated for its one candidate.
+        assertEquals(
+            listOf(
+                ProviderSelection.ExcludedDeck("Parent"),
+                ProviderSelection.NotesOutsideDecks(listOf("Parent"), listOf(2L)),
+            ),
+            browserSelections,
+        )
     }
 
     @Test
@@ -1052,10 +1063,14 @@ class AnkiProviderReadsTest {
                 ProviderEndpoint.DECKS ->
                     FakeProviderCursor(query.projection, listOf(deckRow(20, "Skip")))
                 ProviderEndpoint.NOTES_BROWSER ->
-                    FakeProviderCursor(
-                        query.projection,
-                        listOf(mapOf(ProviderColumn.NOTE_ID to integer(4L))),
-                    )
+                    if (query.selection is ProviderSelection.ExcludedDeck) {
+                        FakeProviderCursor(
+                            query.projection,
+                            listOf(mapOf(ProviderColumn.NOTE_ID to integer(4L))),
+                        )
+                    } else {
+                        null
+                    }
                 else -> pages(query, cancellation)
             }
         }
@@ -1319,7 +1334,8 @@ class AnkiProviderReadsTest {
                         query.projection,
                         listOf(deckRow(20, "Split::A"), deckRow(21, "Split::B")),
                     )
-                ProviderEndpoint.NOTES_BROWSER -> browserCursors.removeFirst()
+                ProviderEndpoint.NOTES_BROWSER ->
+                    if (query.selection is ProviderSelection.ExcludedDeck) browserCursors.removeFirst() else null
                 else -> pages(query, cancellation)
             }
         }
@@ -1356,7 +1372,8 @@ class AnkiProviderReadsTest {
             when (query.endpoint) {
                 ProviderEndpoint.DECKS ->
                     FakeProviderCursor(query.projection, listOf(deckRow(name = "Core")))
-                ProviderEndpoint.NOTES_BROWSER -> browserCursor
+                ProviderEndpoint.NOTES_BROWSER ->
+                    if (query.selection is ProviderSelection.ExcludedDeck) browserCursor else null
                 else -> pages(query, cancellation)
             }
         }

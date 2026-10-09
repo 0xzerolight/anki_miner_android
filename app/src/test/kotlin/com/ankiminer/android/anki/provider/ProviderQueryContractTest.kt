@@ -194,6 +194,24 @@ class ProviderQueryContractTest {
                 ),
             )
         }
+        // The outside-the-exclusions search negates the same escaped deck terms.
+        assertEquals(
+            CompiledProviderSelection("nid:3,12 -deck:\"Core\\_2k\" -deck:\"Quote \\\" deck\"", null),
+            compileProviderSelection(
+                ProviderQuery(
+                    endpoint = ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection =
+                        ProviderSelection.NotesOutsideDecks(
+                            listOf("Core_2k", "Quote \" deck"),
+                            listOf(3L, 12L),
+                        ),
+                ),
+                noteIdColumn = "_id",
+                modelIdColumn = "mid",
+                checksumColumn = "csum",
+            ),
+        )
     }
 
     @Test
@@ -204,6 +222,15 @@ class ProviderQueryContractTest {
                     ProviderEndpoint.NOTES_BROWSER,
                     projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
                     selection = ProviderSelection.ExcludedDeck("Mining"),
+                ),
+                ProviderQuery(
+                    ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection =
+                        ProviderSelection.NotesOutsideDecks(
+                            listOf("Mining"),
+                            (1L..ProviderQueryShapes.NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS).toList(),
+                        ),
                 ),
                 ProviderQuery(
                     ProviderEndpoint.NOTES_V2,
@@ -267,7 +294,7 @@ class ProviderQueryContractTest {
                 ),
             )
 
-        assertEquals(13, legal.size)
+        assertEquals(14, legal.size)
         assertTrue(legal.all(ProviderQueryShapes::isAllowed))
     }
 
@@ -294,6 +321,45 @@ class ProviderQueryContractTest {
                         ProviderEndpoint.CARDS,
                         projection = ProviderQueryShapes.CARD_ID_PROJECTION,
                         selection = ProviderSelection.ExcludedDeck("Mining"),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection =
+                            ProviderSelection.NotesOutsideDecks(
+                                listOf("Mining"),
+                                (1L..ProviderQueryShapes.NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS + 1L).toList(),
+                            ),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.NotesOutsideDecks(emptyList(), listOf(1L)),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.NotesOutsideDecks(listOf("Mining"), listOf(2L, 1L)),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_BROWSER,
+                        projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                        selection = ProviderSelection.NotesOutsideDecks(listOf("\uD800"), listOf(1L)),
+                    )
+                },
+                {
+                    ProviderQuery(
+                        ProviderEndpoint.NOTES_V2,
+                        projection = ProviderQueryShapes.NOTE_PAGE_PROJECTION,
+                        selection = ProviderSelection.NotesOutsideDecks(listOf("Mining"), listOf(1L)),
                     )
                 },
                 {

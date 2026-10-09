@@ -352,7 +352,43 @@ internal class AnkiProviderReadService(
                 }
             }
         }
+        removeNotesWithCardsOutside(excluded, minimalScopes, cancellation)
         return excluded
+    }
+
+    /**
+     * Keeps a note excluded only while none of its cards sits outside the excluded decks.
+     *
+     * A `deck:"X"` search returns every note with any card in X. Desktop's known set is
+     * `deck:* -deck:"X"`, which keeps a note that has any card outside the exclusions; dropping
+     * such a note here hid a studied word from known words, and the excluded-deck admission then
+     * created a duplicate note for it. The candidates go back through the same search negated, in
+     * bounded ascending chunks, and every hit is taken off the excluded set.
+     */
+    private fun removeNotesWithCardsOutside(
+        excluded: MutableSet<Long>,
+        excludedScopes: List<String>,
+        cancellation: AnkiCancellation,
+    ) {
+        for (chunk in excluded.sorted().chunked(ProviderQueryShapes.NOTES_OUTSIDE_DECKS_MAX_NOTE_IDS)) {
+            ensureActive(cancellation)
+            val query =
+                ProviderQuery(
+                    endpoint = ProviderEndpoint.NOTES_BROWSER,
+                    projection = ProviderQueryShapes.NOTE_ID_PROJECTION,
+                    selection = ProviderSelection.NotesOutsideDecks(excludedScopes, chunk),
+                    deadline = ProviderReadDeadline.BULK,
+                )
+            // A null cursor is AnkiDroid's zero-match answer: the whole chunk stays excluded.
+            val browserCursor = provider.queryOptional(query, cancellation) ?: continue
+            browserCursor.use { cursor ->
+                requireProjection(cursor, query)
+                while (cursor.moveToNext()) {
+                    ensureActive(cancellation)
+                    excluded.remove(cursor.positiveLong(ProviderColumn.NOTE_ID))
+                }
+            }
+        }
     }
 
     /**
