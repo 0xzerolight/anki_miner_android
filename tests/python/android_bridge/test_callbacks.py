@@ -498,6 +498,16 @@ def test_synchronous_anki_callback_requires_json_string(result: object) -> None:
     assert exc_info.value.code == "invalid_callback_result"
 
 
+def test_synchronous_callback_memory_error_is_not_a_callback_failure() -> None:
+    class ExhaustedCallbacks:
+        def ankiStoreMedia(self, raw: str) -> str:
+            raise MemoryError("interpreter exhausted")
+
+    client = AndroidAnkiCallbacks(ExhaustedCallbacks(), _RUN_ID)
+    with pytest.raises(MemoryError, match="interpreter exhausted"):
+        client.store_media({})
+
+
 def test_synchronous_anki_callback_rejects_mismatched_request_id() -> None:
     registry = JobRegistry()
     handle = registry.begin()

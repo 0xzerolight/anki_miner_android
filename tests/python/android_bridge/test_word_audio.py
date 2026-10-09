@@ -118,12 +118,32 @@ def test_fetch_never_raises(tmp_path: Path) -> None:
     assert _fetcher(tmp_path, TtsCallbacks(tmp_path / "cache")).fetch("ספר", "") is None
 
 
-def test_memory_exhaustion_is_the_runs_to_stop_on(tmp_path: Path) -> None:
-    def exhausted(_term: str, _reading: str) -> str:
-        raise MemoryError
+class ExhaustedTtsCallbacks:
+    def synthesizeSentenceAudio(self, raw: str) -> str:
+        raise MemoryError("interpreter exhausted")
 
-    with pytest.raises(MemoryError):
-        _fetcher(tmp_path, TtsCallbacks(tmp_path / "cache"), speakable=exhausted).fetch("ספר", "")
+
+def _exhausted_speakable(_term: str, _reading: str) -> str:
+    raise MemoryError("interpreter exhausted")
+
+
+@pytest.mark.parametrize(
+    ("callbacks_kind", "speakable"),
+    [
+        ("tts", _exhausted_speakable),
+        ("exhausted", _speak_reading_else_term),
+    ],
+    ids=["speakable", "kotlin-callback"],
+)
+def test_memory_exhaustion_is_the_runs_to_stop_on(
+    tmp_path: Path,
+    callbacks_kind: str,
+    speakable: object,
+) -> None:
+    callbacks = TtsCallbacks(tmp_path / "cache") if callbacks_kind == "tts" else ExhaustedTtsCallbacks()
+
+    with pytest.raises(MemoryError, match="interpreter exhausted"):
+        _fetcher(tmp_path, callbacks, speakable=speakable).fetch("ספר", "")
 
 
 def test_cancellation_returns_none_and_writes_no_media(tmp_path: Path) -> None:

@@ -53,6 +53,9 @@ def _invoke_result(callbacks: object, method_name: str, message: str) -> str:
         raise BridgeProtocolError("missing_callback", f"EngineCallbacks.{method_name} is required")
     try:
         result = method(message)
+    except MemoryError:
+        # Memory exhaustion is the run's to stop on, not a Kotlin callback fault.
+        raise
     except Exception as exc:
         raise BridgeProtocolError("callback_failed", f"EngineCallbacks.{method_name} raised an exception") from exc
     if not isinstance(result, str):
