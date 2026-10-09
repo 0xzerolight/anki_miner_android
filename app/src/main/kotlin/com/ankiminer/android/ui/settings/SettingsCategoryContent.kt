@@ -26,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -58,6 +57,7 @@ import com.ankiminer.android.diagnostics.TesterDiagnosticsIdentity
 import com.ankiminer.android.localization.LocalizedStringResource
 import com.ankiminer.android.tts.DeviceVoiceStatus
 import com.ankiminer.android.tts.probeDeviceVoice
+import com.ankiminer.android.ui.links.rememberExternalLinkOpener
 import com.ankiminer.android.ui.theme.AnkiMinerTokens
 import com.ankiminer.android.ui.theme.SecondaryActionButton
 import com.ankiminer.android.ui.theme.SupportingText
@@ -1702,7 +1702,7 @@ internal fun UpdateAvailableActions(
     available: AvailableUpdate,
     onSkip: () -> Unit,
 ) {
-    val uriHandler = LocalUriHandler.current
+    val openLink = rememberExternalLinkOpener()
     Text(stringResource(R.string.settings_update_available, available.version))
     FlowRow(
         modifier = Modifier.fillMaxWidth(),
@@ -1710,7 +1710,7 @@ internal fun UpdateAvailableActions(
         verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related),
     ) {
         TextButton(
-            onClick = { uriHandler.openUri(available.releasePageUrl) },
+            onClick = { openLink(available.releasePageUrl) },
             colors = accentTextButtonColors(),
         ) {
             Text(stringResource(R.string.settings_update_view_release))

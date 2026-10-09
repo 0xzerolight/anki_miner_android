@@ -811,6 +811,7 @@
     <string name="source_open_repository">Apri repository del codice sorgente</string>
     <string name="community_star_project">⭐ Stella</string>
     <string name="community_join_discord">Discord</string>
+    <string name="link_open_unavailable">Nessuna app disponibile per aprire questo link.</string>
     <string name="anki_setup_provider_unavailable">AnkiDroid non è disponibile. I record locali di recupero restano elencati qui sotto.</string>
     <string name="anki_setup_runtime_busy">Termina o annulla il mining attivo o l\'operazione sulle risorse prima di modificare la configurazione di Anki</string>
     <string name="anki_setup_failed">La configurazione di Anki non è stata completata. Controlla lo stato e riprova.</string>
