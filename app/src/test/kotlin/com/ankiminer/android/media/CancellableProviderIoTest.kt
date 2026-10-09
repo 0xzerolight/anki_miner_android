@@ -7,7 +7,11 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -83,7 +87,8 @@ class CancellableProviderIoTest {
             windowElapsed.countDown()
 
             assertEquals("done", result.get(1, TimeUnit.SECONDS))
-            assertTrue("deadline was not rearmed", scheduler.armCount.get() >= 2)
+            // Entry window, start window, and the rearm after reported progress.
+            assertTrue("deadline was not rearmed", scheduler.armCount.get() >= 3)
             assertTrue(uncaught.isEmpty())
         } finally {
             executor.shutdownNow()
@@ -236,6 +241,154 @@ class CancellableProviderIoTest {
         } finally {
             callerScope.cancel()
             scope.cancel()
+        }
+    }
+
+    @Test
+    fun anOperationQueuedBehindAProgressingCopyWaitsInsteadOfTimingOut() {
+        // A pick made while a long SAF copy holds the single provider lane used to fail after
+        // one window of pure queue time, though the copy ahead of it never stalled.
+        val copyScheduler = ManualProviderIoDeadlineScheduler()
+        val pickScheduler = ManualProviderIoDeadlineScheduler()
+        val copyStarted = CountDownLatch(1)
+        val chunks = LinkedBlockingQueue<Boolean>()
+        val delivered = Semaphore(0)
+        val pickRan = AtomicBoolean(false)
+        val copyExecutor = Executors.newSingleThreadExecutor()
+        val pickExecutor = Executors.newSingleThreadExecutor()
+        try {
+            val copy =
+                execute(copyScheduler, copyExecutor) { deadline ->
+                    copyStarted.countDown()
+                    while (checkNotNull(chunks.poll(5, TimeUnit.SECONDS)) { "copy was never released" }) {
+                        deadline.rearm()
+                        delivered.release()
+                    }
+                    "copied"
+                }
+            assertTrue(copyStarted.await(1, TimeUnit.SECONDS))
+            val pick =
+                execute(pickScheduler, pickExecutor) {
+                    pickRan.set(true)
+                    "picked"
+                }
+            pickScheduler.awaitArmCount(1)
+
+            repeat(2) {
+                chunks.put(true)
+                assertTrue(delivered.tryAcquire(1, TimeUnit.SECONDS))
+                pickScheduler.fireArmedDeadline()
+                val early = runCatching { pick.get(100, TimeUnit.MILLISECONDS) }.exceptionOrNull()
+                assertTrue("queued pick ended behind a progressing copy: $early", early is TimeoutException)
+            }
+            assertFalse(pickRan.get())
+
+            chunks.put(false)
+            assertEquals("copied", copy.get(1, TimeUnit.SECONDS))
+            assertEquals("picked", pick.get(1, TimeUnit.SECONDS))
+            assertTrue(uncaught.isEmpty())
+        } finally {
+            chunks.put(false)
+            copyExecutor.shutdownNow()
+            pickExecutor.shutdownNow()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun anOperationAbandonedBeforeItStartsDoesNotBlockLaterOperations() {
+        // A queued pick that was cancelled was recorded as a blocked provider worker, so every
+        // later SAF call failed with "still blocked" until the copy ahead of it finished.
+        val copyScheduler = ManualProviderIoDeadlineScheduler()
+        val pickScheduler = ManualProviderIoDeadlineScheduler()
+        val laterScheduler = ManualProviderIoDeadlineScheduler()
+        val copyStarted = CountDownLatch(1)
+        val releaseCopy = CountDownLatch(1)
+        val pickRan = AtomicBoolean(false)
+        val callerScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val copyExecutor = Executors.newSingleThreadExecutor()
+        val laterExecutor = Executors.newSingleThreadExecutor()
+        try {
+            val copy =
+                execute(copyScheduler, copyExecutor) {
+                    copyStarted.countDown()
+                    check(releaseCopy.await(5, TimeUnit.SECONDS)) { "copy was never released" }
+                    "copied"
+                }
+            assertTrue(copyStarted.await(1, TimeUnit.SECONDS))
+            val pick =
+                callerScope.launch {
+                    CancellableProviderIo.execute(
+                        scope = scope,
+                        timeoutMillis = 5_000L,
+                        scheduler = pickScheduler,
+                    ) { pickRan.set(true) }
+                }
+            awaitWorkerCount(2)
+            runBlocking { pick.cancelAndJoin() }
+
+            val later = execute(laterScheduler, laterExecutor) { "later" }
+            // Arming happens only after the blocked-worker gate admits the operation.
+            laterScheduler.awaitArmCount(1)
+            releaseCopy.countDown()
+
+            assertEquals("copied", copy.get(1, TimeUnit.SECONDS))
+            assertEquals("later", later.get(1, TimeUnit.SECONDS))
+            assertFalse("abandoned pick still reached the provider", pickRan.get())
+        } finally {
+            releaseCopy.countDown()
+            callerScope.cancel()
+            copyExecutor.shutdownNow()
+            laterExecutor.shutdownNow()
+            scope.cancel()
+        }
+    }
+
+    @Test
+    fun anOperationQueuedBehindAStalledWorkerStillTimesOut() {
+        // Queue time behind a healthy copy is not a stall, but queue time behind a wedged
+        // provider is: the queued caller must still fail within its window instead of waiting
+        // forever for a lane that never frees.
+        val stalledScheduler = ManualProviderIoDeadlineScheduler()
+        val pickScheduler = ManualProviderIoDeadlineScheduler()
+        val stalledStarted = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val pickRan = AtomicBoolean(false)
+        val stalledExecutor = Executors.newSingleThreadExecutor()
+        val pickExecutor = Executors.newSingleThreadExecutor()
+        try {
+            execute(stalledScheduler, stalledExecutor) {
+                stalledStarted.countDown()
+                check(release.await(5, TimeUnit.SECONDS)) { "stalled worker was never released" }
+                "late"
+            }
+            assertTrue(stalledStarted.await(1, TimeUnit.SECONDS))
+            val pick =
+                execute(pickScheduler, pickExecutor) {
+                    pickRan.set(true)
+                    "picked"
+                }
+
+            pickScheduler.fireArmedDeadline()
+
+            val failure = assertThrows(ExecutionException::class.java) { pick.get(1, TimeUnit.SECONDS) }
+            assertTrue(failure.cause is ProviderIoTimeoutException)
+            release.countDown()
+            awaitProviderIoWorkerRelease()
+            assertFalse("timed-out pick still reached the provider", pickRan.get())
+        } finally {
+            release.countDown()
+            stalledExecutor.shutdownNow()
+            pickExecutor.shutdownNow()
+            scope.cancel()
+        }
+    }
+
+    private fun awaitWorkerCount(count: Int) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (scope.coroutineContext.job.children.count() < count) {
+            check(System.nanoTime() < deadline) { "provider worker was never launched" }
+            Thread.sleep(1)
         }
     }
 
