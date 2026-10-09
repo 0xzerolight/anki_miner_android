@@ -17,6 +17,7 @@ import com.ankiminer.android.data.anki.AnkiSetupFailureOrigin
 import com.ankiminer.android.data.resources.ResourceFailureAction
 import com.ankiminer.android.data.resources.ResourceFailureOrigin
 import com.ankiminer.android.engine.LanguageProfileInfo
+import com.ankiminer.android.engine.LanguageUnavailableReason
 import com.ankiminer.android.ui.settings.AnkiDeckCard
 import com.ankiminer.android.ui.settings.AnkiDroidConnectActions
 import com.ankiminer.android.ui.settings.AnkiOperationCard
@@ -230,7 +231,12 @@ private fun WizardHeldLanguage(
     if (language.downloadingCode != null) {
         Text(stringResource(R.string.wizard_downloads_language_running, wizardLanguageName(code, language.profiles)))
     } else {
-        SupportingText(stringResource(R.string.language_unavailable_data_required))
+        // After a process death, or a cancel once the data was in, the profile can already read
+        // available: the same button then fetches the rest of the set and switches.
+        val needsData =
+            language.profiles.firstOrNull { it.code == code }?.unavailableReason ==
+                LanguageUnavailableReason.DATA_REQUIRED
+        if (needsData) SupportingText(stringResource(R.string.language_unavailable_data_required))
         SecondaryActionButton(
             onClick = { callbacks.onDownloadAndSwitchLanguage(code) },
             modifier = Modifier.fillMaxWidth(),

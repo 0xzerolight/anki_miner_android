@@ -1363,9 +1363,6 @@ class SettingsViewModelTest {
 
             viewModel.downloadAndSwitchLanguage("ar")
             advanceUntilIdle()
-            // Hebrew needs no download: the offer is only for a data-required language.
-            viewModel.downloadAndSwitchLanguage("he")
-            advanceUntilIdle()
 
             assertEquals(listOf("ar"), resources.recommendedInstalls)
             assertEquals("ja", repository.current.language)

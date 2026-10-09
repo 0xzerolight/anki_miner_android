@@ -1573,11 +1573,16 @@ internal class SettingsViewModel(
      * end and the profile reads available. A member that fails after the data still switches; its
      * failure carries the retry. A cancelled or refused install leaves the language where it was,
      * even when the data landed before the cancel.
+     *
+     * A language whose data is already in (Android ended the process mid-set, or the user cancelled
+     * after the data) runs the same way: the rest of its set installs, or nothing when none is
+     * left, and the switch follows, as the interrupted Next would have done.
      */
     fun downloadAndSwitchLanguage(code: String) {
         if (mutableLanguageDownload.value != null) return
         val profile = languageProfiles.value.firstOrNull { it.code == code } ?: return
-        if (profile.unavailableReason != LanguageUnavailableReason.DATA_REQUIRED) return
+        // A language this build cannot mine has nothing a download could supply.
+        if (profile.unavailableReason == LanguageUnavailableReason.UNSUPPORTED) return
         val source = languageProfileSource ?: return
         mutableLanguageDownload.value = code
         viewModelScope.launch {
