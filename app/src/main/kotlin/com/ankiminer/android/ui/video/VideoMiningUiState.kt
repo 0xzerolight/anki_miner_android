@@ -174,4 +174,16 @@ data class VideoMiningUiState(
                 !resetPending &&
                 !audioTrackProbePending &&
                 !timingPreviewPending
+
+    /**
+     * The guard MediaMiningViewModel applies to every source pick and clear, minus its modal
+     * timing-preview and audio-track dialogs, which already cover the screen. Kept in one place
+     * so the rows never offer a pick the ViewModel would silently drop.
+     */
+    val canEditSources: Boolean
+        get() =
+            runState.acceptsInputEdits &&
+                !startPending &&
+                !timingPreviewPending &&
+                !audioTrackProbePending
 }

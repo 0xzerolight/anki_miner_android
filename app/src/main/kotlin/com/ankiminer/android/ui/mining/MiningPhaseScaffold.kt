@@ -209,6 +209,16 @@ internal fun MiningCancelButton(
 }
 
 /**
+ * Whether a scroll keyed on [key] should run. The first composition only records the key: a
+ * fresh list already sits at the top, and a recreated one (rotation, a return from another tab)
+ * restored its position along with the saved key, so scrolling then would throw the user back.
+ */
+internal fun scrollKeyChanged(
+    appliedKey: String?,
+    key: String,
+): Boolean = appliedKey != null && appliedKey != key
+
+/**
  * Scrolls the list whenever [transitionKey] moves to a new run or phase: back to the top, or, with
  * [revealEnd], to the end, where a finished run's result line sits under the inputs. On a short
  * screen the inputs alone fill the view, and the top would hide how the run went.
@@ -221,7 +231,7 @@ internal fun ResetMiningScrollOnTransition(
 ) {
     var appliedKey by rememberSaveable { mutableStateOf<String?>(null) }
     LaunchedEffect(transitionKey) {
-        if (appliedKey != null && appliedKey != transitionKey) {
+        if (scrollKeyChanged(appliedKey, transitionKey)) {
             listState.scrollToItem(0)
             if (revealEnd) {
                 // scrollToItem remeasured the list for this state, so the count includes the result.

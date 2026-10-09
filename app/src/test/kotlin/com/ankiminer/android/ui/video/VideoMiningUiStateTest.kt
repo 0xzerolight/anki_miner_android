@@ -94,6 +94,40 @@ class VideoMiningUiStateTest {
         assertFalse(probing.canTestTiming)
     }
 
+    @Test
+    fun canEditSourcesWhileIdleOrAfterARunFinishes() {
+        val idle = stateWithCommittedSources()
+        assertTrue(idle.canEditSources)
+        assertTrue(
+            idle.copy(runState = MiningRunState.Cancelled(runId = "run", result = null)).canEditSources,
+        )
+    }
+
+    @Test
+    fun canEditSourcesIsFalseWhileARunIsInFlight() {
+        val base = stateWithCommittedSources()
+        assertFalse(
+            base.copy(
+                runState = MiningRunState.Running("run", MiningProgress(0, 0, "x")),
+            ).canEditSources,
+        )
+        assertFalse(
+            base.copy(runState = MiningRunState.Starting(runId = null, progress = null)).canEditSources,
+        )
+    }
+
+    @Test
+    fun canEditSourcesIsFalseWhileAudioTrackProbeIsPending() {
+        assertFalse(stateWithCommittedSources().copy(audioTrackProbePending = true).canEditSources)
+    }
+
+    @Test
+    fun canEditSourcesIsFalseWhileStartOrTimingPreviewIsPending() {
+        val base = stateWithCommittedSources()
+        assertFalse(base.copy(startPending = true).canEditSources)
+        assertFalse(base.copy(timingPreviewPending = true).canEditSources)
+    }
+
     private fun stateWithVideoOnly() =
         VideoMiningUiState(
             video = DocumentSlotState(document("content://test/video", "video.mkv")),
