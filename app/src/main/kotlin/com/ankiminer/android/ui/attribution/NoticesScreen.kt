@@ -79,11 +79,6 @@ private fun NoticeBlockItem(block: NoticeBlock) {
         } else {
             Modifier
         }
-    val text =
-        when (block) {
-            is NoticeBlock.Bullet -> "• ${block.text}"
-            else -> block.text
-        }
     if (block is NoticeBlock.Code) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -93,7 +88,7 @@ private fun NoticeBlockItem(block: NoticeBlock) {
         ) {
             SelectionContainer {
                 Text(
-                    text = text,
+                    text = block.text,
                     modifier = Modifier.padding(AnkiMinerTokens.Space.group),
                     style =
                         MaterialTheme.typography.bodySmall.copy(
@@ -105,7 +100,8 @@ private fun NoticeBlockItem(block: NoticeBlock) {
     } else {
         SelectionContainer {
             Text(
-                text = text,
+                // A bullet's text already carries its marker: "•" or the item's own number.
+                text = block.text,
                 modifier = textModifier.fillMaxWidth(),
                 style =
                     when (block) {
@@ -141,7 +137,7 @@ private fun loadNotices(context: Context): List<NoticeDocument> {
     val names = assets.list(NOTICES_ASSET_DIR)?.sortedWith(NOTICE_ORDER) ?: emptyList()
     return names.map { name ->
         val text = assets.open("$NOTICES_ASSET_DIR/$name").use { it.readBytes().toString(Charsets.UTF_8) }
-        NoticeDocument(name, parseNoticeBlocks(text))
+        NoticeDocument(name, noticeBlocksFor(name, text))
     }
 }
 
