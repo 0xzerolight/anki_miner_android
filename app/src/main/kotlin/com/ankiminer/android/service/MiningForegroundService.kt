@@ -101,6 +101,22 @@ internal fun cpuWakeStateChangeRequired(
     owned: Boolean,
 ): Boolean = parked == owned
 
+/**
+ * The type the mining service passes to `startForeground` on [sdkInt], API 29+ (the call takes no
+ * type below that).
+ *
+ * `mediaProcessing` exists only from API 35. API 34 checks every requested type bit against its own
+ * policy table and fails the call for a bit it does not know, so 29–34 run the same work as
+ * `dataSync`, the manifest's other type for this service.
+ */
+@SuppressLint("InlinedApi")
+internal fun miningForegroundServiceType(sdkInt: Int): Int =
+    if (sdkInt >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING
+    } else {
+        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+    }
+
 internal fun decodeMiningForegroundIntentIdentity(
     action: String?,
     extraKeys: Set<String>,
@@ -383,13 +399,12 @@ class MiningForegroundService : Service() {
         stopSelfResult(startId)
     }
 
-    @SuppressLint("InlinedApi")
     private fun startForegroundTyped(notification: Notification) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING,
+                miningForegroundServiceType(Build.VERSION.SDK_INT),
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)

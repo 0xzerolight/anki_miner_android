@@ -36,6 +36,16 @@ class M3ContractTest(unittest.TestCase):
         self.assertIn("registry.serviceDestroyed", destroy)
         self.assertIn("super.onDestroy()", destroy)
 
+    def test_mining_service_declares_every_foreground_type_it_passes(self) -> None:
+        manifest = (ROOT / "app/src/main/AndroidManifest.xml").read_text(encoding="utf-8")
+        element = manifest[manifest.index('android:name=".service.MiningForegroundService"') :]
+        element = element[: element.index("/>")]
+
+        # miningForegroundServiceType: mediaProcessing on API 35+, dataSync on API 29-34.
+        self.assertIn('android:foregroundServiceType="mediaProcessing|dataSync"', element)
+        self.assertIn("android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING", manifest)
+        self.assertIn("android.permission.FOREGROUND_SERVICE_DATA_SYNC", manifest)
+
     def test_proactive_saf_reconciliation_cannot_crash_application_startup(self) -> None:
         application = (ROOT / "app/src/main/kotlin/com/ankiminer/android/AnkiMinerApplication.kt").read_text(
             encoding="utf-8"
