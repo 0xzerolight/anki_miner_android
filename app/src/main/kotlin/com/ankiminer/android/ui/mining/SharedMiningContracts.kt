@@ -30,6 +30,8 @@ data class MiningReceipt(
     val deckName: String?,
     val noteIds: List<Long>,
     val minedForms: List<String>,
+    /** The run's mining language, whose known-words list Undo reverts; blank when the engine did not stamp it. */
+    val minedFormsLanguage: String,
 )
 
 /** The one sentence a finished run leads with. */

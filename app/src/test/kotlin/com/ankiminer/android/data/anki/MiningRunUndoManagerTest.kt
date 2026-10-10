@@ -24,7 +24,7 @@ class MiningRunUndoManagerTest {
             val reverter = RecordingReverter()
             val manager = undoManager(backend, Executor(Runnable::run), coordinator, reverter)
 
-            val outcome = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            val outcome = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
 
             assertEquals(UndoRunOutcome.Busy, outcome)
             assertTrue(backend.calls.isEmpty())
@@ -42,11 +42,11 @@ class MiningRunUndoManagerTest {
             val reverter = RecordingReverter()
             val manager = undoManager(backend, executor, RuntimeWorkCoordinator(), reverter)
 
-            val first = async { manager.undoRun("run-1", listOf(11L), listOf("猫")) }
+            val first = async { manager.undoRun("run-1", listOf(11L), listOf("猫"), "ja") }
             runCurrent()
             assertTrue(manager.undoActive.value)
 
-            val second = manager.undoRun("run-2", listOf(12L), listOf("犬"))
+            val second = manager.undoRun("run-2", listOf(12L), listOf("犬"), "ja")
 
             assertEquals(UndoRunOutcome.Busy, second)
             assertEquals(1, executor.queued.size)
@@ -67,8 +67,8 @@ class MiningRunUndoManagerTest {
             val reverter = RecordingReverter()
             val manager = undoManager(backend, Executor(Runnable::run), RuntimeWorkCoordinator(), reverter)
 
-            val first = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
-            val second = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            val first = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
+            val second = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
 
             assertEquals(
                 UndoRunOutcome.Undone(UndoneRunReceipt("run-1", deletedNotes = 2, knownWordsReverted = true)),
@@ -95,7 +95,7 @@ class MiningRunUndoManagerTest {
                 )
             val manager = undoManager(backend, Executor(Runnable::run), coordinator, reverter)
 
-            manager.undoRun("run-1", listOf(11L), listOf("猫"))
+            manager.undoRun("run-1", listOf(11L), listOf("猫"), "ja")
 
             assertEquals(listOf("delete:ANKI_SETUP", "revert:resource"), events)
         }
@@ -107,7 +107,7 @@ class MiningRunUndoManagerTest {
             val reverter = RecordingReverter()
             val manager = undoManager(backend, Executor(Runnable::run), RuntimeWorkCoordinator(), reverter)
 
-            val outcome = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            val outcome = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
 
             assertEquals(UndoRunOutcome.DeleteFailed, outcome)
             assertTrue(reverter.calls.isEmpty())
@@ -122,7 +122,7 @@ class MiningRunUndoManagerTest {
             val backend = RecordingBackend(failure = IllegalStateException("provider gone"))
             val manager = undoManager(backend, Executor(Runnable::run), coordinator, RecordingReverter())
 
-            manager.undoRun("run-1", listOf(11L), listOf("猫"))
+            manager.undoRun("run-1", listOf(11L), listOf("猫"), "ja")
 
             val next = coordinator.tryAcquire(RuntimeWorkCoordinator.Kind.ANKI_SETUP)
             assertNotNull(next)
@@ -136,7 +136,7 @@ class MiningRunUndoManagerTest {
             val reverter = RecordingReverter(result = false)
             val manager = undoManager(backend, Executor(Runnable::run), RuntimeWorkCoordinator(), reverter)
 
-            val outcome = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            val outcome = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
 
             val expected = UndoneRunReceipt("run-1", deletedNotes = 2, knownWordsReverted = false)
             assertEquals(UndoRunOutcome.Undone(expected), outcome)
@@ -151,7 +151,7 @@ class MiningRunUndoManagerTest {
             val reverter = RecordingReverter()
             val manager = undoManager(backend, executor, RuntimeWorkCoordinator(), reverter)
 
-            val caller = launch { manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫")) }
+            val caller = launch { manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫"), "ja") }
             runCurrent()
             caller.cancel()
             caller.join()
@@ -173,13 +173,13 @@ class MiningRunUndoManagerTest {
             val backend = RecordingBackend()
             val reverter = RecordingReverter()
             val manager = undoManager(backend, executor, RuntimeWorkCoordinator(), reverter)
-            val caller = launch { manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫")) }
+            val caller = launch { manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫"), "ja") }
             runCurrent()
             caller.cancel()
             caller.join()
             executor.runNext()
 
-            val retry = manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫"))
+            val retry = manager.undoRun("run-1", listOf(11L, 12L, 13L), listOf("猫"), "ja")
 
             val expected = UndoneRunReceipt("run-1", deletedNotes = 3, knownWordsReverted = true)
             assertEquals(UndoRunOutcome.Undone(expected), retry)
@@ -196,11 +196,11 @@ class MiningRunUndoManagerTest {
             val backend = RecordingBackend()
             val reverter = RecordingReverter(result = false)
             val manager = undoManager(backend, Executor(Runnable::run), RuntimeWorkCoordinator(), reverter)
-            manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
             reverter.result = true
 
-            val retry = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
-            val again = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"))
+            val retry = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
+            val again = manager.undoRun("run-1", listOf(11L, 12L), listOf("猫"), "ja")
 
             val expected = UndoneRunReceipt("run-1", deletedNotes = 2, knownWordsReverted = true)
             assertEquals(UndoRunOutcome.Undone(expected), retry)
@@ -221,10 +221,23 @@ class MiningRunUndoManagerTest {
                 )
 
             repeat(9) { index ->
-                manager.undoRun("run-$index", listOf(index.toLong()), listOf("word-$index"))
+                manager.undoRun("run-$index", listOf(index.toLong()), listOf("word-$index"), "ja")
             }
 
             assertEquals((1..8).map { "run-$it" }, manager.undoneRuns.value.keys.toList())
+        }
+
+    @Test
+    fun `the revert targets the run's own mining language, blank included`() =
+        runTest {
+            val reverter = RecordingReverter()
+            val manager = undoManager(RecordingBackend(), Executor(Runnable::run), RuntimeWorkCoordinator(), reverter)
+
+            manager.undoRun("run-de", listOf(11L), listOf("Katze"), "de")
+            // A run the engine never stamped: the resource manager falls back to the live language.
+            manager.undoRun("run-unstamped", listOf(12L), listOf("猫"), "")
+
+            assertEquals(listOf("de", ""), reverter.languages)
         }
 
     private fun undoManager(
@@ -266,9 +279,14 @@ class MiningRunUndoManagerTest {
         private val onRevert: ((List<String>) -> Unit)? = null,
     ) : MinedWordsReverter {
         val calls = mutableListOf<List<String>>()
+        val languages = mutableListOf<String>()
 
-        override suspend fun removeMinedWords(words: List<String>): Boolean {
+        override suspend fun removeMinedWords(
+            words: List<String>,
+            language: String,
+        ): Boolean {
             calls += words
+            languages += language
             onRevert?.invoke(words)
             return result
         }

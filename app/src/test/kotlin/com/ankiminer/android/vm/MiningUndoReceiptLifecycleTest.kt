@@ -352,7 +352,10 @@ class MiningUndoReceiptLifecycleTest {
                 runtimeWorkCoordinator = RuntimeWorkCoordinator(),
                 reverter =
                     object : MinedWordsReverter {
-                        override suspend fun removeMinedWords(words: List<String>): Boolean {
+                        override suspend fun removeMinedWords(
+                            words: List<String>,
+                            language: String,
+                        ): Boolean {
                             revertCalls += words
                             return pendingRevertResults.removeFirstOrNull() ?: true
                         }

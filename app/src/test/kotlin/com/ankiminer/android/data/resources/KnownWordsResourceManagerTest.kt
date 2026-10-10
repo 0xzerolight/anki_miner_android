@@ -13,6 +13,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -101,11 +102,33 @@ class KnownWordsResourceManagerTest {
         }
 
     @Test
+    fun `undo reverts the mined words in the run's language after a switch`() =
+        runTest {
+            val harness = Harness()
+            harness.language = "ko"
+
+            assertTrue(harness.manager.removeMinedWords(listOf("猫"), "ja"))
+
+            assertEquals(listOf("ja"), harness.bridge.languagesOf("resource.minedwords.remove"))
+        }
+
+    @Test
+    fun `an unstamped run's undo reverts the active language`() =
+        runTest {
+            val harness = Harness()
+            harness.language = "ko"
+
+            assertTrue(harness.manager.removeMinedWords(listOf("고양이"), ""))
+
+            assertEquals(listOf("ko"), harness.bridge.languagesOf("resource.minedwords.remove"))
+        }
+
+    @Test
     fun `a failed undo retried after a language switch reverts the language active when undo ran`() =
         runTest {
             val harness = Harness()
             harness.bridge.failOnce += "resource.minedwords.remove"
-            assertFalse(harness.manager.removeMinedWords(listOf("猫")))
+            assertFalse(harness.manager.removeMinedWords(listOf("猫"), ""))
             harness.language = "ko"
 
             harness.manager.retryKnownWordsFailure()

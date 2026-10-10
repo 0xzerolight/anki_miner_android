@@ -1231,7 +1231,7 @@ class MediaMiningViewModel internal constructor(
         viewModelScope.launch(LogContext.asContextElement(target.runId)) {
             AppLog.i(LogComponent.UI, "command", "command" to "undo", "outcome" to "ok")
             try {
-                when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms)) {
+                when (val outcome = manager.undoRun(target.runId, target.noteIds, target.minedForms, target.minedFormsLanguage)) {
                     is UndoRunOutcome.Undone -> {
                         if (outcome.receipt.knownWordsReverted) {
                             receiptStore.clear()
@@ -1261,7 +1261,7 @@ class MediaMiningViewModel internal constructor(
         val result = runState.terminalResult
         val runId = runState.runId
         if (result != null && runId != null && result.cardIds.isNotEmpty()) {
-            return MiningReceipt(runId, result.cardsCreated, null, result.cardIds, result.minedForms)
+            return MiningReceipt(runId, result.cardsCreated, null, result.cardIds, result.minedForms, result.minedFormsLanguage)
         }
         return localState.value.restoredReceipt.takeIf { runState == MiningRunState.Idle }
     }
@@ -1286,7 +1286,7 @@ class MediaMiningViewModel internal constructor(
             return
         }
         receiptStore.save(
-            MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms),
+            MiningReceipt(runId, result.cardsCreated, localState.value.runDeckName, result.cardIds, result.minedForms, result.minedFormsLanguage),
         )
     }
 
