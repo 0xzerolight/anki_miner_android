@@ -360,7 +360,7 @@ class UiAuditJankFlowTest {
             mapOf(
                 SettingsCategory.ANKI to
                     listOf("anki-deck-options", "anki-target", "anki-card-creation"),
-                SettingsCategory.MEDIA to listOf("media-options"),
+                SettingsCategory.MEDIA to listOf("media-sentence-audio", "media-screenshot"),
                 SettingsCategory.RESOURCES to
                     listOf(
                         "dictionary-sources",

@@ -12,6 +12,12 @@ internal data class SettingsSearchEntry(
     val cardKey: String,
     @StringRes val title: Int,
     @StringRes val detail: Int? = null,
+    /**
+     * Untranslated words that also find the entry, as desktop's `anchor_text` keywords do: a row's
+     * old name, a term its options never spell out ("fps", "dedup"), or the languages' English names.
+     * Matched only, never shown and never ranked: a hit here cannot outrank a title.
+     */
+    val keywords: List<String> = emptyList(),
 )
 
 /** Card keys emitted per category by `settingsCategoryContent`. */
@@ -19,7 +25,7 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
     mapOf(
         SettingsCategory.ANKI to
             setOf("anki-deck-options", "anki-target", "anki-card-creation", "anki-operation"),
-        SettingsCategory.MEDIA to setOf("media-options"),
+        SettingsCategory.MEDIA to setOf(MEDIA_SENTENCE_AUDIO_KEY, MEDIA_SCREENSHOT_KEY),
         SettingsCategory.RESOURCES to
             setOf(
                 "dictionary-sources",
@@ -35,7 +41,7 @@ internal val SETTINGS_CARD_KEYS: Map<SettingsCategory, Set<String>> =
                 "word-lists",
             ),
         SettingsCategory.SENTENCES to setOf("subtitle-text", "sentence-options"),
-        SettingsCategory.LANGUAGE to setOf(MINING_LANGUAGE_KEY, LANGUAGE_VARIANT_KEY, LANGUAGE_TONE_COLOR_KEY),
+        SettingsCategory.LANGUAGE to setOf(MINING_LANGUAGE_KEY, LANGUAGE_VARIANT_KEY),
         SettingsCategory.UI to setOf("ui-options"),
         SettingsCategory.DIAGNOSTICS to
             setOf(
@@ -56,7 +62,8 @@ private fun entry(
     cardKey: String,
     @StringRes title: Int,
     @StringRes detail: Int? = null,
-): SettingsSearchEntry = SettingsSearchEntry(id, category, cardKey, title, detail)
+    keywords: List<String> = emptyList(),
+): SettingsSearchEntry = SettingsSearchEntry(id, category, cardKey, title, detail, keywords)
 
 internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
     listOf(
@@ -89,8 +96,23 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             "anki.card_type_marker",
             SettingsCategory.ANKI,
             "anki-target",
+            R.string.anki_card_type_markers,
             R.string.anki_card_type_marker_field,
-            R.string.anki_card_type_marker_missing,
+        ),
+        // Both sit in the field map beside the rows they format, as on desktop.
+        entry(
+            "anki.reading_tone_color",
+            SettingsCategory.ANKI,
+            "anki-target",
+            R.string.settings_reading_tone_color,
+            keywords = listOf("Colour readings by tone", "pinyin", "jyutping"),
+        ),
+        entry(
+            "anki.pitch_format",
+            SettingsCategory.ANKI,
+            "anki-target",
+            R.string.settings_pitch_format,
+            R.string.settings_pitch_format_help,
         ),
         entry(
             "anki.strict_card_order",
@@ -100,40 +122,66 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_strict_card_order_help,
         ),
 
-        // Media
-        entry("media.audio_padding", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_padding),
-        entry("media.screenshot_offset", SettingsCategory.MEDIA, "media-options", R.string.settings_screenshot_offset),
+        // Media: Sentence audio
+        entry("media.audio_format", SettingsCategory.MEDIA, MEDIA_SENTENCE_AUDIO_KEY, R.string.settings_audio_format),
+        entry("media.audio_bitrate", SettingsCategory.MEDIA, MEDIA_SENTENCE_AUDIO_KEY, R.string.settings_audio_bitrate),
+        entry("media.audio_padding", SettingsCategory.MEDIA, MEDIA_SENTENCE_AUDIO_KEY, R.string.settings_audio_padding),
+        entry(
+            "media.reading_tts",
+            SettingsCategory.MEDIA,
+            MEDIA_SENTENCE_AUDIO_KEY,
+            R.string.settings_reading_tts,
+            R.string.settings_reading_tts_help,
+            // Desktop renamed the row from "Read aloud (manga, books)"; the old name still finds it.
+            keywords = listOf("TTS", "Read aloud", "Spoken sentences for manga and books"),
+        ),
+        entry(
+            "media.subtitle_offset",
+            SettingsCategory.MEDIA,
+            MEDIA_SENTENCE_AUDIO_KEY,
+            R.string.settings_subtitle_offset,
+        ),
+
+        // Media: Screenshot
+        entry(
+            "media.screenshot_offset",
+            SettingsCategory.MEDIA,
+            MEDIA_SCREENSHOT_KEY,
+            R.string.settings_screenshot_offset,
+        ),
         entry(
             "media.animated_screenshots",
             SettingsCategory.MEDIA,
-            "media-options",
+            MEDIA_SCREENSHOT_KEY,
             R.string.settings_animated_screenshots,
             R.string.settings_animated_screenshots_summary,
         ),
         entry(
-            "media.animated_match_audio",
+            "media.animated_format",
             SettingsCategory.MEDIA,
-            "media-options",
-            R.string.settings_animated_match_audio,
-            R.string.settings_animated_match_audio_help,
+            MEDIA_SCREENSHOT_KEY,
+            R.string.settings_animated_format,
+            R.string.settings_animated_format_help,
+            keywords = listOf("AVIF", "WebP"),
         ),
         entry(
             "media.animated_clip_duration",
             SettingsCategory.MEDIA,
-            "media-options",
+            MEDIA_SCREENSHOT_KEY,
             R.string.settings_animated_clip_duration,
             R.string.settings_animated_clip_duration_help,
+            // The row folds in the old "Match audio length" checkbox.
+            keywords = listOf("Clip Duration", "Match audio duration", "Match audio length"),
         ),
         entry(
-            "media.animated_quality",
+            "media.animated_size",
             SettingsCategory.MEDIA,
-            "media-options",
-            R.string.settings_animated_quality,
+            MEDIA_SCREENSHOT_KEY,
+            R.string.settings_animated_size,
             R.string.settings_animated_quality_help,
+            // The presets never spell these out; the size sets the frame rate and quality too.
+            keywords = listOf("fps", "frame rate", "quality", "resolution"),
         ),
-        entry("media.subtitle_offset", SettingsCategory.MEDIA, "media-options", R.string.settings_subtitle_offset),
-        entry("media.audio_bitrate", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_bitrate),
-        entry("media.audio_format", SettingsCategory.MEDIA, "media-options", R.string.settings_audio_format),
 
         // Dictionaries
         // The recommended set is installed from the panel's Add menu, so searching for it has to
@@ -184,12 +232,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.resource_panel_pitch_heading,
         ),
         entry(
-            "resources.pitch_format",
-            SettingsCategory.RESOURCES,
-            "pitch-sources",
-            R.string.settings_pitch_format,
-        ),
-        entry(
             "resources.lookup_test",
             SettingsCategory.RESOURCES,
             "dictionary-lookup",
@@ -199,13 +241,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
         // Audio packs
         entry("resources.audio_chain", SettingsCategory.RESOURCES, "audio-sources", R.string.resource_panel_audio_heading),
         entry("resources.audio_import", SettingsCategory.RESOURCES, "audio-sources", R.string.resource_panel_add_audio),
-        entry(
-            "resources.reading_tts",
-            SettingsCategory.RESOURCES,
-            "audio-sources",
-            R.string.settings_reading_tts,
-            R.string.settings_reading_audio,
-        ),
         entry(
             "resources.device_voice",
             SettingsCategory.RESOURCES,
@@ -269,16 +304,33 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_excluded_decks,
         ),
         entry(
-            "word_filters.exclude_hiragana",
+            "word_filters.wordsets",
             SettingsCategory.WORD_FILTERS,
             "filtering-options",
-            R.string.settings_exclude_hiragana,
+            R.string.settings_skip_names,
+            R.string.settings_skip_names_help,
+            keywords = listOf("Name Wordsets", "proper names"),
         ),
         entry(
-            "word_filters.exclude_katakana",
+            "word_filters.script_type",
             SettingsCategory.WORD_FILTERS,
             "filtering-options",
-            R.string.settings_exclude_katakana,
+            R.string.settings_script_type,
+            keywords = listOf("hiragana", "katakana", "kana"),
+        ),
+        entry(
+            "word_filters.hangul_only",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_exclude_hangul_only,
+            R.string.settings_exclude_hangul_only_help,
+        ),
+        entry(
+            "word_filters.hanja_containing",
+            SettingsCategory.WORD_FILTERS,
+            "filtering-options",
+            R.string.settings_exclude_hanja,
+            R.string.settings_exclude_hanja_help,
         ),
         entry(
             "word_filters.reading_occurrence",
@@ -287,7 +339,6 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_reading_occurrence,
         ),
         entry("word_filters.workers", SettingsCategory.WORD_FILTERS, "filtering-options", R.string.settings_workers),
-        entry("word_filters.wordsets", SettingsCategory.WORD_FILTERS, "filtering-options", R.string.settings_wordsets),
         entry(
             "word_filters.known_words_import",
             SettingsCategory.WORD_FILTERS,
@@ -329,26 +380,30 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             LANGUAGE_VARIANT_KEY,
             R.string.language_script_variant,
         ),
-        entry(
-            "language.reading_tone_color",
-            SettingsCategory.LANGUAGE,
-            LANGUAGE_TONE_COLOR_KEY,
-            R.string.settings_reading_tone_color,
-        ),
 
         // Sentences
-        entry("sentences.subtitle_regex", SettingsCategory.SENTENCES, "subtitle-text", R.string.settings_subtitle_regex),
+        entry(
+            "sentences.use_subtitle_regex",
+            SettingsCategory.SENTENCES,
+            "subtitle-text",
+            R.string.settings_subtitle_cleanup,
+            R.string.settings_subtitle_cleanup_help,
+            keywords = listOf("Enable Subtitle Regex Filter", "clean subtitles", "speaker labels"),
+        ),
+        // The raw fields sit behind "Edit the pattern (advanced)", which the hit names.
+        entry(
+            "sentences.subtitle_regex",
+            SettingsCategory.SENTENCES,
+            "subtitle-text",
+            R.string.settings_subtitle_regex,
+            R.string.settings_subtitle_edit_pattern,
+        ),
         entry(
             "sentences.subtitle_replacement",
             SettingsCategory.SENTENCES,
             "subtitle-text",
             R.string.settings_subtitle_replacement,
-        ),
-        entry(
-            "sentences.use_subtitle_regex",
-            SettingsCategory.SENTENCES,
-            "subtitle-text",
-            R.string.settings_use_subtitle_regex,
+            R.string.settings_subtitle_edit_pattern,
         ),
         entry(
             "sentences.subtitle_presets",
@@ -357,12 +412,12 @@ internal val SETTINGS_SEARCH_INDEX: List<SettingsSearchEntry> =
             R.string.settings_subtitle_presets,
         ),
         entry(
-            "sentences.deduplicate",
+            "sentences.sentence_rule",
             SettingsCategory.SENTENCES,
             "sentence-options",
-            R.string.settings_deduplicate,
+            R.string.settings_sentence_rule,
+            keywords = listOf("dedup", "deduplicate", "i+1", "one card per sentence"),
         ),
-        entry("sentences.i_plus_one", SettingsCategory.SENTENCES, "sentence-options", R.string.settings_i_plus_one),
         entry(
             "sentences.max_duration",
             SettingsCategory.SENTENCES,
@@ -456,22 +511,32 @@ internal fun availableSettingsSearchEntries(
     dynamicColorSupported: Boolean,
     language: LanguageSettingsState = LanguageSettingsState(),
 ): List<SettingsSearchEntry> =
-    entries.filter { entry ->
-        when (entry.id) {
-            "resources.lookup_test" -> setup.dictionaries.any { it.isUsable }
-            // The cards these find exist only for a language that has them.
-            "resources.pitch_import", "resources.pitch_chain", "resources.pitch_format" -> language.showsPitch
-            // The device voice speaks word audio only outside Japanese.
-            "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
-            "language.script_variant" -> language.scriptVariants.isNotEmpty()
-            "language.reading_tone_color" -> language.showsToneColor
-            "word_filters.kana_variants", "word_filters.exclude_hiragana", "word_filters.exclude_katakana" ->
-                language.showsKanaFilters
-            "word_filters.wordsets" -> language.showsNameWordsets
-            "diagnostics.unidic" ->
-                !setup.tokenizerReady ||
-                    setup.failure?.origin == ResourceFailureOrigin.UNIDIC
-            "ui.dynamic_color" -> dynamicColorSupported
-            else -> true
+    entries
+        .filter { entry ->
+            when (entry.id) {
+                "resources.lookup_test" -> setup.dictionaries.any { it.isUsable }
+                // The rows these find exist only for a language that has them.
+                "resources.pitch_import", "resources.pitch_chain", "anki.pitch_format" -> language.showsPitch
+                // The device voice speaks word audio only outside Japanese.
+                "resources.device_voice" -> language.activeCode != LanguageScope.JAPANESE
+                "language.script_variant" -> language.scriptVariants.isNotEmpty()
+                "anki.reading_tone_color" -> language.showsToneColor
+                "word_filters.kana_variants", "word_filters.script_type" -> language.showsKanaFilters
+                "word_filters.hangul_only", "word_filters.hanja_containing" -> language.showsHangulFilters
+                "word_filters.wordsets" -> language.showsNameWordsets
+                "diagnostics.unidic" ->
+                    !setup.tokenizerReady ||
+                        setup.failure?.origin == ResourceFailureOrigin.UNIDIC
+                "ui.dynamic_color" -> dynamicColorSupported
+                else -> true
+            }
+        }.map { entry ->
+            // The list shows native names alone; those and the English one ("Japanese") find it.
+            if (entry.id == "language.mining_language") {
+                entry.copy(
+                    keywords = entry.keywords + language.profiles.flatMap { listOf(it.englishName, it.displayName) },
+                )
+            } else {
+                entry
+            }
         }
-    }

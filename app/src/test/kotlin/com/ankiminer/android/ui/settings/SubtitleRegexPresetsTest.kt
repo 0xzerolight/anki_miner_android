@@ -6,7 +6,7 @@ import org.junit.Test
 class SubtitleRegexPresetsTest {
     @Test
     fun presetPatternsMatchDesktopVerbatim() {
-        // Desktop SUBTITLE_REGEX_PRESETS, gui/widgets/panels/filtering_settings_panel.py. Python
+        // Desktop SUBTITLE_REGEX_PRESETS, gui/widgets/panels/sentences_settings_panel.py. Python
         // regex source: a "fix" toward java.util.regex idioms would silently change what the engine
         // strips.
         assertEquals(
@@ -15,6 +15,7 @@ class SubtitleRegexPresetsTest {
                 """\[[^\]]*\]|［[^］]*］""",
                 """[♪♬♫#～〜]+""",
                 """^[^「『:：]+[:：]\s*""",
+                """(?:^|(?<=[.!?…]\s))[-–—]\s+""",
             ),
             SUBTITLE_REGEX_PRESETS.map { it.pattern },
         )

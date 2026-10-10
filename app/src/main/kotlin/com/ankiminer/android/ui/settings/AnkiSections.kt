@@ -121,6 +121,11 @@ internal fun AnkiTargetCard(
     mappingExpanded: Boolean? = null,
     onMappingExpandedChange: (Boolean) -> Unit = {},
     inlineFailure: (@Composable () -> Unit)? = null,
+    /**
+     * Settings that format a mapped field, drawn right after that field's row as on desktop: tone
+     * colouring after Sentence reading, the pitch category format after Pitch category.
+     */
+    fieldRowExtras: @Composable (key: String) -> Unit = {},
 ) {
     OutlinedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(AnkiMinerTokens.Space.content), verticalArrangement = Arrangement.spacedBy(AnkiMinerTokens.Space.related)) {
@@ -232,6 +237,7 @@ internal fun AnkiTargetCard(
                                     )
                             },
                         )
+                        fieldRowExtras(key)
                     }
                     // The uniqueness rule is enforced by isDestinationAvailable disabling taken
                     // fields, and the first-field rule surfaces as a verification status.
@@ -278,8 +284,13 @@ internal fun AnkiTargetCard(
  * JP Mining Note support: pick a card mode, then the note-type field that marks it. The engine writes
  * `"x"` into that field on every mined note; anything else about mining is unchanged.
  *
- * Both dropdowns list only the note type's real fields, so the marker can never name a field the
- * note type lacks — which the Anki verification step would reject at the start of a run.
+ * As on desktop, the card type is the visible control and the marker field sits behind "Customise
+ * marker field names": picking a card type already selects the note type's conventional marker
+ * field when it has one. The disclosure stays open while no marker is chosen, because the line
+ * saying the card type is off until one is would otherwise be hidden.
+ *
+ * The marker dropdown lists only the note type's real fields, so the marker can never name a field
+ * the note type lacks — which the Anki verification step would reject at the start of a run.
  */
 @Composable
 private fun CardTypeMarkerSection(
@@ -307,23 +318,29 @@ private fun CardTypeMarkerSection(
         },
     )
     if (state.cardType != null) {
-        SettingsDropdown(
-            label = stringResource(R.string.anki_card_type_marker_field),
-            options = (listOf("") + fields).map { it to it.ifEmpty { noneLabel } },
-            selected = state.cardTypeMarkerField ?: "",
-            onSelect = onSelectCardTypeMarker,
-            // A marker sharing a destination with a mapped field is rejected at the snapshot
-            // boundary, so those fields are not offered.
-            isOptionEnabled = { field ->
-                !state.busy &&
-                    (field.isEmpty() || state.fieldMap.none { (_, mapped) -> mapped == field })
-            },
-        )
-        if (state.cardTypeMarkerField.isNullOrEmpty()) {
-            Text(
-                stringResource(R.string.anki_card_type_marker_missing),
-                color = MaterialTheme.colorScheme.error,
+        val markerMissing = state.cardTypeMarkerField.isNullOrEmpty()
+        SettingsDisclosure(
+            title = stringResource(R.string.anki_card_type_markers),
+            forceOpen = markerMissing,
+        ) {
+            SettingsDropdown(
+                label = stringResource(R.string.anki_card_type_marker_field),
+                options = (listOf("") + fields).map { it to it.ifEmpty { noneLabel } },
+                selected = state.cardTypeMarkerField ?: "",
+                onSelect = onSelectCardTypeMarker,
+                // A marker sharing a destination with a mapped field is rejected at the snapshot
+                // boundary, so those fields are not offered.
+                isOptionEnabled = { field ->
+                    !state.busy &&
+                        (field.isEmpty() || state.fieldMap.none { (_, mapped) -> mapped == field })
+                },
             )
+            if (markerMissing) {
+                Text(
+                    stringResource(R.string.anki_card_type_marker_missing),
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
     }
 }
@@ -429,7 +446,11 @@ private fun noteTypeStatusText(status: NoteTypeSetupStatus): String =
         },
     )
 
-/** A read-only Material dropdown over (value, label) pairs; used by the Anki cards and the wizard's language page. */
+/**
+ * A read-only Material dropdown over (value, label) pairs; used by the Anki cards, the wizard's
+ * language page, and the settings rows that mirror a desktop combo (Script type, Sentence rule,
+ * Size).
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsDropdown(
@@ -437,27 +458,31 @@ internal fun SettingsDropdown(
     options: List<Pair<String, String>>,
     selected: String,
     onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
     isOptionEnabled: (String) -> Boolean = { true },
+    enabled: Boolean = true,
 ) {
     var expanded by remember { mutableStateOf(false) }
     val selectedLabel = options.firstOrNull { it.first == selected }?.second ?: selected
     ExposedDropdownMenuBox(
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
+        expanded = expanded && enabled,
+        onExpandedChange = { expanded = it && enabled },
+        modifier = modifier,
     ) {
         OutlinedTextField(
             value = selectedLabel,
             onValueChange = {},
             readOnly = true,
+            enabled = enabled,
             label = { Text(label) },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded && enabled) },
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable),
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable, enabled),
         )
         ExposedDropdownMenu(
-            expanded = expanded,
+            expanded = expanded && enabled,
             onDismissRequest = { expanded = false },
         ) {
             options.forEach { (value, display) ->
