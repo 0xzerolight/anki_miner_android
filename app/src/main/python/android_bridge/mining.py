@@ -636,13 +636,21 @@ def _word_filter_seams(profile: object, config: object) -> dict[str, object]:
 
 
 def _word_list_seams(profile: object) -> dict[str, object]:
-    """The word lists' fold and decode ladder for a non-ja profile (``import_decode_ladder``)."""
+    """``service_factory.create_services``' WordListService seams, for every language.
+
+    The fold, and the normaliser the parser applies before a card front exists,
+    so a ｺｰﾋｰ entry meets the コーヒー front. The ladder is
+    ``import_decode_ladder``'s: Japanese keeps the UTF-8 default (``None``),
+    since EUC-JP bytes decode as cp932 without raising; gated on the profile
+    object, as desktop gates it.
+    """
 
     from anki_miner.utils.subtitle_encoding import script_check_kwarg
 
-    ladder = profile.import_encodings
+    ladder = None if profile is get_profile(JAPANESE) else profile.import_encodings
     return {
         "dedup_fold": profile.dedup_fold,
+        "normalize": profile.normalize,
         "encodings": ladder,
         **script_check_kwarg(ladder, profile.script),
     }
@@ -683,7 +691,7 @@ def _build_processor(
     from anki_miner.services.stats_service import StatsService
     from anki_miner.services.subtitle_parser import SubtitleParserService
     from anki_miner.services.word_filter import WordFilterService
-    from anki_miner.services.word_list_service import WordListService
+    from anki_miner.services.word_list_service import WordListService, active_whitelist
     from anki_miner.services.wordset_service import WordsetService
 
     definition_service: object | None = None
@@ -748,10 +756,35 @@ def _build_processor(
                 )
                 wordset_service = None
 
+        # Built before the parser, as upstream does: the whitelist is the
+        # parser's rescue probe (R1).
+        word_list_service = None
+        if config.use_blacklist or config.use_whitelist:
+            try:
+                word_list_service = WordListService(
+                    blacklist_path=(config.blacklist_path if config.use_blacklist else None),
+                    whitelist_path=(config.whitelist_path if config.use_whitelist else None),
+                    **_word_list_seams(get_profile(language)),
+                )
+                word_list_service.load()
+            except MemoryError:
+                raise  # never an optional-source miss; see the module note
+            except Exception as error:
+                _show_optional_failure(
+                    adapters.presenter,
+                    "Couldn't load word lists",
+                    error,
+                    service="word_lists",
+                )
+                word_list_service = None
+
         # Desktop's _create_subtitle_parser: the profile factory injects the card
         # front, reading, normaliser and script gate a non-ja language needs; the
         # literal class is the ja factory's bare forward.
         parser_factory = SubtitleParserService if profile is None else profile.create_parser
+        # R1: the run's whitelist rescues tokens the parse gates would drop, under
+        # the same gate as the phase-2 partition (off under bypass).
+        whitelist = active_whitelist(config, word_list_service)
         subtitle_parser = parser_factory(
             config,
             term_lookup=(definition_service.offline_terms_exist if has_indexed_dictionary else None),
@@ -769,6 +802,7 @@ def _build_processor(
             # ja run is unchanged; passed as desktop passes it so a language that
             # has one resolves its card fronts.
             form_lookup=(definition_service.offline_term_rows if has_indexed_dictionary else None),
+            force_include=whitelist.is_whitelisted if whitelist is not None else None,
         )
         word_filter = WordFilterService(
             config,
@@ -881,26 +915,6 @@ def _build_processor(
             )
             known_word_db = None
 
-        word_list_service = None
-        if config.use_blacklist or config.use_whitelist:
-            try:
-                word_list_service = WordListService(
-                    blacklist_path=(config.blacklist_path if config.use_blacklist else None),
-                    whitelist_path=(config.whitelist_path if config.use_whitelist else None),
-                    **({} if profile is None else _word_list_seams(profile)),
-                )
-                word_list_service.load()
-            except MemoryError:
-                raise  # never an optional-source miss; see the module note
-            except Exception as error:
-                _show_optional_failure(
-                    adapters.presenter,
-                    "Couldn't load word lists",
-                    error,
-                    service="word_lists",
-                )
-                word_list_service = None
-
         stats_service = StatsService(config.stats_db_path, **language_kwarg(language))
         if not stats_service.load():
             stats_service = None
@@ -972,12 +986,16 @@ class _SentencePreview:
         index = find_cue_index(self._entries, word.start_time, word.sentence, tolerance=1e-3)
         return index if index is not None and self._entries[index][2] == word.sentence else None
 
-    def __call__(self, word: Any) -> SentencePreview:
+    def __call__(self, word: Any, *, default: bool) -> SentencePreview:
         from anki_miner.services.word_filter import merge_cue_window
 
         expansion: tuple[int, int] = word.line_expansion
         index: int | None = None
-        if expansion == (0, 0) and self._config.merge_incomplete_cues:
+        # The default sentence carries the engine's own stamp verbatim, refusals
+        # included: under i+1 an unmerged fragment is the engine keeping its i+1
+        # sentence, and re-deriving would open the curator on an i+2 one. Only a
+        # variant, which the stamp never reached, re-derives the merge.
+        if not default and expansion == (0, 0) and self._config.merge_incomplete_cues:
             from anki_miner.languages.registry import config_language, get_profile
             from anki_miner.services.cue_merge import auto_line_expansion, merge_budget_seconds
 

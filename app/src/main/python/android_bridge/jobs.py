@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from math import isfinite
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from . import log_context
 from .anki_limits import ANKI_LIMITS_V1
@@ -125,6 +125,16 @@ class SentencePreview:
     translation: str
 
 
+class SentencePreviewer(Protocol):
+    """Previews one curation sentence; ``default`` is true for the candidate's own sentence.
+
+    Only that one carries the engine's stamp (refusals included); a variant
+    never went through the automatic merge, so its preview re-derives it.
+    """
+
+    def __call__(self, word: object, *, default: bool) -> SentencePreview: ...
+
+
 @dataclass(frozen=True)
 class _CurationPagePlan:
     candidate_ids: tuple[str, ...]
@@ -154,7 +164,7 @@ class _CurationGate:
     allow_line_expansion: bool = False
     allow_clip_override: bool = False
     sentence_context: Callable[[object], SentencePageContext | None] | None = None
-    sentence_preview: Callable[[object], SentencePreview] | None = None
+    sentence_preview: SentencePreviewer | None = None
     known_words_target: KnownWordsTarget | None = None
 
     @property
@@ -198,7 +208,9 @@ def _sentence_payload(
     sentence_id: str,
     word: object,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
-    sentence_preview: Callable[[object], SentencePreview] | None = None,
+    sentence_preview: SentencePreviewer | None = None,
+    *,
+    default: bool,
 ) -> dict[str, Any]:
     payload = {
         "sentenceId": sentence_id,
@@ -214,7 +226,7 @@ def _sentence_payload(
         payload["imageEntry"] = context.image_entry
         payload["blockBox"] = list(context.block_box)
         payload["locationLabel"] = context.location_label
-    preview = sentence_preview(word) if sentence_preview is not None else None
+    preview = sentence_preview(word, default=default) if sentence_preview is not None else None
     if preview is not None:
         # Zero counts and an empty translation are omitted, as in a selection.
         lines_before, lines_after = preview.line_expansion
@@ -250,11 +262,17 @@ def _candidate_payload_from_ref(
     candidate_id: str,
     reference: _CandidateRef,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
-    sentence_preview: Callable[[object], SentencePreview] | None = None,
+    sentence_preview: SentencePreviewer | None = None,
 ) -> dict[str, Any]:
     word = reference.original
     sentence_payloads = [
-        _sentence_payload(sentence_id, sentence, sentence_context, sentence_preview)
+        _sentence_payload(
+            sentence_id,
+            sentence,
+            sentence_context,
+            sentence_preview,
+            default=sentence_id == reference.default_sentence_id,
+        )
         for sentence_id, sentence in reference.sentences.items()
     ]
 
@@ -281,7 +299,7 @@ def _bounded_candidate(
     candidate_id: str,
     word: object,
     sentence_context: Callable[[object], SentencePageContext | None] | None = None,
-    sentence_preview: Callable[[object], SentencePreview] | None = None,
+    sentence_preview: SentencePreviewer | None = None,
 ) -> tuple[_CandidateRef, dict[str, Any], int]:
     """Build one candidate's reference, payload and exact encoded size.
 
@@ -299,7 +317,7 @@ def _bounded_candidate(
     size = _encoded_size(payload)
     for variant in _sentence_variants(word):
         sentence_id = _opaque_id("sentence")
-        sentence_payload = _sentence_payload(sentence_id, variant, sentence_context, sentence_preview)
+        sentence_payload = _sentence_payload(sentence_id, variant, sentence_context, sentence_preview, default=False)
         grown = size + 1 + _encoded_size(sentence_payload)
         if grown > _CANDIDATE_MAX_UTF8_BYTES:
             break
@@ -429,7 +447,7 @@ def _plan_curation(
     allow_line_expansion: bool,
     allow_clip_override: bool,
     sentence_context: Callable[[object], SentencePageContext | None] | None,
-    sentence_preview: Callable[[object], SentencePreview] | None,
+    sentence_preview: SentencePreviewer | None,
     known_words_target: KnownWordsTarget | None,
 ) -> _CurationGate | None:
     """Build the unpublished gate for ``candidates``, or ``None`` once the run is cancelled.
@@ -598,7 +616,7 @@ class JobRegistry:
         allow_line_expansion: bool = False,
         allow_clip_override: bool = False,
         sentence_context: Callable[[object], SentencePageContext | None] | None = None,
-        sentence_preview: Callable[[object], SentencePreview] | None = None,
+        sentence_preview: SentencePreviewer | None = None,
         known_words_target: KnownWordsTarget | None = None,
     ) -> list[object] | None:
         """Publish candidates and park until Kotlin confirms or cancels.

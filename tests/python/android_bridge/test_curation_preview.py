@@ -80,17 +80,33 @@ _SCHEMA = json.loads(
 Respond = Callable[[dict[str, Any]], list[dict[str, Any]]]
 
 
+class _CatDictionary(_DefinitionService):
+    """An offline dictionary that defines 猫 alone, for a run with phase 2's filters on."""
+
+    def has_usable_offline_provider(self) -> bool:
+        return True
+
+    def has_offline_definitions(self, terms: list[str]) -> dict[str, bool]:
+        return {term: term == "猫" for term in terms}
+
+    def offline_deinflection_terms_exist(self, terms: list[str]) -> set[str]:
+        del terms
+        return set()
+
+
 def _run(
     tmp_path: Path,
     home: Path,
     monkeypatch: pytest.MonkeyPatch,
     respond: Respond,
+    *,
+    i_plus_one: bool = False,
 ) -> tuple[dict[str, Any], dict[str, str]]:
     for module in ("pysubs2", "charset_normalizer", "requests"):
         pytest.importorskip(module, reason="runtime dependency lane")
     import anki_miner.services.subtitle_parser as parser_module
     from anki_miner.config import AnkiMinerConfig
-    from anki_miner.models import TokenizedWord
+    from anki_miner.models import LineLemmas, TokenizedWord
     from anki_miner.orchestration.episode_processor import EpisodeProcessor
     from anki_miner.services.word_filter import WordFilterService
 
@@ -131,7 +147,9 @@ def _run(
     config = replace(
         mining._map_config(request, home),
         include_known_words=True,
-        bypass_optional_filters=True,
+        # i+1 is one of phase 2's optional filters, which a bypass run skips.
+        bypass_optional_filters=not i_plus_one,
+        use_i_plus_one_filter=i_plus_one,
     )
     assert config.merge_incomplete_cues is True
 
@@ -152,13 +170,37 @@ def _run(
 
     word = occurrence("猫を", 1.0)
     word.sentence_candidates = [occurrence("猫を", 1.0), occurrence("猫が", 10.0)]
+    parsed: tuple[list[Any], list[Any]] = ([word], [])
+    if i_plus_one:
+        # 見る, on the cue that finishes 猫を, is unknown too: the merged window
+        # would hold two unknowns. No dictionary defines it, so it is never a
+        # candidate, yet it still counts against i+1 (phase 2's snapshot).
+        seen = replace(
+            word,
+            surface="見た",
+            lemma="見る",
+            orth_base="見る",
+            pos="動詞",
+            sentence="見た。",
+            start_time=2.2,
+            end_time=3.0,
+        )
+        seen.sentence_candidates = []
+        line_index = [
+            LineLemmas("猫を", frozenset({"猫"}), 1.0, 2.0, 1.0),
+            LineLemmas("見た。", frozenset({"見る"}), 2.2, 3.0, 0.8),
+            LineLemmas("次の文。", frozenset(), 3.2, 4.0, 0.8),
+            LineLemmas("猫が", frozenset({"猫"}), 10.0, 11.0, 1.0),
+            LineLemmas("好き。", frozenset(), 11.1, 12.0, 0.9),
+        ]
+        parsed = ([word, seen], line_index)
 
     class _Parser(parser_module.SubtitleParserService):
         """The real parser with tokenizing stubbed; raw cue parsing stays real."""
 
         def parse_subtitle_file_with_index(self, subtitle_file: Path, subtitle_offset: float | None = None) -> Any:
             assert subtitle_file == primary
-            return [word], []
+            return parsed
 
         def count_lemmas(self, subtitle_file: Path) -> collections.Counter[str]:
             return collections.Counter({"猫": 2})
@@ -176,7 +218,7 @@ def _run(
             subtitle_parser=_Parser(config),
             word_filter=WordFilterService(config),
             media_extractor=_MediaExtractor(),
-            definition_service=_DefinitionService(),
+            definition_service=_CatDictionary() if i_plus_one else _DefinitionService(),
             anki_service=anki_adapter,
             presenter=presenter,
         )
@@ -309,3 +351,28 @@ def test_a_picked_occurrence_mines_with_its_own_merge(
     _curation, fields = _run(tmp_path, initialized_bridge_home, monkeypatch, pick)
 
     assert fields == {"Expression": "猫", "Sentence": "猫が 好き。", "Translation": "I like cats."}
+
+
+def test_an_i_plus_one_fragment_the_engine_would_not_merge_opens_unmerged(
+    initialized_bridge_home: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under i+1 the engine refuses a merge that adds a second unknown (desktop 2c187631f).
+
+    The curator opens on the engine's own stamp, so the untouched default mines
+    the i+1 fragment rather than an i+2 sentence. A picked occurrence still
+    re-derives its merge, as desktop's curator does on a pick.
+    """
+
+    def untouched(curation: dict[str, Any]) -> list[dict[str, Any]]:
+        candidate_id, default, _alternative = _sentences(curation)
+        return _selection(candidate_id, default)
+
+    curation, fields = _run(tmp_path, initialized_bridge_home, monkeypatch, untouched, i_plus_one=True)
+
+    _candidate_id, default, alternative = _sentences(curation)
+    assert (default["sentence"], default.get("linesBefore"), default.get("linesAfter")) == ("猫を", None, None)
+    assert default["translation"] == "I saw"
+    assert (alternative["sentence"], alternative.get("linesBefore"), alternative["linesAfter"]) == ("猫が", None, 1)
+    assert fields == {"Expression": "猫", "Sentence": "猫を", "Translation": "I saw"}

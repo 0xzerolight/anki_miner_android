@@ -1717,7 +1717,7 @@ def test_engine_composition_seams_still_have_the_parameters_the_bridge_passes() 
     parser_params = _vendored_method_params(
         "anki_miner/services/subtitle_parser.py", "SubtitleParserService", "__init__"
     )
-    assert {"name_lookup", "term_rules_lookup", "form_lookup"} <= parser_params
+    assert {"name_lookup", "term_rules_lookup", "form_lookup", "force_include"} <= parser_params
 
     episode_params = _vendored_method_params(
         "anki_miner/orchestration/episode_processor.py", "EpisodeProcessor", "process_episode"
@@ -1759,7 +1759,7 @@ def test_bridge_passes_every_new_engine_seam() -> None:
     # One call builds the parser for every language: the literal class for ja,
     # the profile's factory otherwise, with the same lookups.
     parser_kwargs = _bridge_call_keywords("_build_processor", "parser_factory")
-    assert {"name_lookup", "term_rules_lookup", "form_lookup"} <= parser_kwargs
+    assert {"name_lookup", "term_rules_lookup", "form_lookup", "force_include"} <= parser_kwargs
 
     # Every registry EpisodeProcessor.check_resource_staleness folds into its
     # ``families=frozenset(...)``: one left out is a family never gated.
@@ -1874,6 +1874,7 @@ def test_runtime_composition_injects_only_android_video_services(
             term_common_lookup: object,
             term_rules_lookup: object,
             form_lookup: object,
+            force_include: object,
         ) -> None:
             assert term_lookup is expected_term_lookup
             assert reading_lookup is expected_reading_lookup
@@ -1884,6 +1885,8 @@ def test_runtime_composition_injects_only_android_video_services(
             # No excluded_wordsets in this config, so there is no wordset
             # service to source name spans from.
             assert name_lookup is None
+            # Word lists are off, so there is no whitelist to rescue through.
+            assert force_include is None
             self.tagger = tagger
             events.append("subtitle-parser")
 
