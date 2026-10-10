@@ -1,5 +1,7 @@
 package com.ankiminer.android.anki.provider
 
+import com.ankiminer.android.data.settings.CardType
+import com.ankiminer.android.data.settings.PitchCategoryFormat
 import com.ankiminer.android.engine.LanguageExtraCardField
 
 /** One non-empty Anki destination assigned to multiple logical engine fields. */
@@ -18,6 +20,17 @@ internal data class AnkiFieldMappingChange(
 internal data class AnkiFieldMapMergeResult(
     val fieldMap: Map<String, String>,
     val changes: List<AnkiFieldMappingChange>,
+    /** Keys "Fill in automatically" itself assigned ([AnkiFieldMapPolicy.remap], [AnkiFieldMapPolicy.applyPreset]). */
+    val filledCount: Int = 0,
+)
+
+/** Everything a recognised note type's preset writes, beside the field map (desktop `apply_note_type_preset`). */
+internal data class AnkiPresetApplication(
+    val mapping: AnkiFieldMapMergeResult,
+    val cardType: CardType?,
+    val cardTypeMarkerField: String?,
+    val pitchCategoryFormat: PitchCategoryFormat,
+    val boldTargetInSentence: Boolean?,
 )
 
 /**
@@ -143,18 +156,21 @@ internal object AnkiFieldMapPolicy {
                 }
         merged[AnkiFieldKeys.WORD] = firstField
         usedDestinations += firstField
+        var filled = 1
 
         AnkiFieldKeys.OPTIONAL.forEach { key ->
             val suggested = AnkiFieldAutoMap.firstAvailableMatch(key, fieldNames, usedDestinations)
             if (suggested.isNotEmpty()) {
                 merged[key] = suggested
                 usedDestinations += suggested
+                filled += 1
             }
         }
 
         autoMapProfileFields(fieldNames, extraFields, usedDestinations).forEach { (key, destination) ->
             merged[key] = destination
             usedDestinations += destination
+            filled += 1
         }
 
         val extraKeys = extraFields.map(LanguageExtraCardField::key)
@@ -167,18 +183,78 @@ internal object AnkiFieldMapPolicy {
             }
         }
 
-        val changes =
-            (AnkiFieldKeys.ALL + extraKeys).mapNotNull { key ->
-                val previous = currentFieldMap[key].orEmpty()
-                val replacement = merged[key].orEmpty()
-                if (previous != replacement) {
-                    AnkiFieldMappingChange(key, previous, replacement)
-                } else {
-                    null
-                }
-            }
-        return AnkiFieldMapMergeResult(merged, changes)
+        return AnkiFieldMapMergeResult(merged, everyChange(currentFieldMap, merged, extraKeys), filled)
     }
+
+    /**
+     * Write a recognised note type's preset, desktop's "Fill in automatically" preset path.
+     *
+     * Every key the preset answers is overwritten, `""` included: Lapis has no sentence-reading
+     * field, and that is an answer, not a gap. [extraFields] (the language's own fields the note type
+     * has) come next, and a valid manual choice for a language field the fill did not answer stays.
+     * Android's ownership rules still hold: the word owns field[0] whatever the preset calls it, and
+     * no destination gets two owners. Desktop also writes the preset's pitch-category format and
+     * marker names; Android keeps one marker for the active card mode, so a mode the note type cannot
+     * render is turned off rather than left marking nothing. Bold target words are turned on when the
+     * preset relies on them and never off.
+     */
+    fun applyPreset(
+        preset: NoteTypePreset,
+        presetFields: Map<String, String>,
+        extraFields: Map<String, String>,
+        fieldNames: List<String>,
+        currentFieldMap: Map<String, String>,
+        currentCardType: CardType?,
+        currentBoldTargetInSentence: Boolean?,
+    ): AnkiPresetApplication {
+        val firstField = fieldNames.firstOrNull()
+        val cardType = currentCardType?.takeIf { it in preset.supportedCardTypes }
+        val marker =
+            cardType
+                ?.let { preset.cardTypeMarkerFields[it] }
+                ?.takeIf { it.isNotEmpty() && it in fieldNames && it != firstField }
+        val merged = AnkiFieldKeys.ALL.associateWithTo(linkedMapOf()) { "" }
+        val usedDestinations = setOfNotNull(marker).toMutableSet()
+        var filled = 0
+        fun claim(
+            key: String,
+            destination: String,
+        ): Boolean {
+            if (destination.isEmpty() || destination !in fieldNames || destination in usedDestinations) return false
+            merged[key] = destination
+            usedDestinations += destination
+            return true
+        }
+        if (firstField != null && claim(AnkiFieldKeys.WORD, firstField)) filled += 1
+        AnkiFieldKeys.OPTIONAL.forEach { key ->
+            if (claim(key, presetFields[key].orEmpty())) filled += 1
+        }
+        extraFields.forEach { (key, destination) ->
+            if (key !in AnkiFieldKeys.ALL && claim(key, destination)) filled += 1
+        }
+        currentFieldMap.forEach { (key, destination) ->
+            if (key !in AnkiFieldKeys.ALL && key !in merged) claim(key, destination)
+        }
+        val extraKeys = (currentFieldMap.keys + merged.keys).filterNot(AnkiFieldKeys.ALL::contains).distinct()
+        return AnkiPresetApplication(
+            mapping = AnkiFieldMapMergeResult(merged, everyChange(currentFieldMap, merged, extraKeys), filled),
+            cardType = cardType,
+            cardTypeMarkerField = marker,
+            pitchCategoryFormat = preset.pitchCategoryFormat,
+            boldTargetInSentence = if (preset.boldTargetInSentence) true else currentBoldTargetInSentence,
+        )
+    }
+
+    private fun everyChange(
+        previousMap: Map<String, String>,
+        updatedMap: Map<String, String>,
+        extraKeys: List<String>,
+    ): List<AnkiFieldMappingChange> =
+        (AnkiFieldKeys.ALL + extraKeys).mapNotNull { key ->
+            val previous = previousMap[key].orEmpty()
+            val replacement = updatedMap[key].orEmpty()
+            if (previous != replacement) AnkiFieldMappingChange(key, previous, replacement) else null
+        }
 
     /** Return an updated map, or null when the manual choice violates destination ownership. */
     fun assign(
