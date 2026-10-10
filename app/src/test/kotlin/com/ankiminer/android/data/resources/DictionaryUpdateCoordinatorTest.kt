@@ -284,13 +284,13 @@ class DictionaryUpdateCoordinatorTest {
         }
 
     @Test
-    fun `a check cancelled by recovery reopens the latch for the next visible idle edge`() =
+    fun `a check that never ran or was cancelled reopens the latch for the next visible idle edge`() =
         runTest {
             val fixture = Fixture(this)
             var calls = 0
             fixture.resources.checkAnswer = {
                 calls += 1
-                if (calls == 1) throw ResourceBridgeException("resource_operation_cancelled", "recovery")
+                if (calls == 1) throw ResourceBridgeException("resource_operation_cancelled", "cancelled")
                 ResourceUpdateCheck(1, true, 0, emptyList())
             }
 

@@ -236,8 +236,8 @@ internal class DictionaryUpdateCoordinator(
     private fun checkRefused(code: String): DictionaryUpdateResult {
         AppLog.i(LogComponent.RESOURCES, "update.check", "outcome" to "fail", "code" to code)
         return when (code) {
-            // The check never ran: startup recovery stopped it (resource.cleanup refuses while
-            // one runs) or the runtime was taken first. The next visible idle edge may retry.
+            // The check never ran or was cut short: recovery or the runtime got there first, or
+            // Python cancelled it. The next visible idle edge may retry.
             "resource_operation_cancelled", "resource_not_ready", "resource_busy" -> {
                 if (automaticRun) automaticStarted.set(false)
                 DictionaryUpdateResult.Busy

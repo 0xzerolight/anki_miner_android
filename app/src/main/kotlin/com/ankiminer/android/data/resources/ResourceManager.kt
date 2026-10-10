@@ -38,7 +38,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -190,13 +189,17 @@ interface ResourceManager {
     /**
      * Ask each installed slot's publisher whether a newer revision is out (`resource.updates.check`).
      *
-     * Takes no operation lock and no runtime lease, and blocks the calling thread for up to one
-     * index timeout per publisher, so it runs on the caller's IO dispatcher and never queues
-     * imports behind it on the resource executor. Refused (`resource_not_ready`, `resource_busy`)
-     * unless startup recovery is READY and the runtime is idle. Throws [ResourceBridgeException].
+     * Takes no operation lock and no runtime lease, and blocks the calling thread while publishers
+     * answer, with no overall bound (Python's fetch has per-read timeouts only), so it runs on the
+     * caller's IO dispatcher and never queues imports behind it on the resource executor. Refused
+     * (`resource_not_ready`, `resource_busy`) unless startup recovery is READY and the runtime is
+     * idle; while it runs, [recoverAndRefresh] is skipped. Throws [ResourceBridgeException].
      */
     suspend fun checkResourceUpdates(request: ResourceUpdateCheckRequest): ResourceUpdateCheck =
         throw ResourceBridgeException("resource_updates_unavailable", "Dictionary updates are unavailable")
+
+    /** A dictionary update check is talking to publishers; startup recovery must not run under it. */
+    fun isUpdateCheckRunning(): Boolean = false
 
     /**
      * Download [update]'s archive and rebuild its slot in place for [language], keeping its chain
@@ -374,16 +377,31 @@ internal class AndroidResourceManager(
     @Volatile
     private var startupRecoveryTailPending = false
 
-    /** Held for as long as an update check runs; recovery waits on it. */
-    private val updateCheckMutex = Mutex()
+    /**
+     * Pairs an update check's start with recovery's: `resource.cleanup` refuses while a check holds
+     * its Python operation, and a check must not start once recovery has left READY.
+     */
+    private val updateCheckMonitor = Any()
 
     @Volatile
-    private var updateCheckOperationId: String? = null
+    private var updateCheckRunning = false
+
+    override fun isUpdateCheckRunning(): Boolean = updateCheckRunning
 
     override suspend fun recoverAndRefresh() {
-        startupRecoveryTailPending = false
-        mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
-        stopResourceUpdateCheck()
+        // Skipped, not waited on: a check has no overall bound. Startup recovery never meets one
+        // (a check needs READY), and a later refresh recovers once it has finished.
+        val admitted =
+            synchronized(updateCheckMonitor) {
+                if (updateCheckRunning) return@synchronized false
+                startupRecoveryTailPending = false
+                mutableState.update { it.copy(startupReadiness = ResourceStartupReadiness.RECOVERING) }
+                true
+            }
+        if (!admitted) {
+            AppLog.i(LogComponent.RESOURCES, "recovery", "outcome" to "skip", "code" to "update_check_running")
+            return
+        }
         val interrupted = runOnExecutor(resourceExecutor) { operationJournal.read() }
         val clearInterruptedAudioInput = interrupted?.origin == ResourceFailureOrigin.AUDIO
         val retainKnownWordsInput =
@@ -2136,48 +2154,26 @@ internal class AndroidResourceManager(
     }
 
     override suspend fun checkResourceUpdates(request: ResourceUpdateCheckRequest): ResourceUpdateCheck {
-        if (!updateCheckMutex.tryLock()) {
-            throw ResourceBridgeException("resource_busy", "A dictionary update check is already running")
-        }
-        try {
-            // Published before the readiness read: recovery leaves READY before it reads this, so a
-            // check either sees RECOVERING below or is cancelled by recovery.
-            updateCheckOperationId = request.operationId
+        synchronized(updateCheckMonitor) {
+            if (updateCheckRunning) {
+                throw ResourceBridgeException("resource_busy", "A dictionary update check is already running")
+            }
+            // Under the monitor recovery leaves READY under, so the two never overlap.
             if (mutableState.value.startupReadiness != ResourceStartupReadiness.READY) {
                 throw ResourceBridgeException("resource_not_ready", "Startup recovery has not finished")
             }
             if (runtimeWorkCoordinator.activeKind.value != null) {
                 throw ResourceBridgeException("resource_busy", "The runtime is busy")
             }
+            updateCheckRunning = true
+        }
+        try {
             return ResourceBridgeCodec.decodeUpdatesChecked(
                 bridge.dispatch(ResourceBridgeCodec.encodeUpdatesCheckRequest(request), null),
             )
         } finally {
-            updateCheckOperationId = null
-            updateCheckMutex.unlock()
+            updateCheckRunning = false
         }
-    }
-
-    /**
-     * `resource.cleanup` refuses while a check holds its Python operation, so recovery cancels one
-     * in flight and waits for it to end. Python polls the cancel between publishers.
-     */
-    private suspend fun stopResourceUpdateCheck() {
-        updateCheckOperationId?.let { operationId ->
-            controlExecutor.execute {
-                try {
-                    bridge.dispatch(ResourceBridgeCodec.encodeCancelRequest(operationId), null)
-                } catch (failure: Exception) {
-                    AppLog.ignored(
-                        LogComponent.RESOURCES,
-                        "update.check.cancel",
-                        "the check ends at its own timeouts",
-                        failure,
-                    )
-                }
-            }
-        }
-        updateCheckMutex.withLock {}
     }
 
     override suspend fun installResourceUpdate(

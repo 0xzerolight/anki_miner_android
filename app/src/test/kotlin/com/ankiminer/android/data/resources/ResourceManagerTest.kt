@@ -43,6 +43,8 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.concurrent.thread
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -3018,17 +3020,20 @@ class ResourceManagerTest {
         }
 
     @Test
-    fun recoveryCancelsAnInFlightUpdateCheckBeforeItsCleanup() {
+    fun recoveryRequestedDuringAnUpdateCheckIsSkippedWithoutStoppingIt() {
         val harness = Harness()
         val checkStarted = CountDownLatch(1)
-        val cancelReceived = CountDownLatch(1)
-        harness.bridge.onCancel = { cancelReceived.countDown() }
+        val releaseCheck = CountDownLatch(1)
         harness.bridge.onUpdatesCheck = {
             checkStarted.countDown()
-            // Python polls cancellation between publishers; without one this check never ends.
-            if (!cancelReceived.await(5, TimeUnit.SECONDS)) error("recovery never cancelled the check")
-            throw ResourceBridgeException("resource_operation_cancelled", "cancelled")
+            if (!releaseCheck.await(5, TimeUnit.SECONDS)) error("the check was never released")
+            """{"schemaVersion":1,"type":"resource.updates.checked","payload":{"checked":1,"reached":true,"failedCount":0,"updates":[]}}"""
         }
+        val seen = Collections.synchronizedList(mutableListOf<ResourceStartupReadiness>())
+        val recorder =
+            CoroutineScope(Dispatchers.Unconfined).launch {
+                harness.manager.state.collect { seen += it.startupReadiness }
+            }
         val checkFailure = AtomicReference<Throwable?>()
         val check =
             thread {
@@ -3038,17 +3043,54 @@ class ResourceManagerTest {
                     }.exceptionOrNull(),
                 )
             }
-        assertTrue(checkStarted.await(5, TimeUnit.SECONDS))
+        try {
+            assertTrue(checkStarted.await(5, TimeUnit.SECONDS))
+            assertTrue(harness.manager.isUpdateCheckRunning())
+            harness.bridge.clearRequests()
 
+            kotlinx.coroutines.runBlocking { harness.manager.recoverAndRefresh() }
+
+            // Skipped outright: no RECOVERING, no cleanup Python would refuse, no cancel, no wait.
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertFalse(ResourceStartupReadiness.RECOVERING in seen)
+            assertEquals(emptyList<String>(), harness.bridge.requestTypes)
+            assertTrue(check.isAlive)
+        } finally {
+            releaseCheck.countDown()
+            check.join(5_000)
+            recorder.cancel()
+        }
+
+        assertNull(checkFailure.get())
+        assertFalse(harness.manager.isUpdateCheckRunning())
         kotlinx.coroutines.runBlocking { harness.manager.recoverAndRefresh() }
-        check.join(5_000)
-
+        assertTrue("resource.cleanup" in harness.bridge.requestTypes)
         assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
-        assertNull(harness.manager.state.value.failure)
-        assertEquals("resource_operation_cancelled", (checkFailure.get() as ResourceBridgeException).code)
-        val types = harness.bridge.requestTypes
-        assertTrue(types.indexOf("resource.operation.cancel") < types.indexOf("resource.cleanup"))
     }
+
+    @Test
+    fun updateCheckIsRefusedWhileRecoveryIsInProgress() =
+        runTest {
+            val executor = PausableExecutor()
+            val harness = Harness(resourceExecutor = executor)
+            executor.paused = true
+            val recovery = launch { harness.manager.recoverAndRefresh() }
+            runCurrent()
+            assertEquals(ResourceStartupReadiness.RECOVERING, harness.manager.state.value.startupReadiness)
+
+            val refused = runCatching { harness.manager.checkResourceUpdates(UPDATE_CHECK_REQUEST) }.exceptionOrNull()
+
+            assertEquals("resource_not_ready", (refused as ResourceBridgeException).code)
+            assertFalse(harness.manager.isUpdateCheckRunning())
+            executor.paused = false
+            while (executor.queued.isNotEmpty()) {
+                executor.runNext()
+                runCurrent()
+            }
+            recovery.join()
+            assertEquals(ResourceStartupReadiness.READY, harness.manager.state.value.startupReadiness)
+            assertTrue(harness.bridge.requestsOfType("resource.updates.check").isEmpty())
+        }
 
     /** Serves one archive body, or an HTTP status with an empty body. */
     private class ArchiveConnection(
