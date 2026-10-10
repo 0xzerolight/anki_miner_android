@@ -799,7 +799,7 @@ private fun SettingsAnkiFixture(setup: SetupUiState) {
             onSetFieldMapping = { _, _ -> },
             onSelectCardType = {},
             onSelectCardTypeMarker = {},
-            onRemapFields = {},
+            onFillFieldsAutomatically = {},
         )
     }
 }

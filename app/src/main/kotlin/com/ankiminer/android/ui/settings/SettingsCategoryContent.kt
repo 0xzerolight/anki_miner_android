@@ -270,7 +270,7 @@ private fun LazyListScope.ankiSettings(
             setupViewModel::setFieldMapping,
             setupViewModel::selectCardType,
             setupViewModel::setCardTypeMarkerField,
-            setupViewModel::remapFieldsFromNoteType,
+            setupViewModel::fillFieldsAutomatically,
             mappingExpanded = expansion.isExpanded("anki-target"),
             onMappingExpandedChange = { expansion.setExpanded("anki-target", it) },
             inlineFailure = {

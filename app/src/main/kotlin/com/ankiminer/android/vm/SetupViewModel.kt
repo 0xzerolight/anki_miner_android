@@ -11,6 +11,9 @@ import com.ankiminer.android.anki.generated.UnicodeContractV151
 import com.ankiminer.android.anki.provider.AnkiFieldMapPolicy
 import com.ankiminer.android.anki.provider.AnkiProviderReadiness
 import com.ankiminer.android.anki.provider.AnkiFieldMappingChange
+import com.ankiminer.android.anki.provider.AnkiPresetApplication
+import com.ankiminer.android.anki.provider.NoteTypeFill
+import com.ankiminer.android.anki.provider.NoteTypeFillSource
 import com.ankiminer.android.data.RuntimeWorkCoordinator
 import com.ankiminer.android.data.anki.AnkiSetupManager
 import com.ankiminer.android.data.resources.AudioPackCandidate
@@ -73,6 +76,8 @@ internal class SetupViewModel(
     private val strings: StringResourceResolver,
     private val savedStateHandle: SavedStateHandle = SavedStateHandle(),
     private val languageProfileSource: LanguageProfileSource? = null,
+    /** "Fill in automatically"'s note-type presets; null runs the keyword pass alone. */
+    private val noteTypeFillSource: NoteTypeFillSource? = null,
 ) : ViewModel() {
     /** What the active mining language changes on this screen; Japanese needs no bridge call. */
     private data class LanguageFacts(
@@ -115,6 +120,7 @@ internal class SetupViewModel(
         val pendingReplace: PendingResourceReplace? = null,
         val pendingDelete: PendingResourceDelete? = null,
         val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
+        val fieldFillCount: Int? = null,
         val deckPersistence: DeckPersistenceStatus = DeckPersistenceStatus.IDLE,
         val failedDeckName: String? = null,
         val wizardCompletion: WizardCompletionStatus = WizardCompletionStatus.IDLE,
@@ -145,6 +151,7 @@ internal class SetupViewModel(
     private val repository = settingsRepository
     private val settingsMutationMutex = Mutex()
     private var pendingPicker = restorePendingPicker()
+    private var fillJob: Job? = null
     private var pendingPickerJob: Job? = null
     private var pendingPickerRetentionJob: Job? = null
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -224,6 +231,7 @@ internal class SetupViewModel(
                 cardType = appSettings.cardType,
                 cardTypeMarkerField = appSettings.cardTypeMarkerField,
                 fieldMapChanges = localState.fieldMapChanges,
+                fieldFillCount = localState.fieldFillCount,
                 remediations = ankiState.remediations,
                 recoveryInventoryStatus = ankiState.recoveryInventoryStatus,
                 ankiOperation = ankiState.operation,
@@ -314,6 +322,7 @@ internal class SetupViewModel(
             deckPersistence = localState.deckPersistence,
             failedDeckName = localState.failedDeckName,
             fieldMapChanges = localState.fieldMapChanges,
+            fieldFillCount = localState.fieldFillCount,
             wizardCompletion = localState.wizardCompletion,
             audioPackChoices = localState.audioPackChoices,
             pendingReplace = localState.pendingReplace,
@@ -347,15 +356,42 @@ internal class SetupViewModel(
         }
     }
 
-    fun selectNoteType(name: String) {
+    /**
+     * Pick the note type. A Settings pick maps by keyword ([AnkiFieldMapPolicy.merge]); the setup
+     * wizard passes [fillAutomatically], so a note type "Fill in automatically" recognises (Lapis,
+     * Kiku, Senren, Anki Miner Note) takes its whole preset, as desktop's wizard does.
+     */
+    fun selectNoteType(
+        name: String,
+        fillAutomatically: Boolean = false,
+    ) {
         val state = currentState()
         if (state.busy || state.noteType == name) return
         val fields = state.availableNoteTypes.firstOrNull { it.name == name }?.fieldNames ?: return
+        if (!fillAutomatically) {
+            persistNoteTypeSelection(name, fields, state, preset = null)
+            return
+        }
+        if (fillJob?.isActive == true) return
+        fillJob = viewModelScope.launch { persistNoteTypeSelection(name, fields, state, recognisedPreset(fields, state.language)) }
+    }
+
+    private fun persistNoteTypeSelection(
+        name: String,
+        fields: List<String>,
+        state: SetupUiState,
+        preset: NoteTypeFill?,
+    ) {
         var changes = emptyList<AnkiFieldMappingChange>()
         persistAnkiSettings(
             transform = { current ->
                 if (current.noteType == name) {
                     current
+                } else if (preset != null && current.language == state.language) {
+                    val applied = applyPreset(preset, fields, current)
+                    // As for a keyword pick: name only the choices this pick discarded.
+                    changes = applied.mapping.changes.filter { it.previousDestination.isNotEmpty() }
+                    current.withPreset(applied).copy(noteType = name)
                 } else {
                     val retainedMarker =
                         current.cardTypeMarkerField?.takeIf { marker ->
@@ -379,55 +415,108 @@ internal class SetupViewModel(
                 }
             },
             afterSuccess = { persisted ->
-                local.update { it.copy(fieldMapChanges = changes) }
+                local.update { it.copy(fieldMapChanges = changes, fieldFillCount = null) }
                 refreshPersistedTarget(persisted)
             },
         )
     }
 
     /**
-     * Re-run keyword auto-mapping over the note type that is already selected.
+     * "Fill in automatically" (desktop D13) over the note type that is already selected.
      *
-     * [selectNoteType] maps only on a CHANGE, so a field map saved against an older keyword table
-     * keeps its gaps for good — the reason a Senren user who set the app up before the plural pitch
-     * names were known still gets no pitch on their cards after updating.
+     * A note type the engine recognises by its field names takes its whole preset: every mapping,
+     * the pitch-category format, the card-mode marker and, for Anki Miner Note, bold target words.
+     * Anything else, or a bridge that cannot answer, gets the keyword pass ([AnkiFieldMapPolicy.remap]),
+     * which also mends a map saved against an older keyword table: [selectNoteType] maps only on a
+     * CHANGE, so a Senren user who set up before the plural pitch names were known had no other way
+     * to get pitch on their cards.
      */
-    fun remapFieldsFromNoteType() {
+    fun fillFieldsAutomatically() {
         val state = currentState()
-        if (state.busy) return
+        if (state.busy || fillJob?.isActive == true) return
         val noteType = state.noteType ?: return
         val fields =
-            state.availableNoteTypes.firstOrNull { it.name == noteType }?.fieldNames ?: return
-        var changes = emptyList<AnkiFieldMappingChange>()
-        persistAnkiSettings(
-            transform = { current ->
-                if (current.noteType != noteType) {
-                    current
-                } else {
-                    val retainedMarker =
-                        current.cardTypeMarkerField?.takeIf { marker ->
-                            marker in fields && marker != fields.firstOrNull()
+            state.availableNoteTypes.firstOrNull { it.name == noteType }?.fieldNames?.takeIf { it.isNotEmpty() }
+                ?: return
+        fillJob =
+            viewModelScope.launch {
+                val preset = recognisedPreset(fields, state.language)
+                var changes = emptyList<AnkiFieldMappingChange>()
+                var filled = 0
+                persistAnkiSettings(
+                    transform = { current ->
+                        if (current.noteType != noteType || current.language != state.language) {
+                            current
+                        } else if (preset != null) {
+                            val applied = applyPreset(preset, fields, current)
+                            changes = applied.mapping.changes
+                            filled = applied.mapping.filledCount
+                            current.withPreset(applied)
+                        } else {
+                            val retainedMarker =
+                                current.cardTypeMarkerField?.takeIf { marker ->
+                                    marker in fields && marker != fields.firstOrNull()
+                                }
+                            val remapped =
+                                AnkiFieldMapPolicy.remap(
+                                    fieldNames = fields,
+                                    currentFieldMap = current.fieldMap,
+                                    reservedDestinations = setOfNotNull(retainedMarker),
+                                    extraFields = state.extraCardFields,
+                                )
+                            changes = remapped.changes
+                            filled = remapped.filledCount
+                            current.copy(
+                                fieldMap = remapped.fieldMap,
+                                cardTypeMarkerField = retainedMarker,
+                            )
                         }
-                    val remapped =
-                        AnkiFieldMapPolicy.remap(
-                            fieldNames = fields,
-                            currentFieldMap = current.fieldMap,
-                            reservedDestinations = setOfNotNull(retainedMarker),
-                            extraFields = state.extraCardFields,
-                        )
-                    changes = remapped.changes
-                    current.copy(
-                        fieldMap = remapped.fieldMap,
-                        cardTypeMarkerField = retainedMarker,
-                    )
-                }
-            },
-            afterSuccess = { persisted ->
-                local.update { it.copy(fieldMapChanges = changes) }
-                refreshPersistedTarget(persisted)
-            },
-        )
+                    },
+                    afterSuccess = { persisted ->
+                        local.update { it.copy(fieldMapChanges = changes, fieldFillCount = filled) }
+                        refreshPersistedTarget(persisted)
+                    },
+                )
+            }
     }
+
+    /** The engine's answer when it recognises the note type; null for the keyword pass. */
+    private suspend fun recognisedPreset(
+        fieldNames: List<String>,
+        language: String,
+    ): NoteTypeFill? {
+        val source = noteTypeFillSource ?: return null
+        return source
+            .fill(fieldNames, language)
+            .onFailure { failure ->
+                AppLog.w(LogComponent.ANKI, "note_type_fill", failure, "outcome" to "keyword_fallback")
+            }.getOrNull()
+            ?.takeIf { it.preset != null }
+    }
+
+    private fun applyPreset(
+        fill: NoteTypeFill,
+        fieldNames: List<String>,
+        current: AppSettings,
+    ): AnkiPresetApplication =
+        AnkiFieldMapPolicy.applyPreset(
+            preset = checkNotNull(fill.preset),
+            presetFields = fill.fields,
+            extraFields = fill.extraFields,
+            fieldNames = fieldNames,
+            currentFieldMap = current.fieldMap,
+            currentCardType = current.cardType,
+            currentBoldTargetInSentence = current.boldTargetInSentence,
+        )
+
+    private fun AppSettings.withPreset(applied: AnkiPresetApplication): AppSettings =
+        copy(
+            fieldMap = applied.mapping.fieldMap,
+            cardType = applied.cardType,
+            cardTypeMarkerField = applied.cardTypeMarkerField,
+            pitchCategoryFormat = applied.pitchCategoryFormat,
+            boldTargetInSentence = applied.boldTargetInSentence,
+        )
 
     fun selectDeck(deckName: String) {
         val state = currentState()
@@ -510,7 +599,7 @@ internal class SetupViewModel(
                 }
             },
             afterSuccess = { persisted ->
-                local.update { it.copy(fieldMapChanges = emptyList()) }
+                local.update { it.copy(fieldMapChanges = emptyList(), fieldFillCount = null) }
                 refreshPersistedTarget(persisted)
             },
         )
@@ -1798,6 +1887,7 @@ internal class SetupViewModel(
         private val savedStateHandleFactory: (CreationExtras) -> SavedStateHandle =
             { extras -> extras.createSavedStateHandle() },
         private val languageProfileSource: LanguageProfileSource? = null,
+        private val noteTypeFillSource: NoteTypeFillSource? = null,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>, extras: CreationExtras): T {
@@ -1813,6 +1903,7 @@ internal class SetupViewModel(
                 strings,
                 savedStateHandleFactory(extras),
                 languageProfileSource,
+                noteTypeFillSource,
             ) as T
         }
     }

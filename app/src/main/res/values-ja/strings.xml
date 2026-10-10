@@ -393,8 +393,12 @@
     <string name="disclosure_expanded">展開</string>
     <string name="disclosure_collapsed">折りたたみ</string>
     <string name="settings_disclosure_summary">%1$s（%2$d/%3$d）</string>
-    <string name="anki_field_mapping_remap">フィールド名から対応付けを補完</string>
-    <string name="anki_field_mapping_remap_help">このノートタイプのフィールド名を再び照合し、認識できた対応付けをすべて補完します。認識できない名前は、すでに選択されているフィールドのままです。</string>
+    <string name="anki_field_mapping_remap">自動で入力</string>
+    <string name="anki_field_mapping_remap_help">このノートタイプのフィールド名を照合し、認識できた対応付けをすべて入力します。Lapis、Kiku、Senren、Anki Miner Note は認識され、すべて入力されます。</string>
+    <string name="anki_field_fill_done">自動で入力したフィールド: %1$d</string>
+    <string name="anki_field_fill_none">自動で入力できるフィールドはありませんでした</string>
+    <string name="wizard_note_type_get_anki_miner_note_help">カード用のノートタイプがまだありませんか？Anki Miner Note は無料で、どの言語でも使えます。.apkg ファイルをダウンロードし、AnkiDroid で開いてインポートしてください。</string>
+    <string name="wizard_note_type_get_anki_miner_note">Anki Miner Note を入手</string>
     <string name="anki_field_mapping_changes">このノートタイプのフィールドの対応付けが変更されました：%1$s</string>
     <string name="anki_field_none">未対応付け</string>
     <string name="anki_card_type_title">カードタイプ</string>

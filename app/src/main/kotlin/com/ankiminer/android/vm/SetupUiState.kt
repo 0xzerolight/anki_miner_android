@@ -59,6 +59,8 @@ internal data class SetupUiState(
     val cardType: CardType? = null,
     val cardTypeMarkerField: String? = null,
     val fieldMapChanges: List<AnkiFieldMappingChange> = emptyList(),
+    /** How many mappings the last "Fill in automatically" filled; null until it has run. */
+    val fieldFillCount: Int? = null,
     val remediations: AnkiRemediationInventory = AnkiRemediationInventory(emptyList()),
     val recoveryInventoryStatus: AnkiRecoveryInventoryStatus =
         AnkiRecoveryInventoryStatus.NOT_CHECKED,

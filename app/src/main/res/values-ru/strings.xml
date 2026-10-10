@@ -406,8 +406,12 @@
     <string name="disclosure_expanded">Развёрнуто</string>
     <string name="disclosure_collapsed">Свёрнуто</string>
     <string name="settings_disclosure_summary">%1$s (%2$d из %3$d)</string>
-    <string name="anki_field_mapping_remap">Заполнить сопоставления по именам полей</string>
-    <string name="anki_field_mapping_remap_help">Повторно сверяет имена полей этого типа заметки и заполняет каждое распознанное сопоставление. Нераспознанные имена сохраняют уже выбранное поле.</string>
+    <string name="anki_field_mapping_remap">Заполнить автоматически</string>
+    <string name="anki_field_mapping_remap_help">Сверяет имена полей этого типа заметки и заполняет каждое распознанное сопоставление. Lapis, Kiku, Senren и Anki Miner Note распознаются и заполняются полностью.</string>
+    <string name="anki_field_fill_done">Автоматически заполнены поля: %1$d</string>
+    <string name="anki_field_fill_none">Не удалось автоматически заполнить ни одного поля</string>
+    <string name="wizard_note_type_get_anki_miner_note_help">Ещё нет типа заметки для ваших карточек? Anki Miner Note бесплатен и подходит для любого языка. Скачайте файл .apkg и откройте его в AnkiDroid, чтобы импортировать.</string>
+    <string name="wizard_note_type_get_anki_miner_note">Получить Anki Miner Note</string>
     <string name="anki_field_mapping_changes">Сопоставления для этого типа заметки изменены: %1$s</string>
     <string name="anki_field_none">Не сопоставлено</string>
     <string name="anki_card_type_title">Тип карточки</string>

@@ -292,7 +292,8 @@ internal fun OnboardingWizard(
                 onInstallRequiredResources = viewModel::installRequiredResources,
                 onSelectDeck = viewModel::selectDeck,
                 onRetryDeckSelection = viewModel::retryDeckSelection,
-                onSelectNoteType = viewModel::selectNoteType,
+                // Desktop's wizard fills a recognised note type (Lapis, Anki Miner Note, ...) on pick.
+                onSelectNoteType = { viewModel.selectNoteType(it, fillAutomatically = true) },
                 onChangeCardFields = onChangeCardFields,
                 onRefresh = viewModel::refresh,
                 onCancelOperation = viewModel::cancelOperation,
