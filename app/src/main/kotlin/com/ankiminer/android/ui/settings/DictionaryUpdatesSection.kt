@@ -10,6 +10,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
 import com.ankiminer.android.R
 import com.ankiminer.android.data.resources.DictionaryUpdateResult
 import com.ankiminer.android.data.resources.DictionaryUpdateUiState
@@ -38,10 +39,12 @@ internal fun DictionaryUpdatesSection(
             modifier = Modifier.semantics { heading() },
             style = MaterialTheme.typography.titleSmall,
         )
-        BooleanSetting(
+        // TriStateSetting only ever On or Off here: unlike BooleanSetting's one-line label, its label
+        // wraps, and desktop's wording does not fit one line at 320dp.
+        TriStateSetting(
             label = stringResource(R.string.dictionary_updates_automatic),
-            checked = automatic,
-            onCheckedChange = onAutomaticChange,
+            state = ToggleableState(automatic),
+            onClick = { onAutomaticChange(!automatic) },
         )
         SupportingText(stringResource(R.string.dictionary_updates_help))
         SecondaryActionButton(
